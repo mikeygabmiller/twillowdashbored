@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Mikey's Detailing — Messages</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1f2530;
+    --line: #2a313d;
+    --text: #e7ecf3;
+    --muted: #8a93a3;
+    --accent: #2f81f7;
+    --in: #232a36;
+    --out: #2f81f7;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--text);
+  }
+  /* ---- Login overlay ---- */
+  #login {
+    position: fixed; inset: 0; z-index: 50;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg);
+  }
+  #login .card {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 28px; width: 320px; text-align: center;
+  }
+  #login h1 { font-size: 18px; margin: 0 0 4px; }
+  #login p { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
+  input, textarea, button { font: inherit; }
+  input[type=password], input[type=text] {
+    width: 100%; padding: 11px 12px; border-radius: 9px;
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
+    outline: none;
+  }
+  input:focus, textarea:focus { border-color: var(--accent); }
+  .btn {
+    background: var(--accent); color: #fff; border: 0; border-radius: 9px;
+    padding: 11px 14px; cursor: pointer; font-weight: 600;
+  }
+  .btn:disabled { opacity: .5; cursor: default; }
+  .btn.ghost { background: var(--panel-2); border: 1px solid var(--line); color: var(--text); font-weight: 500; }
+  #login .btn { width: 100%; margin-top: 12px; }
+  .err { color: #ff6b6b; font-size: 12px; min-height: 16px; margin-top: 8px; }
+
+  /* ---- App shell ---- */
+  #app { display: none; height: 100%; }
+  .layout { display: grid; grid-template-columns: 320px 1fr; height: 100%; }
+  .sidebar { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 16px; border-bottom: 1px solid var(--line);
+  }
+  .topbar h2 { font-size: 15px; margin: 0; }
+  .topbar .sub { font-size: 11px; color: var(--muted); }
+  .threadlist { overflow-y: auto; flex: 1; min-height: 0; }
+  .thread {
+    padding: 12px 16px; border-bottom: 1px solid var(--line); cursor: pointer;
+    display: flex; flex-direction: column; gap: 3px;
+  }
+  .thread:hover { background: var(--panel-2); }
+  .thread.active { background: var(--panel-2); border-left: 3px solid var(--accent); padding-left: 13px; }
+  .thread .name { font-weight: 600; font-size: 14px; display: flex; justify-content: space-between; gap: 8px; }
+  .thread .name .time { color: var(--muted); font-weight: 400; font-size: 11px; white-space: nowrap; }
+  .thread .preview { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .thread .preview .dir { color: var(--accent); }
+
+  /* ---- Conversation pane ---- */
+  .chat { display: flex; flex-direction: column; min-height: 0; }
+  .chat-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 18px; border-bottom: 1px solid var(--line); background: var(--panel);
+  }
+  .chat-head .who { font-weight: 600; }
+  .chat-head .num { color: var(--muted); font-size: 12px; }
+  .messages { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+  .bubble { max-width: 70%; padding: 9px 13px; border-radius: 14px; font-size: 14px; line-height: 1.35; white-space: pre-wrap; word-wrap: break-word; }
+  .bubble .meta { display: block; font-size: 10px; opacity: .65; margin-top: 4px; }
+  .msg-in  { align-self: flex-start; background: var(--in); border-bottom-left-radius: 4px; }
+  .msg-out { align-self: flex-end; background: var(--out); color: #fff; border-bottom-right-radius: 4px; }
+  .composer { display: flex; gap: 10px; padding: 14px 18px; border-top: 1px solid var(--line); background: var(--panel); }
+  .composer textarea {
+    flex: 1; resize: none; height: 44px; max-height: 140px; padding: 11px 12px;
+    border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); outline: none;
+  }
+  .empty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 14px; text-align: center; padding: 24px; }
+  .pill { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 20px; padding: 3px 10px; }
+  @media (max-width: 720px) {
+    .layout { grid-template-columns: 1fr; }
+    .sidebar { display: var(--sb, flex); }
+    .chat   { display: var(--ch, none); }
+    body.viewing { --sb: none; --ch: flex; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Login -->
+<div id="login">
+  <div class="card">
+    <h1>Mikey's Detailing</h1>
+    <p>Enter your dashboard password</p>
+    <input id="pw" type="password" autocomplete="current-password" placeholder="Password" />
+    <div class="err" id="loginErr"></div>
+    <button class="btn" id="loginBtn">Open dashboard</button>
+  </div>
+</div>
+
+<!-- App -->
+<div id="app">
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="topbar">
+        <div>
+          <h2>Messages</h2>
+          <div class="sub" id="status">—</div>
+        </div>
+        <div style="display:flex; gap:8px;">
+          <button class="btn ghost" id="newBtn" title="New conversation">+ New</button>
+          <button class="btn ghost" id="logoutBtn" title="Log out">⎋</button>
+        </div>
+      </div>
+      <div class="threadlist" id="threadlist"></div>
+    </aside>
+
+    <section class="chat">
+      <div class="chat-head" id="chatHead" style="display:none;">
+        <div>
+          <span class="who" id="whoName"></span>
+          <span class="num" id="whoNum"></span>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button class="btn ghost" id="backBtn" style="display:none;">‹ Back</button>
+          <button class="btn ghost" id="renameBtn">Rename</button>
+        </div>
+      </div>
+      <div class="messages" id="messages">
+        <div class="empty" id="emptyState">Select a conversation on the left, or start a new one.</div>
+      </div>
+      <div class="composer" id="composer" style="display:none;">
+        <textarea id="msgInput" placeholder="Type a message…"></textarea>
+        <button class="btn" id="sendBtn">Send</button>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var POLL_MS = 20000;            // relaxed 20s polling (stays within Netlify free tier)
+  var PASS_KEY = "mkd_dashboard_pass";
+  var pass = localStorage.getItem(PASS_KEY) || "";
+  var currentPhone = null;
+  var threadsCache = [];
+  var pollTimer = null;
+
+  // ---- elements ----
+  var el = function (id) { return document.getElementById(id); };
+  var loginBox = el("login"), app = el("app");
+
+  // ---------------------------------------------------------------- API
+  function api(path, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign({ "x-dashboard-pass": pass }, opts.headers || {});
+    return fetch(path, opts).then(function (res) {
+      if (res.status === 401) { logout(); throw new Error("unauthorized"); }
+      return res.json();
+    });
+  }
+
+  // ---------------------------------------------------------------- auth
+  function showLogin() { loginBox.style.display = "flex"; app.style.display = "none"; }
+  function showApp()   { loginBox.style.display = "none"; app.style.display = "block"; }
+
+  function tryLogin() {
+    var v = el("pw").value;
+    if (!v) return;
+    el("loginBtn").disabled = true;
+    el("loginErr").textContent = "";
+    // Validate by hitting a protected endpoint
+    fetch("/api/threads", { headers: { "x-dashboard-pass": v } }).then(function (res) {
+      el("loginBtn").disabled = false;
+      if (res.ok) {
+        pass = v; localStorage.setItem(PASS_KEY, v);
+        showApp(); start();
+      } else {
+        el("loginErr").textContent = "Wrong password. Try again.";
+      }
+    }).catch(function () {
+      el("loginBtn").disabled = false;
+      el("loginErr").textContent = "Network error. Try again.";
+    });
+  }
+
+  function logout() {
+    pass = ""; localStorage.removeItem(PASS_KEY);
+    stopPolling(); currentPhone = null;
+    showLogin();
+  }
+
+  // ---------------------------------------------------------------- render
+  function fmtTime(ts) {
+    if (!ts) return "";
+    var d = new Date(ts), now = new Date();
+    var sameDay = d.toDateString() === now.toDateString();
+    if (sameDay) return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  }
+
+  function prettyPhone(p) {
+    var m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(p || "");
+    return m ? "(" + m[1] + ") " + m[2] + "-" + m[3] : (p || "");
+  }
+
+  function renderThreads(threads) {
+    threadsCache = threads;
+    var list = el("threadlist");
+    if (!threads.length) {
+      list.innerHTML = '<div class="empty" style="padding:30px 16px;">No conversations yet.</div>';
+      return;
+    }
+    list.innerHTML = "";
+    threads.forEach(function (t) {
+      var div = document.createElement("div");
+      div.className = "thread" + (t.phone === currentPhone ? " active" : "");
+      var label = t.name && t.name.trim() ? t.name : prettyPhone(t.phone);
+      var dirArrow = t.lastDir === "out" ? '<span class="dir">You: </span>' : "";
+      div.innerHTML =
+        '<div class="name"><span>' + esc(label) + '</span><span class="time">' + fmtTime(t.lastTs) + '</span></div>' +
+        '<div class="preview">' + dirArrow + esc(t.lastBody || "") + '</div>';
+      div.onclick = function () { openThread(t.phone); };
+      list.appendChild(div);
+    });
+  }
+
+  function renderMessages(thread) {
+    var box = el("messages");
+    el("chatHead").style.display = "flex";
+    el("composer").style.display = "flex";
+    var label = thread.name && thread.name.trim() ? thread.name : prettyPhone(thread.phone);
+    el("whoName").textContent = label;
+    el("whoNum").textContent = "  " + prettyPhone(thread.phone);
+
+    box.innerHTML = "";
+    if (!thread.messages || !thread.messages.length) {
+      box.innerHTML = '<div class="empty">No messages yet. Say hello 👋</div>';
+    } else {
+      thread.messages.forEach(function (m) {
+        var b = document.createElement("div");
+        b.className = "bubble " + (m.dir === "out" ? "msg-out" : "msg-in");
+        var tag = m.kind === "auto" ? " · auto" : "";
+        b.innerHTML = esc(m.body) + '<span class="meta">' + fmtTime(m.ts) + tag + "</span>";
+        box.appendChild(b);
+      });
+      box.scrollTop = box.scrollHeight;
+    }
+  }
+
+  // ---------------------------------------------------------------- actions
+  function refreshThreads() {
+    return api("/api/threads").then(function (d) {
+      if (d && d.ok) {
+        renderThreads(d.threads || []);
+        el("status").textContent = (d.threads || []).length + " conversation" + ((d.threads || []).length === 1 ? "" : "s");
+      }
+    }).catch(function () {});
+  }
+
+  function openThread(phone) {
+    currentPhone = phone;
+    document.body.classList.add("viewing");
+    el("emptyState") && (el("emptyState").style.display = "none");
+    renderThreads(threadsCache); // re-highlight
+    return api("/api/thread?phone=" + encodeURIComponent(phone)).then(function (d) {
+      if (d && d.ok) renderMessages(d.thread);
+    }).catch(function () {});
+  }
+
+  function sendMessage() {
+    var input = el("msgInput");
+    var body = input.value.trim();
+    if (!body || !currentPhone) return;
+    el("sendBtn").disabled = true;
+    api("/api/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: currentPhone, body: body }),
+    }).then(function (d) {
+      el("sendBtn").disabled = false;
+      if (d && d.ok) {
+        input.value = "";
+        renderMessages(d.thread);
+        refreshThreads();
+      } else {
+        alert("Could not send: " + ((d && d.error) || "unknown error"));
+      }
+    }).catch(function () {
+      el("sendBtn").disabled = false;
+      alert("Network error — message not sent.");
+    });
+  }
+
+  function renameContact() {
+    if (!currentPhone) return;
+    var current = "";
+    var t = threadsCache.find(function (x) { return x.phone === currentPhone; });
+    if (t && t.name) current = t.name;
+    var name = prompt("Name for " + prettyPhone(currentPhone) + ":", current);
+    if (name === null) return;
+    api("/api/name", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone: currentPhone, name: name.trim() }),
+    }).then(function () { refreshThreads(); openThread(currentPhone); });
+  }
+
+  function newConversation() {
+    var raw = prompt("Customer phone number (e.g. 360-555-1234):");
+    if (!raw) return;
+    var digits = raw.replace(/\D/g, "");
+    var phone = null;
+    if (digits.length === 10) phone = "+1" + digits;
+    else if (digits.length === 11 && digits[0] === "1") phone = "+" + digits;
+    else if (/^\+1\d{10}$/.test(raw)) phone = raw;
+    if (!phone) { alert("That doesn't look like a valid US phone number."); return; }
+    openThread(phone);
+  }
+
+  // ---------------------------------------------------------------- polling (pauses when tab hidden)
+  function poll() {
+    refreshThreads();
+    if (currentPhone) {
+      api("/api/thread?phone=" + encodeURIComponent(currentPhone)).then(function (d) {
+        if (d && d.ok && currentPhone === d.thread.phone) renderMessages(d.thread);
+      }).catch(function () {});
+    }
+  }
+  function startPolling() {
+    stopPolling();
+    if (!document.hidden) pollTimer = setInterval(poll, POLL_MS);
+  }
+  function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
+
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) {
+      stopPolling();                 // pause all polling when tab is hidden
+    } else {
+      poll();                        // immediate catch-up, then resume
+      startPolling();
+    }
+  });
+
+  function start() {
+    refreshThreads();
+    startPolling();
+  }
+
+  // ---------------------------------------------------------------- helpers
+  function esc(s) {
+    return String(s == null ? "" : s)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;");
+  }
+
+  // ---------------------------------------------------------------- wire up
+  el("loginBtn").onclick = tryLogin;
+  el("pw").addEventListener("keydown", function (e) { if (e.key === "Enter") tryLogin(); });
+  el("logoutBtn").onclick = logout;
+  el("sendBtn").onclick = sendMessage;
+  el("renameBtn").onclick = renameContact;
+  el("newBtn").onclick = newConversation;
+  el("backBtn").onclick = function () { document.body.classList.remove("viewing"); };
+  el("msgInput").addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  });
+  // show Back button on small screens
+  if (window.matchMedia("(max-width: 720px)").matches) el("backBtn").style.display = "inline-block";
+
+  // ---------------------------------------------------------------- boot
+  if (pass) {
+    showApp(); start();
+  } else {
+    showLogin();
+  }
+})();
+</script>
+</body>
+</html>

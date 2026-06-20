@@ -1,0 +1,10 @@
+{
+  "name": "mikeys-sms-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Standalone SMS dashboard for Mikey's Mobile Detailing (Netlify Functions + Blobs + Twilio).",
+  "dependencies": {
+    "@netlify/blobs": "^10.0.0"
+  }
+}
