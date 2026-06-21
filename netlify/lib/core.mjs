@@ -36,11 +36,59 @@ export function blankThread(phone) {
     pinned: false,
     archived: false,
     unread: 0,
+    linked: [],        // array of related thread phone numbers (E.164)
     messages: [],      // { id, dir:'in'|'out', body, ts, kind, error? }
     scheduled: [],     // { id, body, sendAt }
     createdAt: Date.now(),
     updatedAt: Date.now(),
   };
+}
+
+// ---------------------------------------------------------------------------
+// Analytics
+// ---------------------------------------------------------------------------
+// Average "time to reply": for each customer message that was waiting, measure
+// how long until Mikey's next outbound message. Auto/quote messages still count
+// as outbound. Returns { avgMs, count, awaiting, awaitingSince }.
+export function computeReplyStats(messages) {
+  let total = 0, count = 0, pending = null;
+  for (const m of (messages || [])) {
+    if (m.dir === 'in') { if (pending == null) pending = m.ts; }
+    else if (m.dir === 'out' && pending != null) { total += (m.ts - pending); count++; pending = null; }
+  }
+  return { avgMs: count ? Math.round(total / count) : null, count, awaiting: pending != null, awaitingSince: pending };
+}
+
+// Compact transcript for prompting the model (most-recent `max` messages).
+export function transcript(thread, max = 40) {
+  return (thread.messages || []).slice(-max)
+    .map((m) => `${m.dir === 'in' ? 'Customer' : 'Mikey'}: ${String(m.body || '').replace(/\s+/g, ' ').trim()}`)
+    .join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Gemini (Google Generative Language API) — key comes from process.env only.
+// ---------------------------------------------------------------------------
+export async function geminiGenerate(prompt, opts = {}) {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error('GEMINI_API_KEY not set');
+  const model = process.env.GEMINI_MODEL || 'gemini-2.0-flash';
+  const body = {
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: opts.temperature == null ? 0.4 : opts.temperature,
+      maxOutputTokens: opts.maxTokens || 512,
+    },
+  };
+  if (opts.json) body.generationConfig.responseMimeType = 'application/json';
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
+  );
+  if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const data = await res.json();
+  const parts = (((data.candidates || [])[0] || {}).content || {}).parts || [];
+  return parts.map((p) => p.text || '').join('').trim();
 }
 
 // Load a thread, filling in any fields missing from older saved data.
