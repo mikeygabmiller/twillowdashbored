@@ -5,41 +5,6 @@
 [functions]
   node_bundler = "esbuild"
 
-# Route the public webhook paths and the dashboard API to the single function.
-# status = 200 makes these rewrites (the function still sees the original path),
-# so /api/health, /sms, /submit, etc. all reach netlify/functions/api.mjs.
-[[redirects]]
-  from = "/submit"
-  to = "/.netlify/functions/api"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/sms"
-  to = "/.netlify/functions/api"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/call"
-  to = "/.netlify/functions/api"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/voicemail"
-  to = "/.netlify/functions/api"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/voicemail-done"
-  to = "/.netlify/functions/api"
-  status = 200
-  force = true
-
-[[redirects]]
-  from = "/api/*"
-  to = "/.netlify/functions/api"
-  status = 200
-  force = true
+# Routing is handled natively by the function's `export const config = { path }`
+# (see netlify/functions/api.mjs). No [[redirects]] here — having both fights
+# with the function's own routes and can 404 every path.
