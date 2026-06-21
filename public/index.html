@@ -418,7 +418,9 @@
 <script>
 (function(){
   "use strict";
-  var POLL_MS=20000;
+  // Adaptive polling to stay well under Netlify's free-tier function-call budget:
+  // start fast, back off when nothing changes, pause entirely when idle/hidden.
+  var POLL_MIN=30000, POLL_MAX=300000, IDLE_MS=20*60*1000;
   var STATUS={new:{label:"New",cls:"st-new",dot:"dot-new"},active:{label:"Active",cls:"st-active",dot:"dot-active"},won:{label:"Won",cls:"st-won",dot:"dot-won"},lost:{label:"Lost",cls:"st-lost",dot:"dot-lost"}};
   var FILTERS=[["all","All"],["unread","Unread"],["new","New"],["active","Active"],["won","Won"],["lost","Lost"]];
   var LEAD_COLS=[["new","New leads","#3b82f6"],["active","Active","#22c55e"],["won","Won","#a855f7"],["lost","Lost","#8a93a3"]];
@@ -434,7 +436,7 @@
   var ACCENTS=[["#ff2e43","#c81e30","Red"],["#3b82f6","#1d4ed8","Blue"],["#22c55e","#15803d","Green"],["#a855f7","#7e22ce","Purple"],["#f97316","#c2410c","Orange"],["#06b6d4","#0e7490","Cyan"]];
 
   var state={threads:[],filter:"all",tab:"messages",search:"",phone:null,thread:null};
-  var pollTimer=null, lastArchive=null;
+  var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
   function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
   function vibrate(ms){try{if(navigator.vibrate)navigator.vibrate(ms)}catch(e){}}
@@ -628,8 +630,9 @@
   }
   function loadThread(){
     if(!state.phone)return Promise.resolve();
-    return api("/api/thread?phone="+encodeURIComponent(state.phone)).then(function(d){
-      if(d&&d.ok){state.thread=d.thread;renderThread();refreshThreads()}
+    // Combined endpoint returns the thread AND the conversation list in one call.
+    return api("/api/threads?phone="+encodeURIComponent(state.phone)).then(function(d){
+      if(d&&d.ok){state.threads=d.threads||state.threads;if(d.thread)state.thread=d.thread;renderThread();renderMain()}
     });
   }
 
@@ -752,10 +755,31 @@
   }
 
   // ---- polling ----
-  function poll(){refreshThreads();if(state.phone)loadThread()}
-  function startPoll(){stopPoll();if(!document.hidden)pollTimer=setInterval(poll,POLL_MS)}
-  function stopPoll(){if(pollTimer){clearInterval(pollTimer);pollTimer=null}}
-  document.addEventListener("visibilitychange",function(){if(document.hidden)stopPoll();else{poll();startPoll()}});
+  // Lightweight change signature so we can tell if anything actually moved.
+  function sig(){return state.threads.map(function(t){return t.phone+":"+t.lastTs+":"+t.unread+":"+t.scheduledCount}).join("|")}
+  function stopPoll(){if(pollTimer){clearTimeout(pollTimer);pollTimer=null}}
+  function scheduleNext(){
+    stopPoll();
+    if(paused||document.hidden)return;
+    if(Date.now()-lastActivity>IDLE_MS){paused=true;return} // idle: stop until next interaction
+    pollTimer=setTimeout(runPoll,pollInterval);
+  }
+  function runPoll(){
+    pollTimer=null;
+    var p=state.phone?loadThread():refreshThreads();
+    p.then(function(){
+      var s=sig();
+      pollInterval=(s===lastSig)?Math.min(Math.round(pollInterval*1.6),POLL_MAX):POLL_MIN;
+      lastSig=s;scheduleNext();
+    });
+  }
+  function startPoll(){paused=false;lastActivity=Date.now();pollInterval=POLL_MIN;lastSig=sig();scheduleNext()}
+  function markActivity(){lastActivity=Date.now();if(paused&&!document.hidden){paused=false;pollInterval=POLL_MIN;runPoll()}}
+  document.addEventListener("visibilitychange",function(){
+    if(document.hidden){stopPoll()}
+    else{paused=false;lastActivity=Date.now();pollInterval=POLL_MIN;runPoll()}
+  });
+  ["pointerdown","keydown","touchstart"].forEach(function(ev){document.addEventListener(ev,markActivity,{passive:true})});
 
   // ---- wire up ----
   var sp=el("searchPill"),si=el("search");
