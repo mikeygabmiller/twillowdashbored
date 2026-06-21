@@ -36,6 +36,7 @@ export function blankThread(phone) {
     pinned: false,
     archived: false,
     unread: 0,
+    appointmentAt: null, // ms timestamp of the customer's booked detail (for reminders)
     linked: [],        // array of related thread phone numbers (E.164)
     messages: [],      // { id, dir:'in'|'out', body, ts, kind, error? }
     scheduled: [],     // { id, body, sendAt }
@@ -77,7 +78,7 @@ export async function geminiGenerate(prompt, opts = {}) {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: {
       temperature: opts.temperature == null ? 0.4 : opts.temperature,
-      maxOutputTokens: opts.maxTokens || 512,
+      maxOutputTokens: opts.maxTokens || 1024,
     },
   };
   if (opts.json) body.generationConfig.responseMimeType = 'application/json';

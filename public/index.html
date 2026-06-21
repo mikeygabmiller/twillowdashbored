@@ -358,6 +358,7 @@
       <div class="ctools">
         <button class="btn icon" id="tplBtn" title="Quick replies">⚡</button>
         <button class="btn icon" id="schedBtn" title="Schedule send">🗓</button>
+        <button class="btn icon" id="remBtn" title="Appointment reminder">⏰</button>
         <button class="btn icon" id="draftBtn" title="AI draft reply">✨</button>
         <div class="spacer"></div>
         <span id="charCount" style="color:var(--muted2);font-size:11px"></span>
@@ -367,6 +368,15 @@
           <input type="datetime-local" id="schedTime" />
           <div class="quickset" id="quickset"></div>
           <button class="btn accent" id="schedConfirm" style="width:100%">🗓 Schedule send</button>
+        </div>
+        <div class="sched-pop" id="remPop" style="display:none">
+          <label>Appointment date &amp; time</label>
+          <input type="datetime-local" id="remAppt" />
+          <label>Send the reminder</label>
+          <div class="quickset" id="remWhen"></div>
+          <label>Reminder message</label>
+          <div class="quickset" id="remTpls"></div>
+          <button class="btn accent" id="remConfirm" style="width:100%">⏰ Schedule reminder</button>
         </div>
       </div>
       <div class="crow">
@@ -421,6 +431,7 @@
           <div class="infoline"><span>First seen</span><span id="dtSeen"></span></div>
           <div class="infoline"><span>Messages</span><span id="dtMsgCount"></span></div>
           <div class="infoline"><span>Avg reply time</span><span id="dtReply"></span></div>
+          <div class="infoline"><span>Appointment</span><span id="dtAppt" style="cursor:pointer"></span></div>
         </div>
       </div>
     </div>
@@ -475,6 +486,14 @@
     ["⭐ Review","Thanks {name}! Hope you love the detail. If you've got 2 min, a Google review means the world: "]
   ];
   var QUICK=[["In 1 hour",60],["This evening 6pm",-18],["Tomorrow 9am",-33],["Tomorrow 6pm",-42]];
+  // Appointment reminders: premade messages + when-to-send presets (relative to the appointment).
+  var REMINDERS=[
+    ["⏰ Day-before confirm","Hi {name}! Reminder: your detail with Mikey's Mobile Detailing is on {date} at {time}. Reply CONFIRM, or text me to reschedule. 🚗"],
+    ["🌅 Morning of","Good morning {name}! Looking forward to detailing your vehicle today at {time}. I'll text you when I'm on my way. 🚗✨"],
+    ["🅿️ On my way","On my way now {name} — see you in about 15–20 minutes!"],
+    ["💧 Aftercare + review","Thanks again {name}! Try to keep it out of the rain for 24 hours. If you've got 2 minutes, a Google review would mean the world: "]
+  ];
+  var REM_WHEN=[["Day before · 6pm","dayBefore18"],["Morning of · 8am","morning8"],["2 hours before","h2"],["1 hour before","h1"]];
   var ACCENTS=[["#ff2e43","#c81e30","Red"],["#3b82f6","#1d4ed8","Blue"],["#22c55e","#15803d","Green"],["#a855f7","#7e22ce","Purple"],["#f97316","#c2410c","Orange"],["#06b6d4","#0e7490","Cyan"]];
 
   var state={threads:[],filter:"all",tab:"messages",search:"",phone:null,thread:null,insights:null};
@@ -809,6 +828,10 @@
     var rs=replyStats(t.messages);
     el("dtReply").textContent=rs.avgMs!=null?fmtDur(rs.avgMs):"—";
 
+    var da=el("dtAppt");
+    if(t.appointmentAt){da.textContent=fmtFull(t.appointmentAt)+"  ✕";da.title="Tap to clear appointment";da.onclick=function(){if(confirm("Clear the saved appointment?"))saveMeta({appointmentAt:null})}}
+    else{da.textContent="— set with ⏰";da.title="";da.onclick=null}
+
     renderLinked();
     // reset AI summary box when switching conversations
     if(el("aiOut")._phone!==t.phone){el("aiOut").style.display="none";el("aiOut").innerHTML="";el("aiOut")._phone=t.phone}
@@ -916,6 +939,53 @@
   function updateCount(){var v=el("msgInput").value;var n=v.length;el("charCount").textContent=n?n+" · "+Math.ceil(n/160)+" SMS":""}
   function autoGrow(){var ta=el("msgInput");ta.style.height="46px";ta.style.height=Math.min(ta.scrollHeight,140)+"px"}
 
+  // ---- appointment reminders ----
+  var remSel={when:0,tpl:0};
+  function remTime(appt,code){
+    var d=new Date(appt);
+    if(code==="dayBefore18"){d.setDate(d.getDate()-1);d.setHours(18,0,0,0)}
+    else if(code==="morning8"){d.setHours(8,0,0,0)}
+    else if(code==="h2"){d=new Date(appt-2*3600000)}
+    else if(code==="h1"){d=new Date(appt-3600000)}
+    return d.getTime();
+  }
+  function fillRemPlaceholders(text,apptMs){
+    var t=state.thread;var name=t&&t.name?t.name.split(" ")[0]:"there";
+    var d=new Date(apptMs);
+    var date=d.toLocaleDateString([],{weekday:"short",month:"short",day:"numeric"});
+    var time=d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
+    return text.replace(/\{name\}/g,name).replace(/\{date\}/g,date).replace(/\{time\}/g,time);
+  }
+  function buildReminderUI(){
+    var w=el("remWhen");w.innerHTML="";
+    REM_WHEN.forEach(function(x,i){var b=document.createElement("button");b.textContent=x[0];if(i===remSel.when)b.style.cssText="border-color:var(--accent);color:var(--accent-text)";
+      b.onclick=function(){remSel.when=i;buildReminderUI()};w.appendChild(b)});
+    var tp=el("remTpls");tp.innerHTML="";
+    REMINDERS.forEach(function(x,i){var b=document.createElement("button");b.textContent=x[0];if(i===remSel.tpl)b.style.cssText="border-color:var(--accent);color:var(--accent-text)";
+      b.onclick=function(){remSel.tpl=i;buildReminderUI()};tp.appendChild(b)});
+  }
+  function openRemPop(){
+    var t=state.thread;
+    el("remAppt").value=t&&t.appointmentAt?toLocalInput(new Date(t.appointmentAt)):toLocalInput(quickTime(-9-24)); // default ~tomorrow 9am
+    buildReminderUI();
+  }
+  function doReminder(){
+    var t=state.thread;if(!t)return;
+    var v=el("remAppt").value;if(!v){toast("Pick the appointment date & time",{bad:true});return}
+    var apptMs=new Date(v).getTime();
+    var sendAt=remTime(apptMs,REM_WHEN[remSel.when][1]);
+    if(sendAt<Date.now()){toast("That reminder would send in the past — pick a later appointment or a closer reminder",{bad:true});return}
+    var body=fillRemPlaceholders(REMINDERS[remSel.tpl][1],apptMs);
+    // remember the appointment, then schedule the reminder text
+    post("/api/meta",{phone:t.phone,appointmentAt:apptMs}).then(function(){
+      return post("/api/schedule",{phone:t.phone,body:body,sendAt:sendAt});
+    }).then(function(d){
+      if(d&&d.ok){el("remPop").style.display="none";state.thread=d.thread;renderThread();refreshThreads();
+        toast("⏰ Reminder set for "+fmtFull(sendAt))}
+      else toast("Couldn't set reminder: "+((d&&d.error)||"error"),{bad:true});
+    }).catch(function(){toast("Network error",{bad:true})});
+  }
+
   // ---- tabs ----
   function setTab(tab){
     state.tab=tab;state.phone=null;document.body.classList.remove("viewing");
@@ -987,12 +1057,19 @@
   el("msgInput").addEventListener("input",function(){updateCount();autoGrow()});
   el("msgInput").addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}});
   el("dtNotes").addEventListener("blur",function(){if(state.thread&&el("dtNotes").value!==(state.thread.notes||""))saveMeta({notes:el("dtNotes").value})});
-  el("tplBtn").onclick=function(){var m=el("tplMenu");el("schedPop").style.display="none";m.style.display=m.style.display==="none"?"block":"none"};
-  el("schedBtn").onclick=function(){var p=el("schedPop");el("tplMenu").style.display="none";if(p.style.display==="none"&&!el("schedTime").value)el("schedTime").value=toLocalInput(quickTime(60));p.style.display=p.style.display==="none"?"block":"none"};
+  function closePops(except){["tplMenu","schedPop","remPop"].forEach(function(id){if(id!==except)el(id).style.display="none"})}
+  el("tplBtn").onclick=function(){var m=el("tplMenu");closePops("tplMenu");m.style.display=m.style.display==="none"?"block":"none"};
+  el("schedBtn").onclick=function(){var p=el("schedPop");closePops("schedPop");if(p.style.display==="none"&&!el("schedTime").value)el("schedTime").value=toLocalInput(quickTime(60));p.style.display=p.style.display==="none"?"block":"none"};
+  el("remBtn").onclick=function(){var p=el("remPop");closePops("remPop");if(p.style.display==="none")openRemPop();p.style.display=p.style.display==="none"?"block":"none"};
   el("schedConfirm").onclick=doSchedule;
+  el("remConfirm").onclick=doReminder;
   el("draftBtn").onclick=aiDraft;
   el("aiSummarizeBtn").onclick=aiSummarize;
-  document.addEventListener("click",function(e){if(!e.target.closest("#tplBtn")&&!e.target.closest("#tplMenu"))el("tplMenu").style.display="none";if(!e.target.closest("#schedBtn")&&!e.target.closest("#schedPop"))el("schedPop").style.display="none"});
+  document.addEventListener("click",function(e){
+    if(!e.target.closest("#tplBtn")&&!e.target.closest("#tplMenu"))el("tplMenu").style.display="none";
+    if(!e.target.closest("#schedBtn")&&!e.target.closest("#schedPop"))el("schedPop").style.display="none";
+    if(!e.target.closest("#remBtn")&&!e.target.closest("#remPop"))el("remPop").style.display="none";
+  });
 
   Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.onclick=function(){vibrate(6);setTab(b.getAttribute("data-tab"))}});
 
