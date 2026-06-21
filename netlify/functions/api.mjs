@@ -34,7 +34,7 @@ export default async function handler(request) {
     if (request.method === 'POST' && pathname === '/voicemail-done') return handleVoicemailDone(request);
 
     if (request.method === 'GET'  && pathname === '/api/health')     return apiHealth();
-    if (request.method === 'GET'  && pathname === '/api/threads')    return apiThreads();
+    if (request.method === 'GET'  && pathname === '/api/threads')    return apiThreads(url);
     if (request.method === 'GET'  && pathname === '/api/thread')     return apiThread(url);
     if (request.method === 'POST' && pathname === '/api/send')       return apiSend(request);
     if (request.method === 'POST' && pathname === '/api/meta')       return apiMeta(request);
@@ -179,10 +179,19 @@ async function apiHealth() {
   });
 }
 
-async function apiThreads() {
+async function apiThreads(url) {
   const index = await loadIndex();
   index.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (b.lastTs || 0) - (a.lastTs || 0));
-  return json({ ok: true, threads: index });
+
+  // Optionally include the currently-open thread in the same response so the
+  // dashboard can poll with ONE function call instead of two (saves invocations).
+  const want = url && url.searchParams.get('phone');
+  if (!want) return json({ ok: true, threads: index });
+
+  const phone = normalizePhone(want) || want;
+  const thread = await loadThread(phone);
+  if (thread.unread) { thread.unread = 0; await saveThread(thread); await updateIndexEntry(thread); }
+  return json({ ok: true, threads: index, thread });
 }
 
 async function apiThread(url) {
