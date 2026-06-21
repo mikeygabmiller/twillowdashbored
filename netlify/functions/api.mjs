@@ -24,16 +24,24 @@
 
 import { getStore } from '@netlify/blobs';
 
-export const config = {
-  path: ['/submit', '/sms', '/call', '/voicemail', '/voicemail-done', '/api/*'],
-};
-
 const INDEX_KEY = 'threads-index';
 const threadKey = (phone) => `thread:${phone}`;
 
 export default async function handler(request) {
   const url = new URL(request.url);
-  const { pathname } = url;
+  // Routing is done via redirects in netlify.toml. The function normally sees the
+  // original request path; if it ever gets the internal function path instead,
+  // recover the real one from Netlify's original-URL headers.
+  let pathname = url.pathname;
+  if (pathname.startsWith('/.netlify/functions/')) {
+    const original =
+      request.headers.get('x-nf-original-path') ||
+      request.headers.get('x-original-uri') ||
+      request.headers.get('x-forwarded-url') || '';
+    if (original) {
+      try { pathname = new URL(original, url.origin).pathname; } catch { /* keep default */ }
+    }
+  }
 
   // CORS pre-flight — the quote form lives on a different domain (mikeysdetailing.com)
   if (request.method === 'OPTIONS') {
