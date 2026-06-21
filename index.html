@@ -103,8 +103,8 @@
 </head>
 <body>
 
-<!-- Login -->
-<div id="login">
+<!-- Login (password protection removed — kept hidden) -->
+<div id="login" style="display:none;">
   <div class="card">
     <h1>Mikey's Detailing</h1>
     <p>Enter your dashboard password</p>
@@ -391,11 +391,8 @@
   if (window.matchMedia("(max-width: 720px)").matches) el("backBtn").style.display = "inline-block";
 
   // ---------------------------------------------------------------- boot
-  if (pass) {
-    showApp(); start();
-  } else {
-    showLogin();
-  }
+  // Password protection removed — open the dashboard directly.
+  showApp(); start();
 })();
 </script>
 </body>

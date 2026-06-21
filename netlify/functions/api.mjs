@@ -59,11 +59,8 @@ export default async function handler(request) {
     // ----- Health check (no auth — reveals only yes/no flags, no secrets) --
     if (request.method === 'GET' && pathname === '/api/health') return apiHealth();
 
-    // ----- Password-protected dashboard API -------------------------------
+    // ----- Dashboard API (password protection removed — open access) ------
     if (pathname.startsWith('/api/')) {
-      if (!authorized(request)) {
-        return json({ ok: false, error: 'unauthorized' }, 401);
-      }
       if (request.method === 'GET'  && pathname === '/api/threads') return apiThreads();
       if (request.method === 'GET'  && pathname === '/api/thread')  return apiThread(url);
       if (request.method === 'POST' && pathname === '/api/send')    return apiSend(request);
