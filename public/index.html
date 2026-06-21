@@ -6,393 +6,462 @@
 <meta name="robots" content="noindex, nofollow" />
 <title>Mikey's Detailing — Messages</title>
 <style>
-  :root {
-    --bg: #0f1115;
-    --panel: #171a21;
-    --panel-2: #1f2530;
-    --line: #2a313d;
-    --text: #e7ecf3;
-    --muted: #8a93a3;
-    --accent: #2f81f7;
-    --in: #232a36;
-    --out: #2f81f7;
+  :root{
+    --bg:#0a0a0c; --panel:#121216; --panel2:#1a1b21; --panel3:#23252d;
+    --line:#2a2d36; --text:#f2f4f8; --muted:#9aa3b2; --muted2:#6b7280;
+    --red:#ff2e43; --red-dark:#c81e30; --red-soft:#2a1316;
+    --blue:#3b82f6; --green:#22c55e; --gold:#eab308; --purple:#a855f7; --gray:#8a93a3;
+    --radius:14px;
   }
-  * { box-sizing: border-box; }
-  html, body { height: 100%; margin: 0; }
-  body {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    background: var(--bg); color: var(--text);
-  }
-  /* ---- Login overlay ---- */
-  #login {
-    position: fixed; inset: 0; z-index: 50;
-    display: flex; align-items: center; justify-content: center;
-    background: var(--bg);
-  }
-  #login .card {
-    background: var(--panel); border: 1px solid var(--line);
-    border-radius: 14px; padding: 28px; width: 320px; text-align: center;
-  }
-  #login h1 { font-size: 18px; margin: 0 0 4px; }
-  #login p { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
-  input, textarea, button { font: inherit; }
-  input[type=password], input[type=text] {
-    width: 100%; padding: 11px 12px; border-radius: 9px;
-    border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
-    outline: none;
-  }
-  input:focus, textarea:focus { border-color: var(--accent); }
-  .btn {
-    background: var(--accent); color: #fff; border: 0; border-radius: 9px;
-    padding: 11px 14px; cursor: pointer; font-weight: 600;
-  }
-  .btn:disabled { opacity: .5; cursor: default; }
-  .btn.ghost { background: var(--panel-2); border: 1px solid var(--line); color: var(--text); font-weight: 500; }
-  #login .btn { width: 100%; margin-top: 12px; }
-  .err { color: #ff6b6b; font-size: 12px; min-height: 16px; margin-top: 8px; }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:var(--bg);color:var(--text);overflow:hidden}
+  button{font:inherit;cursor:pointer}
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:#2c2f38;border-radius:6px}
+  ::-webkit-scrollbar-thumb:hover{background:#3a3e49}
 
-  /* ---- App shell ---- */
-  #app { display: none; height: 100%; }
-  .layout { display: grid; grid-template-columns: 320px 1fr; height: 100%; }
-  .sidebar { border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; background: var(--panel); }
-  .topbar {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 16px; border-bottom: 1px solid var(--line);
-  }
-  .topbar h2 { font-size: 15px; margin: 0; }
-  .topbar .sub { font-size: 11px; color: var(--muted); }
-  .threadlist { overflow-y: auto; flex: 1; min-height: 0; }
-  .thread {
-    padding: 12px 16px; border-bottom: 1px solid var(--line); cursor: pointer;
-    display: flex; flex-direction: column; gap: 3px;
-  }
-  .thread:hover { background: var(--panel-2); }
-  .thread.active { background: var(--panel-2); border-left: 3px solid var(--accent); padding-left: 13px; }
-  .thread .name { font-weight: 600; font-size: 14px; display: flex; justify-content: space-between; gap: 8px; }
-  .thread .name .time { color: var(--muted); font-weight: 400; font-size: 11px; white-space: nowrap; }
-  .thread .preview { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .thread .preview .dir { color: var(--accent); }
+  .app{display:grid;grid-template-columns:340px 1fr;height:100%}
+  .btn{background:var(--panel3);color:var(--text);border:1px solid var(--line);border-radius:10px;padding:9px 12px}
+  .btn:hover{background:#2c2f39}
+  .btn.red{background:var(--red);border-color:var(--red);color:#fff;font-weight:600}
+  .btn.red:hover{background:var(--red-dark)}
+  .btn.icon{padding:8px;display:inline-flex;align-items:center;justify-content:center;min-width:38px}
+  .btn:disabled{opacity:.5;cursor:default}
 
-  /* ---- Conversation pane ---- */
-  .chat { display: flex; flex-direction: column; min-height: 0; }
-  .chat-head {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 18px; border-bottom: 1px solid var(--line); background: var(--panel);
-  }
-  .chat-head .who { font-weight: 600; }
-  .chat-head .num { color: var(--muted); font-size: 12px; }
-  .messages { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
-  .bubble { max-width: 70%; padding: 9px 13px; border-radius: 14px; font-size: 14px; line-height: 1.35; white-space: pre-wrap; word-wrap: break-word; }
-  .bubble .meta { display: block; font-size: 10px; opacity: .65; margin-top: 4px; }
-  .msg-in  { align-self: flex-start; background: var(--in); border-bottom-left-radius: 4px; }
-  .msg-out { align-self: flex-end; background: var(--out); color: #fff; border-bottom-right-radius: 4px; }
-  .composer { display: flex; gap: 10px; padding: 14px 18px; border-top: 1px solid var(--line); background: var(--panel); }
-  .composer textarea {
-    flex: 1; resize: none; height: 44px; max-height: 140px; padding: 11px 12px;
-    border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2); color: var(--text); outline: none;
-  }
-  .empty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 14px; text-align: center; padding: 24px; }
-  .pill { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 20px; padding: 3px 10px; }
-  @media (max-width: 720px) {
-    .layout { grid-template-columns: 1fr; }
-    .sidebar { display: var(--sb, flex); }
-    .chat   { display: var(--ch, none); }
-    body.viewing { --sb: none; --ch: flex; }
+  /* ---------- Sidebar ---------- */
+  .sidebar{background:var(--panel);border-right:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
+  .brand{display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid var(--line)}
+  .brand .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--red),#7a0f1a);
+    display:flex;align-items:center;justify-content:center;font-weight:800;color:#fff}
+  .brand h1{font-size:16px;margin:0;letter-spacing:.2px}
+  .brand small{display:block;color:var(--muted);font-size:11px;font-weight:500}
+  .search{padding:12px 14px;border-bottom:1px solid var(--line)}
+  .search input{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);
+    border-radius:24px;padding:10px 14px;outline:none}
+  .search input:focus{border-color:var(--red)}
+  .filters{display:flex;gap:7px;padding:10px 14px;overflow-x:auto;border-bottom:1px solid var(--line);scrollbar-width:none}
+  .filters::-webkit-scrollbar{display:none}
+  .chip{white-space:nowrap;font-size:12px;padding:5px 11px;border-radius:20px;background:var(--panel2);
+    border:1px solid var(--line);color:var(--muted)}
+  .chip.active{background:var(--red-soft);border-color:var(--red);color:#ff8a93}
+  .newbtn{margin:12px 14px 6px;display:flex}
+  .newbtn .btn{flex:1;display:flex;align-items:center;justify-content:center;gap:8px}
+  .list{flex:1;overflow-y:auto;min-height:0}
+  .conv{display:flex;gap:12px;padding:13px 16px;border-bottom:1px solid #1d1f26;cursor:pointer;position:relative}
+  .conv:hover{background:var(--panel2)}
+  .conv.active{background:var(--panel2);box-shadow:inset 3px 0 0 var(--red)}
+  .avatar{width:42px;height:42px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;
+    font-weight:700;color:#fff;font-size:15px}
+  .conv .body{flex:1;min-width:0}
+  .conv .row1{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+  .conv .nm{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .conv .tm{color:var(--muted2);font-size:11px;white-space:nowrap;flex:none}
+  .conv .prev{color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+  .conv .prev .you{color:#7f8794}
+  .conv .meta{display:flex;gap:6px;align-items:center;margin-top:6px;flex-wrap:wrap}
+  .badge{font-size:10px;font-weight:700;padding:2px 7px;border-radius:20px;text-transform:uppercase;letter-spacing:.3px}
+  .unread-dot{position:absolute;left:7px;top:50%;transform:translateY(-50%);width:8px;height:8px;border-radius:50%;background:var(--red)}
+  .pin{color:var(--gold);font-size:11px}
+  .sched-flag{color:#7dd3fc;font-size:11px}
+  .tag{font-size:10px;padding:2px 7px;border-radius:6px;background:#23252d;color:#aab2c0;border:1px solid #30333d}
+
+  /* status colors */
+  .st-new{background:rgba(59,130,246,.18);color:#7eb0ff}
+  .st-active{background:rgba(34,197,94,.18);color:#69e29a}
+  .st-won{background:rgba(168,85,247,.2);color:#cda4f7}
+  .st-lost{background:rgba(138,147,163,.2);color:#b6bdc9}
+
+  /* ---------- Chat ---------- */
+  .chat{display:flex;flex-direction:column;min-height:0;background:#0c0c0f;position:relative}
+  .empty{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--muted);gap:10px;text-align:center;padding:30px}
+  .empty .big{font-size:40px}
+  .chat-head{display:flex;align-items:center;gap:12px;padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel)}
+  .chat-head .who{flex:1;min-width:0}
+  .chat-head .who .nm{font-weight:700;font-size:15px;display:flex;align-items:center;gap:8px}
+  .chat-head .who .num{color:var(--muted);font-size:12px}
+  .statusSel{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:7px 9px;font-size:12px;outline:none}
+  .head-actions{display:flex;gap:6px}
+
+  .messages{flex:1;overflow-y:auto;padding:18px 18px 6px;display:flex;flex-direction:column;gap:9px;min-height:0}
+  .day{align-self:center;color:var(--muted2);font-size:11px;margin:8px 0;background:var(--panel2);padding:3px 12px;border-radius:20px}
+  .bubble{max-width:74%;padding:9px 13px;border-radius:16px;font-size:14px;line-height:1.4;white-space:pre-wrap;word-wrap:break-word;position:relative}
+  .bubble .t{display:block;font-size:10px;opacity:.7;margin-top:4px}
+  .in{align-self:flex-start;background:var(--panel3);border-bottom-left-radius:5px}
+  .out{align-self:flex-end;background:linear-gradient(135deg,var(--red),var(--red-dark));color:#fff;border-bottom-right-radius:5px}
+  .out.auto{background:#3a2330}.out.scheduled{background:#332a16}
+  .kind{font-size:9px;text-transform:uppercase;letter-spacing:.5px;opacity:.8;margin-left:6px}
+  .err{color:#ffd0d0;font-size:10px;display:block;margin-top:3px}
+
+  .sched-banner{margin:6px 18px;padding:10px 13px;background:#15212e;border:1px solid #1f3a52;border-radius:12px}
+  .sched-banner .sb-title{font-size:11px;color:#7dd3fc;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px}
+  .sched-item{display:flex;align-items:center;gap:8px;font-size:12.5px;color:#cfe6f5;padding:3px 0}
+  .sched-item .x{margin-left:auto;color:#9fb4c4;cursor:pointer;border:none;background:none;font-size:15px}
+
+  /* composer */
+  .composer{border-top:1px solid var(--line);background:var(--panel);padding:10px 14px}
+  .ctools{display:flex;gap:7px;align-items:center;margin-bottom:8px;flex-wrap:wrap;position:relative}
+  .ctools .spacer{flex:1}
+  .crow{display:flex;gap:10px;align-items:flex-end}
+  .crow textarea{flex:1;resize:none;height:46px;max-height:150px;background:var(--panel2);border:1px solid var(--line);
+    color:var(--text);border-radius:12px;padding:12px 14px;outline:none}
+  .crow textarea:focus{border-color:var(--red)}
+  .menu{position:absolute;bottom:42px;left:0;background:var(--panel3);border:1px solid var(--line);border-radius:12px;
+    padding:6px;min-width:260px;max-width:340px;box-shadow:0 12px 40px rgba(0,0,0,.5);z-index:30}
+  .menu div.it{padding:9px 11px;border-radius:8px;font-size:13px;color:var(--text)}
+  .menu div.it:hover{background:var(--panel2)}
+  .sched-pop{position:absolute;bottom:42px;left:0;background:var(--panel3);border:1px solid var(--line);border-radius:12px;
+    padding:14px;width:300px;box-shadow:0 12px 40px rgba(0,0,0,.5);z-index:30}
+  .sched-pop label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px}
+  .sched-pop input{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:9px;padding:9px;margin-bottom:10px;color-scheme:dark}
+  .quickset{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  .quickset button{font-size:11px;padding:5px 9px;border-radius:16px;background:var(--panel);border:1px solid var(--line);color:var(--muted)}
+
+  /* details drawer */
+  .details{position:absolute;top:0;right:0;width:330px;height:100%;background:var(--panel);border-left:1px solid var(--line);
+    transform:translateX(100%);transition:transform .22s ease;z-index:25;display:flex;flex-direction:column}
+  .details.open{transform:translateX(0)}
+  .details h3{margin:0;font-size:14px}
+  .dt-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line)}
+  .dt-body{padding:16px;overflow-y:auto;display:flex;flex-direction:column;gap:18px}
+  .dt-sec .lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;font-weight:700}
+  .tagwrap{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .tag.rm{cursor:pointer}.tag.rm:hover{background:#3a2027;color:#ffb3bb;border-color:var(--red)}
+  .tagadd{background:var(--panel2);border:1px dashed var(--line);color:var(--muted);border-radius:6px;padding:3px 9px;font-size:11px}
+  .notes{width:100%;min-height:120px;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:10px;padding:11px;resize:vertical;outline:none;font-size:13px;line-height:1.5}
+  .notes:focus{border-color:var(--red)}
+  .infoline{font-size:13px;color:var(--muted);display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #1c1e25}
+
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:var(--panel3);border:1px solid var(--line);
+    color:var(--text);padding:11px 18px;border-radius:30px;font-size:13px;box-shadow:0 10px 30px rgba(0,0,0,.5);z-index:100;opacity:0;transition:opacity .2s,transform .2s}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(-4px)}
+  .toast.bad{border-color:var(--red);color:#ffb3bb}
+
+  .backbtn{display:none}
+  @media(max-width:780px){
+    .app{grid-template-columns:1fr}
+    .sidebar{display:flex}
+    .chat{display:none;position:fixed;inset:0;z-index:40}
+    body.viewing .sidebar{display:none}
+    body.viewing .chat{display:flex}
+    .backbtn{display:inline-flex}
+    .details{width:100%}
   }
 </style>
 </head>
 <body>
+<div class="app">
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">M</div>
+      <div><h1>Mikey's Detailing</h1><small id="convCount">Messages</small></div>
+    </div>
+    <div class="search"><input id="search" type="text" placeholder="Search messages & contacts" /></div>
+    <div class="filters" id="filters"></div>
+    <div class="newbtn"><button class="btn red" id="newBtn">＋ New message</button></div>
+    <div class="list" id="list"></div>
+  </aside>
 
-<!-- Login (password protection removed — kept hidden) -->
-<div id="login" style="display:none;">
-  <div class="card">
-    <h1>Mikey's Detailing</h1>
-    <p>Enter your dashboard password</p>
-    <input id="pw" type="password" autocomplete="current-password" placeholder="Password" />
-    <div class="err" id="loginErr"></div>
-    <button class="btn" id="loginBtn">Open dashboard</button>
-  </div>
-</div>
+  <!-- Chat -->
+  <section class="chat" id="chat">
+    <div class="empty" id="emptyState">
+      <div class="big">💬</div>
+      <div>Select a conversation, or start a new one.</div>
+    </div>
 
-<!-- App -->
-<div id="app">
-  <div class="layout">
-    <aside class="sidebar">
-      <div class="topbar">
-        <div>
-          <h2>Messages</h2>
-          <div class="sub" id="status">—</div>
-        </div>
-        <div style="display:flex; gap:8px;">
-          <button class="btn ghost" id="newBtn" title="New conversation">+ New</button>
-          <button class="btn ghost" id="logoutBtn" title="Log out">⎋</button>
+    <div class="chat-head" id="chatHead" style="display:none">
+      <button class="btn icon backbtn" id="backBtn">‹</button>
+      <div class="avatar" id="hAvatar"></div>
+      <div class="who">
+        <div class="nm"><span id="hName"></span><span class="pin" id="hPin" style="display:none">📌</span></div>
+        <div class="num" id="hNum"></div>
+      </div>
+      <select class="statusSel" id="statusSel" title="Lead status">
+        <option value="">No status</option>
+        <option value="new">🔵 New lead</option>
+        <option value="active">🟢 Active</option>
+        <option value="won">🟣 Won</option>
+        <option value="lost">⚪ Lost</option>
+      </select>
+      <div class="head-actions">
+        <button class="btn icon" id="callBtn" title="Call (rings your phone, then connects)">📞</button>
+        <button class="btn icon" id="pinBtn" title="Pin">📌</button>
+        <button class="btn icon" id="detailsBtn" title="Notes & tags">ⓘ</button>
+      </div>
+    </div>
+
+    <div class="sched-banner" id="schedBanner" style="display:none"></div>
+    <div class="messages" id="messages"></div>
+
+    <div class="composer" id="composer" style="display:none">
+      <div class="ctools">
+        <button class="btn icon" id="tplBtn" title="Templates">⚡</button>
+        <button class="btn icon" id="schedBtn" title="Schedule send">🗓</button>
+        <div class="spacer"></div>
+        <span id="charCount" style="color:var(--muted2);font-size:11px"></span>
+        <div class="menu" id="tplMenu" style="display:none"></div>
+        <div class="sched-pop" id="schedPop" style="display:none">
+          <label>Send this message at:</label>
+          <input type="datetime-local" id="schedTime" />
+          <div class="quickset" id="quickset"></div>
+          <button class="btn red" id="schedConfirm" style="width:100%">Schedule send</button>
         </div>
       </div>
-      <div class="threadlist" id="threadlist"></div>
-    </aside>
-
-    <section class="chat">
-      <div class="chat-head" id="chatHead" style="display:none;">
-        <div>
-          <span class="who" id="whoName"></span>
-          <span class="num" id="whoNum"></span>
-        </div>
-        <div style="display:flex; gap:8px; align-items:center;">
-          <button class="btn ghost" id="backBtn" style="display:none;">‹ Back</button>
-          <button class="btn ghost" id="renameBtn">Rename</button>
-        </div>
-      </div>
-      <div class="messages" id="messages">
-        <div class="empty" id="emptyState">Select a conversation on the left, or start a new one.</div>
-      </div>
-      <div class="composer" id="composer" style="display:none;">
+      <div class="crow">
         <textarea id="msgInput" placeholder="Type a message…"></textarea>
-        <button class="btn" id="sendBtn">Send</button>
+        <button class="btn red" id="sendBtn">Send</button>
       </div>
-    </section>
-  </div>
+    </div>
+
+    <!-- Details drawer -->
+    <div class="details" id="details">
+      <div class="dt-head"><h3>Details</h3><button class="btn icon" id="detailsClose">✕</button></div>
+      <div class="dt-body">
+        <div class="dt-sec">
+          <div class="lbl">Lead status</div>
+          <div id="dtStatus"></div>
+        </div>
+        <div class="dt-sec">
+          <div class="lbl">Tags</div>
+          <div class="tagwrap" id="dtTags"></div>
+        </div>
+        <div class="dt-sec">
+          <div class="lbl">Notes (private)</div>
+          <textarea class="notes" id="dtNotes" placeholder="Add notes about this lead — vehicle, address, preferences…"></textarea>
+        </div>
+        <div class="dt-sec">
+          <div class="lbl">Contact</div>
+          <div class="infoline"><span>Phone</span><span id="dtPhone"></span></div>
+          <div class="infoline"><span>First seen</span><span id="dtSeen"></span></div>
+          <div style="margin-top:12px;display:flex;gap:8px">
+            <button class="btn" id="renameBtn" style="flex:1">Rename</button>
+            <button class="btn" id="archiveBtn" style="flex:1">Archive</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 </div>
+
+<div class="toast" id="toast"></div>
 
 <script>
-(function () {
+(function(){
   "use strict";
+  var POLL_MS=20000;
+  var STATUS={new:{label:"New",cls:"st-new"},active:{label:"Active",cls:"st-active"},won:{label:"Won",cls:"st-won"},lost:{label:"Lost",cls:"st-lost"}};
+  var FILTERS=[["all","All"],["unread","Unread"],["new","New"],["active","Active"],["won","Won"],["lost","Lost"],["scheduled","Scheduled"],["archived","Archived"]];
+  var TEMPLATES=[
+    ["👋 Intro","Hey {name}! It's Mikey from Mikey's Mobile Detailing — got your request. When works best for a detail this week?"],
+    ["📅 Booked","You're locked in! I'll send a reminder the morning of. See you then! 🚗"],
+    ["⏰ Reminder","Hey {name}, quick reminder — your detail with Mikey's is tomorrow. Reply CONFIRM or text me to reschedule. 👍"],
+    ["💵 Quote","Happy to help! For your vehicle that runs about $___. Want me to get you on the schedule?"],
+    ["🅿️ On my way","On my way now — see you in about 15 minutes!"],
+    ["⭐ Review","Thanks {name}! Hope you love the detail. If you've got 2 min, a Google review means the world: "]
+  ];
+  var QUICK=[["In 1 hour",60],["This evening 6pm",-18],["Tomorrow 9am",-33],["Tomorrow 6pm",-42]];
 
-  var POLL_MS = 20000;            // relaxed 20s polling (stays within Netlify free tier)
-  var PASS_KEY = "mkd_dashboard_pass";
-  var pass = localStorage.getItem(PASS_KEY) || "";
-  var currentPhone = null;
-  var threadsCache = [];
-  var pollTimer = null;
+  var state={threads:[],filter:"all",search:"",phone:null,thread:null};
+  var pollTimer=null;
+  function el(id){return document.getElementById(id)}
+  function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
 
-  // ---- elements ----
-  var el = function (id) { return document.getElementById(id); };
-  var loginBox = el("login"), app = el("app");
+  // ---- API ----
+  function api(path,opts){opts=opts||{};return fetch(path,opts).then(function(r){return r.json().catch(function(){return{ok:false}})})}
+  function post(path,bodyObj){return api(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(bodyObj)})}
 
-  // ---------------------------------------------------------------- API
-  function api(path, opts) {
-    opts = opts || {};
-    opts.headers = Object.assign({ "x-dashboard-pass": pass }, opts.headers || {});
-    return fetch(path, opts).then(function (res) {
-      if (res.status === 401) { logout(); throw new Error("unauthorized"); }
-      return res.json();
+  // ---- utils ----
+  function digitsToE164(raw){var d=String(raw).replace(/\D/g,"");if(/^\+1\d{10}$/.test(raw))return raw;if(d.length===10)return"+1"+d;if(d.length===11&&d[0]==="1")return"+"+d;return null}
+  function prettyPhone(p){var m=/^\+1(\d{3})(\d{3})(\d{4})$/.exec(p||"");return m?"("+m[1]+") "+m[2]+"-"+m[3]:(p||"")}
+  function displayName(t){return t.name&&t.name.trim()?t.name:prettyPhone(t.phone)}
+  function initials(t){var n=displayName(t).trim();var p=n.replace(/[^a-zA-Z ]/g,"").split(/\s+/).filter(Boolean);if(!p.length)return"#";return(p[0][0]+(p[1]?p[1][0]:"")).toUpperCase()}
+  function colorFor(phone){var h=0;for(var i=0;i<phone.length;i++)h=phone.charCodeAt(i)+((h<<5)-h);var hue=Math.abs(h)%360;return"hsl("+hue+",45%,42%)"}
+  function fmtTime(ts){if(!ts)return"";var d=new Date(ts),n=new Date();if(d.toDateString()===n.toDateString())return d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});var diff=(n-d)/86400000;if(diff<7)return d.toLocaleDateString([],{weekday:"short"});return d.toLocaleDateString([],{month:"short",day:"numeric"})}
+  function fmtFull(ts){return new Date(ts).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}
+
+  function toast(msg,bad){var t=el("toast");t.textContent=msg;t.className="toast show"+(bad?" bad":"");clearTimeout(t._h);t._h=setTimeout(function(){t.className="toast"+(bad?" bad":"")},2800)}
+
+  // ---- filters ----
+  function renderFilters(){var f=el("filters");f.innerHTML="";FILTERS.forEach(function(p){var c=document.createElement("div");c.className="chip"+(state.filter===p[0]?" active":"");c.textContent=p[1];c.onclick=function(){state.filter=p[0];renderFilters();renderList()};f.appendChild(c)})}
+
+  function passFilter(t){
+    var f=state.filter;
+    if(f==="archived")return t.archived;
+    if(t.archived)return false;
+    if(f==="all")return true;
+    if(f==="unread")return t.unread>0;
+    if(f==="scheduled")return t.scheduledCount>0;
+    return t.status===f;
+  }
+  function passSearch(t){if(!state.search)return true;var q=state.search.toLowerCase();return (displayName(t)+" "+t.phone+" "+(t.lastBody||"")+" "+(t.tags||[]).join(" ")).toLowerCase().indexOf(q)>=0}
+
+  // ---- list ----
+  function renderList(){
+    var list=el("list");var items=state.threads.filter(passFilter).filter(passSearch);
+    var total=state.threads.filter(function(t){return !t.archived}).length;
+    var unread=state.threads.reduce(function(a,t){return a+(t.unread>0?1:0)},0);
+    el("convCount").textContent=total+" conversation"+(total===1?"":"s")+(unread?" · "+unread+" unread":"");
+    if(!items.length){list.innerHTML='<div style="padding:34px 18px;color:var(--muted);text-align:center;font-size:13px">No conversations here.</div>';return}
+    list.innerHTML="";
+    items.forEach(function(t){
+      var d=document.createElement("div");d.className="conv"+(t.phone===state.phone?" active":"");
+      var st=STATUS[t.status];
+      d.innerHTML=
+        (t.unread>0?'<span class="unread-dot"></span>':'')+
+        '<div class="avatar" style="background:'+colorFor(t.phone)+'">'+esc(initials(t))+'</div>'+
+        '<div class="body">'+
+          '<div class="row1"><span class="nm" style="'+(t.unread?"color:#fff":"")+'">'+esc(displayName(t))+'</span><span class="tm">'+fmtTime(t.lastTs)+'</span></div>'+
+          '<div class="prev">'+(t.lastDir==="out"?'<span class="you">You: </span>':'')+esc(t.lastBody||"No messages yet")+'</div>'+
+          '<div class="meta">'+
+            (st?'<span class="badge '+st.cls+'">'+st.label+'</span>':'')+
+            (t.pinned?'<span class="pin">📌</span>':'')+
+            (t.scheduledCount>0?'<span class="sched-flag">🗓 '+t.scheduledCount+'</span>':'')+
+            (t.tags||[]).slice(0,2).map(function(x){return '<span class="tag">'+esc(x)+'</span>'}).join('')+
+          '</div>'+
+        '</div>';
+      d.onclick=function(){openThread(t.phone)};
+      list.appendChild(d);
     });
   }
 
-  // ---------------------------------------------------------------- auth
-  function showLogin() { loginBox.style.display = "flex"; app.style.display = "none"; }
-  function showApp()   { loginBox.style.display = "none"; app.style.display = "block"; }
+  // ---- thread ----
+  function refreshThreads(){return api("/api/threads").then(function(d){if(d&&d.ok){state.threads=d.threads||[];renderList()}})}
 
-  function tryLogin() {
-    var v = el("pw").value;
-    if (!v) return;
-    el("loginBtn").disabled = true;
-    el("loginErr").textContent = "";
-    // Validate by hitting a protected endpoint
-    fetch("/api/threads", { headers: { "x-dashboard-pass": v } }).then(function (res) {
-      el("loginBtn").disabled = false;
-      if (res.ok) {
-        pass = v; localStorage.setItem(PASS_KEY, v);
-        showApp(); start();
-      } else if (res.status === 401) {
-        el("loginErr").textContent = "Wrong password. Try again.";
-      } else if (res.status === 404) {
-        el("loginErr").textContent = "Server not found (404) — the backend didn't deploy. Check /api/health";
-      } else {
-        el("loginErr").textContent = "Server error " + res.status + " — open /api/health to diagnose.";
-      }
-    }).catch(function () {
-      el("loginBtn").disabled = false;
-      el("loginErr").textContent = "Network error. Try again.";
+  function openThread(phone){
+    state.phone=phone;document.body.classList.add("viewing");
+    el("emptyState").style.display="none";renderList();
+    return loadThread();
+  }
+  function loadThread(){
+    if(!state.phone)return Promise.resolve();
+    return api("/api/thread?phone="+encodeURIComponent(state.phone)).then(function(d){
+      if(d&&d.ok){state.thread=d.thread;renderThread();refreshThreads()}
     });
   }
 
-  function logout() {
-    pass = ""; localStorage.removeItem(PASS_KEY);
-    stopPolling(); currentPhone = null;
-    showLogin();
+  function renderThread(){
+    var t=state.thread;if(!t)return;
+    el("chatHead").style.display="flex";el("composer").style.display="block";
+    el("hAvatar").textContent=initials(t);el("hAvatar").style.background=colorFor(t.phone);
+    el("hName").textContent=displayName(t);
+    el("hNum").textContent=prettyPhone(t.phone);
+    el("hPin").style.display=t.pinned?"inline":"none";
+    el("statusSel").value=t.status||"";
+    el("pinBtn").style.opacity=t.pinned?1:.55;
+
+    // scheduled banner
+    var sb=el("schedBanner");var sc=(t.scheduled||[]);
+    if(sc.length){sb.style.display="block";sb.innerHTML='<div class="sb-title">🗓 Scheduled</div>'+sc.map(function(s){
+      return '<div class="sched-item"><span>'+esc(s.body.slice(0,60))+(s.body.length>60?'…':'')+'</span><span style="color:#7dd3fc;margin-left:8px">'+fmtFull(s.sendAt)+'</span><button class="x" data-id="'+s.id+'">✕</button></div>'}).join('');
+      Array.prototype.forEach.call(sb.querySelectorAll(".x"),function(b){b.onclick=function(){post("/api/unschedule",{phone:t.phone,id:b.getAttribute("data-id")}).then(function(d){if(d.ok){state.thread=d.thread;renderThread();refreshThreads();toast("Scheduled message canceled")}})}});
+    }else sb.style.display="none";
+
+    // messages
+    var box=el("messages");box.innerHTML="";var lastDay="";
+    if(!t.messages.length){box.innerHTML='<div class="empty" style="height:100%"><div class="big">👋</div><div>No messages yet — say hello!</div></div>'}
+    t.messages.forEach(function(m){
+      var day=new Date(m.ts).toDateString();
+      if(day!==lastDay){lastDay=day;var dv=document.createElement("div");dv.className="day";dv.textContent=new Date(m.ts).toLocaleDateString([],{weekday:"long",month:"short",day:"numeric"});box.appendChild(dv)}
+      var b=document.createElement("div");
+      b.className="bubble "+(m.dir==="out"?"out":"in")+(m.kind==="auto"?" auto":"")+(m.kind==="scheduled"?" scheduled":"");
+      b.innerHTML=esc(m.body)+'<span class="t">'+fmtTime(m.ts)+(m.kind&&m.kind!=="manual"&&m.dir==="out"?'<span class="kind">'+esc(m.kind)+'</span>':'')+'</span>'+(m.error?'<span class="err">⚠ '+esc(m.error)+'</span>':'');
+      box.appendChild(b);
+    });
+    box.scrollTop=box.scrollHeight;
+
+    renderDetails();
   }
 
-  // ---------------------------------------------------------------- render
-  function fmtTime(ts) {
-    if (!ts) return "";
-    var d = new Date(ts), now = new Date();
-    var sameDay = d.toDateString() === now.toDateString();
-    if (sameDay) return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    return d.toLocaleDateString([], { month: "short", day: "numeric" });
+  function renderDetails(){
+    var t=state.thread;if(!t)return;
+    var ds=el("dtStatus");ds.innerHTML="";
+    [["","None"],["new","🔵 New lead"],["active","🟢 Active"],["won","🟣 Won"],["lost","⚪ Lost"]].forEach(function(o){
+      var b=document.createElement("button");b.className="chip"+((t.status||"")===o[0]?" active":"");b.style.marginRight="6px";b.style.marginBottom="6px";b.textContent=o[1];
+      b.onclick=function(){saveMeta({status:o[0]})};ds.appendChild(b);
+    });
+    var tw=el("dtTags");tw.innerHTML="";
+    (t.tags||[]).forEach(function(tag){var s=document.createElement("span");s.className="tag rm";s.innerHTML=esc(tag)+" ✕";s.title="Remove tag";s.onclick=function(){saveMeta({tags:(t.tags||[]).filter(function(x){return x!==tag})})};tw.appendChild(s)});
+    var add=document.createElement("button");add.className="tagadd";add.textContent="+ Tag";add.onclick=function(){var v=prompt("Add tag (e.g. VIP, Ceramic, Truck):");if(v&&v.trim())saveMeta({tags:(t.tags||[]).concat([v.trim()])})};tw.appendChild(add);
+    var n=el("dtNotes");if(document.activeElement!==n)n.value=t.notes||"";
+    el("dtPhone").textContent=prettyPhone(t.phone);
+    el("dtSeen").textContent=t.createdAt?new Date(t.createdAt).toLocaleDateString():"—";
+    el("archiveBtn").textContent=t.archived?"Unarchive":"Archive";
   }
 
-  function prettyPhone(p) {
-    var m = /^\+1(\d{3})(\d{3})(\d{4})$/.exec(p || "");
-    return m ? "(" + m[1] + ") " + m[2] + "-" + m[3] : (p || "");
+  function saveMeta(patch){
+    var t=state.thread;if(!t)return;
+    post("/api/meta",Object.assign({phone:t.phone},patch)).then(function(d){if(d&&d.ok){state.thread=d.thread;renderThread();refreshThreads()}});
   }
 
-  function renderThreads(threads) {
-    threadsCache = threads;
-    var list = el("threadlist");
-    if (!threads.length) {
-      list.innerHTML = '<div class="empty" style="padding:30px 16px;">No conversations yet.</div>';
-      return;
-    }
-    list.innerHTML = "";
-    threads.forEach(function (t) {
-      var div = document.createElement("div");
-      div.className = "thread" + (t.phone === currentPhone ? " active" : "");
-      var label = t.name && t.name.trim() ? t.name : prettyPhone(t.phone);
-      var dirArrow = t.lastDir === "out" ? '<span class="dir">You: </span>' : "";
-      div.innerHTML =
-        '<div class="name"><span>' + esc(label) + '</span><span class="time">' + fmtTime(t.lastTs) + '</span></div>' +
-        '<div class="preview">' + dirArrow + esc(t.lastBody || "") + '</div>';
-      div.onclick = function () { openThread(t.phone); };
-      list.appendChild(div);
+  // ---- actions ----
+  function sendMessage(){
+    var inp=el("msgInput");var body=inp.value.trim();if(!body||!state.phone)return;
+    el("sendBtn").disabled=true;
+    post("/api/send",{phone:state.phone,body:body}).then(function(d){
+      el("sendBtn").disabled=false;
+      if(d&&d.ok){inp.value="";updateCount();state.thread=d.thread;renderThread();refreshThreads()}
+      else toast("Couldn't send: "+((d&&d.error)||"error"),true);
+    }).catch(function(){el("sendBtn").disabled=false;toast("Network error",true)});
+  }
+  function placeCall(){
+    if(!state.phone)return;
+    if(!confirm("Call "+displayName(state.thread)+"?\nYour cell will ring first — answer it, and we'll connect you to the customer."))return;
+    post("/api/call",{phone:state.phone}).then(function(d){toast(d&&d.ok?"📞 Calling your phone now — answer to connect":"Call failed: "+((d&&d.error)||"error"),!(d&&d.ok))});
+  }
+  function newConversation(){
+    var raw=prompt("Customer phone number:");if(!raw)return;var p=digitsToE164(raw);
+    if(!p){toast("That's not a valid US number",true);return}
+    openThread(p);el("msgInput").focus();
+  }
+
+  // ---- templates & schedule ----
+  function fillTemplate(text){var t=state.thread;var name=t&&t.name?t.name.split(" ")[0]:"there";el("msgInput").value=text.replace(/\{name\}/g,name);el("msgInput").focus();updateCount()}
+  function buildTplMenu(){var m=el("tplMenu");m.innerHTML="";TEMPLATES.forEach(function(tp){var d=document.createElement("div");d.className="it";d.textContent=tp[0];d.onclick=function(){fillTemplate(tp[1]);m.style.display="none"};m.appendChild(d)})}
+  function buildQuickset(){var q=el("quickset");q.innerHTML="";QUICK.forEach(function(x){var b=document.createElement("button");b.textContent=x[0];b.onclick=function(){el("schedTime").value=toLocalInput(quickTime(x[1]))};q.appendChild(b)})}
+  function quickTime(code){var d=new Date();if(code>0){d.setMinutes(d.getMinutes()+code)}else{var hour=-code;if(hour>=24){d.setDate(d.getDate()+1);hour-=24}d.setHours(hour,0,0,0);if(d<new Date())d.setDate(d.getDate()+1)}return d}
+  function toLocalInput(d){var p=function(n){return(n<10?"0":"")+n};return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+"T"+p(d.getHours())+":"+p(d.getMinutes())}
+  function doSchedule(){
+    var body=el("msgInput").value.trim();if(!body){toast("Type a message first",true);return}
+    var v=el("schedTime").value;if(!v){toast("Pick a date & time",true);return}
+    var sendAt=new Date(v).getTime();if(sendAt<Date.now()){toast("Pick a future time",true);return}
+    post("/api/schedule",{phone:state.phone,body:body,sendAt:sendAt}).then(function(d){
+      if(d&&d.ok){el("msgInput").value="";updateCount();el("schedPop").style.display="none";state.thread=d.thread;renderThread();refreshThreads();toast("🗓 Scheduled for "+fmtFull(sendAt))}
+      else toast("Couldn't schedule: "+((d&&d.error)||"error"),true);
     });
   }
+  function updateCount(){var v=el("msgInput").value;var n=v.length;el("charCount").textContent=n?n+" char"+(n===1?"":"s")+" · "+Math.ceil(n/160)+" SMS":""}
 
-  function renderMessages(thread) {
-    var box = el("messages");
-    el("chatHead").style.display = "flex";
-    el("composer").style.display = "flex";
-    var label = thread.name && thread.name.trim() ? thread.name : prettyPhone(thread.phone);
-    el("whoName").textContent = label;
-    el("whoNum").textContent = "  " + prettyPhone(thread.phone);
+  // ---- polling ----
+  function poll(){refreshThreads();if(state.phone)loadThread()}
+  function startPoll(){stopPoll();if(!document.hidden)pollTimer=setInterval(poll,POLL_MS)}
+  function stopPoll(){if(pollTimer){clearInterval(pollTimer);pollTimer=null}}
+  document.addEventListener("visibilitychange",function(){if(document.hidden)stopPoll();else{poll();startPoll()}});
 
-    box.innerHTML = "";
-    if (!thread.messages || !thread.messages.length) {
-      box.innerHTML = '<div class="empty">No messages yet. Say hello 👋</div>';
-    } else {
-      thread.messages.forEach(function (m) {
-        var b = document.createElement("div");
-        b.className = "bubble " + (m.dir === "out" ? "msg-out" : "msg-in");
-        var tag = m.kind === "auto" ? " · auto" : "";
-        b.innerHTML = esc(m.body) + '<span class="meta">' + fmtTime(m.ts) + tag + "</span>";
-        box.appendChild(b);
-      });
-      box.scrollTop = box.scrollHeight;
-    }
-  }
+  // ---- wire up ----
+  el("search").addEventListener("input",function(e){state.search=e.target.value;renderList()});
+  el("newBtn").onclick=newConversation;
+  el("sendBtn").onclick=sendMessage;
+  el("backBtn").onclick=function(){document.body.classList.remove("viewing")};
+  el("callBtn").onclick=placeCall;
+  el("pinBtn").onclick=function(){saveMeta({pinned:!state.thread.pinned})};
+  el("statusSel").onchange=function(){saveMeta({status:el("statusSel").value})};
+  el("detailsBtn").onclick=function(){el("details").classList.toggle("open")};
+  el("detailsClose").onclick=function(){el("details").classList.remove("open")};
+  el("renameBtn").onclick=function(){var v=prompt("Contact name:",state.thread.name||"");if(v!==null)saveMeta({name:v.trim()})};
+  el("archiveBtn").onclick=function(){saveMeta({archived:!state.thread.archived});el("details").classList.remove("open")};
+  el("msgInput").addEventListener("input",updateCount);
+  el("msgInput").addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}});
+  el("dtNotes").addEventListener("blur",function(){if(state.thread&&el("dtNotes").value!==(state.thread.notes||""))saveMeta({notes:el("dtNotes").value})});
+  el("tplBtn").onclick=function(){var m=el("tplMenu");el("schedPop").style.display="none";m.style.display=m.style.display==="none"?"block":"none"};
+  el("schedBtn").onclick=function(){var p=el("schedPop");el("tplMenu").style.display="none";if(p.style.display==="none"&&!el("schedTime").value)el("schedTime").value=toLocalInput(quickTime(60));p.style.display=p.style.display==="none"?"block":"none"};
+  el("schedConfirm").onclick=doSchedule;
+  document.addEventListener("click",function(e){if(!e.target.closest("#tplBtn")&&!e.target.closest("#tplMenu"))el("tplMenu").style.display="none";if(!e.target.closest("#schedBtn")&&!e.target.closest("#schedPop"))el("schedPop").style.display="none"});
 
-  // ---------------------------------------------------------------- actions
-  function refreshThreads() {
-    return api("/api/threads").then(function (d) {
-      if (d && d.ok) {
-        renderThreads(d.threads || []);
-        el("status").textContent = (d.threads || []).length + " conversation" + ((d.threads || []).length === 1 ? "" : "s");
-      }
-    }).catch(function () {});
-  }
-
-  function openThread(phone) {
-    currentPhone = phone;
-    document.body.classList.add("viewing");
-    el("emptyState") && (el("emptyState").style.display = "none");
-    renderThreads(threadsCache); // re-highlight
-    return api("/api/thread?phone=" + encodeURIComponent(phone)).then(function (d) {
-      if (d && d.ok) renderMessages(d.thread);
-    }).catch(function () {});
-  }
-
-  function sendMessage() {
-    var input = el("msgInput");
-    var body = input.value.trim();
-    if (!body || !currentPhone) return;
-    el("sendBtn").disabled = true;
-    api("/api/send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone: currentPhone, body: body }),
-    }).then(function (d) {
-      el("sendBtn").disabled = false;
-      if (d && d.ok) {
-        input.value = "";
-        renderMessages(d.thread);
-        refreshThreads();
-      } else {
-        alert("Could not send: " + ((d && d.error) || "unknown error"));
-      }
-    }).catch(function () {
-      el("sendBtn").disabled = false;
-      alert("Network error — message not sent.");
-    });
-  }
-
-  function renameContact() {
-    if (!currentPhone) return;
-    var current = "";
-    var t = threadsCache.find(function (x) { return x.phone === currentPhone; });
-    if (t && t.name) current = t.name;
-    var name = prompt("Name for " + prettyPhone(currentPhone) + ":", current);
-    if (name === null) return;
-    api("/api/name", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phone: currentPhone, name: name.trim() }),
-    }).then(function () { refreshThreads(); openThread(currentPhone); });
-  }
-
-  function newConversation() {
-    var raw = prompt("Customer phone number (e.g. 360-555-1234):");
-    if (!raw) return;
-    var digits = raw.replace(/\D/g, "");
-    var phone = null;
-    if (digits.length === 10) phone = "+1" + digits;
-    else if (digits.length === 11 && digits[0] === "1") phone = "+" + digits;
-    else if (/^\+1\d{10}$/.test(raw)) phone = raw;
-    if (!phone) { alert("That doesn't look like a valid US phone number."); return; }
-    openThread(phone);
-  }
-
-  // ---------------------------------------------------------------- polling (pauses when tab hidden)
-  function poll() {
-    refreshThreads();
-    if (currentPhone) {
-      api("/api/thread?phone=" + encodeURIComponent(currentPhone)).then(function (d) {
-        if (d && d.ok && currentPhone === d.thread.phone) renderMessages(d.thread);
-      }).catch(function () {});
-    }
-  }
-  function startPolling() {
-    stopPolling();
-    if (!document.hidden) pollTimer = setInterval(poll, POLL_MS);
-  }
-  function stopPolling() { if (pollTimer) { clearInterval(pollTimer); pollTimer = null; } }
-
-  document.addEventListener("visibilitychange", function () {
-    if (document.hidden) {
-      stopPolling();                 // pause all polling when tab is hidden
-    } else {
-      poll();                        // immediate catch-up, then resume
-      startPolling();
-    }
-  });
-
-  function start() {
-    refreshThreads();
-    startPolling();
-  }
-
-  // ---------------------------------------------------------------- helpers
-  function esc(s) {
-    return String(s == null ? "" : s)
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
-  }
-
-  // ---------------------------------------------------------------- wire up
-  el("loginBtn").onclick = tryLogin;
-  el("pw").addEventListener("keydown", function (e) { if (e.key === "Enter") tryLogin(); });
-  el("logoutBtn").onclick = logout;
-  el("sendBtn").onclick = sendMessage;
-  el("renameBtn").onclick = renameContact;
-  el("newBtn").onclick = newConversation;
-  el("backBtn").onclick = function () { document.body.classList.remove("viewing"); };
-  el("msgInput").addEventListener("keydown", function (e) {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-  });
-  // show Back button on small screens
-  if (window.matchMedia("(max-width: 720px)").matches) el("backBtn").style.display = "inline-block";
-
-  // ---------------------------------------------------------------- boot
-  // Password protection removed — open the dashboard directly.
-  showApp(); start();
+  // ---- boot ----
+  renderFilters();buildTplMenu();buildQuickset();
+  refreshThreads();startPoll();
 })();
 </script>
 </body>
