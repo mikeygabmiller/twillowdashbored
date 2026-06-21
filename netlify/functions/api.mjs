@@ -24,6 +24,11 @@
 
 import { getStore } from '@netlify/blobs';
 
+// Native Netlify v2 routing (works alongside the redirects in netlify.toml).
+export const config = {
+  path: ['/submit', '/sms', '/call', '/voicemail', '/voicemail-done', '/api/*'],
+};
+
 const INDEX_KEY = 'threads-index';
 const threadKey = (phone) => `thread:${phone}`;
 
