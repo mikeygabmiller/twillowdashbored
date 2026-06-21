@@ -48,6 +48,9 @@ export default async function handler(request) {
     if (request.method === 'POST' && pathname === '/voicemail')     return handleVoicemail(request);
     if (request.method === 'POST' && pathname === '/voicemail-done')return handleVoicemailDone(request);
 
+    // ----- Health check (no auth — reveals only yes/no flags, no secrets) --
+    if (request.method === 'GET' && pathname === '/api/health') return apiHealth();
+
     // ----- Password-protected dashboard API -------------------------------
     if (pathname.startsWith('/api/')) {
       if (!authorized(request)) {
@@ -224,6 +227,29 @@ async function handleVoicemailDone(request) {
 // ===========================================================================
 // Dashboard API
 // ===========================================================================
+
+// Diagnostics — confirms routing, env vars, and Blobs without exposing secrets.
+async function apiHealth() {
+  let blobs = 'ok';
+  try {
+    await getStore('mkd-messages').get('__healthcheck__');
+  } catch (e) {
+    blobs = 'error: ' + String((e && e.message) || e);
+  }
+  return json({
+    ok: true,
+    routing: 'function-reached',
+    env: {
+      DASHBOARD_PASSWORD: Boolean(process.env.DASHBOARD_PASSWORD),
+      TWILIO_ACCOUNT_SID: Boolean(process.env.TWILIO_ACCOUNT_SID),
+      TWILIO_AUTH_TOKEN:  Boolean(process.env.TWILIO_AUTH_TOKEN),
+      TWILIO_FROM:        process.env.TWILIO_FROM || null,
+      MIKEY_PHONE:        process.env.MIKEY_PHONE || null,
+    },
+    blobs,
+  });
+}
+
 async function apiThreads() {
   const index = await loadIndex();
   index.sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));

@@ -193,8 +193,12 @@
       if (res.ok) {
         pass = v; localStorage.setItem(PASS_KEY, v);
         showApp(); start();
-      } else {
+      } else if (res.status === 401) {
         el("loginErr").textContent = "Wrong password. Try again.";
+      } else if (res.status === 404) {
+        el("loginErr").textContent = "Server not found (404) — the backend didn't deploy. Check /api/health";
+      } else {
+        el("loginErr").textContent = "Server error " + res.status + " — open /api/health to diagnose.";
       }
     }).catch(function () {
       el("loginBtn").disabled = false;
