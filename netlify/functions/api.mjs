@@ -72,7 +72,15 @@ export default async function handler(request) {
       if (request.method === 'POST' && pathname === '/api/name')    return apiName(request);
     }
 
-    return new Response('Not found', { status: 404 });
+    // Distinctive fallback so we can confirm the function is actually reached
+    // and see exactly what path it receives.
+    return json({
+      ok: true,
+      message: 'Mikeys SMS backend is running, but no route matched this path.',
+      seenPath: pathname,
+      url: request.url,
+      method: request.method,
+    }, 200);
   } catch (err) {
     return json({ ok: false, error: String(err && err.message || err) }, 500);
   }
