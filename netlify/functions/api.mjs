@@ -229,6 +229,10 @@ async function apiMeta(request) {
   if (typeof data.notes === 'string') thread.notes = data.notes;
   if (typeof data.pinned === 'boolean') thread.pinned = data.pinned;
   if (typeof data.archived === 'boolean') thread.archived = data.archived;
+  if ('appointmentAt' in data) {
+    const a = Number(data.appointmentAt);
+    thread.appointmentAt = (data.appointmentAt == null || !a) ? null : a;
+  }
   if (Array.isArray(data.linked)) {
     thread.linked = [...new Set(data.linked.map((p) => normalizePhone(p) || p).filter(Boolean))]
       .filter((p) => p !== thread.phone).slice(0, 20);
@@ -335,7 +339,7 @@ async function apiAiSummary(request) {
     `"tags": array of up to 4 short labels like "Truck","Ceramic","VIP","Quote sent","Needs follow-up"}\n\n` +
     `Conversation:\n${transcript(thread)}`;
   try {
-    const text = await geminiGenerate(prompt, { json: true, maxTokens: 400 });
+    const text = await geminiGenerate(prompt, { json: true, maxTokens: 800 });
     let parsed = {};
     try { parsed = JSON.parse(text); } catch { parsed = { summary: text }; }
     return json({
@@ -357,11 +361,12 @@ async function apiAiDraft(request) {
   const hint = (data.hint || '').trim();
   const prompt =
     `You are Mikey replying to a customer by text for Mikey's Mobile Detailing. ` +
-    `Write ONE friendly, professional reply (1-3 short sentences, no greeting line, no signature, ready to send). ` +
+    `Write ONE friendly, professional reply (1-3 short complete sentences, no greeting line, no signature, ready to send). ` +
+    `Finish every sentence — do not cut off mid-thought. ` +
     (hint ? `Goal of this reply: ${hint}. ` : '') +
     `\n\nConversation so far:\n${transcript(thread)}\n\nReply:`;
   try {
-    const text = await geminiGenerate(prompt, { temperature: 0.7, maxTokens: 200 });
+    const text = await geminiGenerate(prompt, { temperature: 0.7, maxTokens: 400 });
     return json({ ok: true, draft: text.replace(/^["']|["']$/g, '').trim() });
   } catch (err) {
     return json({ ok: false, error: String(err.message || err) }, 502);
@@ -381,9 +386,10 @@ async function apiAiTriage() {
   const prompt =
     `You are the operations assistant for Mikey's Mobile Detailing. Below are the open SMS threads. ` +
     `Give a short, prioritized action list (max 6 bullets) of who to reply to first and the suggested next step. ` +
-    `Customers who are WAITING for a reply are top priority; longest waits first. Be concise and practical.\n\n${lines}`;
+    `Customers who are WAITING for a reply are top priority; longest waits first. Be concise and practical. ` +
+    `Keep each bullet to one complete sentence and finish your final bullet.\n\n${lines}`;
   try {
-    const briefing = await geminiGenerate(prompt, { maxTokens: 500 });
+    const briefing = await geminiGenerate(prompt, { maxTokens: 1200 });
     return json({ ok: true, briefing });
   } catch (err) {
     return json({ ok: false, error: String(err.message || err) }, 502);
