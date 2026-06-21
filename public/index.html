@@ -251,6 +251,37 @@
   .toast .undo{color:var(--accent);font-weight:700;background:none;border:none;font-size:13.5px;flex:none}
   .toast.bad .undo{color:#ff8a93}
 
+  /* ---------- Insights ---------- */
+  .ins{padding:14px 14px 0;display:flex;flex-direction:column;gap:16px}
+  .stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+  .stat{background:var(--panel2);border:1px solid var(--line2);border-radius:14px;padding:14px}
+  .stat .v{font-size:24px;font-weight:800;letter-spacing:-.5px}
+  .stat .k{font-size:11.5px;color:var(--muted2);margin-top:3px;text-transform:uppercase;letter-spacing:.4px;font-weight:600}
+  .stat.hot .v{color:var(--accent-text)}
+  .ins-sec .h{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .ins-sec .h .t{font-size:14px;font-weight:700}
+  .ins-sec .h .t .n{color:var(--muted2);font-weight:600;margin-left:6px}
+  .need-card{display:flex;gap:11px;align-items:center;background:var(--panel2);border:1px solid var(--line2);border-left:3px solid var(--accent);border-radius:12px;padding:11px 12px;margin-bottom:8px;cursor:pointer}
+  .need-card:active{transform:scale(.99)}
+  .need-card .body{min-width:0;flex:1}
+  .need-card .nm{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .need-card .prev{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+  .need-card .wait{flex:none;font-size:11px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:4px 9px;border-radius:12px}
+  .ai-card{background:linear-gradient(135deg,#16131c,#121216);border:1px solid #2c2540;border-radius:14px;padding:14px}
+  .ai-card .ttl{font-size:12px;font-weight:700;color:#c9a4f7;text-transform:uppercase;letter-spacing:.4px;margin-bottom:9px;display:flex;align-items:center;gap:6px}
+  .ai-card .txt{font-size:13.5px;line-height:1.55;white-space:pre-wrap;color:#e7e3f2}
+  .ai-box{margin-top:10px;background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:12px;font-size:13px;line-height:1.5}
+  .ai-box .sug{display:flex;gap:7px;flex-wrap:wrap;margin-top:11px}
+  .ai-box .sug .tagadd{cursor:pointer}
+  .ai-box .acts{display:flex;gap:8px;margin-top:11px}
+  .ai-box .acts .btn{flex:1;font-size:12.5px;padding:8px}
+  .spin{display:inline-block;width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:spin .7s linear infinite;vertical-align:-2px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .link-row{display:flex;align-items:center;gap:10px;background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:9px 11px;margin-bottom:7px;cursor:pointer}
+  .link-row .nm{font-size:13px;font-weight:600;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .link-row .x{color:var(--muted2);border:none;background:none;font-size:15px}
+  .link-hint{font-size:11.5px;color:#7dd3fc;background:#15212e;border:1px solid #1f3a52;border-radius:9px;padding:8px 10px;margin-bottom:8px;cursor:pointer}
+
   /* ---------- Responsive ---------- */
   .backbtn{display:none}
   @media(min-width:781px){
@@ -294,8 +325,8 @@
     <nav class="bottomnav" id="bottomnav">
       <button class="navitem active" data-tab="messages"><span class="ic">💬</span><span class="ndot" id="navUnread"></span>Messages</button>
       <button class="navitem" data-tab="leads"><span class="ic">📋</span>Leads</button>
+      <button class="navitem" data-tab="insights"><span class="ic">📊</span><span class="ndot" id="navNeeds"></span>Insights</button>
       <button class="navitem" data-tab="scheduled"><span class="ic">🗓</span><span class="ndot" id="navSched"></span>Scheduled</button>
-      <button class="navitem" data-tab="archived"><span class="ic">🗄</span>Archive</button>
     </nav>
   </aside>
 
@@ -327,6 +358,7 @@
       <div class="ctools">
         <button class="btn icon" id="tplBtn" title="Quick replies">⚡</button>
         <button class="btn icon" id="schedBtn" title="Schedule send">🗓</button>
+        <button class="btn icon" id="draftBtn" title="AI draft reply">✨</button>
         <div class="spacer"></div>
         <span id="charCount" style="color:var(--muted2);font-size:11px"></span>
         <div class="menu" id="tplMenu" style="display:none"></div>
@@ -371,14 +403,24 @@
           <div class="tagwrap" id="dtTags"></div>
         </div>
         <div class="dt-sec">
+          <div class="lbl">✨ AI overview</div>
+          <button class="btn" id="aiSummarizeBtn" style="width:100%">✨ Summarize conversation</button>
+          <div class="ai-box" id="aiOut" style="display:none"></div>
+        </div>
+        <div class="dt-sec">
           <div class="lbl">Notes (private)</div>
           <textarea class="notes" id="dtNotes" placeholder="Vehicle, address, gate code, preferences…"></textarea>
+        </div>
+        <div class="dt-sec">
+          <div class="lbl">Linked conversations</div>
+          <div id="dtLinked"></div>
         </div>
         <div class="dt-sec">
           <div class="lbl">Contact</div>
           <div class="infoline"><span>Phone</span><span id="dtPhone"></span></div>
           <div class="infoline"><span>First seen</span><span id="dtSeen"></span></div>
           <div class="infoline"><span>Messages</span><span id="dtMsgCount"></span></div>
+          <div class="infoline"><span>Avg reply time</span><span id="dtReply"></span></div>
         </div>
       </div>
     </div>
@@ -435,7 +477,7 @@
   var QUICK=[["In 1 hour",60],["This evening 6pm",-18],["Tomorrow 9am",-33],["Tomorrow 6pm",-42]];
   var ACCENTS=[["#ff2e43","#c81e30","Red"],["#3b82f6","#1d4ed8","Blue"],["#22c55e","#15803d","Green"],["#a855f7","#7e22ce","Purple"],["#f97316","#c2410c","Orange"],["#06b6d4","#0e7490","Cyan"]];
 
-  var state={threads:[],filter:"all",tab:"messages",search:"",phone:null,thread:null};
+  var state={threads:[],filter:"all",tab:"messages",search:"",phone:null,thread:null,insights:null};
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
   function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
@@ -484,6 +526,7 @@
       all:active.length,
       unread:active.reduce(function(a,t){return a+(t.unread>0?1:0)},0),
       sched:active.reduce(function(a,t){return a+(t.scheduledCount>0?1:0)},0),
+      needs:active.filter(function(t){return t.lastDir==="in"}).length,
       arch:state.threads.filter(function(t){return t.archived}).length
     };
   }
@@ -491,9 +534,30 @@
     var c=counts();
     var nu=el("navUnread");nu.textContent=c.unread;nu.className="ndot"+(c.unread?" show":"");
     var ns=el("navSched");ns.textContent=c.sched;ns.className="ndot"+(c.sched?" show":"");
+    var nn=el("navNeeds");nn.textContent=c.needs;nn.className="ndot"+(c.needs?" show":"");
     el("mnAll").textContent=c.all||"";el("mnUnread").textContent=c.unread||"";
     el("mnSched").textContent=c.sched||"";el("mnArch").textContent=c.arch||"";
   }
+
+  // ---- reply-time analytics (client mirror of server logic) ----
+  function replyStats(msgs){
+    var total=0,count=0,pending=null;
+    (msgs||[]).forEach(function(m){
+      if(m.dir==="in"){if(pending==null)pending=m.ts}
+      else if(m.dir==="out"&&pending!=null){total+=m.ts-pending;count++;pending=null}
+    });
+    return{avgMs:count?Math.round(total/count):null,count:count,awaiting:pending!=null,awaitingSince:pending};
+  }
+  function fmtDur(ms){
+    if(ms==null)return"—";
+    var m=Math.round(ms/60000);
+    if(m<1)return"under a min";
+    if(m<60)return m+" min";
+    var h=Math.floor(m/60),mm=m%60;
+    if(h<24)return h+"h"+(mm?" "+mm+"m":"");
+    var d=Math.floor(h/24);return d+"d "+(h%24)+"h";
+  }
+  function ago(ts){return fmtDur(Date.now()-ts)}
 
   // ---- filters (chips, messages tab only) ----
   function renderFilters(){
@@ -521,6 +585,7 @@
   function renderMain(){
     renderFilters();refreshBadges();
     if(state.tab==="leads")return renderLeads();
+    if(state.tab==="insights")return renderInsights();
     if(state.tab==="scheduled")return renderList("scheduled");
     if(state.tab==="archived")return renderList("archived");
     return renderList("messages");
@@ -591,6 +656,60 @@
     if(!any){box.innerHTML='<div class="emptyview"><div class="big">📋</div><div>No leads yet</div><div class="sub">Set a status (New / Active / Won / Lost) on a conversation to build your pipeline.</div></div>';return}
     box.innerHTML=html;
     Array.prototype.forEach.call(box.querySelectorAll(".lead-card"),function(c){c.onclick=function(){openThread(c.getAttribute("data-phone"))}});
+  }
+
+  // ---- insights ----
+  function renderInsights(){
+    var box=el("scroll");
+    var active=state.threads.filter(function(t){return !t.archived});
+    var needs=active.filter(function(t){return t.lastDir==="in"}).sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
+    var ins=state.insights||{};
+    var avg=ins.avgReplyMs!=null?fmtDur(ins.avgReplyMs):"—";
+    var won=active.filter(function(t){return t.status==="won"}).length;
+
+    var html='<div class="ins">';
+    html+='<div class="stat-grid">'+
+      '<div class="stat hot"><div class="v">'+(needs.length)+'</div><div class="k">Need a reply</div></div>'+
+      '<div class="stat"><div class="v">'+avg+'</div><div class="k">Avg reply time</div></div>'+
+      '<div class="stat"><div class="v">'+active.length+'</div><div class="k">Open convos</div></div>'+
+      '<div class="stat"><div class="v">'+won+'</div><div class="k">Won leads</div></div>'+
+    '</div>';
+
+    // AI briefing
+    html+='<div class="ins-sec"><div class="h"><div class="t">✨ AI briefing</div></div>'+
+      '<div class="ai-card"><div class="ttl">🤖 Who to respond to first</div>'+
+      '<div class="txt" id="briefTxt" style="color:var(--muted2)">Tap below to have AI prioritize your inbox.</div>'+
+      '<button class="btn" id="briefBtn" style="width:100%;margin-top:11px">✨ Generate briefing</button></div></div>';
+
+    // Needs reply
+    html+='<div class="ins-sec"><div class="h"><div class="t">Waiting on you<span class="n">'+needs.length+'</span></div></div>';
+    if(!needs.length)html+='<div class="sub" style="color:var(--muted2);font-size:13px;padding:4px 2px">🎉 You\'re all caught up — nobody is waiting.</div>';
+    needs.forEach(function(t){
+      var st=STATUS[t.status];
+      html+='<div class="need-card" data-phone="'+esc(t.phone)+'">'+
+        '<div class="avatar" style="width:38px;height:38px;font-size:14px;background:'+colorFor(t.phone)+'">'+esc(initials(t))+'</div>'+
+        '<div class="body"><div class="nm">'+esc(displayName(t))+(st?' <span class="badge '+st.cls+'" style="margin-left:4px">'+st.label+'</span>':'')+'</div>'+
+        '<div class="prev">'+esc(t.lastBody||"")+'</div></div>'+
+        '<span class="wait">'+ago(t.lastTs)+'</span></div>';
+    });
+    html+='</div></div>';
+    box.innerHTML=html;
+
+    Array.prototype.forEach.call(box.querySelectorAll(".need-card"),function(c){c.onclick=function(){openThread(c.getAttribute("data-phone"))}});
+    el("briefBtn").onclick=function(){runBriefing()};
+  }
+
+  function fetchInsights(){
+    return api("/api/insights").then(function(d){if(d&&d.ok){state.insights=d;if(state.tab==="insights")renderInsights()}});
+  }
+  function runBriefing(){
+    var b=el("briefBtn"),tx=el("briefTxt");if(!b)return;
+    b.disabled=true;b.innerHTML='<span class="spin"></span> Thinking…';
+    post("/api/ai/triage",{}).then(function(d){
+      if(d&&d.ok){tx.style.color="";tx.textContent=d.briefing}
+      else toast("AI briefing failed: "+((d&&d.error)||"error"),{bad:true});
+    }).catch(function(){toast("Network error",{bad:true})})
+    .then(function(){if(el("briefBtn")){el("briefBtn").disabled=false;el("briefBtn").innerHTML="✨ Regenerate briefing"}});
   }
 
   // ---- swipe to archive ----
@@ -686,6 +805,71 @@
     el("dtPhone").textContent=prettyPhone(t.phone);
     el("dtSeen").textContent=t.createdAt?new Date(t.createdAt).toLocaleDateString():"—";
     el("dtMsgCount").textContent=(t.messages||[]).length;
+
+    var rs=replyStats(t.messages);
+    el("dtReply").textContent=rs.avgMs!=null?fmtDur(rs.avgMs):"—";
+
+    renderLinked();
+    // reset AI summary box when switching conversations
+    if(el("aiOut")._phone!==t.phone){el("aiOut").style.display="none";el("aiOut").innerHTML="";el("aiOut")._phone=t.phone}
+  }
+
+  function renderLinked(){
+    var t=state.thread;var wrap=el("dtLinked");wrap.innerHTML="";
+    var byPhone={};state.threads.forEach(function(x){byPhone[x.phone]=x});
+    (t.linked||[]).forEach(function(p){
+      var row=document.createElement("div");row.className="link-row";
+      var nm=byPhone[p]?displayName(byPhone[p]):prettyPhone(p);
+      row.innerHTML='<div class="avatar" style="width:30px;height:30px;font-size:12px;background:'+colorFor(p)+'">'+esc((byPhone[p]?initials(byPhone[p]):"#"))+'</div><span class="nm">'+esc(nm)+'</span><button class="x">✕</button>';
+      row.querySelector(".nm").onclick=function(){openThread(p)};
+      row.querySelector(".avatar").onclick=function(){openThread(p)};
+      row.querySelector(".x").onclick=function(e){e.stopPropagation();saveMeta({linked:(t.linked||[]).filter(function(x){return x!==p})})};
+      wrap.appendChild(row);
+    });
+    // suggest same-name conversations not yet linked
+    var nm=(t.name||"").trim().toLowerCase();
+    if(nm){
+      state.threads.forEach(function(x){
+        if(x.phone===t.phone||x.archived)return;
+        if((x.name||"").trim().toLowerCase()!==nm)return;
+        if((t.linked||[]).indexOf(x.phone)>=0)return;
+        var h=document.createElement("div");h.className="link-hint";
+        h.innerHTML='🔗 Possibly the same customer: <b>'+esc(displayName(x))+'</b> — tap to link';
+        h.onclick=function(){saveMeta({linked:(t.linked||[]).concat([x.phone])})};
+        wrap.appendChild(h);
+      });
+    }
+    var add=document.createElement("button");add.className="tagadd";add.style.marginTop="2px";add.textContent="+ Link a conversation";
+    add.onclick=function(){var v=prompt("Phone number to link:");if(!v)return;var p=digitsToE164(v);if(!p){toast("Not a valid US number",{bad:true});return}saveMeta({linked:(t.linked||[]).concat([p])})};
+    wrap.appendChild(add);
+  }
+
+  // ---- AI: summary & draft ----
+  function aiSummarize(){
+    var t=state.thread;if(!t)return;
+    var b=el("aiSummarizeBtn");b.disabled=true;b.innerHTML='<span class="spin"></span> Summarizing…';
+    post("/api/ai/summary",{phone:t.phone}).then(function(d){
+      if(d&&d.ok){
+        var box=el("aiOut");box.style.display="block";
+        var html='<div>'+esc(d.summary||"(no summary)")+'</div>';
+        if(d.tags&&d.tags.length){html+='<div class="sug">'+d.tags.map(function(x){return '<span class="tagadd" data-tag="'+esc(x)+'">+ '+esc(x)+'</span>'}).join('')+'</div>'}
+        html+='<div class="acts"><button class="btn" id="aiToNotes">📝 Save to notes</button>'+(d.status?'<button class="btn" id="aiSetStatus">Set '+esc(STATUS[d.status]?STATUS[d.status].label:d.status)+'</button>':'')+'</div>';
+        box.innerHTML=html;
+        Array.prototype.forEach.call(box.querySelectorAll("[data-tag]"),function(s){s.onclick=function(){var tag=s.getAttribute("data-tag");if((state.thread.tags||[]).indexOf(tag)<0)saveMeta({tags:(state.thread.tags||[]).concat([tag])});s.style.opacity=.4}});
+        el("aiToNotes").onclick=function(){var cur=state.thread.notes||"";var add="🤖 AI summary ("+new Date().toLocaleDateString()+"):\n"+d.summary;saveMeta({notes:cur?cur+"\n\n"+add:add});toast("Saved to notes")};
+        if(el("aiSetStatus"))el("aiSetStatus").onclick=function(){saveMeta({status:d.status})};
+      }else toast("AI summary failed: "+((d&&d.error)||"error"),{bad:true});
+    }).catch(function(){toast("Network error",{bad:true})})
+    .then(function(){var bb=el("aiSummarizeBtn");bb.disabled=false;bb.innerHTML="✨ Re-summarize"});
+  }
+  function aiDraft(){
+    var t=state.thread;if(!t)return;
+    var b=el("draftBtn");b.disabled=true;b.innerHTML='<span class="spin"></span>';
+    post("/api/ai/draft",{phone:t.phone}).then(function(d){
+      if(d&&d.ok&&d.draft){el("msgInput").value=d.draft;autoGrow();updateCount();el("msgInput").focus();toast("✨ Draft ready — edit & send")}
+      else toast("Draft failed: "+((d&&d.error)||"error"),{bad:true});
+    }).catch(function(){toast("Network error",{bad:true})})
+    .then(function(){var bb=el("draftBtn");bb.disabled=false;bb.innerHTML="✨"});
   }
 
   function saveMeta(patch){
@@ -740,6 +924,7 @@
     Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.classList.toggle("active",b.getAttribute("data-tab")===tab)});
     el("scroll").scrollTop=0;
     renderMain();
+    if(tab==="insights")fetchInsights();
   }
 
   // ---- drawer ----
@@ -805,6 +990,8 @@
   el("tplBtn").onclick=function(){var m=el("tplMenu");el("schedPop").style.display="none";m.style.display=m.style.display==="none"?"block":"none"};
   el("schedBtn").onclick=function(){var p=el("schedPop");el("tplMenu").style.display="none";if(p.style.display==="none"&&!el("schedTime").value)el("schedTime").value=toLocalInput(quickTime(60));p.style.display=p.style.display==="none"?"block":"none"};
   el("schedConfirm").onclick=doSchedule;
+  el("draftBtn").onclick=aiDraft;
+  el("aiSummarizeBtn").onclick=aiSummarize;
   document.addEventListener("click",function(e){if(!e.target.closest("#tplBtn")&&!e.target.closest("#tplMenu"))el("tplMenu").style.display="none";if(!e.target.closest("#schedBtn")&&!e.target.closest("#schedPop"))el("schedPop").style.display="none"});
 
   Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.onclick=function(){vibrate(6);setTab(b.getAttribute("data-tab"))}});

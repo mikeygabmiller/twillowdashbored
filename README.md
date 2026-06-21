@@ -37,6 +37,8 @@ environment variables — never in the code.
 | `TWILIO_AUTH_TOKEN` | your Twilio Auth Token |
 | `TWILIO_FROM` | your Twilio number, e.g. `+14256007897` |
 | `MIKEY_PHONE` | your cell, e.g. `+13607975831` |
+| `GEMINI_API_KEY` | Google AI Studio key — powers AI summary / draft / briefing |
+| `GEMINI_MODEL` | *(optional)* model id, defaults to `gemini-2.0-flash` |
 
 ## Twilio webhooks (your business number)
 - **Messaging** → "A message comes in" → **POST** `https://mikeysms.netlify.app/sms`
@@ -48,7 +50,8 @@ Point the form's submit URL to: `https://mikeysms.netlify.app/submit`
 ## Endpoints (reference)
 Public: `/submit` `/sms` `/call` `/voicemail` `/voicemail-done`
 Dashboard API: `/api/health` `/api/threads` `/api/thread` `/api/send` `/api/meta`
-`/api/schedule` `/api/unschedule` `/api/call` `/api/read`
+`/api/schedule` `/api/unschedule` `/api/call` `/api/read` `/api/insights`
+AI (Gemini): `/api/ai/summary` `/api/ai/draft` `/api/ai/triage`
 
 > Note: there is no password — the dashboard is open to anyone with the link. To add
 > a lock back later, re-enable the `x-dashboard-pass` check in `api.mjs` and a login
