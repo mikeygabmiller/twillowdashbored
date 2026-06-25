@@ -61,7 +61,10 @@ async function handleSubmit(request) {
   let body;
   try { body = await request.json(); } catch { return cors(json({ ok: false, error: 'bad_json' }, 400)); }
 
-  const { name, phone, email, location, total, vehicle, condition, services, notes } = body;
+  const { name, phone, email, location, total, vehicle, condition, services, notes, smsConsent } = body;
+  // Only auto-text the client if they ticked the SMS consent box on the form
+  // (A2P/compliance). Mikey's lead alert + the dashboard lead always go through.
+  const consent = smsConsent === true || smsConsent === 'true';
   if (!name || !phone) return cors(json({ ok: false, error: 'missing_fields' }, 422));
   const clientPhone = normalizePhone(phone);
   if (!clientPhone) return cors(json({ ok: false, error: 'bad_phone' }, 422));
@@ -69,13 +72,10 @@ async function handleSubmit(request) {
   const serviceList = Array.isArray(services) ? services.join(', ') : (services || '');
   const quoteLine = total ? `$${total}` : 'TBD';
 
-  const clientMsg = [
-    `Hey ${name.split(' ')[0]}! 👋 Got your quote request — Mikey's Mobile Detailing.`,
-    `Your estimate: ${quoteLine}`,
-    vehicle ? `Vehicle: ${vehicle}` : null,
-    serviceList ? `Services: ${serviceList}` : null,
-    `Mikey will text you back shortly to confirm. Reply here anytime!`,
-  ].filter(Boolean).join('\n');
+  const clientMsg =
+    `Hey ${name.split(' ')[0]}, it's Mikey. I got your quote submission on my site. ` +
+    `Whenever you have a minute, feel free to send over the year, make, and model of the car ` +
+    `you'd like detailed, and I'll confirm that price. Talk soon!`;
 
   const mikeyMsg = [
     `🔔 NEW QUOTE — ${name}`, `Phone: ${clientPhone}`,
@@ -86,7 +86,7 @@ async function handleSubmit(request) {
   ].filter((s) => s !== null).join('\n');
 
   const [r1, r2] = await Promise.allSettled([
-    sendSms(clientPhone, clientMsg),
+    consent ? sendSms(clientPhone, clientMsg) : Promise.resolve({ skipped: true }),
     sendSms(process.env.MIKEY_PHONE, mikeyMsg),
   ]);
 
@@ -101,7 +101,8 @@ async function handleSubmit(request) {
     notes ? `Notes: ${notes}` : null,
   ].filter(Boolean).join('\n');
   if (detail && !thread.notes) thread.notes = `Quote request (${new Date().toLocaleDateString()}):\n${detail}`;
-  thread.messages.push({ id: genId(), dir: 'out', body: clientMsg, ts: Date.now(), kind: 'auto' });
+  // Record the auto-text in the thread only if we actually sent it.
+  if (consent) thread.messages.push({ id: genId(), dir: 'out', body: clientMsg, ts: Date.now(), kind: 'auto' });
   await saveThread(thread);
   await updateIndexEntry(thread);
 
