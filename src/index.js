@@ -576,7 +576,7 @@ function transcript(thread, max = 40) {
 async function geminiGenerate(prompt, opts = {}) {
   const key = ENV.GEMINI_API_KEY;
   if (!key) throw new Error('GEMINI_API_KEY not set');
-  const model = ENV.GEMINI_MODEL || 'gemini-2.0-flash';
+  const model = ENV.GEMINI_MODEL || 'gemini-2.5-flash';
   const body = {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: {
