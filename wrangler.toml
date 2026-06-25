@@ -3,7 +3,7 @@
 # This replaces the Netlify deploy. Cloudflare's free tier is request-based
 # (100k req/day) with no credit system that pauses production deploys.
 
-name = "mikeys-sms-dashboard"
+name = "texting"
 main = "src/index.js"
 compatibility_date = "2025-06-01"
 
