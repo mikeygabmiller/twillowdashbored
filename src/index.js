@@ -66,6 +66,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/call')       return apiCall(request);
   if (request.method === 'POST' && pathname === '/api/read')       return apiRead(request);
   if (request.method === 'GET'  && pathname === '/api/insights')   return apiInsights();
+  if (request.method === 'GET'  && pathname === '/api/migrate')    return apiMigrate(url);
   if (request.method === 'POST' && pathname === '/api/ai/summary') return apiAiSummary(request);
   if (request.method === 'POST' && pathname === '/api/ai/draft')   return apiAiDraft(request);
   if (request.method === 'POST' && pathname === '/api/ai/triage')  return apiAiTriage();
@@ -146,7 +147,8 @@ async function handleInboundSms(request) {
   });
   await sendSms(ENV.MIKEY_PHONE,
     `📱 New text from ${from}:\n"${text}"\n\nReply in your dashboard.`).catch(() => {});
-  return twiml('Got it! Mikey will get back to you soon. 🚗✨');
+  // No auto-reply to the customer — Mikey replies personally from the dashboard.
+  return twiml('');
 }
 
 async function handleInboundCall(request) {
@@ -342,6 +344,47 @@ async function apiInsights() {
     replyCount, open, won,
     needsReply, possibleLinks,
   });
+}
+
+// One-time import of conversations from the old Netlify deployment into KV.
+// The Worker can reach Netlify server-to-server, so visiting this URL once in a
+// browser copies every thread over with full history. Safe to re-run.
+//   GET /api/migrate            (defaults to the Netlify URL below)
+//   GET /api/migrate?from=https://mikeysms.netlify.app
+async function apiMigrate(url) {
+  const src = (url.searchParams.get('from') || 'https://mikeysms.netlify.app').replace(/\/+$/, '');
+  let summaries;
+  try {
+    const r = await fetch(`${src}/api/threads`);
+    if (!r.ok) throw new Error(`threads ${r.status}`);
+    const data = await r.json();
+    summaries = data.threads || (Array.isArray(data) ? data : []);
+  } catch (e) {
+    return json({ ok: false, error: `could not read ${src}/api/threads: ${String((e && e.message) || e)}` }, 502);
+  }
+
+  let imported = 0, skipped = 0;
+  const results = [];
+  for (const s of summaries) {
+    const phone = s && s.phone;
+    if (!phone) { skipped++; continue; }
+    try {
+      const tr = await fetch(`${src}/api/thread?phone=${encodeURIComponent(phone)}`);
+      if (!tr.ok) throw new Error(`thread ${tr.status}`);
+      const td = await tr.json();
+      const thread = td.thread || td;
+      if (!thread || !thread.phone) { skipped++; results.push({ phone, error: 'no thread body' }); continue; }
+      const merged = Object.assign(blankThread(phone), thread);
+      await saveThread(merged);
+      await updateIndexEntry(merged);
+      imported++;
+      results.push({ phone, name: merged.name || '', messages: (merged.messages || []).length });
+    } catch (e) {
+      skipped++;
+      results.push({ phone, error: String((e && e.message) || e) });
+    }
+  }
+  return json({ ok: true, source: src, imported, skipped, results });
 }
 
 async function apiAiSummary(request) {

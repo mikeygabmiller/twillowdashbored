@@ -125,7 +125,8 @@ async function handleInboundSms(request) {
   });
   await sendSms(process.env.MIKEY_PHONE,
     `📱 New text from ${from}:\n"${text}"\n\nReply in your dashboard.`).catch(() => {});
-  return twiml('Got it! Mikey will get back to you soon. 🚗✨');
+  // No auto-reply to the customer — Mikey replies personally from the dashboard.
+  return twiml('');
 }
 
 async function handleInboundCall(request) {
