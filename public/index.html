@@ -298,6 +298,31 @@
     .details{width:100%}
     .bubble{max-width:82%}
   }
+  /* compact "Today" summary bar at top of the messages list */
+  .sumbar{margin:8px 10px 10px;background:linear-gradient(180deg,var(--panel3),var(--panel2));border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .sum-head{display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;user-select:none}
+  .sum-title{font-weight:800;font-size:12.5px;letter-spacing:.2px}
+  .sum-pills{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap;justify-content:flex-end}
+  .sum-pill{font-size:11px;font-weight:700;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:2px 8px;white-space:nowrap}
+  .sum-pill.hot{color:#fff;background:var(--accent);border-color:transparent}
+  .sum-tog{color:var(--muted2);font-size:12px;margin-left:2px}
+  .sum-body{padding:2px 8px 9px}
+  .sum-clear{font-size:12.5px;color:var(--muted2);padding:6px 6px 4px}
+  .sum-row{display:flex;align-items:center;gap:8px;padding:8px 8px;border-radius:10px;cursor:pointer}
+  .sum-row:hover{background:var(--panel)}
+  .sum-nm{font-weight:700;font-size:12.5px;white-space:nowrap;max-width:34%;overflow:hidden;text-overflow:ellipsis}
+  .sum-prev{flex:1;color:var(--muted2);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sum-wait{font-size:11px;font-weight:800;color:var(--accent-text);white-space:nowrap}
+  .sum-more{font-size:12px;color:var(--accent-text);font-weight:700;padding:7px 8px 3px;cursor:pointer}
+  /* editable quick-reply rows */
+  .menu div.it.tpl-it{flex-direction:row;align-items:center;gap:6px}
+  .menu .tpl-ins{display:flex;flex-direction:column;gap:2px;flex:1;min-width:0}
+  .menu .tpl-ins b{font-size:13px;font-weight:700}
+  .menu .tpl-acts{display:flex;gap:2px;flex-shrink:0}
+  .menu .tpl-acts button{background:none;border:none;color:var(--muted2);font-size:13px;padding:5px 6px;border-radius:7px;cursor:pointer}
+  .menu .tpl-acts button:hover{background:var(--panel);color:var(--text)}
+  .menu div.it.tpl-new{color:var(--accent-text);font-weight:700;justify-content:center;border:1px dashed var(--line);margin-top:4px}
+  .menu .tpl-hint{font-size:10.5px;color:var(--muted2);padding:7px 10px 4px;line-height:1.4}
 </style>
 </head>
 <body>
@@ -360,6 +385,7 @@
         <button class="btn icon" id="schedBtn" title="Schedule send">🗓</button>
         <button class="btn icon" id="remBtn" title="Appointment reminder">⏰</button>
         <button class="btn icon" id="draftBtn" title="AI draft reply">✨</button>
+        <button class="btn icon" id="polishBtn" title="AI polish my text">🪄</button>
         <div class="spacer"></div>
         <span id="charCount" style="color:var(--muted2);font-size:11px"></span>
         <div class="menu" id="tplMenu" style="display:none"></div>
@@ -496,7 +522,7 @@
   var REM_WHEN=[["Day before · 6pm","dayBefore18"],["Morning of · 8am","morning8"],["2 hours before","h2"],["1 hour before","h1"]];
   var ACCENTS=[["#ff2e43","#c81e30","Red"],["#3b82f6","#1d4ed8","Blue"],["#22c55e","#15803d","Green"],["#a855f7","#7e22ce","Purple"],["#f97316","#c2410c","Orange"],["#06b6d4","#0e7490","Cyan"]];
 
-  var state={threads:[],filter:"all",tab:"messages",search:"",phone:null,thread:null,insights:null};
+  var state={threads:[],filter:"all",tab:"messages",search:"",phone:null,thread:null,insights:null,templates:TEMPLATES.slice()};
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
   function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
@@ -641,15 +667,58 @@
     else items=state.threads.filter(passFilter);
     items=items.filter(passSearch);
 
+    var head=(mode==="messages"&&!state.search)?summaryBar():"";
     if(!items.length){
       var msg={messages:["No conversations","💬","New texts from customers show up here."],
         scheduled:["Nothing scheduled","🗓","Schedule a send from any conversation and it lands here."],
         archived:["Archive is empty","🗄","Swipe a conversation to archive it."]}[mode]||["Nothing here","💬",""];
-      box.innerHTML='<div class="emptyview"><div class="big">'+msg[1]+'</div><div>'+esc(msg[0])+'</div><div class="sub">'+esc(msg[2])+'</div></div>';
+      box.innerHTML=head+'<div class="emptyview"><div class="big">'+msg[1]+'</div><div>'+esc(msg[0])+'</div><div class="sub">'+esc(msg[2])+'</div></div>';
+      wireSummary();
       return;
     }
-    box.innerHTML="";
+    box.innerHTML=head;
     items.forEach(function(t){box.appendChild(convNode(t))});
+    wireSummary();
+  }
+
+  // ---- compact "Today" summary (top of messages list, mobile-friendly) ----
+  function summaryBar(){
+    var active=state.threads.filter(function(t){return !t.archived});
+    var needs=active.filter(function(t){return t.lastDir==="in"}).sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
+    var unread=active.reduce(function(a,t){return a+(t.unread>0?1:0)},0);
+    var sched=active.reduce(function(a,t){return a+(t.scheduledCount>0?1:0)},0);
+    var collapsed=localStorage.getItem("mkd-sum")==="0";
+    var h='<div class="sumbar" id="sumbar">'+
+      '<div class="sum-head" id="sumHead">'+
+        '<span class="sum-title">📋 Today</span>'+
+        '<span class="sum-pills">'+
+          '<span class="sum-pill'+(needs.length?" hot":"")+'">'+needs.length+' waiting</span>'+
+          (unread?'<span class="sum-pill">'+unread+' unread</span>':'')+
+          (sched?'<span class="sum-pill">'+sched+' scheduled</span>':'')+
+        '</span>'+
+        '<span class="sum-tog">'+(collapsed?"▸":"▾")+'</span>'+
+      '</div>';
+    if(!collapsed){
+      h+='<div class="sum-body">';
+      if(!needs.length){h+='<div class="sum-clear">🎉 All caught up — nobody\'s waiting on you.</div>'}
+      else{
+        needs.slice(0,3).forEach(function(t){
+          h+='<div class="sum-row" data-phone="'+esc(t.phone)+'">'+
+            '<span class="sum-nm">'+esc(displayName(t))+'</span>'+
+            '<span class="sum-prev">'+esc(t.lastBody||"")+'</span>'+
+            '<span class="sum-wait">'+ago(t.lastTs)+'</span></div>';
+        });
+        if(needs.length>3)h+='<div class="sum-more" id="sumMore">+'+(needs.length-3)+' more waiting · open Insights →</div>';
+      }
+      h+='</div>';
+    }
+    return h+'</div>';
+  }
+  function wireSummary(){
+    var head=el("sumHead");if(!head)return;
+    head.onclick=function(){var c=localStorage.getItem("mkd-sum")==="0";localStorage.setItem("mkd-sum",c?"1":"0");vibrate(6);renderMain()};
+    Array.prototype.forEach.call(document.querySelectorAll(".sum-row"),function(r){r.onclick=function(){openThread(r.getAttribute("data-phone"))}});
+    var more=el("sumMore");if(more)more.onclick=function(){setTab("insights")};
   }
 
   function renderLeads(){
@@ -894,6 +963,17 @@
     }).catch(function(){toast("Network error",{bad:true})})
     .then(function(){var bb=el("draftBtn");bb.disabled=false;bb.innerHTML="✨"});
   }
+  function aiPolish(){
+    var t=state.thread;if(!t)return;
+    var inp=el("msgInput");var text=inp.value.trim();
+    if(!text){toast("Type a reply first — 🪄 cleans up what you wrote",{bad:true});return}
+    var b=el("polishBtn");b.disabled=true;b.innerHTML='<span class="spin"></span>';
+    post("/api/ai/draft",{phone:t.phone,text:text}).then(function(d){
+      if(d&&d.ok&&d.draft){inp.value=d.draft;autoGrow();updateCount();inp.focus();toast("🪄 Polished — review & send")}
+      else toast("Polish failed: "+((d&&d.error)||"error"),{bad:true});
+    }).catch(function(){toast("Network error",{bad:true})})
+    .then(function(){var bb=el("polishBtn");if(bb){bb.disabled=false;bb.innerHTML="🪄"}});
+  }
 
   function saveMeta(patch){
     var t=state.thread;if(!t)return;
@@ -923,7 +1003,38 @@
 
   // ---- templates & schedule ----
   function fillTemplate(text){var t=state.thread;var name=t&&t.name?t.name.split(" ")[0]:"there";el("msgInput").value=text.replace(/\{name\}/g,name);el("msgInput").focus();autoGrow();updateCount()}
-  function buildTplMenu(){var m=el("tplMenu");m.innerHTML='<div class="mh">Quick replies</div>';TEMPLATES.forEach(function(tp){var d=document.createElement("div");d.className="it";d.innerHTML='<span>'+esc(tp[0])+'</span><small>'+esc(tp[1])+'</small>';d.onclick=function(){fillTemplate(tp[1]);m.style.display="none"};m.appendChild(d)})}
+  function buildTplMenu(){
+    var m=el("tplMenu");m.innerHTML='<div class="mh">Quick replies</div>';
+    state.templates.forEach(function(tp,i){
+      var d=document.createElement("div");d.className="it tpl-it";
+      d.innerHTML='<span class="tpl-ins"><b>'+esc(tp[0])+'</b><small>'+esc(tp[1])+'</small></span>'+
+        '<span class="tpl-acts"><button class="tpl-edit" title="Edit">✎</button><button class="tpl-del" title="Delete">✕</button></span>';
+      d.querySelector(".tpl-ins").onclick=function(){fillTemplate(tp[1]);m.style.display="none"};
+      d.querySelector(".tpl-edit").onclick=function(e){e.stopPropagation();editTemplate(i)};
+      d.querySelector(".tpl-del").onclick=function(e){e.stopPropagation();deleteTemplate(i)};
+      m.appendChild(d);
+    });
+    var add=document.createElement("div");add.className="it tpl-new";add.innerHTML='<span>＋ New quick reply</span>';
+    add.onclick=function(){addTemplate()};m.appendChild(add);
+    var hint=document.createElement("div");hint.className="tpl-hint";hint.textContent="Tap a reply to insert it. Use {name} to drop in the customer's first name.";m.appendChild(hint);
+  }
+  function loadTemplates(){return api("/api/templates").then(function(d){if(d&&d.ok&&d.templates&&d.templates.length)state.templates=d.templates;buildTplMenu()})}
+  function saveTemplates(){post("/api/templates",{templates:state.templates}).then(function(d){if(!d||!d.ok)toast("Couldn't save template",{bad:true})})}
+  function addTemplate(){
+    var label=prompt("Button label (e.g. 💵 Quote):");if(label===null||!label.trim())return;
+    var body=prompt("Message text — use {name} for the first name:");if(body===null||!body.trim())return;
+    state.templates.push([label.trim(),body.trim()]);saveTemplates();buildTplMenu();toast("Quick reply saved");
+  }
+  function editTemplate(i){
+    var tp=state.templates[i];
+    var label=prompt("Button label:",tp[0]);if(label===null)return;
+    var body=prompt("Message text — use {name} for the first name:",tp[1]);if(body===null)return;
+    state.templates[i]=[label.trim()||tp[0],body.trim()||tp[1]];saveTemplates();buildTplMenu();toast("Quick reply updated");
+  }
+  function deleteTemplate(i){
+    if(!confirm('Delete "'+state.templates[i][0]+'"?'))return;
+    state.templates.splice(i,1);saveTemplates();buildTplMenu();
+  }
   function buildQuickset(){var q=el("quickset");q.innerHTML="";QUICK.forEach(function(x){var b=document.createElement("button");b.textContent=x[0];b.onclick=function(){el("schedTime").value=toLocalInput(quickTime(x[1]))};q.appendChild(b)})}
   function quickTime(code){var d=new Date();if(code>0){d.setMinutes(d.getMinutes()+code)}else{var hour=-code;if(hour>=24){d.setDate(d.getDate()+1);hour-=24}d.setHours(hour,0,0,0);if(d<new Date())d.setDate(d.getDate()+1)}return d}
   function toLocalInput(d){var p=function(n){return(n<10?"0":"")+n};return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+"T"+p(d.getHours())+":"+p(d.getMinutes())}
@@ -1003,7 +1114,7 @@
   function checkHealth(){
     var b=el("healthBadge");el("healthTxt").textContent="…";
     api("/api/health").then(function(d){
-      var ok=d&&d.ok&&d.blobs==="ok";
+      var ok=d&&d.ok&&(d.storage==="ok"||d.blobs==="ok");
       b.className="health "+(ok?"ok":"bad");
       el("healthTxt").textContent=ok?"online":"issue";
     }).catch(function(){b.className="health bad";el("healthTxt").textContent="offline"});
@@ -1064,6 +1175,7 @@
   el("schedConfirm").onclick=doSchedule;
   el("remConfirm").onclick=doReminder;
   el("draftBtn").onclick=aiDraft;
+  el("polishBtn").onclick=aiPolish;
   el("aiSummarizeBtn").onclick=aiSummarize;
   document.addEventListener("click",function(e){
     if(!e.target.closest("#tplBtn")&&!e.target.closest("#tplMenu"))el("tplMenu").style.display="none";
@@ -1080,7 +1192,7 @@
   Array.prototype.forEach.call(document.querySelectorAll(".drawer [data-filter]"),function(it){it.onclick=function(){state.tab="messages";state.filter=it.getAttribute("data-filter");setTab("messages");state.filter=it.getAttribute("data-filter");renderFilters();renderMain();closeDrawer()}});
 
   // ---- boot ----
-  loadAccent();buildAccents();buildTplMenu();buildQuickset();
+  loadAccent();buildAccents();buildTplMenu();loadTemplates();buildQuickset();
   renderFilters();refreshThreads();startPoll();checkHealth();
 })();
 </script>

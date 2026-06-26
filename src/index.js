@@ -67,6 +67,8 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/read')       return apiRead(request);
   if (request.method === 'GET'  && pathname === '/api/insights')   return apiInsights();
   if (request.method === 'GET'  && pathname === '/api/migrate')    return apiMigrate(url);
+  if (request.method === 'GET'  && pathname === '/api/templates')  return apiGetTemplates();
+  if (request.method === 'POST' && pathname === '/api/templates')  return apiSaveTemplates(request);
   if (request.method === 'POST' && pathname === '/api/ai/summary') return apiAiSummary(request);
   if (request.method === 'POST' && pathname === '/api/ai/draft')   return apiAiDraft(request);
   if (request.method === 'POST' && pathname === '/api/ai/triage')  return apiAiTriage();
@@ -387,6 +389,25 @@ async function apiMigrate(url) {
   return json({ ok: true, source: src, imported, skipped, results });
 }
 
+// Custom quick-reply templates, stored per account in KV so they're shared
+// across every device Mikey opens the dashboard on.
+async function apiGetTemplates() {
+  const tpl = await kv().get('templates', { type: 'json' });
+  return json({ ok: true, templates: Array.isArray(tpl) ? tpl : [] });
+}
+
+async function apiSaveTemplates(request) {
+  const data = await readJson(request);
+  const list = Array.isArray(data.templates)
+    ? data.templates
+        .filter((x) => Array.isArray(x) && x.length >= 2 && String(x[1]).trim())
+        .map((x) => [String(x[0]).slice(0, 40), String(x[1]).slice(0, 1000)])
+        .slice(0, 50)
+    : [];
+  await kv().put('templates', JSON.stringify(list));
+  return json({ ok: true, templates: list });
+}
+
 async function apiAiSummary(request) {
   const data = await readJson(request);
   const phone = normalizePhone(data.phone);
@@ -421,12 +442,26 @@ async function apiAiDraft(request) {
   if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
   const thread = await loadThread(phone);
   const hint = (data.hint || '').trim();
-  const prompt =
-    `You are Mikey replying to a customer by text for Mikey's Mobile Detailing. ` +
-    `Write ONE friendly, professional reply (1-3 short complete sentences, no greeting line, no signature, ready to send). ` +
-    `Finish every sentence — do not cut off mid-thought. ` +
-    (hint ? `Goal of this reply: ${hint}. ` : '') +
-    `\n\nConversation so far:\n${transcript(thread)}\n\nReply:`;
+  const draftText = (data.text || '').trim();
+  let prompt;
+  if (draftText) {
+    // Polish mode: clean up a reply Mikey already wrote, keep his meaning/voice.
+    prompt =
+      `You are Mikey from Mikey's Mobile Detailing, texting a customer. ` +
+      `Polish the draft below so it reads clear, warm and professional: fix grammar, spelling and tone, ` +
+      `keep it concise (1-3 short sentences), keep Mikey's friendly voice and the original meaning, ` +
+      `no added greeting unless it's already there, no signature, ready to send. ` +
+      `Return ONLY the polished message — no quotes, no preamble. ` +
+      (hint ? `Also: ${hint}. ` : '') +
+      `\n\nConversation so far (for context):\n${transcript(thread)}\n\nDraft to polish:\n${draftText}\n\nPolished message:`;
+  } else {
+    prompt =
+      `You are Mikey replying to a customer by text for Mikey's Mobile Detailing. ` +
+      `Write ONE friendly, professional reply (1-3 short complete sentences, no greeting line, no signature, ready to send). ` +
+      `Finish every sentence — do not cut off mid-thought. ` +
+      (hint ? `Goal of this reply: ${hint}. ` : '') +
+      `\n\nConversation so far:\n${transcript(thread)}\n\nReply:`;
+  }
   try {
     const text = await geminiGenerate(prompt, { temperature: 0.7, maxTokens: 400 });
     return json({ ok: true, draft: text.replace(/^["']|["']$/g, '').trim() });
