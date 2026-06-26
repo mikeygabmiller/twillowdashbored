@@ -336,6 +336,17 @@
   .cost-rows{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
   .cost-rows span{font-size:11.5px;font-weight:700;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:3px 9px}
   .cost-note{font-size:11px;color:var(--muted2);margin-top:9px;line-height:1.45}
+  /* password gate */
+  .login-overlay{display:none;position:fixed;inset:0;z-index:200;background:var(--bg);align-items:center;justify-content:center;padding:24px}
+  .login-overlay.show{display:flex}
+  .login-box{width:100%;max-width:340px;background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:30px 24px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.5)}
+  .login-ic{font-size:42px}
+  .login-title{font-size:19px;font-weight:800;margin-top:8px}
+  .login-sub{font-size:13px;color:var(--muted2);margin:6px 0 18px}
+  .login-box input{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:12px;padding:13px;font-size:15px;color-scheme:dark}
+  .login-err{color:#ff6b6b;font-size:12.5px;min-height:16px;margin:9px 0 4px}
+  .login-btn{width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:13px;font-size:15px;font-weight:700;cursor:pointer}
+  .login-btn:disabled{opacity:.6}
 </style>
 </head>
 <body>
@@ -499,12 +510,24 @@
     <div class="sec-lbl">Tools</div>
     <div class="ditem" id="refreshItem"><span class="ic">🔄</span>Refresh now</div>
     <div class="ditem" id="healthItem"><span class="ic">🩺</span>Connection<span class="n"><span class="health" id="healthBadge"><span class="dotc"></span><span id="healthTxt">check</span></span></span></div>
+    <div class="ditem" id="logoutItem"><span class="ic">🔓</span>Sign out</div>
   </div>
   <div class="foot">
-    Mikey's Mobile Detailing SMS<br>
-    <a href="https://mikeysms.netlify.app" target="_blank">mikeysms.netlify.app</a> · auto-refresh on
+    Mikey's Mobile Detailing<br>
+    Dashboard · auto-refresh on
   </div>
 </aside>
+
+<div id="loginOverlay" class="login-overlay">
+  <div class="login-box">
+    <div class="login-ic">🚗</div>
+    <div class="login-title">Mikey's Dashboard</div>
+    <div class="login-sub">Enter your password to continue</div>
+    <input id="loginPass" type="password" placeholder="Password" autocomplete="current-password" />
+    <div class="login-err" id="loginErr"></div>
+    <button id="loginBtn" class="login-btn">Sign in</button>
+  </div>
+</div>
 
 <div class="toast" id="toast"></div>
 
@@ -543,7 +566,18 @@
   function vibrate(ms){try{if(navigator.vibrate)navigator.vibrate(ms)}catch(e){}}
 
   // ---- API ----
-  function api(path,opts){opts=opts||{};return fetch(path,opts).then(function(r){return r.json().catch(function(){return{ok:false}})})}
+  function api(path,opts){opts=opts||{};return fetch(path,opts).then(function(r){if(r.status===401){showLogin();return{ok:false,unauthorized:true}}return r.json().catch(function(){return{ok:false}})})}
+  function showLogin(msg){var o=el("loginOverlay");if(o.classList.contains("show")){if(msg)el("loginErr").textContent=msg;return}o.classList.add("show");if(msg)el("loginErr").textContent=msg;setTimeout(function(){try{el("loginPass").focus()}catch(e){}},60)}
+  function hideLogin(){el("loginOverlay").classList.remove("show");el("loginErr").textContent=""}
+  function doLogin(){
+    var p=el("loginPass").value;if(!p){el("loginPass").focus();return}
+    var b=el("loginBtn");b.disabled=true;el("loginErr").textContent="";
+    post("/api/login",{password:p}).then(function(d){
+      b.disabled=false;
+      if(d&&d.ok){el("loginPass").value="";hideLogin();refreshThreads();loadTemplates();checkHealth();startPoll()}
+      else{el("loginErr").textContent="Wrong password — try again";el("loginPass").select()}
+    }).catch(function(){b.disabled=false;el("loginErr").textContent="Network error — try again"});
+  }
   function post(path,bodyObj){return api(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(bodyObj)})}
 
   // ---- utils ----
@@ -1222,6 +1256,9 @@
   el("polishBtn").onclick=aiPolish;
   el("micBtn").onclick=toggleMic;
   if(SR)el("micBtn").style.display="";
+  el("loginBtn").onclick=doLogin;
+  el("loginPass").addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();doLogin()}});
+  el("logoutItem").onclick=function(){post("/api/logout",{}).then(function(){location.reload()})};
   el("aiSummarizeBtn").onclick=aiSummarize;
   document.addEventListener("click",function(e){
     if(!e.target.closest("#tplBtn")&&!e.target.closest("#tplMenu"))el("tplMenu").style.display="none";

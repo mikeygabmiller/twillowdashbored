@@ -56,6 +56,11 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/voicemail')      return handleVoicemail(request);
   if (request.method === 'POST' && pathname === '/voicemail-done') return handleVoicemailDone(request);
 
+  if (request.method === 'POST' && pathname === '/api/login')      return apiLogin(request);
+  if (request.method === 'POST' && pathname === '/api/logout')     return apiLogout();
+  // Everything else under /api/ requires the dashboard password (once one is set).
+  if (pathname.startsWith('/api/') && !(await isAuthed(request)))   return json({ ok: false, error: 'unauthorized' }, 401);
+
   if (request.method === 'GET'  && pathname === '/api/health')     return apiHealth();
   if (request.method === 'GET'  && pathname === '/api/threads')    return apiThreads(url);
   if (request.method === 'GET'  && pathname === '/api/thread')     return apiThread(url);
@@ -714,6 +719,48 @@ async function dispatchDueScheduled(now = Date.now()) {
     await updateIndexEntry(thread);
   }
   return sent;
+}
+
+// ===========================================================================
+// Dashboard auth (password gate). If DASHBOARD_PASSWORD isn't set, the
+// dashboard stays open (so nothing locks up before you configure it).
+// ===========================================================================
+async function tokenFor() {
+  const data = new TextEncoder().encode('mkd:' + (ENV.DASHBOARD_PASSWORD || ''));
+  const buf = await crypto.subtle.digest('SHA-256', data);
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+function getCookie(request, name) {
+  const c = request.headers.get('Cookie') || '';
+  const m = c.match(new RegExp('(?:^|; )' + name + '=([^;]+)'));
+  return m ? m[1] : null;
+}
+async function isAuthed(request) {
+  if (!ENV.DASHBOARD_PASSWORD) return true;
+  return getCookie(request, 'mkd_auth') === (await tokenFor());
+}
+async function apiLogin(request) {
+  const data = await readJson(request);
+  if (!ENV.DASHBOARD_PASSWORD) return json({ ok: true });
+  if ((data.password || '') !== ENV.DASHBOARD_PASSWORD) return json({ ok: false, error: 'wrong_password' }, 401);
+  const token = await tokenFor();
+  return new Response(JSON.stringify({ ok: true }), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Access-Control-Allow-Origin': '*',
+      'Set-Cookie': `mkd_auth=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=7776000`,
+    },
+  });
+}
+function apiLogout() {
+  return new Response(JSON.stringify({ ok: true }), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/json',
+      'Set-Cookie': 'mkd_auth=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0',
+    },
+  });
 }
 
 // ===========================================================================
