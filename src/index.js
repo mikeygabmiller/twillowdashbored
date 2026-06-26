@@ -320,10 +320,19 @@ async function apiInsights() {
   let totalMs = 0, replyCount = 0;
   const needsReply = [];
   const byName = {};
+  // Twilio spend for the current calendar month (counts all threads, even archived).
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  let segOut = 0, msgsIn = 0;
 
   for (const e of index) {
-    if (e.archived) continue;
     const thread = await loadThread(e.phone);
+    for (const m of (thread.messages || [])) {
+      if (!m.ts || m.ts < monthStart) continue;
+      if (m.dir === 'out') segOut += Math.max(1, Math.ceil(String(m.body || '').length / 160));
+      else if (m.dir === 'in') msgsIn += 1;
+    }
+    if (e.archived) continue;
     const st = computeReplyStats(thread.messages);
     if (st.avgMs != null) { totalMs += st.avgMs * st.count; replyCount += st.count; }
 
@@ -340,11 +349,14 @@ async function apiInsights() {
 
   const open = index.filter((e) => !e.archived).length;
   const won = index.filter((e) => e.status === 'won').length;
+  const RATE = 0.0079, NUMBER_FEE = 1.15;
+  const costUsd = +(segOut * RATE + msgsIn * RATE + NUMBER_FEE).toFixed(2);
   return json({
     ok: true,
     avgReplyMs: replyCount ? Math.round(totalMs / replyCount) : null,
     replyCount, open, won,
     needsReply, possibleLinks,
+    costMonth: { segOut, msgsIn, usd: costUsd },
   });
 }
 

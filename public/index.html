@@ -9,6 +9,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <title>Mikey's Detailing — Messages</title>
+<link rel="manifest" href="/manifest.webmanifest" />
+<link rel="apple-touch-icon" href="/icon-180.png" />
+<link rel="icon" type="image/png" href="/icon-192.png" />
+<meta name="apple-mobile-web-app-title" content="Mikey's SMS" />
 <style>
   :root{
     --bg:#0a0a0c; --panel:#121216; --panel2:#1a1b21; --panel3:#23252d;
@@ -323,6 +327,15 @@
   .menu .tpl-acts button:hover{background:var(--panel);color:var(--text)}
   .menu div.it.tpl-new{color:var(--accent-text);font-weight:700;justify-content:center;border:1px dashed var(--line);margin-top:4px}
   .menu .tpl-hint{font-size:10.5px;color:var(--muted2);padding:7px 10px 4px;line-height:1.4}
+  /* mic recording state */
+  .btn.icon.rec{color:#fff;background:var(--accent);animation:recpulse 1.1s ease-in-out infinite}
+  @keyframes recpulse{0%,100%{box-shadow:0 0 0 0 var(--accent-soft)}50%{box-shadow:0 0 0 7px transparent}}
+  /* cost card (Insights) */
+  .cost-card{background:linear-gradient(180deg,var(--panel3),var(--panel2));border:1px solid var(--line);border-radius:14px;padding:14px 15px}
+  .cost-big{font-size:30px;font-weight:800;letter-spacing:-.5px}
+  .cost-rows{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+  .cost-rows span{font-size:11.5px;font-weight:700;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:3px 9px}
+  .cost-note{font-size:11px;color:var(--muted2);margin-top:9px;line-height:1.45}
 </style>
 </head>
 <body>
@@ -386,6 +399,7 @@
         <button class="btn icon" id="remBtn" title="Appointment reminder">⏰</button>
         <button class="btn icon" id="draftBtn" title="AI draft reply">✨</button>
         <button class="btn icon" id="polishBtn" title="AI polish my text">🪄</button>
+        <button class="btn icon" id="micBtn" title="Dictate (voice to text)" style="display:none">🎤</button>
         <div class="spacer"></div>
         <span id="charCount" style="color:var(--muted2);font-size:11px"></span>
         <div class="menu" id="tplMenu" style="display:none"></div>
@@ -763,6 +777,17 @@
       '<div class="stat"><div class="v">'+won+'</div><div class="k">Won leads</div></div>'+
     '</div>';
 
+    // This month's Twilio spend
+    var cm=ins.costMonth;
+    if(cm){
+      var mo=new Date().toLocaleDateString([],{month:"long"});
+      html+='<div class="ins-sec"><div class="h"><div class="t">💸 '+esc(mo)+' Twilio spend</div></div>'+
+        '<div class="cost-card"><div class="cost-big">~$'+(cm.usd||0).toFixed(2)+'</div>'+
+        '<div class="cost-rows"><span>'+(cm.segOut||0)+' sent</span><span>'+(cm.msgsIn||0)+' received</span><span>$1.15 number</span></div>'+
+        '<div class="cost-note">Estimate at ~$0.0079 per text segment. Exact billing lives in your Twilio console.</div>'+
+        '</div></div>';
+    }
+
     // AI briefing
     html+='<div class="ins-sec"><div class="h"><div class="t">✨ AI briefing</div></div>'+
       '<div class="ai-card"><div class="ttl">🤖 Who to respond to first</div>'+
@@ -975,6 +1000,25 @@
     .then(function(){var bb=el("polishBtn");if(bb){bb.disabled=false;bb.innerHTML="🪄"}});
   }
 
+  // ---- voice-to-text (free, built into the browser) ----
+  var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  var rec=null,recOn=false,recBase="";
+  function toggleMic(){
+    if(!SR){toast("Voice typing isn't available here — use your keyboard's 🎤 key instead",{bad:true});return}
+    if(recOn){try{rec&&rec.stop()}catch(e){}return}
+    rec=new SR();rec.lang="en-US";rec.interimResults=true;rec.continuous=true;
+    recBase=el("msgInput").value.trim();
+    rec.onresult=function(e){
+      var said="";for(var i=0;i<e.results.length;i++){said+=e.results[i][0].transcript}
+      el("msgInput").value=(recBase?recBase+" ":"")+said;autoGrow();updateCount();
+    };
+    rec.onend=function(){recOn=false;el("micBtn").classList.remove("rec");recBase=el("msgInput").value.trim()};
+    rec.onerror=function(ev){recOn=false;el("micBtn").classList.remove("rec");
+      if(ev.error==="not-allowed"||ev.error==="service-not-allowed")toast("Mic blocked — allow microphone access for this site",{bad:true});
+      else if(ev.error!=="no-speech"&&ev.error!=="aborted")toast("Mic error: "+ev.error,{bad:true});};
+    try{rec.start();recOn=true;el("micBtn").classList.add("rec");vibrate(8);toast("🎤 Listening — tap 🎤 again to stop")}catch(e){}
+  }
+
   function saveMeta(patch){
     var t=state.thread;if(!t)return;
     post("/api/meta",Object.assign({phone:t.phone},patch)).then(function(d){if(d&&d.ok){state.thread=d.thread;renderThread();refreshThreads()}});
@@ -1176,6 +1220,8 @@
   el("remConfirm").onclick=doReminder;
   el("draftBtn").onclick=aiDraft;
   el("polishBtn").onclick=aiPolish;
+  el("micBtn").onclick=toggleMic;
+  if(SR)el("micBtn").style.display="";
   el("aiSummarizeBtn").onclick=aiSummarize;
   document.addEventListener("click",function(e){
     if(!e.target.closest("#tplBtn")&&!e.target.closest("#tplMenu"))el("tplMenu").style.display="none";
@@ -1195,6 +1241,15 @@
   loadAccent();buildAccents();buildTplMenu();loadTemplates();buildQuickset();
   renderFilters();refreshThreads();startPoll();checkHealth();
 })();
+</script>
+<script>
+  // Register the service worker so the dashboard installs as a real app
+  // (home-screen icon, full-screen, offline shell).
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("/sw.js").catch(function () {});
+    });
+  }
 </script>
 </body>
 </html>
