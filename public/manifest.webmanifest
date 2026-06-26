@@ -1,6 +1,6 @@
 {
-  "name": "Mikey's Detailing — SMS",
-  "short_name": "Mikey's SMS",
+  "name": "Mikey's Dashboard",
+  "short_name": "Mikey's Dashboard",
   "description": "Mikey's Mobile Detailing customer texting dashboard.",
   "start_url": "/",
   "scope": "/",
