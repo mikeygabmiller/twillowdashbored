@@ -347,6 +347,17 @@
   .login-err{color:#ff6b6b;font-size:12.5px;min-height:16px;margin:9px 0 4px}
   .login-btn{width:100%;background:var(--accent);color:#fff;border:none;border-radius:12px;padding:13px;font-size:15px;font-weight:700;cursor:pointer}
   .login-btn:disabled{opacity:.6}
+  .login-switch{margin-top:16px;background:none;border:none;color:var(--muted2);font-size:12.5px;text-decoration:underline;cursor:pointer}
+  /* PIN pad */
+  .pin-dots{display:flex;justify-content:center;gap:12px;margin:18px 0 20px;min-height:14px}
+  .pin-dots .d{width:13px;height:13px;border-radius:50%;border:2px solid var(--line);transition:.12s}
+  .pin-dots .d.on{background:var(--accent);border-color:var(--accent)}
+  .pin-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;max-width:264px;margin:0 auto}
+  .pin-key{height:62px;border-radius:50%;background:var(--panel2);border:1px solid var(--line);color:var(--text);font-size:24px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;user-select:none;-webkit-tap-highlight-color:transparent}
+  .pin-key:active{background:var(--accent);color:#fff;transform:scale(.95)}
+  .pin-key.fn{background:transparent;border-color:transparent;font-size:22px;color:var(--muted)}
+  .pin-shake{animation:pinshake .35s}
+  @keyframes pinshake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
 </style>
 </head>
 <body>
@@ -519,13 +530,20 @@
 </aside>
 
 <div id="loginOverlay" class="login-overlay">
-  <div class="login-box">
+  <div class="login-box" id="loginBox">
     <div class="login-ic">🚗</div>
     <div class="login-title">Mikey's Dashboard</div>
-    <div class="login-sub">Enter your password to continue</div>
-    <input id="loginPass" type="password" placeholder="Password" autocomplete="current-password" />
+    <div class="login-sub" id="loginSub">Enter your PIN</div>
+    <div id="pinMode">
+      <div class="pin-dots" id="pinDots"></div>
+      <div class="pin-pad" id="pinPad"></div>
+    </div>
+    <div id="passMode" style="display:none">
+      <input id="loginPass" type="password" placeholder="Password" autocomplete="current-password" />
+      <button id="loginBtn" class="login-btn">Sign in</button>
+    </div>
     <div class="login-err" id="loginErr"></div>
-    <button id="loginBtn" class="login-btn">Sign in</button>
+    <button class="login-switch" id="loginSwitch" type="button">Use password instead</button>
   </div>
 </div>
 
@@ -567,17 +585,42 @@
 
   // ---- API ----
   function api(path,opts){opts=opts||{};return fetch(path,opts).then(function(r){if(r.status===401){showLogin();return{ok:false,unauthorized:true}}return r.json().catch(function(){return{ok:false}})})}
-  function showLogin(msg){var o=el("loginOverlay");if(o.classList.contains("show")){if(msg)el("loginErr").textContent=msg;return}o.classList.add("show");if(msg)el("loginErr").textContent=msg;setTimeout(function(){try{el("loginPass").focus()}catch(e){}},60)}
+  function showLogin(msg){var o=el("loginOverlay");if(o.classList.contains("show")){if(msg)el("loginErr").textContent=msg;return}o.classList.add("show");if(msg)el("loginErr").textContent=msg;setTimeout(function(){try{if(el("passMode").style.display!=="none")el("loginPass").focus()}catch(e){}},60)}
   function hideLogin(){el("loginOverlay").classList.remove("show");el("loginErr").textContent=""}
-  function doLogin(){
-    var p=el("loginPass").value;if(!p){el("loginPass").focus();return}
-    var b=el("loginBtn");b.disabled=true;el("loginErr").textContent="";
-    post("/api/login",{password:p}).then(function(d){
-      b.disabled=false;
-      if(d&&d.ok){el("loginPass").value="";hideLogin();refreshThreads();loadTemplates();checkHealth();startPoll()}
-      else{el("loginErr").textContent="Wrong password — try again";el("loginPass").select()}
-    }).catch(function(){b.disabled=false;el("loginErr").textContent="Network error — try again"});
+  function submitLogin(value,wrongMsg){
+    el("loginErr").textContent="";
+    post("/api/login",{password:value}).then(function(d){
+      if(d&&d.ok){pin="";if(el("loginPass"))el("loginPass").value="";hideLogin();refreshThreads();loadTemplates();checkHealth();startPoll()}
+      else{
+        el("loginErr").textContent=wrongMsg||"Wrong PIN — try again";
+        var box=el("loginBox");if(box){box.classList.remove("pin-shake");void box.offsetWidth;box.classList.add("pin-shake")}
+        pin="";renderPinDots();vibrate(20);if(el("loginPass"))el("loginPass").select();
+      }
+    }).catch(function(){el("loginErr").textContent="Network error — try again"});
   }
+  function doLogin(){var p=el("loginPass").value;if(!p){el("loginPass").focus();return}submitLogin(p,"Wrong password — try again")}
+
+  // ---- PIN pad ----
+  var pin="";
+  function buildPinPad(){
+    var pad=el("pinPad");pad.innerHTML="";
+    ["1","2","3","4","5","6","7","8","9","back","0","ok"].forEach(function(k){
+      var b=document.createElement("button");b.type="button";b.className="pin-key";
+      if(k==="back"){b.className+=" fn";b.textContent="⌫";b.onclick=pinBack}
+      else if(k==="ok"){b.className+=" fn";b.textContent="✓";b.onclick=pinSubmit}
+      else{b.textContent=k;b.onclick=function(){pinPush(k)}}
+      pad.appendChild(b);
+    });
+    renderPinDots();
+  }
+  function renderPinDots(){
+    var d=el("pinDots");if(!d)return;d.innerHTML="";
+    var n=pin.length?Math.min(pin.length,12):4;
+    for(var i=0;i<n;i++){var s=document.createElement("span");s.className="d"+(i<pin.length?" on":"");d.appendChild(s)}
+  }
+  function pinPush(ch){if(pin.length>=12)return;pin+=ch;el("loginErr").textContent="";renderPinDots();vibrate(5)}
+  function pinBack(){pin=pin.slice(0,-1);renderPinDots();vibrate(5)}
+  function pinSubmit(){if(!pin){vibrate(15);return}submitLogin(pin)}
   function post(path,bodyObj){return api(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(bodyObj)})}
 
   // ---- utils ----
@@ -1259,6 +1302,20 @@
   el("loginBtn").onclick=doLogin;
   el("loginPass").addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();doLogin()}});
   el("logoutItem").onclick=function(){post("/api/logout",{}).then(function(){location.reload()})};
+  el("loginSwitch").onclick=function(){
+    var tm=el("passMode"),pm=el("pinMode");
+    if(tm.style.display==="none"){tm.style.display="";pm.style.display="none";el("loginSub").textContent="Enter your password";el("loginSwitch").textContent="Use PIN instead";setTimeout(function(){el("loginPass").focus()},40)}
+    else{tm.style.display="none";pm.style.display="";el("loginSub").textContent="Enter your PIN";el("loginSwitch").textContent="Use password instead"}
+    el("loginErr").textContent="";pin="";renderPinDots();
+  };
+  document.addEventListener("keydown",function(e){
+    if(!el("loginOverlay").classList.contains("show"))return;
+    if(el("pinMode").style.display==="none")return; // password field handles itself
+    if(e.key>="0"&&e.key<="9"){pinPush(e.key)}
+    else if(e.key==="Backspace"){e.preventDefault();pinBack()}
+    else if(e.key==="Enter"){e.preventDefault();pinSubmit()}
+  });
+  buildPinPad();
   el("aiSummarizeBtn").onclick=aiSummarize;
   document.addEventListener("click",function(e){
     if(!e.target.closest("#tplBtn")&&!e.target.closest("#tplMenu"))el("tplMenu").style.display="none";
