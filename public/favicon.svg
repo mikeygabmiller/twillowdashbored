@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="brandBg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff3b4d"/>
+      <stop offset=".55" stop-color="#d61f31"/>
+      <stop offset="1" stop-color="#8c1019"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#brandBg)"/>
+  <!-- subtle top gloss for a "freshly detailed" shine -->
+  <path d="M9 16 C24 8 40 8 55 16 L55 11 C40 4 24 4 9 11 Z" fill="#fff" opacity=".16"/>
+  <!-- M monogram -->
+  <polyline points="18,45 18,21 32,37 46,21 46,45" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- shine sparkle -->
+  <path d="M49 12.5 l1.7 4.3 4.3 1.7 -4.3 1.7 -1.7 4.3 -1.7 -4.3 -4.3 -1.7 4.3 -1.7 Z" fill="#fff"/>
+</svg>
