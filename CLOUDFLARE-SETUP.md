@@ -12,8 +12,7 @@ What changed under the hood:
 - The inbound auto-reply ("Got it! Mikey will get back to you soon") is removed —
   customers no longer get an automatic text; Mikey replies personally.
 
-The Netlify files (`netlify/`, `netlify.toml`) are left in place for reference
-but are no longer used.
+The old Netlify files have been removed — this repo now deploys only to Cloudflare.
 
 ## Deploy with NO terminal — Cloudflare dashboard (browser only)
 

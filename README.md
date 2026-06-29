@@ -1,58 +1,64 @@
 # Mikey's Detailing — SMS Dashboard
 
 A self-hosted, Google Voice–style texting dashboard for **Mikey's Mobile Detailing**,
-running on Netlify (no Cloudflare). Everything lives in this GitHub repo and edits
-auto-deploy. Live at **https://mikeysms.netlify.app**.
+running as a **Cloudflare Worker**. Everything lives in this GitHub repo and edits
+auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.workers.dev**.
+
+> Migrated off Netlify → Cloudflare Workers. See **CLOUDFLARE-SETUP.md** for the
+> full deploy walkthrough (browser-only, no terminal needed).
 
 ## Features
-- **Google Voice–style UI** (red & black): conversation list, search, unread badges,
-  message bubbles, mark-read-on-open, Enter to send.
+- **Mobile-first UI** (red & black): conversation list, search, unread badges,
+  message bubbles, mark-read-on-open, Enter to send. Installs to the home screen
+  as a PWA (app icon, full-screen, offline shell via `public/sw.js`).
+- **PIN / password login** (set the `DASHBOARD_PASSWORD` secret).
 - **Lead pipeline:** mark each conversation **New / Active / Won / Lost**, add custom
   **tags**, and filter the list by status, unread, or scheduled.
 - **Private notes** per customer (vehicle, address, preferences…). Quote-form
   submissions are auto-saved into the notes.
-- **Scheduled send:** pick a date/time (or a quick preset) and the message goes out
-  automatically — handled by a cron function that runs every 5 minutes.
+- **Scheduled send & appointment reminders:** pick a date/time (or a preset) and the
+  message goes out automatically — handled by a **Cron Trigger** every 5 minutes.
 - **Click-to-call:** rings your cell, then bridges the call to the customer through
   your Twilio number (keeps your personal number private).
-- **Quick-reply templates**, contact rename, pin, and archive.
-- **Free-tier friendly:** polls every 20s and pauses when the browser tab is hidden.
+- **AI helpers (optional, Gemini):** conversation summary, draft/polish a reply,
+  and an inbox triage briefing.
+- **Editable quick-reply templates**, contact rename, pin, and archive.
+- **Free-tier friendly:** adaptive polling that backs off and pauses when idle/hidden.
 
 ## How it's built
 ```
-public/index.html                    the dashboard (static, editable in GitHub)
-netlify/functions/api.mjs            API + Twilio webhooks (Netlify Function v2)
-netlify/functions/dispatch-scheduled.mjs  cron: sends due scheduled messages (every 5 min)
-netlify/lib/core.mjs                 shared storage + Twilio logic (Netlify Blobs)
-netlify.toml                         publish = "public", functions dir, esbuild
-package.json                         @netlify/blobs dependency
+public/index.html      the dashboard UI (static, served via Workers static assets)
+public/sw.js           service worker (installable PWA / offline shell)
+public/manifest.webmanifest, icon-*.png, favicon.svg   PWA icons + manifest
+src/index.js           the Worker: API + Twilio webhooks + scheduled() cron handler
+wrangler.toml          Worker config: name, KV binding, static assets, cron trigger
+package.json           dependencies
 ```
-Conversations are stored in **Netlify Blobs** (no database). All secrets come from
-environment variables — never in the code.
+Conversations are stored in **Cloudflare KV** (the `MESSAGES` namespace) — no
+database. All secrets come from **Worker secrets** — never in the code.
 
-## Environment variables (Netlify → Site configuration → Environment variables)
+## Secrets (Cloudflare → Worker → Settings → Variables and Secrets, type = Secret)
 | Variable | Value |
 |---|---|
 | `TWILIO_ACCOUNT_SID` | your Twilio Account SID (`AC…`) |
 | `TWILIO_AUTH_TOKEN` | your Twilio Auth Token |
 | `TWILIO_FROM` | your Twilio number, e.g. `+14256007897` |
 | `MIKEY_PHONE` | your cell, e.g. `+13607975831` |
-| `GEMINI_API_KEY` | Google AI Studio key — powers AI summary / draft / briefing |
-| `GEMINI_MODEL` | *(optional)* model id, defaults to `gemini-2.0-flash` |
+| `DASHBOARD_PASSWORD` | *(optional)* PIN/password to lock the dashboard. If unset, the dashboard is open to anyone with the link. |
+| `GEMINI_API_KEY` | *(optional)* Google AI Studio key — powers AI summary / draft / briefing |
+| `GEMINI_MODEL` | *(optional)* model id, defaults to `gemini-2.5-flash` |
 
 ## Twilio webhooks (your business number)
-- **Messaging** → "A message comes in" → **POST** `https://mikeysms.netlify.app/sms`
-- **Voice** → "A call comes in" → **POST** `https://mikeysms.netlify.app/call`
+- **Messaging** → "A message comes in" → **POST** `https://texting.mikeysdetailingsnohomish.workers.dev/sms`
+- **Voice** → "A call comes in" → **POST** `https://texting.mikeysdetailingsnohomish.workers.dev/call`
 
 ## Website quote form
-Point the form's submit URL to: `https://mikeysms.netlify.app/submit`
+Point the form's submit URL to: `https://texting.mikeysdetailingsnohomish.workers.dev/submit`
 
 ## Endpoints (reference)
 Public: `/submit` `/sms` `/call` `/voicemail` `/voicemail-done`
+Auth: `/api/login` `/api/logout`
 Dashboard API: `/api/health` `/api/threads` `/api/thread` `/api/send` `/api/meta`
 `/api/schedule` `/api/unschedule` `/api/call` `/api/read` `/api/insights`
+`/api/templates` `/api/migrate`
 AI (Gemini): `/api/ai/summary` `/api/ai/draft` `/api/ai/triage`
-
-> Note: there is no password — the dashboard is open to anyone with the link. To add
-> a lock back later, re-enable the `x-dashboard-pass` check in `api.mjs` and a login
-> screen in `index.html`.
