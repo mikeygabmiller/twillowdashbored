@@ -158,25 +158,57 @@ function escapeXml(s) {
   return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+// Resolve and validate Twilio REST credentials. Trims surrounding whitespace
+// because env vars pasted into a host dashboard frequently carry a stray
+// newline or space, which makes Twilio reject the Basic-auth username with a
+// confusing 401 (error 20003, "invalid username").
+function twilioCreds() {
+  const sid = (process.env.TWILIO_ACCOUNT_SID || '').trim();
+  const token = (process.env.TWILIO_AUTH_TOKEN || '').trim();
+  const missing = [];
+  if (!sid) missing.push('TWILIO_ACCOUNT_SID');
+  if (!token) missing.push('TWILIO_AUTH_TOKEN');
+  if (missing.length) {
+    throw new Error(`Twilio is not configured: missing ${missing.join(' and ')}. Set these environment variables and redeploy.`);
+  }
+  if (!/^AC[0-9a-fA-F]{32}$/.test(sid)) {
+    throw new Error('Twilio TWILIO_ACCOUNT_SID looks wrong — it must be your Account SID starting with "AC" (not an API Key "SK…" or other value). Check it in the Twilio Console.');
+  }
+  return { sid, token, auth: `Basic ${btoa(`${sid}:${token}`)}` };
+}
+
+// Turn a failed Twilio REST response into a clear, actionable error.
+async function twilioError(res, label) {
+  const text = await res.text();
+  let detail = text;
+  try {
+    const data = JSON.parse(text);
+    if (data && data.message) detail = data.message;
+    // 20003 = authentication error (bad Account SID / Auth Token).
+    if (data && data.code === 20003) {
+      return new Error(`${label} failed: Twilio rejected the credentials (authentication error). Double-check TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN in your environment — they may be wrong, swapped, or contain extra spaces.`);
+    }
+  } catch { /* not JSON — fall back to raw text */ }
+  return new Error(`${label} failed: Twilio ${res.status} — ${detail}`);
+}
+
 export async function sendSms(to, body) {
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
+  const { sid, auth } = twilioCreds();
   const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
     method: 'POST',
     headers: {
-      'Authorization': `Basic ${btoa(`${sid}:${token}`)}`,
+      'Authorization': auth,
       'Content-Type': 'application/x-www-form-urlencoded',
     },
     body: new URLSearchParams({ From: process.env.TWILIO_FROM, To: to, Body: body }),
   });
-  if (!res.ok) throw new Error(`Twilio ${res.status}: ${await res.text()}`);
+  if (!res.ok) throw await twilioError(res, 'Sending text');
   return res.json();
 }
 
 // Click-to-call: ring Mikey's cell, then bridge the call to the customer.
 export async function placeBridgeCall(customer) {
-  const sid = process.env.TWILIO_ACCOUNT_SID;
-  const token = process.env.TWILIO_AUTH_TOKEN;
+  const { sid, auth } = twilioCreds();
   const from = process.env.TWILIO_FROM;
   const twiml =
     `<Response><Say voice="alice">Connecting your call.</Say>` +
@@ -184,12 +216,12 @@ export async function placeBridgeCall(customer) {
   const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Calls.json`, {
     method: 'POST',
     headers: {
-      'Authorization': `Basic ${btoa(`${sid}:${token}`)}`,
+      'Authorization': auth,
       'Content-Type': 'application/x-www-form-urlencoded',
     },
     body: new URLSearchParams({ To: process.env.MIKEY_PHONE, From: from, Twiml: twiml }),
   });
-  if (!res.ok) throw new Error(`Twilio call ${res.status}: ${await res.text()}`);
+  if (!res.ok) throw await twilioError(res, 'Placing call');
   return res.json();
 }
 
