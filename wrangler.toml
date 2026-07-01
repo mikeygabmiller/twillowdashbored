@@ -18,9 +18,11 @@ directory = "./public"
 binding = "MESSAGES"
 id = "e3305474d22a48ac97265b394aba685e"
 
-# Scheduled-send dispatcher — runs every 5 minutes (scheduled() handler).
+# Scheduled-send dispatcher (scheduled() handler). Runs every minute so delayed
+# auto-replies and appointment reminders land on time (e.g. the 3.5-min first
+# reach-out). Well within the free tier (~1,440 runs/day vs 100k/day).
 [triggers]
-crons = ["*/5 * * * *"]
+crons = ["* * * * *"]
 
 # Secrets (set once, not stored here):
 #   npx wrangler secret put TWILIO_ACCOUNT_SID

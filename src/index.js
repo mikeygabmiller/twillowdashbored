@@ -114,10 +114,12 @@ async function handleSubmit(request) {
     notes ? `Notes: ${notes}` : null, ``, `Open the dashboard to reply to ${name.split(' ')[0]}.`,
   ].filter((s) => s !== null).join('\n');
 
-  const [r1, r2] = await Promise.allSettled([
-    consent ? sendSms(clientPhone, clientMsg) : Promise.resolve({ skipped: true }),
-    sendSms(ENV.MIKEY_PHONE, mikeyMsg),
-  ]);
+  // Hold the customer's first auto-reply for a few minutes so it reads like Mikey
+  // personally texting back, not an instant bot. Mikey's own lead alert still goes
+  // out immediately below.
+  const FIRST_REACHOUT_DELAY_MS = 210000; // 3.5 minutes
+
+  const mikeySms = await sendSms(ENV.MIKEY_PHONE, mikeyMsg).then(() => 'fulfilled').catch(() => 'rejected');
 
   // Start the conversation, tag as a new lead, store form details as a note.
   const thread = await loadThread(clientPhone);
@@ -130,13 +132,20 @@ async function handleSubmit(request) {
     notes ? `Notes: ${notes}` : null,
   ].filter(Boolean).join('\n');
   if (detail && !thread.notes) thread.notes = `Quote request (${new Date().toLocaleDateString()}):\n${detail}`;
-  // Record the auto-text in the thread only if we actually sent it.
-  if (consent) thread.messages.push({ id: genId(), dir: 'out', body: clientMsg, ts: Date.now(), kind: 'auto' });
+  // Queue the first reach-out (if they consented) instead of sending it now. The
+  // scheduled-send cron delivers it ~3.5 min later and records it in the thread;
+  // until then it shows as "scheduled to send" so Mikey can cancel and reply himself.
+  let clientSms = 'skipped';
+  if (consent) {
+    thread.scheduled.push({ id: genId(), body: clientMsg, sendAt: Date.now() + FIRST_REACHOUT_DELAY_MS });
+    thread.scheduled.sort((a, b) => a.sendAt - b.sendAt);
+    clientSms = 'scheduled';
+  }
   await saveThread(thread);
   await updateIndexEntry(thread);
 
-  const ok = r1.status === 'fulfilled' && r2.status === 'fulfilled';
-  return cors(json({ ok, clientSms: r1.status, mikeySms: r2.status }, ok ? 200 : 207));
+  const ok = mikeySms === 'fulfilled';
+  return cors(json({ ok, clientSms, mikeySms }, ok ? 200 : 207));
 }
 
 async function handleInboundSms(request) {
