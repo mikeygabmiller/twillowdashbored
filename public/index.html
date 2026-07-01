@@ -1138,20 +1138,24 @@
   }
   function aiDraft(){
     var t=state.thread;if(!t)return;
+    var inp=el("msgInput");var prev=inp.value;
     var b=el("draftBtn");b.disabled=true;b.innerHTML='<span class="spin"></span>';
     post("/api/ai/draft",{phone:t.phone}).then(function(d){
-      if(d&&d.ok&&d.draft){el("msgInput").value=d.draft;autoGrow();updateCount();el("msgInput").focus();toast("Draft ready — edit & send")}
+      if(d&&d.ok&&d.draft){inp.value=d.draft;autoGrow();updateCount();inp.focus();
+        toast("Draft ready — edit & send",{undo:function(){inp.value=prev;autoGrow();updateCount();inp.focus()}})}
       else toast("Draft failed: "+((d&&d.error)||"error"),{bad:true});
     }).catch(function(){toast("Network error",{bad:true})})
     .then(function(){var bb=el("draftBtn");bb.disabled=false;bb.innerHTML=ic("sparkles",21)});
   }
   function aiPolish(){
     var t=state.thread;if(!t)return;
-    var inp=el("msgInput");var text=inp.value.trim();
+    var inp=el("msgInput");var text=inp.value.trim();var original=inp.value;
     if(!text){toast("Type a reply first — polish cleans up what you wrote",{bad:true});return}
     var b=el("polishBtn");b.disabled=true;b.innerHTML='<span class="spin"></span>';
     post("/api/ai/draft",{phone:t.phone,text:text}).then(function(d){
-      if(d&&d.ok&&d.draft){inp.value=d.draft;autoGrow();updateCount();inp.focus();toast("Polished — review & send")}
+      if(d&&d.ok&&d.draft){inp.value=d.draft;autoGrow();updateCount();inp.focus();
+        // Keep the user's original words one tap away — polish never silently wipes them.
+        toast("Polished — tap Undo to restore your words",{undo:function(){inp.value=original;autoGrow();updateCount();inp.focus()}})}
       else toast("Polish failed: "+((d&&d.error)||"error"),{bad:true});
     }).catch(function(){toast("Network error",{bad:true})})
     .then(function(){var bb=el("polishBtn");if(bb){bb.disabled=false;bb.innerHTML=ic("wand",21)}});
