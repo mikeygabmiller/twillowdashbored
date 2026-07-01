@@ -716,7 +716,7 @@ function normalizePhone(raw) {
 }
 
 // ===========================================================================
-// Scheduled-send dispatch (cron every 5 min — see wrangler.toml [triggers])
+// Scheduled-send dispatch (cron every minute — see wrangler.toml [triggers])
 // ===========================================================================
 async function dispatchDueScheduled(now = Date.now()) {
   const index = await loadIndex();
@@ -726,7 +726,13 @@ async function dispatchDueScheduled(now = Date.now()) {
     const thread = await loadThread(entry.phone);
     const due = (thread.scheduled || []).filter((s) => s.sendAt <= now);
     if (!due.length) continue;
+    // Reserve the due items FIRST — remove them and persist BEFORE sending. KV is
+    // eventually consistent and the cron runs every minute, so if we sent first and
+    // saved after, an overlapping/next run could read the stale queue and text the
+    // customer twice. Reserving first makes it at-most-once (a rare crash drops a
+    // message rather than double-sending it — the safer failure for customer texts).
     thread.scheduled = (thread.scheduled || []).filter((s) => s.sendAt > now);
+    await saveThread(thread);
     for (const s of due) {
       try {
         await sendSms(thread.phone, s.body);
