@@ -78,7 +78,9 @@ export async function geminiGenerate(prompt, opts = {}) {
     contents: [{ parts: [{ text: prompt }] }],
     generationConfig: {
       temperature: opts.temperature == null ? 0.4 : opts.temperature,
-      maxOutputTokens: opts.maxTokens || 1024,
+      // Give the model plenty of room so replies/summaries finish their thought.
+      // gemini-2.0-flash supports up to 8192 output tokens.
+      maxOutputTokens: opts.maxTokens || 2048,
     },
   };
   if (opts.json) body.generationConfig.responseMimeType = 'application/json';
@@ -88,8 +90,32 @@ export async function geminiGenerate(prompt, opts = {}) {
   );
   if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const data = await res.json();
-  const parts = (((data.candidates || [])[0] || {}).content || {}).parts || [];
-  return parts.map((p) => p.text || '').join('').trim();
+  const candidate = (data.candidates || [])[0] || {};
+  const parts = (candidate.content || {}).parts || [];
+  const text = parts.map((p) => p.text || '').join('').trim();
+  // If the model stopped because it ran out of tokens, the last sentence is a
+  // dangling fragment. Trim back to the last complete sentence so the reader
+  // never sees text cut off mid-word. (JSON responses are left untouched so we
+  // don't corrupt the structure — those callers parse and validate downstream.)
+  if (candidate.finishReason === 'MAX_TOKENS' && !opts.json) {
+    return trimToCompleteSentence(text);
+  }
+  return text;
+}
+
+// Trim a possibly-truncated string back to its last sentence-ending punctuation
+// so a cut-off final fragment is dropped rather than shown mid-thought. Falls
+// back to the original text if there's no earlier sentence boundary to cut to.
+function trimToCompleteSentence(text) {
+  if (!text) return text;
+  const lastEnd = Math.max(
+    text.lastIndexOf('. '), text.lastIndexOf('! '), text.lastIndexOf('? '),
+    text.lastIndexOf('.\n'), text.lastIndexOf('!\n'), text.lastIndexOf('?\n'),
+  );
+  // Also handle punctuation at the very end (e.g. a complete final sentence).
+  if (/[.!?]["')\]]?$/.test(text)) return text;
+  if (lastEnd > 0) return text.slice(0, lastEnd + 1).trim();
+  return text;
 }
 
 // Load a thread, filling in any fields missing from older saved data.

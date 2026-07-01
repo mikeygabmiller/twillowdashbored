@@ -46,6 +46,7 @@ export default async function handler(request) {
     if (request.method === 'GET'  && pathname === '/api/insights')   return apiInsights();
     if (request.method === 'POST' && pathname === '/api/ai/summary') return apiAiSummary(request);
     if (request.method === 'POST' && pathname === '/api/ai/draft')   return apiAiDraft(request);
+    if (request.method === 'POST' && pathname === '/api/ai/polish')  return apiAiPolish(request);
     if (request.method === 'POST' && pathname === '/api/ai/triage')  return apiAiTriage();
 
     return json({ ok: true, message: 'Mikeys SMS backend running.', seenPath: pathname }, 200);
@@ -340,7 +341,7 @@ async function apiAiSummary(request) {
     `"tags": array of up to 4 short labels like "Truck","Ceramic","VIP","Quote sent","Needs follow-up"}\n\n` +
     `Conversation:\n${transcript(thread)}`;
   try {
-    const text = await geminiGenerate(prompt, { json: true, maxTokens: 800 });
+    const text = await geminiGenerate(prompt, { json: true, maxTokens: 1024 });
     let parsed = {};
     try { parsed = JSON.parse(text); } catch { parsed = { summary: text }; }
     return json({
@@ -367,8 +368,32 @@ async function apiAiDraft(request) {
     (hint ? `Goal of this reply: ${hint}. ` : '') +
     `\n\nConversation so far:\n${transcript(thread)}\n\nReply:`;
   try {
-    const text = await geminiGenerate(prompt, { temperature: 0.7, maxTokens: 400 });
+    const text = await geminiGenerate(prompt, { temperature: 0.7, maxTokens: 1024 });
     return json({ ok: true, draft: text.replace(/^["']|["']$/g, '').trim() });
+  } catch (err) {
+    return json({ ok: false, error: String(err.message || err) }, 502);
+  }
+}
+
+async function apiAiPolish(request) {
+  const data = await readJson(request);
+  const phone = normalizePhone(data.phone);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  const text = String(data.text || '').trim();
+  if (!text) return json({ ok: false, error: 'no_text' }, 422);
+  const thread = await loadThread(phone);
+  const prompt =
+    `You are helping Mikey from Mikey's Mobile Detailing clean up a text message before he sends it. ` +
+    `Rewrite the DRAFT below in Mikey's own voice: keep his meaning, intent, and any specific details ` +
+    `(prices, dates, times, names) exactly as he wrote them. Just fix grammar, spelling, and clarity, ` +
+    `and make the tone friendly and professional. Keep it about the same length — do NOT add new offers, ` +
+    `greetings, or a signature, and do NOT invent information he didn't include. ` +
+    `Finish every sentence; never cut off mid-thought. Return ONLY the rewritten message, nothing else.\n\n` +
+    (thread.messages.length ? `For context, here is the recent conversation:\n${transcript(thread)}\n\n` : '') +
+    `DRAFT to rewrite:\n${text}\n\nRewritten message:`;
+  try {
+    const out = await geminiGenerate(prompt, { temperature: 0.5, maxTokens: 1024 });
+    return json({ ok: true, polished: out.replace(/^["']|["']$/g, '').trim() });
   } catch (err) {
     return json({ ok: false, error: String(err.message || err) }, 502);
   }
@@ -390,7 +415,7 @@ async function apiAiTriage() {
     `Customers who are WAITING for a reply are top priority; longest waits first. Be concise and practical. ` +
     `Keep each bullet to one complete sentence and finish your final bullet.\n\n${lines}`;
   try {
-    const briefing = await geminiGenerate(prompt, { maxTokens: 1200 });
+    const briefing = await geminiGenerate(prompt, { maxTokens: 2048 });
     return json({ ok: true, briefing });
   } catch (err) {
     return json({ ok: false, error: String(err.message || err) }, 502);

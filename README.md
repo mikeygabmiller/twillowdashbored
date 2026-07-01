@@ -51,7 +51,7 @@ Point the form's submit URL to: `https://mikeysms.netlify.app/submit`
 Public: `/submit` `/sms` `/call` `/voicemail` `/voicemail-done`
 Dashboard API: `/api/health` `/api/threads` `/api/thread` `/api/send` `/api/meta`
 `/api/schedule` `/api/unschedule` `/api/call` `/api/read` `/api/insights`
-AI (Gemini): `/api/ai/summary` `/api/ai/draft` `/api/ai/triage`
+AI (Gemini): `/api/ai/summary` `/api/ai/draft` `/api/ai/polish` `/api/ai/triage`
 
 > Note: there is no password — the dashboard is open to anyone with the link. To add
 > a lock back later, re-enable the `x-dashboard-pass` check in `api.mjs` and a login
