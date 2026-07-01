@@ -439,7 +439,7 @@ async function apiAiSummary(request) {
     `"tags": array of up to 4 short labels like "Truck","Ceramic","VIP","Quote sent","Needs follow-up"}\n\n` +
     `Conversation:\n${transcript(thread)}`;
   try {
-    const text = await geminiGenerate(prompt, { json: true, maxTokens: 800 });
+    const text = await geminiGenerate(prompt, { json: true, maxTokens: 1200 });
     let parsed = {};
     try { parsed = JSON.parse(text); } catch { parsed = { summary: text }; }
     return json({
@@ -480,7 +480,7 @@ async function apiAiDraft(request) {
       `\n\nConversation so far:\n${transcript(thread)}\n\nReply:`;
   }
   try {
-    const text = await geminiGenerate(prompt, { temperature: 0.7, maxTokens: 400 });
+    const text = await geminiGenerate(prompt, { temperature: 0.7, maxTokens: 800 });
     return json({ ok: true, draft: text.replace(/^["']|["']$/g, '').trim() });
   } catch (err) {
     return json({ ok: false, error: String(err.message || err) }, 502);
@@ -503,7 +503,7 @@ async function apiAiTriage() {
     `Customers who are WAITING for a reply are top priority; longest waits first. Be concise and practical. ` +
     `Keep each bullet to one complete sentence and finish your final bullet.\n\n${lines}`;
   try {
-    const briefing = await geminiGenerate(prompt, { maxTokens: 1200 });
+    const briefing = await geminiGenerate(prompt, { maxTokens: 2000 });
     return json({ ok: true, briefing });
   } catch (err) {
     return json({ ok: false, error: String(err.message || err) }, 502);
@@ -629,22 +629,34 @@ async function geminiGenerate(prompt, opts = {}) {
   const key = ENV.GEMINI_API_KEY;
   if (!key) throw new Error('GEMINI_API_KEY not set');
   const model = ENV.GEMINI_MODEL || 'gemini-2.5-flash';
-  const body = {
-    contents: [{ parts: [{ text: prompt }] }],
-    generationConfig: {
-      temperature: opts.temperature == null ? 0.4 : opts.temperature,
-      maxOutputTokens: opts.maxTokens || 1024,
-    },
+  const gen = {
+    temperature: opts.temperature == null ? 0.4 : opts.temperature,
+    maxOutputTokens: opts.maxTokens || 1024,
   };
-  if (opts.json) body.generationConfig.responseMimeType = 'application/json';
+  if (opts.json) gen.responseMimeType = 'application/json';
+  // Gemini 2.5 models "think" by default, and those hidden thinking tokens are
+  // spent out of maxOutputTokens — which was truncating replies mid-sentence
+  // (and sometimes leaving nothing at all). These are short, direct tasks, so
+  // turn thinking off and give the whole budget to the actual answer.
+  if (/2\.5|thinking/i.test(model)) gen.thinkingConfig = { thinkingBudget: 0 };
+  const body = { contents: [{ parts: [{ text: prompt }] }], generationConfig: gen };
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
   );
   if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
   const data = await res.json();
-  const parts = (((data.candidates || [])[0] || {}).content || {}).parts || [];
-  return parts.map((p) => p.text || '').join('').trim();
+  const cand = (data.candidates || [])[0] || {};
+  const parts = ((cand.content || {}).parts) || [];
+  let text = parts.map((p) => p.text || '').join('').trim();
+  // Safety net: if the model still bumped the token ceiling, drop a dangling
+  // partial sentence so the user never sees a chopped-off half-word. (Not for
+  // JSON responses — trimming those would corrupt the payload.)
+  if (!opts.json && cand.finishReason === 'MAX_TOKENS' && text) {
+    const m = text.match(/^[\s\S]*[.!?…"”')\]]/);
+    if (m && m[0].length > 40) text = m[0].trim();
+  }
+  return text;
 }
 
 // ===========================================================================
