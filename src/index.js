@@ -213,6 +213,24 @@ async function apiHealth() {
   let storage = 'ok';
   try { await kv().get('__health__'); }
   catch (e) { storage = 'error: ' + String((e && e.message) || e); }
+  // Credential SHAPE diagnostic — reports whether the Twilio creds look valid
+  // (prefix / length / stray whitespace) WITHOUT ever exposing the secret values.
+  const sid = ENV.TWILIO_ACCOUNT_SID || '';
+  const token = ENV.TWILIO_AUTH_TOKEN || '';
+  const from = ENV.TWILIO_FROM || '';
+  const twilio = {
+    sidPresent: !!sid,
+    sidPrefix: sid.slice(0, 2),                 // should be "AC"
+    sidLen: sid.length,                         // should be 34
+    sidLooksValid: /^AC[0-9a-f]{32}$/i.test(sid),
+    tokenPresent: !!token,
+    tokenLen: token.length,                     // should be 32
+    fromPresent: !!from,
+    from,                                       // your Twilio number (not secret)
+    mikeyPresent: !!ENV.MIKEY_PHONE,
+    whitespaceInSid: /\s/.test(sid),
+    whitespaceInToken: /\s/.test(token),
+  };
   return json({
     ok: true, routing: 'worker-reached',
     env: {
@@ -220,7 +238,7 @@ async function apiHealth() {
       TWILIO_AUTH_TOKEN: Boolean(ENV.TWILIO_AUTH_TOKEN),
       TWILIO_FROM: ENV.TWILIO_FROM || null,
       MIKEY_PHONE: ENV.MIKEY_PHONE || null,
-    }, storage,
+    }, twilio, storage,
   });
 }
 
