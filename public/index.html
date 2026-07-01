@@ -392,7 +392,7 @@
         <button class="btn icon" id="tplBtn" data-ic="zap" title="Quick replies" aria-label="Quick replies"></button>
         <button class="btn icon" id="schedBtn" data-ic="calendar-clock" title="Schedule send" aria-label="Schedule send"></button>
         <button class="btn icon" id="remBtn" data-ic="bell" title="Appointment reminder" aria-label="Appointment reminder"></button>
-        <button class="btn icon" id="draftBtn" data-ic="sparkles" title="AI draft reply" aria-label="AI draft reply"></button>
+        <button class="btn icon" id="draftBtn" data-ic="sparkles" title="AI: polish what you typed, or draft a reply if empty" aria-label="AI polish or draft reply"></button>
         <div class="spacer"></div>
         <span id="charCount" style="color:var(--muted2);font-size:11px"></span>
         <div class="menu" id="tplMenu" style="display:none"></div>
@@ -968,14 +968,28 @@
     }).catch(function(){toast("Network error",{bad:true})})
     .then(function(){var bb=el("aiSummarizeBtn");bb.disabled=false;bb.innerHTML=ic("sparkles",16)+"<span>Re-summarize</span>"});
   }
+  // Sparkles button in the composer. If the box is empty it writes a fresh
+  // draft (autowrite). If you've already typed something it polishes YOUR words
+  // instead of throwing them away — and keeps the original so you can undo.
   function aiDraft(){
     var t=state.thread;if(!t)return;
+    var inp=el("msgInput");var typed=inp.value.trim();
     var b=el("draftBtn");b.disabled=true;b.innerHTML='<span class="spin"></span>';
-    post("/api/ai/draft",{phone:t.phone}).then(function(d){
-      if(d&&d.ok&&d.draft){el("msgInput").value=d.draft;autoGrow();updateCount();el("msgInput").focus();toast("Draft ready — edit & send")}
-      else toast("Draft failed: "+((d&&d.error)||"error"),{bad:true});
-    }).catch(function(){toast("Network error",{bad:true})})
-    .then(function(){var bb=el("draftBtn");bb.disabled=false;bb.innerHTML=ic("sparkles",21)});
+    var done=function(){var bb=el("draftBtn");bb.disabled=false;bb.innerHTML=ic("sparkles",21)};
+    if(typed){
+      var original=inp.value;
+      post("/api/ai/polish",{phone:t.phone,text:typed}).then(function(d){
+        if(d&&d.ok&&d.polished){
+          inp.value=d.polished;autoGrow();updateCount();inp.focus();
+          toast("Polished your reply",{undo:function(){inp.value=original;autoGrow();updateCount();inp.focus()}});
+        }else toast("Polish failed: "+((d&&d.error)||"error"),{bad:true});
+      }).catch(function(){toast("Network error",{bad:true})}).then(done);
+    }else{
+      post("/api/ai/draft",{phone:t.phone}).then(function(d){
+        if(d&&d.ok&&d.draft){inp.value=d.draft;autoGrow();updateCount();inp.focus();toast("Draft ready — edit & send")}
+        else toast("Draft failed: "+((d&&d.error)||"error"),{bad:true});
+      }).catch(function(){toast("Network error",{bad:true})}).then(done);
+    }
   }
 
   function saveMeta(patch){
