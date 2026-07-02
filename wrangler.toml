@@ -18,9 +18,11 @@ directory = "./public"
 binding = "MESSAGES"
 id = "e3305474d22a48ac97265b394aba685e"
 
-# Scheduled-send dispatcher (scheduled() handler). Runs every minute so delayed
-# auto-replies and appointment reminders land on time (e.g. the 3.5-min first
-# reach-out). Well within the free tier (~1,440 runs/day vs 100k/day).
+# Minute cron (scheduled() handler): delivers due scheduled sends (delayed auto-
+# replies, appointment reminders, the 3.5-min first reach-out) AND advances the
+# auto follow-up engine (surfaces nudges, fires autopilot sends). Well within the
+# free tier (~1,440 runs/day vs 100k/day); the engine uses the thread index's
+# cached next-due time to only load conversations that actually need action.
 [triggers]
 crons = ["* * * * *"]
 
