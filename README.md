@@ -17,7 +17,17 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
 - **Private notes** per customer (vehicle, address, preferences…). Quote-form
   submissions are auto-saved into the notes.
 - **Scheduled send & appointment reminders:** pick a date/time (or a preset) and the
-  message goes out automatically — handled by a **Cron Trigger** every 5 minutes.
+  message goes out automatically — handled by a **Cron Trigger** every minute.
+- **Auto follow-up engine:** every conversation is watched for context — who spoke
+  last, how long ago, and its lead status — and a **suggested nudge (what to say +
+  when)** surfaces in a dedicated Follow-ups tab, on the conversation, and as a badge.
+  Cadences: a reply you owe a waiting customer; an escalating chase on unanswered
+  outreach (≈1d → 3d → 7d, then it stops); a review ask after a **Won** job; a rebook
+  reminder months later; and a revival for a **Lost** lead. Drafts are AI-written
+  (Gemini) with template fallbacks. One tap to Send / Edit / Snooze / Skip, or flip on
+  **Autopilot** to have the safe nudges send themselves (quiet-hours aware; replies you
+  owe a customer always wait for your approval). All tunable per-contact and globally
+  in the menu.
 - **Click-to-call:** rings your cell, then bridges the call to the customer through
   your Twilio number (keeps your personal number private).
 - **Instant email alerts (optional, Resend):** get emailed the moment a text,
@@ -80,4 +90,5 @@ Auth: `/api/login` `/api/logout`
 Dashboard API: `/api/health` `/api/threads` `/api/thread` `/api/send` `/api/meta`
 `/api/schedule` `/api/unschedule` `/api/call` `/api/read` `/api/insights`
 `/api/alert-test` `/api/templates` `/api/migrate`
+`/api/followups` `/api/followup` `/api/config`
 AI (Gemini): `/api/ai/summary` `/api/ai/draft` `/api/ai/triage`

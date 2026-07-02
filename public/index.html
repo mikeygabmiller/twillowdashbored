@@ -180,6 +180,56 @@
   .sched-item{display:flex;align-items:center;gap:8px;font-size:12.5px;color:#cfe6f5;padding:4px 0}
   .sched-item .x{margin-left:auto;color:#9fb4c4;cursor:pointer;border:none;background:none;font-size:16px}
 
+  /* ---- auto follow-up ---- */
+  .followup-banner{margin:8px 14px 0;padding:12px 14px;background:linear-gradient(135deg,#1c1708,#171310);border:1px solid #4a3a12;border-radius:13px;border-left:3px solid #f5b842}
+  .fu-banner-top{display:flex;align-items:center;gap:7px;margin-bottom:8px}
+  .fu-banner-top .t{font-size:11px;color:#f5c563;font-weight:700;text-transform:uppercase;letter-spacing:.4px;display:flex;align-items:center;gap:5px}
+  .fu-udot{width:8px;height:8px;border-radius:50%;background:#f5b842;flex:none}
+  .fu-udot.high{background:#ff5a5f;box-shadow:0 0 0 3px rgba(255,90,95,.18)}
+  .fu-udot.low{background:#8a93a3}
+  .fu-reason{font-size:13px;color:#e9dcc0;line-height:1.4;margin-bottom:9px}
+  .fu-draft{background:rgba(0,0,0,.28);border:1px solid #3a3320;border-radius:10px;padding:10px 11px;font-size:13.5px;line-height:1.5;color:#f3ead6;white-space:pre-wrap}
+  .fu-draft.empty{color:var(--muted2);font-style:italic}
+  .fu-acts{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+  .fu-acts .btn{flex:1 1 auto;font-size:12.5px;padding:8px 10px;min-width:74px}
+  .fu-acts .btn.accent{flex:2 1 140px}
+  .fu-mini{display:flex;gap:6px;align-items:center;margin-top:9px;font-size:11.5px;color:var(--muted2)}
+  .fu-mini button{background:none;border:none;color:var(--muted2);text-decoration:underline;font-size:11.5px;cursor:pointer;padding:0}
+  .fu-mini .sp{margin:0 2px;opacity:.5}
+
+  /* follow-ups tab cards */
+  .fu-card{background:var(--panel2);border:1px solid var(--line2);border-left:3px solid #f5b842;border-radius:13px;padding:12px 13px;margin-bottom:10px}
+  .fu-card.high{border-left-color:#ff5a5f}
+  .fu-card.low{border-left-color:#8a93a3}
+  .fu-card .top{display:flex;align-items:center;gap:9px;margin-bottom:7px}
+  .fu-card .top .nm{font-weight:700;font-size:14.5px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .fu-card .top .when{margin-left:auto;flex:none;font-size:11px;font-weight:700;color:#f5c563;background:rgba(245,184,66,.13);padding:4px 9px;border-radius:11px}
+  .fu-card.high .top .when{color:#ff8388;background:rgba(255,90,95,.14)}
+  .fu-card .rsn{font-size:12.5px;color:var(--muted);margin-bottom:8px}
+  .fu-card .draft{background:rgba(0,0,0,.22);border:1px solid var(--line);border-radius:10px;padding:9px 11px;font-size:13px;line-height:1.5;color:var(--txt);white-space:pre-wrap;cursor:pointer}
+  .fu-card .acts{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}
+  .fu-card .acts .btn{flex:1 1 auto;font-size:12px;padding:7px 9px}
+  .fu-flag{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:700;color:#f5c563;background:rgba(245,184,66,.13);padding:2px 6px;border-radius:8px}
+  .fu-flag.high{color:#ff8388;background:rgba(255,90,95,.14)}
+
+  /* per-contact follow-up controls in details */
+  #dtFollowup .fu-row{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:13px}
+  #dtFollowup .fu-row .lbl2{flex:1;color:var(--txt);font-weight:500;text-transform:none;letter-spacing:0;margin:0}
+  #dtFollowup .fu-next{font-size:12px;color:var(--muted);padding:6px 0}
+  .fu-settings{display:flex;flex-direction:column;gap:2px}
+  .fu-settings .fu-row{display:flex;align-items:center;gap:9px;padding:8px 0;font-size:13px;color:var(--txt)}
+  .fu-settings .fu-row .lbl2{flex:1}
+  .fu-settings input[type=text],.fu-settings input[type=number]{background:var(--panel2);border:1px solid var(--line);border-radius:9px;color:var(--txt);padding:7px 9px;font-size:13px;width:100%}
+  .fu-settings input[type=number]{width:64px;text-align:center}
+  .fu-settings .hint{font-size:11.5px;color:var(--muted2);line-height:1.45;padding:2px 0 6px}
+  .fu-settings .fu-col{display:flex;flex-direction:column;gap:5px;padding:6px 0}
+
+  /* toggle switch */
+  .sw{position:relative;width:42px;height:24px;flex:none;border-radius:13px;background:var(--line2);border:1px solid var(--line);cursor:pointer;transition:background .15s}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:#fff;transition:left .15s}
+  .sw.on{background:var(--accent);border-color:var(--accent)}
+  .sw.on::after{left:20px}
+
   /* composer */
   .composer{border-top:1px solid var(--line);background:var(--panel);padding:9px 12px calc(9px + var(--safe-bottom))}
   .ctools{display:flex;gap:4px;align-items:center;margin-bottom:7px;position:relative}
@@ -415,6 +465,7 @@
     <nav class="bottomnav" id="bottomnav">
       <button class="navitem active" data-tab="messages"><span class="ic" data-ic="message-square"></span><span class="ndot" id="navUnread"></span>Messages</button>
       <button class="navitem" data-tab="leads"><span class="ic" data-ic="clipboard-list"></span>Leads</button>
+      <button class="navitem" data-tab="followups"><span class="ic" data-ic="list-checks"></span><span class="ndot" id="navFollow"></span>Follow-ups</button>
       <button class="navitem" data-tab="insights"><span class="ic" data-ic="bar-chart"></span><span class="ndot" id="navNeeds"></span>Insights</button>
       <button class="navitem" data-tab="scheduled"><span class="ic" data-ic="calendar-days"></span><span class="ndot" id="navSched"></span>Scheduled</button>
     </nav>
@@ -442,6 +493,7 @@
     </div>
 
     <div class="sched-banner" id="schedBanner" style="display:none"></div>
+    <div class="followup-banner" id="fuBanner" style="display:none"></div>
     <div class="messages" id="messages"></div>
 
     <div class="composer" id="composer" style="display:none">
@@ -512,6 +564,10 @@
           <div class="ai-box" id="aiOut" style="display:none"></div>
         </div>
         <div class="dt-sec">
+          <div class="lbl"><span class="ic-inline" data-ic="list-checks" data-ic-size="13"></span> Auto follow-ups</div>
+          <div id="dtFollowup"></div>
+        </div>
+        <div class="dt-sec">
           <div class="lbl">Notes (private)</div>
           <textarea class="notes" id="dtNotes" placeholder="Vehicle, address, gate code, preferences…"></textarea>
         </div>
@@ -544,8 +600,12 @@
     <div class="ditem" data-tab="messages"><span class="ic" data-ic="message-square"></span>All messages<span class="n" id="mnAll"></span></div>
     <div class="ditem" data-filter="unread"><span class="ic" data-ic="mail"></span>Unread<span class="n" id="mnUnread"></span></div>
     <div class="ditem" data-tab="leads"><span class="ic" data-ic="clipboard-list"></span>Leads pipeline</div>
+    <div class="ditem" data-tab="followups"><span class="ic" data-ic="list-checks"></span>Follow-ups<span class="n" id="mnFollow"></span></div>
     <div class="ditem" data-tab="scheduled"><span class="ic" data-ic="calendar-days"></span>Scheduled<span class="n" id="mnSched"></span></div>
     <div class="ditem" data-tab="archived"><span class="ic" data-ic="archive"></span>Archived<span class="n" id="mnArch"></span></div>
+
+    <div class="sec-lbl">Auto follow-up settings</div>
+    <div class="fu-settings" id="fuSettings"></div>
 
     <div class="sec-lbl">Accent color</div>
     <div class="accent-row" id="accentRow"></div>
@@ -610,7 +670,11 @@
   var REM_WHEN=[["Day before · 6pm","dayBefore18"],["Morning of · 8am","morning8"],["2 hours before","h2"],["1 hour before","h1"]];
   var ACCENTS=[["#ff2e43","#c81e30","Red"],["#3b82f6","#1d4ed8","Blue"],["#22c55e","#15803d","Green"],["#a855f7","#7e22ce","Purple"],["#f97316","#c2410c","Orange"],["#06b6d4","#0e7490","Cyan"]];
 
-  var state={threads:[],filter:"all",tab:"messages",search:"",phone:null,thread:null,insights:null,templates:TEMPLATES.slice()};
+  // Follow-up stage → short label + icon, for badges and headings.
+  var FU_STAGE={owed:["Reply owed","message-square"],nudge:["Follow-up","list-checks"],won:["Win follow-up","check-circle"],lost:["Revival","undo"]};
+  var FU_SNOOZE=[["1 day",24],["3 days",72],["1 week",168]];
+
+  var state={threads:[],filter:"all",tab:"messages",search:"",phone:null,thread:null,insights:null,config:null,templates:TEMPLATES.slice()};
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
   function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
@@ -649,7 +713,12 @@
     "alert":'<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3z"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
     "file-text":'<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/>',
     "dollar":'<line x1="12" x2="12" y1="2" y2="22"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
-    "bot":'<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>'
+    "bot":'<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+    "list-checks":'<path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/>',
+    "clock":'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+    "send":'<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>',
+    "moon":'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+    "rocket":'<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>'
   };
   function ic(name,size,strokeW){
     size=size||22;var p=ICONS[name];if(p==null)return"";
@@ -671,7 +740,7 @@
   function submitLogin(value,wrongMsg){
     el("loginErr").textContent="";
     post("/api/login",{password:value}).then(function(d){
-      if(d&&d.ok){pin="";if(el("loginPass"))el("loginPass").value="";hideLogin();refreshThreads();loadTemplates();checkHealth();startPoll()}
+      if(d&&d.ok){pin="";if(el("loginPass"))el("loginPass").value="";hideLogin();refreshThreads();loadTemplates();checkHealth();startPoll();loadConfig()}
       else{
         el("loginErr").textContent=wrongMsg||"Wrong PIN — try again";
         var box=el("loginBox");if(box){box.classList.remove("pin-shake");void box.offsetWidth;box.classList.add("pin-shake")}
@@ -744,6 +813,7 @@
       unread:active.reduce(function(a,t){return a+(t.unread>0?1:0)},0),
       sched:active.reduce(function(a,t){return a+(t.scheduledCount>0?1:0)},0),
       needs:active.filter(function(t){return t.lastDir==="in"}).length,
+      follow:active.filter(function(t){return t.followupDue}).length,
       arch:state.threads.filter(function(t){return t.archived}).length
     };
   }
@@ -752,8 +822,10 @@
     var nu=el("navUnread");nu.textContent=c.unread;nu.className="ndot"+(c.unread?" show":"");
     var ns=el("navSched");ns.textContent=c.sched;ns.className="ndot"+(c.sched?" show":"");
     var nn=el("navNeeds");nn.textContent=c.needs;nn.className="ndot"+(c.needs?" show":"");
+    var nf=el("navFollow");if(nf){nf.textContent=c.follow;nf.className="ndot"+(c.follow?" show":"")}
     el("mnAll").textContent=c.all||"";el("mnUnread").textContent=c.unread||"";
     el("mnSched").textContent=c.sched||"";el("mnArch").textContent=c.arch||"";
+    if(el("mnFollow"))el("mnFollow").textContent=c.follow||"";
   }
 
   // ---- reply-time analytics (client mirror of server logic) ----
@@ -802,6 +874,7 @@
   function renderMain(){
     renderFilters();refreshBadges();
     if(state.tab==="leads")return renderLeads();
+    if(state.tab==="followups")return renderFollowups();
     if(state.tab==="insights")return renderInsights();
     if(state.tab==="scheduled")return renderList("scheduled");
     if(state.tab==="archived")return renderList("archived");
@@ -820,6 +893,7 @@
         '<div class="prev">'+(t.lastDir==="out"?'<span class="you">You: </span>':'')+'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(t.lastBody||"No messages yet")+'</span></div>'+
         '<div class="meta">'+
           (st?'<span class="badge '+st.cls+'">'+st.label+'</span>':'')+
+          (t.followupDue?'<span class="fu-flag'+(t.fu&&t.fu.urgency==="high"?" high":"")+'">'+ic("list-checks",11)+'follow-up</span>':'')+
           (t.scheduledCount>0?'<span class="sched-flag">'+ic("calendar-clock",12)+t.scheduledCount+'</span>':'')+
           (t.tags||[]).slice(0,2).map(function(x){return '<span class="tag">'+esc(x)+'</span>'}).join('')+
         '</div>'+
@@ -983,6 +1057,165 @@
     .then(function(){if(el("briefBtn")){el("briefBtn").disabled=false;el("briefBtn").innerHTML=ic("sparkles",16)+"<span>Regenerate briefing</span>"}});
   }
 
+  // ---- auto follow-ups ----
+  function fuDueLabel(dueAt){
+    if(!dueAt)return"";
+    var diff=Date.now()-dueAt;
+    return diff>=0?("due "+fmtDur(diff)+" ago"):("in "+fmtDur(-diff));
+  }
+  function threadByPhone(phone){return state.threads.filter(function(x){return x.phone===phone})[0]}
+
+  function renderFollowups(){
+    var box=el("scroll");
+    var ur={high:3,normal:2,low:1};
+    var items=state.threads.filter(function(t){return !t.archived&&t.followupDue&&t.fu})
+      .sort(function(a,b){return (ur[b.fu.urgency]||2)-(ur[a.fu.urgency]||2)||(a.fu.dueAt||0)-(b.fu.dueAt||0)});
+    var auto=state.config&&state.config.autopilot;
+    var engineOff=state.config&&state.config.followupsEnabled===false;
+    var head='<div style="display:flex;align-items:center;gap:8px;padding:2px 2px 12px;font-size:12.5px">'+
+      '<span style="display:flex;align-items:center;gap:6px;color:var(--muted)">'+ic("list-checks",15)+' Suggested follow-ups</span>'+
+      '<span style="margin-left:auto;color:var(--muted2)">Autopilot: <b style="color:'+(auto?"var(--green)":"var(--muted)")+'">'+(auto?"On":"Off")+'</b></span></div>';
+    if(engineOff){box.innerHTML=head+'<div class="emptyview"><div class="big">'+ic("list-checks",46)+'</div><div>Follow-ups are turned off</div><div class="sub">Turn the follow-up engine back on in the menu → Auto follow-up settings.</div></div>';return}
+    if(!items.length){
+      box.innerHTML=head+'<div class="emptyview"><div class="big">'+ic("check-circle",46)+'</div><div>No follow-ups due</div><div class="sub">When a conversation goes quiet, a suggested nudge — what to say and when — shows up here automatically.</div></div>';
+      return;
+    }
+    var html=head;
+    items.forEach(function(t){
+      var u=t.fu.urgency||"normal";var stage=FU_STAGE[t.fu.stage]||["Follow-up","list-checks"];
+      html+='<div class="fu-card '+u+'" data-phone="'+esc(t.phone)+'">'+
+        '<div class="top"><span class="nm">'+esc(displayName(t))+'</span><span class="when">'+esc(fuDueLabel(t.fu.dueAt))+'</span></div>'+
+        '<div class="rsn">'+ic(stage[1],12)+' '+esc(t.fu.reason||stage[0])+'</div>'+
+        (t.fu.draft?'<div class="draft" data-open="1">'+esc(t.fu.draft)+'</div>':'<div class="draft empty" data-open="1">Open the conversation to draft a reply →</div>')+
+        '<div class="acts">'+
+          '<button class="btn accent" data-act="send">'+ic("send",14)+' Send</button>'+
+          '<button class="btn" data-act="open">'+ic("pencil",14)+' Edit</button>'+
+          '<button class="btn" data-act="snooze">'+ic("clock",14)+' Snooze</button>'+
+          '<button class="btn" data-act="skip">Skip</button>'+
+        '</div></div>';
+    });
+    box.innerHTML=html;
+    Array.prototype.forEach.call(box.querySelectorAll(".fu-card"),function(card){
+      var phone=card.getAttribute("data-phone");
+      card.querySelector("[data-open]").onclick=function(){openThread(phone)};
+      Array.prototype.forEach.call(card.querySelectorAll("[data-act]"),function(b){
+        b.onclick=function(e){e.stopPropagation();var act=b.getAttribute("data-act");
+          if(act==="open")return openThread(phone);
+          if(act==="send")return fuSendFromCard(threadByPhone(phone),b);
+          if(act==="snooze")return fuSnoozeInline(phone,b);
+          if(act==="skip")return fuAction(phone,{action:"skip"}).then(function(){toast("Follow-up skipped");refreshThreads()});
+        };
+      });
+    });
+  }
+  function fuSendFromCard(t,btn){
+    if(!t)return;var body=(t.fu&&t.fu.draft)||"";
+    if(!body){openThread(t.phone);return}
+    if(!confirm('Send this follow-up to '+displayName(t)+'?\n\n"'+body+'"'))return;
+    btn.disabled=true;
+    fuAction(t.phone,{action:"send",body:body}).then(function(d){
+      if(d&&d.ok){toast("Follow-up sent");refreshThreads()}
+      else{toast("Couldn't send: "+((d&&d.error)||"error"),{bad:true});btn.disabled=false}
+    });
+  }
+  function fuSnoozeInline(phone,btn){
+    var acts=btn.parentNode;
+    acts.innerHTML=FU_SNOOZE.map(function(x){return '<button class="btn" data-h="'+x[1]+'">'+esc(x[0])+'</button>'}).join('')+'<button class="btn" data-h="cancel">'+ic("x",13)+'</button>';
+    Array.prototype.forEach.call(acts.querySelectorAll("[data-h]"),function(b){
+      b.onclick=function(e){e.stopPropagation();var h=b.getAttribute("data-h");
+        if(h==="cancel")return renderFollowups();
+        fuAction(phone,{action:"snooze",hours:+h}).then(function(){toast("Snoozed");refreshThreads()});
+      };
+    });
+  }
+  // POST an action; if it targets the open thread, refresh that view too.
+  function fuAction(phone,body){
+    return post("/api/followup",Object.assign({phone:phone},body)).then(function(d){
+      if(d&&d.ok&&d.thread&&state.phone===phone){state.thread=d.thread;renderThread()}
+      return d;
+    });
+  }
+
+  // ---- chat nudge banner ----
+  function renderFuBanner(t){
+    var fb=el("fuBanner");
+    var sug=(t&&t.followup&&t.followup.suggestion)?t.followup.suggestion:null;
+    if(!sug){fb.style.display="none";return}
+    var u=sug.urgency||"normal";var stage=FU_STAGE[sug.stage]||["Follow-up","list-checks"];
+    fb.style.display="block";
+    fb.innerHTML=
+      '<div class="fu-banner-top"><span class="fu-udot '+u+'"></span><span class="t">'+ic("list-checks",12)+' Suggested follow-up · '+esc(stage[0])+'</span></div>'+
+      '<div class="fu-reason">'+esc(sug.reason||stage[0])+'</div>'+
+      (sug.draft?'<div class="fu-draft">'+esc(sug.draft)+'</div>':'<div class="fu-draft empty">No draft yet — tap regenerate to write one.</div>')+
+      '<div class="fu-acts">'+
+        '<button class="btn accent" id="fuSend">'+ic("send",14)+' Send</button>'+
+        '<button class="btn" id="fuUse">'+ic("pencil",14)+' Edit</button>'+
+        '<button class="btn" id="fuRegen" title="Rewrite">'+ic("refresh-cw",14)+'</button>'+
+      '</div>'+
+      '<div class="fu-mini">'+
+        FU_SNOOZE.map(function(x){return '<button data-sn="'+x[1]+'">Snooze '+esc(x[0])+'</button>'}).join('<span class="sp">·</span>')+
+        '<span class="sp">·</span><button data-skip="1">Skip</button>'+
+      '</div>';
+    el("fuSend").onclick=function(){fuBannerSend(t,sug)};
+    el("fuUse").onclick=function(){el("msgInput").value=sug.draft||"";autoGrow();updateCount();el("msgInput").focus();toast("Loaded into your message — edit & send")};
+    el("fuRegen").onclick=function(){var b=el("fuRegen");b.disabled=true;b.innerHTML='<span class="spin"></span>';fuAction(t.phone,{action:"regen"}).then(function(d){if(!d||!d.ok)toast("Couldn't rewrite",{bad:true})})};
+    Array.prototype.forEach.call(fb.querySelectorAll("[data-sn]"),function(b){b.onclick=function(){fuAction(t.phone,{action:"snooze",hours:+b.getAttribute("data-sn")}).then(function(){toast("Snoozed");loadThread();refreshThreads()})}});
+    fb.querySelector("[data-skip]").onclick=function(){fuAction(t.phone,{action:"skip"}).then(function(){toast("Follow-up skipped");loadThread();refreshThreads()})};
+  }
+  function fuBannerSend(t,sug){
+    var body=(sug&&sug.draft)||"";
+    if(!body){el("fuUse").click();return}
+    var btn=el("fuSend");btn.disabled=true;btn.innerHTML='<span class="spin"></span>';
+    fuAction(t.phone,{action:"send",body:body}).then(function(d){
+      if(d&&d.ok){toast("Follow-up sent");loadThread();refreshThreads()}
+      else{toast("Couldn't send: "+((d&&d.error)||"error"),{bad:true});btn.disabled=false;btn.innerHTML=ic("send",14)+" Send"}
+    });
+  }
+
+  // ---- per-contact follow-up controls (details sheet) ----
+  function renderFollowupControls(){
+    var t=state.thread;var wrap=el("dtFollowup");if(!wrap||!t)return;
+    var fu=t.followup||{};var enabled=fu.enabled!==false;var autoState=fu.auto;
+    var globalAuto=state.config&&state.config.autopilot;
+    var eff=autoState===true?true:(autoState===false?false:!!globalAuto);
+    var html='<div class="fu-row"><span class="lbl2">Follow up this contact</span><span class="sw'+(enabled?" on":"")+'" id="fuEnSw"></span></div>';
+    if(enabled){
+      html+='<div class="fu-row"><span class="lbl2">Send automatically'+(autoState===null?' <span style="color:var(--muted2)">· default</span>':'')+'</span><span class="sw'+(eff?" on":"")+'" id="fuAutoSw"></span></div>';
+      if(fu.snoozeUntil&&fu.snoozeUntil>Date.now())html+='<div class="fu-next">Snoozed until '+esc(fmtFull(fu.snoozeUntil))+' · <button class="tagadd" id="fuUnsnooze" style="padding:2px 8px">Resume</button></div>';
+      var nx=threadByPhone(t.phone);
+      if(nx&&nx.followupNextAt&&!(fu.suggestion))html+='<div class="fu-next">Next check-in '+esc(fuDueLabel(nx.followupNextAt))+'</div>';
+      var log=(fu.log||[]).slice(-3).reverse();
+      if(log.length)html+='<div class="fu-next" style="opacity:.85">Recent: '+esc(log.map(function(l){return (l.action||"")+" "+fmtTime(l.at)}).join(" · "))+'</div>';
+    }
+    wrap.innerHTML=html;
+    el("fuEnSw").onclick=function(){fuAction(t.phone,{action:enabled?"off":"on"}).then(function(){loadThread()})};
+    if(el("fuAutoSw"))el("fuAutoSw").onclick=function(){fuAction(t.phone,{action:"auto",auto:!eff}).then(function(){loadThread()})};
+    if(el("fuUnsnooze"))el("fuUnsnooze").onclick=function(){fuAction(t.phone,{action:"on"}).then(function(){loadThread()})};
+  }
+
+  // ---- global follow-up settings (drawer) ----
+  function loadConfig(){return api("/api/config").then(function(d){if(d&&d.ok){state.config=d.config;renderFuSettings()}})}
+  function saveConfig(patch){
+    return post("/api/config",patch).then(function(d){if(d&&d.ok){state.config=d.config;renderFuSettings();if(state.tab==="followups")renderFollowups()}return d});
+  }
+  function renderFuSettings(){
+    var wrap=el("fuSettings");if(!wrap)return;var c=state.config||{};
+    wrap.innerHTML=
+      '<div class="fu-row"><span class="lbl2">Follow-up engine</span><span class="sw'+(c.followupsEnabled!==false?" on":"")+'" id="cfgEnabled"></span></div>'+
+      '<div class="fu-row"><span class="lbl2">Autopilot <span style="color:var(--muted2);font-weight:400">· auto-send safe nudges</span></span><span class="sw'+(c.autopilot?" on":"")+'" id="cfgAuto"></span></div>'+
+      '<div class="hint">Autopilot sends the nudge, review-ask, rebook and revival texts on its own. A reply you owe a customer is always left for you to approve.</div>'+
+      '<div class="fu-col"><span class="lbl2">Google review link</span><input type="text" id="cfgReview" placeholder="https://g.page/r/…" value="'+esc(c.reviewUrl||"")+'"></div>'+
+      '<div class="fu-row"><span class="lbl2">Rebook reminder after</span><span style="display:flex;align-items:center;gap:6px"><input type="number" id="cfgRebook" min="1" max="365" value="'+(c.rebookDays||90)+'"><span style="color:var(--muted2)">days</span></span></div>'+
+      '<div class="fu-row"><span class="lbl2">Quiet hours</span><span style="display:flex;align-items:center;gap:5px"><input type="number" id="cfgQs" min="0" max="23" value="'+(c.quietStart==null?20:c.quietStart)+'"><span style="color:var(--muted2)">to</span><input type="number" id="cfgQe" min="0" max="23" value="'+(c.quietEnd==null?8:c.quietEnd)+'"></span></div>'+
+      '<div class="hint">'+esc(c.tz||"America/Los_Angeles")+', 24-hour. Suggestions still appear anytime — only automatic sends wait for daytime.</div>';
+    el("cfgEnabled").onclick=function(){saveConfig({followupsEnabled:!(c.followupsEnabled!==false)})};
+    el("cfgAuto").onclick=function(){saveConfig({autopilot:!c.autopilot})};
+    el("cfgReview").onchange=function(){saveConfig({reviewUrl:el("cfgReview").value.trim()})};
+    el("cfgRebook").onchange=function(){saveConfig({rebookDays:+el("cfgRebook").value})};
+    el("cfgQs").onchange=function(){saveConfig({quietStart:+el("cfgQs").value})};
+    el("cfgQe").onchange=function(){saveConfig({quietEnd:+el("cfgQe").value})};
+  }
+
   // ---- swipe to archive ----
   function attachSwipe(node,t,wrap){
     var x0=null,dx=0,active=false;
@@ -1039,6 +1272,7 @@
       return '<div class="sched-item"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(s.body.slice(0,60))+(s.body.length>60?'…':'')+'</span><span style="color:#7dd3fc;margin:0 8px">'+fmtFull(s.sendAt)+'</span><button class="x" data-id="'+s.id+'">'+ic("x",16)+'</button></div>'}).join('');
       Array.prototype.forEach.call(sb.querySelectorAll(".x"),function(b){b.onclick=function(){post("/api/unschedule",{phone:t.phone,id:b.getAttribute("data-id")}).then(function(d){if(d.ok){state.thread=d.thread;renderThread();refreshThreads();toast("Scheduled message canceled")}})}});
     }else sb.style.display="none";
+    renderFuBanner(t);
 
     var box=el("messages");box.innerHTML="";var lastDay="";var lastDir="";
     if(!t.messages.length){box.innerHTML='<div class="empty" style="height:100%"><div class="big">'+ic("message-circle",48)+'</div><div>No messages yet</div><div class="sub">Say hello — your first text starts the conversation.</div></div>'}
@@ -1085,6 +1319,7 @@
     else{da.innerHTML='— set with <span class="ic-inline">'+ic("bell",12)+'</span>';da.title="";da.onclick=null}
 
     renderLinked();
+    renderFollowupControls();
     // reset AI summary box when switching conversations
     if(el("aiOut")._phone!==t.phone){el("aiOut").style.display="none";el("aiOut").innerHTML="";el("aiOut")._phone=t.phone}
   }
@@ -1307,12 +1542,13 @@
   function setTab(tab){
     state.tab=tab;state.phone=null;document.body.classList.remove("viewing");
     el("details").classList.remove("open");el("sheetScrim").classList.remove("show");
-    el("emptyState").style.display="flex";el("chatHead").style.display="none";el("composer").style.display="none";el("schedBanner").style.display="none";
+    el("emptyState").style.display="flex";el("chatHead").style.display="none";el("composer").style.display="none";el("schedBanner").style.display="none";el("fuBanner").style.display="none";
     el("messages").innerHTML="";
     Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.classList.toggle("active",b.getAttribute("data-tab")===tab)});
     el("scroll").scrollTop=0;
     renderMain();
     if(tab==="insights")fetchInsights();
+    if(tab==="followups")refreshThreads();
   }
 
   // ---- drawer ----
@@ -1432,7 +1668,7 @@
   hydrateIcons();
   el("myAvatar").innerHTML=brandGlyph();el("drawerLogo").innerHTML=brandGlyph();el("loginLogo").innerHTML=brandGlyph();
   loadAccent();buildAccents();buildTplMenu();loadTemplates();buildQuickset();
-  renderFilters();refreshThreads();startPoll();checkHealth();
+  renderFilters();refreshThreads();startPoll();checkHealth();loadConfig();
 })();
 </script>
 <script>
