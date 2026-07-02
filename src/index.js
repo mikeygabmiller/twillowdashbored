@@ -86,6 +86,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/submit')         return handleSubmit(request);
   if (request.method === 'POST' && pathname === '/sms')            return handleInboundSms(request);
   if (request.method === 'POST' && pathname === '/call')           return handleInboundCall(request);
+  if (request.method === 'POST' && pathname === '/call-screen')    return handleCallScreen(request);
   if (request.method === 'POST' && pathname === '/voicemail')      return handleVoicemail(request);
   if (request.method === 'POST' && pathname === '/voicemail-done') return handleVoicemailDone(request);
 
@@ -109,6 +110,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/followup')   return apiFollowupAction(request);
   if (request.method === 'GET'  && pathname === '/api/config')     return apiGetConfig();
   if (request.method === 'POST' && pathname === '/api/config')     return apiSaveConfig(request);
+  if (request.method === 'POST' && pathname === '/api/block')      return apiBlock(request);
   if (request.method === 'GET'  && pathname === '/api/migrate')    return apiMigrate(url);
   if (request.method === 'GET'  && pathname === '/api/templates')  return apiGetTemplates();
   if (request.method === 'POST' && pathname === '/api/templates')  return apiSaveTemplates(request);
@@ -205,16 +207,68 @@ async function handleInboundSms(request) {
   return twiml('');
 }
 
-async function handleInboundCall(request) {
-  const form = await request.formData();
-  const from = form.get('From') || 'Unknown';
+// Small TwiML fragment that rings Mikey's cell and then falls through to
+// voicemail — shared by the direct path and the post-screening path.
+function dialMikeyTwiml() {
   const mikeyPhone = normalizePhone(ENV.MIKEY_PHONE) || '+13607975831';
-  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+  return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Dial timeout="20" action="/voicemail" method="POST"><Number>${escapeXml(mikeyPhone)}</Number></Dial>
 </Response>`;
+}
+
+// Inbound call. Two guards run before the call is ever forwarded to Mikey's
+// phone (which is what was letting robocall/spam auto-dialers flood his Google
+// Voice voicemail):
+//   1. Block list — known spam numbers are rejected instantly (no ring, no VM).
+//   2. Press-1 screening gate — the caller must press a key to be connected.
+//      Auto-dialers don't press keys, so they hit <Hangup/> and are never
+//      forwarded. Real customers press 1 and reach Mikey exactly like before.
+// Mikey is only alerted for calls that clear these guards, so the notification
+// flood stops too.
+async function handleInboundCall(request) {
+  const form = await request.formData();
+  const from = form.get('From') || 'Unknown';
+  const fromNorm = normalizePhone(from) || from;
+  const cfg = await loadConfig();
+
+  // 1. Blocked number → reject with a rejected tone. No forward, no voicemail,
+  //    no alert. Costs Mikey nothing and the spammer gets a dead end.
+  if (Array.isArray(cfg.blockedNumbers) && cfg.blockedNumbers.includes(fromNorm)) {
+    return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response><Reject reason="rejected"/></Response>');
+  }
+
+  // 2. Screening gate. Gather waits for a single key; if none is pressed within
+  //    the timeout, Twilio falls through to <Hangup/> and the call is dropped
+  //    without ever forwarding to Mikey — which is what defeats the robo-dialers.
+  if (cfg.callScreening !== false) {
+    const gate = `<?xml version="1.0" encoding="UTF-8"?>
+<Response>
+  <Gather numDigits="1" action="/call-screen" method="POST" timeout="8">
+    <Say voice="alice">Thanks for calling Mikey's Mobile Detailing. If you're a customer, press 1 to reach Mikey.</Say>
+  </Gather>
+  <Hangup/>
+</Response>`;
+    return xmlResponse(gate);
+  }
+
+  // Screening off → original behavior: forward straight to Mikey.
   notifyMikey(`📞 Incoming call from ${from}`, `Incoming call from ${from} to your Mikey's Detailing number.`).catch(() => {});
-  return xmlResponse(xml);
+  return xmlResponse(dialMikeyTwiml());
+}
+
+// Screening gate result. Only reached when a caller actually pressed a key, so
+// a human is on the line. Press 1 → notify Mikey and forward the call. Any other
+// key → polite hangup (still no forward, no voicemail).
+async function handleCallScreen(request) {
+  const form = await request.formData();
+  const from = form.get('From') || 'Unknown';
+  const digits = form.get('Digits') || '';
+  if (digits === '1') {
+    notifyMikey(`📞 Incoming call from ${from}`, `Incoming call from ${from} to your Mikey's Detailing number (passed screening).`).catch(() => {});
+    return xmlResponse(dialMikeyTwiml());
+  }
+  return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="alice">Sorry, I didn\'t get that. Goodbye.</Say><Hangup/></Response>');
 }
 
 async function handleVoicemail(request) {
@@ -974,9 +1028,28 @@ async function apiSaveConfig(request) {
   if (data.quietStart != null && !isNaN(+data.quietStart)) next.quietStart = Math.max(0, Math.min(23, Math.round(+data.quietStart)));
   if (data.quietEnd != null && !isNaN(+data.quietEnd)) next.quietEnd = Math.max(0, Math.min(23, Math.round(+data.quietEnd)));
   if (typeof data.tz === 'string' && data.tz) next.tz = data.tz.slice(0, 64);
+  if (typeof data.callScreening === 'boolean') next.callScreening = data.callScreening;
   await kv().put('config', JSON.stringify(next));
   CFG_CACHE = next;
   return json({ ok: true, config: next });
+}
+
+// Add or remove a number from the call block list. Blocked numbers are rejected
+// instantly at the /call webhook — no ring, no voicemail, no alert.
+async function apiBlock(request) {
+  const data = await readJson(request);
+  const action = data.action === 'unblock' ? 'unblock' : 'block';
+  const phone = normalizePhone(data.phone);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  const next = Object.assign({}, await loadConfig());
+  const list = Array.isArray(next.blockedNumbers) ? next.blockedNumbers.slice() : [];
+  const has = list.includes(phone);
+  if (action === 'block' && !has) list.push(phone);
+  if (action === 'unblock' && has) list.splice(list.indexOf(phone), 1);
+  next.blockedNumbers = list;
+  await kv().put('config', JSON.stringify(next));
+  CFG_CACHE = next;
+  return json({ ok: true, config: next, blockedNumbers: list });
 }
 
 // ===========================================================================
@@ -1034,6 +1107,9 @@ function defaultConfig() {
     quietStart: 20,          // 8pm — no autopilot sends after this local hour…
     quietEnd: 8,             // …until 8am (suggestions still surface anytime)
     tz: 'America/Los_Angeles',
+    callScreening: true,     // press-1 gate on inbound calls — stops robocall/spam
+                             // auto-dialers before they ring your phone or hit voicemail
+    blockedNumbers: [],      // normalized numbers that get rejected instantly (no ring)
   };
 }
 

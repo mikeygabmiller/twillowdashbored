@@ -84,11 +84,26 @@ verify it in Resend, then set `ALERT_FROM` to an address on it.
 ## Website quote form
 Point the form's submit URL to: `https://texting.mikeysdetailingsnohomish.workers.dev/submit`
 
+## Spam-call screening
+Inbound calls are gated before they ever forward to your phone, so robocall
+auto-dialers stop flooding your voicemail:
+- **Press-1 screening** (on by default): callers hear "press 1 to reach Mikey."
+  Bots don't press a key, so they're hung up on and never ring you or leave a
+  voicemail. Real customers press 1 and connect as usual. Toggle it in the menu
+  under **Call screening**.
+- **Block list:** paste a number under **Block a number** in the menu (or POST
+  `/api/block` with `{phone, action:'block'|'unblock'}`) to reject that caller
+  instantly — no ring, no voicemail, no alert.
+
+You're only alerted once a caller clears the gate, so the notification flood
+stops too. No Twilio Console changes are needed — the existing `/call` webhook
+drives everything.
+
 ## Endpoints (reference)
-Public: `/submit` `/sms` `/call` `/voicemail` `/voicemail-done`
+Public: `/submit` `/sms` `/call` `/call-screen` `/voicemail` `/voicemail-done`
 Auth: `/api/login` `/api/logout`
 Dashboard API: `/api/health` `/api/threads` `/api/thread` `/api/send` `/api/meta`
 `/api/schedule` `/api/unschedule` `/api/call` `/api/read` `/api/insights`
 `/api/alert-test` `/api/templates` `/api/migrate`
-`/api/followups` `/api/followup` `/api/config`
+`/api/followups` `/api/followup` `/api/config` `/api/block`
 AI (Gemini): `/api/ai/summary` `/api/ai/draft` `/api/ai/triage`

@@ -1207,13 +1207,35 @@
       '<div class="fu-col"><span class="lbl2">Google review link</span><input type="text" id="cfgReview" placeholder="https://g.page/r/…" value="'+esc(c.reviewUrl||"")+'"></div>'+
       '<div class="fu-row"><span class="lbl2">Rebook reminder after</span><span style="display:flex;align-items:center;gap:6px"><input type="number" id="cfgRebook" min="1" max="365" value="'+(c.rebookDays||90)+'"><span style="color:var(--muted2)">days</span></span></div>'+
       '<div class="fu-row"><span class="lbl2">Quiet hours</span><span style="display:flex;align-items:center;gap:5px"><input type="number" id="cfgQs" min="0" max="23" value="'+(c.quietStart==null?20:c.quietStart)+'"><span style="color:var(--muted2)">to</span><input type="number" id="cfgQe" min="0" max="23" value="'+(c.quietEnd==null?8:c.quietEnd)+'"></span></div>'+
-      '<div class="hint">'+esc(c.tz||"America/Los_Angeles")+', 24-hour. Suggestions still appear anytime — only automatic sends wait for daytime.</div>';
+      '<div class="hint">'+esc(c.tz||"America/Los_Angeles")+', 24-hour. Suggestions still appear anytime — only automatic sends wait for daytime.</div>'+
+      '<div class="fu-row"><span class="lbl2">Call screening <span style="color:var(--muted2);font-weight:400">· stop spam calls</span></span><span class="sw'+(c.callScreening!==false?" on":"")+'" id="cfgScreen"></span></div>'+
+      '<div class="hint">Callers hear "press 1 to reach Mikey." Robo-dialers don\'t press a key, so they never ring your phone or leave voicemail. Real customers press 1 and get through.</div>'+
+      '<div class="fu-col"><span class="lbl2">Block a number</span><span style="display:flex;gap:6px"><input type="text" id="cfgBlockNum" placeholder="+1425…" style="flex:1"><button id="cfgBlockBtn" class="btn" style="white-space:nowrap">Block</button></span></div>'+
+      blockedListHtml(c.blockedNumbers);
     el("cfgEnabled").onclick=function(){saveConfig({followupsEnabled:!(c.followupsEnabled!==false)})};
     el("cfgAuto").onclick=function(){saveConfig({autopilot:!c.autopilot})};
     el("cfgReview").onchange=function(){saveConfig({reviewUrl:el("cfgReview").value.trim()})};
     el("cfgRebook").onchange=function(){saveConfig({rebookDays:+el("cfgRebook").value})};
     el("cfgQs").onchange=function(){saveConfig({quietStart:+el("cfgQs").value})};
     el("cfgQe").onchange=function(){saveConfig({quietEnd:+el("cfgQe").value})};
+    el("cfgScreen").onclick=function(){saveConfig({callScreening:!(c.callScreening!==false)})};
+    el("cfgBlockBtn").onclick=function(){var v=el("cfgBlockNum").value.trim();if(v)blockNumber(v,"block")};
+    Array.prototype.forEach.call(document.querySelectorAll("[data-unblock]"),function(b){
+      b.onclick=function(){blockNumber(b.getAttribute("data-unblock"),"unblock")};
+    });
+  }
+  function blockedListHtml(list){
+    if(!list||!list.length)return '<div class="hint">No blocked numbers yet.</div>';
+    return '<div class="fu-col"><span class="lbl2">Blocked numbers</span>'+list.map(function(n){
+      return '<div class="fu-row" style="padding:4px 0"><span>'+esc(n)+'</span><button class="btn" data-unblock="'+esc(n)+'" style="margin-left:auto">Unblock</button></div>';
+    }).join("")+'</div>';
+  }
+  function blockNumber(phone,action){
+    return post("/api/block",{phone:phone,action:action}).then(function(d){
+      if(d&&d.ok){state.config=d.config;renderFuSettings()}
+      else toast&&toast((d&&d.error)||"Couldn't update block list");
+      return d;
+    });
   }
 
   // ---- swipe to archive ----
