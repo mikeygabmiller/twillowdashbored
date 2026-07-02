@@ -553,6 +553,7 @@
     <div class="sec-lbl">Tools</div>
     <div class="ditem" id="refreshItem"><span class="ic" data-ic="refresh-cw"></span>Refresh now</div>
     <div class="ditem" id="healthItem"><span class="ic" data-ic="activity"></span>Connection<span class="n"><span class="health" id="healthBadge"><span class="dotc"></span><span id="healthTxt">check</span></span></span></div>
+    <div class="ditem" id="alertTestItem"><span class="ic" data-ic="bell"></span>Send test alert</div>
     <div class="ditem" id="logoutItem"><span class="ic" data-ic="log-out"></span>Sign out</div>
   </div>
   <div class="foot">
@@ -1416,6 +1417,14 @@
   el("menuBtn").onclick=openDrawer;el("myAvatar").onclick=openDrawer;el("scrim").onclick=closeDrawer;
   el("refreshItem").onclick=function(){refreshThreads();if(state.phone)loadThread();toast("Refreshed");closeDrawer()};
   el("healthItem").onclick=checkHealth;
+  el("alertTestItem").onclick=function(){
+    toast("Sending test alert…");
+    post("/api/alert-test",{}).then(function(d){
+      if(d&&d.ok)toast(d.channel==="email"?("Test email sent to "+(d.alertEmail||"your inbox")):"Test alert sent by text");
+      else toast("Test alert failed — check your alert settings");
+    }).catch(function(){toast("Test alert failed")});
+    closeDrawer();
+  };
   Array.prototype.forEach.call(document.querySelectorAll(".drawer [data-tab]"),function(it){it.onclick=function(){setTab(it.getAttribute("data-tab"));closeDrawer()}});
   Array.prototype.forEach.call(document.querySelectorAll(".drawer [data-filter]"),function(it){it.onclick=function(){state.tab="messages";state.filter=it.getAttribute("data-filter");setTab("messages");state.filter=it.getAttribute("data-filter");renderFilters();renderMain();closeDrawer()}});
 

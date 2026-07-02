@@ -17,6 +17,9 @@
  *   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM, MIKEY_PHONE
  *   GEMINI_API_KEY        (optional — only the AI endpoints need it)
  *   GEMINI_MODEL          (optional — defaults to gemini-2.0-flash)
+ *   RESEND_API_KEY        (optional — email alerts instead of texting yourself)
+ *   ALERT_EMAIL           (optional — where alerts go; defaults to nothing)
+ *   ALERT_FROM            (optional — verified sender; defaults to Resend's)
  * Required KV binding: MESSAGES
  */
 
@@ -71,6 +74,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/call')       return apiCall(request);
   if (request.method === 'POST' && pathname === '/api/read')       return apiRead(request);
   if (request.method === 'GET'  && pathname === '/api/insights')   return apiInsights();
+  if (request.method === 'POST' && pathname === '/api/alert-test') return apiAlertTest();
   if (request.method === 'GET'  && pathname === '/api/migrate')    return apiMigrate(url);
   if (request.method === 'GET'  && pathname === '/api/templates')  return apiGetTemplates();
   if (request.method === 'POST' && pathname === '/api/templates')  return apiSaveTemplates(request);
@@ -119,7 +123,7 @@ async function handleSubmit(request) {
   // out immediately below.
   const FIRST_REACHOUT_DELAY_MS = 210000; // 3.5 minutes
 
-  const mikeySms = await sendSms(ENV.MIKEY_PHONE, mikeyMsg).then(() => 'fulfilled').catch(() => 'rejected');
+  const mikeyAlert = await notifyMikey(`🔔 New quote — ${name}`, mikeyMsg);
 
   // Start the conversation, tag as a new lead, store form details as a note.
   const thread = await loadThread(clientPhone);
@@ -144,8 +148,8 @@ async function handleSubmit(request) {
   await saveThread(thread);
   await updateIndexEntry(thread);
 
-  const ok = mikeySms === 'fulfilled';
-  return cors(json({ ok, clientSms, mikeySms }, ok ? 200 : 207));
+  const ok = mikeyAlert;
+  return cors(json({ ok, clientSms, mikeyAlert }, ok ? 200 : 207));
 }
 
 async function handleInboundSms(request) {
@@ -161,8 +165,8 @@ async function handleInboundSms(request) {
     body: text + (numMedia > 0 ? `\n[${numMedia} attachment(s)]` : ''),
     ts: Date.now(),
   });
-  await sendSms(ENV.MIKEY_PHONE,
-    `📱 New text from ${from}:\n"${text}"\n\nReply in your dashboard.`).catch(() => {});
+  await notifyMikey(`📱 New text from ${from}`,
+    `New text from ${from}:\n"${text}"\n\nReply in your dashboard.`);
   // No auto-reply to the customer — Mikey replies personally from the dashboard.
   return twiml('');
 }
@@ -175,7 +179,7 @@ async function handleInboundCall(request) {
 <Response>
   <Dial timeout="20" action="/voicemail" method="POST"><Number>${escapeXml(mikeyPhone)}</Number></Dial>
 </Response>`;
-  sendSms(mikeyPhone, `📞 Incoming call from ${from} to your Mikey's Detailing number.`).catch(() => {});
+  notifyMikey(`📞 Incoming call from ${from}`, `Incoming call from ${from} to your Mikey's Detailing number.`).catch(() => {});
   return xmlResponse(xml);
 }
 
@@ -183,14 +187,13 @@ async function handleVoicemail(request) {
   const form = await request.formData();
   const from = form.get('From') || 'Unknown';
   const dialStatus = form.get('DialCallStatus') || '';
-  const mikeyPhone = normalizePhone(ENV.MIKEY_PHONE) || '+13607975831';
   if (dialStatus === 'completed') return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="alice">Hey, you've reached Mikey's Mobile Detailing. Leave a message and Mikey will text or call you right back.</Say>
   <Record maxLength="120" action="/voicemail-done" method="POST" playBeep="true" />
 </Response>`;
-  sendSms(mikeyPhone, `📵 Missed call from ${from} — they're leaving a voicemail now.`).catch(() => {});
+  notifyMikey(`📵 Missed call from ${from}`, `Missed call from ${from} — they're leaving a voicemail now.`).catch(() => {});
   return xmlResponse(xml);
 }
 
@@ -199,9 +202,8 @@ async function handleVoicemailDone(request) {
   const from = form.get('From') || 'Unknown';
   const recordingUrl = form.get('RecordingUrl') || '';
   const duration = form.get('RecordingDuration') || '?';
-  const mikeyPhone = normalizePhone(ENV.MIKEY_PHONE) || '+13607975831';
   if (recordingUrl) {
-    await sendSms(mikeyPhone, `🎙️ Voicemail from ${from} (${duration}s):\n${recordingUrl}.mp3`).catch(() => {});
+    await notifyMikey(`🎙️ Voicemail from ${from}`, `Voicemail from ${from} (${duration}s):\n${recordingUrl}.mp3`);
   }
   return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
 }
@@ -239,7 +241,24 @@ async function apiHealth() {
       TWILIO_FROM: ENV.TWILIO_FROM || null,
       MIKEY_PHONE: ENV.MIKEY_PHONE || null,
     }, twilio, storage,
+    alerts: {
+      channel: (ENV.RESEND_API_KEY && ENV.ALERT_EMAIL) ? 'email' : 'sms',
+      emailConfigured: Boolean(ENV.RESEND_API_KEY && ENV.ALERT_EMAIL),
+      alertEmail: ENV.ALERT_EMAIL || null,
+      alertFrom: ENV.ALERT_FROM || 'onboarding@resend.dev',
+    },
   });
+}
+
+// Fire a test alert through the same path real notifications use, so Mikey can
+// confirm email delivery from the dashboard without waiting for a real text.
+async function apiAlertTest() {
+  const ok = await notifyMikey(
+    '✅ Test alert — Mikey\'s Dashboard',
+    'This is a test alert from your dashboard. If you got this, inbound-text notifications are working.',
+  );
+  const channel = (ENV.RESEND_API_KEY && ENV.ALERT_EMAIL) ? 'email' : 'sms';
+  return json({ ok, channel, alertEmail: ENV.ALERT_EMAIL || null });
 }
 
 async function apiThreads(url) {
@@ -684,6 +703,42 @@ async function geminiGenerate(prompt, opts = {}) {
     if (m && m[0].length > 40) text = m[0].trim();
   }
   return text;
+}
+
+// ===========================================================================
+// Alerts to Mikey (email preferred, SMS fallback)
+// ===========================================================================
+// Every "heads up, something happened" alert goes through here. If Resend is
+// configured we email it (free) instead of paying Twilio to text ourselves.
+// SMS is the automatic fallback when email isn't set up or the send fails, so
+// an alert always lands somewhere. Returns true if any channel succeeded.
+async function notifyMikey(subject, body) {
+  if (ENV.RESEND_API_KEY && ENV.ALERT_EMAIL) {
+    try { await sendEmail(subject, body); return true; }
+    catch { /* fall through to SMS so the alert still reaches Mikey */ }
+  }
+  try { await sendSms(ENV.MIKEY_PHONE, body); return true; }
+  catch { return false; }
+}
+
+// Send an alert email via Resend (https://resend.com). Plain text is plenty for
+// a phone notification. ALERT_FROM must be a Resend-verified sender; until a
+// domain is verified, Resend only allows onboarding@resend.dev -> your own
+// account email, which is exactly the single-recipient case here.
+async function sendEmail(subject, text) {
+  const to = ENV.ALERT_EMAIL;
+  const from = ENV.ALERT_FROM || 'Mikeys Dashboard <onboarding@resend.dev>';
+  if (!to) throw new Error('ALERT_EMAIL not set');
+  const res = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${ENV.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ from, to: [to], subject, text }),
+  });
+  if (!res.ok) throw new Error(`Resend ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  return res.json();
 }
 
 // ===========================================================================
