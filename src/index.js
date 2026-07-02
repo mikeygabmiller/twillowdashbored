@@ -21,6 +21,25 @@
  *   ALERT_EMAIL           (optional — where alerts go; defaults to nothing)
  *   ALERT_FROM            (optional — verified sender; defaults to Resend's)
  * Required KV binding: MESSAGES
+ *
+ * ┌─────────────────────────────────────────────────────────────────────────┐
+ * │ ⚠  KV WRITE BUDGET — READ BEFORE TOUCHING ANY put()/saveThread/saveIndex  │
+ * ├─────────────────────────────────────────────────────────────────────────┤
+ * │ Cloudflare's free tier allows only ~1,000 KV WRITES (put/delete) PER DAY. │
+ * │ That is ~0.7 writes/minute. Reads are far cheaper (~100k/day) — writes are │
+ * │ the scarce resource. The minute cron (runCron) touches every conversation,│
+ * │ so a SINGLE unnecessary write inside a per-thread loop = thousands/day and │
+ * │ the whole app hard-stops with 429s until midnight UTC.                     │
+ * │                                                                           │
+ * │ RULES for anything that runs in the cron or a loop over the index:        │
+ * │   1. NEVER write on a tick where nothing changed. Skip idle threads       │
+ * │      BEFORE loading them (see the guard in evaluateFollowups).            │
+ * │   2. Gate every saveThread()/saveIndex() behind a real state change.      │
+ * │   3. Batch the index: mutate it in memory and saveIndex() ONCE per tick,  │
+ * │      not once per thread. (updateIndexEntry de-dupes no-op writes.)       │
+ * │ If you add a feature that writes on a schedule, do the math first:        │
+ * │   writes/day = (threads touched) × (writes each) × 1440. Keep it << 1000. │
+ * └─────────────────────────────────────────────────────────────────────────┘
  */
 
 // env is identical across every request of a deployment (bindings + secrets
@@ -812,9 +831,17 @@ async function evaluateFollowups(now = Date.now()) {
   if (cfg.followupsEnabled === false) return 0;
   const index = await loadIndex();
   let acted = 0;
+  let indexDirty = false; // batch: write the whole index at most ONCE per tick
   for (const e of index) {
     if (e.archived) continue;
-    if (e.followupNextAt && e.followupNextAt > now && !e.followupDue) continue; // not due, nothing pending
+    // Nothing to do this tick — skip WITHOUT touching KV. This is THE guard that
+    // keeps us under the daily write budget (see the KV WRITE BUDGET note up top):
+    // a thread is only worth loading if a nudge is already surfaced (followupDue)
+    // or its next step has come due. Idle conversations — the vast majority, which
+    // have followupNextAt=null because no follow-up applies — fall through here and
+    // are never re-saved. (Stale suggestions still get cleared promptly: that
+    // happens on the customer's inbound reply and whenever the thread is opened.)
+    if (!e.followupDue && (!e.followupNextAt || e.followupNextAt > now)) continue;
 
     const thread = await loadThread(e.phone);
     const fu = thread.followup || (thread.followup = defaultFollowup());
@@ -823,11 +850,10 @@ async function evaluateFollowups(now = Date.now()) {
     if (thread.status && !thread.statusAt) thread.statusAt = now;
     const plan = computeFollowupPlan(thread, now, cfg);
 
-    if (fu.suggestion && (!plan || fu.suggestion.stepKey !== plan.stepKey)) fu.suggestion = null; // stale
-    if (!plan || plan.dueAt > now) { await saveThread(thread); await updateIndexEntry(thread); continue; }
+    let changed = false; // only persist this thread if we actually mutate it
+    if (fu.suggestion && (!plan || fu.suggestion.stepKey !== plan.stepKey)) { fu.suggestion = null; changed = true; } // stale
 
-    if (autopilotAllowed(plan, fu, cfg)) {
-      if (inQuietHours(now, cfg)) { await saveThread(thread); await updateIndexEntry(thread); continue; } // wait for daytime
+    if (plan && plan.dueAt <= now && autopilotAllowed(plan, fu, cfg) && !inQuietHours(now, cfg)) {
       // Reserve the step (persist lastStepKey) BEFORE sending, mirroring the
       // scheduled-send dispatcher, so an overlapping tick can't double-send.
       const body = followupTemplate(thread, plan, cfg);
@@ -840,18 +866,22 @@ async function evaluateFollowups(now = Date.now()) {
       } catch (err) {
         thread.messages.push({ id: genId(), dir: 'out', body, ts: Date.now(), kind: 'followup', error: String(err.message || err) });
       }
-      await saveThread(thread); await updateIndexEntry(thread); acted++;
-    } else if (!fu.suggestion) {
+      changed = true; acted++;
+    } else if (plan && plan.dueAt <= now && !autopilotAllowed(plan, fu, cfg) && !fu.suggestion) {
       const draft = await buildFollowupDraft(thread, plan, cfg, { ai: true });
       fu.suggestion = {
         id: genId(), stage: plan.stage, step: plan.step || 0, stepKey: plan.stepKey,
         reason: followupReason(thread, plan), draft, urgency: plan.urgency, dueAt: plan.dueAt, createdAt: now,
       };
-      await saveThread(thread); await updateIndexEntry(thread); acted++;
-    } else {
-      await updateIndexEntry(thread);
+      changed = true; acted++;
+    }
+
+    if (changed) {
+      await saveThread(thread);
+      if (applyIndexSummary(index, buildIndexSummary(thread, cfg))) indexDirty = true;
     }
   }
+  if (indexDirty) await saveIndex(index); // one write covering every thread we advanced
   return acted;
 }
 
@@ -1019,6 +1049,8 @@ async function loadThread(phone) {
   return Object.assign(blankThread(phone), raw || {});
 }
 
+// ⚠ KV WRITE — counts against the ~1,000/day free-tier budget (see note up top).
+// Do not call inside a per-thread loop unless the thread actually changed.
 async function saveThread(thread) {
   thread.updatedAt = Date.now();
   await kv().put(threadKey(thread.phone), JSON.stringify(thread));
@@ -1028,6 +1060,8 @@ async function loadIndex() {
   return (await kv().get(INDEX_KEY, { type: 'json' })) || [];
 }
 
+// ⚠ KV WRITE — rewrites the entire index. In cron/loop code, mutate the index in
+// memory and call this ONCE at the end, not once per thread (see note up top).
 async function saveIndex(index) {
   await kv().put(INDEX_KEY, JSON.stringify(index));
 }
@@ -1036,16 +1070,16 @@ function preview(body) {
   return String(body || '').replace(/\s+/g, ' ').trim().slice(0, 90);
 }
 
-async function updateIndexEntry(thread) {
-  const index = await loadIndex();
+// Build the lightweight index row for a thread. Pure (no KV) so cron loops can
+// reuse it while holding the index in memory and batch a single saveIndex().
+function buildIndexSummary(thread, cfg) {
   const last = thread.messages[thread.messages.length - 1];
-  const cfg = await loadConfig();
   const plan = computeFollowupPlan(thread, Date.now(), cfg);
   const fu = thread.followup || {};
   // Only mirror a suggestion the current plan still agrees with — if the customer
   // just replied, the old nudge is stale and the badge should clear immediately.
   const sug = (fu.suggestion && plan && fu.suggestion.stepKey === plan.stepKey) ? fu.suggestion : null;
-  const summary = {
+  return {
     phone: thread.phone,
     name: thread.name || '',
     tags: thread.tags || [],
@@ -1061,10 +1095,25 @@ async function updateIndexEntry(thread) {
     followupDue: !!sug,
     fu: sug ? { reason: sug.reason, urgency: sug.urgency, stage: sug.stage, dueAt: sug.dueAt, draft: (sug.draft || '').slice(0, 320) } : null,
   };
-  const i = index.findIndex((t) => t.phone === thread.phone);
-  if (i >= 0) index[i] = summary;
-  else index.push(summary);
-  await saveIndex(index);
+}
+
+// Merge `summary` into the in-memory `index`. Returns true only if something
+// actually changed, so callers can avoid a pointless saveIndex() write.
+function applyIndexSummary(index, summary) {
+  const i = index.findIndex((t) => t.phone === summary.phone);
+  if (i >= 0) {
+    if (JSON.stringify(index[i]) === JSON.stringify(summary)) return false; // no-op, don't spend a write
+    index[i] = summary;
+  } else {
+    index.push(summary);
+  }
+  return true;
+}
+
+async function updateIndexEntry(thread) {
+  const cfg = await loadConfig();
+  const index = await loadIndex();
+  if (applyIndexSummary(index, buildIndexSummary(thread, cfg))) await saveIndex(index);
 }
 
 async function appendMessage(phone, message, opts = {}) {
