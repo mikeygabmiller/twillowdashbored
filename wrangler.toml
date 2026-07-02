@@ -23,6 +23,13 @@ id = "e3305474d22a48ac97265b394aba685e"
 # auto follow-up engine (surfaces nudges, fires autopilot sends). Well within the
 # free tier (~1,440 runs/day vs 100k/day); the engine uses the thread index's
 # cached next-due time to only load conversations that actually need action.
+#
+# EMERGENCY STOP (no deploy, no KV write needed):
+#   - Kill the follow-up engine only: dashboard → Worker → Settings → Variables,
+#     add  FOLLOWUPS_DISABLED = 1  (honored by evaluateFollowups; scheduled sends
+#     keep working). Remove it to resume.
+#   - Stop ALL cron work: dashboard → Worker → Settings → Triggers, delete the
+#     cron below. A later `wrangler deploy` re-creates it from this file.
 [triggers]
 crons = ["* * * * *"]
 

@@ -20,6 +20,10 @@
  *   RESEND_API_KEY        (optional — email alerts instead of texting yourself)
  *   ALERT_EMAIL           (optional — where alerts go; defaults to nothing)
  *   ALERT_FROM            (optional — verified sender; defaults to Resend's)
+ *   FOLLOWUPS_DISABLED    (optional kill switch — set to "1" in the Cloudflare
+ *                          dashboard to stop the follow-up cron WITHOUT a KV
+ *                          write, for when the daily write limit is exhausted and
+ *                          the in-app toggle therefore can't save. Unset to resume.)
  * Required KV binding: MESSAGES
  *
  * ┌─────────────────────────────────────────────────────────────────────────┐
@@ -51,6 +55,15 @@ let ENV = null;
 // entry point so a settings change is picked up on the very next invocation.
 let CFG_CACHE = null;
 function kv() { return ENV.MESSAGES; }
+
+// Truthy-check a Worker var/secret. Used for kill switches that must work even
+// when KV writes are blocked (the in-app toggles all persist to KV, so they're
+// useless once the daily write limit is hit — a var is set in the Cloudflare
+// dashboard with no KV write). Accepts 1/true/yes/on (case-insensitive).
+function envFlag(name) {
+  const v = String((ENV && ENV[name]) || '').trim().toLowerCase();
+  return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+}
 
 export default {
   async fetch(request, env) {
@@ -882,7 +895,11 @@ async function ensureLiveSuggestion(thread, cfg, now) {
 // in the future, so a typical tick loads only the few threads actually due.
 async function evaluateFollowups(now = Date.now()) {
   const cfg = await loadConfig();
-  if (cfg.followupsEnabled === false) return 0;
+  // Two independent off-switches. `followupsEnabled` is the in-app toggle, but
+  // saving it is itself a KV write — useless once the daily write limit is
+  // already blown. FOLLOWUPS_DISABLED is a Worker var (set in the Cloudflare
+  // dashboard, no KV write) so the engine can always be killed even mid-lockout.
+  if (cfg.followupsEnabled === false || envFlag('FOLLOWUPS_DISABLED')) return 0;
   const index = await loadIndex();
   let acted = 0;
   let indexDirty = false; // batch: write the whole index at most ONCE per tick
