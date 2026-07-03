@@ -37,9 +37,10 @@ id = "e3305474d22a48ac97265b394aba685e"
 #     keep working). Remove it to resume.
 #   - Stop ALL cron work: dashboard → Worker → Settings → Triggers, delete the
 #     cron below. A later `wrangler deploy` re-creates it from this file.
-#   - Turn off Twilio webhook signature checks (only if they misfire behind a
-#     proxy): add  TWILIO_VALIDATION_DISABLED = 1  under Variables. Webhooks are
-#     validated with your existing TWILIO_AUTH_TOKEN, so no new secret is needed.
+#   - Twilio webhook signature enforcement is OPT-IN and OFF by default so a deploy
+#     can't drop real inbound texts. Turn it ON with  TWILIO_SIGNATURE_ENFORCE = 1
+#     under Variables (validated with your existing TWILIO_AUTH_TOKEN — no new secret).
+#     Remove the var to instantly go back to accept-all if webhooks ever stop arriving.
 [triggers]
 crons = ["* * * * *"]
 

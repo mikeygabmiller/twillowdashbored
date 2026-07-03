@@ -1634,10 +1634,17 @@ function forbidden() { return new Response('Forbidden', { status: 403 }); }
 
 // Validate Twilio's X-Twilio-Signature so only real Twilio webhooks are accepted.
 // Twilio signs base64( HMAC-SHA1( authToken, fullURL + sorted(key+value)… ) ).
-// Enforced whenever an auth token is configured; can be turned off with the
-// TWILIO_VALIDATION_DISABLED var (no KV write) if it ever misfires behind a proxy.
+//
+// SAFE ROLLOUT — enforcement is OPT-IN. It stays OFF until you set the Worker var
+// TWILIO_SIGNATURE_ENFORCE=1, so deploying this can NEVER silently 403 real inbound
+// texts/calls before you've confirmed the signed URL matches. To turn it on:
+//   1. Add  TWILIO_SIGNATURE_ENFORCE = 1  in Worker → Settings → Variables.
+//   2. Send yourself a text + do a test call; confirm both land in the dashboard.
+//   3. If webhooks stop arriving, the configured Twilio URL and the Worker's URL
+//      disagree — remove the var (instantly back to accept-all) and check that the
+//      Twilio Messaging/Voice webhooks point at exactly https://<worker>/sms etc.
 async function verifyTwilio(request, params) {
-  if (envFlag('TWILIO_VALIDATION_DISABLED')) return true;
+  if (!envFlag('TWILIO_SIGNATURE_ENFORCE')) return true; // opt-in; off = accept as before
   const token = ENV.TWILIO_AUTH_TOKEN;
   if (!token) return true; // nothing to validate against — don't lock ourselves out
   const sig = request.headers.get('X-Twilio-Signature');
