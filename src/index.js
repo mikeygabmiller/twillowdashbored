@@ -126,6 +126,8 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/call')       return apiCall(request);
   if (request.method === 'POST' && pathname === '/api/read')       return apiRead(request);
   if (request.method === 'GET'  && pathname === '/api/insights')   return apiInsights();
+  if (request.method === 'GET'  && pathname === '/api/media')      return apiMediaProxy(url);
+  if (request.method === 'POST' && pathname === '/api/media-backfill') return apiMediaBackfill(request);
   if (request.method === 'POST' && pathname === '/api/alert-test') return apiAlertTest();
   if (request.method === 'GET'  && pathname === '/api/followups')  return apiFollowups();
   if (request.method === 'POST' && pathname === '/api/followup')   return apiFollowupAction(request);
@@ -250,13 +252,21 @@ async function handleInboundSms(request) {
     return twiml('');
   }
 
-  await appendMessage(fromNorm, {
-    dir: 'in',
-    body: text + (numMedia > 0 ? `\n[${numMedia} attachment(s)]` : ''),
-    ts: Date.now(),
-  });
-  await notifyMikey(`📱 New text from ${from}`,
-    `New text from ${from}:\n"${text}"\n\nReply in your dashboard.`);
+  // Capture MMS media (photos are the quote for a detailing business). Store the
+  // Twilio media URLs on the message; the dashboard renders them through an
+  // authenticated proxy (/api/media) since the raw URLs need account credentials.
+  const media = [];
+  for (let i = 0; i < numMedia; i++) {
+    const u = params['MediaUrl' + i];
+    if (u) media.push({ url: u, type: params['MediaContentType' + i] || '' });
+  }
+  const inMsg = { dir: 'in', body: text, ts: Date.now() };
+  if (media.length) inMsg.media = media;
+  else if (numMedia > 0) inMsg.body = text + `\n[${numMedia} attachment(s)]`;
+  if (params.MessageSid) inMsg.sid = params.MessageSid;
+  await appendMessage(fromNorm, inMsg);
+  await notifyMikey(`📱 New ${numMedia > 0 ? 'photo/text' : 'text'} from ${from}`,
+    `New message from ${from}:\n"${text || (numMedia > 0 ? '[photo]' : '')}"\n\nReply in your dashboard.`);
   // No auto-reply to the customer — Mikey replies personally from the dashboard.
   return twiml('');
 }
@@ -669,6 +679,75 @@ async function apiInsights() {
     needsReply, possibleLinks,
     costMonth: { segOut, msgsIn, usd: costUsd },
   });
+}
+
+// Authenticated image proxy. Twilio media URLs require the account credentials,
+// so the browser can't load them directly; the dashboard points <img> at this
+// route (same-origin, already behind the dashboard password) and we fetch the
+// bytes with Basic auth and stream them back. Locked to Twilio hosts (no SSRF).
+async function apiMediaProxy(url) {
+  const u = url.searchParams.get('u') || '';
+  if (!/^https:\/\/(api|media)\.twilio\.com\//.test(u)) return json({ ok: false, error: 'bad_url' }, 400);
+  const sid = ENV.TWILIO_ACCOUNT_SID, token = ENV.TWILIO_AUTH_TOKEN;
+  const r = await fetch(u, { headers: { Authorization: `Basic ${btoa(`${sid}:${token}`)}` } });
+  if (!r.ok) return json({ ok: false, error: `twilio ${r.status}` }, 502);
+  const ct = r.headers.get('Content-Type') || 'application/octet-stream';
+  return new Response(r.body, { headers: { 'Content-Type': ct, 'Cache-Control': 'private, max-age=86400' } });
+}
+
+// Recover attachments for messages that arrived before inbound media was captured
+// (older texts stored as "[N attachment(s)]"). Pulls this contact's recent MMS from
+// the Twilio API and attaches each photo to the nearest matching inbound message.
+async function apiMediaBackfill(request) {
+  const data = await readJson(request);
+  const phone = normalizePhone(data.phone);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  const sid = ENV.TWILIO_ACCOUNT_SID, token = ENV.TWILIO_AUTH_TOKEN;
+  if (!sid || !token) return json({ ok: false, error: 'twilio_not_configured' }, 500);
+  const auth = `Basic ${btoa(`${sid}:${token}`)}`;
+  const listUrl = `https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json?From=${encodeURIComponent(phone)}&To=${encodeURIComponent(ENV.TWILIO_FROM || '')}&PageSize=100`;
+  let d;
+  try {
+    const r = await fetch(listUrl, { headers: { Authorization: auth } });
+    if (!r.ok) throw new Error(`${r.status}: ${(await r.text()).slice(0, 200)}`);
+    d = await r.json();
+  } catch (e) {
+    return json({ ok: false, error: `twilio_list_failed: ${String((e && e.message) || e)}` }, 502);
+  }
+  // For each inbound message that carried media, resolve its media instance URLs.
+  const twMsgs = [];
+  for (const m of (d.messages || [])) {
+    if (!(+m.num_media > 0) || !(m.subresource_uris && m.subresource_uris.media)) continue;
+    try {
+      const mr = await fetch(`https://api.twilio.com${m.subresource_uris.media}`, { headers: { Authorization: auth } });
+      if (!mr.ok) continue;
+      const md = await mr.json();
+      const media = (md.media_list || []).map((x) => ({
+        url: `https://api.twilio.com${String(x.uri).replace(/\.json$/, '')}`,
+        type: x.content_type || '',
+      }));
+      if (media.length) twMsgs.push({ date: new Date(m.date_created).getTime(), media });
+    } catch { /* skip this one */ }
+  }
+  // Attach to the nearest inbound thread message (within 10 min) that has no media yet.
+  const thread = await loadThread(phone);
+  let attached = 0;
+  for (const msg of (thread.messages || [])) {
+    if (msg.dir !== 'in' || (msg.media && msg.media.length)) continue;
+    if (!/\[\d+ attachment\(s\)\]/.test(msg.body || '')) continue; // only recover messages that carried attachments
+    let best = null, bestDiff = 600000;
+    for (const tw of twMsgs) {
+      const diff = Math.abs(tw.date - (msg.ts || 0));
+      if (diff < bestDiff) { bestDiff = diff; best = tw; }
+    }
+    if (best) {
+      msg.media = best.media;
+      if (/^\s*\[\d+ attachment/.test(msg.body || '')) msg.body = '';
+      attached++;
+    }
+  }
+  if (attached) { await saveThread(thread); await updateIndexEntry(thread); }
+  return json({ ok: true, attached, found: twMsgs.length, thread });
 }
 
 // One-time import of conversations from the old Netlify deployment into KV.
