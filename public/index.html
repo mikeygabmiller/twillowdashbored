@@ -299,6 +299,8 @@
   .quickset button:hover{border-color:var(--accent);color:var(--accent-text)}
   .nl-echo{font-size:11.5px;color:var(--muted2);min-height:15px;margin:-4px 0 9px}
   .nl-echo.ok{color:var(--green);font-weight:600}
+  .pb-bar{height:7px;border-radius:5px;background:var(--panel);border:1px solid var(--line);overflow:hidden;margin-top:11px}
+  .pb-bar span{display:block;height:100%;background:linear-gradient(90deg,#f5b842,#f59e0b);border-radius:5px;transition:width .3s}
 
   /* ---------- Drawer (left menu) ---------- */
   .scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .22s;z-index:45}
@@ -1200,6 +1202,20 @@
   }
 
   // ---- insights ----
+  // Playbook completeness — measured on the fact fields that ship empty and matter
+  // most to AI quality (about/tone/rules ship with sensible defaults).
+  function playbookPct(){
+    var p=(state.config&&state.config.playbook)||{};
+    var fields=[["services","services & pricing"],["area","service area & hours"],["booking","booking & policies"],["faqs","common questions"]];
+    var missing=[];
+    fields.forEach(function(f){if(!String(p[f[0]]||"").trim())missing.push(f[1])});
+    var done=fields.length-missing.length;
+    return {pct:Math.round(done/fields.length*100),missing:missing};
+  }
+  function openPlaybook(){
+    openDrawer();
+    setTimeout(function(){var el2=el("playbookPanel");if(el2){el2.scrollIntoView({block:"start",behavior:"smooth"});var ta=el2.querySelector(".pb-ta");if(ta)setTimeout(function(){ta.focus()},350)}},120);
+  }
   function renderInsights(){
     var box=el("scroll");
     var active=state.threads.filter(function(t){return !t.archived});
@@ -1209,6 +1225,19 @@
     var won=active.filter(function(t){return t.status==="won"}).length;
 
     var html='<div class="ins">';
+
+    // Playbook onboarding nudge (UX-06): the AI is only as good as the playbook,
+    // so surface how complete it is right where Mikey looks, until it's filled in.
+    var pb=playbookPct();
+    if(pb.pct<100){
+      html+='<div class="ai-card" style="border-color:#3a2b12">'+
+        '<div class="ttl" style="color:#f5c563">'+ic("sparkles",15)+' Train your AI · Playbook '+pb.pct+'% complete</div>'+
+        '<div class="txt" style="color:#e9dcc0">Fill in '+esc(pb.missing.join(", "))+' so every AI draft, the Coach and auto follow-ups quote your real info and sound like you.</div>'+
+        '<div class="pb-bar"><span style="width:'+pb.pct+'%"></span></div>'+
+        '<button class="btn accent" id="pbNudgeBtn" style="width:100%;margin-top:11px">Complete your Playbook</button>'+
+      '</div>';
+    }
+
     html+='<div class="stat-grid">'+
       '<div class="stat hot"><div class="v">'+(needs.length)+'</div><div class="k">Need a reply</div></div>'+
       '<div class="stat"><div class="v">'+avg+'</div><div class="k">Avg reply time</div></div>'+
@@ -1249,6 +1278,7 @@
 
     Array.prototype.forEach.call(box.querySelectorAll(".need-card"),function(c){c.onclick=function(){openThread(c.getAttribute("data-phone"))}});
     el("briefBtn").onclick=function(){runBriefing()};
+    var pbn=el("pbNudgeBtn");if(pbn)pbn.onclick=openPlaybook;
   }
 
   function fetchInsights(){
