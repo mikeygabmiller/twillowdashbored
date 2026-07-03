@@ -2,9 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <meta name="robots" content="noindex, nofollow" />
 <meta name="theme-color" content="#0a0a0c" />
+<script>/* set saved theme before first paint to avoid a flash */(function(){try{var m=localStorage.getItem("mkd-theme");if(m==="light"||m==="dark"){document.documentElement.setAttribute("data-theme",m);var tc=document.querySelector('meta[name="theme-color"]');if(tc)tc.setAttribute("content",m==="light"?"#eef0f3":"#0a0a0c")}}catch(e){}})();</script>
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -24,6 +25,23 @@
     --safe-top:env(safe-area-inset-top,0px);
     --safe-bottom:env(safe-area-inset-bottom,0px);
     --nav-h:60px;
+    --scroll-thumb:#2c2f38; --scroll-thumb-h:#3a3e49; --tag-bg:#23252d; --tag-line:#30333d; --tag-ink:#aab2c0;
+  }
+  /* Light theme — neutral tokens re-map; accent tokens stay JS-driven (applyAccent
+     recomputes --accent-text/-soft for the active theme). Applies when the OS asks
+     for light and the user hasn't overridden, or when they pick Light explicitly. */
+  :root[data-theme="light"], :root[data-theme="system"]:not([data-x]){}
+  @media (prefers-color-scheme: light){
+    :root:not([data-theme="dark"]){
+      --bg:#eef0f3; --panel:#ffffff; --panel2:#f4f6f8; --panel3:#e7eaef;
+      --line:#d7dbe2; --line2:#e6e9ee; --text:#161820; --muted:#5a626f; --muted2:#8a93a1;
+      --scroll-thumb:#c7ccd5; --scroll-thumb-h:#b0b6c1; --tag-bg:#eef0f3; --tag-line:#d7dbe2; --tag-ink:#4a5160;
+    }
+  }
+  :root[data-theme="light"]{
+    --bg:#eef0f3; --panel:#ffffff; --panel2:#f4f6f8; --panel3:#e7eaef;
+    --line:#d7dbe2; --line2:#e6e9ee; --text:#161820; --muted:#5a626f; --muted2:#8a93a1;
+    --scroll-thumb:#c7ccd5; --scroll-thumb-h:#b0b6c1; --tag-bg:#eef0f3; --tag-line:#d7dbe2; --tag-ink:#4a5160;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{height:100%;margin:0}
@@ -32,8 +50,21 @@
   button{font:inherit;cursor:pointer;color:inherit}
   input,textarea,select{font:inherit}
   ::-webkit-scrollbar{width:9px;height:9px}
-  ::-webkit-scrollbar-thumb{background:#2c2f38;border-radius:6px}
-  ::-webkit-scrollbar-thumb:hover{background:#3a3e49}
+  ::-webkit-scrollbar-thumb{background:var(--scroll-thumb);border-radius:6px}
+  ::-webkit-scrollbar-thumb:hover{background:var(--scroll-thumb-h)}
+  /* Accessibility: visible keyboard focus + honor reduced-motion. */
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:6px}
+  @media (prefers-reduced-motion:reduce){*{animation-duration:.001ms!important;transition-duration:.001ms!important}}
+  /* Delivery state under sent bubbles (UX-04). */
+  .deliv{display:block;font-size:9.5px;margin-top:2px;opacity:.7;letter-spacing:.2px}
+  .out .deliv{text-align:right;color:#ffe1e4}
+  .deliv.failed{color:#ffd0d0;opacity:1;font-weight:700}
+  .deliv .resend{background:none;border:none;color:#fff;text-decoration:underline;font-size:9.5px;padding:0 0 0 6px;cursor:pointer}
+  /* "Do not text" (opted-out) badge. */
+  .dnt{display:inline-flex;align-items:center;gap:3px;font-size:10px;font-weight:700;color:#ff8a93;background:var(--accent-soft);border:1px solid var(--accent);border-radius:7px;padding:1px 6px}
+  .theme-seg{display:flex;gap:6px;padding:4px 20px 14px}
+  .theme-seg button{flex:1;font-size:12px;font-weight:600;color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:7px 0;cursor:pointer;transition:all .14s}
+  .theme-seg button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text)}
 
   .app{display:grid;grid-template-columns:360px 1fr;height:100%}
   .btn{background:var(--panel3);color:var(--text);border:1px solid var(--line);border-radius:11px;padding:9px 13px;transition:background .15s,transform .08s}
@@ -104,7 +135,7 @@
   .badge{font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.3px}
   .unread-pill{flex:none;min-width:20px;height:20px;border-radius:11px;background:var(--accent);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 6px;align-self:center}
   .sched-flag{color:#7dd3fc;font-size:11px;display:inline-flex;align-items:center;gap:3px}
-  .tag{font-size:10px;padding:2px 8px;border-radius:7px;background:#23252d;color:#aab2c0;border:1px solid #30333d}
+  .tag{font-size:10px;padding:2px 8px;border-radius:7px;background:var(--tag-bg);color:var(--tag-ink);border:1px solid var(--tag-line)}
 
   .st-new{background:rgba(59,130,246,.18);color:#7eb0ff}
   .st-active{background:rgba(34,197,94,.18);color:#69e29a}
@@ -538,7 +569,7 @@
       <button class="btn icon backbtn" id="backBtn" data-ic="chevron-left" aria-label="Back"></button>
       <div class="avatar av" id="hAvatar"></div>
       <div class="who" id="whoBtn">
-        <div class="nm"><span id="hName"></span><span class="pin ic-inline" id="hPin" style="display:none"></span></div>
+        <div class="nm"><span id="hName"></span><span class="pin ic-inline" id="hPin" style="display:none"></span><span class="dnt" id="hDnt" style="display:none"></span></div>
         <div class="num" id="hNum"></div>
       </div>
       <div class="head-actions">
@@ -675,6 +706,8 @@
     <div class="sec-lbl">AI training · playbook</div>
     <div class="playbook" id="playbookPanel"></div>
 
+    <div class="sec-lbl">Appearance</div>
+    <div class="theme-seg" id="themeSeg"></div>
     <div class="sec-lbl">Accent color</div>
     <div class="accent-row" id="accentRow"></div>
 
@@ -796,6 +829,7 @@
     "clock":'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
     "send":'<path d="M14.536 21.686a.5.5 0 0 0 .937-.024l6.5-19a.496.496 0 0 0-.635-.635l-19 6.5a.5.5 0 0 0-.024.937l7.93 3.18a2 2 0 0 1 1.112 1.11z"/><path d="m21.854 2.147-10.94 10.939"/>',
     "moon":'<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>',
+    "ban":'<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>',
     "rocket":'<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>'
   };
   function ic(name,size,strokeW){
@@ -868,15 +902,39 @@
     if(opts.undo){t.querySelector(".undo").onclick=function(){clearTimeout(t._h);t.className="toast"+(opts.bad?" bad":"");opts.undo()}}
   }
 
-  // ---- accent theme ----
+  // ---- accent + light/dark theme ----
+  // Resolve the theme actually showing (explicit choice, else the OS preference).
+  function currentTheme(){var t=document.documentElement.getAttribute("data-theme");if(t==="light"||t==="dark")return t;return (window.matchMedia&&matchMedia("(prefers-color-scheme: light)").matches)?"light":"dark"}
   function applyAccent(hex,dark){
-    var r=document.documentElement.style;
+    var r=document.documentElement.style,light=currentTheme()==="light";
     r.setProperty("--accent",hex);r.setProperty("--accent-dark",dark);
-    r.setProperty("--accent-soft",hexA(hex,.16));r.setProperty("--accent-text",lighten(hex));
+    // accent-text must stay legible on the active ground: lighten on dark, darken on light.
+    r.setProperty("--accent-soft",hexA(hex,light?.12:.16));
+    r.setProperty("--accent-text",light?darken(hex):lighten(hex));
   }
   function hexA(hex,a){var n=parseInt(hex.slice(1),16);return"rgba("+(n>>16&255)+","+(n>>8&255)+","+(n&255)+","+a+")"}
   function lighten(hex){var n=parseInt(hex.slice(1),16),r=n>>16&255,g=n>>8&255,b=n&255;function L(x){return Math.round(x+(255-x)*.45)}return"rgb("+L(r)+","+L(g)+","+L(b)+")"}
+  function darken(hex){var n=parseInt(hex.slice(1),16),r=n>>16&255,g=n>>8&255,b=n&255;function D(x){return Math.round(x*.72)}return"rgb("+D(r)+","+D(g)+","+D(b)+")"}
   function loadAccent(){var saved=localStorage.getItem("mkd-accent");var a=ACCENTS.find(function(x){return x[0]===saved})||ACCENTS[0];applyAccent(a[0],a[1]);return a[0]}
+  // Theme = "system" | "light" | "dark". System removes the attribute so the OS
+  // media query drives it; then we re-apply the accent so its derived colors match.
+  function themePref(){return localStorage.getItem("mkd-theme")||"system"}
+  function applyTheme(mode){
+    if(mode==="light"||mode==="dark")document.documentElement.setAttribute("data-theme",mode);
+    else document.documentElement.removeAttribute("data-theme");
+    var tc=document.querySelector('meta[name="theme-color"]');if(tc)tc.setAttribute("content",currentTheme()==="light"?"#eef0f3":"#0a0a0c");
+    var a=ACCENTS.find(function(x){return x[0]===(localStorage.getItem("mkd-accent")||ACCENTS[0][0])})||ACCENTS[0];applyAccent(a[0],a[1]);
+  }
+  function setTheme(mode){localStorage.setItem("mkd-theme",mode);applyTheme(mode);buildThemeSeg();if(typeof vibrate==="function")vibrate(6)}
+  function buildThemeSeg(){
+    var row=el("themeSeg");if(!row)return;var cur=themePref();
+    row.innerHTML=[["system","Auto"],["light","Light"],["dark","Dark"]].map(function(m){
+      return '<button class="'+(cur===m[0]?"on":"")+'" data-theme-set="'+m[0]+'">'+m[1]+'</button>';
+    }).join("");
+    Array.prototype.forEach.call(row.querySelectorAll("[data-theme-set]"),function(b){b.onclick=function(){setTheme(b.getAttribute("data-theme-set"))}});
+  }
+  // Follow live OS changes only while in Auto mode.
+  if(window.matchMedia){try{matchMedia("(prefers-color-scheme: light)").addEventListener("change",function(){if(themePref()==="system")applyTheme("system")})}catch(e){}}
   function buildAccents(){
     var cur=localStorage.getItem("mkd-accent")||ACCENTS[0][0];var row=el("accentRow");row.innerHTML="";
     ACCENTS.forEach(function(a){var s=document.createElement("div");s.className="swatch"+(a[0]===cur?" sel":"");s.style.background=a[0];s.title=a[2];
@@ -989,6 +1047,7 @@
         '<div class="prev">'+(t.lastDir==="out"?'<span class="you">You: </span>':'')+'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(t.lastBody||"No messages yet")+'</span></div>'+
         '<div class="meta">'+
           (st?'<span class="badge '+st.cls+'">'+st.label+'</span>':'')+
+          (t.optedOut?'<span class="dnt">'+ic("ban",10)+'Do not text</span>':'')+
           ((teamOn()&&t.assignedTo)?assignBadge(t.assignedTo):'')+
           (t.followupDue?'<span class="fu-flag'+(t.fu&&t.fu.urgency==="high"?" high":"")+'">'+ic("list-checks",11)+'follow-up</span>':'')+
           (t.scheduledCount>0?'<span class="sched-flag">'+ic("calendar-clock",12)+t.scheduledCount+'</span>':'')+
@@ -1404,6 +1463,9 @@
       '<div class="hint">'+esc(c.tz||"America/Los_Angeles")+', 24-hour. Suggestions still appear anytime — only automatic sends wait for daytime.</div>'+
       '<div class="fu-row"><span class="lbl2">Call screening <span style="color:var(--muted2);font-weight:400">· stop spam calls</span></span><span class="sw'+(c.callScreening!==false?" on":"")+'" id="cfgScreen"></span></div>'+
       '<div class="hint">Callers hear "press 1 to reach Mikey." Robo-dialers don\'t press a key, so they never ring your phone or leave voicemail. Real customers press 1 and get through.</div>'+
+      '<div class="fu-row"><span class="lbl2">Missed-call text-back <span style="color:var(--muted2);font-weight:400">· never lose a missed call</span></span><span class="sw'+(c.missedCallTextback!==false?" on":"")+'" id="cfgMct"></span></div>'+
+      '<div class="fu-col"><input type="text" id="cfgMctText" placeholder="Sorry I missed your call! Text me here and I\'ll get right back to you." value="'+esc(c.missedCallText||"")+'"></div>'+
+      '<div class="hint">When a call goes unanswered, the caller instantly gets a friendly text so the lead turns into a conversation you can answer from anywhere. Leave the message blank to use the default.</div>'+
       '<div class="fu-col"><span class="lbl2">Block a number</span><span style="display:flex;gap:6px"><input type="text" id="cfgBlockNum" placeholder="+1425…" style="flex:1"><button id="cfgBlockBtn" class="btn" style="white-space:nowrap">Block</button></span></div>'+
       blockedListHtml(c.blockedNumbers);
     el("cfgEnabled").onclick=function(){saveConfig({followupsEnabled:!(c.followupsEnabled!==false)})};
@@ -1413,6 +1475,8 @@
     el("cfgQs").onchange=function(){saveConfig({quietStart:+el("cfgQs").value})};
     el("cfgQe").onchange=function(){saveConfig({quietEnd:+el("cfgQe").value})};
     el("cfgScreen").onclick=function(){saveConfig({callScreening:!(c.callScreening!==false)})};
+    el("cfgMct").onclick=function(){saveConfig({missedCallTextback:!(c.missedCallTextback!==false)})};
+    el("cfgMctText").onchange=function(){saveConfig({missedCallText:el("cfgMctText").value})};
     el("cfgBlockBtn").onclick=function(){var v=el("cfgBlockNum").value.trim();if(v)blockNumber(v,"block")};
     Array.prototype.forEach.call(document.querySelectorAll("[data-unblock]"),function(b){
       b.onclick=function(){blockNumber(b.getAttribute("data-unblock"),"unblock")};
@@ -1475,6 +1539,24 @@
     });
   }
 
+  // Opted-out lookup — the flag lives on the lightweight index row, not the thread.
+  function isDnt(phone){var e=(state.threads||[]).find(function(x){return x.phone===phone});return !!(e&&e.optedOut)}
+  // Delivery state shown under an outbound bubble (UX-04). Failures offer a resend.
+  function delivHTML(m){
+    if(!m||m.dir!=="out")return"";
+    if(m.error||m.status==="failed"||m.status==="undelivered")
+      return '<span class="deliv failed">Not delivered<button class="resend" data-resend="'+esc(m.id)+'">Resend</button></span>';
+    if(m.status==="delivered")return '<span class="deliv">Delivered</span>';
+    return '<span class="deliv">Sent</span>';
+  }
+  function resendMessage(body){
+    if(!state.phone||!body)return;
+    var payload={phone:state.phone,body:body};if(teamOn()&&meName())payload.by=meName();
+    post("/api/send",payload).then(function(d){
+      if(d&&d.ok){state.thread=d.thread;renderThread();refreshThreads();toast("Message resent")}
+      else toast((d&&d.error)==="recipient_opted_out"?"They've opted out (texted STOP)":"Couldn't resend",{bad:true});
+    });
+  }
   function renderThread(){
     var t=state.thread;if(!t)return;
     el("chatHead").style.display="flex";el("composer").style.display="block";
@@ -1482,6 +1564,7 @@
     el("hName").textContent=displayName(t);
     el("hNum").textContent=prettyPhone(t.phone);
     el("hPin").innerHTML=ic("pin",14);el("hPin").style.display=t.pinned?"inline-block":"none";
+    var dnt=isDnt(t.phone);el("hDnt").innerHTML=dnt?ic("ban",10)+'Do not text':'';el("hDnt").style.display=dnt?"inline-flex":"none";
 
     var sb=el("schedBanner");var sc=(t.scheduled||[]);
     if(sc.length){sb.style.display="block";sb.innerHTML='<div class="sb-title">'+ic("calendar-clock",13)+' Scheduled to send</div>'+sc.map(function(s){
@@ -1502,8 +1585,11 @@
       if(day!==lastDay){lastDay=day;lastDir="";var dv=document.createElement("div");dv.className="day";dv.textContent=new Date(m.ts).toLocaleDateString([],{weekday:"long",month:"short",day:"numeric"});box.appendChild(dv)}
       var b=document.createElement("div");
       b.className="bubble "+(m.dir==="out"?"out":"in")+(m.dir===lastDir?" same":"")+(m.kind==="auto"?" auto":"")+(m.kind==="scheduled"?" scheduled":"");
-      b.innerHTML=esc(m.body)+'<span class="t">'+fmtTime(m.ts)+(m.kind&&m.kind!=="manual"&&m.dir==="out"?'<span class="kind">'+esc(m.kind)+'</span>':'')+(m.by&&m.dir==="out"?'<span class="by">'+esc(m.by)+'</span>':'')+'</span>'+(m.error?'<span class="err">'+ic("alert",11)+' '+esc(m.error)+'</span>':'');
+      b.innerHTML=esc(m.body)+'<span class="t">'+fmtTime(m.ts)+(m.kind&&m.kind!=="manual"&&m.dir==="out"?'<span class="kind">'+esc(m.kind)+'</span>':'')+(m.by&&m.dir==="out"?'<span class="by">'+esc(m.by)+'</span>':'')+'</span>'+(m.error?'<span class="err">'+ic("alert",11)+' '+esc(m.error)+'</span>':'')+delivHTML(m);
       box.appendChild(b);lastDir=m.dir;
+    });
+    Array.prototype.forEach.call(box.querySelectorAll("[data-resend]"),function(btn){
+      btn.onclick=function(){var mm=(t.messages||[]).find(function(x){return x.id===btn.getAttribute("data-resend")});if(mm)resendMessage(mm.body)};
     });
     box.scrollTop=box.scrollHeight;
     renderDetails();
@@ -1702,6 +1788,7 @@
     post("/api/send",payload).then(function(d){
       el("sendBtn").disabled=false;
       if(d&&d.ok){inp.value="";autoGrow();updateCount();state.thread=d.thread;renderThread();refreshThreads();vibrate(8)}
+      else if(d&&d.error==="recipient_opted_out")toast("They've opted out (texted STOP) — can't text this number",{bad:true});
       else toast("Couldn't send: "+((d&&d.error)||"error"),{bad:true});
     }).catch(function(){el("sendBtn").disabled=false;toast("Network error",{bad:true})});
   }
@@ -1943,7 +2030,7 @@
   // ---- boot ----
   hydrateIcons();
   el("myAvatar").innerHTML=brandGlyph();el("drawerLogo").innerHTML=brandGlyph();el("loginLogo").innerHTML=brandGlyph();
-  loadAccent();buildAccents();buildTplMenu();loadTemplates();buildQuickset();
+  applyTheme(themePref());loadAccent();buildAccents();buildThemeSeg();buildTplMenu();loadTemplates();buildQuickset();
   renderFilters();refreshThreads();startPoll();checkHealth();loadConfig();
 })();
 </script>
