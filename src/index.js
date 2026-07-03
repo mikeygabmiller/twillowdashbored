@@ -130,6 +130,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/ai/summary') return apiAiSummary(request);
   if (request.method === 'POST' && pathname === '/api/ai/draft')   return apiAiDraft(request);
   if (request.method === 'POST' && pathname === '/api/ai/triage')  return apiAiTriage();
+  if (request.method === 'POST' && pathname === '/api/ai/coach')   return apiAiCoach(request);
 
   // Static assets (the dashboard at "/") are served by Cloudflare's asset
   // layer before the Worker, so anything reaching here is an unknown route.
@@ -402,8 +403,13 @@ async function apiSend(request) {
   const body = (data.body || '').trim();
   if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
   if (!body) return json({ ok: false, error: 'empty_message' }, 422);
+  // In team mode the sender's name rides along so the reply is attributed in the
+  // thread ("— Alex"). Solo sends leave it blank and look exactly as before.
+  const by = String(data.by || '').trim().slice(0, 40);
+  const msg = { dir: 'out', body, ts: Date.now(), kind: 'manual' };
+  if (by) msg.by = by;
   await sendSms(phone, body);
-  const thread = await appendMessage(phone, { dir: 'out', body, ts: Date.now(), kind: 'manual' });
+  const thread = await appendMessage(phone, msg);
   return json({ ok: true, thread });
 }
 
@@ -421,6 +427,7 @@ async function apiMeta(request) {
   if (typeof data.notes === 'string') thread.notes = data.notes;
   if (typeof data.pinned === 'boolean') thread.pinned = data.pinned;
   if (typeof data.archived === 'boolean') thread.archived = data.archived;
+  if (typeof data.assignedTo === 'string') thread.assignedTo = data.assignedTo.slice(0, 24);
   if ('appointmentAt' in data) {
     const a = Number(data.appointmentAt);
     thread.appointmentAt = (data.appointmentAt == null || !a) ? null : a;
@@ -594,7 +601,9 @@ async function apiAiSummary(request) {
   if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
   const thread = await loadThread(phone);
   if (!thread.messages.length) return json({ ok: false, error: 'no_messages' }, 422);
+  const cfg = await loadConfig();
   const prompt =
+    businessContext(cfg) +
     `You are the assistant for Mikey's Mobile Detailing (a car detailing business). ` +
     `Read this SMS conversation and return ONLY JSON with this shape:\n` +
     `{"summary": "2-3 sentence plain-English overview of who this is and where things stand", ` +
@@ -621,23 +630,30 @@ async function apiAiDraft(request) {
   const phone = normalizePhone(data.phone);
   if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
   const thread = await loadThread(phone);
+  const cfg = await loadConfig();
+  const ctx = businessContext(cfg);
   const hint = (data.hint || '').trim();
   const draftText = (data.text || '').trim();
   let prompt;
   if (draftText) {
-    // Polish mode: clean up a reply Mikey already wrote, keep his meaning/voice.
+    // Polish mode: clean up a reply the sender already wrote, keep meaning/voice.
     prompt =
-      `You are Mikey from Mikey's Mobile Detailing, texting a customer. ` +
+      ctx +
+      `You are texting a customer for Mikey's Mobile Detailing. ` +
       `Polish the draft below so it reads clear, warm and professional: fix grammar, spelling and tone, ` +
-      `keep it concise (1-3 short sentences), keep Mikey's friendly voice and the original meaning, ` +
+      `keep it concise (1-3 short sentences), keep the friendly voice and the original meaning, ` +
       `no added greeting unless it's already there, no signature, ready to send. ` +
+      `Stay consistent with the business playbook above; never contradict it. ` +
       `Return ONLY the polished message — no quotes, no preamble. ` +
       (hint ? `Also: ${hint}. ` : '') +
       `\n\nConversation so far (for context):\n${transcript(thread)}\n\nDraft to polish:\n${draftText}\n\nPolished message:`;
   } else {
     prompt =
-      `You are Mikey replying to a customer by text for Mikey's Mobile Detailing. ` +
+      ctx +
+      `You are replying to a customer by text for Mikey's Mobile Detailing. ` +
       `Write ONE friendly, professional reply (1-3 short complete sentences, no greeting line, no signature, ready to send). ` +
+      `Ground it in the business playbook above — use the real services, pricing ranges and policies where relevant, and never contradict them. ` +
+      `Do not invent a specific price or appointment time; if one is needed, say you'll confirm. ` +
       `Finish every sentence — do not cut off mid-thought. ` +
       (hint ? `Goal of this reply: ${hint}. ` : '') +
       `\n\nConversation so far:\n${transcript(thread)}\n\nReply:`;
@@ -654,6 +670,7 @@ async function apiAiTriage() {
   const index = await loadIndex();
   const open = index.filter((e) => !e.archived);
   if (!open.length) return json({ ok: true, briefing: 'No open conversations. All clear! 🚗' });
+  const cfg = await loadConfig();
   const now = Date.now();
   const lines = open.map((e) => {
     const ago = humanAgo(now - (e.lastTs || now));
@@ -661,6 +678,7 @@ async function apiAiTriage() {
     return `- ${e.name || e.phone} [${e.status || 'no status'}] ${who}: "${e.lastBody || ''}"`;
   }).join('\n');
   const prompt =
+    businessContext(cfg) +
     `You are the operations assistant for Mikey's Mobile Detailing. Below are the open SMS threads. ` +
     `Give a short, prioritized action list (max 6 bullets) of who to reply to first and the suggested next step. ` +
     `Customers who are WAITING for a reply are top priority; longest waits first. Be concise and practical. ` +
@@ -668,6 +686,46 @@ async function apiAiTriage() {
   try {
     const briefing = await geminiGenerate(prompt, { maxTokens: 2000 });
     return json({ ok: true, briefing });
+  } catch (err) {
+    return json({ ok: false, error: String(err.message || err) }, 502);
+  }
+}
+
+// Team coach: given a conversation, tell whoever is on the phones EXACTLY what to
+// say and why. Returns a ready reply plus talking points, watch-outs, and a tone
+// cue — all grounded in the business playbook — so a new team member can answer
+// confidently without knowing the business by heart.
+async function apiAiCoach(request) {
+  const data = await readJson(request);
+  const phone = normalizePhone(data.phone);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  const thread = await loadThread(phone);
+  if (!thread.messages.length) return json({ ok: false, error: 'no_messages' }, 422);
+  const cfg = await loadConfig();
+  const prompt =
+    businessContext(cfg) +
+    `You are coaching a NEW team member at Mikey's Mobile Detailing on how to answer this customer text. ` +
+    `Use the business playbook above as the single source of truth. ` +
+    `Return ONLY JSON with this shape:\n` +
+    `{"reply": "one ready-to-send reply (1-3 short, friendly sentences, no greeting line, no signature)", ` +
+    `"points": ["2 to 4 short talking points or key facts to mention, drawn from the playbook"], ` +
+    `"watchouts": ["1 to 2 things to avoid or be careful about with this specific customer"], ` +
+    `"tone": "one short sentence describing the tone to use"}\n` +
+    `Never invent a specific price, date, or appointment time — if one is needed, tell them to confirm with Mikey. ` +
+    `If the playbook is thin, still give your best general detailing-business guidance.` +
+    `\n\nConversation:\n${transcript(thread)}`;
+  try {
+    const text = await geminiGenerate(prompt, { json: true, maxTokens: 1500 });
+    let parsed = {};
+    try { parsed = JSON.parse(text); } catch { parsed = {}; }
+    const arr = (v, n) => Array.isArray(v) ? v.map((s) => String(s).trim()).filter(Boolean).slice(0, n) : [];
+    return json({
+      ok: true,
+      reply: String(parsed.reply || '').trim(),
+      points: arr(parsed.points, 4),
+      watchouts: arr(parsed.watchouts, 2),
+      tone: String(parsed.tone || '').trim(),
+    });
   } catch (err) {
     return json({ ok: false, error: String(err.message || err) }, 502);
   }
@@ -831,11 +889,14 @@ async function buildFollowupDraft(thread, plan, cfg, opts = {}) {
   const tmpl = followupTemplate(thread, plan, cfg);
   if (opts.ai === false || !ENV.GEMINI_API_KEY) return tmpl;
 
+  const ctx = businessContext(cfg);
   let prompt;
   if (plan.stage === 'owed') {
     prompt =
+      ctx +
       `You are Mikey from Mikey's Mobile Detailing, replying to a customer by text. ` +
       `Write ONE friendly, professional reply to their most recent message (1-3 short sentences, no greeting line, no signature, ready to send). ` +
+      `Stay consistent with the business playbook above. ` +
       `Do not invent specific prices, dates, or appointment times — if one is needed, say you'll confirm. Finish every sentence.` +
       `\n\nConversation so far:\n${transcript(thread)}\n\nReply:`;
   } else {
@@ -848,8 +909,10 @@ async function buildFollowupDraft(thread, plan, cfg, opts = {}) {
       'lost:revival': 'a no-pressure revival offering a fresh quote',
     }[`${plan.stage}:${plan.step}`] || `${plan.stage} follow-up`;
     prompt =
+      ctx +
       `You are Mikey from Mikey's Mobile Detailing, texting a customer. ` +
       `Write ONE short, natural follow-up text (1-2 sentences, no greeting line unless natural, no signature, ready to send). ` +
+      `Stay consistent with the business playbook above. ` +
       `Goal: ${goal}. ` +
       (plan.stepKey === 'won:review' && cfg.reviewUrl ? `End the message with this exact review link: ${cfg.reviewUrl} . ` : '') +
       `Do not invent specific prices, dates, or appointments. Finish every sentence.` +
@@ -1046,6 +1109,9 @@ async function apiSaveConfig(request) {
   if (data.quietEnd != null && !isNaN(+data.quietEnd)) next.quietEnd = Math.max(0, Math.min(23, Math.round(+data.quietEnd)));
   if (typeof data.tz === 'string' && data.tz) next.tz = data.tz.slice(0, 64);
   if (typeof data.callScreening === 'boolean') next.callScreening = data.callScreening;
+  if (typeof data.teamMode === 'boolean') next.teamMode = data.teamMode;
+  if (Array.isArray(data.team)) next.team = sanitizeTeam(data.team);
+  if (data.playbook && typeof data.playbook === 'object') next.playbook = sanitizePlaybook(data.playbook, next.playbook);
   await kv().put('config', JSON.stringify(next));
   CFG_CACHE = next;
   return json({ ok: true, config: next });
@@ -1091,6 +1157,7 @@ function blankThread(phone) {
     archived: false,
     unread: 0,
     appointmentAt: null,
+    assignedTo: '',    // team member id this conversation is assigned to (team mode)
     linked: [],
     messages: [],      // { id, dir:'in'|'out', body, ts, kind, error? }
     scheduled: [],     // { id, body, sendAt }
@@ -1127,7 +1194,50 @@ function defaultConfig() {
     callScreening: true,     // press-1 gate on inbound calls — stops robocall/spam
                              // auto-dialers before they ring your phone or hit voicemail
     blockedNumbers: [],      // normalized numbers that get rejected instantly (no ring)
+    teamMode: false,         // when on: conversations can be assigned, and each reply is
+                             // attributed to the sender. Turn off to go back to solo.
+    team: [],                // [{ id, name, role }] — the people who help answer texts
+    playbook: defaultPlaybook(), // the business "brain" that trains every AI output
   };
+}
+
+// The starter playbook. `about`, `tone` and `rules` ship with safe, generic
+// content so the AI is a little smarter out of the box; the fact-specific fields
+// (services, area, booking, faqs) start empty for the owner to fill in — we never
+// invent prices or policies. Everything is editable from the dashboard menu.
+function defaultPlaybook() {
+  return {
+    about: "Mikey's Mobile Detailing is an owner-operated mobile car detailing service based in Snohomish, WA. We come to the customer's home or work.",
+    services: '',
+    area: '',
+    booking: '',
+    tone: 'Friendly, warm, confident and professional — like a trusted local pro texting back. Short, plain-English sentences. At most one tasteful emoji (🚗✨), never more.',
+    faqs: '',
+    rules: "Never confirm an exact price or exact appointment time on your own — say you'll confirm with Mikey. Never invent details you don't know. Always be respectful and low-pressure. If a customer texts STOP, don't text them again.",
+  };
+}
+
+const PLAYBOOK_KEYS = ['about', 'services', 'area', 'booking', 'tone', 'faqs', 'rules'];
+function sanitizePlaybook(next, prev) {
+  const out = Object.assign(defaultPlaybook(), prev || {});
+  for (const k of PLAYBOOK_KEYS) {
+    if (typeof next[k] === 'string') out[k] = next[k].slice(0, 2000);
+  }
+  return out;
+}
+
+// Normalize the team roster: keep only real members, cap the list, and make sure
+// every member has a stable id so assignments and attribution survive edits.
+function sanitizeTeam(arr) {
+  return (arr || [])
+    .filter((m) => m && typeof m === 'object')
+    .map((m) => ({
+      id: String(m.id || genId()).slice(0, 24),
+      name: String(m.name || '').trim().slice(0, 40),
+      role: String(m.role || '').trim().slice(0, 40),
+    }))
+    .filter((m) => m.name)
+    .slice(0, 25);
 }
 
 async function loadConfig() {
@@ -1179,6 +1289,7 @@ function buildIndexSummary(thread, cfg) {
     status: thread.status || '',
     pinned: !!thread.pinned,
     archived: !!thread.archived,
+    assignedTo: thread.assignedTo || '',
     unread: thread.unread || 0,
     scheduledCount: (thread.scheduled || []).length,
     lastBody: last ? preview(last.body) : '',
@@ -1237,6 +1348,29 @@ function transcript(thread, max = 40) {
   return (thread.messages || []).slice(-max)
     .map((m) => `${m.dir === 'in' ? 'Customer' : 'Mikey'}: ${String(m.body || '').replace(/\s+/g, ' ').trim()}`)
     .join('\n');
+}
+
+// The AI "brain": render the business playbook into a compact prompt preamble so
+// every AI output (drafts, polish, follow-ups, summaries, triage, coach) is
+// grounded in the real services, pricing, policies and voice. This is what makes
+// the writing good enough for a team member to trust and send. Returns '' when
+// the playbook is empty so behaviour is unchanged until it's filled in.
+const PLAYBOOK_SECTIONS = [
+  ['about', 'About the business'],
+  ['services', 'Services & pricing'],
+  ['area', 'Service area & hours'],
+  ['booking', 'Booking & policies'],
+  ['tone', 'Voice & tone'],
+  ['faqs', 'Common questions (approved answers)'],
+  ['rules', 'Golden rules — never break these'],
+];
+function businessContext(cfg) {
+  const p = (cfg && cfg.playbook) || {};
+  const rows = PLAYBOOK_SECTIONS
+    .filter(([k]) => p[k] && String(p[k]).trim())
+    .map(([k, label]) => `## ${label}\n${String(p[k]).trim()}`);
+  if (!rows.length) return '';
+  return 'BUSINESS PLAYBOOK (your source of truth — never contradict it):\n' + rows.join('\n\n') + '\n\n';
 }
 
 // ===========================================================================

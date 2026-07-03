@@ -438,6 +438,61 @@
   .pin-key.fn{background:transparent;border-color:transparent;font-size:22px;color:var(--muted)}
   .pin-shake{animation:pinshake .35s}
   @keyframes pinshake{0%,100%{transform:translateX(0)}20%,60%{transform:translateX(-8px)}40%,80%{transform:translateX(8px)}}
+
+  /* ---------- Team mode + assignment ---------- */
+  .mini-av{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;color:#fff;font-size:9px;font-weight:700;flex:none}
+  .assign-chip{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:700;color:#cbd3e0;background:var(--panel3);border:1px solid var(--line);padding:2px 8px 2px 3px;border-radius:20px}
+  .assign-chip .mini-av{width:15px;height:15px;font-size:8px}
+  .team-panel,.playbook{padding:0 20px}
+  .team-panel .hint,.playbook .hint{font-size:11.5px;color:var(--muted2);line-height:1.45;padding:2px 0 6px}
+  .team-panel .fu-row{display:flex;align-items:center;gap:9px;padding:8px 0;font-size:13px;color:var(--text)}
+  .team-panel .fu-row .lbl2{flex:1}
+  .team-you{padding:9px 0 4px}
+  .team-you .lbl2{font-size:12px;color:var(--muted);font-weight:600}
+  .you-chips,.assign-grid{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px}
+  .you-chip,.assign-btn{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;padding:6px 12px 6px 7px;border-radius:20px;background:var(--panel2);border:1px solid var(--line);color:var(--muted)}
+  .assign-btn{border-radius:11px;padding:8px 12px 8px 8px}
+  .you-chip.on,.assign-btn.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text);font-weight:600}
+  .team-list{display:flex;flex-direction:column;gap:6px;padding:8px 0 2px}
+  .team-mem{display:flex;align-items:center;gap:9px;background:var(--panel2);border:1px solid var(--line2);border-radius:11px;padding:8px 10px;font-size:13px}
+  .team-mem .mini-av{width:28px;height:28px;font-size:11px}
+  .team-mem .tm-info{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25}
+  .team-mem .tm-info b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .team-mem .tm-info small{color:var(--muted2);font-size:11px}
+  .team-mem .tm-act{background:none;border:none;color:var(--muted2);padding:5px;border-radius:7px;cursor:pointer;display:inline-flex}
+  .team-mem .tm-act:hover{background:var(--panel);color:var(--text)}
+  .team-add{margin-top:8px}
+
+  /* playbook editor */
+  .pb-field{display:flex;flex-direction:column;gap:5px;padding:8px 0}
+  .pb-field label{font-size:12.5px;font-weight:600;color:var(--text)}
+  .pb-ta{background:var(--panel2);border:1px solid var(--line);border-radius:10px;color:var(--text);padding:9px 10px;font-size:12.5px;line-height:1.45;resize:vertical;min-height:52px;outline:none;width:100%;font-family:inherit}
+  .pb-ta:focus{border-color:var(--accent)}
+
+  /* assignment section in details */
+  #dtAssign .assign-btn{font-size:12.5px}
+
+  /* coach panel (team member help) */
+  .coach-panel{margin:8px 14px 0;background:linear-gradient(135deg,#141018,#121216);border:1px solid #2c2540;border-radius:14px;padding:12px 13px;animation:pop .18s ease;max-height:46vh;overflow-y:auto}
+  .coach-head{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:#c9a4f7;text-transform:uppercase;letter-spacing:.4px}
+  .coach-head>span{display:flex;align-items:center;gap:6px}
+  .coach-head .coach-x{margin-left:auto;background:none;border:none;color:var(--muted2);cursor:pointer;padding:2px;display:inline-flex}
+  .coach-reply{background:rgba(0,0,0,.28);border:1px solid #322a48;border-radius:10px;padding:10px 11px;font-size:13.5px;line-height:1.5;color:#ece7f6;white-space:pre-wrap;cursor:pointer;margin-top:9px}
+  .coach-acts{margin-top:8px}
+  .coach-acts .btn{width:100%;font-size:12.5px}
+  .coach-sec{margin-top:11px;font-size:12.5px;color:#d8d3e6}
+  .coach-sec b{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:#9aa3b2;margin-bottom:5px;font-weight:700}
+  .coach-sec ul{margin:0;padding-left:17px;line-height:1.55}
+  .coach-sec ul li{margin-bottom:2px}
+  .coach-sec.watch b{color:#f5b842}
+  .coach-tone{margin-top:11px;font-size:12px;color:#c9a4f7;display:flex;align-items:center;gap:6px;font-style:italic}
+  .coach-note{margin-top:8px;font-size:12.5px;color:var(--muted)}
+
+  /* team identity nudge above composer */
+  .team-id-bar{margin:8px 14px 0;background:#15212e;border:1px solid #1f3a52;border-radius:11px;padding:9px 12px;font-size:12.5px;color:#9cd3f5;cursor:pointer;display:flex;align-items:center;gap:7px}
+
+  /* attribution on sent bubbles */
+  .bubble .by{margin-left:6px;opacity:.85;font-weight:600}
 </style>
 </head>
 <body>
@@ -487,6 +542,7 @@
         <div class="num" id="hNum"></div>
       </div>
       <div class="head-actions">
+        <button class="btn icon" id="coachBtn" data-ic="bot" title="Coach me — what to say" aria-label="Coach me" style="display:none"></button>
         <button class="btn icon" id="callBtn" data-ic="phone" title="Call" aria-label="Call"></button>
         <button class="btn icon" id="detailsBtn" data-ic="info" title="Details" aria-label="Details"></button>
       </div>
@@ -495,6 +551,8 @@
     <div class="sched-banner" id="schedBanner" style="display:none"></div>
     <div class="followup-banner" id="fuBanner" style="display:none"></div>
     <div class="messages" id="messages"></div>
+    <div class="coach-panel" id="coachPanel" style="display:none"></div>
+    <div class="team-id-bar" id="teamIdentityBar" style="display:none"></div>
 
     <div class="composer" id="composer" style="display:none">
       <div class="ctools">
@@ -554,6 +612,10 @@
           <div class="lbl">Lead status</div>
           <div class="statusgrid" id="dtStatus"></div>
         </div>
+        <div class="dt-sec" id="dtAssignSec" style="display:none">
+          <div class="lbl">Assigned to</div>
+          <div id="dtAssign"></div>
+        </div>
         <div class="dt-sec">
           <div class="lbl">Tags</div>
           <div class="tagwrap" id="dtTags"></div>
@@ -606,6 +668,12 @@
 
     <div class="sec-lbl">Auto follow-up settings</div>
     <div class="fu-settings" id="fuSettings"></div>
+
+    <div class="sec-lbl">Team</div>
+    <div class="team-panel" id="teamPanel"></div>
+
+    <div class="sec-lbl">AI training · playbook</div>
+    <div class="playbook" id="playbookPanel"></div>
 
     <div class="sec-lbl">Accent color</div>
     <div class="accent-row" id="accentRow"></div>
@@ -674,11 +742,21 @@
   var FU_STAGE={owed:["Reply owed","message-square"],nudge:["Follow-up","list-checks"],won:["Win follow-up","check-circle"],lost:["Revival","undo"]};
   var FU_SNOOZE=[["1 day",24],["3 days",72],["1 week",168]];
 
-  var state={threads:[],filter:"all",tab:"messages",search:"",phone:null,thread:null,insights:null,config:null,templates:TEMPLATES.slice()};
+  var state={threads:[],filter:"all",assign:"all",tab:"messages",search:"",phone:null,thread:null,insights:null,config:null,templates:TEMPLATES.slice()};
+  var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
   function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
   function vibrate(ms){try{if(navigator.vibrate)navigator.vibrate(ms)}catch(e){}}
+
+  // ---- team mode helpers ----
+  function teamOn(){return !!(state.config&&state.config.teamMode)}
+  function teamList(){return (state.config&&state.config.team)||[]}
+  function currentMe(){return localStorage.getItem(ME_KEY)||""}
+  function memberById(id){var l=teamList();for(var i=0;i<l.length;i++)if(l[i].id===id)return l[i];return null}
+  function meName(){var m=memberById(currentMe());return m?m.name:""}
+  function memberInitials(m){var p=String(m&&m.name||"").replace(/[^a-zA-Z ]/g,"").split(/\s+/).filter(Boolean);return(p.length?(p[0][0]+(p[1]?p[1][0]:"")):"?").toUpperCase()}
+  function assignBadge(id){var m=memberById(id);if(!m)return"";return '<span class="assign-chip"><span class="mini-av" style="background:'+colorFor(id)+'">'+esc(memberInitials(m))+'</span>'+esc(m.name.split(/\s+/)[0])+'</span>'}
 
   // ---- inline icon system (Lucide paths, MIT) — crisp & consistent across devices ----
   var ICONS={
@@ -853,6 +931,20 @@
     el("filters").style.display=(state.tab==="messages")?"flex":"none";
     if(state.tab!=="messages")return;
     var f=el("filters");f.innerHTML="";var c=counts();
+    // In team mode, lead with "Mine" / "Unassigned" so a helper can zero in on
+    // their own queue. Tapping an active chip again clears back to everyone.
+    if(teamOn()){
+      var me=currentMe();
+      [["mine","Mine"],["unassigned","Unassigned"]].forEach(function(p){
+        var chip=document.createElement("div");chip.className="chip"+(state.assign===p[0]?" active":"");
+        var n=p[0]==="mine"
+          ? state.threads.filter(function(t){return !t.archived&&t.assignedTo&&t.assignedTo===me}).length
+          : state.threads.filter(function(t){return !t.archived&&!t.assignedTo}).length;
+        chip.innerHTML=esc(p[1])+(n?'<span class="cnt">'+n+'</span>':'');
+        chip.onclick=function(){state.assign=(state.assign===p[0]?"all":p[0]);renderFilters();renderMain()};
+        f.appendChild(chip);
+      });
+    }
     FILTERS.forEach(function(p){
       var chip=document.createElement("div");chip.className="chip"+(state.filter===p[0]?" active":"");
       var n=p[0]==="unread"?c.unread:(p[0]==="all"?0:state.threads.filter(function(t){return !t.archived&&t.status===p[0]}).length);
@@ -863,6 +955,10 @@
 
   function passFilter(t){
     if(t.archived)return false;
+    if(teamOn()){
+      if(state.assign==="mine"&&(!currentMe()||t.assignedTo!==currentMe()))return false;
+      if(state.assign==="unassigned"&&t.assignedTo)return false;
+    }
     var f=state.filter;
     if(f==="all")return true;
     if(f==="unread")return t.unread>0;
@@ -893,6 +989,7 @@
         '<div class="prev">'+(t.lastDir==="out"?'<span class="you">You: </span>':'')+'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(t.lastBody||"No messages yet")+'</span></div>'+
         '<div class="meta">'+
           (st?'<span class="badge '+st.cls+'">'+st.label+'</span>':'')+
+          ((teamOn()&&t.assignedTo)?assignBadge(t.assignedTo):'')+
           (t.followupDue?'<span class="fu-flag'+(t.fu&&t.fu.urgency==="high"?" high":"")+'">'+ic("list-checks",11)+'follow-up</span>':'')+
           (t.scheduledCount>0?'<span class="sched-flag">'+ic("calendar-clock",12)+t.scheduledCount+'</span>':'')+
           (t.tags||[]).slice(0,2).map(function(x){return '<span class="tag">'+esc(x)+'</span>'}).join('')+
@@ -1194,9 +1291,106 @@
   }
 
   // ---- global follow-up settings (drawer) ----
-  function loadConfig(){return api("/api/config").then(function(d){if(d&&d.ok){state.config=d.config;renderFuSettings()}})}
+  function loadConfig(){return api("/api/config").then(function(d){if(d&&d.ok){state.config=d.config;afterConfig();renderPlaybook()}})}
+  // Applied after any config change. Deliberately does NOT re-render the playbook
+  // textareas (that would fight the cursor while typing) — they save on blur and
+  // keep their own DOM state.
+  function afterConfig(){
+    renderFuSettings();renderTeam();applyTeamUI();renderMain();
+    if(state.phone&&state.thread)renderDetails();
+  }
   function saveConfig(patch){
-    return post("/api/config",patch).then(function(d){if(d&&d.ok){state.config=d.config;renderFuSettings();if(state.tab==="followups")renderFollowups()}return d});
+    return post("/api/config",patch).then(function(d){if(d&&d.ok){state.config=d.config;afterConfig()}return d});
+  }
+  // Toggle everything that depends on team mode being on/off.
+  function applyTeamUI(){document.body.classList.toggle("teamon",teamOn());renderTeamBits()}
+  // Per-conversation team chrome: the coach button and the "who are you?" nudge.
+  function renderTeamBits(){
+    var cb=el("coachBtn");if(cb)cb.style.display=teamOn()?"":"none";
+    var bar=el("teamIdentityBar");
+    if(bar){
+      if(teamOn()&&!currentMe()&&state.phone){bar.style.display="flex";bar.innerHTML='<span>'+ic("bot",15)+'</span><span>Team mode is on — tap to set who you are, so your replies get signed.</span>';bar.onclick=function(){openDrawer()}}
+      else bar.style.display="none";
+    }
+  }
+
+  // ---- team roster + "you are" (drawer) ----
+  function renderTeam(){
+    var wrap=el("teamPanel");if(!wrap)return;var c=state.config||{};
+    var on=!!c.teamMode;var team=c.team||[];var me=currentMe();
+    var h='<div class="fu-row"><span class="lbl2">Team mode</span><span class="sw'+(on?" on":"")+'" id="cfgTeam"></span></div>'+
+      '<div class="hint">Turn on when someone else is helping answer texts. Assign conversations, filter to "Mine", and every reply is signed with the sender\'s name. Turn off anytime to go back to solo.</div>';
+    if(on){
+      h+='<div class="team-you"><span class="lbl2">You are</span><div class="you-chips">';
+      if(!team.length)h+='<span class="hint" style="padding:0">Add a team member below, then pick yourself.</span>';
+      team.forEach(function(m){
+        h+='<button class="you-chip'+(me===m.id?" on":"")+'" data-me="'+esc(m.id)+'"><span class="mini-av" style="background:'+colorFor(m.id)+'">'+esc(memberInitials(m))+'</span>'+esc(m.name)+'</button>';
+      });
+      h+='</div></div>';
+      h+='<div class="team-list">';
+      team.forEach(function(m){
+        h+='<div class="team-mem"><span class="mini-av" style="background:'+colorFor(m.id)+'">'+esc(memberInitials(m))+'</span>'+
+          '<span class="tm-info"><b>'+esc(m.name)+'</b>'+(m.role?'<small>'+esc(m.role)+'</small>':'')+'</span>'+
+          '<button class="tm-act" data-edit="'+esc(m.id)+'" title="Edit">'+ic("pencil",14)+'</button>'+
+          '<button class="tm-act" data-del="'+esc(m.id)+'" title="Remove">'+ic("x",15)+'</button></div>';
+      });
+      h+='</div><button class="btn ic-btn team-add" id="teamAdd" style="width:100%">'+ic("plus",15)+'<span>Add team member</span></button>';
+    }
+    wrap.innerHTML=h;
+    el("cfgTeam").onclick=function(){saveConfig({teamMode:!on})};
+    Array.prototype.forEach.call(wrap.querySelectorAll("[data-me]"),function(b){b.onclick=function(){
+      var id=b.getAttribute("data-me");
+      localStorage.setItem(ME_KEY,currentMe()===id?"":id);
+      renderTeam();renderTeamBits();vibrate(6);
+    }});
+    Array.prototype.forEach.call(wrap.querySelectorAll("[data-edit]"),function(b){b.onclick=function(){editMember(b.getAttribute("data-edit"))}});
+    Array.prototype.forEach.call(wrap.querySelectorAll("[data-del]"),function(b){b.onclick=function(){removeMember(b.getAttribute("data-del"))}});
+    if(el("teamAdd"))el("teamAdd").onclick=addMember;
+  }
+  function genMemberId(){return "m"+Date.now().toString(36)+Math.random().toString(36).slice(2,5)}
+  function addMember(){
+    var name=prompt("Team member name:");if(name===null||!name.trim())return;
+    var role=prompt("Role (optional, e.g. Detailer, Front desk):");if(role===null)role="";
+    var team=(state.config.team||[]).concat([{id:genMemberId(),name:name.trim(),role:(role||"").trim()}]);
+    saveConfig({team:team}).then(function(){toast("Team member added")});
+  }
+  function editMember(id){
+    var m=memberById(id);if(!m)return;
+    var name=prompt("Name:",m.name);if(name===null)return;
+    var role=prompt("Role (optional):",m.role||"");if(role===null)role=m.role||"";
+    var team=(state.config.team||[]).map(function(x){return x.id===id?{id:id,name:(name.trim()||m.name),role:(role||"").trim()}:x});
+    saveConfig({team:team});
+  }
+  function removeMember(id){
+    var m=memberById(id);if(!m)return;
+    if(!confirm('Remove '+m.name+' from the team?'))return;
+    var team=(state.config.team||[]).filter(function(x){return x.id!==id});
+    saveConfig({team:team}).then(function(){if(currentMe()===id)localStorage.removeItem(ME_KEY);renderTeam();renderTeamBits();toast("Removed")});
+  }
+
+  // ---- AI training / business playbook (drawer) ----
+  var PLAYBOOK_FIELDS=[
+    ["about","About the business","One or two lines: who you are and where you work."],
+    ["services","Services & pricing","List your packages and price ranges so replies quote the right ballpark."],
+    ["area","Service area & hours","Where you travel and the days/times you work."],
+    ["booking","Booking & policies","How booking works, deposits, cancellations, guarantees."],
+    ["tone","Voice & tone","How replies should sound."],
+    ["faqs","Common questions & answers","Paste real questions customers ask and the answers you'd give."],
+    ["rules","Golden rules (never break)","Hard limits — e.g. never quote a firm price without checking."]
+  ];
+  function renderPlaybook(){
+    var wrap=el("playbookPanel");if(!wrap)return;var p=(state.config&&state.config.playbook)||{};
+    var h='<div class="hint">This is the brain behind AI drafts, the Coach, follow-ups and summaries. The more you fill in, the more your whole team sounds like you. Blank fields are simply skipped.</div>';
+    PLAYBOOK_FIELDS.forEach(function(f){
+      h+='<div class="pb-field"><label>'+esc(f[1])+'</label><textarea class="pb-ta" data-key="'+f[0]+'" placeholder="'+esc(f[2])+'">'+esc(p[f[0]]||"")+'</textarea></div>';
+    });
+    wrap.innerHTML=h;
+    Array.prototype.forEach.call(wrap.querySelectorAll(".pb-ta"),function(ta){
+      ta.addEventListener("change",function(){
+        var patch={};patch[ta.getAttribute("data-key")]=ta.value;
+        saveConfig({playbook:patch}).then(function(d){if(d&&d.ok)toast("Playbook saved")});
+      });
+    });
   }
   function renderFuSettings(){
     var wrap=el("fuSettings");if(!wrap)return;var c=state.config||{};
@@ -1295,6 +1489,11 @@
       Array.prototype.forEach.call(sb.querySelectorAll(".x"),function(b){b.onclick=function(){post("/api/unschedule",{phone:t.phone,id:b.getAttribute("data-id")}).then(function(d){if(d.ok){state.thread=d.thread;renderThread();refreshThreads();toast("Scheduled message canceled")}})}});
     }else sb.style.display="none";
     renderFuBanner(t);
+    // Coach advice is per-conversation — clear it when the open thread changes,
+    // but keep it across background polls of the SAME thread so it isn't yanked
+    // away while it's being read.
+    var cp=el("coachPanel");if(cp._phone!==t.phone){cp.style.display="none";cp.innerHTML="";cp._phone=t.phone}
+    renderTeamBits();
 
     var box=el("messages");box.innerHTML="";var lastDay="";var lastDir="";
     if(!t.messages.length){box.innerHTML='<div class="empty" style="height:100%"><div class="big">'+ic("message-circle",48)+'</div><div>No messages yet</div><div class="sub">Say hello — your first text starts the conversation.</div></div>'}
@@ -1303,7 +1502,7 @@
       if(day!==lastDay){lastDay=day;lastDir="";var dv=document.createElement("div");dv.className="day";dv.textContent=new Date(m.ts).toLocaleDateString([],{weekday:"long",month:"short",day:"numeric"});box.appendChild(dv)}
       var b=document.createElement("div");
       b.className="bubble "+(m.dir==="out"?"out":"in")+(m.dir===lastDir?" same":"")+(m.kind==="auto"?" auto":"")+(m.kind==="scheduled"?" scheduled":"");
-      b.innerHTML=esc(m.body)+'<span class="t">'+fmtTime(m.ts)+(m.kind&&m.kind!=="manual"&&m.dir==="out"?'<span class="kind">'+esc(m.kind)+'</span>':'')+'</span>'+(m.error?'<span class="err">'+ic("alert",11)+' '+esc(m.error)+'</span>':'');
+      b.innerHTML=esc(m.body)+'<span class="t">'+fmtTime(m.ts)+(m.kind&&m.kind!=="manual"&&m.dir==="out"?'<span class="kind">'+esc(m.kind)+'</span>':'')+(m.by&&m.dir==="out"?'<span class="by">'+esc(m.by)+'</span>':'')+'</span>'+(m.error?'<span class="err">'+ic("alert",11)+' '+esc(m.error)+'</span>':'');
       box.appendChild(b);lastDir=m.dir;
     });
     box.scrollTop=box.scrollHeight;
@@ -1323,6 +1522,9 @@
       b.innerHTML='<span class="d" style="background:'+o[2]+'"></span>'+o[1];
       b.onclick=function(){saveMeta({status:(t.status===o[0]?"":o[0])})};ds.appendChild(b);
     });
+
+    var asec=el("dtAssignSec");
+    if(teamOn()){asec.style.display="";renderAssign()}else{asec.style.display="none"}
 
     var tw=el("dtTags");tw.innerHTML="";
     (t.tags||[]).forEach(function(tag){var s=document.createElement("span");s.className="tag rm";s.innerHTML=esc(tag)+' <span class="ic-inline">'+ic("x",10)+'</span>';s.title="Remove tag";s.onclick=function(){saveMeta({tags:(t.tags||[]).filter(function(x){return x!==tag})})};tw.appendChild(s)});
@@ -1376,6 +1578,25 @@
     wrap.appendChild(add);
   }
 
+  // ---- assignment (team mode) ----
+  function renderAssign(){
+    var t=state.thread;var wrap=el("dtAssign");if(!wrap||!t)return;
+    if(!teamList().length){wrap.innerHTML='<div style="color:var(--muted2);font-size:12px">Add team members in the menu → Team, then assign this conversation.</div>';return}
+    var cur=t.assignedTo||"";
+    var html='<div class="assign-grid">';
+    html+='<button class="assign-btn'+(!cur?" on":"")+'" data-id="">'+ic("x",13)+' Unassigned</button>';
+    teamList().forEach(function(m){
+      html+='<button class="assign-btn'+(cur===m.id?" on":"")+'" data-id="'+esc(m.id)+'"><span class="mini-av" style="background:'+colorFor(m.id)+'">'+esc(memberInitials(m))+'</span>'+esc(m.name)+'</button>';
+    });
+    html+='</div>';
+    wrap.innerHTML=html;
+    Array.prototype.forEach.call(wrap.querySelectorAll("[data-id]"),function(b){b.onclick=function(){
+      var id=b.getAttribute("data-id");
+      saveMeta({assignedTo:id});
+      toast(id?("Assigned to "+(memberById(id)||{}).name):"Unassigned");
+    }});
+  }
+
   // ---- AI: summary & draft ----
   function aiSummarize(){
     var t=state.thread;if(!t)return;
@@ -1419,6 +1640,35 @@
     .then(function(){var bb=el("polishBtn");if(bb){bb.disabled=false;bb.innerHTML=ic("wand",21)}});
   }
 
+  // ---- AI Coach: tells a team member exactly what to say (and why) ----
+  function aiCoach(){
+    var t=state.thread;if(!t)return;
+    if(!(t.messages&&t.messages.length)){toast("No messages yet to coach on",{bad:true});return}
+    var b=el("coachBtn");b.disabled=true;b.innerHTML='<span class="spin"></span>';
+    var panel=el("coachPanel");panel._phone=t.phone;panel.style.display="block";
+    panel.innerHTML='<div class="coach-head"><span>'+ic("bot",14)+' Coaching…</span></div>';
+    post("/api/ai/coach",{phone:t.phone}).then(function(d){
+      if(d&&d.ok)renderCoach(d);
+      else panel.innerHTML='<div class="coach-head"><span>'+ic("bot",14)+' Coach</span><button class="coach-x" id="coachClose">'+ic("x",15)+'</button></div><div class="coach-note">Couldn\'t generate advice: '+esc((d&&d.error)||"error")+'</div>';
+      if(el("coachClose"))el("coachClose").onclick=function(){panel.style.display="none"};
+    }).catch(function(){panel.style.display="none";toast("Network error",{bad:true})})
+    .then(function(){var bb=el("coachBtn");if(bb){bb.disabled=false;bb.innerHTML=ic("bot",21)}});
+  }
+  function renderCoach(d){
+    var panel=el("coachPanel");
+    var use=function(){el("msgInput").value=d.reply;autoGrow();updateCount();el("msgInput").focus();toast("Loaded — edit & send")};
+    var h='<div class="coach-head"><span>'+ic("bot",14)+' Coach · what to say</span><button class="coach-x" id="coachClose">'+ic("x",15)+'</button></div>';
+    if(d.reply)h+='<div class="coach-reply" id="coachReply">'+esc(d.reply)+'</div><div class="coach-acts"><button class="btn accent ic-btn" id="coachUse">'+ic("pencil",14)+'<span>Use this reply</span></button></div>';
+    if(d.points&&d.points.length)h+='<div class="coach-sec"><b>Key points to hit</b><ul>'+d.points.map(function(p){return '<li>'+esc(p)+'</li>'}).join("")+'</ul></div>';
+    if(d.watchouts&&d.watchouts.length)h+='<div class="coach-sec watch"><b>Watch out</b><ul>'+d.watchouts.map(function(p){return '<li>'+esc(p)+'</li>'}).join("")+'</ul></div>';
+    if(d.tone)h+='<div class="coach-tone">'+ic("sparkles",12)+' '+esc(d.tone)+'</div>';
+    if(!d.reply&&!(d.points&&d.points.length))h+='<div class="coach-note">No specific advice — reply naturally and keep it friendly.</div>';
+    panel.innerHTML=h;
+    el("coachClose").onclick=function(){panel.style.display="none"};
+    if(el("coachUse"))el("coachUse").onclick=use;
+    if(el("coachReply"))el("coachReply").onclick=use;
+  }
+
   // ---- voice-to-text (free, built into the browser) ----
   var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   var rec=null,recOn=false,recBase="";
@@ -1447,7 +1697,9 @@
   function sendMessage(){
     var inp=el("msgInput");var body=inp.value.trim();if(!body||!state.phone)return;
     el("sendBtn").disabled=true;
-    post("/api/send",{phone:state.phone,body:body}).then(function(d){
+    var payload={phone:state.phone,body:body};
+    if(teamOn()&&meName())payload.by=meName(); // sign the reply with who's texting
+    post("/api/send",payload).then(function(d){
       el("sendBtn").disabled=false;
       if(d&&d.ok){inp.value="";autoGrow();updateCount();state.thread=d.thread;renderThread();refreshThreads();vibrate(8)}
       else toast("Couldn't send: "+((d&&d.error)||"error"),{bad:true});
@@ -1565,6 +1817,7 @@
     state.tab=tab;state.phone=null;document.body.classList.remove("viewing");
     el("details").classList.remove("open");el("sheetScrim").classList.remove("show");
     el("emptyState").style.display="flex";el("chatHead").style.display="none";el("composer").style.display="none";el("schedBanner").style.display="none";el("fuBanner").style.display="none";
+    el("coachPanel").style.display="none";el("coachPanel")._phone=null;el("teamIdentityBar").style.display="none";
     el("messages").innerHTML="";
     Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.classList.toggle("active",b.getAttribute("data-tab")===tab)});
     el("scroll").scrollTop=0;
@@ -1644,6 +1897,7 @@
   el("remConfirm").onclick=doReminder;
   el("draftBtn").onclick=aiDraft;
   el("polishBtn").onclick=aiPolish;
+  el("coachBtn").onclick=aiCoach;
   el("micBtn").onclick=toggleMic;
   if(SR)el("micBtn").style.display="";
   el("loginBtn").onclick=doLogin;
