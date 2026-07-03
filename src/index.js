@@ -108,6 +108,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/call-screen')    return handleCallScreen(request);
   if (request.method === 'POST' && pathname === '/voicemail')      return handleVoicemail(request);
   if (request.method === 'POST' && pathname === '/voicemail-done') return handleVoicemailDone(request);
+  if (request.method === 'POST' && pathname === '/voicemail-tx')   return handleVoicemailTranscription(request);
   if (request.method === 'POST' && pathname === '/status')         return handleStatusCallback(request);
 
   if (request.method === 'POST' && pathname === '/api/login')      return apiLogin(request);
@@ -362,7 +363,7 @@ async function handleVoicemail(request) {
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="alice">Hey, you've reached Mikey's Mobile Detailing. Leave a message and Mikey will text or call you right back.</Say>
-  <Record maxLength="120" action="/voicemail-done" method="POST" playBeep="true" />
+  <Record maxLength="120" action="/voicemail-done" method="POST" playBeep="true" transcribe="true" transcribeCallback="/voicemail-tx" />
 </Response>`;
   notifyMikey(`📵 Missed call from ${from}`, `Missed call from ${from} — I sent them an instant text back, and they may leave a voicemail now.`).catch(() => {});
   return xmlResponse(xml);
@@ -378,6 +379,35 @@ async function handleVoicemailDone(request) {
     await notifyMikey(`🎙️ Voicemail from ${from}`, `Voicemail from ${from} (${duration}s):\n${recordingUrl}.mp3`);
   }
   return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+}
+
+// Voicemail transcription callback (Twilio's built-in speech-to-text, fired after
+// the recording is transcribed). Drops the readable text straight into the caller's
+// thread as an inbound message so a voicemail becomes searchable, AI-usable text —
+// no more stopping to play an .mp3. Arrives a little after the voicemail itself.
+async function handleVoicemailTranscription(request) {
+  const params = await formParams(request);
+  if (!(await verifyTwilio(request, params))) return forbidden();
+  const from = params.From || 'Unknown';
+  const fromNorm = normalizePhone(from) || from;
+  const text = (params.TranscriptionText || '').trim();
+  const status = params.TranscriptionStatus || '';
+  const recording = params.RecordingUrl || '';
+  if (fromNorm === normalizePhone(ENV.MIKEY_PHONE)) return new Response('', { status: 204 });
+  if (status !== 'completed' || !text) {
+    // Transcription failed (silence, noise, non-English). The .mp3 alert from
+    // /voicemail-done already went out, so just acknowledge.
+    return new Response('', { status: 204 });
+  }
+  await appendMessage(fromNorm, {
+    dir: 'in',
+    body: `🎙️ Voicemail: "${text}"`,
+    ts: Date.now(),
+    kind: 'voicemail',
+    recording: recording ? recording + '.mp3' : undefined,
+  });
+  notifyMikey(`🎙️ Voicemail transcript from ${from}`, `"${text}"\n\nOpen the dashboard to reply.`).catch(() => {});
+  return new Response('', { status: 204 });
 }
 
 // Twilio delivery-status callback (set as StatusCallback on every outbound send).

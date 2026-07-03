@@ -297,6 +297,8 @@
   .quickset{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:11px}
   .quickset button{font-size:11px;padding:6px 11px;border-radius:16px;background:var(--panel);border:1px solid var(--line);color:var(--muted)}
   .quickset button:hover{border-color:var(--accent);color:var(--accent-text)}
+  .nl-echo{font-size:11.5px;color:var(--muted2);min-height:15px;margin:-4px 0 9px}
+  .nl-echo.ok{color:var(--green);font-weight:600}
 
   /* ---------- Drawer (left menu) ---------- */
   .scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .22s;z-index:45}
@@ -616,7 +618,9 @@
         <span id="charCount" style="color:var(--muted2);font-size:11px"></span>
         <div class="menu" id="tplMenu" style="display:none"></div>
         <div class="sched-pop" id="schedPop" style="display:none">
-          <label>Send this message at</label>
+          <label>Type a time — or pick one below</label>
+          <input type="text" id="schedNL" placeholder="tomorrow 9am · next sat 2pm · in 2 hours" autocomplete="off" />
+          <div class="nl-echo" id="schedNLecho"></div>
           <input type="datetime-local" id="schedTime" />
           <div class="quickset" id="quickset"></div>
           <button class="btn accent ic-btn" id="schedConfirm" data-ic="calendar-clock" data-ic-label="Schedule send" style="width:100%"></button>
@@ -1622,7 +1626,7 @@
     if(m.error||m.status==="failed"||m.status==="undelivered")
       return '<span class="deliv failed">Not delivered<button class="resend" data-resend="'+esc(m.id)+'">Resend</button></span>';
     if(!isLast)return"";
-    return '<span class="deliv">'+(m.status==="delivered"?"Delivered":"Sent")+'</span>';
+    return '<span class="deliv">'+(m.status==="sending"?"Sending…":(m.status==="delivered"?"Delivered":"Sent"))+'</span>';
   }
   function resendMessage(body){
     if(!state.phone||!body)return;
@@ -1860,12 +1864,24 @@
     el("sendBtn").disabled=true;
     var payload={phone:state.phone,body:body};
     if(teamOn()&&meName())payload.by=meName(); // sign the reply with who's texting
+    // Optimistic: show the bubble immediately (marked "Sending…"), clear the box,
+    // then reconcile with the server — so a text feels instant even on slow signal.
+    var tempId="tmp"+Date.now();var forPhone=state.phone;
+    if(state.thread&&state.thread.phone===forPhone){
+      state.thread.messages.push({id:tempId,dir:"out",body:body,ts:Date.now(),kind:"manual",status:"sending",by:payload.by});
+      renderThread();
+    }
+    inp.value="";autoGrow();updateCount();
+    var fail=function(errMsg){
+      var mm=state.thread&&state.thread.phone===forPhone&&(state.thread.messages||[]).find(function(x){return x.id===tempId});
+      if(mm){mm.status="failed";mm.error=errMsg;renderThread()}
+    };
     post("/api/send",payload).then(function(d){
       el("sendBtn").disabled=false;
-      if(d&&d.ok){inp.value="";autoGrow();updateCount();state.thread=d.thread;renderThread();refreshThreads();vibrate(8)}
-      else if(d&&d.error==="recipient_opted_out")toast("They've opted out (texted STOP) — can't text this number",{bad:true});
-      else toast("Couldn't send: "+((d&&d.error)||"error"),{bad:true});
-    }).catch(function(){el("sendBtn").disabled=false;toast("Network error",{bad:true})});
+      if(d&&d.ok){if(state.phone===forPhone){state.thread=d.thread;renderThread()}refreshThreads();vibrate(8)}
+      else if(d&&d.error==="recipient_opted_out"){fail("Opted out (STOP)");toast("They've opted out (texted STOP) — can't text this number",{bad:true})}
+      else{fail("Not sent — tap Resend");toast("Couldn't send: "+((d&&d.error)||"error"),{bad:true})}
+    }).catch(function(){el("sendBtn").disabled=false;fail("Network error — tap Resend");toast("Network error",{bad:true})});
   }
   function placeCall(){
     if(!state.phone)return;
@@ -1879,7 +1895,19 @@
   }
 
   // ---- templates & schedule ----
-  function fillTemplate(text){var t=state.thread;var name=t&&t.name?t.name.split(" ")[0]:"there";el("msgInput").value=text.replace(/\{name\}/g,name);el("msgInput").focus();autoGrow();updateCount()}
+  // Merge variables — expanded at insert time so Mikey sees/edits the real text before sending.
+  //   {first_name}/{name} · {full_name} · {appt}/{appt_time} · {review}
+  function expandVars(text){
+    var t=state.thread||{};var c=state.config||{};
+    var first=((t.name||"").trim().split(/\s+/)[0])||"there";
+    var appt=t.appointmentAt?fmtFull(t.appointmentAt):"your appointment time";
+    return String(text||"")
+      .replace(/\{first_name\}|\{name\}/gi,first)
+      .replace(/\{full_name\}/gi,(t.name||"there"))
+      .replace(/\{appt(?:_time)?\}/gi,appt)
+      .replace(/\{review\}/gi,(c.reviewUrl||""));
+  }
+  function fillTemplate(text){el("msgInput").value=expandVars(text);el("msgInput").focus();autoGrow();updateCount()}
   function buildTplMenu(){
     var m=el("tplMenu");m.innerHTML='<div class="mh">Quick replies</div>';
     state.templates.forEach(function(tp,i){
@@ -1893,19 +1921,19 @@
     });
     var add=document.createElement("div");add.className="it tpl-new";add.innerHTML='<span class="ic-btn">'+ic("plus",15)+'<span>New quick reply</span></span>';
     add.onclick=function(){addTemplate()};m.appendChild(add);
-    var hint=document.createElement("div");hint.className="tpl-hint";hint.textContent="Tap a reply to insert it. Use {name} to drop in the customer's first name.";m.appendChild(hint);
+    var hint=document.createElement("div");hint.className="tpl-hint";hint.innerHTML="Tap a reply to insert it. Variables: <b>{first_name}</b>, <b>{appt}</b>, <b>{review}</b> — filled in automatically.";m.appendChild(hint);
   }
   function loadTemplates(){return api("/api/templates").then(function(d){if(d&&d.ok&&d.templates&&d.templates.length)state.templates=d.templates;buildTplMenu()})}
   function saveTemplates(){post("/api/templates",{templates:state.templates}).then(function(d){if(!d||!d.ok)toast("Couldn't save template",{bad:true})})}
   function addTemplate(){
     var label=prompt("Button label (e.g. Quote):");if(label===null||!label.trim())return;
-    var body=prompt("Message text — use {name} for the first name:");if(body===null||!body.trim())return;
+    var body=prompt("Message text — variables: {first_name} {appt} {review}");if(body===null||!body.trim())return;
     state.templates.push([label.trim(),body.trim()]);saveTemplates();buildTplMenu();toast("Quick reply saved");
   }
   function editTemplate(i){
     var tp=state.templates[i];
     var label=prompt("Button label:",tp[0]);if(label===null)return;
-    var body=prompt("Message text — use {name} for the first name:",tp[1]);if(body===null)return;
+    var body=prompt("Message text — variables: {first_name} {appt} {review}",tp[1]);if(body===null)return;
     state.templates[i]=[label.trim()||tp[0],body.trim()||tp[1]];saveTemplates();buildTplMenu();toast("Quick reply updated");
   }
   function deleteTemplate(i){
@@ -1915,12 +1943,55 @@
   function buildQuickset(){var q=el("quickset");q.innerHTML="";QUICK.forEach(function(x){var b=document.createElement("button");b.textContent=x[0];b.onclick=function(){el("schedTime").value=toLocalInput(quickTime(x[1]))};q.appendChild(b)})}
   function quickTime(code){var d=new Date();if(code>0){d.setMinutes(d.getMinutes()+code)}else{var hour=-code;if(hour>=24){d.setDate(d.getDate()+1);hour-=24}d.setHours(hour,0,0,0);if(d<new Date())d.setDate(d.getDate()+1)}return d}
   function toLocalInput(d){var p=function(n){return(n<10?"0":"")+n};return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+"T"+p(d.getHours())+":"+p(d.getMinutes())}
+  // Natural-language time parsing ("tomorrow 9am", "next sat 2pm", "in 2 hours").
+  function parseClock(s){
+    var m=s.match(/(\d{1,2})(?::(\d{2}))?\s*(a\.?m\.?|p\.?m\.?)/);
+    if(m){var h=(+m[1])%12;if(/p/.test(m[3]))h+=12;return {h:h,mi:m[2]?+m[2]:0}}
+    m=s.match(/\b(\d{1,2}):(\d{2})\b/);
+    if(m)return {h:+m[1],mi:+m[2]};
+    return null;
+  }
+  function parseNaturalTime(str){
+    if(!str)return null;var s=str.trim().toLowerCase();if(!s)return null;var now=new Date();var d=new Date(now);
+    var rel=s.match(/^in\s+(\d+)\s*(min|mins|minute|minutes|hr|hrs|hour|hours|day|days|week|weeks)\b/);
+    if(rel){var n=+rel[1],u=rel[2];
+      if(/^min/.test(u))d.setMinutes(d.getMinutes()+n);
+      else if(/^h/.test(u))d.setHours(d.getHours()+n);
+      else if(/^day/.test(u))d.setDate(d.getDate()+n);
+      else d.setDate(d.getDate()+n*7);
+      return d>now?d:null;
+    }
+    var days={sunday:0,sun:0,monday:1,mon:1,tuesday:2,tues:2,tue:2,wednesday:3,wed:3,thursday:4,thurs:4,thu:4,friday:5,fri:5,saturday:6,sat:6};
+    var anchored=false;
+    if(/\btomorrow\b|\btmrw\b/.test(s)){d.setDate(d.getDate()+1);anchored=true}
+    else if(/\btoday\b|\btonight\b/.test(s)){anchored=true}
+    else{
+      var dm=s.match(/\b(next\s+)?(sunday|sun|monday|mon|tuesday|tues|tue|wednesday|wed|thursday|thurs|thu|friday|fri|saturday|sat)\b/);
+      if(dm){var add=(days[dm[2]]-d.getDay()+7)%7;if(add===0||dm[1])add=add||7;d.setDate(d.getDate()+add);anchored=true}
+    }
+    var t=parseClock(s);
+    if(t)d.setHours(t.h,t.mi,0,0);
+    else if(/\bnoon\b/.test(s))d.setHours(12,0,0,0);
+    else if(/\bmidnight\b/.test(s))d.setHours(0,0,0,0);
+    else if(/\btonight\b|\bevening\b/.test(s))d.setHours(19,0,0,0);
+    else if(/\bmorning\b/.test(s))d.setHours(9,0,0,0);
+    else if(/\bafternoon\b/.test(s))d.setHours(14,0,0,0);
+    else if(anchored)d.setHours(9,0,0,0);
+    else return null;
+    if(!anchored&&d<=now)d.setDate(d.getDate()+1); // a bare time that already passed → next day
+    return d>now?d:null;
+  }
+  function applyNaturalTime(){
+    var raw=el("schedNL").value;var d=parseNaturalTime(raw);var echo=el("schedNLecho");
+    if(d){el("schedTime").value=toLocalInput(d);echo.textContent="→ "+fmtFull(d.getTime());echo.className="nl-echo ok"}
+    else{echo.textContent=raw.trim()?"Didn't catch that — try \"tomorrow 9am\" or use the picker":"";echo.className="nl-echo"}
+  }
   function doSchedule(){
     var body=el("msgInput").value.trim();if(!body){toast("Type a message first",{bad:true});return}
     var v=el("schedTime").value;if(!v){toast("Pick a date & time",{bad:true});return}
     var sendAt=new Date(v).getTime();if(sendAt<Date.now()){toast("Pick a future time",{bad:true});return}
     post("/api/schedule",{phone:state.phone,body:body,sendAt:sendAt}).then(function(d){
-      if(d&&d.ok){el("msgInput").value="";autoGrow();updateCount();el("schedPop").style.display="none";state.thread=d.thread;renderThread();refreshThreads();toast("Scheduled for "+fmtFull(sendAt))}
+      if(d&&d.ok){el("msgInput").value="";el("schedNL").value="";el("schedNLecho").textContent="";autoGrow();updateCount();el("schedPop").style.display="none";state.thread=d.thread;renderThread();refreshThreads();toast("Scheduled for "+fmtFull(sendAt))}
       else toast("Couldn't schedule: "+((d&&d.error)||"error"),{bad:true});
     });
   }
@@ -2059,9 +2130,11 @@
   el("dtNotes").addEventListener("blur",function(){if(state.thread&&el("dtNotes").value!==(state.thread.notes||""))saveMeta({notes:el("dtNotes").value})});
   function closePops(except){["tplMenu","schedPop","remPop"].forEach(function(id){if(id!==except)el(id).style.display="none"})}
   el("tplBtn").onclick=function(){var m=el("tplMenu");closePops("tplMenu");m.style.display=m.style.display==="none"?"block":"none"};
-  el("schedBtn").onclick=function(){var p=el("schedPop");closePops("schedPop");if(p.style.display==="none"&&!el("schedTime").value)el("schedTime").value=toLocalInput(quickTime(60));p.style.display=p.style.display==="none"?"block":"none"};
+  el("schedBtn").onclick=function(){var p=el("schedPop");closePops("schedPop");var opening=p.style.display==="none";if(opening){el("schedNL").value="";el("schedNLecho").textContent="";el("schedNLecho").className="nl-echo";if(!el("schedTime").value)el("schedTime").value=toLocalInput(quickTime(60))}p.style.display=opening?"block":"none"};
   el("remBtn").onclick=function(){var p=el("remPop");closePops("remPop");if(p.style.display==="none")openRemPop();p.style.display=p.style.display==="none"?"block":"none"};
   el("schedConfirm").onclick=doSchedule;
+  el("schedNL").oninput=applyNaturalTime;
+  el("schedNL").onkeydown=function(e){if(e.key==="Enter"){e.preventDefault();applyNaturalTime();if(el("schedTime").value)doSchedule()}};
   el("remConfirm").onclick=doReminder;
   el("draftBtn").onclick=aiDraft;
   el("polishBtn").onclick=aiPolish;
