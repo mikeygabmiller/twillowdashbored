@@ -13,6 +13,13 @@ compatibility_date = "2025-06-01"
 [assets]
 directory = "./public"
 
+# Public origin the Worker is reachable at. Used to build the absolute Twilio
+# StatusCallback URL on cron-time sends (scheduled sends + auto follow-ups), where
+# there's no incoming request to derive it from. Request-time sends detect this
+# automatically; set it here so delivery-failure tracking also covers the cron.
+[vars]
+PUBLIC_BASE_URL = "https://texting.mikeysdetailingsnohomish.workers.dev"
+
 # Conversation storage. Reuses the MESSAGES namespace already on the account.
 [[kv_namespaces]]
 binding = "MESSAGES"
@@ -30,6 +37,10 @@ id = "e3305474d22a48ac97265b394aba685e"
 #     keep working). Remove it to resume.
 #   - Stop ALL cron work: dashboard → Worker → Settings → Triggers, delete the
 #     cron below. A later `wrangler deploy` re-creates it from this file.
+#   - Twilio webhook signature enforcement is OPT-IN and OFF by default so a deploy
+#     can't drop real inbound texts. Turn it ON with  TWILIO_SIGNATURE_ENFORCE = 1
+#     under Variables (validated with your existing TWILIO_AUTH_TOKEN — no new secret).
+#     Remove the var to instantly go back to accept-all if webhooks ever stop arriving.
 [triggers]
 crons = ["* * * * *"]
 

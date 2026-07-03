@@ -54,7 +54,12 @@ let ENV = null;
 // doesn't re-read it for every thread it touches. Cleared at the top of each
 // entry point so a settings change is picked up on the very next invocation.
 let CFG_CACHE = null;
+// The public origin the Worker is reachable at (e.g. https://…workers.dev). Captured
+// from the first request so cron-time sends can build an absolute Twilio StatusCallback
+// URL; falls back to the PUBLIC_BASE_URL var when no request has been seen yet.
+let BASE_URL = null;
 function kv() { return ENV.MESSAGES; }
+function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').replace(/\/+$/, ''); }
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -93,6 +98,7 @@ async function runCron() {
 async function handle(request) {
   const url = new URL(request.url);
   const pathname = url.pathname;
+  BASE_URL = url.origin;
 
   if (request.method === 'OPTIONS') return cors(new Response(null, { status: 204 }));
 
@@ -102,6 +108,8 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/call-screen')    return handleCallScreen(request);
   if (request.method === 'POST' && pathname === '/voicemail')      return handleVoicemail(request);
   if (request.method === 'POST' && pathname === '/voicemail-done') return handleVoicemailDone(request);
+  if (request.method === 'POST' && pathname === '/voicemail-tx')   return handleVoicemailTranscription(request);
+  if (request.method === 'POST' && pathname === '/status')         return handleStatusCallback(request);
 
   if (request.method === 'POST' && pathname === '/api/login')      return apiLogin(request);
   if (request.method === 'POST' && pathname === '/api/logout')     return apiLogout();
@@ -118,6 +126,8 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/call')       return apiCall(request);
   if (request.method === 'POST' && pathname === '/api/read')       return apiRead(request);
   if (request.method === 'GET'  && pathname === '/api/insights')   return apiInsights();
+  if (request.method === 'GET'  && pathname === '/api/media')      return apiMediaProxy(url);
+  if (request.method === 'POST' && pathname === '/api/media-backfill') return apiMediaBackfill(request);
   if (request.method === 'POST' && pathname === '/api/alert-test') return apiAlertTest();
   if (request.method === 'GET'  && pathname === '/api/followups')  return apiFollowups();
   if (request.method === 'POST' && pathname === '/api/followup')   return apiFollowupAction(request);
@@ -143,6 +153,18 @@ async function handle(request) {
 async function handleSubmit(request) {
   let body;
   try { body = await request.json(); } catch { return cors(json({ ok: false, error: 'bad_json' }, 400)); }
+
+  // Bot honeypot: real customers never fill these hidden fields. If one is set,
+  // pretend success and drop the submission — no thread, no text, no alert.
+  if (body && (body.website || body._gotcha || body.hp)) return cors(json({ ok: true, clientSms: 'skipped', mikeyAlert: false }, 200));
+  // Light per-IP rate limit so a script can't flood the form (and your Twilio bill).
+  const ip = request.headers.get('CF-Connecting-IP') || '';
+  if (ip) {
+    const rlKey = 'rl:submit:' + ip;
+    const n = parseInt((await kv().get(rlKey)) || '0', 10);
+    if (n >= 8) return cors(json({ ok: false, error: 'rate_limited' }, 429));
+    await kv().put(rlKey, String(n + 1), { expirationTtl: 3600 });
+  }
 
   const { name, phone, email, location, total, vehicle, condition, services, notes, smsConsent } = body;
   // Only auto-text the client if they ticked the SMS consent box on the form
@@ -203,20 +225,48 @@ async function handleSubmit(request) {
 }
 
 async function handleInboundSms(request) {
-  const form = await request.formData();
-  const from = form.get('From') || '';
-  const text = form.get('Body') || '';
-  const numMedia = parseInt(form.get('NumMedia') || '0', 10);
+  const params = await formParams(request);
+  if (!(await verifyTwilio(request, params))) return forbidden();
+  const from = params.From || '';
+  const text = params.Body || '';
+  const numMedia = parseInt(params.NumMedia || '0', 10);
   const fromNorm = normalizePhone(from) || from;
   if (fromNorm === normalizePhone(ENV.MIKEY_PHONE)) return twiml('');
 
-  await appendMessage(fromNorm, {
-    dir: 'in',
-    body: text + (numMedia > 0 ? `\n[${numMedia} attachment(s)]` : ''),
-    ts: Date.now(),
-  });
-  await notifyMikey(`📱 New text from ${from}`,
-    `New text from ${from}:\n"${text}"\n\nReply in your dashboard.`);
+  // STOP / START compliance. Record the opt-out state ourselves so scheduled sends,
+  // autopilot nudges and blasts all honor it — Twilio blocks at the API but never
+  // tells the app, so without this we'd keep erroring against opted-out numbers.
+  const kw = text.trim().toLowerCase();
+  const STOP_WORDS = ['stop', 'stopall', 'unsubscribe', 'cancel', 'end', 'quit', 'stop all'];
+  const START_WORDS = ['start', 'unstop', 'yes', 'unsubscribe stop'];
+  if (STOP_WORDS.includes(kw)) {
+    await setOptOut(fromNorm, true);
+    await appendMessage(fromNorm, { dir: 'in', body: text, ts: Date.now(), kind: 'opt-out' });
+    await notifyMikey(`🚫 ${from} opted out (STOP)`, `${from} texted STOP and will not receive further messages until they text START.`);
+    return twiml('');
+  }
+  if (START_WORDS.includes(kw)) {
+    await setOptOut(fromNorm, false);
+    await appendMessage(fromNorm, { dir: 'in', body: text, ts: Date.now(), kind: 'opt-in' });
+    await notifyMikey(`✅ ${from} opted back in (START)`, `${from} texted START and can receive messages again.`);
+    return twiml('');
+  }
+
+  // Capture MMS media (photos are the quote for a detailing business). Store the
+  // Twilio media URLs on the message; the dashboard renders them through an
+  // authenticated proxy (/api/media) since the raw URLs need account credentials.
+  const media = [];
+  for (let i = 0; i < numMedia; i++) {
+    const u = params['MediaUrl' + i];
+    if (u) media.push({ url: u, type: params['MediaContentType' + i] || '' });
+  }
+  const inMsg = { dir: 'in', body: text, ts: Date.now() };
+  if (media.length) inMsg.media = media;
+  else if (numMedia > 0) inMsg.body = text + `\n[${numMedia} attachment(s)]`;
+  if (params.MessageSid) inMsg.sid = params.MessageSid;
+  await appendMessage(fromNorm, inMsg);
+  await notifyMikey(`📱 New ${numMedia > 0 ? 'photo/text' : 'text'} from ${from}`,
+    `New message from ${from}:\n"${text || (numMedia > 0 ? '[photo]' : '')}"\n\nReply in your dashboard.`);
   // No auto-reply to the customer — Mikey replies personally from the dashboard.
   return twiml('');
 }
@@ -241,8 +291,9 @@ function dialMikeyTwiml() {
 // Mikey is only alerted for calls that clear these guards, so the notification
 // flood stops too.
 async function handleInboundCall(request) {
-  const form = await request.formData();
-  const from = form.get('From') || 'Unknown';
+  const params = await formParams(request);
+  if (!(await verifyTwilio(request, params))) return forbidden();
+  const from = params.From || 'Unknown';
   const fromNorm = normalizePhone(from) || from;
   const cfg = await loadConfig();
 
@@ -275,9 +326,10 @@ async function handleInboundCall(request) {
 // a human is on the line. Press 1 → notify Mikey and forward the call. Any other
 // key → polite hangup (still no forward, no voicemail).
 async function handleCallScreen(request) {
-  const form = await request.formData();
-  const from = form.get('From') || 'Unknown';
-  const digits = form.get('Digits') || '';
+  const params = await formParams(request);
+  if (!(await verifyTwilio(request, params))) return forbidden();
+  const from = params.From || 'Unknown';
+  const digits = params.Digits || '';
   if (digits === '1') {
     notifyMikey(`📞 Incoming call from ${from}`, `Incoming call from ${from} to your Mikey's Detailing number (passed screening).`).catch(() => {});
     return xmlResponse(dialMikeyTwiml());
@@ -286,28 +338,114 @@ async function handleCallScreen(request) {
 }
 
 async function handleVoicemail(request) {
-  const form = await request.formData();
-  const from = form.get('From') || 'Unknown';
-  const dialStatus = form.get('DialCallStatus') || '';
+  const params = await formParams(request);
+  if (!(await verifyTwilio(request, params))) return forbidden();
+  const from = params.From || 'Unknown';
+  const dialStatus = params.DialCallStatus || '';
   if (dialStatus === 'completed') return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+
+  // Missed-call instant text-back — the #1 lead-recovery move for a solo mobile
+  // business. Fire a friendly SMS to the caller so a missed call converts into a
+  // text thread Mikey can answer from the driveway. Opt-out aware, and throttled so
+  // a caller who rings twice in a row doesn't get spammed.
+  const cfg = await loadConfig();
+  if (cfg.missedCallTextback !== false) {
+    const caller = normalizePhone(from);
+    if (caller && caller !== normalizePhone(ENV.MIKEY_PHONE) && !isOptedOut(cfg, caller)) {
+      const thread = await loadThread(caller);
+      const recent = (thread.messages || []).some((m) => m.kind === 'missed-call' && Date.now() - m.ts < 30 * 60000);
+      if (!recent) {
+        const body = (cfg.missedCallText && cfg.missedCallText.trim()) ||
+          `Hey, it's Mikey with Mikey's Mobile Detailing — sorry I missed your call! Text me right here and I'll get back to you as quick as I can. 🚗`;
+        try {
+          const r = await sendSms(caller, body);
+          thread.messages.push({ id: genId(), dir: 'out', body, ts: Date.now(), kind: 'missed-call', status: 'sent', sid: (r && r.sid) || undefined });
+        } catch (err) {
+          thread.messages.push({ id: genId(), dir: 'out', body, ts: Date.now(), kind: 'missed-call', error: String(err.message || err) });
+        }
+        if (!thread.status) { thread.status = 'new'; thread.statusAt = Date.now(); }
+        await saveThread(thread);
+        await updateIndexEntry(thread);
+      }
+    }
+  }
+
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Say voice="alice">Hey, you've reached Mikey's Mobile Detailing. Leave a message and Mikey will text or call you right back.</Say>
-  <Record maxLength="120" action="/voicemail-done" method="POST" playBeep="true" />
+  <Record maxLength="120" action="/voicemail-done" method="POST" playBeep="true" transcribe="true" transcribeCallback="/voicemail-tx" />
 </Response>`;
-  notifyMikey(`📵 Missed call from ${from}`, `Missed call from ${from} — they're leaving a voicemail now.`).catch(() => {});
+  notifyMikey(`📵 Missed call from ${from}`, `Missed call from ${from} — I sent them an instant text back, and they may leave a voicemail now.`).catch(() => {});
   return xmlResponse(xml);
 }
 
 async function handleVoicemailDone(request) {
-  const form = await request.formData();
-  const from = form.get('From') || 'Unknown';
-  const recordingUrl = form.get('RecordingUrl') || '';
-  const duration = form.get('RecordingDuration') || '?';
+  const params = await formParams(request);
+  if (!(await verifyTwilio(request, params))) return forbidden();
+  const from = params.From || 'Unknown';
+  const recordingUrl = params.RecordingUrl || '';
+  const duration = params.RecordingDuration || '?';
   if (recordingUrl) {
     await notifyMikey(`🎙️ Voicemail from ${from}`, `Voicemail from ${from} (${duration}s):\n${recordingUrl}.mp3`);
   }
   return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+}
+
+// Voicemail transcription callback (Twilio's built-in speech-to-text, fired after
+// the recording is transcribed). Drops the readable text straight into the caller's
+// thread as an inbound message so a voicemail becomes searchable, AI-usable text —
+// no more stopping to play an .mp3. Arrives a little after the voicemail itself.
+async function handleVoicemailTranscription(request) {
+  const params = await formParams(request);
+  if (!(await verifyTwilio(request, params))) return forbidden();
+  const from = params.From || 'Unknown';
+  const fromNorm = normalizePhone(from) || from;
+  const text = (params.TranscriptionText || '').trim();
+  const status = params.TranscriptionStatus || '';
+  const recording = params.RecordingUrl || '';
+  if (fromNorm === normalizePhone(ENV.MIKEY_PHONE)) return new Response('', { status: 204 });
+  if (status !== 'completed' || !text) {
+    // Transcription failed (silence, noise, non-English). The .mp3 alert from
+    // /voicemail-done already went out, so just acknowledge.
+    return new Response('', { status: 204 });
+  }
+  await appendMessage(fromNorm, {
+    dir: 'in',
+    body: `🎙️ Voicemail: "${text}"`,
+    ts: Date.now(),
+    kind: 'voicemail',
+    recording: recording ? recording + '.mp3' : undefined,
+  });
+  notifyMikey(`🎙️ Voicemail transcript from ${from}`, `"${text}"\n\nOpen the dashboard to reply.`).catch(() => {});
+  return new Response('', { status: 204 });
+}
+
+// Twilio delivery-status callback (set as StatusCallback on every outbound send).
+// To conserve the KV write budget we persist only the states that matter: a final
+// `delivered` confirmation and any `failed`/`undelivered` — the intermediate
+// queued/sent ticks are ignored. On a failure we flag the message AND alert Mikey,
+// so a carrier-filtered reply can never die silently.
+async function handleStatusCallback(request) {
+  const params = await formParams(request);
+  if (!(await verifyTwilio(request, params))) return forbidden();
+  const sid = params.MessageSid || params.SmsSid || '';
+  const status = params.MessageStatus || params.SmsStatus || '';
+  const to = normalizePhone(params.To || '');
+  const bad = status === 'failed' || status === 'undelivered';
+  if (!sid || !to || !(bad || status === 'delivered')) return new Response('', { status: 204 });
+
+  const thread = await loadThread(to);
+  const msg = (thread.messages || []).find((m) => m.sid === sid);
+  if (!msg || msg.status === status) return new Response('', { status: 204 }); // unknown or no-op
+  msg.status = status;
+  if (bad) msg.errorCode = params.ErrorCode || '';
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+  if (bad) {
+    notifyMikey('⚠️ A text failed to deliver',
+      `Your message to ${thread.name || to} could not be delivered (${status}${params.ErrorCode ? ', code ' + params.ErrorCode : ''}). Open the dashboard to resend.`).catch(() => {});
+  }
+  return new Response('', { status: 204 });
 }
 
 // ===========================================================================
@@ -408,7 +546,15 @@ async function apiSend(request) {
   const by = String(data.by || '').trim().slice(0, 40);
   const msg = { dir: 'out', body, ts: Date.now(), kind: 'manual' };
   if (by) msg.by = by;
-  await sendSms(phone, body);
+  let r;
+  try {
+    r = await sendSms(phone, body);
+  } catch (err) {
+    const optedOut = /opted_out/.test(String((err && err.message) || err));
+    return json({ ok: false, error: optedOut ? 'recipient_opted_out' : String((err && err.message) || err) }, optedOut ? 409 : 502);
+  }
+  msg.status = 'sent';
+  if (r && r.sid) msg.sid = r.sid;
   const thread = await appendMessage(phone, msg);
   return json({ ok: true, thread });
 }
@@ -533,6 +679,75 @@ async function apiInsights() {
     needsReply, possibleLinks,
     costMonth: { segOut, msgsIn, usd: costUsd },
   });
+}
+
+// Authenticated image proxy. Twilio media URLs require the account credentials,
+// so the browser can't load them directly; the dashboard points <img> at this
+// route (same-origin, already behind the dashboard password) and we fetch the
+// bytes with Basic auth and stream them back. Locked to Twilio hosts (no SSRF).
+async function apiMediaProxy(url) {
+  const u = url.searchParams.get('u') || '';
+  if (!/^https:\/\/(api|media)\.twilio\.com\//.test(u)) return json({ ok: false, error: 'bad_url' }, 400);
+  const sid = ENV.TWILIO_ACCOUNT_SID, token = ENV.TWILIO_AUTH_TOKEN;
+  const r = await fetch(u, { headers: { Authorization: `Basic ${btoa(`${sid}:${token}`)}` } });
+  if (!r.ok) return json({ ok: false, error: `twilio ${r.status}` }, 502);
+  const ct = r.headers.get('Content-Type') || 'application/octet-stream';
+  return new Response(r.body, { headers: { 'Content-Type': ct, 'Cache-Control': 'private, max-age=86400' } });
+}
+
+// Recover attachments for messages that arrived before inbound media was captured
+// (older texts stored as "[N attachment(s)]"). Pulls this contact's recent MMS from
+// the Twilio API and attaches each photo to the nearest matching inbound message.
+async function apiMediaBackfill(request) {
+  const data = await readJson(request);
+  const phone = normalizePhone(data.phone);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  const sid = ENV.TWILIO_ACCOUNT_SID, token = ENV.TWILIO_AUTH_TOKEN;
+  if (!sid || !token) return json({ ok: false, error: 'twilio_not_configured' }, 500);
+  const auth = `Basic ${btoa(`${sid}:${token}`)}`;
+  const listUrl = `https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json?From=${encodeURIComponent(phone)}&To=${encodeURIComponent(ENV.TWILIO_FROM || '')}&PageSize=100`;
+  let d;
+  try {
+    const r = await fetch(listUrl, { headers: { Authorization: auth } });
+    if (!r.ok) throw new Error(`${r.status}: ${(await r.text()).slice(0, 200)}`);
+    d = await r.json();
+  } catch (e) {
+    return json({ ok: false, error: `twilio_list_failed: ${String((e && e.message) || e)}` }, 502);
+  }
+  // For each inbound message that carried media, resolve its media instance URLs.
+  const twMsgs = [];
+  for (const m of (d.messages || [])) {
+    if (!(+m.num_media > 0) || !(m.subresource_uris && m.subresource_uris.media)) continue;
+    try {
+      const mr = await fetch(`https://api.twilio.com${m.subresource_uris.media}`, { headers: { Authorization: auth } });
+      if (!mr.ok) continue;
+      const md = await mr.json();
+      const media = (md.media_list || []).map((x) => ({
+        url: `https://api.twilio.com${String(x.uri).replace(/\.json$/, '')}`,
+        type: x.content_type || '',
+      }));
+      if (media.length) twMsgs.push({ date: new Date(m.date_created).getTime(), media });
+    } catch { /* skip this one */ }
+  }
+  // Attach to the nearest inbound thread message (within 10 min) that has no media yet.
+  const thread = await loadThread(phone);
+  let attached = 0;
+  for (const msg of (thread.messages || [])) {
+    if (msg.dir !== 'in' || (msg.media && msg.media.length)) continue;
+    if (!/\[\d+ attachment\(s\)\]/.test(msg.body || '')) continue; // only recover messages that carried attachments
+    let best = null, bestDiff = 600000;
+    for (const tw of twMsgs) {
+      const diff = Math.abs(tw.date - (msg.ts || 0));
+      if (diff < bestDiff) { bestDiff = diff; best = tw; }
+    }
+    if (best) {
+      msg.media = best.media;
+      if (/^\s*\[\d+ attachment/.test(msg.body || '')) msg.body = '';
+      attached++;
+    }
+  }
+  if (attached) { await saveThread(thread); await updateIndexEntry(thread); }
+  return json({ ok: true, attached, found: twMsgs.length, thread });
 }
 
 // One-time import of conversations from the old Netlify deployment into KV.
@@ -995,10 +1210,11 @@ async function evaluateFollowups(now = Date.now()) {
       pushLog(fu, { at: now, stage: plan.stage, stepKey: plan.stepKey, action: 'auto-sent' });
       await saveThread(thread);
       try {
-        await sendSms(thread.phone, body);
-        thread.messages.push({ id: genId(), dir: 'out', body, ts: Date.now(), kind: 'followup' });
+        const r = await sendSms(thread.phone, body);
+        thread.messages.push({ id: genId(), dir: 'out', body, ts: Date.now(), kind: 'followup', status: 'sent', sid: (r && r.sid) || undefined });
       } catch (err) {
         thread.messages.push({ id: genId(), dir: 'out', body, ts: Date.now(), kind: 'followup', error: String(err.message || err) });
+        notifyMikey('⚠️ Auto follow-up failed', `An automatic follow-up to ${thread.name || thread.phone} did not send: ${String(err.message || err)}`).catch(() => {});
       }
       changed = true; acted++;
     } else if (plan && plan.dueAt <= now && !autopilotAllowed(plan, fu, cfg) && !fu.suggestion) {
@@ -1049,10 +1265,11 @@ async function apiFollowupAction(request) {
     pushLog(fu, { at: now, stepKey, action: 'sent' });
     await saveThread(thread); // reserve before send
     try {
-      await sendSms(phone, body);
-      thread.messages.push({ id: genId(), dir: 'out', body, ts: now, kind: 'followup' });
+      const r = await sendSms(phone, body);
+      thread.messages.push({ id: genId(), dir: 'out', body, ts: now, kind: 'followup', status: 'sent', sid: (r && r.sid) || undefined });
     } catch (err) {
-      return json({ ok: false, error: String(err.message || err) }, 502);
+      const optedOut = /opted_out/.test(String((err && err.message) || err));
+      return json({ ok: false, error: optedOut ? 'recipient_opted_out' : String((err && err.message) || err) }, optedOut ? 409 : 502);
     }
     await saveThread(thread); await updateIndexEntry(thread);
     return json({ ok: true, thread });
@@ -1109,6 +1326,8 @@ async function apiSaveConfig(request) {
   if (data.quietEnd != null && !isNaN(+data.quietEnd)) next.quietEnd = Math.max(0, Math.min(23, Math.round(+data.quietEnd)));
   if (typeof data.tz === 'string' && data.tz) next.tz = data.tz.slice(0, 64);
   if (typeof data.callScreening === 'boolean') next.callScreening = data.callScreening;
+  if (typeof data.missedCallTextback === 'boolean') next.missedCallTextback = data.missedCallTextback;
+  if (typeof data.missedCallText === 'string') next.missedCallText = data.missedCallText.slice(0, 320);
   if (typeof data.teamMode === 'boolean') next.teamMode = data.teamMode;
   if (Array.isArray(data.team)) next.team = sanitizeTeam(data.team);
   if (data.playbook && typeof data.playbook === 'object') next.playbook = sanitizePlaybook(data.playbook, next.playbook);
@@ -1194,6 +1413,9 @@ function defaultConfig() {
     callScreening: true,     // press-1 gate on inbound calls — stops robocall/spam
                              // auto-dialers before they ring your phone or hit voicemail
     blockedNumbers: [],      // normalized numbers that get rejected instantly (no ring)
+    optedOut: [],            // normalized numbers that texted STOP — never messaged again
+    missedCallTextback: true,// auto-text a caller we missed so the lead becomes a text thread
+    missedCallText: '',      // custom missed-call text (blank = the friendly default)
     teamMode: false,         // when on: conversations can be assigned, and each reply is
                              // attributed to the sender. Turn off to go back to solo.
     team: [],                // [{ id, name, role }] — the people who help answer texts
@@ -1291,6 +1513,7 @@ function buildIndexSummary(thread, cfg) {
     archived: !!thread.archived,
     assignedTo: thread.assignedTo || '',
     unread: thread.unread || 0,
+    optedOut: isOptedOut(cfg, thread.phone),
     scheduledCount: (thread.scheduled || []).length,
     lastBody: last ? preview(last.body) : '',
     lastDir: last ? last.dir : '',
@@ -1422,7 +1645,7 @@ async function notifyMikey(subject, body) {
     try { await sendEmail(subject, body); return true; }
     catch { /* fall through to SMS so the alert still reaches Mikey */ }
   }
-  try { await sendSms(ENV.MIKEY_PHONE, body); return true; }
+  try { await sendSms(ENV.MIKEY_PHONE, body, { skipOptOut: true }); return true; }
   catch { return false; }
 }
 
@@ -1449,16 +1672,29 @@ async function sendEmail(subject, text) {
 // ===========================================================================
 // Twilio
 // ===========================================================================
-async function sendSms(to, body) {
+async function sendSms(to, body, opts = {}) {
   const sid = ENV.TWILIO_ACCOUNT_SID;
   const token = ENV.TWILIO_AUTH_TOKEN;
+  const toNorm = normalizePhone(to) || to;
+  // Opt-out guard: never text a number that sent STOP. Skipped for alerts to Mikey
+  // himself (opts.skipOptOut) so notifications always get through.
+  if (!opts.skipOptOut) {
+    const cfg = await loadConfig();
+    if (isOptedOut(cfg, toNorm) && toNorm !== normalizePhone(ENV.MIKEY_PHONE)) {
+      throw new Error('recipient_opted_out');
+    }
+  }
+  const form = { From: ENV.TWILIO_FROM, To: toNorm, Body: body };
+  // Attach a delivery StatusCallback so failures surface (see handleStatusCallback).
+  const base = publicBase();
+  if (base && !opts.skipOptOut) form.StatusCallback = `${base}/status`;
   const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
     method: 'POST',
     headers: {
       'Authorization': `Basic ${btoa(`${sid}:${token}`)}`,
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-    body: new URLSearchParams({ From: ENV.TWILIO_FROM, To: to, Body: body }),
+    body: new URLSearchParams(form),
   });
   if (!res.ok) throw new Error(`Twilio ${res.status}: ${await res.text()}`);
   return res.json();
@@ -1494,6 +1730,65 @@ function normalizePhone(raw) {
 }
 
 // ===========================================================================
+// Webhook security + opt-out ledger
+// ===========================================================================
+// Read a Twilio (x-www-form-urlencoded) POST body into a plain object.
+async function formParams(request) {
+  const form = await request.formData();
+  const out = {};
+  for (const [k, v] of form) out[k] = v;
+  return out;
+}
+function forbidden() { return new Response('Forbidden', { status: 403 }); }
+
+// Validate Twilio's X-Twilio-Signature so only real Twilio webhooks are accepted.
+// Twilio signs base64( HMAC-SHA1( authToken, fullURL + sorted(key+value)… ) ).
+//
+// SAFE ROLLOUT — enforcement is OPT-IN. It stays OFF until you set the Worker var
+// TWILIO_SIGNATURE_ENFORCE=1, so deploying this can NEVER silently 403 real inbound
+// texts/calls before you've confirmed the signed URL matches. To turn it on:
+//   1. Add  TWILIO_SIGNATURE_ENFORCE = 1  in Worker → Settings → Variables.
+//   2. Send yourself a text + do a test call; confirm both land in the dashboard.
+//   3. If webhooks stop arriving, the configured Twilio URL and the Worker's URL
+//      disagree — remove the var (instantly back to accept-all) and check that the
+//      Twilio Messaging/Voice webhooks point at exactly https://<worker>/sms etc.
+async function verifyTwilio(request, params) {
+  if (!envFlag('TWILIO_SIGNATURE_ENFORCE')) return true; // opt-in; off = accept as before
+  const token = ENV.TWILIO_AUTH_TOKEN;
+  if (!token) return true; // nothing to validate against — don't lock ourselves out
+  const sig = request.headers.get('X-Twilio-Signature');
+  if (!sig) return false;
+  let data = request.url;
+  for (const k of Object.keys(params).sort()) data += k + params[k];
+  const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(token), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
+  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
+  const expected = btoa(String.fromCharCode(...new Uint8Array(mac)));
+  return timingSafeEqual(expected, sig);
+}
+function timingSafeEqual(a, b) {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+// Opt-out ledger lives in the (cached) config doc — opt-outs are rare, so the
+// occasional extra write is cheap, and reads piggyback on the per-invocation cache.
+function isOptedOut(cfg, phone) {
+  return !!(cfg && Array.isArray(cfg.optedOut) && cfg.optedOut.includes(phone));
+}
+async function setOptOut(phone, on) {
+  const cfg = Object.assign({}, await loadConfig());
+  const list = Array.isArray(cfg.optedOut) ? cfg.optedOut.slice() : [];
+  const has = list.includes(phone);
+  if (on && !has) list.push(phone);
+  if (!on && has) list.splice(list.indexOf(phone), 1);
+  cfg.optedOut = list;
+  await kv().put('config', JSON.stringify(cfg));
+  CFG_CACHE = cfg;
+}
+
+// ===========================================================================
 // Scheduled-send dispatch (cron every minute — see wrangler.toml [triggers])
 // ===========================================================================
 async function dispatchDueScheduled(now = Date.now()) {
@@ -1513,11 +1808,12 @@ async function dispatchDueScheduled(now = Date.now()) {
     await saveThread(thread);
     for (const s of due) {
       try {
-        await sendSms(thread.phone, s.body);
-        thread.messages.push({ id: genId(), dir: 'out', body: s.body, ts: Date.now(), kind: 'scheduled' });
+        const r = await sendSms(thread.phone, s.body);
+        thread.messages.push({ id: genId(), dir: 'out', body: s.body, ts: Date.now(), kind: 'scheduled', status: 'sent', sid: (r && r.sid) || undefined });
         sent++;
       } catch (err) {
         thread.messages.push({ id: genId(), dir: 'out', body: s.body, ts: Date.now(), kind: 'scheduled', error: String(err.message || err) });
+        notifyMikey('⚠️ Scheduled text failed', `A scheduled message to ${thread.name || thread.phone} did not send: ${String(err.message || err)}`).catch(() => {});
       }
     }
     await saveThread(thread);
