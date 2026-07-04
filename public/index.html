@@ -333,6 +333,33 @@
   .nl-echo.ok{color:var(--green);font-weight:600}
   .pb-bar{height:7px;border-radius:5px;background:var(--panel);border:1px solid var(--line);overflow:hidden;margin-top:11px}
   .pb-bar span{display:block;height:100%;background:linear-gradient(90deg,#f5b842,#f59e0b);border-radius:5px;transition:width .3s}
+  /* ---------- Home (landing) ---------- */
+  .home{padding:6px 14px 18px;max-width:640px;margin:0 auto}
+  .home-head{padding:14px 2px 2px}
+  .hh-greet{font-size:25px;font-weight:800;letter-spacing:-.02em}
+  .hh-sub{color:var(--muted);font-size:14px;margin-top:2px}
+  .hero-card{display:flex;align-items:center;gap:15px;background:linear-gradient(135deg,var(--accent),var(--accent-dark));color:#fff;border-radius:18px;padding:17px 18px;margin-top:15px;box-shadow:0 12px 28px var(--accent-soft);cursor:pointer;transition:transform .1s}
+  .hero-card:active{transform:scale(.99)}
+  .hero-card .hc-n{font-size:42px;font-weight:800;line-height:1;letter-spacing:-.03em;flex:none}
+  .hero-card .hc-txt{flex:1;min-width:0}
+  .hero-card .hc-t{font-size:16px;font-weight:800;letter-spacing:-.01em}
+  .hero-card .hc-s{font-size:12.5px;opacity:.92;margin-top:3px}
+  .hero-card>svg{opacity:.85;flex:none}
+  .hero-card .hc-ic{display:flex;flex:none}
+  .hero-card.ok{background:linear-gradient(135deg,#1f8a54,#146741);box-shadow:0 12px 28px rgba(31,138,84,.2);cursor:default}
+  .home-sec-h{display:flex;align-items:center;gap:8px;margin:24px 2px 11px;font-size:13.5px;font-weight:800;letter-spacing:-.01em}
+  .home-sec-h .hs-n{color:var(--muted2);font-weight:700}
+  .home-row{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line2);border-radius:14px;padding:11px 13px;margin-bottom:8px;cursor:pointer;transition:border-color .14s,transform .08s}
+  .home-row:hover{border-color:var(--line)}
+  .home-row:active{transform:scale(.99)}
+  .home-row .hr-body{flex:1;min-width:0}
+  .home-row .hr-nm{font-weight:700;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .home-row .hr-prev{color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+  .home-row .hr-when{font-size:11.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);padding:4px 9px;border-radius:11px;flex:none}
+  .home-row .hr-fu{color:#f5c563;flex:none;display:flex}.home-row .hr-fu.high{color:#ff8388}
+  .home-more{text-align:center;color:var(--accent-text);font-weight:700;font-size:13px;padding:9px;cursor:pointer}
+  .home-strip{display:flex;flex-wrap:wrap;gap:7px;margin-top:24px;justify-content:center}
+  .home-strip span{font-size:11.5px;font-weight:700;color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:5px 12px}
   /* ---------- Email tab (unified inbox) ---------- */
   .email-card{padding:13px 16px;border-bottom:1px solid var(--line2);cursor:pointer;background:var(--panel);transition:background .12s}
   .email-card:hover{background:var(--panel2)}
@@ -640,11 +667,11 @@
     </button>
 
     <nav class="bottomnav" id="bottomnav">
-      <button class="navitem active" data-tab="messages"><span class="ic" data-ic="message-square"></span><span class="ndot" id="navUnread"></span>Messages</button>
+      <button class="navitem active" data-tab="home"><span class="ic" data-ic="home"></span><span class="ndot" id="navHome"></span>Home</button>
+      <button class="navitem" data-tab="messages"><span class="ic" data-ic="message-square"></span><span class="ndot" id="navUnread"></span>Chats</button>
       <button class="navitem" data-tab="leads"><span class="ic" data-ic="clipboard-list"></span>Leads</button>
-      <button class="navitem" data-tab="followups"><span class="ic" data-ic="list-checks"></span><span class="ndot" id="navFollow"></span>Follow-ups</button>
-      <button class="navitem" data-tab="insights"><span class="ic" data-ic="bar-chart"></span><span class="ndot" id="navNeeds"></span>Insights</button>
       <button class="navitem" data-tab="email"><span class="ic" data-ic="mail"></span><span class="ndot" id="navEmail"></span>Email</button>
+      <button class="navitem" data-tab="insights"><span class="ic" data-ic="bar-chart"></span>Insights</button>
     </nav>
   </aside>
 
@@ -880,11 +907,11 @@
   var FU_STAGE={owed:["Reply owed","message-square"],nudge:["Follow-up","list-checks"],won:["Win follow-up","check-circle"],lost:["Revival","undo"]};
   var FU_SNOOZE=[["1 day",24],["3 days",72],["1 week",168]];
 
-  var state={threads:[],filter:"all",assign:"all",tab:"messages",search:"",phone:null,thread:null,insights:null,config:null,templates:TEMPLATES.slice(),emails:[],loadedOnce:false};
+  var state={threads:[],filter:"all",assign:"all",tab:"home",search:"",phone:null,thread:null,insights:null,config:null,templates:TEMPLATES.slice(),emails:[],loadedOnce:false};
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-04·k";
+  var APP_BUILD="2026-07-04·l";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -944,6 +971,8 @@
     "image":'<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/>',
     "chevron-up":'<path d="m18 15-6-6-6 6"/>',
     "chevron-down":'<path d="m6 9 6 6 6-6"/>',
+    "chevron-right":'<path d="m9 18 6-6-6-6"/>',
+    "home":'<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
     "rocket":'<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>'
   };
   function ic(name,size,strokeW){
@@ -966,7 +995,7 @@
   function submitLogin(value,wrongMsg){
     el("loginErr").textContent="";
     post("/api/login",{password:value}).then(function(d){
-      if(d&&d.ok){pin="";if(el("loginPass"))el("loginPass").value="";hideLogin();refreshThreads();loadTemplates();checkHealth();startPoll();loadConfig()}
+      if(d&&d.ok){pin="";if(el("loginPass"))el("loginPass").value="";hideLogin();refreshThreads();loadTemplates();checkHealth();startPoll();loadConfig();fetchEmails();fetchInsights();showBuild()}
       else{
         el("loginErr").textContent=wrongMsg||"Wrong PIN — try again";
         var box=el("loginBox");if(box){box.classList.remove("pin-shake");void box.offsetWidth;box.classList.add("pin-shake")}
@@ -1071,8 +1100,9 @@
     var c=counts();
     var nu=el("navUnread");nu.textContent=c.unread;nu.className="ndot"+(c.unread?" show":"");
     var ns=el("navSched");if(ns){ns.textContent=c.sched;ns.className="ndot"+(c.sched?" show":"")}
+    var nh=el("navHome");if(nh){nh.textContent=c.needs;nh.className="ndot"+(c.needs?" show":"")}
     refreshEmailBadge();
-    var nn=el("navNeeds");nn.textContent=c.needs;nn.className="ndot"+(c.needs?" show":"");
+    var nn=el("navNeeds");if(nn){nn.textContent=c.needs;nn.className="ndot"+(c.needs?" show":"")}
     var nf=el("navFollow");if(nf){nf.textContent=c.follow;nf.className="ndot"+(c.follow?" show":"")}
     el("mnAll").textContent=c.all||"";el("mnUnread").textContent=c.unread||"";
     el("mnSched").textContent=c.sched||"";el("mnArch").textContent=c.arch||"";
@@ -1167,6 +1197,7 @@
   // ---- main view dispatch ----
   function renderMain(){
     renderFilters();refreshBadges();
+    if(state.tab==="home"&&!state.search)return renderHome();
     if(state.tab==="leads")return renderLeads();
     if(state.tab==="followups")return renderFollowups();
     if(state.tab==="insights")return renderInsights();
@@ -1174,6 +1205,61 @@
     if(state.tab==="archived")return renderList("archived");
     if(state.tab==="email")return renderEmails();
     return renderList("messages");
+  }
+
+  // ---- Home (landing) ----
+  function greeting(){var h=new Date().getHours();return h<12?"Good morning":h<18?"Good afternoon":"Good evening"}
+  function fuUrg(t){return (t.fu&&t.fu.urgency==="high")?3:(t.fu&&t.fu.urgency==="low")?1:2}
+  function homeRow(t,when){
+    return '<div class="home-row" data-open="'+esc(t.phone)+'">'+
+      '<div class="avatar" style="width:42px;height:42px;font-size:15px;background:'+colorFor(t.phone)+'">'+esc(initials(t))+'</div>'+
+      '<div class="hr-body"><div class="hr-nm">'+esc(displayName(t))+'</div><div class="hr-prev">'+esc(t.lastBody||"")+'</div></div>'+
+      '<div class="hr-when">'+esc(when)+'</div></div>';
+  }
+  function homeFuRow(t){
+    var reason=(t.fu&&t.fu.reason)||"Follow-up ready";
+    return '<div class="home-row" data-open="'+esc(t.phone)+'">'+
+      '<div class="avatar" style="width:42px;height:42px;font-size:15px;background:'+colorFor(t.phone)+'">'+esc(initials(t))+'</div>'+
+      '<div class="hr-body"><div class="hr-nm">'+esc(displayName(t))+'</div><div class="hr-prev">'+esc(reason)+'</div></div>'+
+      '<span class="hr-fu'+((t.fu&&t.fu.urgency==="high")?" high":"")+'">'+ic("list-checks",14)+'</span></div>';
+  }
+  function renderHome(){
+    var box=el("scroll");
+    if(!state.loadedOnce&&!state.threads.length){box.innerHTML='<div class="home">'+skeletonList(5)+'</div>';return}
+    var active=state.threads.filter(function(t){return !t.archived});
+    var waiting=active.filter(function(t){return t.lastDir==="in"}).sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
+    var fu=active.filter(function(t){return t.followupDue}).sort(function(a,b){return fuUrg(b)-fuUrg(a)||((a.fu&&a.fu.dueAt)||0)-((b.fu&&b.fu.dueAt)||0)});
+    var ins=state.insights||{};
+    var h='<div class="home">';
+    h+='<div class="home-head"><div class="hh-greet">'+greeting()+'</div><div class="hh-sub">Here\'s what needs you.</div></div>';
+    if(waiting.length){
+      h+='<div class="hero-card" id="heroWaiting"><div class="hc-n">'+waiting.length+'</div>'+
+        '<div class="hc-txt"><div class="hc-t">'+(waiting.length===1?"person is":"people are")+' waiting on you</div>'+
+        '<div class="hc-s">Longest wait '+ago(waiting[0].lastTs)+' · tap to reply</div></div>'+ic("chevron-right",22)+'</div>';
+    }else{
+      h+='<div class="hero-card ok"><span class="hc-ic">'+ic("check-circle",26)+'</span>'+
+        '<div class="hc-txt"><div class="hc-t">You\'re all caught up</div><div class="hc-s">Nobody is waiting on a reply. Nice.</div></div></div>';
+    }
+    if(waiting.length){
+      h+='<div class="home-sec-h"><span>Waiting on you</span><span class="hs-n">'+waiting.length+'</span></div>';
+      waiting.slice(0,5).forEach(function(t){h+=homeRow(t,ago(t.lastTs))});
+      if(waiting.length>5)h+='<div class="home-more" data-more="messages">See all '+waiting.length+'</div>';
+    }
+    if(fu.length){
+      h+='<div class="home-sec-h"><span>Follow-ups ready</span><span class="hs-n">'+fu.length+'</span></div>';
+      fu.slice(0,4).forEach(function(t){h+=homeFuRow(t)});
+      if(fu.length>4)h+='<div class="home-more" data-more="followups">See all '+fu.length+'</div>';
+    }
+    var strip=[];
+    strip.push((ins.open!=null?ins.open:active.length)+' open');
+    if(ins.won!=null)strip.push(ins.won+' won');
+    if(ins.avgReplyMs!=null)strip.push('~'+fmtDur(ins.avgReplyMs)+' reply');
+    h+='<div class="home-strip">'+strip.map(function(s){return '<span>'+esc(s)+'</span>'}).join("")+'</div>';
+    h+='</div>';
+    box.innerHTML=h;
+    var hw=el("heroWaiting");if(hw&&waiting.length)hw.onclick=function(){openThread(waiting[0].phone)};
+    Array.prototype.forEach.call(box.querySelectorAll("[data-open]"),function(c){c.onclick=function(){openThread(c.getAttribute("data-open"))}});
+    Array.prototype.forEach.call(box.querySelectorAll("[data-more]"),function(c){c.onclick=function(){setTab(c.getAttribute("data-more"))}});
   }
 
   // ---- email tab (unified inbox) ----
@@ -1468,7 +1554,7 @@
   }
 
   function fetchInsights(){
-    return api("/api/insights").then(function(d){if(d&&d.ok){state.insights=d;if(state.tab==="insights")renderInsights()}});
+    return api("/api/insights").then(function(d){if(d&&d.ok){state.insights=d;if(state.tab==="insights")renderInsights();else if(state.tab==="home")renderHome()}});
   }
   function runBriefing(){
     var b=el("briefBtn"),tx=el("briefTxt");if(!b)return;
@@ -2330,7 +2416,7 @@
     Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.classList.toggle("active",b.getAttribute("data-tab")===tab)});
     el("scroll").scrollTop=0;
     renderMain();
-    if(tab==="insights")fetchInsights();
+    if(tab==="insights"||tab==="home")fetchInsights();
     if(tab==="followups")refreshThreads();
     if(tab==="email")fetchEmails();
   }
@@ -2475,7 +2561,7 @@
   hydrateIcons();
   el("myAvatar").innerHTML=brandGlyph();el("drawerLogo").innerHTML=brandGlyph();el("loginLogo").innerHTML=brandGlyph();
   applyTheme(themePref());loadAccent();buildAccents();buildThemeSeg();buildTplMenu();loadTemplates();buildQuickset();
-  renderFilters();refreshThreads();startPoll();checkHealth();loadConfig();showBuild();fetchEmails();
+  renderFilters();refreshThreads();startPoll();checkHealth();loadConfig();showBuild();fetchEmails();fetchInsights();
 })();
 </script>
 <script>
