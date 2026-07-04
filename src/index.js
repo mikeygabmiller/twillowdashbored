@@ -66,7 +66,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-04·h';
+const BUILD = '2026-07-04·i';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -117,6 +117,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/voicemail-done') return handleVoicemailDone(request);
   if (request.method === 'POST' && pathname === '/voicemail-tx')   return handleVoicemailTranscription(request);
   if (request.method === 'POST' && pathname === '/status')         return handleStatusCallback(request);
+  if (request.method === 'POST' && pathname === '/email-in')       return handleEmailIn(request);
 
   if (request.method === 'GET'  && pathname === '/api/version')    return json({ ok: true, build: BUILD });
   if (request.method === 'POST' && pathname === '/api/login')      return apiLogin(request);
@@ -134,6 +135,8 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/call')       return apiCall(request);
   if (request.method === 'POST' && pathname === '/api/read')       return apiRead(request);
   if (request.method === 'GET'  && pathname === '/api/insights')   return apiInsights();
+  if (request.method === 'GET'  && pathname === '/api/emails')     return apiEmails();
+  if (request.method === 'POST' && pathname === '/api/email-read') return apiEmailRead(request);
   if (request.method === 'GET'  && pathname === '/api/media')      return apiMediaProxy(url);
   if (request.method === 'POST' && pathname === '/api/media-backfill') return apiMediaBackfill(request);
   if (request.method === 'POST' && pathname === '/api/alert-test') return apiAlertTest();
@@ -687,6 +690,52 @@ async function apiInsights() {
     needsReply, possibleLinks,
     costMonth: { segOut, msgsIn, usd: costUsd },
   });
+}
+
+// ===========================================================================
+// Unified inbox — recent emails alongside texts
+// ---------------------------------------------------------------------------
+// A lightweight feed of recent emails so everything lives in one place. Emails
+// are pushed IN by an automation (e.g. a Zapier "New Gmail email → POST" zap) to
+// /email-in, guarded by a shared EMAIL_INGEST_TOKEN secret. We keep only the last
+// ~60 in a single KV doc (one write per incoming email — emails are low-volume).
+// ===========================================================================
+async function handleEmailIn(request) {
+  const data = await readJson(request);
+  const token = request.headers.get('X-Ingest-Token') || data.token || '';
+  if (!ENV.EMAIL_INGEST_TOKEN || token !== ENV.EMAIL_INGEST_TOKEN) return json({ ok: false, error: 'unauthorized' }, 401);
+  const rawDate = data.date;
+  const email = {
+    id: genId(),
+    from: String(data.from || '').slice(0, 200),
+    fromName: String(data.fromName || data.from || '').slice(0, 120),
+    subject: String(data.subject || '(no subject)').slice(0, 300),
+    snippet: String(data.snippet || data.body || '').replace(/\s+/g, ' ').trim().slice(0, 240),
+    body: String(data.body || data.snippet || '').slice(0, 20000),
+    date: Number(rawDate) || Date.parse(rawDate) || Date.now(),
+    unread: 1,
+  };
+  const list = (await kv().get('emails', { type: 'json' })) || [];
+  // De-dupe on a provided messageId if the automation retries.
+  const mid = data.messageId ? String(data.messageId).slice(0, 200) : '';
+  if (mid) { if (list.some((e) => e.mid === mid)) return json({ ok: true, duplicate: true }); email.mid = mid; }
+  list.unshift(email);
+  if (list.length > 60) list.length = 60;
+  await kv().put('emails', JSON.stringify(list));
+  return json({ ok: true });
+}
+async function apiEmails() {
+  const list = (await kv().get('emails', { type: 'json' })) || [];
+  return json({ ok: true, emails: list });
+}
+async function apiEmailRead(request) {
+  const data = await readJson(request);
+  const list = (await kv().get('emails', { type: 'json' })) || [];
+  let changed = false;
+  if (data.id) { const e = list.find((x) => x.id === data.id); if (e && e.unread) { e.unread = 0; changed = true; } }
+  else { for (const e of list) if (e.unread) { e.unread = 0; changed = true; } }
+  if (changed) await kv().put('emails', JSON.stringify(list));
+  return json({ ok: true, emails: list });
 }
 
 // Authenticated image proxy. Twilio media URLs require the account credentials,
