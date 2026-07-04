@@ -66,7 +66,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-04·j';
+const BUILD = '2026-07-04·k';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -877,11 +877,15 @@ async function apiAiSummary(request) {
   const cfg = await loadConfig();
   const prompt =
     businessContext(cfg) +
-    `You are the assistant for Mikey's Mobile Detailing (a car detailing business). ` +
+    `You are Mikey's operations assistant for his mobile car detailing business. ` +
     `Read this SMS conversation and return ONLY JSON with this shape:\n` +
-    `{"summary": "2-3 sentence plain-English overview of who this is and where things stand", ` +
+    `{"summary": "A tight, practical brief in 2-4 short sentences: who this customer is, ` +
+    `what they want (vehicle + service if known), and the current state — e.g. quote sent, ` +
+    `waiting on their reply, price agreed, scheduled, or gone quiet. Then finish with a final ` +
+    `sentence starting exactly with 'Next: ' naming the single most useful next action for Mikey. ` +
+    `Be concrete and specific to THIS conversation; no filler, no restating the obvious.", ` +
     `"status": one of "new","active","won","lost" or "", ` +
-    `"tags": array of up to 4 short labels like "Truck","Ceramic","VIP","Quote sent","Needs follow-up"}\n\n` +
+    `"tags": array of up to 4 short, useful labels like "Truck","Ceramic","Quote sent","Needs follow-up","VIP"}\n\n` +
     `Conversation:\n${transcript(thread)}`;
   try {
     const text = await geminiGenerate(prompt, { json: true, maxTokens: 1200 });
@@ -909,17 +913,19 @@ async function apiAiDraft(request) {
   const draftText = (data.text || '').trim();
   let prompt;
   if (draftText) {
-    // Polish mode: clean up a reply the sender already wrote, keep meaning/voice.
+    // Polish mode = light proofread only. Keep the sender's exact meaning, wording,
+    // length and voice; fix only mechanics. No transcript, no playbook — those tempt
+    // the model to rewrite. If it's already fine, return it unchanged.
     prompt =
-      ctx +
-      `You are texting a customer for Mikey's Mobile Detailing. ` +
-      `Polish the draft below so it reads clear, warm and professional: fix grammar, spelling and tone, ` +
-      `keep it concise (1-3 short sentences), keep the friendly voice and the original meaning, ` +
-      `no added greeting unless it's already there, no signature, ready to send. ` +
-      `Stay consistent with the business playbook above; never contradict it. ` +
-      `Return ONLY the polished message — no quotes, no preamble. ` +
-      (hint ? `Also: ${hint}. ` : '') +
-      `\n\nConversation so far (for context):\n${transcript(thread)}\n\nDraft to polish:\n${draftText}\n\nPolished message:`;
+      `You are lightly proofreading a short text message the user wrote to a customer. ` +
+      `Make ONLY the minimal edits needed to fix spelling, grammar, capitalization and punctuation. ` +
+      `Keep the EXACT meaning, wording, length and casual texting voice. ` +
+      `Do NOT rephrase, do NOT reorder, do NOT add or remove information, and do NOT add greetings, ` +
+      `sign-offs, emojis or pleasantries that aren't already there. ` +
+      `If the message is already correct, return it exactly as-is. ` +
+      `Return ONLY the corrected message text — no quotes, no explanation, no preamble. ` +
+      (hint ? `Extra instruction: ${hint}. ` : '') +
+      `\n\nMessage to proofread:\n${draftText}\n\nCorrected message:`;
   } else {
     prompt =
       ctx +
@@ -932,7 +938,8 @@ async function apiAiDraft(request) {
       `\n\nConversation so far:\n${transcript(thread)}\n\nReply:`;
   }
   try {
-    const text = await geminiGenerate(prompt, { temperature: 0.7, maxTokens: 800 });
+    // Proofread wants near-deterministic output; a fresh reply can be a bit warmer.
+    const text = await geminiGenerate(prompt, { temperature: draftText ? 0.15 : 0.7, maxTokens: 800 });
     return json({ ok: true, draft: text.replace(/^["']|["']$/g, '').trim() });
   } catch (err) {
     return json({ ok: false, error: String(err.message || err) }, 502);
