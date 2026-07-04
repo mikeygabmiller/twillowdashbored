@@ -311,6 +311,29 @@
   .nl-echo.ok{color:var(--green);font-weight:600}
   .pb-bar{height:7px;border-radius:5px;background:var(--panel);border:1px solid var(--line);overflow:hidden;margin-top:11px}
   .pb-bar span{display:block;height:100%;background:linear-gradient(90deg,#f5b842,#f59e0b);border-radius:5px;transition:width .3s}
+  /* ---------- Email tab (unified inbox) ---------- */
+  .email-card{padding:13px 16px;border-bottom:1px solid var(--line2);cursor:pointer;background:var(--panel);transition:background .12s}
+  .email-card:hover{background:var(--panel2)}
+  .email-card.unrd{background:linear-gradient(90deg,var(--accent-soft),transparent 55%)}
+  .email-card .ec-top{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+  .email-card .ec-from{font-weight:600;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .email-card.unrd .ec-from{font-weight:800}
+  .email-card .ec-date{color:var(--muted2);font-size:12px;flex:none}
+  .email-card.unrd .ec-date{color:var(--accent-text);font-weight:700}
+  .email-card .ec-subj{font-size:13.5px;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text)}
+  .email-card.unrd .ec-subj{font-weight:600}
+  .email-card .ec-snip{font-size:12.5px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .email-reader{position:fixed;inset:0;background:var(--bg);z-index:120;display:flex;flex-direction:column;animation:pop .18s ease}
+  .email-reader .er-head{display:flex;align-items:center;gap:10px;padding:calc(12px + var(--safe-top)) 12px 12px;border-bottom:1px solid var(--line);background:var(--panel)}
+  .email-reader .er-back{background:none;border:none;color:var(--muted);width:40px;height:40px;display:flex;align-items:center;justify-content:center;border-radius:50%;flex:none;cursor:pointer}
+  .email-reader .er-back:hover{background:var(--panel2);color:var(--text)}
+  .email-reader .er-hh{min-width:0}
+  .email-reader .er-from{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .email-reader .er-addr{font-size:12px;color:var(--muted2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .email-reader .er-body-wrap{flex:1;overflow-y:auto;padding:18px 18px calc(24px + var(--safe-bottom));max-width:720px;width:100%;margin:0 auto}
+  .email-reader .er-subj{font-size:19px;font-weight:800;letter-spacing:-.01em;line-height:1.2;margin-bottom:6px}
+  .email-reader .er-date{font-size:12px;color:var(--muted2);margin-bottom:18px}
+  .email-reader .er-body{font-size:14.5px;line-height:1.62;white-space:pre-wrap;word-wrap:break-word;color:var(--text)}
   /* Right-click / long-press conversation menu */
   .ctx-scrim{position:fixed;inset:0;z-index:120}
   .ctx-menu{position:fixed;min-width:232px;max-width:min(284px,92vw);background:var(--panel3);border:1px solid var(--line);
@@ -599,7 +622,7 @@
       <button class="navitem" data-tab="leads"><span class="ic" data-ic="clipboard-list"></span>Leads</button>
       <button class="navitem" data-tab="followups"><span class="ic" data-ic="list-checks"></span><span class="ndot" id="navFollow"></span>Follow-ups</button>
       <button class="navitem" data-tab="insights"><span class="ic" data-ic="bar-chart"></span><span class="ndot" id="navNeeds"></span>Insights</button>
-      <button class="navitem" data-tab="scheduled"><span class="ic" data-ic="calendar-days"></span><span class="ndot" id="navSched"></span>Scheduled</button>
+      <button class="navitem" data-tab="email"><span class="ic" data-ic="mail"></span><span class="ndot" id="navEmail"></span>Email</button>
     </nav>
   </aside>
 
@@ -748,6 +771,7 @@
   <div class="dbody">
     <div class="sec-lbl">Views</div>
     <div class="ditem" data-tab="messages"><span class="ic" data-ic="message-square"></span>All messages<span class="n" id="mnAll"></span></div>
+    <div class="ditem" data-tab="email"><span class="ic" data-ic="mail"></span>Email inbox<span class="n" id="mnEmail"></span></div>
     <div class="ditem" data-filter="unread"><span class="ic" data-ic="mail"></span>Unread<span class="n" id="mnUnread"></span></div>
     <div class="ditem" data-tab="leads"><span class="ic" data-ic="clipboard-list"></span>Leads pipeline</div>
     <div class="ditem" data-tab="followups"><span class="ic" data-ic="list-checks"></span>Follow-ups<span class="n" id="mnFollow"></span></div>
@@ -833,11 +857,11 @@
   var FU_STAGE={owed:["Reply owed","message-square"],nudge:["Follow-up","list-checks"],won:["Win follow-up","check-circle"],lost:["Revival","undo"]};
   var FU_SNOOZE=[["1 day",24],["3 days",72],["1 week",168]];
 
-  var state={threads:[],filter:"all",assign:"all",tab:"messages",search:"",phone:null,thread:null,insights:null,config:null,templates:TEMPLATES.slice()};
+  var state={threads:[],filter:"all",assign:"all",tab:"messages",search:"",phone:null,thread:null,insights:null,config:null,templates:TEMPLATES.slice(),emails:[]};
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-04·h";
+  var APP_BUILD="2026-07-04·i";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -1023,7 +1047,8 @@
   function refreshBadges(){
     var c=counts();
     var nu=el("navUnread");nu.textContent=c.unread;nu.className="ndot"+(c.unread?" show":"");
-    var ns=el("navSched");ns.textContent=c.sched;ns.className="ndot"+(c.sched?" show":"");
+    var ns=el("navSched");if(ns){ns.textContent=c.sched;ns.className="ndot"+(c.sched?" show":"")}
+    refreshEmailBadge();
     var nn=el("navNeeds");nn.textContent=c.needs;nn.className="ndot"+(c.needs?" show":"");
     var nf=el("navFollow");if(nf){nf.textContent=c.follow;nf.className="ndot"+(c.follow?" show":"")}
     el("mnAll").textContent=c.all||"";el("mnUnread").textContent=c.unread||"";
@@ -1124,7 +1149,37 @@
     if(state.tab==="insights")return renderInsights();
     if(state.tab==="scheduled")return renderList("scheduled");
     if(state.tab==="archived")return renderList("archived");
+    if(state.tab==="email")return renderEmails();
     return renderList("messages");
+  }
+
+  // ---- email tab (unified inbox) ----
+  function emailUnread(){return (state.emails||[]).reduce(function(a,e){return a+(e.unread?1:0)},0)}
+  function refreshEmailBadge(){var n=el("navEmail");if(n){var u=emailUnread();n.textContent=u;n.className="ndot"+(u?" show":"")}var mn=el("mnEmail");if(mn)mn.textContent=(state.emails||[]).length||""}
+  function fetchEmails(){return api("/api/emails").then(function(d){if(d&&d.ok){state.emails=d.emails||[];refreshEmailBadge();if(state.tab==="email")renderEmails()}}).catch(function(){})}
+  function fmtEmailDate(ts){var d=new Date(ts),now=new Date();if(d.toDateString()===now.toDateString())return fmtTime(ts);if((now-d)/86400000<7)return d.toLocaleDateString([],{weekday:"short"});return d.toLocaleDateString([],{month:"short",day:"numeric"})}
+  function renderEmails(){
+    var box=el("scroll");var list=state.emails||[];
+    if(!list.length){box.innerHTML='<div class="emptyview"><div class="big">'+ic("mail",46)+'</div><div>No emails yet</div><div class="sub">Once your Gmail is connected, recent emails land here — texts and email in one place. Tap the ☰ menu → “Connect email” to set it up.</div></div>';return}
+    var html="";
+    list.forEach(function(e){
+      html+='<div class="email-card'+(e.unread?" unrd":"")+'" data-eid="'+esc(e.id)+'">'+
+        '<div class="ec-top"><span class="ec-from">'+esc(e.fromName||e.from||"Unknown")+'</span><span class="ec-date">'+fmtEmailDate(e.date)+'</span></div>'+
+        '<div class="ec-subj">'+esc(e.subject||"(no subject)")+'</div>'+
+        '<div class="ec-snip">'+esc(e.snippet||"")+'</div>'+
+      '</div>';
+    });
+    box.innerHTML=html;
+    Array.prototype.forEach.call(box.querySelectorAll(".email-card"),function(c){c.onclick=function(){openEmail(c.getAttribute("data-eid"))}});
+  }
+  function openEmail(id){
+    var e=(state.emails||[]).find(function(x){return x.id===id});if(!e)return;
+    if(e.unread){e.unread=0;refreshEmailBadge();renderEmails();post("/api/email-read",{id:id}).then(function(d){if(d&&d.ok)state.emails=d.emails})}
+    var o=document.createElement("div");o.className="email-reader";
+    o.innerHTML='<div class="er-head"><button class="er-back" aria-label="Back">'+ic("chevron-left",22)+'</button><div class="er-hh"><div class="er-from">'+esc(e.fromName||e.from||"Unknown")+'</div><div class="er-addr">'+esc(e.from||"")+'</div></div></div>'+
+      '<div class="er-body-wrap"><div class="er-subj">'+esc(e.subject||"(no subject)")+'</div><div class="er-date">'+fmtFull(e.date)+'</div><div class="er-body">'+esc((e.body||e.snippet||"").trim())+'</div></div>';
+    o.querySelector(".er-back").onclick=function(){o.remove()};
+    document.body.appendChild(o);
   }
 
   function convNode(t){
@@ -2216,6 +2271,7 @@
     renderMain();
     if(tab==="insights")fetchInsights();
     if(tab==="followups")refreshThreads();
+    if(tab==="email")fetchEmails();
   }
 
   // ---- drawer ----
@@ -2255,6 +2311,7 @@
   }
   function runPoll(){
     pollTimer=null;
+    fetchEmails(); // keep the unified-inbox badge live (cheap KV read)
     var p=state.phone?loadThread():refreshThreads();
     p.then(function(){
       var s=sig();
@@ -2357,7 +2414,7 @@
   hydrateIcons();
   el("myAvatar").innerHTML=brandGlyph();el("drawerLogo").innerHTML=brandGlyph();el("loginLogo").innerHTML=brandGlyph();
   applyTheme(themePref());loadAccent();buildAccents();buildThemeSeg();buildTplMenu();loadTemplates();buildQuickset();
-  renderFilters();refreshThreads();startPoll();checkHealth();loadConfig();showBuild();
+  renderFilters();refreshThreads();startPoll();checkHealth();loadConfig();showBuild();fetchEmails();
 })();
 </script>
 <script>
