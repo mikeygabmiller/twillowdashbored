@@ -61,6 +61,13 @@ let BASE_URL = null;
 function kv() { return ENV.MESSAGES; }
 function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').replace(/\/+$/, ''); }
 
+// Deploy fingerprint. BUMP THIS on every change, and keep APP_BUILD in
+// public/index.html identical. The dashboard footer shows "app <build> · server
+// <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
+// build) is serving this exact version — front-end assets and Worker script alike.
+// A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
+const BUILD = '2026-07-04·h';
+
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
 // useless once the daily write limit is hit — a var is set in the Cloudflare
@@ -111,6 +118,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/voicemail-tx')   return handleVoicemailTranscription(request);
   if (request.method === 'POST' && pathname === '/status')         return handleStatusCallback(request);
 
+  if (request.method === 'GET'  && pathname === '/api/version')    return json({ ok: true, build: BUILD });
   if (request.method === 'POST' && pathname === '/api/login')      return apiLogin(request);
   if (request.method === 'POST' && pathname === '/api/logout')     return apiLogout();
   // Everything else under /api/ requires the dashboard password (once one is set).
@@ -474,7 +482,7 @@ async function apiHealth() {
     whitespaceInToken: /\s/.test(token),
   };
   return json({
-    ok: true, routing: 'worker-reached',
+    ok: true, routing: 'worker-reached', build: BUILD,
     env: {
       TWILIO_ACCOUNT_SID: Boolean(ENV.TWILIO_ACCOUNT_SID),
       TWILIO_AUTH_TOKEN: Boolean(ENV.TWILIO_AUTH_TOKEN),

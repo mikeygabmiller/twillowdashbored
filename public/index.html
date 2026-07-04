@@ -777,7 +777,7 @@
   <div class="foot">
     Mikey's Mobile Detailing<br>
     Dashboard · auto-refresh on<br>
-    <span style="opacity:.75">Build 2026‑07‑03·g — photos, menu, light theme</span>
+    <span id="buildStamp" style="opacity:.75">checking version…</span>
   </div>
 </aside>
 
@@ -834,6 +834,10 @@
   var FU_SNOOZE=[["1 day",24],["3 days",72],["1 week",168]];
 
   var state={threads:[],filter:"all",assign:"all",tab:"messages",search:"",phone:null,thread:null,insights:null,config:null,templates:TEMPLATES.slice()};
+  // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
+  // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
+  // serving this version. See DEPLOY.md.
+  var APP_BUILD="2026-07-04·h";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -2225,6 +2229,19 @@
       el("healthTxt").textContent=ok?"online":"issue";
     }).catch(function(){b.className="health bad";el("healthTxt").textContent="offline"});
   }
+  // Confirm the live URL is serving this exact build (assets AND worker together).
+  function showBuild(){
+    var s=el("buildStamp");if(!s)return;
+    s.textContent="app "+APP_BUILD;
+    api("/api/version").then(function(d){
+      if(d&&d.build){
+        var ok=d.build===APP_BUILD;
+        s.innerHTML="app "+esc(APP_BUILD)+" · server "+esc(d.build)+" "+(ok?"✓ live":"⚠ mismatch");
+        s.style.color=ok?"":"var(--accent-text)";
+        s.style.opacity=ok?".75":"1";
+      }
+    }).catch(function(){});
+  }
 
   // ---- polling ----
   // Lightweight change signature so we can tell if anything actually moved.
@@ -2340,7 +2357,7 @@
   hydrateIcons();
   el("myAvatar").innerHTML=brandGlyph();el("drawerLogo").innerHTML=brandGlyph();el("loginLogo").innerHTML=brandGlyph();
   applyTheme(themePref());loadAccent();buildAccents();buildThemeSeg();buildTplMenu();loadTemplates();buildQuickset();
-  renderFilters();refreshThreads();startPoll();checkHealth();loadConfig();
+  renderFilters();refreshThreads();startPoll();checkHealth();loadConfig();showBuild();
 })();
 </script>
 <script>
