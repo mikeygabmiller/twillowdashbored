@@ -1,5 +1,11 @@
 # Mikey's SMS Dashboard — Cloudflare Worker
 
+> **Deploying / going live?** Read **[DEPLOY.md](DEPLOY.md)** first. Short version:
+> the live URL is auto-deployed from the **production branch**
+> `claude/qqc-submission-auto-text-cspjc3` — changes on any other branch only build
+> *previews*. Always verify the live footer shows `app <build> · server <build> ✓ live`.
+
+
 This app moved off Netlify (whose credit limits paused production deploys) onto
 a **Cloudflare Worker**. Same dashboard, same features, same API — Cloudflare's
 free tier is request-based (100k/day) and does **not** pause your deploys.

@@ -1,7 +1,7 @@
 /* Mikey's Detailing dashboard — service worker.
  * Makes the app installable + loads instantly (and offline) by caching the
  * app shell. API calls are always live (never cached). */
-const CACHE = 'mkd-shell-v3';
+const CACHE = 'mkd-shell-v4';
 const SHELL = ['/', '/manifest.webmanifest', '/favicon.svg', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (e) => {
