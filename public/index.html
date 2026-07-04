@@ -222,6 +222,17 @@
   .load-media{display:inline-flex;align-items:center;gap:7px;background:rgba(127,127,127,.16);border:1px solid rgba(127,127,127,.35);color:inherit;border-radius:11px;padding:8px 12px;font-size:12.5px;cursor:pointer;font-weight:600}
   .load-media:hover{background:rgba(127,127,127,.28)}
   .load-media svg{width:14px;height:14px}
+  .pq-btn{display:inline-flex;align-items:center;gap:6px;margin-top:7px;background:var(--panel2);border:1px solid var(--line);color:var(--purple);border-radius:11px;padding:8px 12px;font-size:12.5px;font-weight:700;cursor:pointer}
+  .pq-btn:hover{border-color:var(--purple)}
+  .pq-btn svg{width:14px;height:14px}
+  /* skeleton loading rows */
+  .skel-row{display:flex;gap:13px;padding:13px 16px;border-bottom:1px solid var(--line2)}
+  .skel-av{width:46px;height:46px;border-radius:50%;flex:none}
+  .skel-lines{flex:1;display:flex;flex-direction:column;gap:9px;padding-top:6px}
+  .skel-line{height:11px;border-radius:6px;width:62%}
+  .skel-line.short{width:38%}
+  .skel-av,.skel-line{background:linear-gradient(90deg,var(--panel2) 25%,var(--panel3) 37%,var(--panel2) 63%);background-size:400% 100%;animation:shimmer 1.4s ease infinite}
+  @keyframes shimmer{0%{background-position:100% 0}100%{background-position:-100% 0}}
   .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px;animation:ctxpop .15s ease}
   .lightbox img{max-width:100%;max-height:100%;border-radius:10px;box-shadow:0 10px 40px rgba(0,0,0,.6)}
   .lightbox .lb-close{position:absolute;top:calc(14px + var(--safe-top));right:16px;background:rgba(255,255,255,.16);border:none;color:#fff;width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer}
@@ -857,11 +868,11 @@
   var FU_STAGE={owed:["Reply owed","message-square"],nudge:["Follow-up","list-checks"],won:["Win follow-up","check-circle"],lost:["Revival","undo"]};
   var FU_SNOOZE=[["1 day",24],["3 days",72],["1 week",168]];
 
-  var state={threads:[],filter:"all",assign:"all",tab:"messages",search:"",phone:null,thread:null,insights:null,config:null,templates:TEMPLATES.slice(),emails:[]};
+  var state={threads:[],filter:"all",assign:"all",tab:"messages",search:"",phone:null,thread:null,insights:null,config:null,templates:TEMPLATES.slice(),emails:[],loadedOnce:false};
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-04·i";
+  var APP_BUILD="2026-07-04·j";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -1275,8 +1286,10 @@
     if(a==="details"){openThread(t.phone);setTimeout(openDetails,420);return}
     if(a==="block"){var blocked=((state.config&&state.config.blockedNumbers)||[]).indexOf(t.phone)>=0;blockNumber(t.phone,blocked?"unblock":"block").then(function(d){if(d&&d.ok)toast(blocked?"Calls unblocked":"Calls blocked")});return}
   }
+  function skeletonList(n){var s="";for(var i=0;i<n;i++)s+='<div class="skel-row"><div class="skel-av"></div><div class="skel-lines"><div class="skel-line"></div><div class="skel-line short"></div></div></div>';return s}
   function renderList(mode){
     var box=el("scroll");
+    if(!state.loadedOnce&&!state.threads.length){box.innerHTML=skeletonList(7);return}
     var items;
     if(mode==="archived")items=state.threads.filter(function(t){return t.archived});
     else if(mode==="scheduled")items=state.threads.filter(function(t){return !t.archived&&t.scheduledCount>0});
@@ -1766,7 +1779,7 @@
   }
 
   // ---- thread ----
-  function refreshThreads(){return api("/api/threads").then(function(d){if(d&&d.ok){state.threads=d.threads||[];renderMain()}})}
+  function refreshThreads(){return api("/api/threads").then(function(d){if(d&&d.ok){state.threads=d.threads||[];state.loadedOnce=true;renderMain()}})}
 
   function openThread(phone){
     state.phone=phone;document.body.classList.add("viewing");
@@ -1828,6 +1841,21 @@
       else toast("Couldn't load photos: "+((d&&d.error)||"error"),{bad:true});
     }).catch(function(){toast("Network error",{bad:true})});
   }
+  // Multimodal: read the customer's photo, draft a reply + assessment into the composer.
+  function aiPhotoQuote(btn){
+    if(!state.phone)return;
+    var orig=btn?btn.innerHTML:"";
+    if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span> Looking at the photo…'}
+    post("/api/ai/photo-quote",{phone:state.phone}).then(function(d){
+      if(d&&d.ok){
+        if(d.draft){el("msgInput").value=d.draft;autoGrow();updateCount();el("msgInput").focus()}
+        var svc=(d.services&&d.services.length)?("\nSuggested: "+d.services.join(", ")):"";
+        toast((d.assessment||"Drafted a reply from the photo — edit & send")+svc);
+      } else if(d&&d.error==="no_photo"){toast("No photo in this conversation yet",{bad:true});}
+      else toast("Couldn't read the photo: "+((d&&d.error)||"error"),{bad:true});
+    }).catch(function(){toast("Network error",{bad:true})})
+      .then(function(){if(btn){btn.disabled=false;btn.innerHTML=orig}});
+  }
   function openLightbox(src){
     var o=document.createElement("div");o.className="lightbox";
     o.innerHTML='<img src="'+src+'" alt="attachment"><button class="lb-close" aria-label="Close">'+ic("x",22)+'</button>';
@@ -1874,7 +1902,10 @@
       var legacyAtt=m.dir==="in"&&!hasMedia&&/\[\d+ attachment\(s\)\]/.test(m.body||"");
       var shownBody=legacyAtt?(m.body||"").replace(/\n?\[\d+ attachment\(s\)\]/,"").trim():(m.body||"");
       var mediaHTML="";
-      if(hasMedia){mediaHTML='<div class="msg-media">'+m.media.map(function(mm){var pu="/api/media?u="+encodeURIComponent(mm.url);return (/^image\//.test(mm.type||"")||!mm.type)?'<img class="msg-img" src="'+pu+'" loading="lazy" alt="attachment">':'<a class="msg-file" href="'+pu+'" target="_blank" rel="noopener">'+ic("file-text",14)+' Attachment</a>'}).join("")+'</div>';}
+      if(hasMedia){
+        mediaHTML='<div class="msg-media">'+m.media.map(function(mm){var pu="/api/media?u="+encodeURIComponent(mm.url);return (/^image\//.test(mm.type||"")||!mm.type)?'<img class="msg-img" src="'+pu+'" loading="lazy" alt="attachment">':'<a class="msg-file" href="'+pu+'" target="_blank" rel="noopener">'+ic("file-text",14)+' Attachment</a>'}).join("")+'</div>';
+        if(m.dir==="in"&&m.media.some(function(mm){return /^image\//.test(mm.type||"")||!mm.type}))mediaHTML+='<button class="pq-btn" data-photoquote="1">'+ic("sparkles",14)+' AI quote from photo</button>';
+      }
       else if(legacyAtt){mediaHTML='<button class="load-media" data-loadmedia="1">'+ic("image",14)+' Load photo</button>';}
       b.innerHTML=mediaHTML+(shownBody?hlBody(shownBody):"")+'<span class="t">'+fmtTime(m.ts)+(m.kind&&m.kind!=="manual"&&m.dir==="out"?'<span class="kind">'+esc(m.kind)+'</span>':'')+(m.by&&m.dir==="out"?'<span class="by">'+esc(m.by)+'</span>':'')+'</span>'+(m.error?'<span class="err">'+ic("alert",11)+' '+esc(m.error)+'</span>':'')+delivHTML(m,idx===t.messages.length-1);
       box.appendChild(b);lastDir=m.dir;
@@ -1883,6 +1914,7 @@
       btn.onclick=function(){var mm=(t.messages||[]).find(function(x){return x.id===btn.getAttribute("data-resend")});if(mm)resendMessage(mm.body)};
     });
     Array.prototype.forEach.call(box.querySelectorAll("[data-loadmedia]"),function(btn){btn.onclick=function(){backfillMedia(btn)}});
+    Array.prototype.forEach.call(box.querySelectorAll("[data-photoquote]"),function(btn){btn.onclick=function(){aiPhotoQuote(btn)}});
     Array.prototype.forEach.call(box.querySelectorAll(".msg-img"),function(im){im.onclick=function(){openLightbox(im.src)}});
     if((state.threadFind||"").trim()){focusFind(state.findIdx||0,true)} else {box.scrollTop=box.scrollHeight}
     renderDetails();

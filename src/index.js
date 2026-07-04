@@ -66,7 +66,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-04·i';
+const BUILD = '2026-07-04·j';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -152,6 +152,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/ai/draft')   return apiAiDraft(request);
   if (request.method === 'POST' && pathname === '/api/ai/triage')  return apiAiTriage();
   if (request.method === 'POST' && pathname === '/api/ai/coach')   return apiAiCoach(request);
+  if (request.method === 'POST' && pathname === '/api/ai/photo-quote') return apiAiPhotoQuote(request);
 
   // Static assets (the dashboard at "/") are served by Cloudflare's asset
   // layer before the Worker, so anything reaching here is an unknown route.
@@ -967,6 +968,56 @@ async function apiAiTriage() {
 // say and why. Returns a ready reply plus talking points, watch-outs, and a tone
 // cue — all grounded in the business playbook — so a new team member can answer
 // confidently without knowing the business by heart.
+// Multimodal quote assist: read the customer's most recent photo, assess the
+// vehicle's condition, recommend playbook services, and draft a reply — never a
+// specific price. Turns "photo is the quote" into an actual drafted response.
+async function fetchTwilioImageB64(u) {
+  const r = await fetch(u, { headers: { Authorization: `Basic ${btoa(`${ENV.TWILIO_ACCOUNT_SID}:${ENV.TWILIO_AUTH_TOKEN}`)}` } });
+  if (!r.ok) throw new Error(`media ${r.status}`);
+  const ct = (r.headers.get('Content-Type') || 'image/jpeg').split(';')[0];
+  const buf = new Uint8Array(await r.arrayBuffer());
+  let bin = ''; const chunk = 0x8000;
+  for (let i = 0; i < buf.length; i += chunk) bin += String.fromCharCode.apply(null, buf.subarray(i, i + chunk));
+  return { mimeType: ct, dataB64: btoa(bin) };
+}
+async function apiAiPhotoQuote(request) {
+  const data = await readJson(request);
+  const phone = normalizePhone(data.phone);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  const thread = await loadThread(phone);
+  let img = null;
+  for (let i = (thread.messages || []).length - 1; i >= 0; i--) {
+    const m = thread.messages[i];
+    if (m.dir === 'in' && Array.isArray(m.media)) {
+      const im = m.media.find((x) => /^image\//.test(x.type || '') || !x.type);
+      if (im) { img = im; break; }
+    }
+  }
+  if (!img) return json({ ok: false, error: 'no_photo' }, 422);
+  let pic;
+  try { pic = await fetchTwilioImageB64(img.url); }
+  catch { return json({ ok: false, error: 'media_fetch_failed' }, 502); }
+  const cfg = await loadConfig();
+  const prompt = businessContext(cfg) +
+    `You are Mikey from Mikey's Mobile Detailing, looking at a photo a customer just texted of their vehicle. ` +
+    `Return ONLY JSON: {"assessment":"2-3 sentences on the vehicle type and its VISIBLE condition (dirt, swirls, stains, oxidation, etc.)", ` +
+    `"services":["recommended services drawn from the playbook that fit what you see"], ` +
+    `"draft":"a warm 1-3 sentence text reply that acknowledges the vehicle, notes what you'd focus on, and says you'll confirm the exact price — NEVER state a specific price or appointment time"}. ` +
+    `Base everything only on what is actually visible.\n\nConversation so far:\n${transcript(thread)}`;
+  try {
+    const text = await geminiGenerate(prompt, { json: true, maxTokens: 1200, images: [{ mimeType: pic.mimeType, dataB64: pic.dataB64 }] });
+    let p = {}; try { p = JSON.parse(text); } catch { p = { draft: text }; }
+    return json({
+      ok: true,
+      assessment: String(p.assessment || '').trim(),
+      services: Array.isArray(p.services) ? p.services.map((s) => String(s).trim()).filter(Boolean).slice(0, 6) : [],
+      draft: String(p.draft || '').trim(),
+    });
+  } catch (err) {
+    return json({ ok: false, error: String(err.message || err) }, 502);
+  }
+}
+
 async function apiAiCoach(request) {
   const data = await readJson(request);
   const phone = normalizePhone(data.phone);
@@ -1670,7 +1721,9 @@ async function geminiGenerate(prompt, opts = {}) {
   // (and sometimes leaving nothing at all). These are short, direct tasks, so
   // turn thinking off and give the whole budget to the actual answer.
   if (/2\.5|thinking/i.test(model)) gen.thinkingConfig = { thinkingBudget: 0 };
-  const body = { contents: [{ parts: [{ text: prompt }] }], generationConfig: gen };
+  const reqParts = [{ text: prompt }];
+  if (opts.images) for (const im of (opts.images || [])) reqParts.push({ inlineData: { mimeType: im.mimeType, data: im.dataB64 } });
+  const body = { contents: [{ parts: reqParts }], generationConfig: gen };
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
