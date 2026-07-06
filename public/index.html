@@ -104,6 +104,8 @@
   .badge{font-size:10px;font-weight:700;padding:3px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.3px}
   .unread-pill{flex:none;min-width:20px;height:20px;border-radius:11px;background:var(--accent);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 6px;align-self:center}
   .sched-flag{color:#7dd3fc;font-size:11px;display:inline-flex;align-items:center;gap:3px}
+  .rem-flag{color:#fbbf24;font-size:11px;display:inline-flex;align-items:center;gap:3px}
+  .rem-flag.due{color:#f59e0b;font-weight:700}
   .tag{font-size:10px;padding:2px 8px;border-radius:7px;background:#23252d;color:#aab2c0;border:1px solid #30333d}
 
   .st-new{background:rgba(59,130,246,.18);color:#7eb0ff}
@@ -179,6 +181,13 @@
   .sched-banner .sb-title{font-size:11px;color:#7dd3fc;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:7px;display:flex;align-items:center;gap:5px}
   .sched-item{display:flex;align-items:center;gap:8px;font-size:12.5px;color:#cfe6f5;padding:4px 0}
   .sched-item .x{margin-left:auto;color:#9fb4c4;cursor:pointer;border:none;background:none;font-size:16px}
+  .rem-banner{margin:8px 14px 0;padding:11px 14px;background:#2a2410;border:1px solid #4a3d12;border-radius:13px;display:flex;align-items:center;gap:8px}
+  .rem-banner.due{background:#3a2a0e;border-color:#7a5c14}
+  .rem-banner .rb-title{font-size:11px;color:#fbbf24;font-weight:700;text-transform:uppercase;letter-spacing:.4px;display:flex;align-items:center;gap:5px;white-space:nowrap}
+  .rem-banner .rb-body{min-width:0;flex:1}
+  .rem-banner .rb-when{color:#fde68a;font-size:12.5px}
+  .rem-banner .rb-note{color:#e7d9a6;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rem-banner .x{margin-left:auto;color:#d6c37a;cursor:pointer;border:none;background:none;font-size:16px;display:inline-flex;flex:none}
 
   /* composer */
   .composer{border-top:1px solid var(--line);background:var(--panel);padding:9px 12px calc(9px + var(--safe-bottom))}
@@ -338,6 +347,7 @@
   .sum-pills{display:flex;gap:6px;margin-left:auto;flex-wrap:wrap;justify-content:flex-end}
   .sum-pill{font-size:11px;font-weight:700;color:var(--muted);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:2px 8px;white-space:nowrap}
   .sum-pill.hot{color:#fff;background:var(--accent);border-color:transparent}
+  .sum-pill.warn{color:#111;background:#fbbf24;border-color:transparent}
   .sum-tog{color:var(--muted2);font-size:12px;margin-left:2px}
   .sum-body{padding:2px 8px 9px}
   .sum-clear{font-size:12.5px;color:var(--muted2);padding:6px 6px 4px}
@@ -441,6 +451,7 @@
       </div>
     </div>
 
+    <div class="rem-banner" id="remBanner" style="display:none"></div>
     <div class="sched-banner" id="schedBanner" style="display:none"></div>
     <div class="messages" id="messages"></div>
 
@@ -449,6 +460,7 @@
         <button class="btn icon" id="tplBtn" data-ic="zap" title="Quick replies" aria-label="Quick replies"></button>
         <button class="btn icon" id="schedBtn" data-ic="calendar-clock" title="Schedule send" aria-label="Schedule send"></button>
         <button class="btn icon" id="remBtn" data-ic="bell" title="Appointment reminder" aria-label="Appointment reminder"></button>
+        <button class="btn icon" id="followBtn" data-ic="clock" title="Follow-up reminder (silent)" aria-label="Follow-up reminder"></button>
         <button class="btn icon" id="draftBtn" data-ic="sparkles" title="AI draft reply" aria-label="AI draft reply"></button>
         <button class="btn icon" id="polishBtn" data-ic="wand" title="AI polish my text" aria-label="AI polish my text"></button>
         <button class="btn icon" id="micBtn" data-ic="mic" title="Dictate (voice to text)" aria-label="Dictate" style="display:none"></button>
@@ -469,6 +481,15 @@
           <label>Reminder message</label>
           <div class="quickset" id="remTpls"></div>
           <button class="btn accent ic-btn" id="remConfirm" data-ic="bell" data-ic-label="Schedule reminder" style="width:100%"></button>
+        </div>
+        <div class="sched-pop" id="followPop" style="display:none">
+          <label>Remind me to follow up on</label>
+          <input type="datetime-local" id="followTime" />
+          <div class="quickset" id="followWhen"></div>
+          <label>Note (optional — just for you)</label>
+          <input type="text" id="followNote" maxlength="200" placeholder="e.g. check if they booked the ceramic" />
+          <button class="btn accent ic-btn" id="followConfirm" data-ic="clock" data-ic-label="Set silent reminder" style="width:100%"></button>
+          <div style="font-size:11px;color:var(--muted2);margin-top:7px;line-height:1.4">Stays private — nothing is texted to the customer. It just pops up in your dashboard when it's due.</div>
         </div>
       </div>
       <div class="crow">
@@ -526,6 +547,7 @@
           <div class="infoline"><span>Messages</span><span id="dtMsgCount"></span></div>
           <div class="infoline"><span>Avg reply time</span><span id="dtReply"></span></div>
           <div class="infoline"><span>Appointment</span><span id="dtAppt" style="cursor:pointer"></span></div>
+          <div class="infoline"><span>Follow-up reminder</span><span id="dtReminder" style="cursor:pointer"></span></div>
         </div>
       </div>
     </div>
@@ -630,6 +652,7 @@
     "info":'<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
     "zap":'<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
     "bell":'<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.41 5.956-2.738 7.326"/>',
+    "clock":'<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
     "sparkles":'<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>',
     "wand":'<path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="M17.8 11.8 19 13"/><path d="M15 9h.01"/><path d="M17.8 6.2 19 5"/><path d="m3 21 9-9"/><path d="M12.2 6.2 11 5"/>',
     "mic":'<path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/>',
@@ -742,6 +765,7 @@
       all:active.length,
       unread:active.reduce(function(a,t){return a+(t.unread>0?1:0)},0),
       sched:active.reduce(function(a,t){return a+(t.scheduledCount>0?1:0)},0),
+      remindDue:active.reduce(function(a,t){return a+(t.reminderAt&&t.reminderAt<=Date.now()?1:0)},0),
       needs:active.filter(function(t){return t.lastDir==="in"}).length,
       arch:state.threads.filter(function(t){return t.archived}).length
     };
@@ -786,6 +810,13 @@
       chip.innerHTML=esc(p[1])+((p[0]!=="all"&&n)?'<span class="cnt">'+n+'</span>':'');
       chip.onclick=function(){state.filter=p[0];renderFilters();renderMain()};f.appendChild(chip);
     });
+    // "Due" chip only appears when a follow-up reminder is actually due — keeps it out of the way otherwise.
+    if(c.remindDue||state.filter==="due"){
+      var dc=document.createElement("div");dc.className="chip"+(state.filter==="due"?" active":"");
+      dc.innerHTML=ic("clock",13)+' Due'+(c.remindDue?'<span class="cnt">'+c.remindDue+'</span>':'');
+      dc.style.cssText="display:inline-flex;align-items:center;gap:4px";
+      dc.onclick=function(){state.filter="due";renderFilters();renderMain()};f.appendChild(dc);
+    }
   }
 
   function passFilter(t){
@@ -793,6 +824,7 @@
     var f=state.filter;
     if(f==="all")return true;
     if(f==="unread")return t.unread>0;
+    if(f==="due")return !!(t.reminderAt&&t.reminderAt<=Date.now());
     return t.status===f;
   }
   function passSearch(t){if(!state.search)return true;var q=state.search.toLowerCase();return(displayName(t)+" "+t.phone+" "+(t.lastBody||"")+" "+(t.tags||[]).join(" ")).toLowerCase().indexOf(q)>=0}
@@ -820,6 +852,7 @@
         '<div class="meta">'+
           (st?'<span class="badge '+st.cls+'">'+st.label+'</span>':'')+
           (t.scheduledCount>0?'<span class="sched-flag">'+ic("calendar-clock",12)+t.scheduledCount+'</span>':'')+
+          (t.reminderAt?'<span class="rem-flag'+(t.reminderAt<=Date.now()?' due':'')+'">'+ic("clock",12)+(t.reminderAt<=Date.now()?'Follow up':fmtTime(t.reminderAt))+'</span>':'')+
           (t.tags||[]).slice(0,2).map(function(x){return '<span class="tag">'+esc(x)+'</span>'}).join('')+
         '</div>'+
       '</div>'+
@@ -858,12 +891,14 @@
     var needs=active.filter(function(t){return t.lastDir==="in"}).sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
     var unread=active.reduce(function(a,t){return a+(t.unread>0?1:0)},0);
     var sched=active.reduce(function(a,t){return a+(t.scheduledCount>0?1:0)},0);
+    var remindDue=active.reduce(function(a,t){return a+(t.reminderAt&&t.reminderAt<=Date.now()?1:0)},0);
     var collapsed=localStorage.getItem("mkd-sum")==="0";
     var h='<div class="sumbar" id="sumbar">'+
       '<div class="sum-head" id="sumHead">'+
         '<span class="sum-title"><span class="ic-inline" data-ic-skip>'+ic("clipboard-list",14)+'</span> Today</span>'+
         '<span class="sum-pills">'+
           '<span class="sum-pill'+(needs.length?" hot":"")+'">'+needs.length+' waiting</span>'+
+          (remindDue?'<span class="sum-pill warn">'+remindDue+' to follow up</span>':'')+
           (unread?'<span class="sum-pill">'+unread+' unread</span>':'')+
           (sched?'<span class="sum-pill">'+sched+' scheduled</span>':'')+
         '</span>'+
@@ -1033,6 +1068,17 @@
     el("hNum").textContent=prettyPhone(t.phone);
     el("hPin").innerHTML=ic("pin",14);el("hPin").style.display=t.pinned?"inline-block":"none";
 
+    var rb=el("remBanner");
+    if(t.reminderAt){
+      var rdue=t.reminderAt<=Date.now();
+      rb.style.display="flex";rb.className="rem-banner"+(rdue?" due":"");
+      rb.innerHTML='<span class="rb-title">'+ic("clock",13)+(rdue?' Follow up now':' Reminder')+'</span>'+
+        '<span class="rb-body"><span class="rb-when">'+fmtFull(t.reminderAt)+'</span>'+
+        (t.reminderNote?'<div class="rb-note">'+esc(t.reminderNote)+'</div>':'')+'</span>'+
+        '<button class="x" id="remDone" title="Clear reminder">'+ic("check",16)+'</button>';
+      el("remDone").onclick=function(){saveMeta({reminderAt:null});toast("Reminder cleared")};
+    }else rb.style.display="none";
+
     var sb=el("schedBanner");var sc=(t.scheduled||[]);
     if(sc.length){sb.style.display="block";sb.innerHTML='<div class="sb-title">'+ic("calendar-clock",13)+' Scheduled to send</div>'+sc.map(function(s){
       return '<div class="sched-item"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(s.body.slice(0,60))+(s.body.length>60?'…':'')+'</span><span style="color:#7dd3fc;margin:0 8px">'+fmtFull(s.sendAt)+'</span><button class="x" data-id="'+s.id+'">'+ic("x",16)+'</button></div>'}).join('');
@@ -1082,6 +1128,10 @@
     var da=el("dtAppt");
     if(t.appointmentAt){da.innerHTML=esc(fmtFull(t.appointmentAt))+' <span class="ic-inline">'+ic("x",12)+'</span>';da.title="Tap to clear appointment";da.onclick=function(){if(confirm("Clear the saved appointment?"))saveMeta({appointmentAt:null})}}
     else{da.innerHTML='— set with <span class="ic-inline">'+ic("bell",12)+'</span>';da.title="";da.onclick=null}
+
+    var dr=el("dtReminder");
+    if(t.reminderAt){var due=t.reminderAt<=Date.now();dr.innerHTML='<span'+(due?' style="color:#f59e0b;font-weight:600"':'')+'>'+esc(fmtFull(t.reminderAt))+'</span> <span class="ic-inline">'+ic("x",12)+'</span>';dr.title="Tap to clear reminder";dr.onclick=function(){if(confirm("Clear the follow-up reminder?"))saveMeta({reminderAt:null})}}
+    else{dr.innerHTML='— set with <span class="ic-inline">'+ic("clock",12)+'</span>';dr.title="";dr.onclick=null}
 
     renderLinked();
     // reset AI summary box when switching conversations
@@ -1302,11 +1352,27 @@
     }).catch(function(){toast("Network error",{bad:true})});
   }
 
+  // ---- silent follow-up reminders (private to Mikey — never texts the customer) ----
+  var FOLLOW_WHEN=[["Tomorrow 9am",1],["In 3 days",3],["Next week",7],["In 2 weeks",14]];
+  function followQuickTime(days){var d=new Date();d.setDate(d.getDate()+days);d.setHours(9,0,0,0);return d}
+  function buildFollowQuickset(){var q=el("followWhen");q.innerHTML="";FOLLOW_WHEN.forEach(function(x){var b=document.createElement("button");b.textContent=x[0];b.onclick=function(){el("followTime").value=toLocalInput(followQuickTime(x[1]))};q.appendChild(b)})}
+  function openFollowPop(){var t=state.thread;el("followTime").value=(t&&t.reminderAt)?toLocalInput(new Date(t.reminderAt)):toLocalInput(followQuickTime(1));el("followNote").value=(t&&t.reminderNote)||""}
+  function doFollowReminder(){
+    var t=state.thread;if(!t)return;
+    var v=el("followTime").value;if(!v){toast("Pick a date & time",{bad:true});return}
+    var at=new Date(v).getTime();if(!at){toast("Pick a valid date & time",{bad:true});return}
+    var note=el("followNote").value.trim();
+    post("/api/meta",{phone:t.phone,reminderAt:at,reminderNote:note}).then(function(d){
+      if(d&&d.ok){el("followPop").style.display="none";state.thread=d.thread;renderThread();refreshThreads();toast("Reminder set for "+fmtFull(at))}
+      else toast("Couldn't set reminder: "+((d&&d.error)||"error"),{bad:true});
+    }).catch(function(){toast("Network error",{bad:true})});
+  }
+
   // ---- tabs ----
   function setTab(tab){
     state.tab=tab;state.phone=null;document.body.classList.remove("viewing");
     el("details").classList.remove("open");el("sheetScrim").classList.remove("show");
-    el("emptyState").style.display="flex";el("chatHead").style.display="none";el("composer").style.display="none";el("schedBanner").style.display="none";
+    el("emptyState").style.display="flex";el("chatHead").style.display="none";el("composer").style.display="none";el("schedBanner").style.display="none";el("remBanner").style.display="none";
     el("messages").innerHTML="";
     Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.classList.toggle("active",b.getAttribute("data-tab")===tab)});
     el("scroll").scrollTop=0;
@@ -1328,7 +1394,7 @@
 
   // ---- polling ----
   // Lightweight change signature so we can tell if anything actually moved.
-  function sig(){return state.threads.map(function(t){return t.phone+":"+t.lastTs+":"+t.unread+":"+t.scheduledCount}).join("|")}
+  function sig(){return state.threads.map(function(t){return t.phone+":"+t.lastTs+":"+t.unread+":"+t.scheduledCount+":"+(t.reminderAt||0)}).join("|")}
   function stopPoll(){if(pollTimer){clearTimeout(pollTimer);pollTimer=null}}
   function scheduleNext(){
     stopPoll();
@@ -1377,12 +1443,14 @@
   el("msgInput").addEventListener("input",function(){updateCount();autoGrow()});
   el("msgInput").addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}});
   el("dtNotes").addEventListener("blur",function(){if(state.thread&&el("dtNotes").value!==(state.thread.notes||""))saveMeta({notes:el("dtNotes").value})});
-  function closePops(except){["tplMenu","schedPop","remPop"].forEach(function(id){if(id!==except)el(id).style.display="none"})}
+  function closePops(except){["tplMenu","schedPop","remPop","followPop"].forEach(function(id){if(id!==except)el(id).style.display="none"})}
   el("tplBtn").onclick=function(){var m=el("tplMenu");closePops("tplMenu");m.style.display=m.style.display==="none"?"block":"none"};
   el("schedBtn").onclick=function(){var p=el("schedPop");closePops("schedPop");if(p.style.display==="none"&&!el("schedTime").value)el("schedTime").value=toLocalInput(quickTime(60));p.style.display=p.style.display==="none"?"block":"none"};
   el("remBtn").onclick=function(){var p=el("remPop");closePops("remPop");if(p.style.display==="none")openRemPop();p.style.display=p.style.display==="none"?"block":"none"};
+  el("followBtn").onclick=function(){var p=el("followPop");closePops("followPop");if(p.style.display==="none")openFollowPop();p.style.display=p.style.display==="none"?"block":"none"};
   el("schedConfirm").onclick=doSchedule;
   el("remConfirm").onclick=doReminder;
+  el("followConfirm").onclick=doFollowReminder;
   el("draftBtn").onclick=aiDraft;
   el("polishBtn").onclick=aiPolish;
   el("micBtn").onclick=toggleMic;
@@ -1409,6 +1477,7 @@
     if(!e.target.closest("#tplBtn")&&!e.target.closest("#tplMenu"))el("tplMenu").style.display="none";
     if(!e.target.closest("#schedBtn")&&!e.target.closest("#schedPop"))el("schedPop").style.display="none";
     if(!e.target.closest("#remBtn")&&!e.target.closest("#remPop"))el("remPop").style.display="none";
+    if(!e.target.closest("#followBtn")&&!e.target.closest("#followPop"))el("followPop").style.display="none";
   });
 
   Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.onclick=function(){vibrate(6);setTab(b.getAttribute("data-tab"))}});
@@ -1422,7 +1491,7 @@
   // ---- boot ----
   hydrateIcons();
   el("myAvatar").innerHTML=brandGlyph();el("drawerLogo").innerHTML=brandGlyph();el("loginLogo").innerHTML=brandGlyph();
-  loadAccent();buildAccents();buildTplMenu();loadTemplates();buildQuickset();
+  loadAccent();buildAccents();buildTplMenu();loadTemplates();buildQuickset();buildFollowQuickset();
   renderFilters();refreshThreads();startPoll();checkHealth();
 })();
 </script>
