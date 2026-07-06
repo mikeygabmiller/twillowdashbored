@@ -271,6 +271,14 @@ async function apiMeta(request) {
     const a = Number(data.appointmentAt);
     thread.appointmentAt = (data.appointmentAt == null || !a) ? null : a;
   }
+  // Silent follow-up reminder: just a timestamp + optional note stored on the
+  // thread. Nothing is ever sent — it only surfaces in the dashboard when due.
+  if ('reminderAt' in data) {
+    const r = Number(data.reminderAt);
+    thread.reminderAt = (data.reminderAt == null || !r) ? null : r;
+    if (!thread.reminderAt) thread.reminderNote = '';
+  }
+  if (typeof data.reminderNote === 'string') thread.reminderNote = data.reminderNote.trim().slice(0, 200);
   if (Array.isArray(data.linked)) {
     thread.linked = [...new Set(data.linked.map((p) => normalizePhone(p) || p).filter(Boolean))]
       .filter((p) => p !== thread.phone).slice(0, 20);
@@ -549,6 +557,8 @@ function blankThread(phone) {
     archived: false,
     unread: 0,
     appointmentAt: null,
+    reminderAt: null,  // silent follow-up reminder — surfaces in the dashboard, never texts the customer
+    reminderNote: '',
     linked: [],
     messages: [],      // { id, dir:'in'|'out', body, ts, kind, error? }
     scheduled: [],     // { id, body, sendAt }
@@ -591,6 +601,7 @@ async function updateIndexEntry(thread) {
     archived: !!thread.archived,
     unread: thread.unread || 0,
     scheduledCount: (thread.scheduled || []).length,
+    reminderAt: thread.reminderAt || null,
     lastBody: last ? preview(last.body) : '',
     lastDir: last ? last.dir : '',
     lastTs: last ? last.ts : (thread.updatedAt || Date.now()),
