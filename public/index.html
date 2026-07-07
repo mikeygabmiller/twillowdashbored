@@ -333,6 +333,35 @@
   .nl-echo.ok{color:var(--green);font-weight:600}
   .pb-bar{height:7px;border-radius:5px;background:var(--panel);border:1px solid var(--line);overflow:hidden;margin-top:11px}
   .pb-bar span{display:block;height:100%;background:linear-gradient(90deg,#f5b842,#f59e0b);border-radius:5px;transition:width .3s}
+  /* ---------- Modal dialogs (email setup, reminder) ---------- */
+  .setup-overlay{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px;animation:pop .15s ease}
+  .setup-box{background:var(--panel);border:1px solid var(--line);border-radius:18px;width:100%;max-width:560px;max-height:90vh;display:flex;flex-direction:column;box-shadow:0 30px 80px rgba(0,0,0,.5)}
+  .setup-head{display:flex;align-items:center;padding:17px 20px;border-bottom:1px solid var(--line)}
+  .setup-head h3{flex:1;font-size:17px;margin:0}
+  .setup-x{background:none;border:none;color:var(--muted);cursor:pointer;display:inline-flex;padding:2px}
+  .setup-body{padding:18px 20px;overflow-y:auto}
+  .setup-ok{display:flex;align-items:center;gap:7px;color:var(--green);font-weight:600;font-size:13.5px;margin-bottom:12px}
+  .setup-note{color:var(--muted);font-size:13.5px;margin-bottom:14px;line-height:1.5}
+  .setup-steps{margin:0 0 14px;padding-left:20px;font-size:13.5px;line-height:1.65;color:var(--text)}
+  .setup-steps li{margin-bottom:6px}
+  .setup-steps code,.setup-steps b{font-weight:700}
+  .setup-steps a{color:var(--accent-text)}
+  #setupScript{width:100%;height:190px;background:var(--ground);border:1px solid var(--line);border-radius:11px;color:var(--text);font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:11px;line-height:1.5;padding:12px;resize:vertical;outline:none;margin-bottom:10px}
+  .setup-foot{font-size:11.5px;color:var(--muted2);margin-top:12px;line-height:1.5}
+  .rm-lbl{display:block;font-size:12px;color:var(--muted);font-weight:600;margin:12px 0 6px}
+  .rm-lbl:first-child{margin-top:0}
+  .setup-body input[type=datetime-local],.setup-body input[type=text]{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:10px;color:var(--text);padding:11px;font-size:14px;outline:none;color-scheme:dark}
+  .setup-body input:focus{border-color:var(--accent)}
+  .rm-acts{display:flex;gap:8px;margin-top:16px}
+  .rm-acts .btn{padding:11px}
+  /* in-thread follow-up reminder banner */
+  .remind-banner{margin:8px 14px 0;padding:10px 13px;background:#15212e;border:1px solid #1f3a52;border-radius:13px;align-items:center;gap:10px;color:#cfe6f5;font-size:13px}
+  .remind-banner.due{background:linear-gradient(135deg,#1c1708,#171310);border-color:#4a3a12;color:#f3ead6}
+  .remind-banner .rb-ic{color:#7dd3fc;flex:none;display:flex}.remind-banner.due .rb-ic{color:#f5b842}
+  .remind-banner .rb-txt{flex:1;min-width:0;line-height:1.35}
+  .remind-banner .rb-when{display:block;font-size:11px;opacity:.75;margin-top:1px}
+  .remind-banner .rb-edit,.remind-banner .rb-x{background:none;border:none;color:inherit;opacity:.7;cursor:pointer;padding:3px;display:inline-flex;flex:none}
+  .remind-banner .rb-edit:hover,.remind-banner .rb-x:hover{opacity:1}
   /* ---------- Home (landing) ---------- */
   .home{padding:6px 14px 18px;max-width:640px;margin:0 auto}
   .home-head{padding:14px 2px 2px}
@@ -706,6 +735,7 @@
       <button id="findNext" data-ic="chevron-down" aria-label="Next match"></button>
       <button id="findClose" data-ic="x" aria-label="Close find"></button>
     </div>
+    <div class="remind-banner" id="remindBanner" style="display:none"></div>
     <div class="sched-banner" id="schedBanner" style="display:none"></div>
     <div class="followup-banner" id="fuBanner" style="display:none"></div>
     <div class="messages" id="messages"></div>
@@ -843,6 +873,7 @@
     <div class="accent-row" id="accentRow"></div>
 
     <div class="sec-lbl">Tools</div>
+    <div class="ditem" id="emailSetupItem"><span class="ic" data-ic="mail"></span>Connect email</div>
     <div class="ditem" id="refreshItem"><span class="ic" data-ic="refresh-cw"></span>Refresh now</div>
     <div class="ditem" id="healthItem"><span class="ic" data-ic="activity"></span>Connection<span class="n"><span class="health" id="healthBadge"><span class="dotc"></span><span id="healthTxt">check</span></span></span></div>
     <div class="ditem" id="alertTestItem"><span class="ic" data-ic="bell"></span>Send test alert</div>
@@ -911,7 +942,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-04·l";
+  var APP_BUILD="2026-07-04·m";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -1229,6 +1260,7 @@
     var active=state.threads.filter(function(t){return !t.archived});
     var waiting=active.filter(function(t){return t.lastDir==="in"}).sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
     var fu=active.filter(function(t){return t.followupDue}).sort(function(a,b){return fuUrg(b)-fuUrg(a)||((a.fu&&a.fu.dueAt)||0)-((b.fu&&b.fu.dueAt)||0)});
+    var reminders=active.filter(function(t){return t.reminderDue}).sort(function(a,b){return (a.reminderAt||0)-(b.reminderAt||0)});
     var ins=state.insights||{};
     var h='<div class="home">';
     h+='<div class="home-head"><div class="hh-greet">'+greeting()+'</div><div class="hh-sub">Here\'s what needs you.</div></div>';
@@ -1244,6 +1276,14 @@
       h+='<div class="home-sec-h"><span>Waiting on you</span><span class="hs-n">'+waiting.length+'</span></div>';
       waiting.slice(0,5).forEach(function(t){h+=homeRow(t,ago(t.lastTs))});
       if(waiting.length>5)h+='<div class="home-more" data-more="messages">See all '+waiting.length+'</div>';
+    }
+    if(reminders.length){
+      h+='<div class="home-sec-h"><span>⏰ Reminders</span><span class="hs-n">'+reminders.length+'</span></div>';
+      reminders.forEach(function(t){
+        h+='<div class="home-row" data-open="'+esc(t.phone)+'"><div class="avatar" style="width:42px;height:42px;font-size:15px;background:'+colorFor(t.phone)+'">'+esc(initials(t))+'</div>'+
+          '<div class="hr-body"><div class="hr-nm">'+esc(displayName(t))+'</div><div class="hr-prev">'+esc(t.reminderNote||"Follow up with them")+'</div></div>'+
+          '<span class="hr-fu" style="color:#7dd3fc">'+ic("clock",14)+'</span></div>';
+      });
     }
     if(fu.length){
       h+='<div class="home-sec-h"><span>Follow-ups ready</span><span class="hs-n">'+fu.length+'</span></div>';
@@ -1269,7 +1309,7 @@
   function fmtEmailDate(ts){var d=new Date(ts),now=new Date();if(d.toDateString()===now.toDateString())return fmtTime(ts);if((now-d)/86400000<7)return d.toLocaleDateString([],{weekday:"short"});return d.toLocaleDateString([],{month:"short",day:"numeric"})}
   function renderEmails(){
     var box=el("scroll");var list=state.emails||[];
-    if(!list.length){box.innerHTML='<div class="emptyview"><div class="big">'+ic("mail",46)+'</div><div>No emails yet</div><div class="sub">Once your Gmail is connected, recent emails land here — texts and email in one place. Tap the ☰ menu → “Connect email” to set it up.</div></div>';return}
+    if(!list.length){box.innerHTML='<div class="emptyview"><div class="big">'+ic("mail",46)+'</div><div>No emails yet</div><div class="sub">Connect your Gmail and recent emails land here — texts and email in one place.</div><button class="btn accent ic-btn" id="emailConnectBtn" style="margin-top:15px">'+ic("mail",16)+'<span>Connect Gmail</span></button></div>';var ecb=el("emailConnectBtn");if(ecb)ecb.onclick=openEmailSetup;return}
     var html="";
     list.forEach(function(e){
       html+='<div class="email-card'+(e.unread?" unrd":"")+'" data-eid="'+esc(e.id)+'">'+
@@ -1280,6 +1320,58 @@
     });
     box.innerHTML=html;
     Array.prototype.forEach.call(box.querySelectorAll(".email-card"),function(c){c.onclick=function(){openEmail(c.getAttribute("data-eid"))}});
+  }
+  function emailAppsScript(url,token){
+    return "const WORKER_URL = '"+url+"';\n"+
+      "const TOKEN = '"+token+"';\n\n"+
+      "function pushRecentEmails() {\n"+
+      "  const threads = GmailApp.search('in:inbox newer_than:2d', 0, 25);\n"+
+      "  const props = PropertiesService.getScriptProperties();\n"+
+      "  const seen = JSON.parse(props.getProperty('seen') || '{}');\n"+
+      "  const now = {};\n"+
+      "  threads.forEach(function (t) {\n"+
+      "    const msgs = t.getMessages(); const m = msgs[msgs.length - 1];\n"+
+      "    const id = m.getId(); now[id] = 1; if (seen[id]) return;\n"+
+      "    const from = m.getFrom(); const nm = from.match(/^\"?([^\"<]*)\"?\\s*<?/);\n"+
+      "    UrlFetchApp.fetch(WORKER_URL, {\n"+
+      "      method: 'post', contentType: 'application/json',\n"+
+      "      headers: { 'X-Ingest-Token': TOKEN }, muteHttpExceptions: true,\n"+
+      "      payload: JSON.stringify({\n"+
+      "        messageId: id, from: from,\n"+
+      "        fromName: (nm && nm[1].trim()) || from,\n"+
+      "        subject: m.getSubject(),\n"+
+      "        snippet: m.getPlainBody().slice(0, 240),\n"+
+      "        body: m.getPlainBody().slice(0, 20000),\n"+
+      "        date: m.getDate().getTime()\n"+
+      "      })\n"+
+      "    });\n"+
+      "  });\n"+
+      "  props.setProperty('seen', JSON.stringify(now));\n"+
+      "}";
+  }
+  function openEmailSetup(){
+    api("/api/email-setup").then(function(d){
+      if(!d||!d.ok){toast("Couldn't load email setup",{bad:true});return}
+      var script=emailAppsScript(d.url,d.token);
+      var o=document.createElement("div");o.className="setup-overlay";
+      o.innerHTML='<div class="setup-box"><div class="setup-head"><h3>Connect your Gmail</h3><button class="setup-x" aria-label="Close">'+ic("x",20)+'</button></div>'+
+        '<div class="setup-body">'+
+          (d.connected?'<div class="setup-ok">'+ic("check-circle",16)+' Connected · '+d.count+' emails synced</div>':'<div class="setup-note">Takes ~3 minutes, it\'s free, and you never touch Cloudflare. Your Gmail sends a copy of recent mail to your dashboard on a schedule.</div>')+
+          '<ol class="setup-steps">'+
+            '<li>Open <a href="https://script.google.com" target="_blank" rel="noopener">script.google.com</a> → <b>New project</b>.</li>'+
+            '<li>Delete what\'s there, paste the script below, hit <b>Save</b> (💾).</li>'+
+            '<li>Press <b>Run</b> once and allow the Google permission prompt.</li>'+
+            '<li>Left sidebar → <b>Triggers</b> (clock icon) → <b>Add Trigger</b> → function <b>pushRecentEmails</b>, event source <b>Time-driven</b>, <b>Every 15 minutes</b> → Save.</li>'+
+          '</ol>'+
+          '<textarea id="setupScript" readonly>'+esc(script)+'</textarea>'+
+          '<button class="btn accent ic-btn" id="setupCopy" style="width:100%">'+ic("copy",16)+'<span>Copy the script</span></button>'+
+          '<div class="setup-foot">Emails appear here within ~15 minutes of finishing. Only a copy of recent mail is sent — your Google password never leaves Google.</div>'+
+        '</div></div>';
+      document.body.appendChild(o);
+      o.querySelector(".setup-x").onclick=function(){o.remove()};
+      o.addEventListener("click",function(e){if(e.target===o)o.remove()});
+      el("setupCopy").onclick=function(){var ta=el("setupScript");ta.focus();ta.select();var ok=function(){toast("Script copied — paste it at script.google.com")};if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(ta.value).then(ok,function(){try{document.execCommand("copy");ok()}catch(e){}});else{try{document.execCommand("copy");ok()}catch(e){}}};
+    }).catch(function(){toast("Network error",{bad:true})});
   }
   function openEmail(id){
     var e=(state.emails||[]).find(function(x){return x.id===id});if(!e)return;
@@ -1344,6 +1436,7 @@
       '<div class="ctx-item" data-a="open">'+ic("message-square",17)+'Open conversation</div>'+
       '<div class="ctx-item" data-a="pin">'+ic("pin",17)+(t.pinned?"Unpin":"Pin to top")+'</div>'+
       '<div class="ctx-item" data-a="read">'+ic("check-circle",17)+(t.unread>0?"Mark as read":"Mark as unread")+'</div>'+
+      '<div class="ctx-item" data-a="remind">'+ic("clock",17)+(t.reminderAt?"Edit follow-up reminder…":"Remind me to follow up…")+'</div>'+
       '<div class="ctx-sep"></div><div class="ctx-lbl">Lead status</div>'+
       '<div class="ctx-status">'+STAT.map(function(s){return '<button class="ctx-chip'+(t.status===s[0]?" on":"")+'" data-st="'+s[0]+'"><span class="d" style="background:'+s[2]+'"></span>'+s[1]+'</button>'}).join("")+'</div>'+
       '<div class="ctx-sep"></div>'+
@@ -1368,6 +1461,25 @@
       var it=e.target.closest("[data-a]");if(!it)return;closeCtxMenu();ctxAction(it.getAttribute("data-a"),t);
     });
   }
+  // Private follow-up reminder — schedule a nudge to yourself on a date (no text sent).
+  function openReminderModal(t){
+    var def=new Date();def.setDate(def.getDate()+1);def.setHours(9,0,0,0);
+    var cur=t.reminderAt?toLocalInput(new Date(t.reminderAt)):toLocalInput(def);
+    var o=document.createElement("div");o.className="setup-overlay";
+    o.innerHTML='<div class="setup-box" style="max-width:400px"><div class="setup-head"><h3>Remind me to follow up</h3><button class="setup-x" aria-label="Close">'+ic("x",20)+'</button></div>'+
+      '<div class="setup-body"><div class="setup-note" style="margin-bottom:4px">A private nudge about <b>'+esc(displayName(t))+'</b> — no text is sent to them.</div>'+
+      '<label class="rm-lbl">When</label><input type="datetime-local" id="rmDate" value="'+cur+'">'+
+      '<div class="quickset" id="rmQuick" style="margin-top:9px"></div>'+
+      '<label class="rm-lbl">Note (optional)</label><input type="text" id="rmNote" placeholder="e.g. check if they booked the ceramic" value="'+esc(t.reminderNote||"")+'" maxlength="200">'+
+      '<div class="rm-acts"><button class="btn accent" id="rmSave" style="flex:2">Set reminder</button>'+(t.reminderAt?'<button class="btn" id="rmClear" style="flex:1">Clear</button>':'')+'</div></div></div>';
+    document.body.appendChild(o);
+    var rq=o.querySelector("#rmQuick");
+    [["Tomorrow",1],["In 3 days",3],["In a week",7],["In 2 weeks",14]].forEach(function(p){var b=document.createElement("button");b.type="button";b.textContent=p[0];b.onclick=function(){var d=new Date();d.setDate(d.getDate()+p[1]);d.setHours(9,0,0,0);el("rmDate").value=toLocalInput(d)};rq.appendChild(b)});
+    o.querySelector(".setup-x").onclick=function(){o.remove()};
+    o.addEventListener("click",function(e){if(e.target===o)o.remove()});
+    el("rmSave").onclick=function(){var v=el("rmDate").value;if(!v){toast("Pick a date & time",{bad:true});return}var at=new Date(v).getTime();metaFor(t,{reminderAt:at,reminderNote:el("rmNote").value.trim()},"Reminder set for "+fmtFull(at));o.remove()};
+    var rc=el("rmClear");if(rc)rc.onclick=function(){metaFor(t,{reminderAt:null,reminderNote:""},"Reminder cleared");o.remove()};
+  }
   function metaFor(t,patch,msg){
     post("/api/meta",Object.assign({phone:t.phone},patch)).then(function(d){
       if(d&&d.ok){if(state.phone===t.phone&&d.thread)state.thread=d.thread;refreshThreads();if(msg)toast(msg)}
@@ -1381,6 +1493,7 @@
     if(a==="archive")return doArchiveToggle(t);
     if(a==="call"){if(confirm("Call "+displayName(t)+"?\nYour cell rings first — answer it to connect."))post("/api/call",{phone:t.phone}).then(function(d){toast(d&&d.ok?"Calling your phone — answer to connect":"Call failed",{bad:!(d&&d.ok)})});return}
     if(a==="copy"){if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(t.phone).then(function(){toast("Number copied")},function(){toast("Copy failed",{bad:true})});else toast("Copy not supported here",{bad:true});return}
+    if(a==="remind")return openReminderModal(t);
     if(a==="details"){openThread(t.phone);setTimeout(openDetails,420);return}
     if(a==="block"){var blocked=((state.config&&state.config.blockedNumbers)||[]).indexOf(t.phone)>=0;blockNumber(t.phone,blocked?"unblock":"block").then(function(d){if(d&&d.ok)toast(blocked?"Calls unblocked":"Calls blocked")});return}
   }
@@ -1978,6 +2091,14 @@
     el("hPin").innerHTML=ic("pin",14);el("hPin").style.display=t.pinned?"inline-block":"none";
     var dnt=isDnt(t.phone);el("hDnt").innerHTML=dnt?ic("ban",10)+'Do not text':'';el("hDnt").style.display=dnt?"inline-flex":"none";
 
+    var rb=el("remindBanner");
+    if(t.reminderAt){
+      var rdue=t.reminderAt<=Date.now();
+      rb.style.display="flex";rb.className="remind-banner"+(rdue?" due":"");
+      rb.innerHTML='<span class="rb-ic">'+ic("clock",15)+'</span><div class="rb-txt"><b>'+(rdue?"Follow-up reminder":"Reminder set")+'</b>'+(t.reminderNote?" · "+esc(t.reminderNote):"")+'<span class="rb-when">'+(rdue?("was due "+ago(t.reminderAt)):("for "+fmtFull(t.reminderAt)))+'</span></div><button class="rb-edit" aria-label="Edit">'+ic("pencil",15)+'</button><button class="rb-x" aria-label="Clear">'+ic("x",16)+'</button>';
+      rb.querySelector(".rb-edit").onclick=function(){openReminderModal(t)};
+      rb.querySelector(".rb-x").onclick=function(){metaFor(t,{reminderAt:null,reminderNote:""},"Reminder cleared")};
+    }else{rb.style.display="none"}
     var sb=el("schedBanner");var sc=(t.scheduled||[]);
     if(sc.length){sb.style.display="block";sb.innerHTML='<div class="sb-title">'+ic("calendar-clock",13)+' Scheduled to send</div>'+sc.map(function(s){
       return '<div class="sched-item"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(s.body.slice(0,60))+(s.body.length>60?'…':'')+'</span><span style="color:#7dd3fc;margin:0 8px">'+fmtFull(s.sendAt)+'</span><button class="x" data-id="'+s.id+'">'+ic("x",16)+'</button></div>'}).join('');
@@ -2409,7 +2530,7 @@
   function setTab(tab){
     state.tab=tab;state.phone=null;document.body.classList.remove("viewing");
     el("details").classList.remove("open");el("sheetScrim").classList.remove("show");
-    el("emptyState").style.display="flex";el("chatHead").style.display="none";el("composer").style.display="none";el("schedBanner").style.display="none";el("fuBanner").style.display="none";
+    el("emptyState").style.display="flex";el("chatHead").style.display="none";el("composer").style.display="none";el("schedBanner").style.display="none";el("fuBanner").style.display="none";el("remindBanner").style.display="none";
     el("coachPanel").style.display="none";el("coachPanel")._phone=null;el("teamIdentityBar").style.display="none";
     hideAiReview();
     el("messages").innerHTML="";
@@ -2544,6 +2665,7 @@
   Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.onclick=function(){vibrate(6);setTab(b.getAttribute("data-tab"))}});
 
   el("menuBtn").onclick=openDrawer;el("myAvatar").onclick=openDrawer;el("scrim").onclick=closeDrawer;
+  el("emailSetupItem").onclick=function(){closeDrawer();openEmailSetup()};
   el("refreshItem").onclick=function(){refreshThreads();if(state.phone)loadThread();toast("Refreshed");closeDrawer()};
   el("healthItem").onclick=checkHealth;
   el("alertTestItem").onclick=function(){
