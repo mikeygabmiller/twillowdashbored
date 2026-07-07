@@ -66,7 +66,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-04·l';
+const BUILD = '2026-07-04·m';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -96,7 +96,28 @@ export default {
 // the auto follow-up engine (surface nudges + fire autopilot sends).
 async function runCron() {
   await dispatchDueScheduled();
+  await dispatchDueReminders();
   await evaluateFollowups();
+}
+
+// Private "remind me to follow up on <date>" reminders — a nudge to Mikey, not a
+// text to the customer. Fires once when due (alerts Mikey), then stays surfaced on
+// Home until he clears it. Cheap: only loads threads whose reminder is actually due.
+async function dispatchDueReminders(now = Date.now()) {
+  const index = await loadIndex();
+  let dirty = false;
+  for (const e of index) {
+    if (!e.reminderAt || e.reminderAt > now) continue;
+    const thread = await loadThread(e.phone);
+    if (!thread.reminderAt || thread.reminderAt > now || thread.reminderNotified) continue;
+    thread.reminderNotified = true;
+    await saveThread(thread);
+    notifyMikey('⏰ Follow-up reminder',
+      `Time to follow up with ${thread.name || thread.phone}${thread.reminderNote ? ':\n' + thread.reminderNote : '.'}`).catch(() => {});
+    const cfg = await loadConfig();
+    if (applyIndexSummary(index, buildIndexSummary(thread, cfg))) dirty = true;
+  }
+  if (dirty) await saveIndex(index);
 }
 
 // ===========================================================================
@@ -137,6 +158,7 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/insights')   return apiInsights();
   if (request.method === 'GET'  && pathname === '/api/emails')     return apiEmails();
   if (request.method === 'POST' && pathname === '/api/email-read') return apiEmailRead(request);
+  if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/email-setup') return apiEmailSetup(request);
   if (request.method === 'GET'  && pathname === '/api/media')      return apiMediaProxy(url);
   if (request.method === 'POST' && pathname === '/api/media-backfill') return apiMediaBackfill(request);
   if (request.method === 'POST' && pathname === '/api/alert-test') return apiAlertTest();
@@ -590,6 +612,12 @@ async function apiMeta(request) {
     const a = Number(data.appointmentAt);
     thread.appointmentAt = (data.appointmentAt == null || !a) ? null : a;
   }
+  if ('reminderAt' in data) {
+    const r = Number(data.reminderAt);
+    thread.reminderAt = (data.reminderAt == null || !r) ? null : r;
+    thread.reminderNotified = false; // re-arm the one-time alert whenever it's (re)set
+  }
+  if (typeof data.reminderNote === 'string') thread.reminderNote = data.reminderNote.slice(0, 200);
   if (Array.isArray(data.linked)) {
     thread.linked = [...new Set(data.linked.map((p) => normalizePhone(p) || p).filter(Boolean))]
       .filter((p) => p !== thread.phone).slice(0, 20);
@@ -704,7 +732,9 @@ async function apiInsights() {
 async function handleEmailIn(request) {
   const data = await readJson(request);
   const token = request.headers.get('X-Ingest-Token') || data.token || '';
-  if (!ENV.EMAIL_INGEST_TOKEN || token !== ENV.EMAIL_INGEST_TOKEN) return json({ ok: false, error: 'unauthorized' }, 401);
+  const cfg = await loadConfig();
+  const authed = (ENV.EMAIL_INGEST_TOKEN && token === ENV.EMAIL_INGEST_TOKEN) || (cfg.emailToken && token === cfg.emailToken);
+  if (!token || !authed) return json({ ok: false, error: 'unauthorized' }, 401);
   const rawDate = data.date;
   const email = {
     id: genId(),
@@ -728,6 +758,21 @@ async function handleEmailIn(request) {
 async function apiEmails() {
   const list = (await kv().get('emails', { type: 'json' })) || [];
   return json({ ok: true, emails: list });
+}
+// Everything the in-app "Connect email" screen needs: the ingest URL and a token
+// (generated + stored in config the first time, so no Cloudflare secret is required).
+async function apiEmailSetup(request) {
+  const regen = request && request.method === 'POST';
+  const cfg = await loadConfig();
+  let token = cfg.emailToken;
+  if (!token || regen) {
+    token = 'ek_' + genId() + genId();
+    const next = Object.assign({}, cfg, { emailToken: token });
+    await kv().put('config', JSON.stringify(next));
+    CFG_CACHE = next;
+  }
+  const list = (await kv().get('emails', { type: 'json' })) || [];
+  return json({ ok: true, url: `${publicBase()}/email-in`, token, connected: list.length > 0, count: list.length, lastAt: list[0] ? list[0].date : null });
 }
 async function apiEmailRead(request) {
   const data = await readJson(request);
@@ -1491,6 +1536,9 @@ function blankThread(phone) {
     archived: false,
     unread: 0,
     appointmentAt: null,
+    reminderAt: null,  // private "follow up on this date" reminder for Mikey
+    reminderNote: '',
+    reminderNotified: false,
     assignedTo: '',    // team member id this conversation is assigned to (team mode)
     linked: [],
     messages: [],      // { id, dir:'in'|'out', body, ts, kind, error? }
@@ -1529,6 +1577,7 @@ function defaultConfig() {
                              // auto-dialers before they ring your phone or hit voicemail
     blockedNumbers: [],      // normalized numbers that get rejected instantly (no ring)
     optedOut: [],            // normalized numbers that texted STOP — never messaged again
+    emailToken: '',          // shared secret for the /email-in ingest (generated in-app)
     missedCallTextback: true,// auto-text a caller we missed so the lead becomes a text thread
     missedCallText: '',      // custom missed-call text (blank = the friendly default)
     teamMode: false,         // when on: conversations can be assigned, and each reply is
@@ -1629,6 +1678,9 @@ function buildIndexSummary(thread, cfg) {
     assignedTo: thread.assignedTo || '',
     unread: thread.unread || 0,
     optedOut: isOptedOut(cfg, thread.phone),
+    reminderAt: thread.reminderAt || null,
+    reminderNote: (thread.reminderNote || '').slice(0, 120),
+    reminderDue: !!(thread.reminderAt && thread.reminderAt <= Date.now()),
     scheduledCount: (thread.scheduled || []).length,
     lastBody: last ? preview(last.body) : '',
     lastDir: last ? last.dir : '',
