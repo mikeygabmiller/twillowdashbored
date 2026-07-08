@@ -748,6 +748,7 @@
         <button class="btn icon" id="tplBtn" data-ic="zap" title="Quick replies" aria-label="Quick replies"></button>
         <button class="btn icon" id="schedBtn" data-ic="calendar-clock" title="Schedule send" aria-label="Schedule send"></button>
         <button class="btn icon" id="remBtn" data-ic="bell" title="Appointment reminder" aria-label="Appointment reminder"></button>
+        <button class="btn icon" id="writeBtn" data-ic="pencil" title="Write a reply for me" aria-label="Write a reply for me"></button>
         <button class="btn icon" id="draftBtn" data-ic="sparkles" title="AI draft reply" aria-label="AI draft reply"></button>
         <button class="btn icon" id="polishBtn" data-ic="wand" title="AI polish my text" aria-label="AI polish my text"></button>
         <button class="btn icon" id="micBtn" data-ic="mic" title="Dictate (voice to text)" aria-label="Dictate" style="display:none"></button>
@@ -770,6 +771,12 @@
           <label>Reminder message</label>
           <div class="quickset" id="remTpls"></div>
           <button class="btn accent ic-btn" id="remConfirm" data-ic="bell" data-ic-label="Schedule reminder" style="width:100%"></button>
+        </div>
+        <div class="sched-pop" id="writePop" style="display:none">
+          <label>Tell the AI what to say — it writes it in your voice</label>
+          <input type="text" id="writeHint" placeholder="e.g. tell him I can come Tuesday at 2, ask what SUV he has" autocomplete="off" />
+          <div class="quickset" id="writeQuick"></div>
+          <button class="btn accent ic-btn" id="writeGo" data-ic="pencil" data-ic-label="Write it for me" style="width:100%"></button>
         </div>
       </div>
       <div class="crow">
@@ -942,7 +949,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-04·m";
+  var APP_BUILD="2026-07-08·n";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -1900,6 +1907,7 @@
     ["area","Service area & hours","Where you travel and the days/times you work."],
     ["booking","Booking & policies","How booking works, deposits, cancellations, guarantees."],
     ["tone","Voice & tone","How replies should sound."],
+    ["examples","How you text (voice examples)","Paste a few real texts you've sent so drafts copy your exact voice."],
     ["faqs","Common questions & answers","Paste real questions customers ask and the answers you'd give."],
     ["rules","Golden rules (never break)","Hard limits — e.g. never quote a firm price without checking."]
   ];
@@ -2285,6 +2293,31 @@
     }).catch(function(){toast("Network error",{bad:true})})
     .then(function(){var bb=el("polishBtn");if(bb){bb.disabled=false;bb.innerHTML=ic("wand",21)}});
   }
+  // ---- "Write it for me": type what you want to say, AI writes it in your voice ----
+  var WRITE_SUGGESTIONS=["Offer a couple time slots","Ask for their address","Let them know I'm running a little late","Confirm the appointment","Politely let them know I'm booked"];
+  function buildWriteQuick(){
+    var box=el("writeQuick");if(!box)return;box.innerHTML="";
+    WRITE_SUGGESTIONS.forEach(function(s){
+      var b=document.createElement("button");b.type="button";b.textContent=s;
+      b.onclick=function(){el("writeHint").value=s;el("writeHint").focus()};
+      box.appendChild(b);
+    });
+  }
+  function aiWrite(){
+    var t=state.thread;if(!t)return;
+    var hint=el("writeHint").value.trim();
+    if(!hint){toast("Tell it what to say first",{bad:true});el("writeHint").focus();return}
+    el("writePop").style.display="none";
+    var b=el("writeGo");if(b){b.disabled=true;}
+    post("/api/ai/draft",{phone:t.phone,hint:hint}).then(function(d){
+      if(d&&d.ok&&d.draft){
+        showAiReview({title:"Written for you",text:d.draft,note:"Based on: “"+hint+"”",
+          onAccept:function(){var inp=el("msgInput");inp.value=d.draft;autoGrow();updateCount();inp.focus()},
+          onRegen:function(){el("writeHint").value=hint;aiWrite()}});
+      } else toast("Couldn't write that: "+((d&&d.error)||"error"),{bad:true});
+    }).catch(function(){toast("Network error",{bad:true})})
+    .then(function(){var bb=el("writeGo");if(bb)bb.disabled=false});
+  }
 
   // ---- AI Coach: tells a team member exactly what to say (and why) ----
   function aiCoach(){
@@ -2625,7 +2658,7 @@
   el("msgInput").addEventListener("input",function(){updateCount();autoGrow()});
   el("msgInput").addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}});
   el("dtNotes").addEventListener("blur",function(){if(state.thread&&el("dtNotes").value!==(state.thread.notes||""))saveMeta({notes:el("dtNotes").value})});
-  function closePops(except){["tplMenu","schedPop","remPop"].forEach(function(id){if(id!==except)el(id).style.display="none"})}
+  function closePops(except){["tplMenu","schedPop","remPop","writePop"].forEach(function(id){if(id!==except)el(id).style.display="none"})}
   el("tplBtn").onclick=function(){var m=el("tplMenu");closePops("tplMenu");m.style.display=m.style.display==="none"?"block":"none"};
   el("schedBtn").onclick=function(){var p=el("schedPop");closePops("schedPop");var opening=p.style.display==="none";if(opening){el("schedNL").value="";el("schedNLecho").textContent="";el("schedNLecho").className="nl-echo";if(!el("schedTime").value)el("schedTime").value=toLocalInput(quickTime(60))}p.style.display=opening?"block":"none"};
   el("remBtn").onclick=function(){var p=el("remPop");closePops("remPop");if(p.style.display==="none")openRemPop();p.style.display=p.style.display==="none"?"block":"none"};
@@ -2633,6 +2666,9 @@
   el("schedNL").oninput=applyNaturalTime;
   el("schedNL").onkeydown=function(e){if(e.key==="Enter"){e.preventDefault();applyNaturalTime();if(el("schedTime").value)doSchedule()}};
   el("remConfirm").onclick=doReminder;
+  el("writeBtn").onclick=function(){var p=el("writePop");closePops("writePop");var opening=p.style.display==="none";if(opening){el("writeHint").value="";buildWriteQuick();setTimeout(function(){el("writeHint").focus()},40)}p.style.display=opening?"block":"none"};
+  el("writeGo").onclick=aiWrite;
+  el("writeHint").onkeydown=function(e){if(e.key==="Enter"){e.preventDefault();aiWrite()}};
   el("draftBtn").onclick=aiDraft;
   el("polishBtn").onclick=aiPolish;
   el("coachBtn").onclick=aiCoach;
@@ -2660,6 +2696,7 @@
     if(!e.target.closest("#tplBtn")&&!e.target.closest("#tplMenu"))el("tplMenu").style.display="none";
     if(!e.target.closest("#schedBtn")&&!e.target.closest("#schedPop"))el("schedPop").style.display="none";
     if(!e.target.closest("#remBtn")&&!e.target.closest("#remPop"))el("remPop").style.display="none";
+    if(!e.target.closest("#writeBtn")&&!e.target.closest("#writePop"))el("writePop").style.display="none";
   });
 
   Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.onclick=function(){vibrate(6);setTab(b.getAttribute("data-tab"))}});

@@ -66,7 +66,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-04·m';
+const BUILD = '2026-07-08·n';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -95,6 +95,7 @@ export default {
 // The minute cron does two jobs: deliver any due scheduled sends, then advance
 // the auto follow-up engine (surface nudges + fire autopilot sends).
 async function runCron() {
+  await seedPlaybookIfNeeded();
   await dispatchDueScheduled();
   await dispatchDueReminders();
   await evaluateFollowups();
@@ -977,9 +978,10 @@ async function apiAiDraft(request) {
       `You are replying to a customer by text for Mikey's Mobile Detailing. ` +
       `Write ONE friendly, professional reply (1-3 short complete sentences, no greeting line, no signature, ready to send). ` +
       `Ground it in the business playbook above — use the real services, pricing ranges and policies where relevant, and never contradict them. ` +
-      `Do not invent a specific price or appointment time; if one is needed, say you'll confirm. ` +
+      `Do not make up a specific price or appointment time on your own. ` +
+      `BUT if the goal below already specifies details the owner has decided — a price, a day, a time, an answer — use those exactly as given; that is the owner telling you what to say. ` +
       `Finish every sentence — do not cut off mid-thought. ` +
-      (hint ? `Goal of this reply: ${hint}. ` : '') +
+      (hint ? `Goal of this reply (write a text that accomplishes exactly this): ${hint}. ` : '') +
       `\n\nConversation so far:\n${transcript(thread)}\n\nReply:`;
   }
   try {
@@ -1593,21 +1595,62 @@ function defaultConfig() {
 // invent prices or policies. Everything is editable from the dashboard menu.
 function defaultPlaybook() {
   return {
-    about: "Mikey's Mobile Detailing is an owner-operated mobile car detailing service based in Snohomish, WA. We come to the customer's home or work.",
-    services: '',
-    area: '',
-    booking: '',
-    tone: 'Friendly, warm, confident and professional — like a trusted local pro texting back. Short, plain-English sentences. At most one tasteful emoji (🚗✨), never more.',
-    faqs: '',
-    rules: "Never confirm an exact price or exact appointment time on your own — say you'll confirm with Mikey. Never invent details you don't know. Always be respectful and low-pressure. If a customer texts STOP, don't text them again.",
+    about: "Mikey's Mobile Detailing is an owner-run mobile car detailing and auto-maintenance service for the Snohomish and Monroe, WA areas. It's always Mikey himself — personal, friendly work that's tailored to you, and a joy to work with every time.",
+    services: "- Full In & Out — starts at $280 (full interior + exterior detail, about 2½ hours)\n" +
+      "- Interior Only — starts at $180 (about 1½ hours)\n" +
+      "Exact price depends on the vehicle's year, make, model and condition — always confirm before booking.",
+    area: "Main area: Snohomish and Monroe. Also travels to Lake Stevens, Marysville, Everett, Duvall, Sultan and nearby towns.\n" +
+      "Hours: mostly weekdays, never Sundays.\n" +
+      "On-site: needs power and water within 20 ft of the vehicle — everything else is covered.",
+    booking: "Booking is by text — just text Mikey to hash out the details and a time.\n" +
+      "Deposit: none. Cancellation: no cancellation fee.\n" +
+      "Payment: cash, Venmo, Zelle, or check.\n" +
+      "Lead time: usually booking about a week out (the following week).",
+    tone: "Friendly and warm, a confident pro, easygoing with a little humor, low-pressure, local and personable. " +
+      "Keep it short and casual like a real text. No emoji graphics (no 🚗✨) — but a simple \":)\" now and then is on-brand; that's how Mikey texts. " +
+      "Sometimes sign off with \"- Mikey\", but not on every text.",
+    faqs: "Q: How much does it cost?\n" +
+      "A: If you send me your car's year, make and model along with the services you're interested in, I can lock in an exact price for you.\n\n" +
+      "Q: Do you come to me?\n" +
+      "A: Yes, I come to you! All I need is power and water within 20 ft of the vehicle.\n\n" +
+      "Q: How long does a full detail take?\n" +
+      "A: Usually around 3 hours.\n\n" +
+      "Q: Can you get out pet hair, stains, or smells?\n" +
+      "A: Yes! I have a special pet-hair removal process. For carpet and seat stains there's no guaranteeing they'll fully come out, but I'll sure as heck try!\n\n" +
+      "Q: Do you do interior-only or exterior-only?\n" +
+      "A: Yes, I can do just interior or just exterior, but the full in-and-out is my most popular — you get that whole-car-clean feeling.\n\n" +
+      "Q: How far out are you booked?\n" +
+      "A: Right now I'm usually booking about a week out.\n\n" +
+      "Q: Do you need water and power at my place?\n" +
+      "A: Yes — I just need power and water within 20 ft of the vehicle.\n\n" +
+      "Q: How do I pay?\n" +
+      "A: I accept cash, check, Venmo, and Zelle.\n\n" +
+      "Q: Do I need to be home while you work?\n" +
+      "A: Not at all! I'd prefer you're there at the start and end so we can go over everything, but in between you're free to go about your day.",
+    rules: "Never promise an exact price or exact appointment time on your own — say you'll confirm it.\n" +
+      "Never invent details, prices, or policies you don't know.\n" +
+      "Always be respectful, low-pressure, and never pushy.\n" +
+      "If someone texts STOP, don't text them again.\n" +
+      "Never argue with an upset customer — stay calm and offer to make it right.",
+    examples: "Real texts Mikey has sent — match this exact rhythm, warmth and length:\n" +
+      "- \"I can do 10:30 if that works :)\"\n" +
+      "- \"Perfect, let's shoot for 10:45.\"\n" +
+      "- \"Be there in 20!\"\n" +
+      "- \"Ready!\"\n" +
+      "- \"Sounds good!\"\n" +
+      "- \"Hey, unfortunately I couldn't get a slot for tomorrow. Let me know if there are any days next week that would work for you.\"\n" +
+      "- \"Ok, I'll work on getting one of those slots opened up for you right now. Can I get your address?\"\n" +
+      "- \"Thank you! I'm looking to open up the Thursday slot for after 3pm. I'll keep in touch and let you know :)\"\n" +
+      "- \"Hey Ruth! It'd work best for me to find a time next week for the detail. I'll reach out with the open slots when we're closer to the date. Thanks!\"\n" +
+      "- \"Good morning — unfortunately I need to leave town today for an emergency. Any chance we can reschedule for tomorrow at 1pm? Thanks for understanding.\"",
   };
 }
 
-const PLAYBOOK_KEYS = ['about', 'services', 'area', 'booking', 'tone', 'faqs', 'rules'];
+const PLAYBOOK_KEYS = ['about', 'services', 'area', 'booking', 'tone', 'faqs', 'rules', 'examples'];
 function sanitizePlaybook(next, prev) {
   const out = Object.assign(defaultPlaybook(), prev || {});
   for (const k of PLAYBOOK_KEYS) {
-    if (typeof next[k] === 'string') out[k] = next[k].slice(0, 2000);
+    if (typeof next[k] === 'string') out[k] = next[k].slice(0, 4000);
   }
   return out;
 }
@@ -1631,6 +1674,22 @@ async function loadConfig() {
   const raw = await kv().get('config', { type: 'json' });
   CFG_CACHE = Object.assign(defaultConfig(), raw || {});
   return CFG_CACHE;
+}
+
+// One-time playbook seed. The live `config` in KV was created before the owner
+// filled out his real playbook (services, area, FAQs, voice examples), so its
+// playbook is still the generic starter. On the first cron tick after a deploy
+// with a newer seed version we upgrade the stored playbook to the current
+// defaults, then stamp `playbookSeed` so this never runs again (protecting any
+// later dashboard edits). Exactly ONE KV write, ever, per version bump.
+const PLAYBOOK_SEED_VERSION = 2;
+async function seedPlaybookIfNeeded() {
+  const cfg = await loadConfig();
+  if ((cfg.playbookSeed || 0) >= PLAYBOOK_SEED_VERSION) return;
+  cfg.playbook = Object.assign({}, cfg.playbook || {}, defaultPlaybook());
+  cfg.playbookSeed = PLAYBOOK_SEED_VERSION;
+  await kv().put('config', JSON.stringify(cfg));
+  CFG_CACHE = cfg;
 }
 
 async function loadThread(phone) {
@@ -1751,6 +1810,7 @@ const PLAYBOOK_SECTIONS = [
   ['area', 'Service area & hours'],
   ['booking', 'Booking & policies'],
   ['tone', 'Voice & tone'],
+  ['examples', 'How Mikey texts (copy this voice exactly)'],
   ['faqs', 'Common questions (approved answers)'],
   ['rules', 'Golden rules — never break these'],
 ];
