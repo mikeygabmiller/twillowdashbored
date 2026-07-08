@@ -284,6 +284,7 @@
   .fu-card .acts .btn{flex:1 1 auto;font-size:12px;padding:7px 9px}
   .fu-flag{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:700;color:#f5c563;background:rgba(245,184,66,.13);padding:2px 6px;border-radius:8px}
   .fu-flag.high{color:#ff8388;background:rgba(255,90,95,.14)}
+  .reply-flag{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:700;color:#34d399;background:rgba(34,197,94,.14);padding:2px 6px;border-radius:8px}
 
   /* per-contact follow-up controls in details */
   #dtFollowup .fu-row{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:13px}
@@ -741,6 +742,7 @@
     <div class="messages" id="messages"></div>
     <div class="coach-panel" id="coachPanel" style="display:none"></div>
     <div class="team-id-bar" id="teamIdentityBar" style="display:none"></div>
+    <div class="ai-review" id="suggestBox" style="display:none"></div>
     <div class="ai-review" id="aiReview" style="display:none"></div>
 
     <div class="composer" id="composer" style="display:none">
@@ -949,7 +951,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-08·o";
+  var APP_BUILD="2026-07-08·p";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -1404,6 +1406,7 @@
           (st?'<span class="badge '+st.cls+'">'+st.label+'</span>':'')+
           (t.optedOut?'<span class="dnt">'+ic("ban",10)+'Do not text</span>':'')+
           ((teamOn()&&t.assignedTo)?assignBadge(t.assignedTo):'')+
+          (t.replyReady?'<span class="reply-flag">'+ic("sparkles",11)+'reply ready</span>':'')+
           (t.followupDue?'<span class="fu-flag'+(t.fu&&t.fu.urgency==="high"?" high":"")+'">'+ic("list-checks",11)+'follow-up</span>':'')+
           (t.scheduledCount>0?'<span class="sched-flag">'+ic("calendar-clock",12)+t.scheduledCount+'</span>':'')+
           (t.tags||[]).slice(0,2).map(function(x){return '<span class="tag">'+esc(x)+'</span>'}).join('')+
@@ -2004,7 +2007,9 @@
     state.phone=phone;document.body.classList.add("viewing");
     // reset any in-thread find when moving to a different conversation
     state.threadFind="";state.findIdx=0;var fb=el("findBar");if(fb)fb.style.display="none";var fi=el("findInput");if(fi)fi.value="";
+    state.lastAiText=null;
     hideAiReview();
+    var sbx=el("suggestBox");if(sbx){sbx.style.display="none";sbx.innerHTML=""}
     el("emptyState").style.display="none";renderMain();
     return loadThread();
   }
@@ -2113,6 +2118,7 @@
       Array.prototype.forEach.call(sb.querySelectorAll(".x"),function(b){b.onclick=function(){post("/api/unschedule",{phone:t.phone,id:b.getAttribute("data-id")}).then(function(d){if(d.ok){state.thread=d.thread;renderThread();refreshThreads();toast("Scheduled message canceled")}})}});
     }else sb.style.display="none";
     renderFuBanner(t);
+    renderSuggested(t);
     // Coach advice is per-conversation — clear it when the open thread changes,
     // but keep it across background polls of the SAME thread so it isn't yanked
     // away while it's being read.
@@ -2269,12 +2275,32 @@
     box.querySelector(".air-regen").onclick=function(){hideAiReview();if(o.onRegen)o.onRegen()};
   }
   function hideAiReview(){var box=el("aiReview");if(box){box.style.display="none";box.innerHTML=""}}
+  // "Reply already waiting": if the server pre-drafted a reply for this thread and
+  // the ball is in Mikey's court, show it above the composer — one tap to Send,
+  // or Edit (which teaches the AI from his changes), or Dismiss.
+  function renderSuggested(t){
+    var box=el("suggestBox");if(!box)return;
+    var s=t&&t.suggested;var msgs=(t&&t.messages)||[];var last=msgs[msgs.length-1];
+    if(!(s&&s.text&&last&&last.dir==="in")){box.style.display="none";box.innerHTML="";return}
+    box.style.display="block";
+    box.innerHTML='<div class="air-top"><span class="air-title">'+ic("sparkles",13)+' Reply ready — in your voice</span><button class="air-x" aria-label="Dismiss">'+ic("x",16)+'</button></div>'+
+      '<div class="air-text">'+esc(s.text)+'</div>'+
+      '<div class="air-acts"><button class="btn accent air-send">'+ic("send",15)+' Send</button><button class="btn air-edit">'+ic("pencil",14)+' Edit first</button><button class="btn air-discard">Dismiss</button></div>';
+    box.querySelector(".air-x").onclick=function(){dismissSuggested(t)};
+    box.querySelector(".air-discard").onclick=function(){dismissSuggested(t)};
+    box.querySelector(".air-edit").onclick=function(){var inp=el("msgInput");inp.value=s.text;autoGrow();updateCount();inp.focus();state.lastAiText=s.text;box.style.display="none"};
+    box.querySelector(".air-send").onclick=function(){state.lastAiText=s.text;el("msgInput").value=s.text;autoGrow();updateCount();sendMessage()};
+  }
+  function dismissSuggested(t){
+    var box=el("suggestBox");if(box){box.style.display="none";box.innerHTML=""}
+    post("/api/meta",{phone:t.phone,clearSuggested:true}).then(function(d){if(d&&d.ok&&d.thread&&state.phone===t.phone){state.thread=d.thread}});
+  }
   function aiDraft(){
     var t=state.thread;if(!t)return;
     var b=el("draftBtn");b.disabled=true;b.innerHTML='<span class="spin"></span>';
     post("/api/ai/draft",{phone:t.phone}).then(function(d){
       if(d&&d.ok&&d.draft){
-        showAiReview({title:"Suggested reply",text:d.draft,onAccept:function(){var inp=el("msgInput");inp.value=d.draft;autoGrow();updateCount();inp.focus()},onRegen:aiDraft});
+        showAiReview({title:"Suggested reply",text:d.draft,onAccept:function(){state.lastAiText=d.draft;var inp=el("msgInput");inp.value=d.draft;autoGrow();updateCount();inp.focus()},onRegen:aiDraft});
       } else toast("Draft failed: "+((d&&d.error)||"error"),{bad:true});
     }).catch(function(){toast("Network error",{bad:true})})
     .then(function(){var bb=el("draftBtn");bb.disabled=false;bb.innerHTML=ic("sparkles",21)});
@@ -2312,7 +2338,7 @@
     post("/api/ai/draft",{phone:t.phone,hint:hint}).then(function(d){
       if(d&&d.ok&&d.draft){
         showAiReview({title:"Written for you",text:d.draft,note:"Based on: “"+hint+"”",
-          onAccept:function(){var inp=el("msgInput");inp.value=d.draft;autoGrow();updateCount();inp.focus()},
+          onAccept:function(){state.lastAiText=d.draft;var inp=el("msgInput");inp.value=d.draft;autoGrow();updateCount();inp.focus()},
           onRegen:function(){el("writeHint").value=hint;aiWrite()}});
       } else toast("Couldn't write that: "+((d&&d.error)||"error"),{bad:true});
     }).catch(function(){toast("Network error",{bad:true})})
@@ -2378,6 +2404,9 @@
     el("sendBtn").disabled=true;
     var payload={phone:state.phone,body:body};
     if(teamOn()&&meName())payload.by=meName(); // sign the reply with who's texting
+    // If this send started from an AI draft/suggestion, pass the original so the
+    // server can learn from how Mikey edited it. Used once, then cleared.
+    if(state.lastAiText){payload.aiOriginal=state.lastAiText;state.lastAiText=null}
     // Optimistic: show the bubble immediately (marked "Sending…"), clear the box,
     // then reconcile with the server — so a text feels instant even on slow signal.
     var tempId="tmp"+Date.now();var forPhone=state.phone;

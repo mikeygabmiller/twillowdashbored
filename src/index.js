@@ -66,7 +66,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-08·o';
+const BUILD = '2026-07-08·p';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -302,6 +302,9 @@ async function handleInboundSms(request) {
   await appendMessage(fromNorm, inMsg);
   await notifyMikey(`📱 New ${numMedia > 0 ? 'photo/text' : 'text'} from ${from}`,
     `New message from ${from}:\n"${text || (numMedia > 0 ? '[photo]' : '')}"\n\nReply in your dashboard.`);
+  // Pre-draft a reply in Mikey's voice so it's already waiting when he opens the
+  // thread. Best-effort — never blocks or fails the inbound webhook.
+  await maybeSuggestReply(fromNorm);
   // No auto-reply to the customer — Mikey replies personally from the dashboard.
   return twiml('');
 }
@@ -591,6 +594,10 @@ async function apiSend(request) {
   msg.status = 'sent';
   if (r && r.sid) msg.sid = r.sid;
   const thread = await appendMessage(phone, msg);
+  // "Learns from your edits": if this send started from an AI draft/suggestion the
+  // owner then tweaked, remember the before→after so future drafts sound more like him.
+  const aiOriginal = (data.aiOriginal || '').trim();
+  if (aiOriginal) { try { await recordEdit(aiOriginal, body); } catch { /* non-fatal */ } }
   return json({ ok: true, thread });
 }
 
@@ -619,6 +626,7 @@ async function apiMeta(request) {
     thread.reminderNotified = false; // re-arm the one-time alert whenever it's (re)set
   }
   if (typeof data.reminderNote === 'string') thread.reminderNote = data.reminderNote.slice(0, 200);
+  if (data.clearSuggested) thread.suggested = null; // Mikey dismissed the pre-drafted reply
   if (Array.isArray(data.linked)) {
     thread.linked = [...new Set(data.linked.map((p) => normalizePhone(p) || p).filter(Boolean))]
       .filter((p) => p !== thread.phone).slice(0, 20);
@@ -948,46 +956,55 @@ async function apiAiSummary(request) {
   }
 }
 
+// The single source of truth for drafting a customer reply — used by the AI draft
+// button, the "write it for me" composer, AND the proactive suggested reply that's
+// pre-drafted the moment a customer texts. It grounds every reply in the playbook +
+// Mikey's voice AND in how he's been editing recent drafts, so it keeps getting
+// sharper the more he uses it ("learns from your edits").
+async function generateReply(thread, cfg, hint) {
+  const prompt =
+    businessContext(cfg) +
+    (await editsContext()) +
+    `You are replying to a customer by text for Mikey's Mobile Detailing. ` +
+    `Write ONE friendly, professional reply (1-3 short complete sentences, no greeting line, no signature, ready to send). ` +
+    `Ground it in the business playbook above — use the real services, pricing ranges and voice, and never contradict them. ` +
+    `Do not make up a specific price or appointment time on your own. ` +
+    `BUT if the goal below already specifies details the owner has decided — a price, a day, a time, an answer — use those exactly as given; that is the owner telling you what to say. ` +
+    `Finish every sentence — do not cut off mid-thought. ` +
+    (hint ? `Goal of this reply (write a text that accomplishes exactly this): ${hint}. ` : '') +
+    `\n\nConversation so far:\n${transcript(thread)}\n\nReply:`;
+  const text = await geminiGenerate(prompt, { temperature: 0.7, maxTokens: 800 });
+  return text.replace(/^["']|["']$/g, '').trim();
+}
+
 async function apiAiDraft(request) {
   const data = await readJson(request);
   const phone = normalizePhone(data.phone);
   if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
   const thread = await loadThread(phone);
   const cfg = await loadConfig();
-  const ctx = businessContext(cfg);
   const hint = (data.hint || '').trim();
   const draftText = (data.text || '').trim();
-  let prompt;
-  if (draftText) {
-    // Polish mode = light proofread only. Keep the sender's exact meaning, wording,
-    // length and voice; fix only mechanics. No transcript, no playbook — those tempt
-    // the model to rewrite. If it's already fine, return it unchanged.
-    prompt =
-      `You are lightly proofreading a short text message the user wrote to a customer. ` +
-      `Make ONLY the minimal edits needed to fix spelling, grammar, capitalization and punctuation. ` +
-      `Keep the EXACT meaning, wording, length and casual texting voice. ` +
-      `Do NOT rephrase, do NOT reorder, do NOT add or remove information, and do NOT add greetings, ` +
-      `sign-offs, emojis or pleasantries that aren't already there. ` +
-      `If the message is already correct, return it exactly as-is. ` +
-      `Return ONLY the corrected message text — no quotes, no explanation, no preamble. ` +
-      (hint ? `Extra instruction: ${hint}. ` : '') +
-      `\n\nMessage to proofread:\n${draftText}\n\nCorrected message:`;
-  } else {
-    prompt =
-      ctx +
-      `You are replying to a customer by text for Mikey's Mobile Detailing. ` +
-      `Write ONE friendly, professional reply (1-3 short complete sentences, no greeting line, no signature, ready to send). ` +
-      `Ground it in the business playbook above — use the real services, pricing ranges and policies where relevant, and never contradict them. ` +
-      `Do not make up a specific price or appointment time on your own. ` +
-      `BUT if the goal below already specifies details the owner has decided — a price, a day, a time, an answer — use those exactly as given; that is the owner telling you what to say. ` +
-      `Finish every sentence — do not cut off mid-thought. ` +
-      (hint ? `Goal of this reply (write a text that accomplishes exactly this): ${hint}. ` : '') +
-      `\n\nConversation so far:\n${transcript(thread)}\n\nReply:`;
-  }
   try {
-    // Proofread wants near-deterministic output; a fresh reply can be a bit warmer.
-    const text = await geminiGenerate(prompt, { temperature: draftText ? 0.15 : 0.7, maxTokens: 800 });
-    return json({ ok: true, draft: text.replace(/^["']|["']$/g, '').trim() });
+    if (draftText) {
+      // Polish mode = light proofread only. Keep the sender's exact meaning, wording,
+      // length and voice; fix only mechanics. No transcript, no playbook — those tempt
+      // the model to rewrite. If it's already fine, return it unchanged.
+      const prompt =
+        `You are lightly proofreading a short text message the user wrote to a customer. ` +
+        `Make ONLY the minimal edits needed to fix spelling, grammar, capitalization and punctuation. ` +
+        `Keep the EXACT meaning, wording, length and casual texting voice. ` +
+        `Do NOT rephrase, do NOT reorder, do NOT add or remove information, and do NOT add greetings, ` +
+        `sign-offs, emojis or pleasantries that aren't already there. ` +
+        `If the message is already correct, return it exactly as-is. ` +
+        `Return ONLY the corrected message text — no quotes, no explanation, no preamble. ` +
+        (hint ? `Extra instruction: ${hint}. ` : '') +
+        `\n\nMessage to proofread:\n${draftText}\n\nCorrected message:`;
+      const text = await geminiGenerate(prompt, { temperature: 0.15, maxTokens: 800 });
+      return json({ ok: true, draft: text.replace(/^["']|["']$/g, '').trim() });
+    }
+    const text = await generateReply(thread, cfg, hint);
+    return json({ ok: true, draft: text });
   } catch (err) {
     return json({ ok: false, error: String(err.message || err) }, 502);
   }
@@ -1544,6 +1561,7 @@ function blankThread(phone) {
     assignedTo: '',    // team member id this conversation is assigned to (team mode)
     linked: [],
     messages: [],      // { id, dir:'in'|'out', body, ts, kind, error? }
+    suggested: null,   // proactive pre-drafted reply awaiting Mikey: { text, ts, forTs }
     scheduled: [],     // { id, body, sendAt }
     followup: defaultFollowup(),
     createdAt: Date.now(),
@@ -1749,6 +1767,7 @@ function buildIndexSummary(thread, cfg) {
     reminderNote: (thread.reminderNote || '').slice(0, 120),
     reminderDue: !!(thread.reminderAt && thread.reminderAt <= Date.now()),
     scheduledCount: (thread.scheduled || []).length,
+    replyReady: !!(thread.suggested && thread.suggested.text),
     lastBody: last ? preview(last.body) : '',
     lastDir: last ? last.dir : '',
     lastTs: last ? last.ts : (thread.updatedAt || Date.now()),
@@ -1784,6 +1803,8 @@ async function appendMessage(phone, message, opts = {}) {
   message.ts = message.ts || Date.now();
   thread.messages.push(message);
   if (message.dir === 'in') thread.unread = (thread.unread || 0) + 1;
+  // Once Mikey replies, any pre-drafted suggestion is answered — clear it.
+  if (message.dir === 'out') thread.suggested = null;
   await saveThread(thread);
   await updateIndexEntry(thread);
   return thread;
@@ -1805,6 +1826,57 @@ function transcript(thread, max = 40) {
   return (thread.messages || []).slice(-max)
     .map((m) => `${m.dir === 'in' ? 'Customer' : 'Mikey'}: ${String(m.body || '').replace(/\s+/g, ' ').trim()}`)
     .join('\n');
+}
+
+// ===========================================================================
+// "Learns from your edits" — a small memory of how Mikey rewrites AI drafts
+// ===========================================================================
+// When Mikey tweaks an AI draft/suggestion before sending, we save the
+// before→after pair (capped, most-recent-first) and feed the recent ones back
+// into every reply prompt. The AI drifts toward how he actually words things —
+// so it literally gets better the more he uses it. One KV write only when he
+// actually edits, so it's easy on the write budget.
+const EDITS_KEY = 'ai:edits';
+async function loadEdits() {
+  return (await kv().get(EDITS_KEY, { type: 'json' })) || [];
+}
+async function recordEdit(from, to) {
+  from = String(from || '').trim();
+  to = String(to || '').trim();
+  if (!from || !to || from === to) return;          // no change → nothing to learn
+  if (to.length > 600 || from.length > 600) return; // skip outliers
+  const norm = (s) => s.replace(/\s+/g, ' ').toLowerCase();
+  if (norm(from) === norm(to)) return;              // whitespace/case only
+  const list = await loadEdits();
+  list.unshift({ from, to, ts: Date.now() });
+  await kv().put(EDITS_KEY, JSON.stringify(list.slice(0, 12)));
+}
+async function editsContext() {
+  const recent = (await loadEdits()).filter((e) => e && e.from && e.to).slice(0, 6);
+  if (!recent.length) return '';
+  const rows = recent.map((e) => `- The draft said: "${e.from}"\n  Mikey changed it to: "${e.to}"`).join('\n');
+  return 'HOW MIKEY EDITS DRAFTS (these are his recent corrections — learn the PATTERN of how he rewrites: his length, warmth, word choices — and apply that style, not the specific content):\n' + rows + '\n\n';
+}
+
+// Proactively pre-draft a reply the instant a customer texts, so one is already
+// waiting when Mikey opens the thread ("reply already waiting"). Best-effort: it
+// never blocks or fails the inbound webhook, and only runs when the ball is in
+// Mikey's court (last message is inbound, not opted out, not archived).
+async function maybeSuggestReply(phone) {
+  if (!ENV.GEMINI_API_KEY) return;
+  try {
+    const cfg = await loadConfig();
+    if (isOptedOut(cfg, phone)) return;
+    const thread = await loadThread(phone);
+    if (thread.archived) return;
+    const last = thread.messages[thread.messages.length - 1];
+    if (!last || last.dir !== 'in') return;
+    const text = await generateReply(thread, cfg, '');
+    if (!text) return;
+    thread.suggested = { text, ts: Date.now(), forTs: last.ts };
+    await saveThread(thread);
+    await updateIndexEntry(thread);
+  } catch { /* suggestions are a bonus — swallow errors so inbound never breaks */ }
 }
 
 // The AI "brain": render the business playbook into a compact prompt preamble so
