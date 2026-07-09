@@ -66,7 +66,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-08·q';
+const BUILD = '2026-07-08·r';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -154,6 +154,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/meta')       return apiMeta(request);
   if (request.method === 'POST' && pathname === '/api/schedule')   return apiSchedule(request);
   if (request.method === 'POST' && pathname === '/api/unschedule') return apiUnschedule(request);
+  if (request.method === 'POST' && pathname === '/api/request-date') return apiRequestDate(request);
   if (request.method === 'POST' && pathname === '/api/call')       return apiCall(request);
   if (request.method === 'POST' && pathname === '/api/read')       return apiRead(request);
   if (request.method === 'GET'  && pathname === '/api/insights')   return apiInsights();
@@ -601,6 +602,34 @@ async function apiSend(request) {
   return json({ ok: true, thread });
 }
 
+// "Request a date": whoever is texting for Mikey taps this when a customer is ready
+// to book. It emails Mikey (via notifyMikey — email if Resend is set up, else SMS)
+// with the customer, their last message, and a one-tap link to the conversation,
+// and flags the thread so the texter sees "date requested" until it's handled.
+async function apiRequestDate(request) {
+  const data = await readJson(request);
+  const phone = normalizePhone(data.phone);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  const thread = await loadThread(phone);
+  const who = String(data.by || '').trim().slice(0, 40);
+  const note = String(data.note || '').trim().slice(0, 300);
+  const name = thread.name || phone;
+  const lastIn = (thread.messages || []).filter((m) => m.dir === 'in').slice(-1)[0];
+  const lastBody = lastIn ? String(lastIn.body || '').slice(0, 240) : '';
+  const link = `${publicBase()}/?c=${encodeURIComponent(phone)}`;
+  const subject = `📅 Date needed for ${name}`;
+  const body =
+    `${who ? who + ' is texting for you and ' : ''}${name} is ready to book and needs one of your open dates.\n\n` +
+    (lastBody ? `Their last message:\n"${lastBody}"\n\n` : '') +
+    (note ? `Note from ${who || 'your texter'}: ${note}\n\n` : '') +
+    `Open the conversation to send them a time:\n${link}`;
+  const sent = await notifyMikey(subject, body);
+  thread.dateRequest = { at: Date.now(), by: who };
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+  return json({ ok: true, thread, sent });
+}
+
 async function apiMeta(request) {
   const data = await readJson(request);
   const phone = normalizePhone(data.phone);
@@ -619,7 +648,9 @@ async function apiMeta(request) {
   if ('appointmentAt' in data) {
     const a = Number(data.appointmentAt);
     thread.appointmentAt = (data.appointmentAt == null || !a) ? null : a;
+    if (thread.appointmentAt) thread.dateRequest = null; // booking answers the date request
   }
+  if (data.clearDateRequest) thread.dateRequest = null; // texter/Mikey marked it handled
   if ('reminderAt' in data) {
     const r = Number(data.reminderAt);
     thread.reminderAt = (data.reminderAt == null || !r) ? null : r;
@@ -647,6 +678,7 @@ async function apiSchedule(request) {
   const thread = await loadThread(phone);
   thread.scheduled.push({ id: genId(), body, sendAt });
   thread.scheduled.sort((a, b) => a.sendAt - b.sendAt);
+  thread.dateRequest = null; // scheduling a send answers the "need a date" request
   await saveThread(thread);
   await updateIndexEntry(thread);
   return json({ ok: true, thread });
@@ -1562,6 +1594,7 @@ function blankThread(phone) {
     linked: [],
     messages: [],      // { id, dir:'in'|'out', body, ts, kind, error? }
     suggested: null,   // proactive pre-drafted reply awaiting Mikey: { text, ts, forTs }
+    dateRequest: null, // texter asked Mikey for an available date: { at, by }
     scheduled: [],     // { id, body, sendAt }
     followup: defaultFollowup(),
     createdAt: Date.now(),
@@ -1786,6 +1819,7 @@ function buildIndexSummary(thread, cfg) {
     reminderDue: !!(thread.reminderAt && thread.reminderAt <= Date.now()),
     scheduledCount: (thread.scheduled || []).length,
     replyReady: !!(thread.suggested && thread.suggested.text),
+    dateRequested: !!thread.dateRequest,
     lastBody: last ? preview(last.body) : '',
     lastDir: last ? last.dir : '',
     lastTs: last ? last.ts : (thread.updatedAt || Date.now()),
