@@ -351,6 +351,32 @@
     border-radius:12px;padding:9px 12px;margin:0 0 8px;font-size:12.5px;color:var(--text)}
   .date-banner .db-ic{color:#34d399;display:flex}.date-banner b{font-weight:650}
   .date-banner .db-x{margin-left:auto;background:transparent;border:0;color:var(--muted2);cursor:pointer;padding:2px;display:flex}
+  /* conversation guide (help) — step-by-step flow with tap-to-use example texts */
+  .guide-scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:60;opacity:0;pointer-events:none;transition:opacity .2s}
+  .guide-scrim.show{opacity:1;pointer-events:auto}
+  .guide{position:fixed;left:0;right:0;bottom:0;z-index:61;background:var(--panel3);border-top-left-radius:20px;border-top-right-radius:20px;
+    max-height:90vh;display:flex;flex-direction:column;transform:translateY(101%);transition:transform .26s cubic-bezier(.4,0,.2,1);box-shadow:0 -10px 44px rgba(0,0,0,.55)}
+  .guide.show{transform:translateY(0)}
+  .guide-hd{display:flex;align-items:center;gap:11px;padding:16px 18px 13px;border-bottom:1px solid var(--line);flex:0 0 auto}
+  .guide-hd .ghelp{color:var(--accent-text);display:flex}.guide-hd .ghelp svg{width:22px;height:22px}
+  .guide-hd .gt{font-size:16px;font-weight:700}
+  .guide-hd .gsub{font-size:11.5px;color:var(--muted2);margin-top:1px}
+  .guide-hd .gx{margin-left:auto;background:transparent;border:0;color:var(--muted);cursor:pointer;font-size:17px;padding:4px 8px;border-radius:8px}
+  .guide-hd .gx:hover{background:var(--panel2);color:var(--text)}
+  .guide-body{overflow:auto;padding:6px 16px 30px;max-width:640px;margin:0 auto;width:100%}
+  .gstep{display:flex;gap:12px;padding:15px 0;border-bottom:1px solid var(--line)}
+  .gstep:last-child{border-bottom:0}
+  .gstep .gn{flex:0 0 auto;width:26px;height:26px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);
+    font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center;margin-top:1px}
+  .gstep .gc{flex:1;min-width:0}
+  .gstep .gtitle{font-size:14.5px;font-weight:700;color:var(--text)}
+  .gstep .gdesc{font-size:12.5px;color:var(--muted2);margin:3px 0 10px;line-height:1.45}
+  .gex{display:block;width:100%;text-align:left;font-family:inherit;font-size:13px;color:var(--text);background:var(--panel2);
+    border:1px solid var(--line);border-radius:11px;padding:10px 12px;margin-bottom:7px;cursor:pointer;line-height:1.45}
+  .gex:hover{border-color:var(--accent)}
+  .gex .gtag{display:block;font-size:9.5px;font-weight:800;color:var(--accent-text);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+  .gtip{font-size:12px;color:var(--muted2);background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:10px 12px;margin-top:6px;line-height:1.5}
+  .gtip b{color:var(--text)}
   .nl-echo{font-size:11.5px;color:var(--muted2);min-height:15px;margin:-4px 0 9px}
   .nl-echo.ok{color:var(--green);font-weight:600}
   .pb-bar{height:7px;border-radius:5px;background:var(--panel);border:1px solid var(--line);overflow:hidden;margin-top:11px}
@@ -742,6 +768,7 @@
         <div class="num" id="hNum"></div>
       </div>
       <div class="head-actions">
+        <button class="btn icon" id="guideBtn" data-ic="help" title="How to run this conversation" aria-label="Conversation guide"></button>
         <button class="btn icon" id="threadSearchBtn" data-ic="search" title="Find in conversation" aria-label="Find in conversation"></button>
         <button class="btn icon" id="coachBtn" data-ic="bot" title="Coach me — what to say" aria-label="Coach me" style="display:none"></button>
         <button class="btn icon" id="callBtn" data-ic="phone" title="Call" aria-label="Call"></button>
@@ -938,6 +965,16 @@
   </div>
 </div>
 
+<div class="guide-scrim" id="guideScrim"></div>
+<div class="guide" id="guide">
+  <div class="guide-hd">
+    <span class="ghelp" data-ic="help"></span>
+    <div><div class="gt">Running a conversation</div><div class="gsub">Mikey's normal flow · tap any example to use it</div></div>
+    <button class="gx" id="guideClose" aria-label="Close">✕</button>
+  </div>
+  <div class="guide-body" id="guideBody"></div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -976,7 +1013,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-08·r";
+  var APP_BUILD="2026-07-08·s";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -1005,6 +1042,7 @@
     "pin":'<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>',
     "phone":'<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
     "info":'<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+    "help":'<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
     "zap":'<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
     "bell":'<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.41 5.956-2.738 7.326"/>',
     "sparkles":'<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>',
@@ -2385,6 +2423,49 @@
       post("/api/meta",{phone:t.phone,clearDateRequest:true}).then(function(d){if(d&&d.ok&&d.thread&&state.phone===t.phone){state.thread=d.thread}});
     };
   }
+  // ---- Conversation guide (the "?" in a chat): Mikey's normal flow with tap-to-use examples ----
+  var GUIDE_STEPS=[
+    {t:"Get the details",d:"Find out what they've got and what they want.",ex:[
+      {tag:"Opener",x:"Hey! Happy to help :) What's the year, make and model of your car, and are you thinking interior, exterior, or a full detail?"}]},
+    {t:"Give the quote",d:"Share the starting price, and say the exact price gets confirmed. Interior starts at $160 · exterior $130 · full $260 — trucks & really dirty cars a bit more.",ex:[
+      {tag:"Full detail",x:"For a [year make model], a full detail starts at $260 — I'll confirm the exact price once I know the condition. Want me to find you a time?"},
+      {tag:"Interior only",x:"An interior detail starts at $160 and takes about an hour and a half. I'll lock in the exact price once I know a little more about the condition!"}]},
+    {t:"Answer their questions",d:"The usual ones. Or tap Tools → “Write a reply for me” to answer anything in Mikey's voice.",ex:[
+      {tag:"Do you come to me?",x:"Yes, I come to you! All I need is power and water within 20 ft of the car."},
+      {tag:"How long?",x:"A full detail usually takes about 3–4 hours."},
+      {tag:"Pet hair / stains",x:"Yep! I've got a special pet-hair process. No promises on the toughest stains, but I'll sure as heck try!"}]},
+    {t:"Move to booking",d:"Get their address and offer a time. Not sure what Mikey has open? Tap Tools → “Request a date from Mikey.”",ex:[
+      {tag:"Ask address",x:"Awesome! What's your address or zip? I'll get you a couple of times that work."},
+      {tag:"Offer a time",x:"I've got [day] at [time] open — does that work for you?"}]},
+    {t:"Confirm the booking",d:"Lock it in and set expectations.",ex:[
+      {tag:"Confirm",x:"Perfect, you're all set for [day] at [time]! I'll text you when I'm on my way. :)"}]},
+    {t:"Anything else",d:"",tip:"Keep it warm and low-pressure — never pushy. Don't promise an exact price or exact time on your own; say you'll confirm. When in doubt, tap <b>Tools → Write a reply for me</b> and just type what you want to say. And if they're ready to book but you don't know Mikey's availability, use <b>Request a date from Mikey</b> — it emails him."}
+  ];
+  function buildGuide(){
+    var body=el("guideBody");if(!body)return;var h="";
+    GUIDE_STEPS.forEach(function(s,i){
+      h+='<div class="gstep"><span class="gn">'+(i+1)+'</span><div class="gc"><div class="gtitle">'+esc(s.t)+'</div>'+
+        (s.d?'<div class="gdesc">'+esc(s.d)+'</div>':'');
+      (s.ex||[]).forEach(function(e){
+        h+='<button class="gex" type="button" data-x="'+esc(e.x)+'"><span class="gtag">'+esc(e.tag)+'</span>'+esc(e.x)+'</button>';
+      });
+      if(s.tip)h+='<div class="gtip">'+s.tip+'</div>';
+      h+='</div></div>';
+    });
+    body.innerHTML=h;
+    Array.prototype.forEach.call(body.querySelectorAll(".gex"),function(b){
+      b.onclick=function(){insertExample(b.getAttribute("data-x"))};
+    });
+  }
+  function insertExample(text){
+    var inp=el("msgInput");if(!inp)return;
+    var cur=inp.value;
+    inp.value=(cur&&cur.trim())?(cur.replace(/\s+$/,"")+" "+text):text;
+    autoGrow();updateCount();closeGuide();inp.focus();
+    toast("Dropped in — edit anything in [brackets] and send");
+  }
+  function openGuide(){if(!state.thread)return;buildGuide();el("guideScrim").classList.add("show");el("guide").classList.add("show")}
+  function closeGuide(){el("guideScrim").classList.remove("show");el("guide").classList.remove("show")}
   function aiDraft(){
     var t=state.thread;if(!t)return;
     var b=el("draftBtn");b.disabled=true;b.innerHTML='<span class="spin"></span>';
@@ -2791,6 +2872,9 @@
   el("draftBtn").onclick=aiDraft;
   el("polishBtn").onclick=aiPolish;
   el("coachBtn").onclick=aiCoach;
+  el("guideBtn").onclick=openGuide;
+  el("guideClose").onclick=closeGuide;
+  el("guideScrim").onclick=closeGuide;
   el("micBtn").onclick=toggleMic;
   // mic now lives inside the labeled Tools sheet (only offered when the browser supports it)
   el("toolsBtn").onclick=function(){var s=el("toolsSheet");closePops("toolsSheet");var opening=s.style.display==="none";if(opening)buildToolsSheet();s.style.display=opening?"block":"none"};
