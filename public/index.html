@@ -1013,7 +1013,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-08·s";
+  var APP_BUILD="2026-07-08·t";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -2393,12 +2393,16 @@
     });
     sheet.innerHTML=h;
     Array.prototype.forEach.call(sheet.querySelectorAll(".ts-row"),function(row){
-      row.onclick=function(){
+      row.onclick=function(e){
+        if(e){e.stopPropagation()}
         var act=row.getAttribute("data-act");
         sheet.style.display="none";
         var map={write:"writeBtn",draft:"draftBtn",polish:"polishBtn",tpl:"tplBtn",sched:"schedBtn",rem:"remBtn",mic:"micBtn"};
         if(act==="reqdate"){requestDate();return}
-        var id=map[act];if(id&&el(id))el(id).click();
+        var id=map[act];
+        // Defer to the next tick so THIS tap fully finishes before we open a popup —
+        // otherwise the document's outside-click handler closes it again instantly.
+        if(id&&el(id)){var btn=el(id);setTimeout(function(){btn.click()},0)}
       };
     });
   }
