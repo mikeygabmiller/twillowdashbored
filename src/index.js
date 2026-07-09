@@ -66,7 +66,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-08·p';
+const BUILD = '2026-07-08·q';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -1614,17 +1614,19 @@ function defaultConfig() {
 function defaultPlaybook() {
   return {
     about: "Mikey's Mobile Detailing is an owner-run mobile car detailing service for the Snohomish and Monroe, WA areas — Mikey comes to your driveway. It's always Mikey himself: personal, friendly work that's tailored to you, and you don't pay until you love it. 300+ cars detailed, 5-star rated.",
-    services: "- Interior Detail — starts at $160 (deep interior clean: vacuum, carpets & seats, windows, pet-hair removal, stain extraction; about 1½ hours)\n" +
-      "- Exterior Detail — starts at $130 (hand wash, polish and protection so the paint really shines)\n" +
-      "- Full Detail, In & Out — starts at $260 (interior + exterior; a first-time full detail runs about 3–4 hours)\n" +
+    services: "- Interior Detail — starts at $160 (deep interior clean: full vacuum, carpets & seats, all interior surfaces wiped down, interior windows, door jambs, pet-hair removal and stain treatment; about 1½ hours)\n" +
+      "- Exterior Detail — starts at $130 (hand wash, wheels & tires, bug & tar removal, polish, and a spray wax/sealant so the paint really shines)\n" +
+      "- Full Detail, In & Out — starts at $260 (everything inside and out; a first-time full detail runs about 3–4 hours)\n" +
       "Trucks and heavily-soiled vehicles are priced a bit higher. Every price is a \"starting at\" — the exact price depends on the vehicle's year, make, model and condition, and always gets confirmed before booking.\n" +
       "Add-ons available: ceramic coating, paint correction, and headlight restoration.\n" +
-      "Recurring members pay less per visit and keep their car looking its best year-round.",
+      "Recurring members pay less per visit, and their upkeep visits are quicker (around an hour) since the car stays in great shape.",
     area: "Main area: Snohomish and Monroe. Also serves Mill Creek, Lake Stevens, Marysville, Everett, Duvall, Sultan and nearby towns — all mobile, right at your driveway.\n" +
       "Hours: usually Wednesday–Saturday, afternoons. Never Sundays.\n" +
       "On-site: needs power and water within 20 ft of the vehicle — everything else is covered.",
     booking: "Booking is by text — just text Mikey your vehicle and zip and he'll send a couple of time options and confirm the appointment. There's also an instant-quote tool on mikeysdetailing.com that gives an exact price in about 30 seconds.\n" +
+      "For a new customer, find out: their vehicle year/make/model, address or zip, whether they want interior / exterior / or full, the car's current condition (photos help), and the timeframe they're hoping for.\n" +
       "Guarantee: you don't pay until you love it.\n" +
+      "No travel fee — the price is the price.\n" +
       "Deposit: none. Cancellation: no cancellation fee.\n" +
       "Payment: cash, Venmo, Zelle, or check.\n" +
       "Lead time: usually booking about a week out.",
@@ -1653,11 +1655,27 @@ function defaultPlaybook() {
       "A: I accept cash, check, Venmo, and Zelle. And you don't pay until you love it.\n\n" +
       "Q: Do I need to be home while you work?\n" +
       "A: Not at all! I'd prefer you're there at the start and end so we can go over everything, but in between you're free to go about your day.",
+    scenarios: "HOW MIKEY HANDLES COMMON SITUATIONS — respond with this same approach, warmth and wording:\n\n" +
+      "- Customer says it's more than they wanted to spend / asks for a discount:\n" +
+      "  \"I'm sorry to hear that! I can definitely help you mix and match services to get exactly what you need and nothing you don't. What's your budget?\"\n\n" +
+      "- Wants it done today / ASAP:\n" +
+      "  If booked up: \"Sadly I don't have availability this week, but I'll let you know the moment my next slot opens up.\" If it can be squeezed in: \"I can likely squeeze you in tomorrow if that works!\"\n\n" +
+      "- They're outside the service area:\n" +
+      "  \"Unfortunately I'm not able to make it out to your area anytime soon — we could plan for next month. If that's not soon enough, I totally understand if you'd rather go with someone else.\"\n\n" +
+      "- Arrived but they're not home / can't find access:\n" +
+      "  \"Hey, I'm at the address you sent! All I need is the car unlocked and access to power and water — let me know where I can find those.\"\n\n" +
+      "- Rain or bad weather on the appointment day:\n" +
+      "  \"Hey, the weather isn't looking great today. Any chance we can reschedule? Let me know what day works and I'll get you back on the calendar.\"\n\n" +
+      "- Running late:\n" +
+      "  \"I'm on my way, just running into a little traffic — ETA is about [time].\"\n\n" +
+      "- Unhappy with the result / a complaint (always stay warm and fix it):\n" +
+      "  \"I'm so sorry to hear that! I'd be more than happy to come back ASAP and make it right for you.\"",
     rules: "Never promise an exact price or exact appointment time on your own — give the \"starts at\" range and say you'll confirm the exact price.\n" +
       "Never invent details, prices, or policies you don't know.\n" +
+      "Only recommend add-ons lightly and when they genuinely fit the car — never pushy.\n" +
       "Always be respectful, low-pressure, and never pushy.\n" +
       "If someone texts STOP, don't text them again.\n" +
-      "Never argue with an upset customer — stay calm and offer to make it right.",
+      "Never argue with an upset customer — stay calm, apologize, and offer to come back and make it right.",
     examples: "Real texts Mikey has sent — match this exact rhythm, warmth and length:\n" +
       "- \"I can do 10:30 if that works :)\"\n" +
       "- \"Perfect, let's shoot for 10:45.\"\n" +
@@ -1672,7 +1690,7 @@ function defaultPlaybook() {
   };
 }
 
-const PLAYBOOK_KEYS = ['about', 'services', 'area', 'booking', 'tone', 'faqs', 'rules', 'examples'];
+const PLAYBOOK_KEYS = ['about', 'services', 'area', 'booking', 'tone', 'faqs', 'scenarios', 'rules', 'examples'];
 function sanitizePlaybook(next, prev) {
   const out = Object.assign(defaultPlaybook(), prev || {});
   for (const k of PLAYBOOK_KEYS) {
@@ -1708,7 +1726,7 @@ async function loadConfig() {
 // with a newer seed version we upgrade the stored playbook to the current
 // defaults, then stamp `playbookSeed` so this never runs again (protecting any
 // later dashboard edits). Exactly ONE KV write, ever, per version bump.
-const PLAYBOOK_SEED_VERSION = 3;
+const PLAYBOOK_SEED_VERSION = 4;
 async function seedPlaybookIfNeeded() {
   const cfg = await loadConfig();
   if ((cfg.playbookSeed || 0) >= PLAYBOOK_SEED_VERSION) return;
@@ -1892,6 +1910,7 @@ const PLAYBOOK_SECTIONS = [
   ['tone', 'Voice & tone'],
   ['examples', 'How Mikey texts (copy this voice exactly)'],
   ['faqs', 'Common questions (approved answers)'],
+  ['scenarios', 'How Mikey handles common situations'],
   ['rules', 'Golden rules — never break these'],
 ];
 function businessContext(cfg) {
