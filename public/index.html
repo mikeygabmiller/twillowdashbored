@@ -951,7 +951,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-08·p";
+  var APP_BUILD="2026-07-08·q";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -1912,6 +1912,7 @@
     ["tone","Voice & tone","How replies should sound."],
     ["examples","How you text (voice examples)","Paste a few real texts you've sent so drafts copy your exact voice."],
     ["faqs","Common questions & answers","Paste real questions customers ask and the answers you'd give."],
+    ["scenarios","How you handle situations","What to say in tricky moments — discounts, no-shows, complaints, running late."],
     ["rules","Golden rules (never break)","Hard limits — e.g. never quote a firm price without checking."]
   ];
   function renderPlaybook(){
