@@ -284,6 +284,7 @@
   .fu-card .acts .btn{flex:1 1 auto;font-size:12px;padding:7px 9px}
   .fu-flag{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:700;color:#f5c563;background:rgba(245,184,66,.13);padding:2px 6px;border-radius:8px}
   .fu-flag.high{color:#ff8388;background:rgba(255,90,95,.14)}
+  .reply-flag{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:700;color:#34d399;background:rgba(34,197,94,.14);padding:2px 6px;border-radius:8px}
 
   /* per-contact follow-up controls in details */
   #dtFollowup .fu-row{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:13px}
@@ -329,6 +330,53 @@
   .quickset{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:11px}
   .quickset button{font-size:11px;padding:6px 11px;border-radius:16px;background:var(--panel);border:1px solid var(--line);color:var(--muted)}
   .quickset button:hover{border-color:var(--accent);color:var(--accent-text)}
+  /* flip-up labeled tools panel — so a texter never has to guess an icon */
+  .tools-btn{display:inline-flex;align-items:center;gap:6px;font-family:inherit;font-size:13px;font-weight:650;
+    color:var(--accent-text);background:var(--accent-soft);border:1px solid transparent;border-radius:10px;padding:7px 12px;cursor:pointer}
+  .tools-btn svg{width:17px;height:17px}
+  .tools-btn:active{transform:scale(.97)}
+  .tools-sheet{position:absolute;bottom:46px;left:0;right:0;background:var(--panel3);border:1px solid var(--line);
+    border-radius:14px;box-shadow:0 -8px 34px rgba(0,0,0,.5);padding:6px;z-index:30;max-height:64vh;overflow:auto;animation:popup .16s ease}
+  .tools-sheet .ts-hd{font-size:10.5px;color:var(--muted2);font-weight:700;padding:9px 10px 6px;text-transform:uppercase;letter-spacing:.05em}
+  .ts-row{display:flex;align-items:center;gap:12px;padding:10px 11px;border-radius:11px;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .ts-row:hover,.ts-row:active{background:var(--panel2)}
+  .ts-row .ts-ic{width:34px;height:34px;flex:0 0 auto;border-radius:9px;background:var(--panel2);display:flex;align-items:center;justify-content:center;color:var(--muted)}
+  .ts-row .ts-ic svg{width:19px;height:19px}
+  .ts-row .ts-txt{display:flex;flex-direction:column;min-width:0}
+  .ts-row .ts-txt b{font-size:14px;font-weight:650;color:var(--text)}
+  .ts-row .ts-txt span{font-size:11.5px;color:var(--muted2)}
+  .ts-row.accent .ts-ic{background:var(--accent-soft);color:var(--accent-text)}
+  .ts-row.accent .ts-txt b{color:var(--accent-text)}
+  .date-banner{display:flex;align-items:center;gap:9px;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.4);
+    border-radius:12px;padding:9px 12px;margin:0 0 8px;font-size:12.5px;color:var(--text)}
+  .date-banner .db-ic{color:#34d399;display:flex}.date-banner b{font-weight:650}
+  .date-banner .db-x{margin-left:auto;background:transparent;border:0;color:var(--muted2);cursor:pointer;padding:2px;display:flex}
+  /* conversation guide (help) — step-by-step flow with tap-to-use example texts */
+  .guide-scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:60;opacity:0;pointer-events:none;transition:opacity .2s}
+  .guide-scrim.show{opacity:1;pointer-events:auto}
+  .guide{position:fixed;left:0;right:0;bottom:0;z-index:61;background:var(--panel3);border-top-left-radius:20px;border-top-right-radius:20px;
+    max-height:90vh;display:flex;flex-direction:column;transform:translateY(101%);transition:transform .26s cubic-bezier(.4,0,.2,1);box-shadow:0 -10px 44px rgba(0,0,0,.55)}
+  .guide.show{transform:translateY(0)}
+  .guide-hd{display:flex;align-items:center;gap:11px;padding:16px 18px 13px;border-bottom:1px solid var(--line);flex:0 0 auto}
+  .guide-hd .ghelp{color:var(--accent-text);display:flex}.guide-hd .ghelp svg{width:22px;height:22px}
+  .guide-hd .gt{font-size:16px;font-weight:700}
+  .guide-hd .gsub{font-size:11.5px;color:var(--muted2);margin-top:1px}
+  .guide-hd .gx{margin-left:auto;background:transparent;border:0;color:var(--muted);cursor:pointer;font-size:17px;padding:4px 8px;border-radius:8px}
+  .guide-hd .gx:hover{background:var(--panel2);color:var(--text)}
+  .guide-body{overflow:auto;padding:6px 16px 30px;max-width:640px;margin:0 auto;width:100%}
+  .gstep{display:flex;gap:12px;padding:15px 0;border-bottom:1px solid var(--line)}
+  .gstep:last-child{border-bottom:0}
+  .gstep .gn{flex:0 0 auto;width:26px;height:26px;border-radius:50%;background:var(--accent-soft);color:var(--accent-text);
+    font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center;margin-top:1px}
+  .gstep .gc{flex:1;min-width:0}
+  .gstep .gtitle{font-size:14.5px;font-weight:700;color:var(--text)}
+  .gstep .gdesc{font-size:12.5px;color:var(--muted2);margin:3px 0 10px;line-height:1.45}
+  .gex{display:block;width:100%;text-align:left;font-family:inherit;font-size:13px;color:var(--text);background:var(--panel2);
+    border:1px solid var(--line);border-radius:11px;padding:10px 12px;margin-bottom:7px;cursor:pointer;line-height:1.45}
+  .gex:hover{border-color:var(--accent)}
+  .gex .gtag{display:block;font-size:9.5px;font-weight:800;color:var(--accent-text);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+  .gtip{font-size:12px;color:var(--muted2);background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:10px 12px;margin-top:6px;line-height:1.5}
+  .gtip b{color:var(--text)}
   .nl-echo{font-size:11.5px;color:var(--muted2);min-height:15px;margin:-4px 0 9px}
   .nl-echo.ok{color:var(--green);font-weight:600}
   .pb-bar{height:7px;border-radius:5px;background:var(--panel);border:1px solid var(--line);overflow:hidden;margin-top:11px}
@@ -720,6 +768,7 @@
         <div class="num" id="hNum"></div>
       </div>
       <div class="head-actions">
+        <button class="btn icon" id="guideBtn" data-ic="help" title="How to run this conversation" aria-label="Conversation guide"></button>
         <button class="btn icon" id="threadSearchBtn" data-ic="search" title="Find in conversation" aria-label="Find in conversation"></button>
         <button class="btn icon" id="coachBtn" data-ic="bot" title="Coach me — what to say" aria-label="Coach me" style="display:none"></button>
         <button class="btn icon" id="callBtn" data-ic="phone" title="Call" aria-label="Call"></button>
@@ -741,18 +790,24 @@
     <div class="messages" id="messages"></div>
     <div class="coach-panel" id="coachPanel" style="display:none"></div>
     <div class="team-id-bar" id="teamIdentityBar" style="display:none"></div>
+    <div class="date-banner" id="dateBanner" style="display:none"></div>
+    <div class="ai-review" id="suggestBox" style="display:none"></div>
     <div class="ai-review" id="aiReview" style="display:none"></div>
 
     <div class="composer" id="composer" style="display:none">
       <div class="ctools">
-        <button class="btn icon" id="tplBtn" data-ic="zap" title="Quick replies" aria-label="Quick replies"></button>
-        <button class="btn icon" id="schedBtn" data-ic="calendar-clock" title="Schedule send" aria-label="Schedule send"></button>
-        <button class="btn icon" id="remBtn" data-ic="bell" title="Appointment reminder" aria-label="Appointment reminder"></button>
-        <button class="btn icon" id="draftBtn" data-ic="sparkles" title="AI draft reply" aria-label="AI draft reply"></button>
-        <button class="btn icon" id="polishBtn" data-ic="wand" title="AI polish my text" aria-label="AI polish my text"></button>
+        <button class="tools-btn" id="toolsBtn" data-ic="list-checks" data-ic-label="Tools" aria-label="Tools"></button>
+        <!-- the individual tool buttons stay in the DOM (hidden) so the labeled Tools sheet can trigger them -->
+        <button class="btn icon" id="tplBtn" data-ic="zap" title="Quick replies" aria-label="Quick replies" style="display:none"></button>
+        <button class="btn icon" id="schedBtn" data-ic="calendar-clock" title="Schedule send" aria-label="Schedule send" style="display:none"></button>
+        <button class="btn icon" id="remBtn" data-ic="bell" title="Appointment reminder" aria-label="Appointment reminder" style="display:none"></button>
+        <button class="btn icon" id="writeBtn" data-ic="pencil" title="Write a reply for me" aria-label="Write a reply for me" style="display:none"></button>
+        <button class="btn icon" id="draftBtn" data-ic="sparkles" title="AI draft reply" aria-label="AI draft reply" style="display:none"></button>
+        <button class="btn icon" id="polishBtn" data-ic="wand" title="AI polish my text" aria-label="AI polish my text" style="display:none"></button>
         <button class="btn icon" id="micBtn" data-ic="mic" title="Dictate (voice to text)" aria-label="Dictate" style="display:none"></button>
         <div class="spacer"></div>
         <span id="charCount" style="color:var(--muted2);font-size:11px"></span>
+        <div class="tools-sheet" id="toolsSheet" style="display:none"></div>
         <div class="menu" id="tplMenu" style="display:none"></div>
         <div class="sched-pop" id="schedPop" style="display:none">
           <label>Type a time — or pick one below</label>
@@ -770,6 +825,12 @@
           <label>Reminder message</label>
           <div class="quickset" id="remTpls"></div>
           <button class="btn accent ic-btn" id="remConfirm" data-ic="bell" data-ic-label="Schedule reminder" style="width:100%"></button>
+        </div>
+        <div class="sched-pop" id="writePop" style="display:none">
+          <label>Tell the AI what to say — it writes it in your voice</label>
+          <input type="text" id="writeHint" placeholder="e.g. tell him I can come Tuesday at 2, ask what SUV he has" autocomplete="off" />
+          <div class="quickset" id="writeQuick"></div>
+          <button class="btn accent ic-btn" id="writeGo" data-ic="pencil" data-ic-label="Write it for me" style="width:100%"></button>
         </div>
       </div>
       <div class="crow">
@@ -904,6 +965,16 @@
   </div>
 </div>
 
+<div class="guide-scrim" id="guideScrim"></div>
+<div class="guide" id="guide">
+  <div class="guide-hd">
+    <span class="ghelp" data-ic="help"></span>
+    <div><div class="gt">Running a conversation</div><div class="gsub">Mikey's normal flow · tap any example to use it</div></div>
+    <button class="gx" id="guideClose" aria-label="Close">✕</button>
+  </div>
+  <div class="guide-body" id="guideBody"></div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -942,7 +1013,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-04·n";
+  var APP_BUILD="2026-07-08·u";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -971,6 +1042,7 @@
     "pin":'<path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z"/>',
     "phone":'<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"/>',
     "info":'<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+    "help":'<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
     "zap":'<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>',
     "bell":'<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.41 5.956-2.738 7.326"/>',
     "sparkles":'<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>',
@@ -1026,7 +1098,7 @@
   function submitLogin(value,wrongMsg){
     el("loginErr").textContent="";
     post("/api/login",{password:value}).then(function(d){
-      if(d&&d.ok){pin="";if(el("loginPass"))el("loginPass").value="";hideLogin();refreshThreads();loadTemplates();checkHealth();startPoll();loadConfig();fetchEmails();fetchInsights();showBuild()}
+      if(d&&d.ok){pin="";if(el("loginPass"))el("loginPass").value="";hideLogin();refreshThreads();loadTemplates();checkHealth();startPoll();loadConfig();fetchEmails();fetchInsights();showBuild();if(state.pendingC)openThread(state.pendingC)}
       else{
         el("loginErr").textContent=wrongMsg||"Wrong PIN — try again";
         var box=el("loginBox");if(box){box.classList.remove("pin-shake");void box.offsetWidth;box.classList.add("pin-shake")}
@@ -1397,6 +1469,8 @@
           (st?'<span class="badge '+st.cls+'">'+st.label+'</span>':'')+
           (t.optedOut?'<span class="dnt">'+ic("ban",10)+'Do not text</span>':'')+
           ((teamOn()&&t.assignedTo)?assignBadge(t.assignedTo):'')+
+          (t.replyReady?'<span class="reply-flag">'+ic("sparkles",11)+'reply ready</span>':'')+
+          (t.dateRequested?'<span class="reply-flag" style="color:#eab308;background:rgba(234,179,8,.14)">'+ic("calendar-days",11)+'date needed</span>':'')+
           (t.followupDue?'<span class="fu-flag'+(t.fu&&t.fu.urgency==="high"?" high":"")+'">'+ic("list-checks",11)+'follow-up</span>':'')+
           (t.scheduledCount>0?'<span class="sched-flag">'+ic("calendar-clock",12)+t.scheduledCount+'</span>':'')+
           (t.tags||[]).slice(0,2).map(function(x){return '<span class="tag">'+esc(x)+'</span>'}).join('')+
@@ -1900,7 +1974,9 @@
     ["area","Service area & hours","Where you travel and the days/times you work."],
     ["booking","Booking & policies","How booking works, deposits, cancellations, guarantees."],
     ["tone","Voice & tone","How replies should sound."],
+    ["examples","How you text (voice examples)","Paste a few real texts you've sent so drafts copy your exact voice."],
     ["faqs","Common questions & answers","Paste real questions customers ask and the answers you'd give."],
+    ["scenarios","How you handle situations","What to say in tricky moments — discounts, no-shows, complaints, running late."],
     ["rules","Golden rules (never break)","Hard limits — e.g. never quote a firm price without checking."]
   ];
   function renderPlaybook(){
@@ -1996,7 +2072,10 @@
     state.phone=phone;document.body.classList.add("viewing");
     // reset any in-thread find when moving to a different conversation
     state.threadFind="";state.findIdx=0;var fb=el("findBar");if(fb)fb.style.display="none";var fi=el("findInput");if(fi)fi.value="";
+    state.lastAiText=null;
     hideAiReview();
+    var sbx=el("suggestBox");if(sbx){sbx.style.display="none";sbx.innerHTML=""}
+    var dbx=el("dateBanner");if(dbx){dbx.style.display="none";dbx.innerHTML=""}
     el("emptyState").style.display="none";renderMain();
     return loadThread();
   }
@@ -2004,8 +2083,18 @@
     if(!state.phone)return Promise.resolve();
     // Combined endpoint returns the thread AND the conversation list in one call.
     return api("/api/threads?phone="+encodeURIComponent(state.phone)).then(function(d){
-      if(d&&d.ok){state.threads=d.threads||state.threads;if(d.thread)state.thread=d.thread;renderThread();renderMain()}
+      if(d&&d.ok){state.threads=d.threads||state.threads;if(d.thread)state.thread=d.thread;renderThread();renderMain();
+        if(state.pendingC===state.phone)state.pendingC=null;} // deep-link satisfied
     });
+  }
+  // Deep link from the "Request a date" email (…/?c=<phone>) — jump straight to the chat.
+  function maybeDeepLink(){
+    try{
+      var m=location.search.match(/[?&]c=([^&#]+)/);
+      if(m){state.pendingC=decodeURIComponent(m[1]);
+        if(window.history&&history.replaceState)history.replaceState(null,"",location.pathname+location.hash);}
+    }catch(e){}
+    if(state.pendingC)openThread(state.pendingC);
   }
 
   // Opted-out lookup — the flag lives on the lightweight index row, not the thread.
@@ -2105,6 +2194,8 @@
       Array.prototype.forEach.call(sb.querySelectorAll(".x"),function(b){b.onclick=function(){post("/api/unschedule",{phone:t.phone,id:b.getAttribute("data-id")}).then(function(d){if(d.ok){state.thread=d.thread;renderThread();refreshThreads();toast("Scheduled message canceled")}})}});
     }else sb.style.display="none";
     renderFuBanner(t);
+    renderDateBanner(t);
+    renderSuggested(t);
     // Coach advice is per-conversation — clear it when the open thread changes,
     // but keep it across background polls of the SAME thread so it isn't yanked
     // away while it's being read.
@@ -2261,12 +2352,130 @@
     box.querySelector(".air-regen").onclick=function(){hideAiReview();if(o.onRegen)o.onRegen()};
   }
   function hideAiReview(){var box=el("aiReview");if(box){box.style.display="none";box.innerHTML=""}}
+  // "Reply already waiting": if the server pre-drafted a reply for this thread and
+  // the ball is in Mikey's court, show it above the composer — one tap to Send,
+  // or Edit (which teaches the AI from his changes), or Dismiss.
+  function renderSuggested(t){
+    var box=el("suggestBox");if(!box)return;
+    var s=t&&t.suggested;var msgs=(t&&t.messages)||[];var last=msgs[msgs.length-1];
+    if(!(s&&s.text&&last&&last.dir==="in")){box.style.display="none";box.innerHTML="";return}
+    box.style.display="block";
+    box.innerHTML='<div class="air-top"><span class="air-title">'+ic("sparkles",13)+' Reply ready — in your voice</span><button class="air-x" aria-label="Dismiss">'+ic("x",16)+'</button></div>'+
+      '<div class="air-text">'+esc(s.text)+'</div>'+
+      '<div class="air-acts"><button class="btn accent air-send">'+ic("send",15)+' Send</button><button class="btn air-edit">'+ic("pencil",14)+' Edit first</button><button class="btn air-discard">Dismiss</button></div>';
+    box.querySelector(".air-x").onclick=function(){dismissSuggested(t)};
+    box.querySelector(".air-discard").onclick=function(){dismissSuggested(t)};
+    box.querySelector(".air-edit").onclick=function(){var inp=el("msgInput");inp.value=s.text;autoGrow();updateCount();inp.focus();state.lastAiText=s.text;box.style.display="none"};
+    box.querySelector(".air-send").onclick=function(){state.lastAiText=s.text;el("msgInput").value=s.text;autoGrow();updateCount();sendMessage()};
+  }
+  function dismissSuggested(t){
+    var box=el("suggestBox");if(box){box.style.display="none";box.innerHTML=""}
+    post("/api/meta",{phone:t.phone,clearSuggested:true}).then(function(d){if(d&&d.ok&&d.thread&&state.phone===t.phone){state.thread=d.thread}});
+  }
+  // ---- Labeled "Tools" sheet: every composer action with its name, so a texter
+  //      never has to guess what an icon does. Each row triggers the (hidden) button. ----
+  function buildToolsSheet(){
+    var sheet=el("toolsSheet");if(!sheet)return;
+    var rows=[
+      {act:"write",  ic:"pencil",         t:"Write a reply for me", s:"Tell it what to say — it writes it in your voice", accent:true},
+      {act:"reqdate",ic:"calendar-days",  t:"Request a date from Mikey", s:"Emails Mikey for his next open date", accent:true},
+      {act:"draft",  ic:"sparkles",       t:"AI draft a reply", s:"Let the AI suggest a full reply to send"},
+      {act:"polish", ic:"wand",           t:"Polish my text", s:"Fix spelling & grammar, keep your wording"},
+      {act:"tpl",    ic:"zap",            t:"Quick replies", s:"Insert one of your saved replies"},
+      {act:"sched",  ic:"calendar-clock", t:"Schedule send", s:"Write now, send automatically later"},
+      {act:"rem",    ic:"bell",           t:"Appointment reminder", s:"Get a private nudge before an appointment"}
+    ];
+    if(SR)rows.push({act:"mic",ic:"mic",t:"Dictate",s:"Talk instead of type"});
+    var h='<div class="ts-hd">Tools</div>';
+    rows.forEach(function(r){
+      h+='<div class="ts-row'+(r.accent?" accent":"")+'" data-act="'+r.act+'"><span class="ts-ic">'+ic(r.ic,19)+'</span>'+
+         '<span class="ts-txt"><b>'+esc(r.t)+'</b><span>'+esc(r.s)+'</span></span></div>';
+    });
+    sheet.innerHTML=h;
+    Array.prototype.forEach.call(sheet.querySelectorAll(".ts-row"),function(row){
+      row.onclick=function(e){
+        if(e){e.stopPropagation()}
+        var act=row.getAttribute("data-act");
+        sheet.style.display="none";
+        var map={write:"writeBtn",draft:"draftBtn",polish:"polishBtn",tpl:"tplBtn",sched:"schedBtn",rem:"remBtn",mic:"micBtn"};
+        if(act==="reqdate"){requestDate();return}
+        var id=map[act];
+        // Defer to the next tick so THIS tap fully finishes before we open a popup —
+        // otherwise the document's outside-click handler closes it again instantly.
+        if(id&&el(id)){var btn=el(id);setTimeout(function(){btn.click()},0)}
+      };
+    });
+  }
+  // ---- Request a date: emails Mikey and flags the thread so the texter sees it's pending ----
+  function requestDate(){
+    var t=state.thread;if(!t)return;
+    toast("Emailing Mikey for a date…");
+    post("/api/request-date",{phone:t.phone,by:(teamOn()&&meName())?meName():""}).then(function(d){
+      if(d&&d.ok){if(state.phone===t.phone&&d.thread){state.thread=d.thread;renderThread()}refreshThreads();
+        toast(d.sent?"Sent! Mikey's been emailed for an open date.":"Flagged — but the alert didn't send. Check alert settings.",{bad:!d.sent});
+      } else toast("Couldn't send: "+((d&&d.error)||"error"),{bad:true});
+    }).catch(function(){toast("Network error",{bad:true})});
+  }
+  function renderDateBanner(t){
+    var box=el("dateBanner");if(!box)return;
+    if(!(t&&t.dateRequest)){box.style.display="none";box.innerHTML="";return}
+    box.style.display="flex";
+    box.innerHTML='<span class="db-ic">'+ic("calendar-days",16)+'</span><div><b>Date requested</b> — Mikey\'s been emailed for an open date. He\'ll reply here.</div>'+
+      '<button class="db-x" aria-label="Clear">'+ic("x",16)+'</button>';
+    box.querySelector(".db-x").onclick=function(){
+      box.style.display="none";
+      post("/api/meta",{phone:t.phone,clearDateRequest:true}).then(function(d){if(d&&d.ok&&d.thread&&state.phone===t.phone){state.thread=d.thread}});
+    };
+  }
+  // ---- Conversation guide (the "?" in a chat): Mikey's normal flow with tap-to-use examples ----
+  var GUIDE_STEPS=[
+    {t:"Get the details",d:"Find out what they've got and what they want.",ex:[
+      {tag:"Opener",x:"Hey! Happy to help :) What's the year, make and model of your car, and are you thinking interior, exterior, or a full detail?"}]},
+    {t:"Give the quote",d:"Share the starting price, and say the exact price gets confirmed. Interior starts at $160 · exterior $130 · full $260 — trucks & really dirty cars a bit more.",ex:[
+      {tag:"Full detail",x:"For a [year make model], a full detail starts at $260 — I'll confirm the exact price once I know the condition. Want me to find you a time?"},
+      {tag:"Interior only",x:"An interior detail starts at $160 and takes about an hour and a half. I'll lock in the exact price once I know a little more about the condition!"}]},
+    {t:"Answer their questions",d:"The usual ones. Or tap Tools → “Write a reply for me” to answer anything in Mikey's voice.",ex:[
+      {tag:"Do you come to me?",x:"Yes, I come to you! All I need is power and water within 20 ft of the car."},
+      {tag:"How long?",x:"A full detail usually takes about 3–4 hours."},
+      {tag:"Pet hair / stains",x:"Yep! I've got a special pet-hair process. No promises on the toughest stains, but I'll sure as heck try!"}]},
+    {t:"Move to booking",d:"Get their address and offer a time. Not sure what Mikey has open? Tap Tools → “Request a date from Mikey.”",ex:[
+      {tag:"Ask address",x:"Awesome! What's your address or zip? I'll get you a couple of times that work."},
+      {tag:"Offer a time",x:"I've got [day] at [time] open — does that work for you?"}]},
+    {t:"Confirm the booking",d:"Lock it in and set expectations.",ex:[
+      {tag:"Confirm",x:"Perfect, you're all set for [day] at [time]! I'll text you when I'm on my way. :)"}]},
+    {t:"Anything else",d:"",tip:"Keep it warm and low-pressure — never pushy. Don't promise an exact price or exact time on your own; say you'll confirm. When in doubt, tap <b>Tools → Write a reply for me</b> and just type what you want to say. And if they're ready to book but you don't know Mikey's availability, use <b>Request a date from Mikey</b> — it emails him."}
+  ];
+  function buildGuide(){
+    var body=el("guideBody");if(!body)return;var h="";
+    GUIDE_STEPS.forEach(function(s,i){
+      h+='<div class="gstep"><span class="gn">'+(i+1)+'</span><div class="gc"><div class="gtitle">'+esc(s.t)+'</div>'+
+        (s.d?'<div class="gdesc">'+esc(s.d)+'</div>':'');
+      (s.ex||[]).forEach(function(e){
+        h+='<button class="gex" type="button" data-x="'+esc(e.x)+'"><span class="gtag">'+esc(e.tag)+'</span>'+esc(e.x)+'</button>';
+      });
+      if(s.tip)h+='<div class="gtip">'+s.tip+'</div>';
+      h+='</div></div>';
+    });
+    body.innerHTML=h;
+    Array.prototype.forEach.call(body.querySelectorAll(".gex"),function(b){
+      b.onclick=function(){insertExample(b.getAttribute("data-x"))};
+    });
+  }
+  function insertExample(text){
+    var inp=el("msgInput");if(!inp)return;
+    var cur=inp.value;
+    inp.value=(cur&&cur.trim())?(cur.replace(/\s+$/,"")+" "+text):text;
+    autoGrow();updateCount();closeGuide();inp.focus();
+    toast("Dropped in — edit anything in [brackets] and send");
+  }
+  function openGuide(){if(!state.thread)return;buildGuide();el("guideScrim").classList.add("show");el("guide").classList.add("show")}
+  function closeGuide(){el("guideScrim").classList.remove("show");el("guide").classList.remove("show")}
   function aiDraft(){
     var t=state.thread;if(!t)return;
     var b=el("draftBtn");b.disabled=true;b.innerHTML='<span class="spin"></span>';
     post("/api/ai/draft",{phone:t.phone}).then(function(d){
       if(d&&d.ok&&d.draft){
-        showAiReview({title:"Suggested reply",text:d.draft,onAccept:function(){var inp=el("msgInput");inp.value=d.draft;autoGrow();updateCount();inp.focus()},onRegen:aiDraft});
+        showAiReview({title:"Suggested reply",text:d.draft,onAccept:function(){state.lastAiText=d.draft;var inp=el("msgInput");inp.value=d.draft;autoGrow();updateCount();inp.focus()},onRegen:aiDraft});
       } else toast("Draft failed: "+((d&&d.error)||"error"),{bad:true});
     }).catch(function(){toast("Network error",{bad:true})})
     .then(function(){var bb=el("draftBtn");bb.disabled=false;bb.innerHTML=ic("sparkles",21)});
@@ -2284,6 +2493,31 @@
       } else toast("Polish failed: "+((d&&d.error)||"error"),{bad:true});
     }).catch(function(){toast("Network error",{bad:true})})
     .then(function(){var bb=el("polishBtn");if(bb){bb.disabled=false;bb.innerHTML=ic("wand",21)}});
+  }
+  // ---- "Write it for me": type what you want to say, AI writes it in your voice ----
+  var WRITE_SUGGESTIONS=["Offer a couple time slots","Ask for their address","Let them know I'm running a little late","Confirm the appointment","Politely let them know I'm booked"];
+  function buildWriteQuick(){
+    var box=el("writeQuick");if(!box)return;box.innerHTML="";
+    WRITE_SUGGESTIONS.forEach(function(s){
+      var b=document.createElement("button");b.type="button";b.textContent=s;
+      b.onclick=function(){el("writeHint").value=s;el("writeHint").focus()};
+      box.appendChild(b);
+    });
+  }
+  function aiWrite(){
+    var t=state.thread;if(!t)return;
+    var hint=el("writeHint").value.trim();
+    if(!hint){toast("Tell it what to say first",{bad:true});el("writeHint").focus();return}
+    el("writePop").style.display="none";
+    var b=el("writeGo");if(b){b.disabled=true;}
+    post("/api/ai/draft",{phone:t.phone,hint:hint}).then(function(d){
+      if(d&&d.ok&&d.draft){
+        showAiReview({title:"Written for you",text:d.draft,note:"Based on: “"+hint+"”",
+          onAccept:function(){state.lastAiText=d.draft;var inp=el("msgInput");inp.value=d.draft;autoGrow();updateCount();inp.focus()},
+          onRegen:function(){el("writeHint").value=hint;aiWrite()}});
+      } else toast("Couldn't write that: "+((d&&d.error)||"error"),{bad:true});
+    }).catch(function(){toast("Network error",{bad:true})})
+    .then(function(){var bb=el("writeGo");if(bb)bb.disabled=false});
   }
 
   // ---- AI Coach: tells a team member exactly what to say (and why) ----
@@ -2345,6 +2579,9 @@
     el("sendBtn").disabled=true;
     var payload={phone:state.phone,body:body};
     if(teamOn()&&meName())payload.by=meName(); // sign the reply with who's texting
+    // If this send started from an AI draft/suggestion, pass the original so the
+    // server can learn from how Mikey edited it. Used once, then cleared.
+    if(state.lastAiText){payload.aiOriginal=state.lastAiText;state.lastAiText=null}
     // Optimistic: show the bubble immediately (marked "Sending…"), clear the box,
     // then reconcile with the server — so a text feels instant even on slow signal.
     var tempId="tmp"+Date.now();var forPhone=state.phone;
@@ -2625,7 +2862,7 @@
   el("msgInput").addEventListener("input",function(){updateCount();autoGrow()});
   el("msgInput").addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}});
   el("dtNotes").addEventListener("blur",function(){if(state.thread&&el("dtNotes").value!==(state.thread.notes||""))saveMeta({notes:el("dtNotes").value})});
-  function closePops(except){["tplMenu","schedPop","remPop"].forEach(function(id){if(id!==except)el(id).style.display="none"})}
+  function closePops(except){["tplMenu","schedPop","remPop","writePop","toolsSheet"].forEach(function(id){if(id!==except)el(id).style.display="none"})}
   el("tplBtn").onclick=function(){var m=el("tplMenu");closePops("tplMenu");m.style.display=m.style.display==="none"?"block":"none"};
   el("schedBtn").onclick=function(){var p=el("schedPop");closePops("schedPop");var opening=p.style.display==="none";if(opening){el("schedNL").value="";el("schedNLecho").textContent="";el("schedNLecho").className="nl-echo";if(!el("schedTime").value)el("schedTime").value=toLocalInput(quickTime(60))}p.style.display=opening?"block":"none"};
   el("remBtn").onclick=function(){var p=el("remPop");closePops("remPop");if(p.style.display==="none")openRemPop();p.style.display=p.style.display==="none"?"block":"none"};
@@ -2633,11 +2870,18 @@
   el("schedNL").oninput=applyNaturalTime;
   el("schedNL").onkeydown=function(e){if(e.key==="Enter"){e.preventDefault();applyNaturalTime();if(el("schedTime").value)doSchedule()}};
   el("remConfirm").onclick=doReminder;
+  el("writeBtn").onclick=function(){var p=el("writePop");closePops("writePop");var opening=p.style.display==="none";if(opening){el("writeHint").value="";buildWriteQuick();setTimeout(function(){el("writeHint").focus()},40)}p.style.display=opening?"block":"none"};
+  el("writeGo").onclick=aiWrite;
+  el("writeHint").onkeydown=function(e){if(e.key==="Enter"){e.preventDefault();aiWrite()}};
   el("draftBtn").onclick=aiDraft;
   el("polishBtn").onclick=aiPolish;
   el("coachBtn").onclick=aiCoach;
+  el("guideBtn").onclick=openGuide;
+  el("guideClose").onclick=closeGuide;
+  el("guideScrim").onclick=closeGuide;
   el("micBtn").onclick=toggleMic;
-  if(SR)el("micBtn").style.display="";
+  // mic now lives inside the labeled Tools sheet (only offered when the browser supports it)
+  el("toolsBtn").onclick=function(){var s=el("toolsSheet");closePops("toolsSheet");var opening=s.style.display==="none";if(opening)buildToolsSheet();s.style.display=opening?"block":"none"};
   el("loginBtn").onclick=doLogin;
   el("loginPass").addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();doLogin()}});
   el("logoutItem").onclick=function(){post("/api/logout",{}).then(function(){location.reload()})};
@@ -2660,6 +2904,8 @@
     if(!e.target.closest("#tplBtn")&&!e.target.closest("#tplMenu"))el("tplMenu").style.display="none";
     if(!e.target.closest("#schedBtn")&&!e.target.closest("#schedPop"))el("schedPop").style.display="none";
     if(!e.target.closest("#remBtn")&&!e.target.closest("#remPop"))el("remPop").style.display="none";
+    if(!e.target.closest("#writeBtn")&&!e.target.closest("#writePop"))el("writePop").style.display="none";
+    if(!e.target.closest("#toolsBtn")&&!e.target.closest("#toolsSheet"))el("toolsSheet").style.display="none";
   });
 
   Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.onclick=function(){vibrate(6);setTab(b.getAttribute("data-tab"))}});
@@ -2684,6 +2930,7 @@
   el("myAvatar").innerHTML=brandGlyph();el("drawerLogo").innerHTML=brandGlyph();el("loginLogo").innerHTML=brandGlyph();
   applyTheme(themePref());loadAccent();buildAccents();buildThemeSeg();buildTplMenu();loadTemplates();buildQuickset();
   renderFilters();refreshThreads();startPoll();checkHealth();loadConfig();showBuild();fetchEmails();fetchInsights();
+  maybeDeepLink();
 })();
 </script>
 <script>
