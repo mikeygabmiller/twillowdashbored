@@ -66,7 +66,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-08·u';
+const BUILD = '2026-07-08·v';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -308,7 +308,19 @@ async function handleQqcText(request) {
   const thread = await loadThread(clientPhone);
   if (!thread.name) thread.name = name;
   if (!thread.status) { thread.status = 'new'; thread.statusAt = Date.now(); }
-  const detail = [vehicle ? `Vehicle: ${vehicle}` : null, services ? `Services: ${services}` : null, `Quote: ${quoteLine}`].filter(Boolean).join('\n');
+  const email = body.email ? String(body.email).trim() : '';
+  const location = body.location ? String(body.location).trim() : '';
+  const condition = body.condition ? String(body.condition).trim() : '';
+  const notes = body.notes ? String(body.notes).trim() : '';
+  const detail = [
+    vehicle ? `Vehicle: ${vehicle}` : null,
+    condition ? `Condition: ${condition}` : null,
+    services ? `Services: ${services}` : null,
+    `Quote: ${quoteLine}`,
+    email ? `Email: ${email}` : null,
+    location ? `City: ${location}` : null,
+    notes ? `Notes: ${notes}` : null,
+  ].filter(Boolean).join('\n');
   if (detail && !thread.notes) thread.notes = `QQC quote (${new Date().toLocaleDateString()}):\n${detail}`;
   let clientSms = 'skipped';
   if (consent) {
