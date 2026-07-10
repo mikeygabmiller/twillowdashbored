@@ -66,7 +66,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-08·t';
+const BUILD = '2026-07-08·u';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -132,6 +132,7 @@ async function handle(request) {
   if (request.method === 'OPTIONS') return cors(new Response(null, { status: 204 }));
 
   if (request.method === 'POST' && pathname === '/submit')         return handleSubmit(request);
+  if (request.method === 'POST' && pathname === '/qqc-text')       return handleQqcText(request);
   if (request.method === 'POST' && pathname === '/sms')            return handleInboundSms(request);
   if (request.method === 'POST' && pathname === '/call')           return handleInboundCall(request);
   if (request.method === 'POST' && pathname === '/call-screen')    return handleCallScreen(request);
@@ -258,6 +259,66 @@ async function handleSubmit(request) {
 
   const ok = mikeyAlert;
   return cors(json({ ok, clientSms, mikeyAlert }, ok ? 200 : 207));
+}
+
+// QQC quote-form auto-text — a faithful port of the (dead-since-6/22) Make scenario
+// "Mikey QQC Auto-Text", moved into the Worker so it can't break on a missing Make
+// function and stops burning Make credits. Reuses the Twilio creds already here.
+//
+// Replicates the Make flow exactly:
+//   1. Text Mikey immediately:  🔔 NEW QUOTE — name, phone, $total, vehicle, services
+//   2. ~3.5 min later, text the customer the first reach-out — but only when they
+//      consented (Make's filter: smsConsent != "false") and the phone is a valid +1.
+// Improvements over Make: the delayed text goes through the reserve-then-send cron
+// (at-most-once, opt-out aware, delivery-tracked), and the lead is recorded in the
+// dashboard. Accepts JSON or form-encoded bodies. No new secrets needed.
+async function handleQqcText(request) {
+  let body = {};
+  try {
+    const ct = (request.headers.get('Content-Type') || '').toLowerCase();
+    if (ct.includes('application/json')) body = await request.json();
+    else { const form = await request.formData(); for (const [k, v] of form) body[k] = v; }
+  } catch { return cors(json({ ok: false, error: 'bad_body' }, 400)); }
+
+  // Bot honeypot — real customers never fill these hidden fields.
+  if (body.website || body._gotcha || body.hp) return cors(json({ ok: true, clientSms: 'skipped', mikeyAlert: false }, 200));
+
+  const name = String(body.name || '').trim();
+  const clientPhone = normalizePhone(body.phone);
+  if (!name || !clientPhone) return cors(json({ ok: false, error: 'missing_fields' }, 422));
+
+  const total = body.total;
+  const vehicle = body.vehicle ? String(body.vehicle).trim() : '';
+  const services = Array.isArray(body.services) ? body.services.join(', ') : (body.services ? String(body.services).trim() : '');
+  const quoteLine = total ? `$${total}` : 'TBD';
+  // Make's filter: send to the customer UNLESS smsConsent is explicitly "false".
+  const consent = String(body.smsConsent).toLowerCase() !== 'false';
+
+  const first = name.split(/\s+/)[0];
+  const clientMsg =
+    `Hey ${first}, it's Mikey. I got your quote submission on my site. ` +
+    `Whenever you have a minute, feel free to send over the year, make, and model of the car ` +
+    `you'd like detailed, and I'll confirm that price. Talk soon!`;
+  const mikeyMsg = `🔔 NEW QUOTE — ${name}, ${clientPhone}, ${quoteLine}` +
+    (vehicle ? `, ${vehicle}` : '') + (services ? `, ${services}` : '');
+
+  const mikeyAlert = await notifyMikey(`🔔 New quote — ${name}`, mikeyMsg);
+
+  // Record the lead and queue the delayed reach-out via the existing scheduler.
+  const thread = await loadThread(clientPhone);
+  if (!thread.name) thread.name = name;
+  if (!thread.status) { thread.status = 'new'; thread.statusAt = Date.now(); }
+  const detail = [vehicle ? `Vehicle: ${vehicle}` : null, services ? `Services: ${services}` : null, `Quote: ${quoteLine}`].filter(Boolean).join('\n');
+  if (detail && !thread.notes) thread.notes = `QQC quote (${new Date().toLocaleDateString()}):\n${detail}`;
+  let clientSms = 'skipped';
+  if (consent) {
+    thread.scheduled.push({ id: genId(), body: clientMsg, sendAt: Date.now() + 210000 }); // 3.5 min, like Make's Sleep
+    thread.scheduled.sort((a, b) => a.sendAt - b.sendAt);
+    clientSms = 'scheduled';
+  }
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+  return cors(json({ ok: !!mikeyAlert, clientSms, mikeyAlert }, mikeyAlert ? 200 : 207));
 }
 
 async function handleInboundSms(request) {
