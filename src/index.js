@@ -66,7 +66,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-08·v';
+const BUILD = '2026-07-08·w';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -1092,20 +1092,23 @@ async function apiAiDraft(request) {
   const draftText = (data.text || '').trim();
   try {
     if (draftText) {
-      // Polish mode = light proofread only. Keep the sender's exact meaning, wording,
-      // length and voice; fix only mechanics. No transcript, no playbook — those tempt
-      // the model to rewrite. If it's already fine, return it unchanged.
+      // Polish mode = clean up and reword for clarity while keeping the sender's
+      // meaning, facts and casual voice. We include just the voice/tone (not the
+      // whole playbook) so it sounds like Mikey, and forbid changing any facts so
+      // it can't invent prices/times. This actually rewrites awkward phrasing —
+      // it's not a bare proofread.
+      const voice = (cfg.playbook && cfg.playbook.tone) ? `Write in this texting voice:\n${cfg.playbook.tone}\n\n` : '';
       const prompt =
-        `You are lightly proofreading a short text message the user wrote to a customer. ` +
-        `Make ONLY the minimal edits needed to fix spelling, grammar, capitalization and punctuation. ` +
-        `Keep the EXACT meaning, wording, length and casual texting voice. ` +
-        `Do NOT rephrase, do NOT reorder, do NOT add or remove information, and do NOT add greetings, ` +
-        `sign-offs, emojis or pleasantries that aren't already there. ` +
-        `If the message is already correct, return it exactly as-is. ` +
-        `Return ONLY the corrected message text — no quotes, no explanation, no preamble. ` +
-        (hint ? `Extra instruction: ${hint}. ` : '') +
-        `\n\nMessage to proofread:\n${draftText}\n\nCorrected message:`;
-      const text = await geminiGenerate(prompt, { temperature: 0.15, maxTokens: 800 });
+        voice +
+        `You are polishing a short text message the user is about to send a customer. ` +
+        `Rewrite it so it reads clearly and sounds great: fix spelling, grammar and punctuation, and reword any awkward, clunky or confusing phrasing so every sentence makes sense and flows naturally. ` +
+        `KEEP the user's exact meaning and intent. Keep it casual and friendly like a real text — never stiff, formal or corporate — and keep it about the same length (it's a text, so stay concise). ` +
+        `Do NOT add, remove, or change any facts, prices, dates, times, names or details, and do NOT invent anything the user didn't say. ` +
+        `Do NOT add greetings, sign-offs, or emojis that aren't already there. ` +
+        `Return ONLY the polished message — no quotes, no explanation, no preamble. ` +
+        (hint ? `Also follow this instruction: ${hint}. ` : '') +
+        `\n\nMessage to polish:\n${draftText}\n\nPolished message:`;
+      const text = await geminiGenerate(prompt, { temperature: 0.4, maxTokens: 800 });
       return json({ ok: true, draft: text.replace(/^["']|["']$/g, '').trim() });
     }
     const text = await generateReply(thread, cfg, hint);
