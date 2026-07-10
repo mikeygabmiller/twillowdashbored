@@ -1013,7 +1013,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-08·v";
+  var APP_BUILD="2026-07-08·w";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -2488,7 +2488,7 @@
     post("/api/ai/draft",{phone:t.phone,text:text}).then(function(d){
       if(d&&d.ok&&d.draft){
         var changed=d.draft.trim()!==text;
-        showAiReview({title:"Polished",text:d.draft,note:changed?"Same meaning — just fixed the wording.":"Looks good already — no changes needed.",
+        showAiReview({title:"Polished",text:d.draft,note:changed?"Same meaning — cleaned up and reworded to read clearly.":"Looks good already — no changes needed.",
           onAccept:function(){var inp=el("msgInput");inp.value=d.draft;autoGrow();updateCount();inp.focus()},onRegen:aiPolish});
       } else toast("Polish failed: "+((d&&d.error)||"error"),{bad:true});
     }).catch(function(){toast("Network error",{bad:true})})
