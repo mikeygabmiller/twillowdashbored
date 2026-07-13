@@ -719,6 +719,105 @@
 
   /* attribution on sent bubbles */
   .bubble .by{margin-left:6px;opacity:.85;font-weight:600}
+
+  /* ---------- Money tracker (own full-screen section) ---------- */
+  .money{position:fixed;inset:0;z-index:80;background:var(--bg);display:none;flex-direction:column}
+  .mo-head{display:flex;align-items:center;gap:10px;padding:calc(10px + var(--safe-top)) 12px 10px;border-bottom:1px solid var(--line);background:var(--panel);flex:none}
+  .mo-title{flex:1;min-width:0}
+  .mo-title b{font-size:17px;letter-spacing:-.01em}
+  .mo-title small{display:block;color:var(--muted2);font-size:11.5px;margin-top:1px}
+  .mo-body{flex:1;overflow-y:auto;min-height:0;-webkit-overflow-scrolling:touch;padding:14px 14px calc(84px + var(--safe-bottom));max-width:640px;width:100%;margin:0 auto}
+  .mo-nav{position:absolute;left:0;right:0;bottom:0;display:flex;background:rgba(18,18,22,.94);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line2);padding-bottom:var(--safe-bottom);z-index:4}
+  .mo-nav button{flex:1;background:none;border:none;color:var(--muted2);font-size:10.5px;font-weight:700;padding:9px 0 11px;display:flex;flex-direction:column;gap:3px;align-items:center;user-select:none;-webkit-user-select:none}
+  .mo-nav button .e{font-size:20px;line-height:1}
+  .mo-nav button.active{color:var(--accent-text)}
+  .mo-hero{background:linear-gradient(135deg,#1f8a54,#146741);color:#fff;border-radius:18px;padding:16px 18px;margin-bottom:14px;box-shadow:0 12px 28px rgba(31,138,84,.18)}
+  .mo-hero.neg{background:linear-gradient(135deg,#b91c1c,#7f1d1d);box-shadow:0 12px 28px rgba(185,28,28,.2)}
+  .mo-hero .mh-lbl{font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;opacity:.85}
+  .mo-hero .mh-v{font-size:38px;font-weight:800;letter-spacing:-.03em;margin-top:2px}
+  .mo-hero .mh-sub{font-size:12.5px;opacity:.92;margin-top:4px}
+  .mo-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin:4px 0 6px}
+  .mo-btn{display:flex;flex-direction:column;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--line2);border-radius:15px;padding:14px 6px 11px;font-size:12.5px;font-weight:700;color:var(--text);user-select:none;-webkit-user-select:none}
+  .mo-btn .e{font-size:25px;line-height:1}
+  .mo-btn:active{transform:scale(.95)}
+  .mo-btn.income{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text)}
+  .mo-btn.dim{opacity:.72}
+  .mo-sec-h{font-size:13px;font-weight:800;margin:18px 2px 9px;display:flex;align-items:center;gap:7px}
+  .mo-sec-h .n{color:var(--muted2);font-weight:700}
+  .mo-sec-h .r{margin-left:auto;font-size:11.5px;color:var(--muted2);font-weight:600}
+  .mo-row{display:flex;align-items:center;gap:11px;background:var(--panel);border:1px solid var(--line2);border-radius:13px;padding:10px 13px;margin-bottom:7px;cursor:pointer}
+  .mo-row:active{transform:scale(.995)}
+  .mo-row .ee{font-size:19px;flex:none;width:24px;text-align:center}
+  .mo-row .bd{flex:1;min-width:0}
+  .mo-row .l1{font-size:13.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mo-row .l2{font-size:11.5px;color:var(--muted2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+  .mo-row .amt{font-weight:800;font-size:14.5px;flex:none;font-variant-numeric:tabular-nums}
+  .mo-row .amt.in{color:var(--green)}
+  .mo-row .amt.per{color:var(--muted2);font-weight:700}
+  .mo-row .del{flex:none;background:none;border:none;color:var(--muted2);padding:4px;display:flex;cursor:pointer}
+  .mo-row .del:hover{color:var(--accent-text)}
+  .mo-day{font-size:11.5px;font-weight:800;color:var(--muted);margin:14px 2px 7px;display:flex;gap:8px}
+  .mo-day .dt2{margin-left:auto;font-weight:700;color:var(--muted2)}
+  .mo-nudge{background:linear-gradient(135deg,#1c1708,#171310);border:1px solid #4a3a12;border-left:3px solid #f5b842;border-radius:13px;padding:11px 13px;margin-bottom:8px}
+  .mo-nudge .t{font-size:13px;color:#f3ead6;line-height:1.45}
+  .mo-nudge .t b{color:#f5c563}
+  .mo-nudge .acts{display:flex;gap:7px;margin-top:9px}
+  .mo-nudge .acts .btn{font-size:12px;padding:7px 11px}
+  .mo-mnav{display:flex;align-items:center;gap:8px;margin-bottom:12px}
+  .mo-mnav b{flex:1;text-align:center;font-size:15px;letter-spacing:-.01em}
+  .mo-mnav button{background:var(--panel);border:1px solid var(--line);border-radius:10px;color:var(--muted);width:40px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .mo-mnav button:disabled{opacity:.35}
+  .mo-catrow{display:flex;align-items:center;gap:10px;padding:6px 2px;font-size:13px}
+  .mo-catrow .cl{flex:none;width:110px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--muted)}
+  .mo-catrow .bar{flex:1;height:14px;border-radius:5px;background:var(--panel2);overflow:hidden}
+  .mo-catrow .bar span{display:block;height:100%;background:var(--blue);border-radius:4px;min-width:2px}
+  .mo-catrow b{flex:none;min-width:60px;text-align:right;font-variant-numeric:tabular-nums}
+  .mo-chart{background:var(--panel);border:1px solid var(--line2);border-radius:14px;padding:14px 14px 8px;margin-top:14px}
+  .mo-chart .mc-title{font-size:12.5px;font-weight:800;margin-bottom:14px}
+  .mc-bars-wrap{padding-bottom:24px}
+  .mc-bars{display:flex;gap:8px;position:relative}
+  .mc-col{flex:1;position:relative;cursor:pointer;min-width:0}
+  .mc-zero{position:absolute;left:0;right:0;height:1px;background:var(--line)}
+  .mc-bar{position:absolute;left:16%;right:16%;border-radius:4px 4px 0 0;background:#22c55e;min-height:2px}
+  .mc-bar.dim{opacity:.55}
+  .mc-bar.neg{border-radius:0 0 4px 4px;background:#ef4444}
+  .mc-m{position:absolute;left:0;right:0;bottom:-20px;text-align:center;font-size:10.5px;color:var(--muted2);font-weight:700}
+  .mc-val{position:absolute;left:-14px;right:-14px;text-align:center;font-size:10px;font-weight:800;color:var(--text);display:none;white-space:nowrap}
+  .mc-val.show{display:block}
+  .mo-scrim{position:absolute;inset:0;background:rgba(0,0,0,.55);z-index:5;display:none}
+  .mo-scrim.show{display:block}
+  .mo-sheet{position:absolute;left:0;right:0;bottom:0;z-index:6;background:var(--panel3);border-top-left-radius:20px;border-top-right-radius:20px;box-shadow:0 -10px 44px rgba(0,0,0,.55);transform:translateY(102%);transition:transform .24s cubic-bezier(.2,.7,.3,1);max-height:92%;display:flex;flex-direction:column}
+  .mo-sheet.show{transform:translateY(0)}
+  .mo-sheet .sh-hd{display:flex;align-items:center;gap:9px;padding:14px 16px 4px;flex:none}
+  .mo-sheet .sh-hd .e{font-size:21px}
+  .mo-sheet .sh-hd b{flex:1;font-size:15.5px}
+  .mo-sheet .sh-x{background:none;border:none;color:var(--muted);display:flex;padding:4px;cursor:pointer}
+  .mo-sheet .sh-body{overflow-y:auto;min-height:0;padding:0 16px calc(16px + var(--safe-bottom))}
+  .mo-amt{text-align:center;font-size:40px;font-weight:800;letter-spacing:-.02em;padding:6px 0 2px;font-variant-numeric:tabular-nums}
+  .mo-amt small{font-size:22px;color:var(--muted2);vertical-align:8px;margin-right:2px;font-weight:700}
+  .mo-amt.zero{color:var(--muted2)}
+  .mo-pad{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin:8px 0 4px}
+  .mo-pad button{height:50px;border-radius:12px;background:var(--panel2);border:1px solid var(--line);color:var(--text);font-size:21px;font-weight:600;cursor:pointer;user-select:none;-webkit-user-select:none}
+  .mo-pad button:active{background:var(--accent-soft);border-color:var(--accent)}
+  .mo-f-lbl{font-size:10.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:800;margin:13px 0 7px}
+  .mo-chips{display:flex;gap:7px;flex-wrap:wrap}
+  .mo-chip{font-size:12.5px;font-weight:650;padding:8px 13px;border-radius:11px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);cursor:pointer;user-select:none;-webkit-user-select:none}
+  .mo-chip:active{transform:scale(.96)}
+  .mo-chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text)}
+  .mo-in{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:11px;color:var(--text);padding:10px 12px;font-size:14px;outline:none;color-scheme:dark;font-family:inherit}
+  .mo-in:focus{border-color:var(--accent)}
+  .mo-save{width:100%;margin-top:16px;background:var(--accent);border:none;color:#fff;border-radius:13px;padding:14px;font-size:15px;font-weight:800;cursor:pointer;font-family:inherit}
+  .mo-save:active{transform:scale(.98)}
+  .mo-save:disabled{opacity:.5}
+  .mo-delbtn{width:100%;margin-top:9px;background:none;border:none;color:var(--accent-text);font-size:13px;font-weight:700;padding:8px;cursor:pointer;font-family:inherit}
+  .mo-set{background:var(--panel);border:1px solid var(--line2);border-radius:14px;padding:2px 14px;margin-bottom:12px}
+  .mo-srow{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line2);font-size:13.5px}
+  .mo-set .mo-srow:last-child{border-bottom:none}
+  .mo-srow .lb{flex:1;font-weight:600;min-width:0}
+  .mo-srow .lb small{display:block;font-weight:400;color:var(--muted2);font-size:11.5px;margin-top:1px;line-height:1.4}
+  .mo-srow select{background:var(--panel2);border:1px solid var(--line);border-radius:9px;color:var(--text);padding:7px 9px;font-size:13px;font-family:inherit}
+  .mo-empty{display:flex;flex-direction:column;align-items:center;gap:9px;color:var(--muted2);text-align:center;padding:36px 20px;font-size:13px}
+  .mo-empty .e{font-size:38px;opacity:.9}
 </style>
 </head>
 <body>
@@ -747,6 +846,7 @@
       <button class="navitem active" data-tab="home"><span class="ic" data-ic="home"></span><span class="ndot" id="navHome"></span>Home</button>
       <button class="navitem" data-tab="messages"><span class="ic" data-ic="message-square"></span><span class="ndot" id="navUnread"></span>Chats</button>
       <button class="navitem" data-tab="leads"><span class="ic" data-ic="clipboard-list"></span>Leads</button>
+      <button class="navitem" data-tab="money"><span class="ic" data-ic="dollar"></span><span class="ndot" id="navMoney"></span>Money</button>
       <button class="navitem" data-tab="email"><span class="ic" data-ic="mail"></span><span class="ndot" id="navEmail"></span>Email</button>
       <button class="navitem" data-tab="insights"><span class="ic" data-ic="bar-chart"></span>Insights</button>
     </nav>
@@ -890,6 +990,10 @@
           <div id="dtLinked"></div>
         </div>
         <div class="dt-sec">
+          <div class="lbl">Jobs &amp; money</div>
+          <div id="dtMoney"></div>
+        </div>
+        <div class="dt-sec">
           <div class="lbl">Contact</div>
           <div class="infoline"><span>Phone</span><span id="dtPhone"></span></div>
           <div class="infoline"><span>First seen</span><span id="dtSeen"></span></div>
@@ -918,6 +1022,7 @@
     <div class="ditem" data-tab="followups"><span class="ic" data-ic="list-checks"></span>Follow-ups<span class="n" id="mnFollow"></span></div>
     <div class="ditem" data-tab="scheduled"><span class="ic" data-ic="calendar-days"></span>Scheduled<span class="n" id="mnSched"></span></div>
     <div class="ditem" data-tab="archived"><span class="ic" data-ic="archive"></span>Archived<span class="n" id="mnArch"></span></div>
+    <div class="ditem" id="moneyItem"><span class="ic" data-ic="dollar"></span>Money tracker</div>
 
     <div class="sec-lbl">Auto follow-up settings</div>
     <div class="fu-settings" id="fuSettings"></div>
@@ -975,6 +1080,24 @@
   <div class="guide-body" id="guideBody"></div>
 </div>
 
+<!-- ============ Money tracker — its own full-screen section ============ -->
+<div class="money" id="moneyApp">
+  <div class="mo-head">
+    <button class="btn icon" id="moBack" data-ic="chevron-left" aria-label="Back to texting"></button>
+    <div class="mo-title"><b>Money</b><small id="moSub">Mikey's Mobile Detailing</small></div>
+    <button class="btn icon" id="moRefresh" data-ic="refresh-cw" aria-label="Refresh"></button>
+  </div>
+  <div class="mo-body" id="moBody"></div>
+  <nav class="mo-nav" id="moNav">
+    <button data-mv="log" class="active"><span class="e">💵</span>Log</button>
+    <button data-mv="history"><span class="e">🗓️</span>History</button>
+    <button data-mv="report"><span class="e">📊</span>Report</button>
+    <button data-mv="settings"><span class="e">⚙️</span>Settings</button>
+  </nav>
+  <div class="mo-scrim" id="moScrim"></div>
+  <div class="mo-sheet" id="moSheet"></div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -1013,7 +1136,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-08·w";
+  var APP_BUILD="2026-07-13·money";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -1076,7 +1199,9 @@
     "chevron-down":'<path d="m6 9 6 6 6-6"/>',
     "chevron-right":'<path d="m9 18 6-6-6-6"/>',
     "home":'<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
-    "rocket":'<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>'
+    "rocket":'<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>',
+    "download":'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
+    "trash":'<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>'
   };
   function ic(name,size,strokeW){
     size=size||22;var p=ICONS[name];if(p==null)return"";
@@ -1098,7 +1223,7 @@
   function submitLogin(value,wrongMsg){
     el("loginErr").textContent="";
     post("/api/login",{password:value}).then(function(d){
-      if(d&&d.ok){pin="";if(el("loginPass"))el("loginPass").value="";hideLogin();refreshThreads();loadTemplates();checkHealth();startPoll();loadConfig();fetchEmails();fetchInsights();showBuild();if(state.pendingC)openThread(state.pendingC)}
+      if(d&&d.ok){pin="";if(el("loginPass"))el("loginPass").value="";hideLogin();refreshThreads();loadTemplates();checkHealth();startPoll();loadConfig();fetchEmails();fetchInsights();loadMoney();showBuild();if(state.pendingC)openThread(state.pendingC)}
       else{
         el("loginErr").textContent=wrongMsg||"Wrong PIN — try again";
         var box=el("loginBox");if(box){box.classList.remove("pin-shake");void box.offsetWidth;box.classList.add("pin-shake")}
@@ -2090,6 +2215,11 @@
   // Deep link from the "Request a date" email (…/?c=<phone>) — jump straight to the chat.
   function maybeDeepLink(){
     try{
+      // ?money=1 (from the evening-reminder / weekly-recap links) → straight to the tracker
+      if(/[?&]money=1/.test(location.search)){
+        if(window.history&&history.replaceState)history.replaceState(null,"",location.pathname+location.hash);
+        openMoney();return;
+      }
       var m=location.search.match(/[?&]c=([^&#]+)/);
       if(m){state.pendingC=decodeURIComponent(m[1]);
         if(window.history&&history.replaceState)history.replaceState(null,"",location.pathname+location.hash);}
@@ -2265,6 +2395,7 @@
     else{da.innerHTML='— set with <span class="ic-inline">'+ic("bell",12)+'</span>';da.title="";da.onclick=null}
 
     renderLinked();
+    renderDtMoney();
     renderFollowupControls();
     // reset AI summary box when switching conversations
     if(el("aiOut")._phone!==t.phone){el("aiOut").style.display="none";el("aiOut").innerHTML="";el("aiOut")._phone=t.phone}
@@ -2908,7 +3039,7 @@
     if(!e.target.closest("#toolsBtn")&&!e.target.closest("#toolsSheet"))el("toolsSheet").style.display="none";
   });
 
-  Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.onclick=function(){vibrate(6);setTab(b.getAttribute("data-tab"))}});
+  Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.onclick=function(){vibrate(6);var tb=b.getAttribute("data-tab");if(tb==="money")return openMoney();setTab(tb)}});
 
   el("menuBtn").onclick=openDrawer;el("myAvatar").onclick=openDrawer;el("scrim").onclick=closeDrawer;
   el("emailSetupItem").onclick=function(){closeDrawer();openEmailSetup()};
@@ -2925,11 +3056,582 @@
   Array.prototype.forEach.call(document.querySelectorAll(".drawer [data-tab]"),function(it){it.onclick=function(){setTab(it.getAttribute("data-tab"));closeDrawer()}});
   Array.prototype.forEach.call(document.querySelectorAll(".drawer [data-filter]"),function(it){it.onclick=function(){state.tab="messages";state.filter=it.getAttribute("data-filter");setTab("messages");state.filter=it.getAttribute("data-filter");renderFilters();renderMain();closeDrawer()}});
 
+  // ============================================================
+  // 💵 Money tracker — its own full-screen section.
+  // Business-first profit ledger: gross − labor − expenses = net,
+  // personal spending walled off, big-button + numpad entry,
+  // won-lead catch-up nudges, CSV in/out. Every feature has an
+  // off switch in its Settings view.
+  // ============================================================
+  var MO={open:false,view:"log",month:null,today:null,entries:[],summary:null,cfg:null,nudges:[],report:null,loadedOnce:false};
+  var MOS=null; // state of the open entry sheet
+  var dtMoneyCache={};
+  var MO_CATS=[["fuel","Fuel","⛽"],["supplies","Supplies","🧴"],["equipment","Equipment","🛠️"],["food","Food","🌮"],["bills","Bills","📱"],["marketing","Marketing","📣"],["misc","Misc","📦"]];
+  var MO_SUBS={supplies:["Chemicals","Towels","Other"]};
+  var MO_METHODS=["Cash","Venmo","Zelle","Check"];
+  function moCatInfo(id){for(var i=0;i<MO_CATS.length;i++)if(MO_CATS[i][0]===id)return MO_CATS[i];return [id||"misc",id||"Misc","📦"]}
+  function jpName(){return (MO.cfg&&MO.cfg.jpName)||"JP"}
+  function fmtMoney(n){n=+n||0;var neg=n<0;n=Math.abs(n);var s=(n%1)?n.toFixed(2):String(Math.round(n));s=s.replace(/\B(?=(\d{3})+(?!\d))/g,",");return (neg?"-$":"$")+s}
+  function moTodayStr(){if(MO.today)return MO.today;var d=new Date(),p=function(x){return (x<10?"0":"")+x};return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())}
+  function moYesterday(){var y=new Date();y.setDate(y.getDate()-1);var p=function(x){return (x<10?"0":"")+x};return y.getFullYear()+"-"+p(y.getMonth()+1)+"-"+p(y.getDate())}
+  function moCurMonth(){return moTodayStr().slice(0,7)}
+  function monthLabel(m){return new Date(+m.slice(0,4),+m.slice(5,7)-1,1).toLocaleDateString([],{month:"long",year:"numeric"})}
+  function monthShort(m){return new Date(+m.slice(0,4),+m.slice(5,7)-1,1).toLocaleDateString([],{month:"short"})}
+  function moDayLabel(dstr){
+    if(dstr===moTodayStr())return "Today";
+    if(dstr===moYesterday())return "Yesterday";
+    return new Date(+dstr.slice(0,4),+dstr.slice(5,7)-1,+dstr.slice(8,10)).toLocaleDateString([],{weekday:"short",month:"short",day:"numeric"});
+  }
+
+  function openMoney(){MO.open=true;el("moneyApp").style.display="flex";if(!MO.loadedOnce||MO.month!==moCurMonth()){moRender();loadMoney()}else moRender()}
+  function closeMoney(){MO.open=false;el("moneyApp").style.display="none";closeMoSheet()}
+  function refreshMoBadge(){var n=el("navMoney");if(n){var c=(MO.cfg&&MO.cfg.wonNudge!==false)?(MO.nudges||[]).length:0;n.textContent=c;n.className="ndot"+(c?" show":"")}}
+  function loadMoney(month){
+    return api("/api/money"+(month?"?month="+encodeURIComponent(month):"")).then(function(d){
+      if(d&&d.ok){MO.month=d.month;MO.today=d.today;MO.entries=d.entries||[];MO.summary=d.summary;MO.cfg=d.config;
+        if(!month||month===(d.today||"").slice(0,7))MO.nudges=d.nudges||[];
+        MO.loadedOnce=true;refreshMoBadge();if(MO.open)moRender()}
+    }).catch(function(){});
+  }
+  function moSetView(v){
+    MO.view=v;
+    Array.prototype.forEach.call(el("moNav").querySelectorAll("[data-mv]"),function(b){b.classList.toggle("active",b.getAttribute("data-mv")===v)});
+    if(v==="log"&&MO.month!==moCurMonth()){loadMoney();return}
+    moRender();
+  }
+  function moRender(){
+    var box=el("moBody");if(!box)return;box.scrollTop=0;
+    el("moSub").textContent=MO.view==="settings"?"Every feature has an off switch":monthLabel((MO.view==="log"?moCurMonth():(MO.month||moCurMonth())));
+    if(!MO.loadedOnce){box.innerHTML='<div class="mo-empty"><span class="e">💵</span>Loading your money…</div>';return}
+    if(MO.view==="history")return moHistory(box);
+    if(MO.view==="report")return moReport(box);
+    if(MO.view==="settings")return moSettings(box);
+    return moLog(box);
+  }
+
+  // ---- Log (home) view: hero number, nudges, the button grid, today ----
+  function moLog(box){
+    var s=MO.summary||{gross:0,jp:0,exp:0,net:0,jobs:0,personal:0};
+    var h='<div class="mo-hero'+(s.net<0?" neg":"")+'">'+
+      '<div class="mh-lbl">'+esc(monthLabel(moCurMonth()))+' · net profit</div>'+
+      '<div class="mh-v">'+fmtMoney(s.net)+'</div>'+
+      '<div class="mh-sub">'+fmtMoney(s.gross)+' in · '+fmtMoney(s.jp+s.exp)+' out · '+s.jobs+' job'+(s.jobs===1?"":"s")+(s.personal?' · personal '+fmtMoney(s.personal)+' kept separate':'')+'</div></div>';
+    if(MO.cfg&&MO.cfg.wonNudge!==false)(MO.nudges||[]).forEach(function(nd){
+      h+='<div class="mo-nudge"><div class="t">💡 <b>'+esc(nd.name||prettyPhone(nd.phone))+'</b> was marked <b>Won</b> '+esc(fmtTime(nd.wonAt))+' — no job $ logged yet.</div>'+
+        '<div class="acts"><button class="btn accent" data-nlog="'+esc(nd.phone)+'">Log the $</button><button class="btn" data-ndis="'+esc(nd.phone)+'">Dismiss</button></div></div>';
+    });
+    var off=(MO.cfg&&MO.cfg.catsOff)||[];
+    h+='<div class="mo-grid">';
+    h+='<button class="mo-btn income" data-mo="job"><span class="e">💵</span>Detail $</button>';
+    h+='<button class="mo-btn" data-mo="jp"><span class="e">🤝</span>Pay '+esc(jpName())+'</button>';
+    MO_CATS.forEach(function(c){if(off.indexOf(c[0])>=0)return;h+='<button class="mo-btn" data-mo="'+c[0]+'"><span class="e">'+c[2]+'</span>'+esc(c[1])+'</button>'});
+    if(!MO.cfg||MO.cfg.personalEnabled!==false)h+='<button class="mo-btn dim" data-mo="personal"><span class="e">🙈</span>Personal</button>';
+    h+='</div>';
+    var today=moTodayStr();
+    var todays=(MO.entries||[]).filter(function(e){return e.date===today});
+    h+='<div class="mo-sec-h">Today'+(todays.length?' <span class="n">'+todays.length+'</span>':'')+'</div>';
+    if(!todays.length)h+='<div style="color:var(--muted2);font-size:12.5px;padding:2px 2px 10px;line-height:1.5">Nothing logged today — tap a button above. Amount, done. Two taps.</div>';
+    todays.forEach(function(e){h+=moEntryRow(e,true)});
+    box.innerHTML=h;
+    moWireRows(box);
+    Array.prototype.forEach.call(box.querySelectorAll("[data-mo]"),function(b){b.onclick=function(){vibrate(6);openMoSheet(b.getAttribute("data-mo"),null,null)}});
+    Array.prototype.forEach.call(box.querySelectorAll("[data-nlog]"),function(b){b.onclick=function(){var ph=b.getAttribute("data-nlog");var t=threadByPhone(ph);openMoSheet("job",{phone:ph,name:t?displayName(t):prettyPhone(ph)},null)}});
+    Array.prototype.forEach.call(box.querySelectorAll("[data-ndis]"),function(b){b.onclick=function(){var ph=b.getAttribute("data-ndis");postMoCfg({dismissNudge:ph}).then(function(){MO.nudges=(MO.nudges||[]).filter(function(x){return x.phone!==ph});refreshMoBadge();if(MO.open)moRender()})}});
+  }
+
+  // Shared entry row (Today list + History). Tap = edit, trash = delete.
+  function moEntryRow(e,withDel){
+    var icon,l1,l2=[],amtCls="";
+    if(e.type==="job"){icon="💵";l1=e.name?esc(e.name):"Detail job";if(e.service)l2.push(esc(e.service));if(e.method)l2.push(esc(e.method));if(e.city)l2.push(esc(e.city));if(e.jp)l2.push(esc(jpName())+" "+fmtMoney(e.jp));amtCls=" in"}
+    else if(e.type==="jp"){icon="🤝";l1="Paid "+esc(jpName());if(e.note)l2.push(esc(e.note))}
+    else if(e.type==="personal"){icon="🙈";l1=esc(e.cat||"Personal");l2.push("personal · not in profit");amtCls=" per"}
+    else{var c=moCatInfo(e.cat);icon=c[2];l1=esc(c[1])+(e.sub?" · "+esc(e.sub):"");if(e.note)l2.push(esc(e.note))}
+    return '<div class="mo-row" data-eid="'+esc(e.id)+'"><span class="ee">'+icon+'</span>'+
+      '<div class="bd"><div class="l1">'+l1+'</div>'+(l2.length?'<div class="l2">'+l2.join(" · ")+'</div>':'')+'</div>'+
+      '<span class="amt'+amtCls+'">'+(e.type==="job"?"+":"−")+fmtMoney(e.amount)+'</span>'+
+      (withDel?'<button class="del" data-edel="'+esc(e.id)+'|'+esc(e.date)+'" aria-label="Delete">'+ic("trash",15)+'</button>':'')+'</div>';
+  }
+  function moWireRows(box){
+    Array.prototype.forEach.call(box.querySelectorAll(".mo-row[data-eid]"),function(r){
+      r.onclick=function(ev){
+        if(ev.target.closest("[data-edel]"))return;
+        var id=r.getAttribute("data-eid");
+        var e=(MO.entries||[]).filter(function(x){return x.id===id})[0];
+        if(e)openMoSheet(e.type==="exp"?(e.cat||"misc"):e.type,null,e);
+      };
+    });
+    Array.prototype.forEach.call(box.querySelectorAll("[data-edel]"),function(b){
+      b.onclick=function(ev){ev.stopPropagation();var p=b.getAttribute("data-edel").split("|");moDeleteEntry(p[0],p[1])};
+    });
+  }
+  function moDeleteEntry(id,date){
+    if(!confirm("Delete this entry?"))return;
+    post("/api/money/delete",{id:id,date:date}).then(function(d){
+      if(d&&d.ok){toast("Entry deleted");MO.report=null;dtMoneyCache={};closeMoSheet();loadMoney(MO.view==="log"?null:MO.month)}
+      else toast("Couldn't delete: "+((d&&d.error)||"error"),{bad:true});
+    });
+  }
+
+  // ---- entry sheet: numpad + only the fields that matter for the tapped kind ----
+  function moKindInfo(kind){
+    if(kind==="job")return{e:"💵",t:"Detail job $"};
+    if(kind==="jp")return{e:"🤝",t:"Pay "+jpName()};
+    if(kind==="personal")return{e:"🙈",t:"Personal spend"};
+    var c=moCatInfo(kind);return{e:c[2],t:c[1]};
+  }
+  function moCityChips(){
+    var seen={},out=[];
+    (MO.entries||[]).forEach(function(e){if(e.city&&!seen[e.city.toLowerCase()]){seen[e.city.toLowerCase()]=1;out.push(e.city)}});
+    if(!out.length)return"";
+    return '<div class="mo-chips" style="margin-top:7px">'+out.slice(0,4).map(function(c){return '<span class="mo-chip" data-city="'+esc(c)+'">'+esc(c)+'</span>'}).join("")+'</div>';
+  }
+  function openMoSheet(kind,preset,editEntry){
+    preset=preset||{};
+    MOS={kind:kind,amt:"",method:"",service:"",sub:"",phone:preset.phone||"",name:preset.name||"",custQ:"",date:moTodayStr(),id:null,origDate:null};
+    if(editEntry){
+      MOS.id=editEntry.id;MOS.origDate=editEntry.date;MOS.date=editEntry.date;MOS.amt=String(editEntry.amount);
+      MOS.method=editEntry.method||"";MOS.service=editEntry.service||"";MOS.sub=editEntry.sub||"";
+      MOS.phone=editEntry.phone||"";MOS.name=editEntry.name||"";
+    }
+    var ki=moKindInfo(kind);
+    var h='<div class="sh-hd"><span class="e">'+ki.e+'</span><b>'+esc((MOS.id?"Edit · ":"")+ki.t)+'</b><button class="sh-x" id="moShX">'+ic("x",20)+'</button></div><div class="sh-body">';
+    h+='<div class="mo-amt zero" id="moAmt"><small>$</small>0</div>';
+    h+='<div class="mo-pad" id="moPad">'+["1","2","3","4","5","6","7","8","9",".","0","⌫"].map(function(k){return '<button type="button" data-k="'+k+'">'+k+'</button>'}).join("")+'</div>';
+    if(kind==="job"){
+      h+='<div class="mo-f-lbl">Paid by</div><div class="mo-chips" id="moMeth">'+MO_METHODS.map(function(m){return '<span class="mo-chip'+(MOS.method===m?" on":"")+'" data-meth="'+m+'">'+m+'</span>'}).join("")+'</div>';
+      var svc=(MO.cfg&&MO.cfg.serviceTypes)||[];
+      if(svc.length)h+='<div class="mo-f-lbl">Service (optional)</div><div class="mo-chips" id="moSvc">'+svc.map(function(sv){return '<span class="mo-chip'+(MOS.service===sv?" on":"")+'" data-svc="'+esc(sv)+'">'+esc(sv)+'</span>'}).join("")+'</div>';
+      h+='<div class="mo-f-lbl">Customer (optional — links to their texts)</div><div id="moCust"></div>';
+      h+='<div class="mo-f-lbl">'+esc(jpName())+' pay on this job (optional)</div><input class="mo-in" id="moJp" type="text" inputmode="decimal" placeholder="e.g. 40" value="'+esc(editEntry&&editEntry.jp?String(editEntry.jp):"")+'">';
+      h+='<div class="mo-f-lbl">City (optional)</div><input class="mo-in" id="moCity" type="text" placeholder="e.g. Monroe" value="'+esc((editEntry&&editEntry.city)||"")+'">'+moCityChips();
+    }
+    if(MO_SUBS[kind])h+='<div class="mo-f-lbl">What kind?</div><div class="mo-chips" id="moSubChips">'+MO_SUBS[kind].map(function(sb){return '<span class="mo-chip'+(MOS.sub===sb?" on":"")+'" data-sub="'+sb+'">'+sb+'</span>'}).join("")+'</div>';
+    if(kind==="personal")h+='<div class="mo-f-lbl">What was it? (optional)</div><input class="mo-in" id="moPCat" type="text" maxlength="30" placeholder="e.g. Food, Car mods, Books" value="'+esc((editEntry&&editEntry.cat)||"")+'">';
+    h+='<div class="mo-f-lbl">When</div><div class="mo-chips" id="moWhen">'+
+       '<span class="mo-chip" data-when="today">Today</span>'+
+       '<span class="mo-chip" data-when="yest">Yesterday</span>'+
+       '<input type="date" class="mo-in" id="moDate" style="width:auto;flex:1;min-width:132px;padding:7px 10px" value="'+MOS.date+'"></div>';
+    h+='<div class="mo-f-lbl">Note (optional)</div><input class="mo-in" id="moNote" type="text" maxlength="200" placeholder="'+(kind==="jp"?"hours or what for":"anything worth remembering")+'" value="'+esc((editEntry&&editEntry.note)||"")+'">';
+    h+='<button class="mo-save" id="moSave">'+(MOS.id?"Save changes":"Save")+'</button>';
+    if(MOS.id)h+='<button class="mo-delbtn" id="moDelE">Delete this entry</button>';
+    h+='</div>';
+    var sh=el("moSheet");sh.innerHTML=h;
+    el("moScrim").classList.add("show");sh.classList.add("show");
+    moUpdateAmt();moSyncWhenChips();
+    el("moShX").onclick=closeMoSheet;
+    Array.prototype.forEach.call(el("moPad").querySelectorAll("[data-k]"),function(b){b.onclick=function(){moPadKey(b.getAttribute("data-k"))}});
+    var meth=el("moMeth");if(meth)Array.prototype.forEach.call(meth.querySelectorAll("[data-meth]"),function(ch){ch.onclick=function(){var m=ch.getAttribute("data-meth");MOS.method=MOS.method===m?"":m;Array.prototype.forEach.call(meth.querySelectorAll("[data-meth]"),function(x){x.classList.toggle("on",x.getAttribute("data-meth")===MOS.method)})}});
+    var svcW=el("moSvc");if(svcW)Array.prototype.forEach.call(svcW.querySelectorAll("[data-svc]"),function(ch){ch.onclick=function(){var sv=ch.getAttribute("data-svc");MOS.service=MOS.service===sv?"":sv;Array.prototype.forEach.call(svcW.querySelectorAll("[data-svc]"),function(x){x.classList.toggle("on",x.getAttribute("data-svc")===MOS.service)})}});
+    var subW=el("moSubChips");if(subW)Array.prototype.forEach.call(subW.querySelectorAll("[data-sub]"),function(ch){ch.onclick=function(){var sb=ch.getAttribute("data-sub");MOS.sub=MOS.sub===sb?"":sb;Array.prototype.forEach.call(subW.querySelectorAll("[data-sub]"),function(x){x.classList.toggle("on",x.getAttribute("data-sub")===MOS.sub)})}});
+    Array.prototype.forEach.call(sh.querySelectorAll("[data-city]"),function(ch){ch.onclick=function(){var ci=el("moCity");if(ci)ci.value=ch.getAttribute("data-city")}});
+    Array.prototype.forEach.call(el("moWhen").querySelectorAll("[data-when]"),function(ch){ch.onclick=function(){MOS.date=ch.getAttribute("data-when")==="today"?moTodayStr():moYesterday();el("moDate").value=MOS.date;moSyncWhenChips()}});
+    el("moDate").onchange=function(){if(el("moDate").value){MOS.date=el("moDate").value;moSyncWhenChips()}};
+    if(el("moCust"))moRenderCust();
+    el("moSave").onclick=moSaveEntry;
+    var de=el("moDelE");if(de)de.onclick=function(){moDeleteEntry(MOS.id,MOS.origDate)};
+  }
+  function moSyncWhenChips(){
+    var w=el("moWhen");if(!w)return;
+    Array.prototype.forEach.call(w.querySelectorAll("[data-when]"),function(ch){
+      var k=ch.getAttribute("data-when");
+      ch.classList.toggle("on",(k==="today"&&MOS.date===moTodayStr())||(k==="yest"&&MOS.date===moYesterday()));
+    });
+  }
+  function moRenderCust(){
+    var box=el("moCust");if(!box)return;
+    if(MOS.phone){
+      box.innerHTML='<div class="mo-chips"><span class="mo-chip on" id="moCustClr">'+esc(MOS.name||prettyPhone(MOS.phone))+' ✕</span></div>';
+      el("moCustClr").onclick=function(){MOS.phone="";MOS.name="";moRenderCust()};
+      return;
+    }
+    var q=(MOS.custQ||"").toLowerCase();
+    var cands=(state.threads||[]).filter(function(t){return !t.archived&&(!q||(displayName(t)+" "+t.phone).toLowerCase().indexOf(q)>=0)});
+    box.innerHTML='<input class="mo-in" id="moCustQ" type="text" placeholder="Search your texts…" value="'+esc(MOS.custQ||"")+'">'+
+      '<div class="mo-chips" style="margin-top:7px">'+cands.slice(0,4).map(function(t){return '<span class="mo-chip" data-cust="'+esc(t.phone)+'">'+esc(displayName(t))+'</span>'}).join("")+'</div>';
+    var inp=el("moCustQ");
+    inp.oninput=function(){MOS.custQ=inp.value;moRenderCust();var ni=el("moCustQ");if(ni){ni.focus();try{ni.setSelectionRange(ni.value.length,ni.value.length)}catch(e){}}};
+    Array.prototype.forEach.call(box.querySelectorAll("[data-cust]"),function(c){c.onclick=function(){var ph=c.getAttribute("data-cust");var t=threadByPhone(ph);MOS.phone=ph;MOS.name=t?displayName(t):"";moRenderCust()}});
+  }
+  function moUpdateAmt(){
+    var d=el("moAmt");if(!d||!MOS)return;
+    d.className="mo-amt"+((!MOS.amt||+MOS.amt===0)?" zero":"");
+    d.innerHTML='<small>$</small>'+esc(MOS.amt||"0");
+  }
+  function moPadKey(k){
+    if(!MOS)return;var v=MOS.amt||"";
+    if(k==="⌫")v=v.slice(0,-1);
+    else if(k==="."){if(v.indexOf(".")>=0)return;v=(v||"0")+"."}
+    else{
+      var nv=(v==="0")?k:v+k;
+      var parts=nv.split(".");
+      if(parts[0].length>6||(parts[1]&&parts[1].length>2))return;
+      v=nv;
+    }
+    MOS.amt=v;moUpdateAmt();vibrate(4);
+  }
+  function closeMoSheet(){
+    var sh=el("moSheet");if(sh)sh.classList.remove("show");
+    var sc=el("moScrim");if(sc)sc.classList.remove("show");
+  }
+  function moSaveEntry(){
+    var amt=parseFloat(MOS.amt);
+    if(!amt||amt<=0){toast("Enter an amount first",{bad:true});return}
+    var e={amount:amt,date:MOS.date||moTodayStr()};
+    var note=el("moNote")?el("moNote").value.trim():"";if(note)e.note=note;
+    if(MOS.kind==="job"){
+      e.type="job";
+      if(MOS.method)e.method=MOS.method;
+      if(MOS.service)e.service=MOS.service;
+      if(MOS.phone){e.phone=MOS.phone;e.name=MOS.name}
+      var city=el("moCity")?el("moCity").value.trim():"";if(city)e.city=city;
+      var jp=el("moJp")?parseFloat(String(el("moJp").value).replace(/[^0-9.]/g,"")):0;if(jp>0)e.jp=jp;
+    }
+    else if(MOS.kind==="jp")e.type="jp";
+    else if(MOS.kind==="personal"){e.type="personal";var pc=el("moPCat")?el("moPCat").value.trim():"";if(pc)e.cat=pc}
+    else{e.type="exp";e.cat=MOS.kind;if(MOS.sub)e.sub=MOS.sub}
+    if(MOS.id){e.id=MOS.id;e.origDate=MOS.origDate}
+    var isEdit=!!MOS.id;var label=moKindInfo(MOS.kind).t;
+    var b=el("moSave");b.disabled=true;
+    post("/api/money/entry",e).then(function(d){
+      if(d&&d.ok){
+        closeMoSheet();MOS=null;MO.report=null;dtMoneyCache={};
+        toast(isEdit?"Entry updated":("Logged — "+label+" "+fmtMoney(amt)));vibrate(10);
+        loadMoney(MO.view==="log"?null:MO.month);
+      } else {b.disabled=false;toast("Couldn't save: "+((d&&d.error)||"error"),{bad:true})}
+    }).catch(function(){b.disabled=false;toast("Network error",{bad:true})});
+  }
+
+  // ---- History view ----
+  function moMonthNav(m){
+    var isCur=m===moCurMonth();
+    return '<div class="mo-mnav"><button id="moPrev" aria-label="Previous month">'+ic("chevron-left",18)+'</button><b>'+esc(monthLabel(m))+'</b><button id="moNext" aria-label="Next month"'+(isCur?" disabled":"")+'>'+ic("chevron-right",18)+'</button></div>';
+  }
+  function moShiftMonth(m,delta){
+    var y=+m.slice(0,4),mo=+m.slice(5,7)+delta;
+    if(mo<1){y--;mo=12}if(mo>12){y++;mo=1}
+    return y+"-"+(mo<10?"0":"")+mo;
+  }
+  function moWireMonthNav(){
+    var p=el("moPrev"),n=el("moNext");
+    if(p)p.onclick=function(){loadMoney(moShiftMonth(MO.month||moCurMonth(),-1))};
+    if(n)n.onclick=function(){if(!n.disabled)loadMoney(moShiftMonth(MO.month||moCurMonth(),1))};
+  }
+  function moHistory(box){
+    var m=MO.month||moCurMonth();var s=MO.summary||{};
+    var h=moMonthNav(m);
+    h+='<div class="home-strip" style="margin:0 0 6px;justify-content:flex-start">'+
+      '<span>in '+fmtMoney(s.gross||0)+'</span><span>out '+fmtMoney((s.jp||0)+(s.exp||0))+'</span><span>net '+fmtMoney(s.net||0)+'</span>'+
+      ((s.personal||0)?'<span>personal '+fmtMoney(s.personal)+'</span>':'')+'</div>';
+    if(!(MO.entries||[]).length){
+      h+='<div class="mo-empty"><span class="e">🗓️</span>Nothing logged in '+esc(monthLabel(m))+'.</div>';
+      box.innerHTML=h;moWireMonthNav();return;
+    }
+    var lastDay="";
+    (MO.entries||[]).forEach(function(e){
+      if(e.date!==lastDay){
+        lastDay=e.date;
+        var inn=0,out=0;
+        (MO.entries||[]).forEach(function(x){if(x.date!==e.date)return;if(x.type==="job")inn+=x.amount;else if(x.type!=="personal")out+=x.amount});
+        h+='<div class="mo-day">'+esc(moDayLabel(e.date))+'<span class="dt2">'+(inn?"+"+fmtMoney(inn):"")+(inn&&out?" · ":"")+(out?"−"+fmtMoney(out):"")+'</span></div>';
+      }
+      h+=moEntryRow(e,true);
+    });
+    box.innerHTML=h;moWireMonthNav();moWireRows(box);
+  }
+
+  // ---- Report view: tiles, breakdowns, month-vs-month trend ----
+  function moReport(box){
+    var m=MO.month||moCurMonth();
+    var s=MO.summary||{gross:0,jp:0,exp:0,net:0,jobs:0,personal:0,byCat:{},byService:{},byMethod:{}};
+    var avg=s.jobs?s.gross/s.jobs:0;
+    var h=moMonthNav(m);
+    h+='<div class="stat-grid">'+
+      '<div class="stat"><div class="v" style="color:'+(s.net<0?"#ef4444":"var(--green)")+'">'+fmtMoney(s.net)+'</div><div class="k">Net profit</div></div>'+
+      '<div class="stat"><div class="v">'+fmtMoney(s.gross)+'</div><div class="k">Gross income</div></div>'+
+      '<div class="stat"><div class="v">'+fmtMoney(s.jp)+'</div><div class="k">'+esc(jpName())+' / labor</div></div>'+
+      '<div class="stat"><div class="v">'+fmtMoney(s.exp)+'</div><div class="k">Expenses</div></div>'+
+      '<div class="stat"><div class="v">'+s.jobs+'</div><div class="k">Jobs</div></div>'+
+      '<div class="stat"><div class="v">'+(s.jobs?fmtMoney(avg):"—")+'</div><div class="k">Avg ticket</div></div>'+
+    '</div>';
+    if(s.personal)h+='<div class="mo-set" style="margin-top:12px"><div class="mo-srow"><span class="lb">🙈 Personal spending<small>Kept completely separate — never counted in profit.</small></span><b>'+fmtMoney(s.personal)+'</b></div></div>';
+    var cats=Object.keys(s.byCat||{}).sort(function(a,b){return s.byCat[b]-s.byCat[a]});
+    if(cats.length){
+      var mx=s.byCat[cats[0]]||1;
+      h+='<div class="mo-sec-h">Where the money went</div>';
+      cats.forEach(function(c){
+        var ci=moCatInfo(c);
+        h+='<div class="mo-catrow"><span class="cl">'+ci[2]+' '+esc(ci[1])+'</span><div class="bar"><span style="width:'+Math.max(3,Math.round(s.byCat[c]/mx*100))+'%"></span></div><b>'+fmtMoney(s.byCat[c])+'</b></div>';
+      });
+    }
+    var svcs=Object.keys(s.byService||{});
+    if(svcs.length){
+      h+='<div class="mo-sec-h">Average ticket by service</div>';
+      svcs.sort(function(a,b){return s.byService[b].total-s.byService[a].total}).forEach(function(sv){
+        var v=s.byService[sv];
+        h+='<div class="mo-row" style="cursor:default"><span class="ee">🚗</span><div class="bd"><div class="l1">'+esc(sv)+'</div><div class="l2">'+v.n+' job'+(v.n===1?"":"s")+' · '+fmtMoney(v.total)+' total</div></div><span class="amt in">'+fmtMoney(v.total/v.n)+'</span></div>';
+      });
+    }
+    var meths=Object.keys(s.byMethod||{});
+    if(meths.length)h+='<div class="home-strip" style="margin-top:14px;justify-content:flex-start">'+meths.map(function(mm){return '<span>'+esc(mm)+' '+fmtMoney(s.byMethod[mm])+'</span>'}).join("")+'</div>';
+    h+='<div id="moTrend"></div>';
+    box.innerHTML=h;moWireMonthNav();
+    if(MO.report)renderMoTrend(MO.report);
+    else api("/api/money/report?months=6").then(function(d){if(d&&d.ok){MO.report=d.months;if(MO.open&&MO.view==="report")renderMoTrend(d.months)}});
+  }
+  function renderMoTrend(months){
+    var host=el("moTrend");if(!host||!months||!months.length)return;
+    var vals=months.map(function(x){return x.net});
+    var maxV=Math.max.apply(null,vals.concat([0])),minV=Math.min.apply(null,vals.concat([0]));
+    var range=(maxV-minV)||1,H=140,zero=Math.round(maxV/range*H);
+    var maxAbs=Math.max.apply(null,vals.map(function(v){return Math.abs(v)}));
+    var h='<div class="mo-chart"><div class="mc-title">Net profit — last '+months.length+' months</div>'+
+      '<div class="mc-bars-wrap"><div class="mc-bars" style="height:'+H+'px">';
+    months.forEach(function(x,i){
+      var v=x.net,bh=Math.max(2,Math.round(Math.abs(v)/range*H));
+      var top=v>=0?(zero-bh):zero;
+      var isCur=x.month===moCurMonth();
+      var show=isCur||(maxAbs>0&&Math.abs(v)===maxAbs);
+      h+='<div class="mc-col" data-i="'+i+'">'+
+        '<div class="mc-zero" style="top:'+zero+'px"></div>'+
+        '<div class="mc-bar'+(v<0?" neg":"")+(isCur?"":" dim")+'" style="top:'+top+'px;height:'+bh+'px"></div>'+
+        '<div class="mc-val'+(show?" show":"")+'" style="top:'+Math.max(-4,top-15)+'px">'+fmtMoney(v)+'</div>'+
+        '<div class="mc-m">'+esc(monthShort(x.month))+'</div></div>';
+    });
+    h+='</div></div><div style="font-size:11px;color:var(--muted2);padding:0 2px 8px">Tap a bar to show its number.</div></div>';
+    host.innerHTML=h;
+    Array.prototype.forEach.call(host.querySelectorAll(".mc-col"),function(c){
+      c.onclick=function(){var v=c.querySelector(".mc-val");if(v)v.classList.toggle("show")};
+    });
+  }
+
+  // ---- Settings view: every feature has an off switch ----
+  function moSettings(box){
+    var c=MO.cfg||{};
+    function sw(key,on){return '<span class="sw'+(on?" on":"")+'" data-mosw="'+key+'"></span>'}
+    function hourSel(id,val){var o="";for(var hh=6;hh<=22;hh++){o+='<option value="'+hh+'"'+(hh===val?" selected":"")+'>'+((hh%12)||12)+(hh<12?"am":"pm")+'</option>'}return '<select id="'+id+'">'+o+'</select>'}
+    var days=["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+    var h='<div class="mo-sec-h">Reminders</div><div class="mo-set">';
+    h+='<div class="mo-srow"><span class="lb">Evening “log today?” nudge<small>Only fires when nothing got logged that day. Delivered by email when alerts are set up, otherwise by text.</small></span>'+sw("reminderEnabled",c.reminderEnabled!==false)+'</div>';
+    if(c.reminderEnabled!==false)h+='<div class="mo-srow"><span class="lb">Send it around</span>'+hourSel("moRemHour",c.reminderHour==null?19:c.reminderHour)+'</div>';
+    h+='<div class="mo-srow"><span class="lb">Weekly recap<small>Gross, labor, expenses, net and job count for the week.</small></span>'+sw("weeklyEmail",c.weeklyEmail!==false)+'</div>';
+    if(c.weeklyEmail!==false)h+='<div class="mo-srow"><span class="lb">Every</span><select id="moWkDay">'+days.map(function(dd,i){return '<option value="'+i+'"'+(i===(c.weeklyDay==null?0:c.weeklyDay)?" selected":"")+'>'+dd+'</option>'}).join("")+'</select>'+hourSel("moWkHour",c.weeklyHour==null?17:c.weeklyHour)+'</div>';
+    h+='</div>';
+    h+='<div class="mo-sec-h">Smart nudges</div><div class="mo-set">';
+    h+='<div class="mo-srow"><span class="lb">Won-job catch-up<small>Flags leads you marked Won but never logged money for.</small></span>'+sw("wonNudge",c.wonNudge!==false)+'</div>';
+    h+='</div>';
+    h+='<div class="mo-sec-h">Buckets &amp; buttons</div><div class="mo-set">';
+    h+='<div class="mo-srow"><span class="lb">Personal bucket<small>Log personal spending separately — it never touches business profit.</small></span>'+sw("personalEnabled",c.personalEnabled!==false)+'</div>';
+    h+='<div class="mo-srow" style="flex-direction:column;align-items:stretch;gap:9px"><span class="lb">Buttons on the Log screen<small>Tap to show or hide a category.</small></span><div class="mo-chips">'+MO_CATS.map(function(cc){var on=(c.catsOff||[]).indexOf(cc[0])<0;return '<span class="mo-chip'+(on?" on":"")+'" data-catoff="'+cc[0]+'">'+cc[2]+' '+cc[1]+'</span>'}).join("")+'</div></div>';
+    h+='</div>';
+    h+='<div class="mo-sec-h">Job options</div><div class="mo-set">';
+    h+='<div class="mo-srow"><span class="lb">Helper’s name<small>Shows on the pay button and reports.</small></span><input class="mo-in" id="moJpName" style="width:110px" maxlength="20" value="'+esc(c.jpName||"JP")+'"></div>';
+    h+='<div class="mo-srow" style="flex-direction:column;align-items:stretch;gap:9px"><span class="lb">Service types<small>Comma-separated — these become the chips on a job.</small></span><input class="mo-in" id="moSvcTypes" value="'+esc((c.serviceTypes||[]).join(", "))+'"></div>';
+    h+='</div>';
+    h+='<div class="mo-sec-h">Recurring bills</div><div class="mo-set">';
+    h+='<div class="mo-srow"><span class="lb">Auto-post monthly bills<small>Insurance, phone, software — posted automatically each month.</small></span>'+sw("recurringEnabled",c.recurringEnabled!==false)+'</div>';
+    (c.recurring||[]).forEach(function(r){
+      h+='<div class="mo-srow"><span class="lb">'+esc(r.label)+'<small>'+fmtMoney(r.amount)+' · '+(r.personal?"personal":esc(moCatInfo(r.cat)[1]))+' · posts day '+r.day+'</small></span><button class="btn icon" data-rdel="'+esc(r.id)+'" style="width:34px;height:34px" aria-label="Remove">'+ic("x",16)+'</button></div>';
+    });
+    h+='<div class="mo-srow"><button class="btn ic-btn" id="moRecAdd" style="width:100%">'+ic("plus",15)+'<span>Add a recurring bill</span></button></div>';
+    h+='</div>';
+    h+='<div class="mo-sec-h">Your data</div><div class="mo-set">';
+    h+='<div class="mo-srow"><span class="lb">Export everything<small>Full CSV of every entry, anytime. No lock-in.</small></span><button class="btn ic-btn" id="moExport">'+ic("download",15)+'<span>CSV</span></button></div>';
+    h+='<div class="mo-srow"><span class="lb">Import from your old app<small>Paste or upload its CSV — you map the categories before anything saves.</small></span><button class="btn" id="moImportBtn">Import</button></div>';
+    h+='</div>';
+    box.innerHTML=h;
+    Array.prototype.forEach.call(box.querySelectorAll("[data-mosw]"),function(s){
+      s.onclick=function(){var k=s.getAttribute("data-mosw");var patch={};patch[k]=!s.classList.contains("on");postMoCfg(patch)};
+    });
+    Array.prototype.forEach.call(box.querySelectorAll("[data-catoff]"),function(ch){
+      ch.onclick=function(){var id=ch.getAttribute("data-catoff");var off=((MO.cfg&&MO.cfg.catsOff)||[]).slice();var i=off.indexOf(id);if(i>=0)off.splice(i,1);else off.push(id);postMoCfg({catsOff:off})};
+    });
+    var rh=el("moRemHour");if(rh)rh.onchange=function(){postMoCfg({reminderHour:+rh.value})};
+    var wd=el("moWkDay");if(wd)wd.onchange=function(){postMoCfg({weeklyDay:+wd.value})};
+    var wh=el("moWkHour");if(wh)wh.onchange=function(){postMoCfg({weeklyHour:+wh.value})};
+    var jn=el("moJpName");if(jn)jn.onchange=function(){postMoCfg({jpName:jn.value.trim()||"JP"}).then(function(){toast("Saved")})};
+    var st2=el("moSvcTypes");if(st2)st2.onchange=function(){postMoCfg({serviceTypes:st2.value.split(",").map(function(x){return x.trim()}).filter(Boolean)}).then(function(){toast("Service types saved")})};
+    Array.prototype.forEach.call(box.querySelectorAll("[data-rdel]"),function(b){
+      b.onclick=function(){
+        var id=b.getAttribute("data-rdel");
+        var r=((MO.cfg&&MO.cfg.recurring)||[]).filter(function(x){return x.id===id})[0];
+        if(!confirm("Remove "+(r?r.label:"this bill")+"? Entries already posted stay."))return;
+        postMoCfg({recurring:((MO.cfg&&MO.cfg.recurring)||[]).filter(function(x){return x.id!==id})});
+      };
+    });
+    var ra=el("moRecAdd");if(ra)ra.onclick=moAddRecurring;
+    var ex=el("moExport");if(ex)ex.onclick=function(){location.href="/api/money/export"};
+    var im=el("moImportBtn");if(im)im.onclick=openMoImport;
+  }
+  function moAddRecurring(){
+    var label=prompt("Bill name (e.g. Insurance):");if(label===null||!label.trim())return;
+    var amt=parseFloat(prompt("Monthly amount ($):")||"");if(!amt||amt<=0){toast("Need a dollar amount",{bad:true});return}
+    var day=parseInt(prompt("Post on which day of the month? (1–28)","1")||"1",10)||1;day=Math.min(28,Math.max(1,day));
+    var list=((MO.cfg&&MO.cfg.recurring)||[]).concat([{id:"r"+Date.now().toString(36),label:label.trim(),amount:amt,cat:"bills",day:day}]);
+    postMoCfg({recurring:list}).then(function(d){if(d&&d.ok)toast("Added — posts on day "+day+" each month")});
+  }
+  function postMoCfg(patch){
+    return post("/api/money/config",patch).then(function(d){
+      if(d&&d.ok){MO.cfg=d.config;refreshMoBadge();if(MO.open)moRender()}
+      else toast("Couldn't save setting",{bad:true});
+      return d;
+    });
+  }
+
+  // ---- CSV import: parse client-side, map categories, then send clean entries ----
+  function moParseCSV(text){
+    var rows=[],row=[],cur="",q=false;
+    for(var i=0;i<text.length;i++){
+      var ch=text[i];
+      if(q){if(ch==='"'){if(text[i+1]==='"'){cur+='"';i++}else q=false}else cur+=ch}
+      else if(ch==='"')q=true;
+      else if(ch===","){row.push(cur);cur=""}
+      else if(ch==="\n"||ch==="\r"){if(ch==="\r"&&text[i+1]==="\n")i++;row.push(cur);cur="";if(row.length>1||String(row[0]).trim()!=="")rows.push(row);row=[]}
+      else cur+=ch;
+    }
+    if(cur!==""||row.length){row.push(cur);if(row.length>1||String(row[0]).trim()!=="")rows.push(row)}
+    return rows;
+  }
+  function moNormDate(s){
+    s=String(s==null?"":s).trim();var m;var p=function(x){x=+x;return (x<10?"0":"")+x};
+    if((m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)))return m[1]+"-"+p(m[2])+"-"+p(m[3]);
+    if((m=s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/))){var y=m[3].length===2?("20"+m[3]):m[3];return y+"-"+p(m[1])+"-"+p(m[2])}
+    var d=new Date(s);if(!isNaN(d)&&d.getFullYear()>2000)return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate());
+    return null;
+  }
+  function moNormAmt(s){
+    s=String(s==null?"":s).replace(/[$,\s]/g,"");
+    if(/^\(.*\)$/.test(s))s="-"+s.slice(1,-1);
+    var n=parseFloat(s);return isFinite(n)?n:null;
+  }
+  var MO_IMPORT_TARGETS=[["job","Income (job $)"],["fuel","Fuel"],["supplies","Supplies"],["equipment","Equipment"],["food","Food"],["bills","Bills"],["marketing","Marketing"],["misc","Misc"],["jp","Labor (helper pay)"],["personal","Personal"],["skip","— Skip these —"]];
+  function moGuessTarget(s){
+    s=String(s||"").toLowerCase();
+    if(/(income|deposit|payment|detail|job|revenue|sale)/.test(s))return"job";
+    if(/(gas|fuel|shell|chevron|arco)/.test(s))return"fuel";
+    if(/(supply|supplies|chemical|soap|towel|wax|polish)/.test(s))return"supplies";
+    if(/(equip|machine|tool|vacuum|extractor|pressure)/.test(s))return"equipment";
+    if(/(food|restaurant|coffee|lunch|dinner|snack|eat)/.test(s))return"food";
+    if(/(insurance|phone|subscription|software|bill|internet)/.test(s))return"bills";
+    if(/(marketing|advert|\bads?\b|promo)/.test(s))return"marketing";
+    if(/(labor|payroll|helper|\bjp\b)/.test(s))return"jp";
+    if(/(personal|car mod|book|headphone|game|gift|clothes)/.test(s))return"personal";
+    return"misc";
+  }
+  function openMoImport(){
+    var o=document.createElement("div");o.className="setup-overlay";
+    o.innerHTML='<div class="setup-box"><div class="setup-head"><h3>Import from your old app</h3><button class="setup-x" aria-label="Close">'+ic("x",20)+'</button></div>'+
+      '<div class="setup-body" id="moImpBody">'+
+        '<div class="setup-note">Export a CSV from your current expense app, then choose the file or paste it below. Nothing saves until you\'ve mapped your old categories and hit Import — and re-running the same import won\'t double anything up.</div>'+
+        '<input type="file" id="moImpFile" accept=".csv,text/csv,text/plain" style="margin-bottom:10px;width:100%;color:var(--text)">'+
+        '<textarea id="moImpTa" class="mo-in" style="height:140px;resize:vertical" placeholder="…or paste the CSV text here"></textarea>'+
+        '<div class="rm-acts"><button class="btn accent" id="moImpNext" style="flex:1">Continue</button></div>'+
+      '</div></div>';
+    document.body.appendChild(o);
+    o.querySelector(".setup-x").onclick=function(){o.remove()};
+    o.addEventListener("click",function(e){if(e.target===o)o.remove()});
+    el("moImpFile").onchange=function(){
+      var f=el("moImpFile").files[0];if(!f)return;
+      var r=new FileReader();r.onload=function(){el("moImpTa").value=String(r.result||"")};r.readAsText(f);
+    };
+    el("moImpNext").onclick=function(){moImportStep2(o)};
+  }
+  function moImportStep2(o){
+    var rows=moParseCSV(el("moImpTa").value||"");
+    if(!rows.length){toast("Paste or choose a CSV first",{bad:true});return}
+    var head=rows[0].map(function(x){return String(x).toLowerCase().trim()});
+    var find=function(re){for(var i=0;i<head.length;i++)if(re.test(head[i]))return i;return -1};
+    var dateCol=find(/date/),amtCol=find(/amount|total|price|cost|value/),catCol=find(/categor|type|tag|folder|bucket/),noteCol=find(/note|desc|memo|payee|title|item|merchant|name/);
+    var hasHeader=dateCol>=0||amtCol>=0||catCol>=0;
+    var data=hasHeader?rows.slice(1):rows;
+    var width=(rows[0]||[]).length;
+    if(dateCol<0){var best=-1,bestN=0,ci;for(ci=0;ci<width;ci++){var n=0;data.slice(0,25).forEach(function(r){if(moNormDate(r[ci]))n++});if(n>bestN){bestN=n;best=ci}}dateCol=best}
+    if(amtCol<0){var bA=-1,bAN=0,cj;for(cj=0;cj<width;cj++){if(cj===dateCol)continue;var n2=0;data.slice(0,25).forEach(function(r){var a=moNormAmt(r[cj]);if(a!=null&&a!==0)n2++});if(n2>bAN){bAN=n2;bA=cj}}amtCol=bA}
+    if(dateCol<0||amtCol<0){toast("Couldn't find a date and amount column in that CSV",{bad:true});return}
+    var parsed=[];
+    data.forEach(function(r){
+      var d=moNormDate(r[dateCol]),a=moNormAmt(r[amtCol]);
+      if(!d||a==null||!a)return;
+      parsed.push({date:d,amount:Math.abs(a),cat:catCol>=0?String(r[catCol]||"").trim():"",note:noteCol>=0?String(r[noteCol]||"").trim().slice(0,200):""});
+    });
+    if(!parsed.length){toast("No usable rows found in that CSV",{bad:true});return}
+    var groups={};parsed.forEach(function(p){var k=p.cat||"(no category)";(groups[k]=groups[k]||[]).push(p)});
+    var body=el("moImpBody");
+    var h='<div class="setup-note">Found <b>'+parsed.length+'</b> entries. Map each of your old categories to a bucket, then import.</div>';
+    Object.keys(groups).forEach(function(g){
+      h+='<div class="mo-srow" style="border-bottom:1px solid var(--line2)"><span class="lb">'+esc(g)+'<small>'+groups[g].length+' entr'+(groups[g].length===1?"y":"ies")+'</small></span>'+
+        '<select data-map="'+esc(g)+'">'+MO_IMPORT_TARGETS.map(function(t){return '<option value="'+t[0]+'"'+(t[0]===moGuessTarget(g)?" selected":"")+'>'+t[1]+'</option>'}).join("")+'</select></div>';
+    });
+    h+='<div class="rm-acts"><button class="btn accent" id="moImpGo" style="flex:1">Import</button></div>';
+    body.innerHTML=h;
+    el("moImpGo").onclick=function(){
+      var map={};Array.prototype.forEach.call(body.querySelectorAll("[data-map]"),function(s){map[s.getAttribute("data-map")]=s.value});
+      var out=[];
+      parsed.forEach(function(p){
+        var t=map[p.cat||"(no category)"]||"misc";
+        if(t==="skip")return;
+        var e={date:p.date,amount:p.amount};
+        if(p.note)e.note=p.note;
+        if(t==="job")e.type="job";
+        else if(t==="jp")e.type="jp";
+        else if(t==="personal"){e.type="personal";if(p.cat)e.cat=p.cat}
+        else{e.type="exp";e.cat=t}
+        out.push(e);
+      });
+      if(!out.length){toast("Everything is set to Skip",{bad:true});return}
+      var g=el("moImpGo");g.disabled=true;g.innerHTML='<span class="spin"></span> Importing…';
+      post("/api/money/import",{entries:out}).then(function(d){
+        if(d&&d.ok){o.remove();MO.report=null;dtMoneyCache={};toast("Imported "+d.imported+" entries across "+d.months+" month"+(d.months===1?"":"s")+(d.skipped?" · "+d.skipped+" skipped":""));loadMoney()}
+        else{g.disabled=false;g.textContent="Import";toast("Import failed: "+((d&&d.error)||"error"),{bad:true})}
+      }).catch(function(){g.disabled=false;g.textContent="Import";toast("Network error",{bad:true})});
+    };
+  }
+
+  // ---- cross-link: "Jobs & money" in the conversation details panel ----
+  function renderDtMoney(){
+    var t=state.thread;var box=el("dtMoney");if(!box||!t)return;
+    var c=dtMoneyCache[t.phone];
+    var btn='<button class="btn ic-btn" id="dtMoneyLog" style="width:100%;margin-top:9px">'+ic("dollar",15)+'<span>Log a job $</span></button>';
+    if(!c){
+      box.innerHTML='<div style="color:var(--muted2);font-size:12px;padding:2px 0 4px">Loading…</div>'+btn;
+      wireDtMoneyLog();
+      api("/api/money/by-phone?phone="+encodeURIComponent(t.phone)).then(function(d){
+        if(d&&d.ok){dtMoneyCache[t.phone]=d;if(state.thread&&state.thread.phone===t.phone)renderDtMoney()}
+        else{box.innerHTML='<div style="color:var(--muted2);font-size:12px;padding:2px 0 4px">Money tracker unavailable.</div>'+btn;wireDtMoneyLog()}
+      }).catch(function(){});
+      return;
+    }
+    var h="";
+    if(c.jobs){
+      h+='<div class="infoline"><span>Jobs logged</span><span>'+c.jobs+'</span></div>'+
+         '<div class="infoline"><span>Total paid you</span><span style="color:var(--green);font-weight:700">'+fmtMoney(c.total)+'</span></div>';
+      (c.entries||[]).filter(function(e){return e.type==="job"}).slice(0,3).forEach(function(e){
+        h+='<div class="infoline"><span>'+esc(e.date)+(e.service?" · "+esc(e.service):"")+'</span><span>'+fmtMoney(e.amount)+'</span></div>';
+      });
+    } else h+='<div style="color:var(--muted2);font-size:12px;padding:2px 0 4px">No jobs logged for this customer yet.</div>';
+    box.innerHTML=h+btn;
+    wireDtMoneyLog();
+  }
+  function wireDtMoneyLog(){
+    var b=el("dtMoneyLog");if(!b)return;
+    b.onclick=function(){
+      var t=state.thread;if(!t)return;
+      closeDetails();openMoney();
+      setTimeout(function(){openMoSheet("job",{phone:t.phone,name:displayName(t)},null)},120);
+    };
+  }
+
+  // ---- money wiring ----
+  el("moBack").onclick=closeMoney;
+  el("moRefresh").onclick=function(){MO.report=null;loadMoney(MO.view==="log"?null:MO.month);toast("Refreshed")};
+  Array.prototype.forEach.call(el("moNav").querySelectorAll("[data-mv]"),function(b){b.onclick=function(){vibrate(6);moSetView(b.getAttribute("data-mv"))}});
+  el("moScrim").onclick=closeMoSheet;
+  el("moneyItem").onclick=function(){closeDrawer();openMoney()};
+
   // ---- boot ----
   hydrateIcons();
   el("myAvatar").innerHTML=brandGlyph();el("drawerLogo").innerHTML=brandGlyph();el("loginLogo").innerHTML=brandGlyph();
   applyTheme(themePref());loadAccent();buildAccents();buildThemeSeg();buildTplMenu();loadTemplates();buildQuickset();
-  renderFilters();refreshThreads();startPoll();checkHealth();loadConfig();showBuild();fetchEmails();fetchInsights();
+  renderFilters();refreshThreads();startPoll();checkHealth();loadConfig();showBuild();fetchEmails();fetchInsights();loadMoney();
   maybeDeepLink();
 })();
 </script>
