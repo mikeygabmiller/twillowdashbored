@@ -219,6 +219,9 @@
   .msg-media{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:4px}
   .msg-img{max-width:230px;max-height:290px;border-radius:12px;cursor:zoom-in;display:block;background:var(--panel2);object-fit:cover}
   .msg-file{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:inherit;text-decoration:underline;padding:4px 0}
+  .msg-vm{margin-bottom:6px}
+  .msg-vm audio{display:block;width:230px;max-width:100%;height:36px}
+  .msg-vm .vm-fail{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;opacity:.7;margin-top:3px}
   .load-media{display:inline-flex;align-items:center;gap:7px;background:rgba(127,127,127,.16);border:1px solid rgba(127,127,127,.35);color:inherit;border-radius:11px;padding:8px 12px;font-size:12.5px;cursor:pointer;font-weight:600}
   .load-media:hover{background:rgba(127,127,127,.28)}
   .load-media svg{width:14px;height:14px}
@@ -2218,7 +2221,12 @@
         if(m.dir==="in"&&m.media.some(function(mm){return /^image\//.test(mm.type||"")||!mm.type}))mediaHTML+='<button class="pq-btn" data-photoquote="1">'+ic("sparkles",14)+' AI quote from photo</button>';
       }
       else if(legacyAtt){mediaHTML='<button class="load-media" data-loadmedia="1">'+ic("image",14)+' Load photo</button>';}
-      b.innerHTML=mediaHTML+(shownBody?hlBody(shownBody):"")+'<span class="t">'+fmtTime(m.ts)+(m.kind&&m.kind!=="manual"&&m.dir==="out"?'<span class="kind">'+esc(m.kind)+'</span>':'')+(m.by&&m.dir==="out"?'<span class="by">'+esc(m.by)+'</span>':'')+'</span>'+(m.error?'<span class="err">'+ic("alert",11)+' '+esc(m.error)+'</span>':'')+delivHTML(m,idx===t.messages.length-1);
+      var voHTML="";
+      if(m.recording){
+        var vpu="/api/media?u="+encodeURIComponent(m.recording);
+        voHTML='<div class="msg-vm"><audio controls preload="none" src="'+esc(vpu)+'"></audio>'+(m.transcriptFailed&&!m.transcript?'<span class="vm-fail">'+ic("alert",11)+' Auto-transcript unavailable — tap play to listen</span>':'')+'</div>';
+      }
+      b.innerHTML=mediaHTML+voHTML+(shownBody?hlBody(shownBody):"")+'<span class="t">'+fmtTime(m.ts)+(m.kind&&m.kind!=="manual"&&m.dir==="out"?'<span class="kind">'+esc(m.kind)+'</span>':'')+(m.by&&m.dir==="out"?'<span class="by">'+esc(m.by)+'</span>':'')+'</span>'+(m.error?'<span class="err">'+ic("alert",11)+' '+esc(m.error)+'</span>':'')+delivHTML(m,idx===t.messages.length-1);
       box.appendChild(b);lastDir=m.dir;
     });
     Array.prototype.forEach.call(box.querySelectorAll("[data-resend]"),function(btn){

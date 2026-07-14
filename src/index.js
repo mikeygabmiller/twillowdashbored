@@ -495,10 +495,34 @@ async function handleVoicemailDone(request) {
   const params = await formParams(request);
   if (!(await verifyTwilio(request, params))) return forbidden();
   const from = params.From || 'Unknown';
+  const fromNorm = normalizePhone(from) || from;
   const recordingUrl = params.RecordingUrl || '';
+  const recordingSid = params.RecordingSid || '';
   const duration = params.RecordingDuration || '?';
-  if (recordingUrl) {
-    await notifyMikey(`🎙️ Voicemail from ${from}`, `Voicemail from ${from} (${duration}s):\n${recordingUrl}.mp3`);
+  if (recordingUrl && fromNorm !== normalizePhone(ENV.MIKEY_PHONE)) {
+    // Drop the voicemail into the caller's thread right away — with the recording
+    // attached — so it's visible AND playable in the dashboard even if the
+    // transcript is delayed or never comes (silence/noise/non-English). The
+    // transcript callback (/voicemail-tx) fills the text into this same message,
+    // matched by RecordingSid so we never show two bubbles for one voicemail.
+    const thread = await loadThread(fromNorm);
+    const dup = (thread.messages || []).some((m) => m.kind === 'voicemail' && recordingSid && m.recordingSid === recordingSid);
+    if (!dup) {
+      thread.messages.push({
+        id: genId(),
+        dir: 'in',
+        body: `🎙️ Voicemail (${duration}s)`,
+        ts: Date.now(),
+        kind: 'voicemail',
+        recording: recordingUrl + '.mp3',
+        recordingSid: recordingSid || undefined,
+      });
+      thread.unread = (thread.unread || 0) + 1;
+      if (!thread.status) { thread.status = 'new'; thread.statusAt = Date.now(); }
+      await saveThread(thread);
+      await updateIndexEntry(thread);
+    }
+    await notifyMikey(`🎙️ Voicemail from ${from}`, `Voicemail from ${from} (${duration}s). Open the dashboard to listen.`);
   }
   return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
 }
@@ -515,19 +539,50 @@ async function handleVoicemailTranscription(request) {
   const text = (params.TranscriptionText || '').trim();
   const status = params.TranscriptionStatus || '';
   const recording = params.RecordingUrl || '';
+  const recordingSid = params.RecordingSid || '';
   if (fromNorm === normalizePhone(ENV.MIKEY_PHONE)) return new Response('', { status: 204 });
+
+  // /voicemail-done normally already stored the voicemail (with the recording).
+  // Find it by RecordingSid so we update that bubble in place instead of adding a
+  // second one. Fall back to appending if this callback somehow arrives first.
+  const thread = await loadThread(fromNorm);
+  const existing = (thread.messages || []).find((m) => m.kind === 'voicemail' && recordingSid && m.recordingSid === recordingSid);
+
   if (status !== 'completed' || !text) {
-    // Transcription failed (silence, noise, non-English). The .mp3 alert from
-    // /voicemail-done already went out, so just acknowledge.
+    // Transcription unavailable (silence, noise, non-English). Mark the stored
+    // voicemail so the UI stops implying text is still coming; the recording is
+    // still there to play. Nothing stored + no text → just acknowledge.
+    if (existing && !existing.transcript) {
+      existing.transcriptFailed = true;
+      await saveThread(thread);
+      await updateIndexEntry(thread);
+    }
     return new Response('', { status: 204 });
   }
-  await appendMessage(fromNorm, {
-    dir: 'in',
-    body: `🎙️ Voicemail: "${text}"`,
-    ts: Date.now(),
-    kind: 'voicemail',
-    recording: recording ? recording + '.mp3' : undefined,
-  });
+
+  if (existing) {
+    existing.body = `🎙️ Voicemail: "${text}"`;
+    existing.transcript = text;
+    existing.transcriptFailed = false;
+    if (!existing.recording && recording) existing.recording = recording + '.mp3';
+    await saveThread(thread);
+    await updateIndexEntry(thread);
+  } else {
+    thread.messages.push({
+      id: genId(),
+      dir: 'in',
+      body: `🎙️ Voicemail: "${text}"`,
+      ts: Date.now(),
+      kind: 'voicemail',
+      transcript: text,
+      recording: recording ? recording + '.mp3' : undefined,
+      recordingSid: recordingSid || undefined,
+    });
+    thread.unread = (thread.unread || 0) + 1;
+    if (!thread.status) { thread.status = 'new'; thread.statusAt = Date.now(); }
+    await saveThread(thread);
+    await updateIndexEntry(thread);
+  }
   notifyMikey(`🎙️ Voicemail transcript from ${from}`, `"${text}"\n\nOpen the dashboard to reply.`).catch(() => {});
   return new Response('', { status: 204 });
 }
