@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-14·goals';
+const BUILD = '2026-07-14·hero';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -1696,7 +1696,26 @@ function defaultMoneyConfig() {
                             // cat ∈ MONEY_CATS ∪ {'jp','expenses','personal'}
     goals: [],              // targets: { id, label, type, target, deadline, startMonth }
                             // type ∈ 'net'|'gross'|'jobs'|'save' (save = cumulative net by a deadline)
+    hero: defaultHero(),    // the customizable Log-screen headline (see defaultHero)
   };
+}
+
+// The Log-screen headline. Defaults to the running balance (all money you have
+// now) up top, with this month's income, spend and top spending category below —
+// every slot is swappable from the in-app customizer.
+function defaultHero() {
+  return { primary: 'balance', stats: ['monthIn', 'monthOut', 'topCat'], startingBalance: 0, title: '' };
+}
+const HERO_METRICS = ['balance', 'monthNet', 'monthIn', 'monthOut', 'monthJobs', 'monthAvg', 'topCat', 'monthPersonal', 'allIn', 'allOut'];
+function sanitizeHero(h, prev) {
+  const out = Object.assign(defaultHero(), prev || {});
+  if (h && typeof h === 'object') {
+    if (HERO_METRICS.includes(h.primary)) out.primary = h.primary;
+    if (Array.isArray(h.stats)) out.stats = h.stats.filter((x) => HERO_METRICS.includes(x)).slice(0, 3);
+    if (h.startingBalance != null && !isNaN(+h.startingBalance)) out.startingBalance = money2(h.startingBalance);
+    if (typeof h.title === 'string') out.title = h.title.slice(0, 40);
+  }
+  return out;
 }
 
 // Buckets a budget cap can target: any expense category, labor, all business
@@ -1826,6 +1845,21 @@ function postRecurring(cfg, monthKeyStr, doc, todayStr) {
   return changed;
 }
 
+// All-time rollup across every month doc — the "money you have now" balance and
+// the lifetime income/spend totals the customizable hero can show. A handful of
+// KV reads (one per month with data); reads are the cheap side of the budget.
+async function allTimeSummary() {
+  const list = await kv().list({ prefix: 'money:m:' });
+  const s = { gross: 0, jp: 0, exp: 0, personal: 0, net: 0, jobs: 0, months: 0 };
+  for (const k of (list.keys || [])) {
+    const doc = await kv().get(k.name, { type: 'json' });
+    const m = summarizeMonth((doc && doc.entries) || []);
+    s.gross += m.gross; s.jp += m.jp; s.exp += m.exp; s.personal += m.personal; s.net += m.net; s.jobs += m.jobs; s.months++;
+  }
+  for (const kk of ['gross', 'jp', 'exp', 'personal', 'net']) s[kk] = money2(s[kk]);
+  return s;
+}
+
 // Won leads with no job $ logged since they were won (recent wins only). The
 // dashboard already knows who was won and when (index statusAt); the ledger
 // knows what got logged — the gap is exactly what Mikey asked to be caught.
@@ -1861,7 +1895,8 @@ async function apiMoney(url) {
     const prevDoc = await loadMonth(prevMonthKey(month));
     nudges = await moneyWonNudges(doc.entries.concat(prevDoc.entries), cfg, now);
   }
-  return json({ ok: true, month, today: todayStr, entries: doc.entries, summary: summarizeMonth(doc.entries), config: cfg, nudges });
+  const allTime = await allTimeSummary();
+  return json({ ok: true, month, today: todayStr, entries: doc.entries, summary: summarizeMonth(doc.entries), allTime, config: cfg, nudges });
 }
 
 async function apiMoneyEntry(request) {
@@ -2004,6 +2039,7 @@ async function apiMoneySaveConfig(request) {
   if (Array.isArray(data.catsOff)) next.catsOff = data.catsOff.map(String).filter((c) => MONEY_CATS.includes(c)).slice(0, MONEY_CATS.length);
   if (Array.isArray(data.budgets)) next.budgets = sanitizeBudgets(data.budgets);
   if (Array.isArray(data.goals)) next.goals = sanitizeGoals(data.goals);
+  if (data.hero) next.hero = sanitizeHero(data.hero, next.hero);
   if (Array.isArray(data.recurring)) {
     next.recurring = data.recurring
       .filter((r) => r && typeof r === 'object' && +r.amount > 0 && String(r.label || '').trim())
