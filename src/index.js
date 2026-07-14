@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-13·money';
+const BUILD = '2026-07-14·goals';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -1692,7 +1692,38 @@ function defaultMoneyConfig() {
     jpName: 'JP',
     catsOff: [],            // category buttons hidden from the log grid
     nudgeDismissed: {},     // phone -> dismissedAt (won-nudges Mikey waved off)
+    budgets: [],            // monthly spending caps: { id, cat, amount }
+                            // cat ∈ MONEY_CATS ∪ {'jp','expenses','personal'}
+    goals: [],              // targets: { id, label, type, target, deadline, startMonth }
+                            // type ∈ 'net'|'gross'|'jobs'|'save' (save = cumulative net by a deadline)
   };
+}
+
+// Buckets a budget cap can target: any expense category, labor, all business
+// expenses combined, or the personal bucket.
+const BUDGET_CATS = MONEY_CATS.concat(['jp', 'expenses', 'personal']);
+const GOAL_TYPES = ['net', 'gross', 'jobs', 'save'];
+function sanitizeBudgets(arr) {
+  return (arr || [])
+    .filter((b) => b && typeof b === 'object' && +b.amount > 0 && BUDGET_CATS.includes(b.cat))
+    .map((b) => ({ id: String(b.id || genId()).slice(0, 24), cat: b.cat, amount: money2(b.amount) }))
+    .slice(0, 20);
+}
+function sanitizeGoals(arr) {
+  return (arr || [])
+    .filter((g) => g && typeof g === 'object' && GOAL_TYPES.includes(g.type) && +g.target > 0 && String(g.label || '').trim())
+    .map((g) => {
+      const out = {
+        id: String(g.id || genId()).slice(0, 24),
+        label: String(g.label).trim().slice(0, 40),
+        type: g.type,
+        target: money2(g.target),
+      };
+      if (/^\d{4}-\d{2}$/.test(String(g.deadline || ''))) out.deadline = String(g.deadline);
+      out.startMonth = /^\d{4}-\d{2}$/.test(String(g.startMonth || '')) ? String(g.startMonth) : '';
+      return out;
+    })
+    .slice(0, 20);
 }
 async function loadMoneyConfig() {
   const raw = await kv().get(MONEY_CFG_KEY, { type: 'json' });
@@ -1971,6 +2002,8 @@ async function apiMoneySaveConfig(request) {
   if (typeof data.jpName === 'string') next.jpName = data.jpName.trim().slice(0, 20) || 'JP';
   if (Array.isArray(data.serviceTypes)) next.serviceTypes = data.serviceTypes.map((s) => String(s).trim().slice(0, 32)).filter(Boolean).slice(0, 10);
   if (Array.isArray(data.catsOff)) next.catsOff = data.catsOff.map(String).filter((c) => MONEY_CATS.includes(c)).slice(0, MONEY_CATS.length);
+  if (Array.isArray(data.budgets)) next.budgets = sanitizeBudgets(data.budgets);
+  if (Array.isArray(data.goals)) next.goals = sanitizeGoals(data.goals);
   if (Array.isArray(data.recurring)) {
     next.recurring = data.recurring
       .filter((r) => r && typeof r === 'object' && +r.amount > 0 && String(r.label || '').trim())

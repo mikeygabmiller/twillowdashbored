@@ -818,6 +818,53 @@
   .mo-srow select{background:var(--panel2);border:1px solid var(--line);border-radius:9px;color:var(--text);padding:7px 9px;font-size:13px;font-family:inherit}
   .mo-empty{display:flex;flex-direction:column;align-items:center;gap:9px;color:var(--muted2);text-align:center;padding:36px 20px;font-size:13px}
   .mo-empty .e{font-size:38px;opacity:.9}
+
+  /* ---- Budgets & Goals ---- */
+  .mo-addbtn{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);border:1px solid var(--accent);border-radius:11px;padding:8px 13px;cursor:pointer;font-family:inherit}
+  .mo-addbtn:active{transform:scale(.96)}
+  .mo-addbtn svg{width:15px;height:15px}
+  /* goal rings */
+  .goal-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-bottom:6px}
+  .goal-card{background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:14px 12px 12px;display:flex;flex-direction:column;align-items:center;gap:9px;cursor:pointer;position:relative;overflow:hidden}
+  .goal-card:active{transform:scale(.985)}
+  .goal-card.wide{grid-column:1 / -1;flex-direction:row;gap:15px;align-items:center;padding:15px}
+  .goal-ring{position:relative;width:96px;height:96px;flex:none}
+  .goal-card.wide .goal-ring{width:84px;height:84px}
+  .goal-ring svg{transform:rotate(-90deg);display:block}
+  .goal-ring .track{fill:none;stroke:var(--panel3);stroke-width:9}
+  .goal-ring .prog{fill:none;stroke-width:9;stroke-linecap:round;transition:stroke-dashoffset 1s cubic-bezier(.4,0,.2,1)}
+  .goal-ring .rc{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px}
+  .goal-ring .rc .pct{font-size:21px;font-weight:800;letter-spacing:-.03em}
+  .goal-ring .rc .rc-e{font-size:16px;line-height:1}
+  .goal-info{text-align:center;min-width:0;width:100%}
+  .goal-card.wide .goal-info{text-align:left;flex:1}
+  .goal-info .gl{font-size:13.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .goal-info .gv{font-size:12px;color:var(--muted);margin-top:2px}
+  .goal-info .gp{font-size:11px;font-weight:800;margin-top:5px;display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:20px}
+  .gp.ontrack{color:var(--green);background:rgba(34,197,94,.14)}
+  .gp.behind{color:#f5b842;background:rgba(245,184,66,.14)}
+  .gp.hit{color:#fff;background:var(--green)}
+  .gp.behind.bad{color:#ff8388;background:rgba(255,90,95,.14)}
+  /* budget meters */
+  .budg{background:var(--panel);border:1px solid var(--line2);border-radius:14px;padding:12px 14px;margin-bottom:9px;cursor:pointer}
+  .budg:active{transform:scale(.99)}
+  .budg .bt{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
+  .budg .bt .be{font-size:16px}
+  .budg .bt .bn{font-weight:700;font-size:13.5px}
+  .budg .bt .bspent{margin-left:auto;font-size:12.5px;font-variant-numeric:tabular-nums}
+  .budg .bt .bspent b{font-weight:800}
+  .budg .meter{height:12px;border-radius:7px;background:var(--panel3);overflow:hidden;position:relative}
+  .budg .meter span{display:block;height:100%;border-radius:7px;transition:width 1s cubic-bezier(.4,0,.2,1);min-width:3px}
+  .budg .meter span.ok{background:linear-gradient(90deg,#22c55e,#16a34a)}
+  .budg .meter span.warn{background:linear-gradient(90deg,#f5b842,#f59e0b)}
+  .budg .meter span.over{background:linear-gradient(90deg,#ef4444,#b91c1c)}
+  .budg .bfoot{display:flex;justify-content:space-between;margin-top:6px;font-size:11.5px}
+  .budg .bfoot .left{color:var(--muted2)}
+  .budg .bfoot .rem{font-weight:700}
+  .budg .bfoot .rem.ok{color:var(--green)}.budg .bfoot .rem.warn{color:#f5b842}.budg .bfoot .rem.over{color:#ff8388}
+  .mo-seg{display:flex;gap:7px;margin:2px 0 4px}
+  .mo-seg button{flex:1;font-size:12.5px;font-weight:700;padding:9px 0;border-radius:11px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);cursor:pointer;font-family:inherit}
+  .mo-seg button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text)}
 </style>
 </head>
 <body>
@@ -1092,6 +1139,7 @@
     <button data-mv="log" class="active"><span class="e">💵</span>Log</button>
     <button data-mv="history"><span class="e">🗓️</span>History</button>
     <button data-mv="report"><span class="e">📊</span>Report</button>
+    <button data-mv="goals"><span class="e">🎯</span>Goals</button>
     <button data-mv="settings"><span class="e">⚙️</span>Settings</button>
   </nav>
   <div class="mo-scrim" id="moScrim"></div>
@@ -1136,7 +1184,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-13·money";
+  var APP_BUILD="2026-07-14·goals";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -3096,15 +3144,16 @@
   function moSetView(v){
     MO.view=v;
     Array.prototype.forEach.call(el("moNav").querySelectorAll("[data-mv]"),function(b){b.classList.toggle("active",b.getAttribute("data-mv")===v)});
-    if(v==="log"&&MO.month!==moCurMonth()){loadMoney();return}
+    if((v==="log"||v==="goals")&&MO.month!==moCurMonth()){loadMoney();return}
     moRender();
   }
   function moRender(){
     var box=el("moBody");if(!box)return;box.scrollTop=0;
-    el("moSub").textContent=MO.view==="settings"?"Every feature has an off switch":monthLabel((MO.view==="log"?moCurMonth():(MO.month||moCurMonth())));
+    el("moSub").textContent=MO.view==="settings"?"Every feature has an off switch":(MO.view==="goals"?"Budgets & goals":monthLabel((MO.view==="log"?moCurMonth():(MO.month||moCurMonth()))));
     if(!MO.loadedOnce){box.innerHTML='<div class="mo-empty"><span class="e">💵</span>Loading your money…</div>';return}
     if(MO.view==="history")return moHistory(box);
     if(MO.view==="report")return moReport(box);
+    if(MO.view==="goals")return moGoals(box);
     if(MO.view==="settings")return moSettings(box);
     return moLog(box);
   }
@@ -3402,6 +3451,198 @@
     Array.prototype.forEach.call(host.querySelectorAll(".mc-col"),function(c){
       c.onclick=function(){var v=c.querySelector(".mc-val");if(v)v.classList.toggle("show")};
     });
+  }
+
+  // ============================================================
+  // 🎯 Budgets & Goals — set targets, watch progress fill up.
+  // Budgets = monthly spending caps (color-coded meters).
+  // Goals   = net / gross / jobs targets (monthly) or a savings
+  //           target by a date (cumulative), shown as rings.
+  // All stored in the money config; progress computed from the
+  // month summary + the 6–12 month trend already fetched.
+  // ============================================================
+  var GOAL_TYPES=[["net","Net profit","💰","monthly"],["gross","Gross income","📈","monthly"],["jobs","Jobs","🚗","monthly"],["save","Savings target","🏆","cumulative"]];
+  function goalTypeInfo(t){for(var i=0;i<GOAL_TYPES.length;i++)if(GOAL_TYPES[i][0]===t)return GOAL_TYPES[i];return GOAL_TYPES[0]}
+  var BUDGET_CATS=[["jp","Pay "],["expenses","All expenses","💸"],["fuel"],["supplies"],["equipment"],["food"],["bills"],["marketing"],["misc"],["personal","Personal","🙈"]];
+  function budgetCatInfo(cat){
+    if(cat==="jp")return["jp",jpName(),"🤝"];
+    if(cat==="expenses")return["expenses","All expenses","💸"];
+    if(cat==="personal")return["personal","Personal","🙈"];
+    var c=moCatInfo(cat);return[cat,c[1],c[2]];
+  }
+  function monthsBetween(from,to){return (+to.slice(0,4)-+from.slice(0,4))*12+(+to.slice(5,7)-+from.slice(5,7))}
+
+  // Current-month spend against one budget cap.
+  function budgetSpent(cat){
+    var s=MO.summary||{};
+    if(cat==="jp")return s.jp||0;
+    if(cat==="expenses")return s.exp||0;
+    if(cat==="personal")return s.personal||0;
+    return (s.byCat&&s.byCat[cat])||0;
+  }
+  function budgetState(pct){return pct>=100?"over":(pct>=80?"warn":"ok")}
+
+  // Progress for one goal → {cur, pct(0-100), over, pace}. Monthly goals read
+  // this month's summary; a savings goal sums net across months since it started.
+  function goalProgress(g){
+    var cur=0;var s=MO.summary||{};
+    if(g.type==="net")cur=s.net||0;
+    else if(g.type==="gross")cur=s.gross||0;
+    else if(g.type==="jobs")cur=s.jobs||0;
+    else if(g.type==="save"){
+      var months=MO.report||[];var start=g.startMonth||"";
+      months.forEach(function(m){if(!start||m.month>=start)cur+=(m.net||0)});
+    }
+    var pct=g.target>0?Math.max(0,cur/g.target*100):0;
+    var out={cur:cur,pct:Math.min(pct,100),raw:pct,over:pct>=100};
+    if(g.type==="save"&&g.deadline){
+      var cur_m=moCurMonth();
+      var total=Math.max(1,monthsBetween(g.startMonth||cur_m,g.deadline)+1);
+      var elapsed=Math.max(1,monthsBetween(g.startMonth||cur_m,cur_m)+1);
+      var remain=Math.max(0,monthsBetween(cur_m,g.deadline));
+      var expected=g.target*Math.min(1,elapsed/total);
+      out.onTrack=cur>=expected;
+      out.perMonth=remain>0?Math.max(0,(g.target-cur)/remain):Math.max(0,g.target-cur);
+      out.remainMonths=remain;
+    }
+    return out;
+  }
+
+  function ringSVG(pct,hit,center){
+    var C=263.9,off=C*(1-Math.min(pct,100)/100);
+    var stroke=hit?"var(--green)":"var(--accent)";
+    return '<div class="goal-ring"><svg width="96" height="96" viewBox="0 0 96 96">'+
+      '<circle class="track" cx="48" cy="48" r="42"/>'+
+      '<circle class="prog" cx="48" cy="48" r="42" stroke="'+stroke+'" stroke-dasharray="'+C+'" stroke-dashoffset="'+off+'"/>'+
+      '</svg><div class="rc">'+center+'</div></div>';
+  }
+
+  function moGoals(box){
+    var goals=(MO.cfg&&MO.cfg.goals)||[];
+    var budgets=(MO.cfg&&MO.cfg.budgets)||[];
+    // A savings goal needs the multi-month trend; fetch once if missing.
+    var needsReport=goals.some(function(g){return g.type==="save"});
+    if(needsReport&&!MO.report){
+      api("/api/money/report?months=12").then(function(d){if(d&&d.ok){MO.report=d.months;if(MO.open&&MO.view==="goals")moGoals(box)}});
+    }
+    var h='<div class="mo-sec-h">🎯 Goals<button class="mo-addbtn" id="goalAdd" style="margin-left:auto">'+ic("plus",15)+'New goal</button></div>';
+    if(!goals.length){
+      h+='<div class="mo-empty" style="padding:22px 20px"><span class="e">🎯</span>No goals yet. Set a monthly profit target or a savings goal and watch the ring fill up.</div>';
+    }else{
+      h+='<div class="goal-grid">';
+      goals.forEach(function(g){
+        var ti=goalTypeInfo(g.type);var p=goalProgress(g);
+        var isJobs=g.type==="jobs";
+        var curTxt=isJobs?Math.round(p.cur):fmtMoney(p.cur);
+        var tgtTxt=isJobs?(g.target+" jobs"):fmtMoney(g.target);
+        var pctNum=Math.round(p.raw);
+        var wide=g.type==="save";
+        var center='<div class="pct">'+Math.min(pctNum,999)+'%</div><div class="rc-e">'+ti[2]+'</div>';
+        var pill="";
+        if(p.over)pill='<span class="gp hit">'+ic("check",11)+' Hit!</span>';
+        else if(g.type==="save"&&g.deadline)pill='<span class="gp '+(p.onTrack?"ontrack":"behind bad")+'">'+(p.onTrack?"On track":fmtMoney(p.perMonth)+"/mo to go")+'</span>';
+        else pill='<span class="gp ontrack">'+(isJobs?Math.max(0,g.target-Math.round(p.cur))+" to go":fmtMoney(Math.max(0,g.target-p.cur))+" to go")+'</span>';
+        h+='<div class="goal-card'+(wide?" wide":"")+'" data-goal="'+esc(g.id)+'">'+ringSVG(p.raw,p.over,center)+
+          '<div class="goal-info"><div class="gl">'+esc(g.label)+'</div>'+
+          '<div class="gv">'+curTxt+' of '+tgtTxt+(g.type==="save"&&g.deadline?' · by '+monthShort(g.deadline)+" "+g.deadline.slice(0,4):' · '+ti[3])+'</div>'+
+          pill+'</div></div>';
+      });
+      h+='</div>';
+    }
+    h+='<div class="mo-sec-h" style="margin-top:22px">💸 Budgets<span class="n" style="font-weight:400;color:var(--muted2)">monthly</span><button class="mo-addbtn" id="budgAdd" style="margin-left:auto">'+ic("plus",15)+'New budget</button></div>';
+    if(!budgets.length){
+      h+='<div class="mo-empty" style="padding:22px 20px"><span class="e">💸</span>No budgets yet. Cap a category — like Supplies or Food — and the meter warns you before you blow past it.</div>';
+    }else{
+      budgets.forEach(function(b){
+        var ci=budgetCatInfo(b.cat);var spent=budgetSpent(b.cat);
+        var pct=b.amount>0?spent/b.amount*100:0;var st=budgetState(pct);
+        var rem=b.amount-spent;
+        h+='<div class="budg" data-budg="'+esc(b.id)+'">'+
+          '<div class="bt"><span class="be">'+ci[2]+'</span><span class="bn">'+esc(ci[1])+'</span>'+
+          '<span class="bspent"><b>'+fmtMoney(spent)+'</b> / '+fmtMoney(b.amount)+'</span></div>'+
+          '<div class="meter"><span class="'+st+'" style="width:'+Math.min(100,Math.round(pct))+'%"></span></div>'+
+          '<div class="bfoot"><span class="left">'+Math.round(pct)+'% used</span>'+
+          '<span class="rem '+st+'">'+(rem>=0?fmtMoney(rem)+" left":fmtMoney(-rem)+" over")+'</span></div></div>';
+      });
+    }
+    box.innerHTML=h;
+    el("goalAdd").onclick=function(){openGoalSheet(null)};
+    el("budgAdd").onclick=function(){openBudgetSheet(null)};
+    Array.prototype.forEach.call(box.querySelectorAll("[data-goal]"),function(c){c.onclick=function(){var g=((MO.cfg&&MO.cfg.goals)||[]).filter(function(x){return x.id===c.getAttribute("data-goal")})[0];if(g)openGoalSheet(g)}});
+    Array.prototype.forEach.call(box.querySelectorAll("[data-budg]"),function(c){c.onclick=function(){var b=((MO.cfg&&MO.cfg.budgets)||[]).filter(function(x){return x.id===c.getAttribute("data-budg")})[0];if(b)openBudgetSheet(b)}});
+  }
+
+  var GS=null; // open goal/budget sheet state
+  function openGoalSheet(g){
+    GS={id:g?g.id:null,type:g?g.type:"net",label:g?g.label:"",target:g?String(g.target):"",deadline:g?(g.deadline||""):"",startMonth:g?(g.startMonth||moCurMonth()):moCurMonth()};
+    var h='<div class="sh-hd"><span class="e">🎯</span><b>'+(g?"Edit goal":"New goal")+'</b><button class="sh-x" id="gsX">'+ic("x",20)+'</button></div><div class="sh-body">';
+    h+='<div class="mo-f-lbl">Goal type</div><div class="mo-chips" id="gsType">'+GOAL_TYPES.map(function(t){return '<span class="mo-chip'+(GS.type===t[0]?" on":"")+'" data-gt="'+t[0]+'">'+t[2]+' '+t[1]+'</span>'}).join("")+'</div>';
+    h+='<div class="mo-f-lbl">Name it</div><input class="mo-in" id="gsLabel" maxlength="40" placeholder="e.g. July profit push" value="'+esc(GS.label)+'">';
+    h+='<div class="mo-f-lbl" id="gsTgtLbl">Target</div><input class="mo-in" id="gsTarget" type="text" inputmode="decimal" placeholder="e.g. 4000" value="'+esc(GS.target)+'">';
+    h+='<div id="gsSave" style="display:none"><div class="mo-f-lbl">Reach it by (optional)</div><input class="mo-in" id="gsDeadline" type="month" value="'+esc(GS.deadline)+'"></div>';
+    h+='<button class="mo-save" id="gsSaveBtn">'+(g?"Save changes":"Create goal")+'</button>';
+    if(g)h+='<button class="mo-delbtn" id="gsDel">Delete this goal</button>';
+    h+='</div>';
+    var sh=el("moSheet");sh.innerHTML=h;el("moScrim").classList.add("show");sh.classList.add("show");
+    function syncType(){
+      var isJobs=GS.type==="jobs",isSave=GS.type==="save";
+      el("gsTgtLbl").textContent=isJobs?"Target — number of jobs":"Target amount ($)";
+      el("gsTarget").setAttribute("inputmode",isJobs?"numeric":"decimal");
+      el("gsSave").style.display=isSave?"block":"none";
+    }
+    syncType();
+    el("gsX").onclick=closeMoSheet;
+    Array.prototype.forEach.call(el("gsType").querySelectorAll("[data-gt]"),function(ch){ch.onclick=function(){GS.type=ch.getAttribute("data-gt");Array.prototype.forEach.call(el("gsType").querySelectorAll("[data-gt]"),function(x){x.classList.toggle("on",x.getAttribute("data-gt")===GS.type)});syncType()}});
+    el("gsSaveBtn").onclick=saveGoal;
+    var gd=el("gsDel");if(gd)gd.onclick=function(){deleteGoal(GS.id)};
+  }
+  function saveGoal(){
+    var label=el("gsLabel").value.trim();
+    var target=parseFloat(String(el("gsTarget").value).replace(/[^0-9.]/g,""));
+    if(!label){toast("Give it a name",{bad:true});return}
+    if(!target||target<=0){toast("Set a target amount",{bad:true});return}
+    var g={id:GS.id||("g"+Date.now().toString(36)),type:GS.type,label:label,target:target};
+    if(GS.type==="save"){g.startMonth=GS.startMonth||moCurMonth();var dl=el("gsDeadline").value;if(/^\d{4}-\d{2}$/.test(dl))g.deadline=dl}
+    var list=((MO.cfg&&MO.cfg.goals)||[]).slice();
+    var i=list.map(function(x){return x.id}).indexOf(g.id);
+    if(i>=0)list[i]=g;else list.push(g);
+    var b=el("gsSaveBtn");b.disabled=true;
+    postMoCfg({goals:list}).then(function(d){if(d&&d.ok){closeMoSheet();MO.report=null;toast(GS.id?"Goal updated":"Goal set 🎯")}else b.disabled=false});
+  }
+  function deleteGoal(id){
+    if(!confirm("Delete this goal?"))return;
+    postMoCfg({goals:((MO.cfg&&MO.cfg.goals)||[]).filter(function(x){return x.id!==id})}).then(function(){closeMoSheet();toast("Goal deleted")});
+  }
+  function openBudgetSheet(b){
+    var used=((MO.cfg&&MO.cfg.budgets)||[]).map(function(x){return x.cat});
+    GS={id:b?b.id:null,cat:b?b.cat:"",amount:b?String(b.amount):""};
+    var h='<div class="sh-hd"><span class="e">💸</span><b>'+(b?"Edit budget":"New budget")+'</b><button class="sh-x" id="bsX">'+ic("x",20)+'</button></div><div class="sh-body">';
+    h+='<div class="mo-f-lbl">Cap which bucket? (per month)</div><div class="mo-chips" id="bsCat">'+
+      BUDGET_CATS.filter(function(c){return b||used.indexOf(c[0])<0||c[0]===GS.cat}).map(function(c){var ci=budgetCatInfo(c[0]);return '<span class="mo-chip'+(GS.cat===c[0]?" on":"")+'" data-bc="'+c[0]+'">'+ci[2]+' '+esc(ci[1])+'</span>'}).join("")+'</div>';
+    h+='<div class="mo-f-lbl">Monthly cap ($)</div><input class="mo-in" id="bsAmt" type="text" inputmode="decimal" placeholder="e.g. 150" value="'+esc(GS.amount)+'">';
+    h+='<button class="mo-save" id="bsSaveBtn">'+(b?"Save changes":"Set budget")+'</button>';
+    if(b)h+='<button class="mo-delbtn" id="bsDel">Delete this budget</button>';
+    h+='</div>';
+    var sh=el("moSheet");sh.innerHTML=h;el("moScrim").classList.add("show");sh.classList.add("show");
+    el("bsX").onclick=closeMoSheet;
+    Array.prototype.forEach.call(el("bsCat").querySelectorAll("[data-bc]"),function(ch){ch.onclick=function(){GS.cat=ch.getAttribute("data-bc");Array.prototype.forEach.call(el("bsCat").querySelectorAll("[data-bc]"),function(x){x.classList.toggle("on",x.getAttribute("data-bc")===GS.cat)})}});
+    el("bsSaveBtn").onclick=saveBudget;
+    var bd=el("bsDel");if(bd)bd.onclick=function(){deleteBudget(GS.id)};
+  }
+  function saveBudget(){
+    if(!GS.cat){toast("Pick a bucket to cap",{bad:true});return}
+    var amt=parseFloat(String(el("bsAmt").value).replace(/[^0-9.]/g,""));
+    if(!amt||amt<=0){toast("Set a monthly cap",{bad:true});return}
+    var bg={id:GS.id||("b"+Date.now().toString(36)),cat:GS.cat,amount:amt};
+    var list=((MO.cfg&&MO.cfg.budgets)||[]).slice();
+    var i=list.map(function(x){return x.id}).indexOf(bg.id);
+    if(i>=0)list[i]=bg;else list.push(bg);
+    var b=el("bsSaveBtn");b.disabled=true;
+    postMoCfg({budgets:list}).then(function(d){if(d&&d.ok){closeMoSheet();toast(GS.id?"Budget updated":"Budget set 💸")}else b.disabled=false});
+  }
+  function deleteBudget(id){
+    if(!confirm("Delete this budget?"))return;
+    postMoCfg({budgets:((MO.cfg&&MO.cfg.budgets)||[]).filter(function(x){return x.id!==id})}).then(function(){closeMoSheet();toast("Budget deleted")});
   }
 
   // ---- Settings view: every feature has an off switch ----
