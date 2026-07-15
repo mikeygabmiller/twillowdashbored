@@ -164,6 +164,7 @@ async function handle(request) {
   if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/email-setup') return apiEmailSetup(request);
   if (request.method === 'GET'  && pathname === '/api/media')      return apiMediaProxy(url);
   if (request.method === 'POST' && pathname === '/api/media-backfill') return apiMediaBackfill(request);
+  if (request.method === 'POST' && pathname === '/api/voicemail-backfill') return apiVoicemailBackfill(request);
   if (request.method === 'POST' && pathname === '/api/alert-test') return apiAlertTest();
   if (request.method === 'GET'  && pathname === '/api/followups')  return apiFollowups();
   if (request.method === 'POST' && pathname === '/api/followup')   return apiFollowupAction(request);
@@ -1020,6 +1021,88 @@ async function apiMediaBackfill(request) {
   }
   if (attached) { await saveThread(thread); await updateIndexEntry(thread); }
   return json({ ok: true, attached, found: twMsgs.length, thread });
+}
+
+// Recover voicemails that live only in Twilio. A voicemail recorded before the
+// thread stored it — e.g. its transcription failed, so the old /voicemail-tx
+// code saved nothing — is still sitting in Twilio's Recordings. This pulls the
+// most recent recordings, finds each caller via the call's From number, and
+// drops a playable voicemail (with transcript when Twilio has one) into that
+// caller's thread. Deduped by RecordingSid so re-running is safe. Kept to a
+// small page so we stay well under the Worker subrequest limit.
+async function apiVoicemailBackfill(request) {
+  const data = await readJson(request).catch(() => ({}));
+  const wantPhone = data && data.phone ? normalizePhone(data.phone) : '';
+  const sid = ENV.TWILIO_ACCOUNT_SID, token = ENV.TWILIO_AUTH_TOKEN;
+  if (!sid || !token) return json({ ok: false, error: 'twilio_not_configured' }, 500);
+  const auth = `Basic ${btoa(`${sid}:${token}`)}`;
+  const api = (path) => fetch(`https://api.twilio.com${path}`, { headers: { Authorization: auth } });
+
+  let recs;
+  try {
+    const r = await api(`/2010-04-01/Accounts/${sid}/Recordings.json?PageSize=15`);
+    if (!r.ok) throw new Error(`${r.status}: ${(await r.text()).slice(0, 200)}`);
+    recs = (await r.json()).recordings || [];
+  } catch (e) {
+    return json({ ok: false, error: `twilio_list_failed: ${String((e && e.message) || e)}` }, 502);
+  }
+
+  // Resolve caller + transcript per recording, grouping by caller so each
+  // thread's KV is written once.
+  const mikey = normalizePhone(ENV.MIKEY_PHONE);
+  const byPhone = new Map();
+  for (const rec of recs) {
+    const recSid = rec.sid, callSid = rec.call_sid;
+    if (!recSid || !callSid) continue;
+    let from = '';
+    try { const cr = await api(`/2010-04-01/Accounts/${sid}/Calls/${callSid}.json`); if (cr.ok) from = (await cr.json()).from || ''; } catch { /* skip */ }
+    const caller = normalizePhone(from);
+    if (!caller || caller === mikey) continue;
+    if (wantPhone && caller !== wantPhone) continue;
+    let transcript = '';
+    try {
+      const tr = await api(`/2010-04-01/Accounts/${sid}/Recordings/${recSid}/Transcriptions.json`);
+      if (tr.ok) { const done = ((await tr.json()).transcriptions || []).find((t) => t.status === 'completed' && t.transcription_text); if (done) transcript = (done.transcription_text || '').trim(); }
+    } catch { /* transcript optional — the recording is what matters */ }
+    const list = byPhone.get(caller) || [];
+    list.push({
+      recordingSid: recSid,
+      recording: `https://api.twilio.com${String(rec.uri).replace(/\.json$/, '')}.mp3`,
+      ts: rec.date_created ? new Date(rec.date_created).getTime() : Date.now(),
+      duration: rec.duration || '',
+      transcript,
+    });
+    byPhone.set(caller, list);
+  }
+
+  let added = 0;
+  for (const [caller, vms] of byPhone) {
+    const thread = await loadThread(caller);
+    let changed = false;
+    for (const vm of vms) {
+      if ((thread.messages || []).some((m) => m.kind === 'voicemail' && m.recordingSid === vm.recordingSid)) continue;
+      thread.messages.push({
+        id: genId(),
+        dir: 'in',
+        body: vm.transcript ? `🎙️ Voicemail: "${vm.transcript}"` : `🎙️ Voicemail (${vm.duration || '?'}s)`,
+        ts: vm.ts,
+        kind: 'voicemail',
+        recording: vm.recording,
+        recordingSid: vm.recordingSid,
+        transcript: vm.transcript || undefined,
+        transcriptFailed: vm.transcript ? undefined : true,
+      });
+      changed = true; added++;
+    }
+    if (changed) {
+      thread.messages.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+      thread.unread = (thread.unread || 0) + 1;
+      if (!thread.status) { thread.status = 'new'; thread.statusAt = Date.now(); }
+      await saveThread(thread);
+      await updateIndexEntry(thread);
+    }
+  }
+  return json({ ok: true, added, scanned: recs.length });
 }
 
 // One-time import of conversations from the old Netlify deployment into KV.

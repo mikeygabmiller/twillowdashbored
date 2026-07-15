@@ -2011,6 +2011,8 @@
       '<div class="fu-row"><span class="lbl2">Missed-call text-back <span style="color:var(--muted2);font-weight:400">· never lose a missed call</span></span><span class="sw'+(c.missedCallTextback!==false?" on":"")+'" id="cfgMct"></span></div>'+
       '<div class="fu-col"><input type="text" id="cfgMctText" placeholder="Sorry I missed your call! Text me here and I\'ll get right back to you." value="'+esc(c.missedCallText||"")+'"></div>'+
       '<div class="hint">When a call goes unanswered, the caller instantly gets a friendly text so the lead turns into a conversation you can answer from anywhere. Leave the message blank to use the default.</div>'+
+      '<div class="fu-col"><span class="lbl2">Voicemails</span><button id="cfgVmRecover" class="btn" style="white-space:nowrap;align-self:flex-start">'+ic("mic",14)+' Recover past voicemails</button></div>'+
+      '<div class="hint">Pulls your recent voicemails from Twilio into the right conversations so you can play them right here. Safe to run anytime.</div>'+
       '<div class="fu-col"><span class="lbl2">Block a number</span><span style="display:flex;gap:6px"><input type="text" id="cfgBlockNum" placeholder="+1425…" style="flex:1"><button id="cfgBlockBtn" class="btn" style="white-space:nowrap">Block</button></span></div>'+
       blockedListHtml(c.blockedNumbers);
     el("cfgEnabled").onclick=function(){saveConfig({followupsEnabled:!(c.followupsEnabled!==false)})};
@@ -2022,6 +2024,7 @@
     el("cfgScreen").onclick=function(){saveConfig({callScreening:!(c.callScreening!==false)})};
     el("cfgMct").onclick=function(){saveConfig({missedCallTextback:!(c.missedCallTextback!==false)})};
     el("cfgMctText").onchange=function(){saveConfig({missedCallText:el("cfgMctText").value})};
+    el("cfgVmRecover").onclick=function(){recoverVoicemails(el("cfgVmRecover"))};
     el("cfgBlockBtn").onclick=function(){var v=el("cfgBlockNum").value.trim();if(v)blockNumber(v,"block")};
     Array.prototype.forEach.call(document.querySelectorAll("[data-unblock]"),function(b){
       b.onclick=function(){blockNumber(b.getAttribute("data-unblock"),"unblock")};
@@ -2144,6 +2147,19 @@
       if(d&&d.ok){state.thread=d.thread;renderThread();refreshThreads();toast(d.attached?("Loaded "+d.attached+" photo"+(d.attached>1?"s":"")):"No photos found in Twilio for this contact",{bad:!d.attached})}
       else toast("Couldn't load photos: "+((d&&d.error)||"error"),{bad:true});
     }).catch(function(){toast("Network error",{bad:true})});
+  }
+  // Pull recent voicemails from Twilio into their conversations so they're playable here.
+  function recoverVoicemails(btn){
+    var orig=btn?btn.innerHTML:"";
+    if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span> Checking Twilio…'}
+    post("/api/voicemail-backfill",{}).then(function(d){
+      if(d&&d.ok){
+        refreshThreads();
+        if(state.phone)openThread(state.phone);
+        toast(d.added?("Recovered "+d.added+" voicemail"+(d.added>1?"s":"")+" — open the conversation to play"):"No new voicemails found (already up to date)",{bad:!d.added});
+      } else if(d&&d.error==="twilio_not_configured"){toast("Twilio isn't configured on the server",{bad:true});}
+      else toast("Couldn't recover voicemails: "+((d&&d.error)||"error"),{bad:true});
+    }).catch(function(){toast("Network error",{bad:true})}).then(function(){if(btn){btn.disabled=false;btn.innerHTML=orig}});
   }
   // Multimodal: read the customer's photo, draft a reply + assessment into the composer.
   function aiPhotoQuote(btn){
