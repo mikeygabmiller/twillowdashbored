@@ -866,6 +866,7 @@
   .budg .bt{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
   .budg .bt .be{font-size:16px}
   .budg .bt .bn{font-weight:700;font-size:13.5px}
+  .budg .bt .bper{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--muted2);background:var(--panel3);padding:2px 6px;border-radius:6px;align-self:center}
   .budg .bt .bspent{margin-left:auto;font-size:12.5px;font-variant-numeric:tabular-nums}
   .budg .bt .bspent b{font-weight:800}
   .budg .meter{height:12px;border-radius:7px;background:var(--panel3);overflow:hidden;position:relative}
@@ -3172,7 +3173,7 @@
   function refreshMoBadge(){var n=el("navMoney");if(n){var c=(MO.cfg&&MO.cfg.wonNudge!==false)?(MO.nudges||[]).length:0;n.textContent=c;n.className="ndot"+(c?" show":"")}}
   function loadMoney(month){
     return api("/api/money"+(month?"?month="+encodeURIComponent(month):"")).then(function(d){
-      if(d&&d.ok){MO.month=d.month;MO.today=d.today;MO.entries=d.entries||[];MO.summary=d.summary;MO.allTime=d.allTime||MO.allTime;MO.cfg=d.config;
+      if(d&&d.ok){MO.month=d.month;MO.today=d.today;MO.entries=d.entries||[];MO.summary=d.summary;MO.week=d.week||null;MO.allTime=d.allTime||MO.allTime;MO.cfg=d.config;
         if(!month||month===(d.today||"").slice(0,7))MO.nudges=d.nudges||[];
         MO.loadedOnce=true;refreshMoBadge();if(MO.open)moRender()}
     }).catch(function(){});
@@ -3543,15 +3544,21 @@
   }
   function monthsBetween(from,to){return (+to.slice(0,4)-+from.slice(0,4))*12+(+to.slice(5,7)-+from.slice(5,7))}
 
-  // Current-month spend against one budget cap.
-  function budgetSpent(cat){
-    var s=MO.summary||{};
+  // Spend against one budget cap, over its period (this week or this month).
+  function budgetSpent(cat,period){
+    var s=(period==="week"?(MO.week||{}):(MO.summary||{}));
     if(cat==="jp")return s.jp||0;
     if(cat==="expenses")return s.exp||0;
     if(cat==="personal")return s.personal||0;
     return (s.byCat&&s.byCat[cat])||0;
   }
   function budgetState(pct){return pct>=100?"over":(pct>=80?"warn":"ok")}
+  // Friendly reset date for a weekly budget: the day after the current week ends.
+  function weekResetLabel(){
+    var end=MO.week&&MO.week.end;if(!end)return "Sunday";
+    var d=new Date(end+"T00:00:00Z");d.setUTCDate(d.getUTCDate()+1);
+    return d.toLocaleDateString([],{weekday:"short",month:"short",day:"numeric",timeZone:"UTC"});
+  }
 
   // Progress for one goal → {cur, pct(0-100), over, pace}. Monthly goals read
   // this month's summary; a savings goal sums net across months since it started.
@@ -3620,25 +3627,28 @@
       });
       h+='</div>';
     }
-    h+='<div class="mo-sec-h" style="margin-top:22px"><span class="ic-inline">'+ic("credit-card",16)+'</span> Budgets<span class="n" style="font-weight:400;color:var(--muted2)">monthly</span><button class="mo-addbtn" id="budgAdd" style="margin-left:auto">'+ic("plus",15)+'New budget</button></div>';
+    h+='<div class="mo-sec-h" style="margin-top:22px"><span class="ic-inline">'+ic("credit-card",16)+'</span> Budgets<button class="mo-addbtn" id="budgAdd" style="margin-left:auto">'+ic("plus",15)+'New budget</button></div>';
     if(!budgets.length){
-      h+='<div class="mo-empty" style="padding:22px 20px"><span class="e">'+ic("credit-card",38)+'</span>No budgets yet. Cap a category — like Supplies or Food — and the meter warns you before you blow past it.</div>';
+      h+='<div class="mo-empty" style="padding:22px 20px"><span class="e">'+ic("credit-card",38)+'</span>No budgets yet. Cap a category — weekly or monthly — and the meter warns you before you blow past it.<div style="margin-top:14px"><button class="mo-addbtn" id="budgQuickFood">'+ic("plus",15)+'Add $30/week Food budget</button></div></div>';
     }else{
       budgets.forEach(function(b){
-        var ci=budgetCatInfo(b.cat);var spent=budgetSpent(b.cat);
+        var per=b.period==="week"?"week":"month";
+        var ci=budgetCatInfo(b.cat);var spent=budgetSpent(b.cat,per);
         var pct=b.amount>0?spent/b.amount*100:0;var st=budgetState(pct);
         var rem=b.amount-spent;
         h+='<div class="budg" data-budg="'+esc(b.id)+'">'+
           '<div class="bt"><span class="be">'+ic(ci[2],16)+'</span><span class="bn">'+esc(ci[1])+'</span>'+
+          '<span class="bper">/ '+(per==="week"?"wk":"mo")+'</span>'+
           '<span class="bspent"><b>'+fmtMoney(spent)+'</b> / '+fmtMoney(b.amount)+'</span></div>'+
           '<div class="meter"><span class="'+st+'" style="width:'+Math.min(100,Math.round(pct))+'%"></span></div>'+
-          '<div class="bfoot"><span class="left">'+Math.round(pct)+'% used</span>'+
+          '<div class="bfoot"><span class="left">'+Math.round(pct)+'% used'+(per==="week"?' · resets '+weekResetLabel():'')+'</span>'+
           '<span class="rem '+st+'">'+(rem>=0?fmtMoney(rem)+" left":fmtMoney(-rem)+" over")+'</span></div></div>';
       });
     }
     box.innerHTML=h;
     el("goalAdd").onclick=function(){openGoalSheet(null)};
     el("budgAdd").onclick=function(){openBudgetSheet(null)};
+    var qf=el("budgQuickFood");if(qf)qf.onclick=function(){quickFoodBudget(qf)};
     Array.prototype.forEach.call(box.querySelectorAll("[data-goal]"),function(c){c.onclick=function(){var g=((MO.cfg&&MO.cfg.goals)||[]).filter(function(x){return x.id===c.getAttribute("data-goal")})[0];if(g)openGoalSheet(g)}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-budg]"),function(c){c.onclick=function(){var b=((MO.cfg&&MO.cfg.budgets)||[]).filter(function(x){return x.id===c.getAttribute("data-budg")})[0];if(b)openBudgetSheet(b)}});
   }
@@ -3729,30 +3739,41 @@
   }
   function openBudgetSheet(b){
     var used=((MO.cfg&&MO.cfg.budgets)||[]).map(function(x){return x.cat});
-    GS={id:b?b.id:null,cat:b?b.cat:"",amount:b?String(b.amount):""};
+    GS={id:b?b.id:null,cat:b?b.cat:"",amount:b?String(b.amount):"",period:b?(b.period==="week"?"week":"month"):"month"};
     var h='<div class="sh-hd"><span class="e">'+ic("credit-card",21)+'</span><b>'+(b?"Edit budget":"New budget")+'</b><button class="sh-x" id="bsX">'+ic("x",20)+'</button></div><div class="sh-body">';
-    h+='<div class="mo-f-lbl">Cap which bucket? (per month)</div><div class="mo-chips" id="bsCat">'+
+    h+='<div class="mo-f-lbl">Cap which bucket?</div><div class="mo-chips" id="bsCat">'+
       BUDGET_CATS.filter(function(c){return b||used.indexOf(c[0])<0||c[0]===GS.cat}).map(function(c){var ci=budgetCatInfo(c[0]);return '<span class="mo-chip'+(GS.cat===c[0]?" on":"")+'" data-bc="'+c[0]+'">'+ci[2]+' '+esc(ci[1])+'</span>'}).join("")+'</div>';
-    h+='<div class="mo-f-lbl">Monthly cap ($)</div><input class="mo-in" id="bsAmt" type="text" inputmode="decimal" placeholder="e.g. 150" value="'+esc(GS.amount)+'">';
+    h+='<div class="mo-f-lbl">How often does it reset?</div><div class="mo-chips" id="bsPer">'+
+      [["week","Weekly"],["month","Monthly"]].map(function(p){return '<span class="mo-chip'+(GS.period===p[0]?" on":"")+'" data-bp="'+p[0]+'">'+p[1]+'</span>'}).join("")+'</div>';
+    h+='<div class="mo-f-lbl" id="bsAmtLbl">'+(GS.period==="week"?"Weekly cap ($)":"Monthly cap ($)")+'</div><input class="mo-in" id="bsAmt" type="text" inputmode="decimal" placeholder="e.g. 30" value="'+esc(GS.amount)+'">';
     h+='<button class="mo-save" id="bsSaveBtn">'+(b?"Save changes":"Set budget")+'</button>';
     if(b)h+='<button class="mo-delbtn" id="bsDel">Delete this budget</button>';
     h+='</div>';
     var sh=el("moSheet");sh.innerHTML=h;el("moScrim").classList.add("show");sh.classList.add("show");
     el("bsX").onclick=closeMoSheet;
     Array.prototype.forEach.call(el("bsCat").querySelectorAll("[data-bc]"),function(ch){ch.onclick=function(){GS.cat=ch.getAttribute("data-bc");Array.prototype.forEach.call(el("bsCat").querySelectorAll("[data-bc]"),function(x){x.classList.toggle("on",x.getAttribute("data-bc")===GS.cat)})}});
+    Array.prototype.forEach.call(el("bsPer").querySelectorAll("[data-bp]"),function(ch){ch.onclick=function(){GS.period=ch.getAttribute("data-bp");Array.prototype.forEach.call(el("bsPer").querySelectorAll("[data-bp]"),function(x){x.classList.toggle("on",x.getAttribute("data-bp")===GS.period)});el("bsAmtLbl").textContent=GS.period==="week"?"Weekly cap ($)":"Monthly cap ($)"}});
     el("bsSaveBtn").onclick=saveBudget;
     var bd=el("bsDel");if(bd)bd.onclick=function(){deleteBudget(GS.id)};
   }
   function saveBudget(){
     if(!GS.cat){toast("Pick a bucket to cap",{bad:true});return}
     var amt=parseFloat(String(el("bsAmt").value).replace(/[^0-9.]/g,""));
-    if(!amt||amt<=0){toast("Set a monthly cap",{bad:true});return}
-    var bg={id:GS.id||("b"+Date.now().toString(36)),cat:GS.cat,amount:amt};
+    if(!amt||amt<=0){toast("Set a cap amount",{bad:true});return}
+    var bg={id:GS.id||("b"+Date.now().toString(36)),cat:GS.cat,amount:amt,period:GS.period==="week"?"week":"month"};
     var list=((MO.cfg&&MO.cfg.budgets)||[]).slice();
     var i=list.map(function(x){return x.id}).indexOf(bg.id);
     if(i>=0)list[i]=bg;else list.push(bg);
     var b=el("bsSaveBtn");b.disabled=true;
     postMoCfg({budgets:list}).then(function(d){if(d&&d.ok){closeMoSheet();toast(GS.id?"Budget updated":"Budget set")}else b.disabled=false});
+  }
+  // One-tap the exact budget the owner asked for: $30/week on Food.
+  function quickFoodBudget(btn){
+    if(btn)btn.disabled=true;
+    var list=((MO.cfg&&MO.cfg.budgets)||[]).slice();
+    if(list.some(function(x){return x.cat==="food"})){toast("You already have a Food budget",{bad:true});if(btn)btn.disabled=false;return}
+    list.push({id:"b"+Date.now().toString(36),cat:"food",amount:30,period:"week"});
+    postMoCfg({budgets:list}).then(function(d){if(!(d&&d.ok)&&btn)btn.disabled=false;else toast("Set: $30/week Food budget")});
   }
   function deleteBudget(id){
     if(!confirm("Delete this budget?"))return;

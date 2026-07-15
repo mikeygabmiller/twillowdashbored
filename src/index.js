@@ -1692,8 +1692,9 @@ function defaultMoneyConfig() {
     jpName: 'JP',
     catsOff: [],            // category buttons hidden from the log grid
     nudgeDismissed: {},     // phone -> dismissedAt (won-nudges Mikey waved off)
-    budgets: [],            // monthly spending caps: { id, cat, amount }
+    budgets: [],            // spending caps: { id, cat, amount, period }
                             // cat ∈ MONEY_CATS ∪ {'jp','expenses','personal'}
+                            // period ∈ 'month' (default) | 'week' (Sun–Sat, auto-resets)
     goals: [],              // targets: { id, label, type, target, deadline, startMonth }
                             // type ∈ 'net'|'gross'|'jobs'|'save' (save = cumulative net by a deadline)
     hero: defaultHero(),    // the customizable Log-screen headline (see defaultHero)
@@ -1725,7 +1726,7 @@ const GOAL_TYPES = ['net', 'gross', 'jobs', 'save'];
 function sanitizeBudgets(arr) {
   return (arr || [])
     .filter((b) => b && typeof b === 'object' && +b.amount > 0 && BUDGET_CATS.includes(b.cat))
-    .map((b) => ({ id: String(b.id || genId()).slice(0, 24), cat: b.cat, amount: money2(b.amount) }))
+    .map((b) => ({ id: String(b.id || genId()).slice(0, 24), cat: b.cat, amount: money2(b.amount), period: b.period === 'week' ? 'week' : 'month' }))
     .slice(0, 20);
 }
 function sanitizeGoals(arr) {
@@ -1821,6 +1822,34 @@ function summarizeMonth(entries) {
   return s;
 }
 
+// The current Sunday–Saturday week as calendar dates (YYYY-MM-DD). Derived from
+// the business-local "today" string, so a weekly budget resets on the same clock
+// Mikey lives on. Treating the date at UTC midnight makes getUTCDay() the correct
+// weekday for that calendar date without dragging timezones back in.
+function weekWindow(todayStr) {
+  const d = new Date(todayStr + 'T00:00:00Z');
+  const dow = d.getUTCDay(); // 0=Sun … 6=Sat
+  const start = new Date(d); start.setUTCDate(d.getUTCDate() - dow);
+  const end = new Date(start); end.setUTCDate(start.getUTCDate() + 6);
+  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+}
+
+// Spend within [start,end] for the buckets a budget can cap (expense categories,
+// labor, personal). Same bucket rules as summarizeMonth, just windowed by date so
+// a weekly cap can span a month boundary. Reads only — no KV writes.
+function summarizeWeek(entries, start, end) {
+  const s = { exp: 0, personal: 0, jp: 0, byCat: {} };
+  for (const e of (entries || [])) {
+    if (!e.date || e.date < start || e.date > end) continue;
+    if (e.type === 'jp') s.jp += e.amount;
+    else if (e.type === 'personal') s.personal += e.amount;
+    else if (e.type === 'exp') { s.exp += e.amount; s.byCat[e.cat || 'misc'] = money2((s.byCat[e.cat || 'misc'] || 0) + e.amount); }
+    else if (e.type === 'job' && e.jp) s.jp += e.jp; // labor cost carried on a job
+  }
+  s.exp = money2(s.exp); s.personal = money2(s.personal); s.jp = money2(s.jp);
+  return s;
+}
+
 // Lazily post recurring bills into the CURRENT month the first time it's viewed
 // on/after each bill's day — no cron writes needed, exactly one write per month
 // with recurring bills. Returns whether the doc changed.
@@ -1890,13 +1919,18 @@ async function apiMoney(url) {
   const doc = await loadMonth(month);
   if (month === curMonth && postRecurring(cfg, month, doc, todayStr)) await saveMonth(month, doc);
   doc.entries.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0) || (b.ts - a.ts));
-  let nudges = [];
-  if (cfg.wonNudge !== false && month === curMonth) {
+  let nudges = [], week = null;
+  if (month === curMonth) {
+    // The current week can reach into last month, so combine both docs once and
+    // reuse the read for the won-lead nudges too.
     const prevDoc = await loadMonth(prevMonthKey(month));
-    nudges = await moneyWonNudges(doc.entries.concat(prevDoc.entries), cfg, now);
+    const combined = doc.entries.concat(prevDoc.entries);
+    const w = weekWindow(todayStr);
+    week = Object.assign({ start: w.start, end: w.end }, summarizeWeek(combined, w.start, w.end));
+    if (cfg.wonNudge !== false) nudges = await moneyWonNudges(combined, cfg, now);
   }
   const allTime = await allTimeSummary();
-  return json({ ok: true, month, today: todayStr, entries: doc.entries, summary: summarizeMonth(doc.entries), allTime, config: cfg, nudges });
+  return json({ ok: true, month, today: todayStr, entries: doc.entries, summary: summarizeMonth(doc.entries), week, allTime, config: cfg, nudges });
 }
 
 async function apiMoneyEntry(request) {
