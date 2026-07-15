@@ -12,6 +12,7 @@
  * Dashboard API:    /api/health /api/threads /api/thread /api/send /api/meta
  *                   /api/schedule /api/unschedule /api/call /api/read
  *                   /api/insights /api/ai/summary /api/ai/draft /api/ai/triage
+ *                   /api/money/* (profit tracker — see the Money module)
  *
  * Required secrets (wrangler secret put ...):
  *   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM, MIKEY_PHONE
@@ -66,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-08·w';
+const BUILD = '2026-07-14·hero';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -99,6 +100,7 @@ async function runCron() {
   await dispatchDueScheduled();
   await dispatchDueReminders();
   await evaluateFollowups();
+  await moneyCron().catch(() => {}); // money reminders must never break the SMS cron
 }
 
 // Private "remind me to follow up on <date>" reminders — a nudge to Mikey, not a
@@ -179,6 +181,17 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/ai/triage')  return apiAiTriage();
   if (request.method === 'POST' && pathname === '/api/ai/coach')   return apiAiCoach(request);
   if (request.method === 'POST' && pathname === '/api/ai/photo-quote') return apiAiPhotoQuote(request);
+
+  // Money tracker (its own dashboard section — see the Money module below)
+  if (request.method === 'GET'  && pathname === '/api/money')          return apiMoney(url);
+  if (request.method === 'POST' && pathname === '/api/money/entry')    return apiMoneyEntry(request);
+  if (request.method === 'POST' && pathname === '/api/money/delete')   return apiMoneyDelete(request);
+  if (request.method === 'GET'  && pathname === '/api/money/report')   return apiMoneyReport(url);
+  if (request.method === 'GET'  && pathname === '/api/money/by-phone') return apiMoneyByPhone(url);
+  if (request.method === 'GET'  && pathname === '/api/money/export')   return apiMoneyExport();
+  if (request.method === 'POST' && pathname === '/api/money/import')   return apiMoneyImport(request);
+  if (request.method === 'GET'  && pathname === '/api/money/config')   return apiMoneyGetConfig();
+  if (request.method === 'POST' && pathname === '/api/money/config')   return apiMoneySaveConfig(request);
 
   // Static assets (the dashboard at "/") are served by Cloudflare's asset
   // layer before the Worker, so anything reaching here is an unknown route.
@@ -1780,6 +1793,515 @@ async function apiBlock(request) {
 }
 
 // ===========================================================================
+// Money tracker
+// ---------------------------------------------------------------------------
+// A business-first profit ledger that lives as its own section in the dashboard.
+// Design decisions come straight from Mikey's questionnaire: real monthly net
+// (gross − JP labor − expenses), personal spending walled off in its own bucket,
+// per-job JP cost for true job profit, no mileage, evening "log today?" reminder,
+// weekly recap, won-lead "you never logged the $" nudges, CSV import/export, and
+// a settings doc where every feature can be switched off.
+//
+// Storage (KV, write-frugal):
+//   money:m:YYYY-MM — one doc per month { entries:[], rec:{recurringId:true} }.
+//                     Written only on user actions and the once-a-month
+//                     recurring-bill post.
+//   money:cfg       — feature toggles, recurring bills, service types.
+//   money:state     — { dailySent, weeklySentOn } reminder markers (≤2 writes/day).
+// ===========================================================================
+const MONEY_CFG_KEY = 'money:cfg';
+const MONEY_STATE_KEY = 'money:state';
+const MONEY_TYPES = ['job', 'jp', 'exp', 'personal'];
+const MONEY_CATS = ['fuel', 'supplies', 'equipment', 'food', 'bills', 'marketing', 'misc'];
+const moneyKey = (m) => 'money:m:' + m;
+
+function defaultMoneyConfig() {
+  return {
+    reminderEnabled: true,  // evening "log today's money?" nudge (via notifyMikey)
+    reminderHour: 19,       // local hour it fires (only if nothing logged that day)
+    weeklyEmail: true,      // weekly recap (email if Resend is set up, else SMS)
+    weeklyDay: 0,           // 0=Sunday
+    weeklyHour: 17,
+    wonNudge: true,         // "you marked them Won but never logged the $"
+    personalEnabled: true,  // show the Personal bucket (never touches profit)
+    recurringEnabled: true, // auto-post monthly bills
+    recurring: [],          // { id, label, amount, cat, day, personal }
+    serviceTypes: ['Interior', 'Exterior', 'Full detail', 'Add-on'],
+    jpName: 'JP',
+    catsOff: [],            // category buttons hidden from the log grid
+    nudgeDismissed: {},     // phone -> dismissedAt (won-nudges Mikey waved off)
+    budgets: [],            // spending caps: { id, cat, amount, period }
+                            // cat ∈ MONEY_CATS ∪ {'jp','expenses','personal'}
+                            // period ∈ 'month' (default) | 'week' (Sun–Sat, auto-resets)
+    goals: [],              // targets: { id, label, type, target, deadline, startMonth }
+                            // type ∈ 'net'|'gross'|'jobs'|'save' (save = cumulative net by a deadline)
+    hero: defaultHero(),    // the customizable Log-screen headline (see defaultHero)
+  };
+}
+
+// The Log-screen headline. Defaults to the running balance (all money you have
+// now) up top, with this month's income, spend and top spending category below —
+// every slot is swappable from the in-app customizer.
+function defaultHero() {
+  return { primary: 'balance', stats: ['monthIn', 'monthOut', 'topCat'], startingBalance: 0, title: '' };
+}
+const HERO_METRICS = ['balance', 'monthNet', 'monthIn', 'monthOut', 'monthJobs', 'monthAvg', 'topCat', 'monthPersonal', 'allIn', 'allOut'];
+function sanitizeHero(h, prev) {
+  const out = Object.assign(defaultHero(), prev || {});
+  if (h && typeof h === 'object') {
+    if (HERO_METRICS.includes(h.primary)) out.primary = h.primary;
+    if (Array.isArray(h.stats)) out.stats = h.stats.filter((x) => HERO_METRICS.includes(x)).slice(0, 3);
+    if (h.startingBalance != null && !isNaN(+h.startingBalance)) out.startingBalance = money2(h.startingBalance);
+    if (typeof h.title === 'string') out.title = h.title.slice(0, 40);
+  }
+  return out;
+}
+
+// Buckets a budget cap can target: any expense category, labor, all business
+// expenses combined, or the personal bucket.
+const BUDGET_CATS = MONEY_CATS.concat(['jp', 'expenses', 'personal']);
+const GOAL_TYPES = ['net', 'gross', 'jobs', 'save'];
+function sanitizeBudgets(arr) {
+  return (arr || [])
+    .filter((b) => b && typeof b === 'object' && +b.amount > 0 && BUDGET_CATS.includes(b.cat))
+    .map((b) => ({ id: String(b.id || genId()).slice(0, 24), cat: b.cat, amount: money2(b.amount), period: b.period === 'week' ? 'week' : 'month' }))
+    .slice(0, 20);
+}
+function sanitizeGoals(arr) {
+  return (arr || [])
+    .filter((g) => g && typeof g === 'object' && GOAL_TYPES.includes(g.type) && +g.target > 0 && String(g.label || '').trim())
+    .map((g) => {
+      const out = {
+        id: String(g.id || genId()).slice(0, 24),
+        label: String(g.label).trim().slice(0, 40),
+        type: g.type,
+        target: money2(g.target),
+      };
+      if (/^\d{4}-\d{2}$/.test(String(g.deadline || ''))) out.deadline = String(g.deadline);
+      out.startMonth = /^\d{4}-\d{2}$/.test(String(g.startMonth || '')) ? String(g.startMonth) : '';
+      return out;
+    })
+    .slice(0, 20);
+}
+async function loadMoneyConfig() {
+  const raw = await kv().get(MONEY_CFG_KEY, { type: 'json' });
+  return Object.assign(defaultMoneyConfig(), raw || {});
+}
+async function loadMoneyState() {
+  return (await kv().get(MONEY_STATE_KEY, { type: 'json' })) || {};
+}
+async function loadMonth(m) {
+  return (await kv().get(moneyKey(m), { type: 'json' })) || { entries: [], rec: {} };
+}
+// ⚠ KV WRITE — only ever called from user actions, imports, the once-a-month
+// recurring post, and never from a per-thread loop.
+async function saveMonth(m, doc) {
+  await kv().put(moneyKey(m), JSON.stringify(doc));
+}
+
+function money2(n) { return Math.round(Number(n) * 100) / 100; }
+function prevMonthKey(m) {
+  const y = +m.slice(0, 4), mo = +m.slice(5, 7);
+  return mo === 1 ? (y - 1) + '-12' : y + '-' + String(mo - 1).padStart(2, '0');
+}
+// Local calendar date (YYYY-MM-DD) / weekday in the business's timezone, so the
+// "day" an entry belongs to matches Mikey's clock, not UTC.
+function localDateStr(ts, tz) {
+  try { return new Date(ts).toLocaleDateString('en-CA', { timeZone: tz || 'America/Los_Angeles' }); }
+  catch { return new Date(ts).toISOString().slice(0, 10); }
+}
+function localDow(ts, tz) {
+  try {
+    const s = new Date(ts).toLocaleDateString('en-US', { timeZone: tz || 'America/Los_Angeles', weekday: 'short' });
+    return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(s.slice(0, 3));
+  } catch { return new Date(ts).getUTCDay(); }
+}
+
+// Validate + trim an incoming entry. Returns null when it isn't usable.
+// Types: job (income; may carry a per-job JP cost), jp (labor payment),
+// exp (business expense with a category), personal (separate bucket).
+function sanitizeMoneyEntry(e, existingId) {
+  const amount = money2(e.amount);
+  if (!amount || !isFinite(amount) || amount <= 0 || amount > 1000000) return null;
+  const type = MONEY_TYPES.includes(e.type) ? e.type : 'exp';
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(e.date || '')) ? String(e.date) : null;
+  if (!date) return null;
+  const out = { id: existingId || genId(), date, ts: Number(e.ts) || Date.now(), type, amount };
+  if (type === 'exp') out.cat = MONEY_CATS.includes(e.cat) ? e.cat : 'misc';
+  if (type === 'personal' && e.cat) out.cat = String(e.cat).slice(0, 30);
+  if (e.sub) out.sub = String(e.sub).slice(0, 24);
+  if (e.method) out.method = String(e.method).slice(0, 16);
+  if (e.service) out.service = String(e.service).slice(0, 32);
+  if (e.phone) { const p = normalizePhone(e.phone); if (p) out.phone = p; }
+  if (e.name) out.name = String(e.name).slice(0, 60);
+  if (e.city) out.city = String(e.city).slice(0, 40);
+  if (e.note) out.note = String(e.note).slice(0, 200);
+  if (type === 'job' && e.jp != null && +e.jp > 0) out.jp = money2(e.jp);
+  if (e.imp) out.imp = true; // came from a CSV import (used for de-dupe on re-import)
+  return out;
+}
+
+// One month, one pass: everything the Report view and the recaps need.
+function summarizeMonth(entries) {
+  const s = { gross: 0, jp: 0, exp: 0, personal: 0, net: 0, jobs: 0, byCat: {}, byService: {}, byMethod: {} };
+  for (const e of (entries || [])) {
+    if (e.type === 'job') {
+      s.gross += e.amount; s.jobs++;
+      if (e.jp) s.jp += e.jp;
+      if (e.service) { const v = s.byService[e.service] = s.byService[e.service] || { n: 0, total: 0 }; v.n++; v.total += e.amount; }
+      if (e.method) s.byMethod[e.method] = money2((s.byMethod[e.method] || 0) + e.amount);
+    } else if (e.type === 'jp') s.jp += e.amount;
+    else if (e.type === 'personal') s.personal += e.amount;
+    else { s.exp += e.amount; s.byCat[e.cat || 'misc'] = money2((s.byCat[e.cat || 'misc'] || 0) + e.amount); }
+  }
+  s.gross = money2(s.gross); s.jp = money2(s.jp); s.exp = money2(s.exp); s.personal = money2(s.personal);
+  s.net = money2(s.gross - s.jp - s.exp); // personal deliberately excluded
+  for (const k of Object.keys(s.byService)) s.byService[k].total = money2(s.byService[k].total);
+  return s;
+}
+
+// The current Sunday–Saturday week as calendar dates (YYYY-MM-DD). Derived from
+// the business-local "today" string, so a weekly budget resets on the same clock
+// Mikey lives on. Treating the date at UTC midnight makes getUTCDay() the correct
+// weekday for that calendar date without dragging timezones back in.
+function weekWindow(todayStr) {
+  const d = new Date(todayStr + 'T00:00:00Z');
+  const dow = d.getUTCDay(); // 0=Sun … 6=Sat
+  const start = new Date(d); start.setUTCDate(d.getUTCDate() - dow);
+  const end = new Date(start); end.setUTCDate(start.getUTCDate() + 6);
+  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+}
+
+// Spend within [start,end] for the buckets a budget can cap (expense categories,
+// labor, personal). Same bucket rules as summarizeMonth, just windowed by date so
+// a weekly cap can span a month boundary. Reads only — no KV writes.
+function summarizeWeek(entries, start, end) {
+  const s = { exp: 0, personal: 0, jp: 0, byCat: {} };
+  for (const e of (entries || [])) {
+    if (!e.date || e.date < start || e.date > end) continue;
+    if (e.type === 'jp') s.jp += e.amount;
+    else if (e.type === 'personal') s.personal += e.amount;
+    else if (e.type === 'exp') { s.exp += e.amount; s.byCat[e.cat || 'misc'] = money2((s.byCat[e.cat || 'misc'] || 0) + e.amount); }
+    else if (e.type === 'job' && e.jp) s.jp += e.jp; // labor cost carried on a job
+  }
+  s.exp = money2(s.exp); s.personal = money2(s.personal); s.jp = money2(s.jp);
+  return s;
+}
+
+// Lazily post recurring bills into the CURRENT month the first time it's viewed
+// on/after each bill's day — no cron writes needed, exactly one write per month
+// with recurring bills. Returns whether the doc changed.
+function postRecurring(cfg, monthKeyStr, doc, todayStr) {
+  if (cfg.recurringEnabled === false) return false;
+  let changed = false;
+  const today = +todayStr.slice(8, 10);
+  for (const r of (cfg.recurring || [])) {
+    if (!r || !r.id || !(+r.amount > 0)) continue;
+    if (doc.rec && doc.rec[r.id]) continue;
+    const postDay = Math.min(Math.max(1, Math.round(+r.day) || 1), 28);
+    if (today < postDay) continue;
+    doc.entries.push({
+      id: genId(), date: monthKeyStr + '-' + String(postDay).padStart(2, '0'), ts: Date.now(),
+      type: r.personal ? 'personal' : 'exp', amount: money2(r.amount),
+      cat: r.personal ? (r.cat || 'recurring') : (MONEY_CATS.includes(r.cat) ? r.cat : 'bills'),
+      note: (r.label || 'Recurring') + ' · auto', auto: true,
+    });
+    doc.rec = doc.rec || {}; doc.rec[r.id] = true;
+    changed = true;
+  }
+  return changed;
+}
+
+// All-time rollup across every month doc — the "money you have now" balance and
+// the lifetime income/spend totals the customizable hero can show. A handful of
+// KV reads (one per month with data); reads are the cheap side of the budget.
+async function allTimeSummary() {
+  const list = await kv().list({ prefix: 'money:m:' });
+  const s = { gross: 0, jp: 0, exp: 0, personal: 0, net: 0, jobs: 0, months: 0 };
+  for (const k of (list.keys || [])) {
+    const doc = await kv().get(k.name, { type: 'json' });
+    const m = summarizeMonth((doc && doc.entries) || []);
+    s.gross += m.gross; s.jp += m.jp; s.exp += m.exp; s.personal += m.personal; s.net += m.net; s.jobs += m.jobs; s.months++;
+  }
+  for (const kk of ['gross', 'jp', 'exp', 'personal', 'net']) s[kk] = money2(s[kk]);
+  return s;
+}
+
+// Won leads with no job $ logged since they were won (recent wins only). The
+// dashboard already knows who was won and when (index statusAt); the ledger
+// knows what got logged — the gap is exactly what Mikey asked to be caught.
+async function moneyWonNudges(entries, cfg, now) {
+  const index = await loadIndex();
+  const out = [];
+  for (const t of index) {
+    if (t.archived || t.status !== 'won') continue;
+    const at = t.statusAt || t.lastTs || 0;
+    if (!at || now - at > 21 * 86400000) continue;
+    if (cfg.nudgeDismissed && cfg.nudgeDismissed[t.phone] >= at) continue;
+    const logged = entries.some((e) => e.type === 'job' && e.phone === t.phone && e.ts >= at - 86400000);
+    if (!logged) out.push({ phone: t.phone, name: t.name || '', wonAt: at });
+  }
+  out.sort((a, b) => b.wonAt - a.wonAt);
+  return out.slice(0, 6);
+}
+
+// ---- money API --------------------------------------------------------------
+async function apiMoney(url) {
+  const now = Date.now();
+  const cfg = await loadMoneyConfig();
+  const mainCfg = await loadConfig();
+  const todayStr = localDateStr(now, mainCfg.tz);
+  const curMonth = todayStr.slice(0, 7);
+  const want = url.searchParams.get('month') || '';
+  const month = /^\d{4}-\d{2}$/.test(want) ? want : curMonth;
+  const doc = await loadMonth(month);
+  if (month === curMonth && postRecurring(cfg, month, doc, todayStr)) await saveMonth(month, doc);
+  doc.entries.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0) || (b.ts - a.ts));
+  let nudges = [], week = null;
+  if (month === curMonth) {
+    // The current week can reach into last month, so combine both docs once and
+    // reuse the read for the won-lead nudges too.
+    const prevDoc = await loadMonth(prevMonthKey(month));
+    const combined = doc.entries.concat(prevDoc.entries);
+    const w = weekWindow(todayStr);
+    week = Object.assign({ start: w.start, end: w.end }, summarizeWeek(combined, w.start, w.end));
+    if (cfg.wonNudge !== false) nudges = await moneyWonNudges(combined, cfg, now);
+  }
+  const allTime = await allTimeSummary();
+  return json({ ok: true, month, today: todayStr, entries: doc.entries, summary: summarizeMonth(doc.entries), week, allTime, config: cfg, nudges });
+}
+
+async function apiMoneyEntry(request) {
+  const data = await readJson(request);
+  const e = sanitizeMoneyEntry(data, data.id ? String(data.id).slice(0, 24) : null);
+  if (!e) return json({ ok: false, error: 'bad_entry' }, 422);
+  const month = e.date.slice(0, 7);
+  // Editing an entry whose date moved to another month: pull it out of the old doc.
+  if (data.id && data.origDate && String(data.origDate).slice(0, 7) !== month) {
+    const om = String(data.origDate).slice(0, 7);
+    if (/^\d{4}-\d{2}$/.test(om)) {
+      const od = await loadMonth(om);
+      const before = od.entries.length;
+      od.entries = od.entries.filter((x) => x.id !== e.id);
+      if (od.entries.length !== before) await saveMonth(om, od);
+    }
+  }
+  const doc = await loadMonth(month);
+  const i = doc.entries.findIndex((x) => x.id === e.id);
+  if (i >= 0) e.ts = doc.entries[i].ts || e.ts; // edits keep their original position
+  if (i >= 0) doc.entries[i] = e; else doc.entries.push(e);
+  if (doc.entries.length > 3000) return json({ ok: false, error: 'month_full' }, 422);
+  await saveMonth(month, doc);
+  return json({ ok: true, entry: e, month, summary: summarizeMonth(doc.entries) });
+}
+
+async function apiMoneyDelete(request) {
+  const data = await readJson(request);
+  const id = String(data.id || '');
+  const month = String(data.date || '').slice(0, 7);
+  if (!id || !/^\d{4}-\d{2}$/.test(month)) return json({ ok: false, error: 'bad_request' }, 422);
+  const doc = await loadMonth(month);
+  const before = doc.entries.length;
+  doc.entries = doc.entries.filter((x) => x.id !== id);
+  if (doc.entries.length === before) return json({ ok: false, error: 'not_found' }, 404);
+  await saveMonth(month, doc);
+  return json({ ok: true, month, summary: summarizeMonth(doc.entries) });
+}
+
+// Per-month aggregates going back N months — feeds the month-vs-month chart.
+async function apiMoneyReport(url) {
+  const n = Math.max(2, Math.min(12, parseInt(url.searchParams.get('months') || '6', 10) || 6));
+  const mainCfg = await loadConfig();
+  let m = localDateStr(Date.now(), mainCfg.tz).slice(0, 7);
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const doc = await loadMonth(m);
+    out.unshift(Object.assign({ month: m }, summarizeMonth(doc.entries)));
+    m = prevMonthKey(m);
+  }
+  return json({ ok: true, months: out });
+}
+
+// Everything logged for one customer (last 12 months) — the thread-details
+// cross-link ("job history + $ spent with you").
+async function apiMoneyByPhone(url) {
+  const phone = normalizePhone(url.searchParams.get('phone'));
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  const mainCfg = await loadConfig();
+  let m = localDateStr(Date.now(), mainCfg.tz).slice(0, 7);
+  const entries = [];
+  for (let i = 0; i < 12; i++) {
+    const doc = await loadMonth(m);
+    for (const e of doc.entries) if (e.phone === phone) entries.push(e);
+    m = prevMonthKey(m);
+  }
+  entries.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0) || (b.ts - a.ts));
+  const jobs = entries.filter((e) => e.type === 'job');
+  return json({
+    ok: true, phone,
+    jobs: jobs.length,
+    total: money2(jobs.reduce((a, e) => a + e.amount, 0)),
+    entries: entries.slice(0, 20),
+  });
+}
+
+// Full CSV export — every month doc, one flat file. No lock-in, ever.
+async function apiMoneyExport() {
+  const list = await kv().list({ prefix: 'money:m:' });
+  const rows = [];
+  for (const k of (list.keys || [])) {
+    const doc = await kv().get(k.name, { type: 'json' });
+    for (const e of ((doc && doc.entries) || [])) rows.push(e);
+  }
+  rows.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0) || (a.ts - b.ts));
+  const csv = (v) => { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  const head = 'date,type,category,sub,amount,jp_cost,method,service,customer,phone,city,note';
+  const body = rows.map((e) => [e.date, e.type, e.cat || '', e.sub || '', e.amount, e.jp || '', e.method || '', e.service || '', e.name || '', e.phone || '', e.city || '', e.note || ''].map(csv).join(',')).join('\n');
+  return new Response(head + '\n' + body, {
+    headers: { 'Content-Type': 'text/csv', 'Content-Disposition': 'attachment; filename="mikeys-money.csv"' },
+  });
+}
+
+// Bulk import (the dashboard parses + maps the CSV client-side and sends clean
+// entries). Re-running the same import is safe: imported rows de-dupe on
+// date+type+amount+note. One KV write per month touched.
+async function apiMoneyImport(request) {
+  const data = await readJson(request);
+  const list = Array.isArray(data.entries) ? data.entries.slice(0, 3000) : [];
+  const byMonth = {};
+  let imported = 0, skipped = 0;
+  for (const raw of list) {
+    const e = sanitizeMoneyEntry(Object.assign({}, raw, { imp: true }));
+    if (!e) { skipped++; continue; }
+    (byMonth[e.date.slice(0, 7)] = byMonth[e.date.slice(0, 7)] || []).push(e);
+  }
+  for (const m of Object.keys(byMonth)) {
+    const doc = await loadMonth(m);
+    const seen = {};
+    for (const x of doc.entries) if (x.imp) seen[x.date + '|' + x.type + '|' + x.amount + '|' + (x.note || '')] = 1;
+    let added = 0;
+    for (const e of byMonth[m]) {
+      const key = e.date + '|' + e.type + '|' + e.amount + '|' + (e.note || '');
+      if (seen[key]) { skipped++; continue; }
+      seen[key] = 1; doc.entries.push(e); added++; imported++;
+    }
+    if (added) {
+      if (doc.entries.length > 3000) doc.entries = doc.entries.slice(-3000);
+      await saveMonth(m, doc);
+    }
+  }
+  return json({ ok: true, imported, skipped, months: Object.keys(byMonth).length });
+}
+
+async function apiMoneyGetConfig() {
+  return json({ ok: true, config: await loadMoneyConfig() });
+}
+
+async function apiMoneySaveConfig(request) {
+  const data = await readJson(request);
+  const next = Object.assign({}, await loadMoneyConfig());
+  for (const k of ['reminderEnabled', 'weeklyEmail', 'wonNudge', 'personalEnabled', 'recurringEnabled']) {
+    if (typeof data[k] === 'boolean') next[k] = data[k];
+  }
+  if (data.reminderHour != null && !isNaN(+data.reminderHour)) next.reminderHour = Math.max(0, Math.min(23, Math.round(+data.reminderHour)));
+  if (data.weeklyHour != null && !isNaN(+data.weeklyHour)) next.weeklyHour = Math.max(0, Math.min(23, Math.round(+data.weeklyHour)));
+  if (data.weeklyDay != null && !isNaN(+data.weeklyDay)) next.weeklyDay = Math.max(0, Math.min(6, Math.round(+data.weeklyDay)));
+  if (typeof data.jpName === 'string') next.jpName = data.jpName.trim().slice(0, 20) || 'JP';
+  if (Array.isArray(data.serviceTypes)) next.serviceTypes = data.serviceTypes.map((s) => String(s).trim().slice(0, 32)).filter(Boolean).slice(0, 10);
+  if (Array.isArray(data.catsOff)) next.catsOff = data.catsOff.map(String).filter((c) => MONEY_CATS.includes(c)).slice(0, MONEY_CATS.length);
+  if (Array.isArray(data.budgets)) next.budgets = sanitizeBudgets(data.budgets);
+  if (Array.isArray(data.goals)) next.goals = sanitizeGoals(data.goals);
+  if (data.hero) next.hero = sanitizeHero(data.hero, next.hero);
+  if (Array.isArray(data.recurring)) {
+    next.recurring = data.recurring
+      .filter((r) => r && typeof r === 'object' && +r.amount > 0 && String(r.label || '').trim())
+      .map((r) => ({
+        id: String(r.id || genId()).slice(0, 24),
+        label: String(r.label).trim().slice(0, 40),
+        amount: money2(r.amount),
+        cat: MONEY_CATS.includes(r.cat) ? r.cat : 'bills',
+        day: Math.max(1, Math.min(28, Math.round(+r.day) || 1)),
+        personal: !!r.personal,
+      })).slice(0, 20);
+  }
+  if (typeof data.dismissNudge === 'string') {
+    const p = normalizePhone(data.dismissNudge);
+    if (p) {
+      next.nudgeDismissed = Object.assign({}, next.nudgeDismissed);
+      next.nudgeDismissed[p] = Date.now();
+      const keys = Object.keys(next.nudgeDismissed);
+      if (keys.length > 30) { keys.sort((a, b) => next.nudgeDismissed[a] - next.nudgeDismissed[b]); delete next.nudgeDismissed[keys[0]]; }
+    }
+  }
+  await kv().put(MONEY_CFG_KEY, JSON.stringify(next));
+  return json({ ok: true, config: next });
+}
+
+// ---- money cron -------------------------------------------------------------
+// Two nudges, both through notifyMikey (email if Resend is configured, else SMS):
+//   1. Evening "log today's money?" — only when NOTHING business got logged today.
+//   2. Weekly recap — last 7 days of gross / labor / expenses / net.
+// Markers in money:state keep this to at most 2 KV writes per day. Kill switch:
+// set MONEY_CRON_DISABLED=1 as a Worker var (no KV write needed), same pattern
+// as FOLLOWUPS_DISABLED.
+async function moneyCron(now = Date.now()) {
+  if (envFlag('MONEY_CRON_DISABLED')) return;
+  const cfg = await loadMoneyConfig();
+  if (cfg.reminderEnabled === false && cfg.weeklyEmail === false) return;
+  const mainCfg = await loadConfig();
+  const tz = mainCfg.tz || 'America/Los_Angeles';
+  const hour = localHour(now, tz);
+  const today = localDateStr(now, tz);
+
+  if (cfg.reminderEnabled !== false && hour === (cfg.reminderHour == null ? 19 : cfg.reminderHour)) {
+    const state = await loadMoneyState();
+    if (state.dailySent !== today) {
+      const doc = await loadMonth(today.slice(0, 7));
+      const loggedToday = doc.entries.some((e) => e.date === today && e.type !== 'personal');
+      state.dailySent = today; // mark either way — one write, stops the hourly rechecks
+      await kv().put(MONEY_STATE_KEY, JSON.stringify(state));
+      if (!loggedToday) {
+        let extra = '';
+        if (cfg.wonNudge !== false) {
+          try {
+            const prevDoc = await loadMonth(prevMonthKey(today.slice(0, 7)));
+            const nudges = await moneyWonNudges(doc.entries.concat(prevDoc.entries), cfg, now);
+            if (nudges.length) extra = `\n\nStill unlogged Won jobs: ${nudges.map((n) => n.name || n.phone).join(', ')}.`;
+          } catch { /* nudges are a bonus */ }
+        }
+        notifyMikey('💵 Log today\'s money?',
+          `Nothing logged today yet — jobs, fuel, supplies, ${cfg.jpName || 'JP'}. 30 seconds now keeps the month's profit real.${extra}\n\nOpen the tracker: ${publicBase()}/?money=1`).catch(() => {});
+      }
+    }
+  }
+
+  if (cfg.weeklyEmail !== false &&
+      localDow(now, tz) === (cfg.weeklyDay == null ? 0 : cfg.weeklyDay) &&
+      hour === (cfg.weeklyHour == null ? 17 : cfg.weeklyHour)) {
+    const state = await loadMoneyState();
+    if (state.weeklySentOn !== today) {
+      state.weeklySentOn = today;
+      await kv().put(MONEY_STATE_KEY, JSON.stringify(state));
+      const days = {};
+      for (let i = 0; i < 7; i++) days[localDateStr(now - i * 86400000, tz)] = 1;
+      const months = [...new Set(Object.keys(days).map((d) => d.slice(0, 7)))];
+      let entries = [];
+      for (const m of months) entries = entries.concat((await loadMonth(m)).entries.filter((e) => days[e.date]));
+      const s = summarizeMonth(entries);
+      const avg = s.jobs ? money2(s.gross / s.jobs) : 0;
+      const topCat = Object.keys(s.byCat).sort((a, b) => s.byCat[b] - s.byCat[a])[0];
+      notifyMikey('📊 Your week in money',
+        `Last 7 days at Mikey's Mobile Detailing:\n\n` +
+        `• Gross: $${s.gross}\n• ${cfg.jpName || 'JP'} / labor: $${s.jp}\n• Expenses: $${s.exp}` +
+        (topCat ? ` (biggest: ${topCat} $${s.byCat[topCat]})` : '') + `\n` +
+        `• NET PROFIT: $${s.net}\n• Jobs: ${s.jobs}${s.jobs ? ` · avg ticket $${avg}` : ''}` +
+        (s.personal ? `\n• Personal (kept separate): $${s.personal}` : '') +
+        `\n\nFull report: ${publicBase()}/?money=1`).catch(() => {});
+    }
+  }
+}
+
+// ===========================================================================
 // Storage model (Cloudflare KV)
 // ===========================================================================
 const INDEX_KEY = 'threads-index';
@@ -2023,6 +2545,7 @@ function buildIndexSummary(thread, cfg) {
     name: thread.name || '',
     tags: thread.tags || [],
     status: thread.status || '',
+    statusAt: thread.statusAt || 0,
     pinned: !!thread.pinned,
     archived: !!thread.archived,
     assignedTo: thread.assignedTo || '',
