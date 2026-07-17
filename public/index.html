@@ -1203,7 +1203,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-15·vm-weekly";
+  var APP_BUILD="2026-07-17·tax-setaside";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -3228,6 +3228,10 @@
     switch(key){
       case "balance":{var v=(at.net||0)+start;return{label:"Balance",value:fmtMoney(v),neg:v<0}}
       case "monthNet":return{label:"Net this month",value:fmtMoney(s.net||0),neg:(s.net||0)<0};
+      case "takeHome":{var rate=+((MO.cfg&&MO.cfg.taxRate)||0),n=s.net||0,res=n>0?n*rate/100:0,th=n-res;
+        return{label:"Take-home",value:fmtMoney(th),neg:th<0,sub:rate?"after "+rate+"% set aside":"set a tax %"}}
+      case "taxReserve":{var trate=+((MO.cfg&&MO.cfg.taxRate)||0),nn=s.net||0,rz=nn>0?nn*trate/100:0;
+        return{label:"Reserved for taxes",value:fmtMoney(rz),sub:trate?trate+"% of profit":"set a tax %"}}
       case "monthIn":return{label:"Made this month",value:fmtMoney(s.gross||0)};
       case "monthOut":return{label:"Spent this month",value:fmtMoney((s.jp||0)+(s.exp||0))};
       case "monthJobs":return{label:"Jobs this month",value:String(s.jobs||0)};
@@ -3684,6 +3688,8 @@
     ["monthIn","Made this month"],
     ["monthOut","Spent this month"],
     ["monthNet","Net profit this month"],
+    ["takeHome","Take-home (after tax set-aside)"],
+    ["taxReserve","Reserved for taxes"],
     ["topCat","Top spending category"],
     ["monthJobs","Jobs this month"],
     ["monthAvg","Average ticket"],
@@ -3702,6 +3708,7 @@
       '<div class="mo-f-lbl">Big number up top</div><select class="mo-in" id="hsPrimary">'+heroOpts(hero.primary,false)+'</select>'+
       '<div class="mo-f-lbl">Custom label (optional)</div><input class="mo-in" id="hsTitle" maxlength="40" placeholder="e.g. In the bank" value="'+esc(hero.title||"")+'">'+
       '<div class="mo-f-lbl">Starting balance — money you already had</div><input class="mo-in" id="hsStart" type="text" inputmode="decimal" placeholder="e.g. 500" value="'+(hero.startingBalance?esc(String(hero.startingBalance)):"")+'">'+
+      '<div class="mo-f-lbl">Tax set-aside % — reserves a slice of profit so you always see your real take-home (0 = off)</div><input class="mo-in" id="hsTax" type="text" inputmode="decimal" placeholder="e.g. 25" value="'+(((MO.cfg&&MO.cfg.taxRate)||0)?esc(String(MO.cfg.taxRate)):"")+'">'+
       '<div class="mo-f-lbl">Three stats below</div>'+
       '<select class="mo-in" id="hsS1" style="margin-bottom:7px">'+heroOpts(st[0]||"",true)+'</select>'+
       '<select class="mo-in" id="hsS2" style="margin-bottom:7px">'+heroOpts(st[1]||"",true)+'</select>'+
@@ -3714,8 +3721,9 @@
     el("hsSave").onclick=function(){
       var stats=[el("hsS1").value,el("hsS2").value,el("hsS3").value].filter(Boolean);
       var start=parseFloat(String(el("hsStart").value).replace(/[^0-9.\-]/g,""))||0;
+      var tax=Math.max(0,Math.min(60,parseFloat(String(el("hsTax").value).replace(/[^0-9.]/g,""))||0));
       var b=el("hsSave");b.disabled=true;
-      postMoCfg({hero:{primary:el("hsPrimary").value,stats:stats,startingBalance:start,title:el("hsTitle").value.trim()}}).then(function(d){if(d&&d.ok){closeMoSheet();toast("Headline updated")}else b.disabled=false});
+      postMoCfg({taxRate:tax,hero:{primary:el("hsPrimary").value,stats:stats,startingBalance:start,title:el("hsTitle").value.trim()}}).then(function(d){if(d&&d.ok){closeMoSheet();toast("Headline updated")}else b.disabled=false});
     };
     el("hsReset").onclick=function(){postMoCfg({hero:{primary:"balance",stats:["monthIn","monthOut","topCat"],startingBalance:0,title:""}}).then(function(){closeMoSheet();toast("Reset to default")})};
   }

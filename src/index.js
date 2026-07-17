@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-15·vm-weekly';
+const BUILD = '2026-07-17·tax-setaside';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -1828,6 +1828,10 @@ function defaultMoneyConfig() {
     recurring: [],          // { id, label, amount, cat, day, personal }
     serviceTypes: ['Interior', 'Exterior', 'Full detail', 'Add-on'],
     jpName: 'JP',
+    taxRate: 0,             // % of net profit to reserve for taxes. 0 = off (no
+                            // change to any existing number). Set it (e.g. 25) to
+                            // unlock the "take-home" and "reserved for taxes"
+                            // headline metrics. Front-end derives both from net.
     catsOff: [],            // category buttons hidden from the log grid
     nudgeDismissed: {},     // phone -> dismissedAt (won-nudges Mikey waved off)
     budgets: [],            // spending caps: { id, cat, amount, period }
@@ -1845,7 +1849,7 @@ function defaultMoneyConfig() {
 function defaultHero() {
   return { primary: 'balance', stats: ['monthIn', 'monthOut', 'topCat'], startingBalance: 0, title: '' };
 }
-const HERO_METRICS = ['balance', 'monthNet', 'monthIn', 'monthOut', 'monthJobs', 'monthAvg', 'topCat', 'monthPersonal', 'allIn', 'allOut'];
+const HERO_METRICS = ['balance', 'monthNet', 'takeHome', 'taxReserve', 'monthIn', 'monthOut', 'monthJobs', 'monthAvg', 'topCat', 'monthPersonal', 'allIn', 'allOut'];
 function sanitizeHero(h, prev) {
   const out = Object.assign(defaultHero(), prev || {});
   if (h && typeof h === 'object') {
@@ -2207,6 +2211,7 @@ async function apiMoneySaveConfig(request) {
   if (data.weeklyHour != null && !isNaN(+data.weeklyHour)) next.weeklyHour = Math.max(0, Math.min(23, Math.round(+data.weeklyHour)));
   if (data.weeklyDay != null && !isNaN(+data.weeklyDay)) next.weeklyDay = Math.max(0, Math.min(6, Math.round(+data.weeklyDay)));
   if (typeof data.jpName === 'string') next.jpName = data.jpName.trim().slice(0, 20) || 'JP';
+  if (data.taxRate != null && !isNaN(+data.taxRate)) next.taxRate = Math.max(0, Math.min(60, Math.round(+data.taxRate * 10) / 10));
   if (Array.isArray(data.serviceTypes)) next.serviceTypes = data.serviceTypes.map((s) => String(s).trim().slice(0, 32)).filter(Boolean).slice(0, 10);
   if (Array.isArray(data.catsOff)) next.catsOff = data.catsOff.map(String).filter((c) => MONEY_CATS.includes(c)).slice(0, MONEY_CATS.length);
   if (Array.isArray(data.budgets)) next.budgets = sanitizeBudgets(data.budgets);
