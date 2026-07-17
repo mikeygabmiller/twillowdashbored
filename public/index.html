@@ -872,6 +872,46 @@
   .budg .bt .bper{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--muted2);background:var(--panel3);padding:2px 6px;border-radius:6px;align-self:center}
   .budg .bt .bspent{margin-left:auto;font-size:12.5px;font-variant-numeric:tabular-nums}
   .budg .bt .bspent b{font-weight:800}
+
+  /* ---------- Money v2: ranges, KPI strip, 30/30/40, AI brain, owed ---------- */
+  .mo-ranges{display:flex;gap:6px;margin:2px 0 10px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .mo-ranges::-webkit-scrollbar{display:none}
+  .mo-rng{flex:none;padding:6px 13px;border-radius:999px;border:1px solid var(--line2);background:var(--panel);color:var(--muted);font-size:12.5px;font-weight:700;cursor:pointer;user-select:none;-webkit-user-select:none}
+  .mo-rng.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .mo-kpis{display:flex;gap:8px;overflow-x:auto;padding:2px 0 12px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .mo-kpis::-webkit-scrollbar{display:none}
+  .mo-kpi{flex:none;min-width:106px;background:var(--panel);border:1px solid var(--line2);border-radius:13px;padding:10px 12px}
+  .mo-kpi .kv{font-size:17px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .mo-kpi .kk{font-size:10px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.06em;font-weight:700;white-space:nowrap}
+  .mo-kpi.good .kv{color:var(--green)} .mo-kpi.bad .kv{color:#ef4444} .mo-kpi.warn .kv{color:#f5c563}
+  .mo-split{display:flex;align-items:center;gap:11px;background:var(--panel);border:1px solid var(--line2);border-radius:13px;padding:11px 13px;margin:0 0 12px;cursor:pointer;user-select:none;-webkit-user-select:none}
+  .mo-split .sbar{flex:1;display:flex;height:9px;border-radius:99px;overflow:hidden;min-width:60px}
+  .mo-split .sbar i{display:block;height:100%}
+  .mo-split .sl{font-size:11.5px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums;font-weight:600}
+  .mo-split-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:10px 0 4px}
+  .mo-split-card{background:var(--panel);border:1px solid var(--line2);border-radius:13px;padding:12px 8px;text-align:center}
+  .mo-split-card .a{font-size:16.5px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+  .mo-split-card .l{font-size:10.5px;color:var(--muted);margin-top:3px;text-transform:uppercase;letter-spacing:.05em;font-weight:700}
+  .mo-brainrow{display:flex;gap:8px;margin:0 0 12px}
+  .mo-brainbtn{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;background:var(--panel);border:1px solid var(--line2);border-radius:13px;padding:11px 6px;font-size:13px;font-weight:700;color:var(--text);cursor:pointer;user-select:none;-webkit-user-select:none}
+  .mo-brainbtn .e{color:#f5c563;display:inline-flex}
+  .mo-ai-h{font-size:16px;font-weight:800;line-height:1.45;margin:4px 0 4px;letter-spacing:-.01em}
+  .mo-ai-sec{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:14px 0 5px;font-weight:800}
+  .mo-ai-li{display:flex;gap:9px;font-size:13.5px;line-height:1.55;padding:3px 0}
+  .mo-ai-li .d{flex:none;margin-top:8px;width:6px;height:6px;border-radius:50%;background:var(--muted)}
+  .mo-ai-li.win .d{background:var(--green)} .mo-ai-li.watch .d{background:#f5c563} .mo-ai-li.move .d{background:var(--accent)}
+  .mo-owe{display:flex;align-items:center;gap:10px;background:rgba(239,68,68,.07);border:1px solid rgba(239,68,68,.35);border-radius:13px;padding:10px 12px;margin:0 0 8px}
+  .mo-owe .bd{flex:1;min-width:0;font-size:13px;line-height:1.4}
+  .mo-owe .bd small{display:block;color:var(--muted);font-size:11.5px}
+  .mo-owe .btn{padding:7px 11px;font-size:12.5px}
+  .mo-profit{font-size:11px;color:var(--muted2);font-variant-numeric:tabular-nums;margin-top:2px}
+  .mo-profit b{font-weight:700}
+  .mo-profit b.good{color:var(--green)} .mo-profit b.bad{color:#ef4444}
+  .mo-rc-clip{display:inline-flex;color:var(--muted);margin-right:2px}
+  .mo-adapt{font-size:10.5px;color:var(--muted2);text-align:center;padding:4px 0 8px}
+  .mc-bar.gin{background:var(--green)} .mc-bar.gout{background:#ef4444;opacity:.7}
+  .mc-legend{display:flex;gap:14px;font-size:11px;color:var(--muted);padding:2px 2px 8px}
+  .mc-legend i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px}
   .budg .meter{height:12px;border-radius:7px;background:var(--panel3);overflow:hidden;position:relative}
   .budg .meter span{display:block;height:100%;border-radius:7px;transition:width 1s cubic-bezier(.4,0,.2,1);min-width:3px}
   .budg .meter span.ok{background:linear-gradient(90deg,#22c55e,#16a34a)}
@@ -1203,7 +1243,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-15·vm-weekly";
+  var APP_BUILD="2026-07-17·money-v2";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -3172,12 +3212,64 @@
   var MO={open:false,view:"log",month:null,today:null,entries:[],summary:null,allTime:null,cfg:null,nudges:[],report:null,loadedOnce:false};
   var MOS=null; // state of the open entry sheet
   var dtMoneyCache={};
-  var MO_CATS=[["fuel","Fuel","fuel"],["supplies","Supplies","spray-can"],["equipment","Equipment","wrench"],["food","Food","utensils"],["bills","Bills","receipt"],["marketing","Marketing","megaphone"],["misc","Misc","package"]];
+  var MO_CATS=[["fuel","Fuel","fuel"],["supplies","Supplies","spray-can"],["equipment","Equipment","wrench"],["food","Food","utensils"],["bills","Bills","receipt"],["marketing","Marketing","megaphone"],["insurance","Insurance","credit-card"],["phone","Phone/net","phone"],["misc","Misc","package"]];
   // Icon (Lucide) for an entry — job/labor/personal each have their own; expenses
   // use their category icon. Kept separate so the buttons, rows, sheets all match.
   function moTypeIcon(type,cat){if(type==="job")return"car";if(type==="jp")return"users";if(type==="personal")return"user";return moCatInfo(cat)[2]}
-  var MO_SUBS={supplies:["Chemicals","Towels","Other"]};
+  var MO_SUBS={supplies:["Chemicals","Pads","Towels","Coatings","Other"]};
   var MO_METHODS=["Cash","Venmo","Zelle","Check"];
+  var MO_VEH=["Sedan","SUV","Truck","Van","Boat/RV","Other"];
+  // ---- adaptive smarts: remember what gets used, quietly reorder to match ----
+  function moUse(){try{return JSON.parse(localStorage.getItem("moUse")||"{}")}catch(e){return{}}}
+  function moBump(kind){try{var u=moUse();u[kind]=(u[kind]||0)+1;localStorage.setItem("moUse",JSON.stringify(u))}catch(e){}}
+  function moRange(){try{return localStorage.getItem("moRange")||"month"}catch(e){return"month"}}
+  function moSetRange(r){try{localStorage.setItem("moRange",r)}catch(e){};moRender()}
+  function moSplitCfg(){var sp=(MO.cfg&&MO.cfg.split)||{};var t=+sp.tax,b=+sp.biz,m=+sp.mine;if(!(t>=0&&b>=0&&m>=0&&t+b+m===100)){t=30;b=30;m=40}return{tax:t,biz:b,mine:m}}
+  function moMatRate(){var r=MO.cfg&&MO.cfg.matRate;return (r==null||isNaN(+r))?5:+r}
+  // profit-per-job: ticket − helper pay − materials (exact if logged, else auto-est)
+  function moJobProfit(e){
+    var mat=(e.mat!=null&&e.mat>0)?e.mat:Math.round(e.amount*moMatRate())/100;
+    var p=e.amount-(e.jp||0)-mat;
+    return{profit:Math.round(p*100)/100,margin:e.amount>0?Math.round(p/e.amount*100):0,est:!(e.mat!=null&&e.mat>0)};
+  }
+  // client-side summarize for the Today range (same shape the server returns)
+  function moSumEntries(list){
+    var s={gross:0,jp:0,exp:0,personal:0,jobs:0,owed:0,byService:{},byCat:{}};
+    (list||[]).forEach(function(e){
+      if(e.type==="job"){s.gross+=e.amount;s.jobs++;if(e.jp)s.jp+=e.jp;if(e.owed)s.owed+=e.owed;
+        if(e.service){var v=s.byService[e.service]=s.byService[e.service]||{n:0,total:0};v.n++;v.total+=e.amount}}
+      else if(e.type==="jp")s.jp+=e.amount;
+      else if(e.type==="personal")s.personal+=e.amount;
+      else{s.exp+=e.amount;s.byCat[e.cat||"misc"]=(s.byCat[e.cat||"misc"]||0)+e.amount}
+    });
+    s.net=Math.round((s.gross-s.jp-s.exp)*100)/100;
+    return s;
+  }
+  // merge per-month report summaries into one (for Quarter / Year ranges)
+  function moAggMonths(months,range){
+    var cur=moCurMonth(),y=cur.slice(0,4);
+    var qs=Math.floor((+cur.slice(5,7)-1)/3)*3+1;
+    var qStart=y+"-"+(qs<10?"0":"")+qs;
+    var s={gross:0,jp:0,exp:0,personal:0,net:0,jobs:0,owed:0,byService:{},byCat:{}};
+    (months||[]).forEach(function(m){
+      if(range==="year"&&m.month.slice(0,4)!==y)return;
+      if(range==="quarter"&&(m.month<qStart||m.month>cur))return;
+      s.gross+=m.gross||0;s.jp+=m.jp||0;s.exp+=m.exp||0;s.personal+=m.personal||0;s.net+=m.net||0;s.jobs+=m.jobs||0;s.owed+=m.owed||0;
+      var bs=m.byService||{};Object.keys(bs).forEach(function(k){var v=s.byService[k]=s.byService[k]||{n:0,total:0};v.n+=bs[k].n;v.total+=bs[k].total});
+      var bc=m.byCat||{};Object.keys(bc).forEach(function(k){s.byCat[k]=(s.byCat[k]||0)+bc[k]});
+    });
+    return s;
+  }
+  // the numbers for the currently-picked time range (Today/Week/Month/Quarter/Year)
+  function moRangeSum(){
+    var r=moRange();
+    if(r==="month")return MO.summary||moSumEntries([]);
+    if(r==="today")return moSumEntries((MO.entries||[]).filter(function(e){return e.date===moTodayStr()}));
+    if(r==="week")return MO.week||moSumEntries([]);
+    if(MO.report12)return moAggMonths(MO.report12,r);
+    if(!MO._r12busy){MO._r12busy=true;api("/api/money/report?months=12").then(function(d){MO._r12busy=false;if(d&&d.ok){MO.report12=d.months;if(MO.open&&MO.view==="log")moRender()}}).catch(function(){MO._r12busy=false})}
+    return null;
+  }
   function moCatInfo(id){for(var i=0;i<MO_CATS.length;i++)if(MO_CATS[i][0]===id)return MO_CATS[i];return [id||"misc",id||"Misc","package"]}
   function jpName(){return (MO.cfg&&MO.cfg.jpName)||"JP"}
   function fmtMoney(n){n=+n||0;var neg=n<0;n=Math.abs(n);var s=(n%1)?n.toFixed(2):String(Math.round(n));s=s.replace(/\B(?=(\d{3})+(?!\d))/g,",");return (neg?"-$":"$")+s}
@@ -3198,7 +3290,7 @@
   function loadMoney(month){
     return api("/api/money"+(month?"?month="+encodeURIComponent(month):"")).then(function(d){
       if(d&&d.ok){MO.month=d.month;MO.today=d.today;MO.entries=d.entries||[];MO.summary=d.summary;MO.week=d.week||null;MO.allTime=d.allTime||MO.allTime;MO.cfg=d.config;
-        if(!month||month===(d.today||"").slice(0,7))MO.nudges=d.nudges||[];
+        if(!month||month===(d.today||"").slice(0,7)){MO.nudges=d.nudges||[];MO.owed=d.owed||[]}
         MO.loadedOnce=true;refreshMoBadge();if(MO.open)moRender()}
     }).catch(function(){});
   }
@@ -3228,6 +3320,13 @@
     switch(key){
       case "balance":{var v=(at.net||0)+start;return{label:"Balance",value:fmtMoney(v),neg:v<0}}
       case "monthNet":return{label:"Net this month",value:fmtMoney(s.net||0),neg:(s.net||0)<0};
+      case "takeHome":{var rate=+((MO.cfg&&MO.cfg.taxRate)||0),n=s.net||0,res=n>0?n*rate/100:0,th=n-res;
+        return{label:"Take-home",value:fmtMoney(th),neg:th<0,sub:rate?"after "+rate+"% set aside":"set a tax %"}}
+      case "taxReserve":{var trate=+((MO.cfg&&MO.cfg.taxRate)||0),nn=s.net||0,rz=nn>0?nn*trate/100:0;
+        return{label:"Reserved for taxes",value:fmtMoney(rz),sub:trate?trate+"% of profit":"set a tax %"}}
+      case "mineBucket":{var sp1=moSplitCfg();return{label:"Yours ("+sp1.mine+"%)",value:fmtMoney((s.gross||0)*sp1.mine/100),sub:"auto-split this month"}}
+      case "taxBucket":{var sp2=moSplitCfg();return{label:"Taxes ("+sp2.tax+"%)",value:fmtMoney((s.gross||0)*sp2.tax/100),sub:"auto-split this month"}}
+      case "bizBucket":{var sp3=moSplitCfg();return{label:"Business ("+sp3.biz+"%)",value:fmtMoney((s.gross||0)*sp3.biz/100),sub:"auto-split this month"}}
       case "monthIn":return{label:"Made this month",value:fmtMoney(s.gross||0)};
       case "monthOut":return{label:"Spent this month",value:fmtMoney((s.jp||0)+(s.exp||0))};
       case "monthJobs":return{label:"Jobs this month",value:String(s.jobs||0)};
@@ -3260,6 +3359,41 @@
       }).join("")+'</div>';
     }
     h+='</div>';
+    // --- the 30/30/40 strip: computed silently in the background, one tap to open ---
+    var sp=moSplitCfg(),rs=moRangeSum(),rGross=(rs&&rs.gross)||0;
+    h+='<div class="mo-split" id="moSplitStrip" title="Auto-split — tap for details">'+
+      '<span class="sl">'+ic("wallet",14)+'</span>'+
+      '<div class="sbar"><i style="width:'+sp.tax+'%;background:#f5c563"></i><i style="width:'+sp.biz+'%;background:var(--accent)"></i><i style="width:'+sp.mine+'%;background:var(--green)"></i></div>'+
+      '<span class="sl">Tax '+fmtMoney(rGross*sp.tax/100)+' · Biz '+fmtMoney(rGross*sp.biz/100)+' · <b style="color:var(--green)">You '+fmtMoney(rGross*sp.mine/100)+'</b></span></div>';
+    // --- AI brain + buckets quick buttons ---
+    h+='<div class="mo-brainrow">'+
+      '<button class="mo-brainbtn" id="moBrainBtn"><span class="e">'+ic("sparkles",16)+'</span>Money Brain</button>'+
+      '<button class="mo-brainbtn" id="moSplitBtn"><span class="e" style="color:var(--green)">'+ic("wallet",16)+'</span>Buckets</button></div>';
+    // --- time-range flips + the KPI strip the questionnaire asked for ---
+    var RANGES=[["today","Today"],["week","Week"],["month","Month"],["quarter","Quarter"],["year","Year"]];
+    h+='<div class="mo-ranges">'+RANGES.map(function(r){return '<span class="mo-rng'+(moRange()===r[0]?" on":"")+'" data-rng="'+r[0]+'">'+r[1]+'</span>'}).join("")+'</div>';
+    if(rs){
+      var mgn=rs.gross>0?Math.round((rs.net||0)/rs.gross*100):0;
+      var best="",bs=rs.byService||{},bk=Object.keys(bs);
+      if(bk.length){bk.sort(function(a,b){return bs[b].total-bs[a].total});best=bk[0]}
+      h+='<div class="mo-kpis">'+
+        '<div class="mo-kpi '+((rs.net||0)<0?"bad":"good")+'"><div class="kv">'+fmtMoney(rs.net||0)+'</div><div class="kk">Net profit</div></div>'+
+        '<div class="mo-kpi good"><div class="kv">'+fmtMoney(rGross*sp.mine/100)+'</div><div class="kk">Yours ('+sp.mine+'%)</div></div>'+
+        '<div class="mo-kpi"><div class="kv">'+(rs.jobs?fmtMoney(rs.gross/rs.jobs):"—")+'</div><div class="kk">Avg ticket</div></div>'+
+        '<div class="mo-kpi"><div class="kv">'+(rs.jobs||0)+'</div><div class="kk">Jobs</div></div>'+
+        '<div class="mo-kpi '+(mgn>=50?"good":(mgn>0?"warn":"bad"))+'"><div class="kv">'+(rs.gross>0?mgn+"%":"—")+'</div><div class="kk">Margin</div></div>'+
+        (best?'<div class="mo-kpi"><div class="kv" style="font-size:13.5px;line-height:1.3;padding-top:2px">'+esc(best)+'</div><div class="kk">Best service</div></div>':"")+
+        '<div class="mo-kpi warn"><div class="kv">'+fmtMoney(rGross*sp.tax/100)+'</div><div class="kk">Tax reserved</div></div>'+
+        ((rs.owed||0)>0?'<div class="mo-kpi bad"><div class="kv">'+fmtMoney(rs.owed)+'</div><div class="kk">Owed to you</div></div>':"")+
+        '</div>';
+    } else h+='<div class="mo-kpis"><div class="mo-kpi"><div class="kv">…</div><div class="kk">Loading</div></div></div>';
+    // --- customers who still owe you ---
+    (MO.owed||[]).forEach(function(o){
+      h+='<div class="mo-owe"><div class="bd"><b>'+esc(o.name||prettyPhone(o.phone)||"A customer")+'</b> still owes <b style="color:#ef4444">'+fmtMoney(o.owed)+'</b>'+
+        '<small>'+esc(moDayLabel(o.date))+' job · '+fmtMoney(o.amount)+' total</small></div>'+
+        (o.phone?'<button class="btn" data-owetext="'+esc(o.phone)+'">Text</button>':"")+
+        '<button class="btn accent" data-owepaid="'+esc(o.id)+'|'+esc(o.date)+'">Paid ✓</button></div>';
+    });
     if(MO.cfg&&MO.cfg.wonNudge!==false)(MO.nudges||[]).forEach(function(nd){
       h+='<div class="mo-nudge"><div class="t"><span class="ic-inline" style="color:#f5c563">'+ic("lightbulb",14)+'</span> <b>'+esc(nd.name||prettyPhone(nd.phone))+'</b> was marked <b>Won</b> '+esc(fmtTime(nd.wonAt))+' — no job $ logged yet.</div>'+
         '<div class="acts"><button class="btn accent" data-nlog="'+esc(nd.phone)+'">Log the $</button><button class="btn" data-ndis="'+esc(nd.phone)+'">Dismiss</button></div></div>';
@@ -3268,9 +3402,13 @@
     h+='<div class="mo-grid">';
     h+='<button class="mo-btn income" data-mo="job"><span class="e">'+ic("car",26)+'</span>Detail $</button>';
     h+='<button class="mo-btn" data-mo="jp"><span class="e">'+ic("users",26)+'</span>Pay '+esc(jpName())+'</button>';
-    MO_CATS.forEach(function(c){if(off.indexOf(c[0])>=0)return;h+='<button class="mo-btn" data-mo="'+c[0]+'"><span class="e">'+ic(c[2],26)+'</span>'+esc(c[1])+'</button>'});
+    // buttons quietly re-order to your habits (most-logged first)
+    var use=moUse();
+    MO_CATS.slice().sort(function(a,b){return (use[b[0]]||0)-(use[a[0]]||0)})
+      .forEach(function(c){if(off.indexOf(c[0])>=0)return;h+='<button class="mo-btn" data-mo="'+c[0]+'"><span class="e">'+ic(c[2],26)+'</span>'+esc(c[1])+'</button>'});
     if(!MO.cfg||MO.cfg.personalEnabled!==false)h+='<button class="mo-btn dim" data-mo="personal"><span class="e">'+ic("user",26)+'</span>Personal</button>';
     h+='</div>';
+    if(Object.keys(use).length>2)h+='<div class="mo-adapt">✦ buttons auto-sort to your habits</div>';
     var today=moTodayStr();
     var todays=(MO.entries||[]).filter(function(e){return e.date===today});
     h+='<div class="mo-sec-h">Today'+(todays.length?' <span class="n">'+todays.length+'</span>':'')+'</div>';
@@ -3279,20 +3417,44 @@
     box.innerHTML=h;
     moWireRows(box);
     el("heroEdit").onclick=function(ev){ev.stopPropagation();openHeroSheet()};
-    Array.prototype.forEach.call(box.querySelectorAll("[data-mo]"),function(b){b.onclick=function(){vibrate(6);openMoSheet(b.getAttribute("data-mo"),null,null)}});
+    var sb=el("moSplitBtn");if(sb)sb.onclick=openSplitSheet;
+    var ss=el("moSplitStrip");if(ss)ss.onclick=openSplitSheet;
+    var bb=el("moBrainBtn");if(bb)bb.onclick=openBrainSheet;
+    Array.prototype.forEach.call(box.querySelectorAll("[data-rng]"),function(r){r.onclick=function(){vibrate(4);moSetRange(r.getAttribute("data-rng"))}});
+    Array.prototype.forEach.call(box.querySelectorAll("[data-owepaid]"),function(b){b.onclick=function(){
+      var p=b.getAttribute("data-owepaid").split("|");b.disabled=true;
+      post("/api/money/entry",{id:p[0],date:p[1],clearOwed:true}).then(function(d){
+        if(d&&d.ok){toast("Marked paid 🎉");vibrate(10);MO.owed=(MO.owed||[]).filter(function(x){return x.id!==p[0]});loadMoney()}
+        else{b.disabled=false;toast("Couldn't update",{bad:true})}
+      });
+    }});
+    Array.prototype.forEach.call(box.querySelectorAll("[data-owetext]"),function(b){b.onclick=function(){
+      var ph=b.getAttribute("data-owetext");closeMoney();openThread(ph);
+    }});
+    Array.prototype.forEach.call(box.querySelectorAll("[data-mo]"),function(b){b.onclick=function(){vibrate(6);var k=b.getAttribute("data-mo");moBump(k);openMoSheet(k,null,null)}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-nlog]"),function(b){b.onclick=function(){var ph=b.getAttribute("data-nlog");var t=threadByPhone(ph);openMoSheet("job",{phone:ph,name:t?displayName(t):prettyPhone(ph)},null)}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-ndis]"),function(b){b.onclick=function(){var ph=b.getAttribute("data-ndis");postMoCfg({dismissNudge:ph}).then(function(){MO.nudges=(MO.nudges||[]).filter(function(x){return x.phone!==ph});refreshMoBadge();if(MO.open)moRender()})}});
   }
 
   // Shared entry row (Today list + History). Tap = edit, trash = delete.
   function moEntryRow(e,withDel){
-    var icon,l1,l2=[],amtCls="";
-    if(e.type==="job"){icon="car";l1=e.name?esc(e.name):"Detail job";if(e.service)l2.push(esc(e.service));if(e.method)l2.push(esc(e.method));if(e.city)l2.push(esc(e.city));if(e.jp)l2.push(esc(jpName())+" "+fmtMoney(e.jp));amtCls=" in"}
+    var icon,l1,l2=[],amtCls="",extra="";
+    if(e.type==="job"){
+      icon="car";l1=e.name?esc(e.name):"Detail job";
+      if(e.service)l2.push(esc(e.service));if(e.veh)l2.push(esc(e.veh));if(e.method)l2.push(esc(e.method));if(e.city)l2.push(esc(e.city));if(e.jp)l2.push(esc(jpName())+" "+fmtMoney(e.jp));
+      amtCls=" in";
+      var pf=moJobProfit(e);
+      var bits=['<b class="'+(pf.profit>=0?"good":"bad")+'">'+(pf.est?"≈ ":"")+fmtMoney(pf.profit)+' profit · '+pf.margin+'%</b>'];
+      if(e.hours)bits.push(Math.round(e.amount/e.hours)+"/hr · "+e.hours+"h");
+      if(e.owed)bits.push('<b class="bad">owes '+fmtMoney(e.owed)+'</b>');
+      extra='<div class="mo-profit">'+bits.join(" · ")+'</div>';
+    }
     else if(e.type==="jp"){icon="users";l1="Paid "+esc(jpName());if(e.note)l2.push(esc(e.note))}
     else if(e.type==="personal"){icon="user";l1=esc(e.cat||"Personal");l2.push("personal · not in profit");amtCls=" per"}
     else{var c=moCatInfo(e.cat);icon=c[2];l1=esc(c[1])+(e.sub?" · "+esc(e.sub):"");if(e.note)l2.push(esc(e.note))}
     return '<div class="mo-row" data-eid="'+esc(e.id)+'"><span class="ee">'+ic(icon,19)+'</span>'+
-      '<div class="bd"><div class="l1">'+l1+'</div>'+(l2.length?'<div class="l2">'+l2.join(" · ")+'</div>':'')+'</div>'+
+      '<div class="bd"><div class="l1">'+l1+'</div>'+(l2.length?'<div class="l2">'+l2.join(" · ")+'</div>':'')+extra+'</div>'+
+      (e.rc?'<a class="mo-rc-clip" href="/api/money/receipt?id='+esc(e.id)+'" target="_blank" onclick="event.stopPropagation()" aria-label="View receipt">'+ic("image",14)+'</a>':"")+
       '<span class="amt'+amtCls+'">'+(e.type==="job"?"+":"−")+fmtMoney(e.amount)+'</span>'+
       (withDel?'<button class="del" data-edel="'+esc(e.id)+'|'+esc(e.date)+'" aria-label="Delete">'+ic("trash",15)+'</button>':'')+'</div>';
   }
@@ -3332,11 +3494,12 @@
   }
   function openMoSheet(kind,preset,editEntry){
     preset=preset||{};
-    MOS={kind:kind,amt:"",method:"",service:"",sub:"",phone:preset.phone||"",name:preset.name||"",custQ:"",date:moTodayStr(),id:null,origDate:null};
+    MOS={kind:kind,amt:"",method:"",service:"",sub:"",phone:preset.phone||"",name:preset.name||"",custQ:"",date:moTodayStr(),id:null,origDate:null,veh:"",rcImg:null,hadRc:false};
     if(editEntry){
       MOS.id=editEntry.id;MOS.origDate=editEntry.date;MOS.date=editEntry.date;MOS.amt=String(editEntry.amount);
       MOS.method=editEntry.method||"";MOS.service=editEntry.service||"";MOS.sub=editEntry.sub||"";
       MOS.phone=editEntry.phone||"";MOS.name=editEntry.name||"";
+      MOS.veh=editEntry.veh||"";MOS.hadRc=!!editEntry.rc;
     }
     var ki=moKindInfo(kind);
     var h='<div class="sh-hd"><span class="e">'+ki.e+'</span><b>'+esc((MOS.id?"Edit · ":"")+ki.t)+'</b><button class="sh-x" id="moShX">'+ic("x",20)+'</button></div><div class="sh-body">';
@@ -3347,8 +3510,18 @@
       var svc=(MO.cfg&&MO.cfg.serviceTypes)||[];
       if(svc.length)h+='<div class="mo-f-lbl">Service (optional)</div><div class="mo-chips" id="moSvc">'+svc.map(function(sv){return '<span class="mo-chip'+(MOS.service===sv?" on":"")+'" data-svc="'+esc(sv)+'">'+esc(sv)+'</span>'}).join("")+'</div>';
       h+='<div class="mo-f-lbl">Customer (optional — links to their texts)</div><div id="moCust"></div>';
+      h+='<div class="mo-f-lbl">Vehicle (optional)</div><div class="mo-chips" id="moVeh">'+MO_VEH.map(function(v){return '<span class="mo-chip'+(MOS.veh===v?" on":"")+'" data-veh="'+v+'">'+v+'</span>'}).join("")+'</div>';
       h+='<div class="mo-f-lbl">'+esc(jpName())+' pay on this job (optional)</div><input class="mo-in" id="moJp" type="text" inputmode="decimal" placeholder="e.g. 40" value="'+esc(editEntry&&editEntry.jp?String(editEntry.jp):"")+'">';
+      h+='<div style="display:flex;gap:8px"><div style="flex:1"><div class="mo-f-lbl">Hours (optional)</div><input class="mo-in" id="moHours" type="text" inputmode="decimal" placeholder="e.g. 2.5" value="'+esc(editEntry&&editEntry.hours?String(editEntry.hours):"")+'"></div>'+
+         '<div style="flex:1"><div class="mo-f-lbl">They still owe (optional)</div><input class="mo-in" id="moOwed" type="text" inputmode="decimal" placeholder="e.g. 50" value="'+esc(editEntry&&editEntry.owed?String(editEntry.owed):"")+'"></div></div>';
       h+='<div class="mo-f-lbl">City (optional)</div><input class="mo-in" id="moCity" type="text" placeholder="e.g. Monroe" value="'+esc((editEntry&&editEntry.city)||"")+'">'+moCityChips();
+    }
+    var isExp=(kind!=="job"&&kind!=="jp"&&kind!=="personal");
+    if(isExp){
+      h+='<div class="mo-f-lbl">Receipt photo (optional — never lose one again)</div>'+
+        '<button type="button" class="btn ic-btn" id="moRcBtn" style="width:100%">'+ic("image",15)+'<span id="moRcLbl">'+(MOS.hadRc?"Replace receipt":"Snap / attach receipt")+'</span></button>'+
+        '<input type="file" id="moRcFile" accept="image/*" capture="environment" style="display:none">'+
+        (MOS.hadRc?'<div style="font-size:11.5px;color:var(--muted);padding-top:5px;text-align:center"><a href="/api/money/receipt?id='+esc(MOS.id)+'" target="_blank" style="color:var(--accent)">View saved receipt</a></div>':"");
     }
     if(MO_SUBS[kind])h+='<div class="mo-f-lbl">What kind?</div><div class="mo-chips" id="moSubChips">'+MO_SUBS[kind].map(function(sb){return '<span class="mo-chip'+(MOS.sub===sb?" on":"")+'" data-sub="'+sb+'">'+sb+'</span>'}).join("")+'</div>';
     if(kind==="personal")h+='<div class="mo-f-lbl">What was it? (optional)</div><input class="mo-in" id="moPCat" type="text" maxlength="30" placeholder="e.g. Food, Car mods, Books" value="'+esc((editEntry&&editEntry.cat)||"")+'">';
@@ -3369,6 +3542,26 @@
     var svcW=el("moSvc");if(svcW)Array.prototype.forEach.call(svcW.querySelectorAll("[data-svc]"),function(ch){ch.onclick=function(){var sv=ch.getAttribute("data-svc");MOS.service=MOS.service===sv?"":sv;Array.prototype.forEach.call(svcW.querySelectorAll("[data-svc]"),function(x){x.classList.toggle("on",x.getAttribute("data-svc")===MOS.service)})}});
     var subW=el("moSubChips");if(subW)Array.prototype.forEach.call(subW.querySelectorAll("[data-sub]"),function(ch){ch.onclick=function(){var sb=ch.getAttribute("data-sub");MOS.sub=MOS.sub===sb?"":sb;Array.prototype.forEach.call(subW.querySelectorAll("[data-sub]"),function(x){x.classList.toggle("on",x.getAttribute("data-sub")===MOS.sub)})}});
     Array.prototype.forEach.call(sh.querySelectorAll("[data-city]"),function(ch){ch.onclick=function(){var ci=el("moCity");if(ci)ci.value=ch.getAttribute("data-city")}});
+    var vehW=el("moVeh");if(vehW)Array.prototype.forEach.call(vehW.querySelectorAll("[data-veh]"),function(ch){ch.onclick=function(){var v=ch.getAttribute("data-veh");MOS.veh=MOS.veh===v?"":v;Array.prototype.forEach.call(vehW.querySelectorAll("[data-veh]"),function(x){x.classList.toggle("on",x.getAttribute("data-veh")===MOS.veh)})}});
+    var rcB=el("moRcBtn"),rcF=el("moRcFile");
+    if(rcB&&rcF){
+      rcB.onclick=function(){rcF.click()};
+      rcF.onchange=function(){
+        var f=rcF.files&&rcF.files[0];if(!f)return;
+        var img=new Image(),rd=new FileReader();
+        rd.onload=function(){img.onload=function(){
+          var mx=1280,w=img.width,hh=img.height;
+          if(w>mx||hh>mx){var sc=mx/Math.max(w,hh);w=Math.round(w*sc);hh=Math.round(hh*sc)}
+          var cv=document.createElement("canvas");cv.width=w;cv.height=hh;
+          cv.getContext("2d").drawImage(img,0,0,w,hh);
+          var q=0.72,out=cv.toDataURL("image/jpeg",q);
+          while(out.length>380000&&q>0.35){q-=0.12;out=cv.toDataURL("image/jpeg",q)}
+          if(out.length>380000){toast("Photo too big — try again",{bad:true});return}
+          MOS.rcImg=out;var lb=el("moRcLbl");if(lb)lb.textContent="Receipt attached ✓ (saves with entry)";
+        };img.src=rd.result};
+        rd.readAsDataURL(f);
+      };
+    }
     Array.prototype.forEach.call(el("moWhen").querySelectorAll("[data-when]"),function(ch){ch.onclick=function(){MOS.date=ch.getAttribute("data-when")==="today"?moTodayStr():moYesterday();el("moDate").value=MOS.date;moSyncWhenChips()}});
     el("moDate").onchange=function(){if(el("moDate").value){MOS.date=el("moDate").value;moSyncWhenChips()}};
     if(el("moCust"))moRenderCust();
@@ -3430,6 +3623,9 @@
       if(MOS.phone){e.phone=MOS.phone;e.name=MOS.name}
       var city=el("moCity")?el("moCity").value.trim():"";if(city)e.city=city;
       var jp=el("moJp")?parseFloat(String(el("moJp").value).replace(/[^0-9.]/g,"")):0;if(jp>0)e.jp=jp;
+      if(MOS.veh)e.veh=MOS.veh;
+      var hrs=el("moHours")?parseFloat(String(el("moHours").value).replace(/[^0-9.]/g,"")):0;if(hrs>0)e.hours=hrs;
+      var ow=el("moOwed")?parseFloat(String(el("moOwed").value).replace(/[^0-9.]/g,"")):0;if(ow>0)e.owed=ow;
     }
     else if(MOS.kind==="jp")e.type="jp";
     else if(MOS.kind==="personal"){e.type="personal";var pc=el("moPCat")?el("moPCat").value.trim():"";if(pc)e.cat=pc}
@@ -3437,8 +3633,10 @@
     if(MOS.id){e.id=MOS.id;e.origDate=MOS.origDate}
     var isEdit=!!MOS.id;var label=moKindInfo(MOS.kind).t;
     var b=el("moSave");b.disabled=true;
+    var rcImg=MOS.rcImg; // receipt rides along after the entry saves (needs its id)
     post("/api/money/entry",e).then(function(d){
       if(d&&d.ok){
+        if(rcImg&&d.entry&&d.entry.id)post("/api/money/receipt",{id:d.entry.id,date:d.entry.date,img:rcImg}).then(function(r){if(r&&r.ok)toast("Receipt saved 📎")}).catch(function(){});
         closeMoSheet();MOS=null;MO.report=null;dtMoneyCache={};
         toast(isEdit?"Entry updated":("Logged — "+label+" "+fmtMoney(amt)));vibrate(10);
         loadMoney(MO.view==="log"?null:MO.month);
@@ -3498,6 +3696,12 @@
       '<div class="stat"><div class="v">'+s.jobs+'</div><div class="k">Jobs</div></div>'+
       '<div class="stat"><div class="v">'+(s.jobs?fmtMoney(avg):"—")+'</div><div class="k">Avg ticket</div></div>'+
     '</div>';
+    var sp=moSplitCfg();
+    h+='<div class="mo-split" id="moSplitStrip2" style="margin-top:12px" title="Auto-split — tap for details">'+
+      '<span class="sl">'+ic("wallet",14)+'</span>'+
+      '<div class="sbar"><i style="width:'+sp.tax+'%;background:#f5c563"></i><i style="width:'+sp.biz+'%;background:var(--accent)"></i><i style="width:'+sp.mine+'%;background:var(--green)"></i></div>'+
+      '<span class="sl">Tax '+fmtMoney((s.gross||0)*sp.tax/100)+' · Biz '+fmtMoney((s.gross||0)*sp.biz/100)+' · <b style="color:var(--green)">You '+fmtMoney((s.gross||0)*sp.mine/100)+'</b></span></div>';
+    if(s.owed)h+='<div class="mo-owe"><div class="bd"><b>Customers still owe you '+fmtMoney(s.owed)+'</b><small>from jobs this month — chase it on the Log screen</small></div></div>';
     if(s.personal)h+='<div class="mo-set" style="margin-top:12px"><div class="mo-srow"><span class="lb"><span class="ic-inline" style="margin-right:5px">'+ic("user",13)+'</span>Personal spending<small>Kept completely separate — never counted in profit.</small></span><b>'+fmtMoney(s.personal)+'</b></div></div>';
     var cats=Object.keys(s.byCat||{}).sort(function(a,b){return s.byCat[b]-s.byCat[a]});
     if(cats.length){
@@ -3510,39 +3714,56 @@
     }
     var svcs=Object.keys(s.byService||{});
     if(svcs.length){
-      h+='<div class="mo-sec-h">Average ticket by service</div>';
+      h+='<div class="mo-sec-h">Service scoreboard — what actually earns</div>';
+      // profit ≈ ticket minus that service's helper pay + materials (exact when
+      // logged on the job, auto-estimated otherwise)
+      var svcCost={};
+      (MO.entries||[]).forEach(function(e){
+        if(e.type!=="job"||!e.service)return;
+        var mat=(e.mat!=null&&e.mat>0)?e.mat:Math.round(e.amount*moMatRate())/100;
+        svcCost[e.service]=(svcCost[e.service]||0)+(e.jp||0)+mat;
+      });
       svcs.sort(function(a,b){return s.byService[b].total-s.byService[a].total}).forEach(function(sv){
         var v=s.byService[sv];
-        h+='<div class="mo-row" style="cursor:default"><span class="ee">'+ic("car",19)+'</span><div class="bd"><div class="l1">'+esc(sv)+'</div><div class="l2">'+v.n+' job'+(v.n===1?"":"s")+' · '+fmtMoney(v.total)+' total</div></div><span class="amt in">'+fmtMoney(v.total/v.n)+'</span></div>';
+        var prof=v.total-(svcCost[sv]||Math.round(v.total*moMatRate())/100);
+        var mgn=v.total>0?Math.round(prof/v.total*100):0;
+        h+='<div class="mo-row" style="cursor:default"><span class="ee">'+ic("car",19)+'</span><div class="bd"><div class="l1">'+esc(sv)+'</div><div class="l2">'+v.n+' job'+(v.n===1?"":"s")+' · avg '+fmtMoney(v.total/v.n)+'</div>'+
+          '<div class="mo-profit"><b class="'+(prof>=0?"good":"bad")+'">≈ '+fmtMoney(prof)+' profit · '+mgn+'%</b></div></div>'+
+          '<span class="amt in">'+fmtMoney(v.total)+'</span></div>';
       });
     }
     var meths=Object.keys(s.byMethod||{});
     if(meths.length)h+='<div class="home-strip" style="margin-top:14px;justify-content:flex-start">'+meths.map(function(mm){return '<span>'+esc(mm)+' '+fmtMoney(s.byMethod[mm])+'</span>'}).join("")+'</div>';
     h+='<div id="moTrend"></div>';
     box.innerHTML=h;moWireMonthNav();
+    var ss2=el("moSplitStrip2");if(ss2)ss2.onclick=openSplitSheet;
     if(MO.report)renderMoTrend(MO.report);
     else api("/api/money/report?months=6").then(function(d){if(d&&d.ok){MO.report=d.months;if(MO.open&&MO.view==="report")renderMoTrend(d.months)}});
   }
   function renderMoTrend(months){
     var host=el("moTrend");if(!host||!months||!months.length)return;
-    var vals=months.map(function(x){return x.net});
-    var maxV=Math.max.apply(null,vals.concat([0])),minV=Math.min.apply(null,vals.concat([0]));
-    var range=(maxV-minV)||1,H=140,zero=Math.round(maxV/range*H);
-    var maxAbs=Math.max.apply(null,vals.map(function(v){return Math.abs(v)}));
-    var h='<div class="mo-chart"><div class="mc-title">Net profit — last '+months.length+' months</div>'+
+    // Cash in vs cash out, month by month, with the net labeled on top.
+    var H=140,maxV=1;
+    months.forEach(function(x){maxV=Math.max(maxV,x.gross||0,(x.jp||0)+(x.exp||0))});
+    var nets=months.map(function(x){return x.net});
+    var maxAbs=Math.max.apply(null,nets.map(function(v){return Math.abs(v)}));
+    var h='<div class="mo-chart"><div class="mc-title">Cash in vs out — last '+months.length+' months</div>'+
+      '<div class="mc-legend"><span><i style="background:var(--green)"></i>In</span><span><i style="background:#ef4444;opacity:.7"></i>Out</span><span>label = net</span></div>'+
       '<div class="mc-bars-wrap"><div class="mc-bars" style="height:'+H+'px">';
     months.forEach(function(x,i){
-      var v=x.net,bh=Math.max(2,Math.round(Math.abs(v)/range*H));
-      var top=v>=0?(zero-bh):zero;
+      var inH=Math.max(2,Math.round((x.gross||0)/maxV*H));
+      var outV=(x.jp||0)+(x.exp||0),outH=Math.max(2,Math.round(outV/maxV*H));
       var isCur=x.month===moCurMonth();
-      var show=isCur||(maxAbs>0&&Math.abs(v)===maxAbs);
-      h+='<div class="mc-col" data-i="'+i+'">'+
-        '<div class="mc-zero" style="top:'+zero+'px"></div>'+
-        '<div class="mc-bar'+(v<0?" neg":"")+(isCur?"":" dim")+'" style="top:'+top+'px;height:'+bh+'px"></div>'+
-        '<div class="mc-val'+(show?" show":"")+'" style="top:'+Math.max(-4,top-15)+'px">'+fmtMoney(v)+'</div>'+
+      var show=isCur||(maxAbs>0&&Math.abs(x.net)===maxAbs);
+      h+='<div class="mc-col" data-i="'+i+'" style="position:relative">'+
+        '<div style="position:absolute;left:0;right:0;bottom:16px;top:0">'+
+          '<div class="mc-bar gin'+(isCur?"":" dim")+'" style="position:absolute;left:12%;width:34%;bottom:0;top:auto;height:'+inH+'px"></div>'+
+          '<div class="mc-bar gout'+(isCur?"":" dim")+'" style="position:absolute;right:12%;width:34%;bottom:0;top:auto;height:'+outH+'px"></div>'+
+        '</div>'+
+        '<div class="mc-val'+(show?" show":"")+'" style="top:'+Math.max(-4,H-16-Math.max(inH,outH)-15)+'px">'+fmtMoney(x.net)+'</div>'+
         '<div class="mc-m">'+esc(monthShort(x.month))+'</div></div>';
     });
-    h+='</div></div><div style="font-size:11px;color:var(--muted2);padding:0 2px 8px">Tap a bar to show its number.</div></div>';
+    h+='</div></div><div style="font-size:11px;color:var(--muted2);padding:0 2px 8px">Tap a month to show its net.</div></div>';
     host.innerHTML=h;
     Array.prototype.forEach.call(host.querySelectorAll(".mc-col"),function(c){
       c.onclick=function(){var v=c.querySelector(".mc-val");if(v)v.classList.toggle("show")};
@@ -3684,6 +3905,11 @@
     ["monthIn","Made this month"],
     ["monthOut","Spent this month"],
     ["monthNet","Net profit this month"],
+    ["takeHome","Take-home (after tax set-aside)"],
+    ["taxReserve","Reserved for taxes"],
+    ["mineBucket","Yours — auto-split"],
+    ["taxBucket","Taxes — auto-split"],
+    ["bizBucket","Business — auto-split"],
     ["topCat","Top spending category"],
     ["monthJobs","Jobs this month"],
     ["monthAvg","Average ticket"],
@@ -3702,6 +3928,7 @@
       '<div class="mo-f-lbl">Big number up top</div><select class="mo-in" id="hsPrimary">'+heroOpts(hero.primary,false)+'</select>'+
       '<div class="mo-f-lbl">Custom label (optional)</div><input class="mo-in" id="hsTitle" maxlength="40" placeholder="e.g. In the bank" value="'+esc(hero.title||"")+'">'+
       '<div class="mo-f-lbl">Starting balance — money you already had</div><input class="mo-in" id="hsStart" type="text" inputmode="decimal" placeholder="e.g. 500" value="'+(hero.startingBalance?esc(String(hero.startingBalance)):"")+'">'+
+      '<div class="mo-f-lbl">Tax set-aside % — reserves a slice of profit so you always see your real take-home (0 = off)</div><input class="mo-in" id="hsTax" type="text" inputmode="decimal" placeholder="e.g. 25" value="'+(((MO.cfg&&MO.cfg.taxRate)||0)?esc(String(MO.cfg.taxRate)):"")+'">'+
       '<div class="mo-f-lbl">Three stats below</div>'+
       '<select class="mo-in" id="hsS1" style="margin-bottom:7px">'+heroOpts(st[0]||"",true)+'</select>'+
       '<select class="mo-in" id="hsS2" style="margin-bottom:7px">'+heroOpts(st[1]||"",true)+'</select>'+
@@ -3714,10 +3941,65 @@
     el("hsSave").onclick=function(){
       var stats=[el("hsS1").value,el("hsS2").value,el("hsS3").value].filter(Boolean);
       var start=parseFloat(String(el("hsStart").value).replace(/[^0-9.\-]/g,""))||0;
+      var tax=Math.max(0,Math.min(60,parseFloat(String(el("hsTax").value).replace(/[^0-9.]/g,""))||0));
       var b=el("hsSave");b.disabled=true;
-      postMoCfg({hero:{primary:el("hsPrimary").value,stats:stats,startingBalance:start,title:el("hsTitle").value.trim()}}).then(function(d){if(d&&d.ok){closeMoSheet();toast("Headline updated")}else b.disabled=false});
+      postMoCfg({taxRate:tax,hero:{primary:el("hsPrimary").value,stats:stats,startingBalance:start,title:el("hsTitle").value.trim()}}).then(function(d){if(d&&d.ok){closeMoSheet();toast("Headline updated")}else b.disabled=false});
     };
     el("hsReset").onclick=function(){postMoCfg({hero:{primary:"balance",stats:["monthIn","monthOut","topCat"],startingBalance:0,title:""}}).then(function(){closeMoSheet();toast("Reset to default")})};
+  }
+
+  // ---- 🗂 Buckets sheet: the 30/30/40 auto-sort, computed in the background ----
+  function openSplitSheet(){
+    var sp=moSplitCfg();
+    var s=MO.summary||{},at=MO.allTime||{};
+    function cards(g,label){
+      return '<div class="mo-f-lbl" style="margin-top:10px">'+label+'</div><div class="mo-split-cards">'+
+        '<div class="mo-split-card"><div class="a" style="color:#f5c563">'+fmtMoney(g*sp.tax/100)+'</div><div class="l">Taxes '+sp.tax+'%</div></div>'+
+        '<div class="mo-split-card"><div class="a" style="color:var(--accent)">'+fmtMoney(g*sp.biz/100)+'</div><div class="l">Business '+sp.biz+'%</div></div>'+
+        '<div class="mo-split-card"><div class="a" style="color:var(--green)">'+fmtMoney(g*sp.mine/100)+'</div><div class="l">Yours '+sp.mine+'%</div></div></div>';
+    }
+    var h='<div class="sh-hd"><span class="e">'+ic("wallet",21)+'</span><b>Auto-split · '+sp.tax+'/'+sp.biz+'/'+sp.mine+'</b><button class="sh-x" id="spX">'+ic("x",20)+'</button></div><div class="sh-body">'+
+      '<div style="font-size:13px;color:var(--muted);line-height:1.55;padding:2px 0 4px">Every dollar you earn is sorted <b style="color:#f5c563">Taxes</b> / <b style="color:var(--accent)">Business</b> / <b style="color:var(--green)">Yours</b> — silently, in the background. Nothing moves your money; these are the amounts to set aside when you cash out.</div>'+
+      cards(s.gross||0,"This month · "+fmtMoney(s.gross||0)+" earned")+
+      cards(at.gross||0,"All-time · "+fmtMoney(at.gross||0)+" earned")+
+      '<div class="mo-f-lbl" style="margin-top:14px">Change the split (must total 100)</div>'+
+      '<div style="display:flex;gap:8px">'+
+      '<input class="mo-in" id="spTax" type="number" inputmode="numeric" value="'+sp.tax+'" style="text-align:center">'+
+      '<input class="mo-in" id="spBiz" type="number" inputmode="numeric" value="'+sp.biz+'" style="text-align:center">'+
+      '<input class="mo-in" id="spMine" type="number" inputmode="numeric" value="'+sp.mine+'" style="text-align:center"></div>'+
+      '<div style="display:flex;gap:8px;font-size:10.5px;color:var(--muted);text-align:center;padding-top:3px"><span style="flex:1">TAXES</span><span style="flex:1">BUSINESS</span><span style="flex:1">YOURS</span></div>'+
+      '<button class="mo-save" id="spSave">Save split</button></div>';
+    var sh=el("moSheet");sh.innerHTML=h;el("moScrim").classList.add("show");sh.classList.add("show");
+    el("spX").onclick=closeMoSheet;
+    el("spSave").onclick=function(){
+      var t=Math.round(+el("spTax").value)||0,bz=Math.round(+el("spBiz").value)||0,mn=Math.round(+el("spMine").value)||0;
+      if(t+bz+mn!==100){toast("Those add up to "+(t+bz+mn)+"% — needs to be 100%",{bad:true});return}
+      var b=el("spSave");b.disabled=true;
+      postMoCfg({split:{tax:t,biz:bz,mine:mn}}).then(function(d){if(d&&d.ok){closeMoSheet();toast("Split updated — sorting in the background")}else b.disabled=false});
+    };
+  }
+
+  // ---- ✦ Money Brain: AI reads your last 6 months and talks straight ----
+  function openBrainSheet(){
+    var h='<div class="sh-hd"><span class="e" style="color:#f5c563">'+ic("sparkles",21)+'</span><b>Money Brain</b><button class="sh-x" id="mbX">'+ic("x",20)+'</button></div>'+
+      '<div class="sh-body" id="mbBody"><div class="mo-empty" style="padding:30px 0"><span class="e">'+ic("sparkles",34)+'</span>Reading your numbers…</div></div>';
+    var sh=el("moSheet");sh.innerHTML=h;el("moScrim").classList.add("show");sh.classList.add("show");
+    el("mbX").onclick=closeMoSheet;
+    function render(d){
+      var body=el("mbBody");if(!body)return;
+      if(!d||!d.ok){body.innerHTML='<div class="mo-empty" style="padding:24px 0"><span class="e">'+ic("alert",30)+'</span>Couldn’t think right now'+(d&&d.error?'<div style="font-size:11.5px;color:var(--muted2);margin-top:6px">'+esc(String(d.error).slice(0,120))+'</div>':"")+'</div>';return}
+      var bh='<div class="mo-ai-h">'+esc(d.headline||"Here’s where you stand.")+'</div>';
+      function sec(title,cls,arr){
+        if(!arr||!arr.length)return"";
+        return '<div class="mo-ai-sec">'+title+'</div>'+arr.map(function(x){return '<div class="mo-ai-li '+cls+'"><span class="d"></span><span>'+esc(x)+'</span></div>'}).join("");
+      }
+      bh+=sec("Going well","win",d.wins)+sec("Watch out","watch",d.watch)+sec("Moves this week","move",d.moves);
+      bh+='<button class="btn ic-btn" id="mbRefresh" style="width:100%;margin-top:16px">'+ic("refresh-cw",14)+'<span>Fresh read</span></button>';
+      if(d.cached)bh+='<div style="font-size:10.5px;color:var(--muted2);text-align:center;padding-top:6px">thought about today’s numbers earlier — fresh read re-checks everything</div>';
+      body.innerHTML=bh;
+      var rf=el("mbRefresh");if(rf)rf.onclick=function(){rf.disabled=true;body.innerHTML='<div class="mo-empty" style="padding:30px 0"><span class="e">'+ic("sparkles",34)+'</span>Re-reading everything…</div>';post("/api/ai/money",{refresh:true}).then(render).catch(function(){render(null)})};
+    }
+    post("/api/ai/money",{}).then(render).catch(function(){render(null)});
   }
 
   var GS=null; // open goal/budget sheet state
@@ -3815,9 +4097,15 @@
     if(c.reminderEnabled!==false)h+='<div class="mo-srow"><span class="lb">Send it around</span>'+hourSel("moRemHour",c.reminderHour==null?19:c.reminderHour)+'</div>';
     h+='<div class="mo-srow"><span class="lb">Weekly recap<small>Gross, labor, expenses, net and job count for the week.</small></span>'+sw("weeklyEmail",c.weeklyEmail!==false)+'</div>';
     if(c.weeklyEmail!==false)h+='<div class="mo-srow"><span class="lb">Every</span><select id="moWkDay">'+days.map(function(dd,i){return '<option value="'+i+'"'+(i===(c.weeklyDay==null?0:c.weeklyDay)?" selected":"")+'>'+dd+'</option>'}).join("")+'</select>'+hourSel("moWkHour",c.weeklyHour==null?17:c.weeklyHour)+'</div>';
+    h+='<div class="mo-srow"><span class="lb">Monthly close-out<small>1st of the month: last month’s P&amp;L, the auto-split buckets, and a CSV backup link.</small></span>'+sw("monthlyEmail",c.monthlyEmail!==false)+'</div>';
     h+='</div>';
     h+='<div class="mo-sec-h">Smart nudges</div><div class="mo-set">';
     h+='<div class="mo-srow"><span class="lb">Won-job catch-up<small>Flags leads you marked Won but never logged money for.</small></span>'+sw("wonNudge",c.wonNudge!==false)+'</div>';
+    h+='</div>';
+    var spc=moSplitCfg();
+    h+='<div class="mo-sec-h">Auto-split &amp; profit</div><div class="mo-set">';
+    h+='<div class="mo-srow"><span class="lb">The '+spc.tax+'/'+spc.biz+'/'+spc.mine+' split<small>Taxes / Business / Yours — runs silently on every dollar of income.</small></span><button class="btn" id="moSplitEdit">Edit</button></div>';
+    h+='<div class="mo-srow"><span class="lb">Materials estimate<small>% of a job’s ticket assumed as supplies when you don’t log the exact cost. Used for profit-per-job.</small></span><input class="mo-in" id="moMatRate" style="width:70px;text-align:center" type="number" inputmode="decimal" value="'+esc(String(moMatRate()))+'"></div>';
     h+='</div>';
     h+='<div class="mo-sec-h">Buckets &amp; buttons</div><div class="mo-set">';
     h+='<div class="mo-srow"><span class="lb">Personal bucket<small>Log personal spending separately — it never touches business profit.</small></span>'+sw("personalEnabled",c.personalEnabled!==false)+'</div>';
@@ -3849,6 +4137,8 @@
     var wd=el("moWkDay");if(wd)wd.onchange=function(){postMoCfg({weeklyDay:+wd.value})};
     var wh=el("moWkHour");if(wh)wh.onchange=function(){postMoCfg({weeklyHour:+wh.value})};
     var jn=el("moJpName");if(jn)jn.onchange=function(){postMoCfg({jpName:jn.value.trim()||"JP"}).then(function(){toast("Saved")})};
+    var se=el("moSplitEdit");if(se)se.onclick=openSplitSheet;
+    var mr=el("moMatRate");if(mr)mr.onchange=function(){var v=Math.max(0,Math.min(30,parseFloat(mr.value)||0));postMoCfg({matRate:v}).then(function(){toast("Materials estimate: "+v+"%")})};
     var st2=el("moSvcTypes");if(st2)st2.onchange=function(){postMoCfg({serviceTypes:st2.value.split(",").map(function(x){return x.trim()}).filter(Boolean)}).then(function(){toast("Service types saved")})};
     Array.prototype.forEach.call(box.querySelectorAll("[data-rdel]"),function(b){
       b.onclick=function(){
@@ -3903,7 +4193,7 @@
     if(/^\(.*\)$/.test(s))s="-"+s.slice(1,-1);
     var n=parseFloat(s);return isFinite(n)?n:null;
   }
-  var MO_IMPORT_TARGETS=[["job","Income (job $)"],["fuel","Fuel"],["supplies","Supplies"],["equipment","Equipment"],["food","Food"],["bills","Bills"],["marketing","Marketing"],["misc","Misc"],["jp","Labor (helper pay)"],["personal","Personal"],["skip","— Skip these —"]];
+  var MO_IMPORT_TARGETS=[["job","Income (job $)"],["fuel","Fuel"],["supplies","Supplies"],["equipment","Equipment"],["food","Food"],["bills","Bills"],["marketing","Marketing"],["insurance","Insurance"],["phone","Phone/net"],["misc","Misc"],["jp","Labor (helper pay)"],["personal","Personal"],["skip","— Skip these —"]];
   function moGuessTarget(s){
     s=String(s||"").toLowerCase();
     if(/(income|deposit|payment|detail|job|revenue|sale)/.test(s))return"job";

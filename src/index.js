@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-15·vm-weekly';
+const BUILD = '2026-07-17·money-v2';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -181,6 +181,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/ai/triage')  return apiAiTriage();
   if (request.method === 'POST' && pathname === '/api/ai/coach')   return apiAiCoach(request);
   if (request.method === 'POST' && pathname === '/api/ai/photo-quote') return apiAiPhotoQuote(request);
+  if (request.method === 'POST' && pathname === '/api/ai/money')    return apiAiMoney(request);
 
   // Money tracker (its own dashboard section — see the Money module below)
   if (request.method === 'GET'  && pathname === '/api/money')          return apiMoney(url);
@@ -191,6 +192,7 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/money/export')   return apiMoneyExport();
   if (request.method === 'POST' && pathname === '/api/money/import')   return apiMoneyImport(request);
   if (request.method === 'GET'  && pathname === '/api/money/config')   return apiMoneyGetConfig();
+  if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/money/receipt') return apiMoneyReceipt(request, url);
   if (request.method === 'POST' && pathname === '/api/money/config')   return apiMoneySaveConfig(request);
 
   // Static assets (the dashboard at "/") are served by Cloudflare's asset
@@ -1384,6 +1386,59 @@ async function apiAiCoach(request) {
   }
 }
 
+// Money Brain: AI reads the last 6 months of real numbers and hands back a
+// headline + wins + watch-outs + next moves. Cached per-day in KV so casual
+// opens are free; pass {refresh:true} to force a fresh read.
+async function apiAiMoney(request) {
+  let body = {};
+  try { body = await readJson(request); } catch { body = {}; }
+  const mainCfg = await loadConfig();
+  const today = localDateStr(Date.now(), mainCfg.tz);
+  const cacheKey = 'money:ai:' + today;
+  if (!body.refresh) {
+    const hit = await kv().get(cacheKey, { type: 'json' });
+    if (hit) return json(Object.assign({ ok: true, cached: true }, hit));
+  }
+  const cfg = await loadMoneyConfig();
+  const sp = cfg.split || { tax: 30, biz: 30, mine: 40 };
+  let mk = today.slice(0, 7);
+  const lines = [];
+  let cur = null;
+  for (let i = 0; i < 6; i++) {
+    const s = summarizeMonth((await loadMonth(mk)).entries);
+    if (i === 0) cur = s;
+    const cats = Object.keys(s.byCat).sort((a, b) => s.byCat[b] - s.byCat[a]).slice(0, 3)
+      .map((c) => `${c} $${s.byCat[c]}`).join(', ');
+    lines.unshift(`${mk}: gross $${s.gross}, jobs ${s.jobs}, labor $${s.jp}, expenses $${s.exp} (${cats || 'none'}), net $${s.net}${s.owed ? `, still owed $${s.owed}` : ''}`);
+    mk = prevMonthKey(mk);
+  }
+  const prompt =
+    `You are the money brain for Mikey's Mobile Detailing, a small mobile car-detailing business. ` +
+    `Their income auto-sorts ${sp.tax}% taxes / ${sp.biz}% business / ${sp.mine}% owner's pay. ` +
+    `Today is ${today}. Six months of real numbers, oldest first:\n${lines.join('\n')}\n\n` +
+    `Return ONLY JSON: {"headline":"one punchy sentence on how the business is doing right now", ` +
+    `"wins":["1-3 short specific things going well, with numbers"], ` +
+    `"watch":["1-3 short specific things to watch out for, with numbers"], ` +
+    `"moves":["2-3 concrete money moves for this week, imperative voice"]}\n` +
+    `Be specific to THESE numbers (call out trends, spikes, the food/misc leak, unpaid balances). ` +
+    `Plain language, no jargon, no invented numbers.`;
+  try {
+    const text = await geminiGenerate(prompt, { json: true, maxTokens: 1200 });
+    let p = {};
+    try { p = JSON.parse(text); } catch { p = {}; }
+    const arr = (v, n) => Array.isArray(v) ? v.map((s) => String(s).trim()).filter(Boolean).slice(0, n) : [];
+    const out = {
+      headline: String(p.headline || '').trim().slice(0, 200),
+      wins: arr(p.wins, 3), watch: arr(p.watch, 3), moves: arr(p.moves, 3),
+      at: today, net: cur ? cur.net : 0,
+    };
+    if (out.headline) await kv().put(cacheKey, JSON.stringify(out), { expirationTtl: 172800 });
+    return json(Object.assign({ ok: true }, out));
+  } catch (err) {
+    return json({ ok: false, error: String(err.message || err) }, 502);
+  }
+}
+
 function humanAgo(ms) {
   const m = Math.round(ms / 60000);
   if (m < 1) return 'just now';
@@ -1812,7 +1867,7 @@ async function apiBlock(request) {
 const MONEY_CFG_KEY = 'money:cfg';
 const MONEY_STATE_KEY = 'money:state';
 const MONEY_TYPES = ['job', 'jp', 'exp', 'personal'];
-const MONEY_CATS = ['fuel', 'supplies', 'equipment', 'food', 'bills', 'marketing', 'misc'];
+const MONEY_CATS = ['fuel', 'supplies', 'equipment', 'food', 'bills', 'marketing', 'insurance', 'phone', 'misc'];
 const moneyKey = (m) => 'money:m:' + m;
 
 function defaultMoneyConfig() {
@@ -1828,6 +1883,18 @@ function defaultMoneyConfig() {
     recurring: [],          // { id, label, amount, cat, day, personal }
     serviceTypes: ['Interior', 'Exterior', 'Full detail', 'Add-on'],
     jpName: 'JP',
+    taxRate: 0,             // % of net profit to reserve for taxes. 0 = off (no
+                            // change to any existing number). Set it (e.g. 25) to
+                            // unlock the "take-home" and "reserved for taxes"
+                            // headline metrics. Front-end derives both from net.
+    split: { tax: 30, biz: 30, mine: 40 },
+                            // The 30/30/40 auto-sort: every dollar of income is
+                            // silently split Taxes/Business/Yours in the background
+                            // (derived math only — no money moves, no extra KV).
+                            // Percentages editable in settings; must total 100.
+    matRate: 5,             // auto-estimated materials % of a job's ticket, used
+                            // for profit-per-job when no exact cost is logged.
+    monthlyEmail: true,     // 1st-of-month close-out email + CSV backup link.
     catsOff: [],            // category buttons hidden from the log grid
     nudgeDismissed: {},     // phone -> dismissedAt (won-nudges Mikey waved off)
     budgets: [],            // spending caps: { id, cat, amount, period }
@@ -1845,7 +1912,7 @@ function defaultMoneyConfig() {
 function defaultHero() {
   return { primary: 'balance', stats: ['monthIn', 'monthOut', 'topCat'], startingBalance: 0, title: '' };
 }
-const HERO_METRICS = ['balance', 'monthNet', 'monthIn', 'monthOut', 'monthJobs', 'monthAvg', 'topCat', 'monthPersonal', 'allIn', 'allOut'];
+const HERO_METRICS = ['balance', 'monthNet', 'takeHome', 'taxReserve', 'mineBucket', 'taxBucket', 'bizBucket', 'monthIn', 'monthOut', 'monthJobs', 'monthAvg', 'topCat', 'monthPersonal', 'allIn', 'allOut'];
 function sanitizeHero(h, prev) {
   const out = Object.assign(defaultHero(), prev || {});
   if (h && typeof h === 'object') {
@@ -1937,16 +2004,27 @@ function sanitizeMoneyEntry(e, existingId) {
   if (e.city) out.city = String(e.city).slice(0, 40);
   if (e.note) out.note = String(e.note).slice(0, 200);
   if (type === 'job' && e.jp != null && +e.jp > 0) out.jp = money2(e.jp);
+  if (type === 'job') {
+    // Optional per-job detail (all additive — old entries stay untouched):
+    // hours worked, vehicle type, exact material cost, and a balance the
+    // customer still owes (deposits / pay-later).
+    if (e.hours != null && +e.hours > 0) out.hours = Math.min(99, money2(e.hours));
+    if (e.veh) out.veh = String(e.veh).slice(0, 20);
+    if (e.mat != null && +e.mat > 0) out.mat = money2(e.mat);
+    if (e.owed != null && +e.owed > 0) out.owed = money2(e.owed);
+  }
+  if (e.rc) out.rc = 1; // has a receipt photo stored under money:rc:<id>
   if (e.imp) out.imp = true; // came from a CSV import (used for de-dupe on re-import)
   return out;
 }
 
 // One month, one pass: everything the Report view and the recaps need.
 function summarizeMonth(entries) {
-  const s = { gross: 0, jp: 0, exp: 0, personal: 0, net: 0, jobs: 0, byCat: {}, byService: {}, byMethod: {} };
+  const s = { gross: 0, jp: 0, exp: 0, personal: 0, net: 0, jobs: 0, owed: 0, byCat: {}, byService: {}, byMethod: {} };
   for (const e of (entries || [])) {
     if (e.type === 'job') {
       s.gross += e.amount; s.jobs++;
+      if (e.owed) s.owed += e.owed;
       if (e.jp) s.jp += e.jp;
       if (e.service) { const v = s.byService[e.service] = s.byService[e.service] || { n: 0, total: 0 }; v.n++; v.total += e.amount; }
       if (e.method) s.byMethod[e.method] = money2((s.byMethod[e.method] || 0) + e.amount);
@@ -1954,7 +2032,7 @@ function summarizeMonth(entries) {
     else if (e.type === 'personal') s.personal += e.amount;
     else { s.exp += e.amount; s.byCat[e.cat || 'misc'] = money2((s.byCat[e.cat || 'misc'] || 0) + e.amount); }
   }
-  s.gross = money2(s.gross); s.jp = money2(s.jp); s.exp = money2(s.exp); s.personal = money2(s.personal);
+  s.gross = money2(s.gross); s.jp = money2(s.jp); s.exp = money2(s.exp); s.personal = money2(s.personal); s.owed = money2(s.owed);
   s.net = money2(s.gross - s.jp - s.exp); // personal deliberately excluded
   for (const k of Object.keys(s.byService)) s.byService[k].total = money2(s.byService[k].total);
   return s;
@@ -1976,15 +2054,20 @@ function weekWindow(todayStr) {
 // labor, personal). Same bucket rules as summarizeMonth, just windowed by date so
 // a weekly cap can span a month boundary. Reads only — no KV writes.
 function summarizeWeek(entries, start, end) {
-  const s = { exp: 0, personal: 0, jp: 0, byCat: {} };
+  const s = { exp: 0, personal: 0, jp: 0, gross: 0, jobs: 0, byCat: {}, byService: {} };
   for (const e of (entries || [])) {
     if (!e.date || e.date < start || e.date > end) continue;
     if (e.type === 'jp') s.jp += e.amount;
     else if (e.type === 'personal') s.personal += e.amount;
     else if (e.type === 'exp') { s.exp += e.amount; s.byCat[e.cat || 'misc'] = money2((s.byCat[e.cat || 'misc'] || 0) + e.amount); }
-    else if (e.type === 'job' && e.jp) s.jp += e.jp; // labor cost carried on a job
+    else if (e.type === 'job') {
+      s.gross += e.amount; s.jobs++;
+      if (e.jp) s.jp += e.jp; // labor cost carried on a job
+      if (e.service) { const v = s.byService[e.service] = s.byService[e.service] || { n: 0, total: 0 }; v.n++; v.total = money2(v.total + e.amount); }
+    }
   }
-  s.exp = money2(s.exp); s.personal = money2(s.personal); s.jp = money2(s.jp);
+  s.exp = money2(s.exp); s.personal = money2(s.personal); s.jp = money2(s.jp); s.gross = money2(s.gross);
+  s.net = money2(s.gross - s.jp - s.exp);
   return s;
 }
 
@@ -2057,7 +2140,7 @@ async function apiMoney(url) {
   const doc = await loadMonth(month);
   if (month === curMonth && postRecurring(cfg, month, doc, todayStr)) await saveMonth(month, doc);
   doc.entries.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0) || (b.ts - a.ts));
-  let nudges = [], week = null;
+  let nudges = [], week = null, owed = [];
   if (month === curMonth) {
     // The current week can reach into last month, so combine both docs once and
     // reuse the read for the won-lead nudges too.
@@ -2066,13 +2149,29 @@ async function apiMoney(url) {
     const w = weekWindow(todayStr);
     week = Object.assign({ start: w.start, end: w.end }, summarizeWeek(combined, w.start, w.end));
     if (cfg.wonNudge !== false) nudges = await moneyWonNudges(combined, cfg, now);
+    // Jobs with a balance the customer still owes — reuses the combined read.
+    owed = combined.filter((e) => e.type === 'job' && e.owed > 0)
+      .sort((a, b) => (a.date < b.date ? -1 : 1)).slice(0, 12)
+      .map((e) => ({ id: e.id, date: e.date, name: e.name || '', phone: e.phone || '', amount: e.amount, owed: e.owed }));
   }
   const allTime = await allTimeSummary();
-  return json({ ok: true, month, today: todayStr, entries: doc.entries, summary: summarizeMonth(doc.entries), week, allTime, config: cfg, nudges });
+  return json({ ok: true, month, today: todayStr, entries: doc.entries, summary: summarizeMonth(doc.entries), week, allTime, config: cfg, nudges, owed });
 }
 
 async function apiMoneyEntry(request) {
   const data = await readJson(request);
+  // One-tap "mark paid": clear the owed balance without resending the whole
+  // entry (works for any month, keeps every other field exactly as it was).
+  if (data.id && data.clearOwed) {
+    const cm = String(data.date || '').slice(0, 7);
+    if (!/^\d{4}-\d{2}$/.test(cm)) return json({ ok: false, error: 'bad_request' }, 422);
+    const cdoc = await loadMonth(cm);
+    const ci = cdoc.entries.findIndex((x) => x.id === String(data.id));
+    if (ci < 0) return json({ ok: false, error: 'not_found' }, 404);
+    delete cdoc.entries[ci].owed;
+    await saveMonth(cm, cdoc);
+    return json({ ok: true, entry: cdoc.entries[ci], month: cm, summary: summarizeMonth(cdoc.entries) });
+  }
   const e = sanitizeMoneyEntry(data, data.id ? String(data.id).slice(0, 24) : null);
   if (!e) return json({ ok: false, error: 'bad_entry' }, 422);
   const month = e.date.slice(0, 7);
@@ -2102,10 +2201,41 @@ async function apiMoneyDelete(request) {
   if (!id || !/^\d{4}-\d{2}$/.test(month)) return json({ ok: false, error: 'bad_request' }, 422);
   const doc = await loadMonth(month);
   const before = doc.entries.length;
+  const gone = doc.entries.find((x) => x.id === id);
   doc.entries = doc.entries.filter((x) => x.id !== id);
   if (doc.entries.length === before) return json({ ok: false, error: 'not_found' }, 404);
   await saveMonth(month, doc);
+  if (gone && gone.rc) { try { await kv().delete('money:rc:' + id); } catch { /* best effort */ } }
   return json({ ok: true, month, summary: summarizeMonth(doc.entries) });
+}
+
+// ---- receipt photos --------------------------------------------------------
+// One small JPEG per entry, stored as a data URL under money:rc:<entryId>.
+// Client compresses to ≤~280KB before upload; deleted with its entry.
+async function apiMoneyReceipt(request, url) {
+  if (request.method === 'GET') {
+    const id = String(url.searchParams.get('id') || '').slice(0, 24);
+    if (!id) return json({ ok: false, error: 'bad_request' }, 422);
+    const data = await kv().get('money:rc:' + id);
+    if (!data) return json({ ok: false, error: 'not_found' }, 404);
+    const m = String(data).match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/s);
+    if (!m) return json({ ok: false, error: 'bad_data' }, 500);
+    const bin = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
+    return new Response(bin, { headers: { 'Content-Type': m[1], 'Cache-Control': 'private, max-age=86400' } });
+  }
+  const data = await readJson(request);
+  const id = String(data.id || '').slice(0, 24);
+  const month = String(data.date || '').slice(0, 7);
+  const img = String(data.img || '');
+  if (!id || !/^\d{4}-\d{2}$/.test(month)) return json({ ok: false, error: 'bad_request' }, 422);
+  if (!/^data:image\/(jpeg|png|webp);base64,/.test(img) || img.length > 400000) return json({ ok: false, error: 'bad_image' }, 422);
+  const doc = await loadMonth(month);
+  const e = doc.entries.find((x) => x.id === id);
+  if (!e) return json({ ok: false, error: 'not_found' }, 404);
+  await kv().put('money:rc:' + id, img);
+  e.rc = 1;
+  await saveMonth(month, doc);
+  return json({ ok: true });
 }
 
 // Per-month aggregates going back N months — feeds the month-vs-month chart.
@@ -2155,8 +2285,8 @@ async function apiMoneyExport() {
   }
   rows.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0) || (a.ts - b.ts));
   const csv = (v) => { v = v == null ? '' : String(v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
-  const head = 'date,type,category,sub,amount,jp_cost,method,service,customer,phone,city,note';
-  const body = rows.map((e) => [e.date, e.type, e.cat || '', e.sub || '', e.amount, e.jp || '', e.method || '', e.service || '', e.name || '', e.phone || '', e.city || '', e.note || ''].map(csv).join(',')).join('\n');
+  const head = 'date,type,category,sub,amount,jp_cost,method,service,customer,phone,city,note,hours,vehicle,material,owed';
+  const body = rows.map((e) => [e.date, e.type, e.cat || '', e.sub || '', e.amount, e.jp || '', e.method || '', e.service || '', e.name || '', e.phone || '', e.city || '', e.note || '', e.hours || '', e.veh || '', e.mat || '', e.owed || ''].map(csv).join(',')).join('\n');
   return new Response(head + '\n' + body, {
     headers: { 'Content-Type': 'text/csv', 'Content-Disposition': 'attachment; filename="mikeys-money.csv"' },
   });
@@ -2200,13 +2330,21 @@ async function apiMoneyGetConfig() {
 async function apiMoneySaveConfig(request) {
   const data = await readJson(request);
   const next = Object.assign({}, await loadMoneyConfig());
-  for (const k of ['reminderEnabled', 'weeklyEmail', 'wonNudge', 'personalEnabled', 'recurringEnabled']) {
+  for (const k of ['reminderEnabled', 'weeklyEmail', 'wonNudge', 'personalEnabled', 'recurringEnabled', 'monthlyEmail']) {
     if (typeof data[k] === 'boolean') next[k] = data[k];
   }
   if (data.reminderHour != null && !isNaN(+data.reminderHour)) next.reminderHour = Math.max(0, Math.min(23, Math.round(+data.reminderHour)));
   if (data.weeklyHour != null && !isNaN(+data.weeklyHour)) next.weeklyHour = Math.max(0, Math.min(23, Math.round(+data.weeklyHour)));
   if (data.weeklyDay != null && !isNaN(+data.weeklyDay)) next.weeklyDay = Math.max(0, Math.min(6, Math.round(+data.weeklyDay)));
   if (typeof data.jpName === 'string') next.jpName = data.jpName.trim().slice(0, 20) || 'JP';
+  if (data.taxRate != null && !isNaN(+data.taxRate)) next.taxRate = Math.max(0, Math.min(60, Math.round(+data.taxRate * 10) / 10));
+  if (data.split && typeof data.split === 'object') {
+    const t = Math.max(0, Math.min(100, Math.round(+data.split.tax) || 0));
+    const b = Math.max(0, Math.min(100, Math.round(+data.split.biz) || 0));
+    const m = Math.max(0, Math.min(100, Math.round(+data.split.mine) || 0));
+    if (t + b + m === 100) next.split = { tax: t, biz: b, mine: m }; // must total 100 or it's ignored
+  }
+  if (data.matRate != null && !isNaN(+data.matRate)) next.matRate = Math.max(0, Math.min(30, Math.round(+data.matRate * 10) / 10));
   if (Array.isArray(data.serviceTypes)) next.serviceTypes = data.serviceTypes.map((s) => String(s).trim().slice(0, 32)).filter(Boolean).slice(0, 10);
   if (Array.isArray(data.catsOff)) next.catsOff = data.catsOff.map(String).filter((c) => MONEY_CATS.includes(c)).slice(0, MONEY_CATS.length);
   if (Array.isArray(data.budgets)) next.budgets = sanitizeBudgets(data.budgets);
@@ -2247,7 +2385,7 @@ async function apiMoneySaveConfig(request) {
 async function moneyCron(now = Date.now()) {
   if (envFlag('MONEY_CRON_DISABLED')) return;
   const cfg = await loadMoneyConfig();
-  if (cfg.reminderEnabled === false && cfg.weeklyEmail === false) return;
+  if (cfg.reminderEnabled === false && cfg.weeklyEmail === false && cfg.monthlyEmail === false) return;
   const mainCfg = await loadConfig();
   const tz = mainCfg.tz || 'America/Los_Angeles';
   const hour = localHour(now, tz);
@@ -2297,6 +2435,29 @@ async function moneyCron(now = Date.now()) {
         `• NET PROFIT: $${s.net}\n• Jobs: ${s.jobs}${s.jobs ? ` · avg ticket $${avg}` : ''}` +
         (s.personal ? `\n• Personal (kept separate): $${s.personal}` : '') +
         `\n\nFull report: ${publicBase()}/?money=1`).catch(() => {});
+    }
+  }
+
+  // Monthly close-out: on the 1st, ~9am — last month's P&L, the auto-split
+  // buckets, and a CSV backup link. State marker keeps it to one send/month.
+  if (cfg.monthlyEmail !== false && today.slice(8) === '01' && hour === 9) {
+    const state = await loadMoneyState();
+    const mPrev = prevMonthKey(today.slice(0, 7));
+    if (state.monthlySent !== mPrev) {
+      state.monthlySent = mPrev;
+      await kv().put(MONEY_STATE_KEY, JSON.stringify(state));
+      const s = summarizeMonth((await loadMonth(mPrev)).entries);
+      const sp = cfg.split || { tax: 30, biz: 30, mine: 40 };
+      const label = new Date(+mPrev.slice(0, 4), +mPrev.slice(5, 7) - 1, 1)
+        .toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+      notifyMikey(`📗 ${label} close-out`,
+        `${label} at Mikey's Mobile Detailing:\n\n` +
+        `• Gross: $${s.gross} · Jobs: ${s.jobs}\n• ${cfg.jpName || 'JP'} / labor: $${s.jp}\n` +
+        `• Expenses: $${s.exp}\n• NET PROFIT: $${s.net}` +
+        (s.owed ? `\n• Customers still owe: $${s.owed}` : '') +
+        `\n\nAuto-split of the month's income (${sp.tax}/${sp.biz}/${sp.mine}):\n` +
+        `• Taxes: $${money2(s.gross * sp.tax / 100)}\n• Business: $${money2(s.gross * sp.biz / 100)}\n• Yours: $${money2(s.gross * sp.mine / 100)}` +
+        `\n\nBackup your data (CSV): ${publicBase()}/api/money/export\nFull report: ${publicBase()}/?money=1`).catch(() => {});
     }
   }
 }
