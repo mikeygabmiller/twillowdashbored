@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-17·money-v3-ui';
+const BUILD = '2026-07-17·buckets-v4';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -1400,7 +1400,7 @@ async function apiAiMoney(request) {
     if (hit) return json(Object.assign({ ok: true, cached: true }, hit));
   }
   const cfg = await loadMoneyConfig();
-  const sp = cfg.split || { tax: 30, biz: 30, mine: 40 };
+  const sp = moneySplit(cfg);
   let mk = today.slice(0, 7);
   const lines = [];
   let cur = null;
@@ -1414,7 +1414,7 @@ async function apiAiMoney(request) {
   }
   const prompt =
     `You are the money brain for Mikey's Mobile Detailing, a small mobile car-detailing business. ` +
-    `Their income auto-sorts ${sp.tax}% taxes / ${sp.biz}% business / ${sp.mine}% owner's pay. ` +
+    `Their income auto-sorts ${sp.costs}% costs / ${sp.you}% owner's pay / ${sp.savings}% savings (no separate tax bucket). ` +
     `Today is ${today}. Six months of real numbers, oldest first:\n${lines.join('\n')}\n\n` +
     `Return ONLY JSON: {"headline":"one punchy sentence on how the business is doing right now", ` +
     `"wins":["1-3 short specific things going well, with numbers"], ` +
@@ -1887,11 +1887,12 @@ function defaultMoneyConfig() {
                             // change to any existing number). Set it (e.g. 25) to
                             // unlock the "take-home" and "reserved for taxes"
                             // headline metrics. Front-end derives both from net.
-    split: { tax: 30, biz: 30, mine: 40 },
-                            // The 30/30/40 auto-sort: every dollar of income is
-                            // silently split Taxes/Business/Yours in the background
-                            // (derived math only — no money moves, no extra KV).
-                            // Percentages editable in settings; must total 100.
+    split: { costs: 30, you: 50, savings: 20 },
+                            // The auto-sort: every dollar of income is silently
+                            // split Costs / You / Savings in the background (derived
+                            // math only — no money moves, no extra KV). Owner's pay
+                            // leads; no separate tax bucket by design. Editable in
+                            // settings; must total 100.
     matRate: 5,             // auto-estimated materials % of a job's ticket, used
                             // for profit-per-job when no exact cost is logged.
     monthlyEmail: true,     // 1st-of-month close-out email + CSV backup link.
@@ -1912,7 +1913,7 @@ function defaultMoneyConfig() {
 function defaultHero() {
   return { primary: 'balance', stats: ['monthIn', 'monthOut', 'topCat'], startingBalance: 0, title: '' };
 }
-const HERO_METRICS = ['balance', 'monthNet', 'takeHome', 'taxReserve', 'mineBucket', 'taxBucket', 'bizBucket', 'monthIn', 'monthOut', 'monthJobs', 'monthAvg', 'topCat', 'monthPersonal', 'allIn', 'allOut'];
+const HERO_METRICS = ['balance', 'monthNet', 'takeHome', 'taxReserve', 'youBucket', 'costsBucket', 'savingsBucket', 'mineBucket', 'taxBucket', 'bizBucket', 'monthIn', 'monthOut', 'monthJobs', 'monthAvg', 'topCat', 'monthPersonal', 'allIn', 'allOut'];
 function sanitizeHero(h, prev) {
   const out = Object.assign(defaultHero(), prev || {});
   if (h && typeof h === 'object') {
@@ -1953,6 +1954,15 @@ function sanitizeGoals(arr) {
 async function loadMoneyConfig() {
   const raw = await kv().get(MONEY_CFG_KEY, { type: 'json' });
   return Object.assign(defaultMoneyConfig(), raw || {});
+}
+// The Costs/You/Savings split, validated and migrated. Old {tax,biz,mine}
+// configs (or anything that doesn't total 100) fall back to the default so
+// nobody sees a broken split after the tax bucket was removed.
+function moneySplit(cfg) {
+  const s = (cfg && cfg.split) || {};
+  const c = +s.costs, y = +s.you, v = +s.savings;
+  if (c >= 0 && y >= 0 && v >= 0 && c + y + v === 100) return { costs: c, you: y, savings: v };
+  return { costs: 30, you: 50, savings: 20 };
 }
 async function loadMoneyState() {
   return (await kv().get(MONEY_STATE_KEY, { type: 'json' })) || {};
@@ -2339,10 +2349,10 @@ async function apiMoneySaveConfig(request) {
   if (typeof data.jpName === 'string') next.jpName = data.jpName.trim().slice(0, 20) || 'JP';
   if (data.taxRate != null && !isNaN(+data.taxRate)) next.taxRate = Math.max(0, Math.min(60, Math.round(+data.taxRate * 10) / 10));
   if (data.split && typeof data.split === 'object') {
-    const t = Math.max(0, Math.min(100, Math.round(+data.split.tax) || 0));
-    const b = Math.max(0, Math.min(100, Math.round(+data.split.biz) || 0));
-    const m = Math.max(0, Math.min(100, Math.round(+data.split.mine) || 0));
-    if (t + b + m === 100) next.split = { tax: t, biz: b, mine: m }; // must total 100 or it's ignored
+    const c = Math.max(0, Math.min(100, Math.round(+data.split.costs) || 0));
+    const y = Math.max(0, Math.min(100, Math.round(+data.split.you) || 0));
+    const v = Math.max(0, Math.min(100, Math.round(+data.split.savings) || 0));
+    if (c + y + v === 100) next.split = { costs: c, you: y, savings: v }; // must total 100 or it's ignored
   }
   if (data.matRate != null && !isNaN(+data.matRate)) next.matRate = Math.max(0, Math.min(30, Math.round(+data.matRate * 10) / 10));
   if (Array.isArray(data.serviceTypes)) next.serviceTypes = data.serviceTypes.map((s) => String(s).trim().slice(0, 32)).filter(Boolean).slice(0, 10);
@@ -2447,7 +2457,7 @@ async function moneyCron(now = Date.now()) {
       state.monthlySent = mPrev;
       await kv().put(MONEY_STATE_KEY, JSON.stringify(state));
       const s = summarizeMonth((await loadMonth(mPrev)).entries);
-      const sp = cfg.split || { tax: 30, biz: 30, mine: 40 };
+      const sp = moneySplit(cfg);
       const label = new Date(+mPrev.slice(0, 4), +mPrev.slice(5, 7) - 1, 1)
         .toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
       notifyMikey(`📗 ${label} close-out`,
@@ -2455,8 +2465,8 @@ async function moneyCron(now = Date.now()) {
         `• Gross: $${s.gross} · Jobs: ${s.jobs}\n• ${cfg.jpName || 'JP'} / labor: $${s.jp}\n` +
         `• Expenses: $${s.exp}\n• NET PROFIT: $${s.net}` +
         (s.owed ? `\n• Customers still owe: $${s.owed}` : '') +
-        `\n\nAuto-split of the month's income (${sp.tax}/${sp.biz}/${sp.mine}):\n` +
-        `• Taxes: $${money2(s.gross * sp.tax / 100)}\n• Business: $${money2(s.gross * sp.biz / 100)}\n• Yours: $${money2(s.gross * sp.mine / 100)}` +
+        `\n\nAuto-split of the month's income (${sp.costs}/${sp.you}/${sp.savings}):\n` +
+        `• Costs: $${money2(s.gross * sp.costs / 100)}\n• Yours: $${money2(s.gross * sp.you / 100)}\n• Savings: $${money2(s.gross * sp.savings / 100)}` +
         `\n\nBackup your data (CSV): ${publicBase()}/api/money/export\nFull report: ${publicBase()}/?money=1`).catch(() => {});
     }
   }

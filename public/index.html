@@ -1031,9 +1031,9 @@
 
   /* ---- split strip + buckets refinement ---- */
   .mo-split{border-radius:15px;box-shadow:var(--mo-elev);padding:12px 14px}
-  .mo-split .sbar i:nth-child(1){background:var(--mo-tax)!important}
+  .mo-split .sbar i:nth-child(1){background:var(--mo-mine)!important}
   .mo-split .sbar i:nth-child(2){background:var(--mo-biz)!important}
-  .mo-split .sbar i:nth-child(3){background:var(--mo-mine)!important}
+  .mo-split .sbar i:nth-child(3){background:var(--mo-tax)!important}
   .mo-split-card{border-radius:15px;box-shadow:var(--mo-elev);padding:14px 8px}
 
   /* ---- owed cards ---- */
@@ -1390,7 +1390,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-17·money-v3-ui";
+  var APP_BUILD="2026-07-17·buckets-v4";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -3371,7 +3371,9 @@
   function moBump(kind){try{var u=moUse();u[kind]=(u[kind]||0)+1;localStorage.setItem("moUse",JSON.stringify(u))}catch(e){}}
   function moRange(){try{return localStorage.getItem("moRange")||"month"}catch(e){return"month"}}
   function moSetRange(r){try{localStorage.setItem("moRange",r)}catch(e){};moRender()}
-  function moSplitCfg(){var sp=(MO.cfg&&MO.cfg.split)||{};var t=+sp.tax,b=+sp.biz,m=+sp.mine;if(!(t>=0&&b>=0&&m>=0&&t+b+m===100)){t=30;b=30;m=40}return{tax:t,biz:b,mine:m}}
+  function moSplitCfg(){var sp=(MO.cfg&&MO.cfg.split)||{};var c=+sp.costs,y=+sp.you,v=+sp.savings;if(!(c>=0&&y>=0&&v>=0&&c+y+v===100)){c=30;y=50;v=20}return{costs:c,you:y,savings:v}}
+  // buckets meta: [key, label, color-var]
+  var MO_BUCKETS=[["you","You","var(--mo-mine)"],["costs","Costs","var(--mo-biz)"],["savings","Savings","var(--mo-tax)"]];
   function moMatRate(){var r=MO.cfg&&MO.cfg.matRate;return (r==null||isNaN(+r))?5:+r}
   // profit-per-job: ticket − helper pay − materials (exact if logged, else auto-est)
   function moJobProfit(e){
@@ -3471,9 +3473,9 @@
         return{label:"Take-home",value:fmtMoney(th),neg:th<0,sub:rate?"after "+rate+"% set aside":"set a tax %"}}
       case "taxReserve":{var trate=+((MO.cfg&&MO.cfg.taxRate)||0),nn=s.net||0,rz=nn>0?nn*trate/100:0;
         return{label:"Reserved for taxes",value:fmtMoney(rz),sub:trate?trate+"% of profit":"set a tax %"}}
-      case "mineBucket":{var sp1=moSplitCfg();return{label:"Yours ("+sp1.mine+"%)",value:fmtMoney((s.gross||0)*sp1.mine/100),sub:"auto-split this month"}}
-      case "taxBucket":{var sp2=moSplitCfg();return{label:"Taxes ("+sp2.tax+"%)",value:fmtMoney((s.gross||0)*sp2.tax/100),sub:"auto-split this month"}}
-      case "bizBucket":{var sp3=moSplitCfg();return{label:"Business ("+sp3.biz+"%)",value:fmtMoney((s.gross||0)*sp3.biz/100),sub:"auto-split this month"}}
+      case "youBucket":case "mineBucket":{var sp1=moSplitCfg();return{label:"Yours ("+sp1.you+"%)",value:fmtMoney((s.gross||0)*sp1.you/100),sub:"auto-split this month"}}
+      case "costsBucket":case "bizBucket":{var sp3=moSplitCfg();return{label:"Costs ("+sp3.costs+"%)",value:fmtMoney((s.gross||0)*sp3.costs/100),sub:"auto-split this month"}}
+      case "savingsBucket":case "taxBucket":{var sp2=moSplitCfg();return{label:"Savings ("+sp2.savings+"%)",value:fmtMoney((s.gross||0)*sp2.savings/100),sub:"auto-split this month"}}
       case "monthIn":return{label:"Made this month",value:fmtMoney(s.gross||0)};
       case "monthOut":return{label:"Spent this month",value:fmtMoney((s.jp||0)+(s.exp||0))};
       case "monthJobs":return{label:"Jobs this month",value:String(s.jobs||0)};
@@ -3514,13 +3516,14 @@
       '<div class="mh-top"><span class="mh-lbl">'+esc(title)+'</span></div>'+
       '<div class="mh-v">'+esc(pm.value)+'</div>'+
       (pm.sub?'<div class="mh-sub">'+esc(pm.sub)+'</div>':'');
-    // signature allocation bar — the 30/30/40, always visible, tappable
+    // signature allocation bar — Costs / You / Savings, always visible, tappable.
+    // Every dollar of income is silently sorted into the three buckets.
     h+='<div class="mh-alloc" id="heroAlloc">'+
-      '<div class="abar"><i style="width:'+sp.tax+'%;background:var(--mo-tax)"></i><i style="width:'+sp.biz+'%;background:var(--mo-biz)"></i><i style="width:'+sp.mine+'%;background:var(--mo-mine)"></i></div>'+
+      '<div class="abar"><i style="width:'+sp.you+'%;background:var(--mo-mine)"></i><i style="width:'+sp.costs+'%;background:var(--mo-biz)"></i><i style="width:'+sp.savings+'%;background:var(--mo-tax)"></i></div>'+
       '<div class="akeys">'+
-        '<span class="ak"><i style="background:var(--mo-tax)"></i>Tax <b>'+fmtMoney(gross*sp.tax/100)+'</b></span>'+
-        '<span class="ak"><i style="background:var(--mo-biz)"></i>Biz <b>'+fmtMoney(gross*sp.biz/100)+'</b></span>'+
-        '<span class="ak"><i style="background:var(--mo-mine)"></i>You <b>'+fmtMoney(gross*sp.mine/100)+'</b></span>'+
+        '<span class="ak"><i style="background:var(--mo-mine)"></i>You <b>'+fmtMoney(gross*sp.you/100)+'</b></span>'+
+        '<span class="ak"><i style="background:var(--mo-biz)"></i>Costs <b>'+fmtMoney(gross*sp.costs/100)+'</b></span>'+
+        '<span class="ak"><i style="background:var(--mo-tax)"></i>Savings <b>'+fmtMoney(gross*sp.savings/100)+'</b></span>'+
         '<span class="akhint">'+ic("chevron-right",13)+'</span>'+
       '</div></div>';
     h+='</div>';
@@ -3553,15 +3556,15 @@
     h+='<div class="mo-pulse'+open+'" id="moPulse">'+
       '<div class="ph" id="moPulseHd">'+
         '<div><div class="pnet '+((s.net||0)<0?"bad":"good")+'">'+fmtMoney(s.net||0)+'</div><div class="plbl">Net · '+esc(monthShort(moCurMonth()))+'</div></div>'+
-        '<div class="pmine"><div class="v">'+fmtMoney(gross*sp.mine/100)+'</div><div class="k">Yours</div></div>'+
+        '<div class="pmine"><div class="v">'+fmtMoney(gross*sp.you/100)+'</div><div class="k">Yours</div></div>'+
         '<span class="chev">'+ic("chevron-down",20)+'</span>'+
       '</div>'+
       '<div class="pbody"><div class="pbody-in"><div class="mo-mini">'+
         '<div class="m"><div class="v">'+(s.jobs||0)+'</div><div class="k">Jobs</div></div>'+
         '<div class="m"><div class="v">'+(s.jobs?fmtMoney(gross/s.jobs):"—")+'</div><div class="k">Avg ticket</div></div>'+
         '<div class="m"><div class="v '+(mgn>=50?"good":(mgn>0?"warn":"bad"))+'">'+(gross>0?mgn+"%":"—")+'</div><div class="k">Margin</div></div>'+
-        '<div class="m"><div class="v warn">'+fmtMoney(gross*sp.tax/100)+'</div><div class="k">Tax set aside</div></div>'+
-        '<div class="m"><div class="v">'+fmtMoney(gross)+'</div><div class="k">Made</div></div>'+
+        '<div class="m"><div class="v" style="color:var(--mo-biz)">'+fmtMoney(gross*sp.costs/100)+'</div><div class="k">Costs</div></div>'+
+        '<div class="m"><div class="v warn">'+fmtMoney(gross*sp.savings/100)+'</div><div class="k">Savings</div></div>'+
         '<div class="m"><div class="v '+((s.owed||0)>0?"bad":"")+'">'+fmtMoney(s.owed||0)+'</div><div class="k">Owed to you</div></div>'+
       '</div><button class="pmore" id="moPulseMore"><span class="e">'+ic("bar-chart",15)+'</span>Full report &amp; trends</button></div></div>'+
     '</div>';
@@ -3889,8 +3892,9 @@
     // ---- the KPI grid: net hero, then the tiles the questionnaire picked ----
     h+='<div class="mo-kgrid">'+
       '<div class="mo-k hero1'+((s.net||0)<0?" bad":"")+' k1">'+delta+'<div class="kv '+((s.net||0)<0?"bad":"good")+'">'+fmtMoney(s.net||0)+'</div><div class="kk">Net profit</div><div class="ksub">'+fmtMoney(gross)+' in · '+fmtMoney((s.jp||0)+(s.exp||0))+' out</div></div>'+
-      '<div class="mo-k"><div class="kv mine">'+fmtMoney(gross*sp.mine/100)+'</div><div class="kk">Yours · '+sp.mine+'%</div></div>'+
-      '<div class="mo-k"><div class="kv warn">'+fmtMoney(gross*sp.tax/100)+'</div><div class="kk">Tax set aside</div></div>'+
+      '<div class="mo-k"><div class="kv mine">'+fmtMoney(gross*sp.you/100)+'</div><div class="kk">Yours · '+sp.you+'%</div></div>'+
+      '<div class="mo-k"><div class="kv" style="color:var(--mo-biz)">'+fmtMoney(gross*sp.costs/100)+'</div><div class="kk">Costs · '+sp.costs+'%</div></div>'+
+      '<div class="mo-k"><div class="kv warn">'+fmtMoney(gross*sp.savings/100)+'</div><div class="kk">Savings · '+sp.savings+'%</div></div>'+
       '<div class="mo-k"><div class="kv">'+(s.jobs?fmtMoney(avg):"—")+'</div><div class="kk">Avg ticket</div></div>'+
       '<div class="mo-k"><div class="kv">'+(s.jobs||0)+'</div><div class="kk">Jobs</div></div>'+
       '<div class="mo-k"><div class="kv '+(mgn>=50?"good":(mgn>0?"warn":"bad"))+'">'+(gross>0?mgn+"%":"—")+'</div><div class="kk">Profit margin</div></div>'+
@@ -3900,8 +3904,8 @@
     // buckets strip → sheet
     h+='<div class="mo-split" id="moSplitStrip2" title="Auto-split — tap for details">'+
       '<span class="sl">'+ic("wallet",14)+'</span>'+
-      '<div class="sbar"><i style="width:'+sp.tax+'%"></i><i style="width:'+sp.biz+'%"></i><i style="width:'+sp.mine+'%"></i></div>'+
-      '<span class="sl">Biz '+fmtMoney(gross*sp.biz/100)+'</span></div>';
+      '<div class="sbar"><i style="width:'+sp.you+'%"></i><i style="width:'+sp.costs+'%"></i><i style="width:'+sp.savings+'%"></i></div>'+
+      '<span class="sl">Adjust buckets</span></div>';
     if(s.personal)h+='<div class="mo-set"><div class="mo-srow"><span class="lb"><span class="ic-inline" style="margin-right:5px">'+ic("user",13)+'</span>Personal spending<small>Kept completely separate — never counted in profit.</small></span><b>'+fmtMoney(s.personal)+'</b></div></div>';
     var cats=Object.keys(s.byCat||{}).sort(function(a,b){return s.byCat[b]-s.byCat[a]});
     if(cats.length){
@@ -4112,9 +4116,9 @@
     ["monthNet","Net profit this month"],
     ["takeHome","Take-home (after tax set-aside)"],
     ["taxReserve","Reserved for taxes"],
-    ["mineBucket","Yours — auto-split"],
-    ["taxBucket","Taxes — auto-split"],
-    ["bizBucket","Business — auto-split"],
+    ["youBucket","Yours — auto-split"],
+    ["costsBucket","Costs — auto-split"],
+    ["savingsBucket","Savings — auto-split"],
     ["topCat","Top spending category"],
     ["monthJobs","Jobs this month"],
     ["monthAvg","Average ticket"],
@@ -4149,34 +4153,54 @@
     el("hsReset").onclick=function(){postMoCfg({hero:{primary:"balance",stats:["monthIn","monthOut","topCat"],startingBalance:0,title:""}}).then(function(){closeMoSheet();toast("Reset to default")})};
   }
 
-  // ---- 🗂 Buckets sheet: the 30/30/40 auto-sort, computed in the background ----
+  // ---- 🗂 Buckets sheet: Costs / You / Savings auto-sort + calculator ----
   function openSplitSheet(){
     var sp=moSplitCfg();
     var s=MO.summary||{},at=MO.allTime||{};
+    // ordered You, Costs, Savings with their colors + %
+    function trio(sp){return [["you","You",sp.you,"var(--mo-mine)"],["costs","Costs",sp.costs,"var(--mo-biz)"],["savings","Savings",sp.savings,"var(--mo-tax)"]]}
     function cards(g,label){
-      return '<div class="mo-f-lbl" style="margin-top:10px">'+label+'</div><div class="mo-split-cards">'+
-        '<div class="mo-split-card"><div class="a" style="color:#f5c563">'+fmtMoney(g*sp.tax/100)+'</div><div class="l">Taxes '+sp.tax+'%</div></div>'+
-        '<div class="mo-split-card"><div class="a" style="color:var(--accent)">'+fmtMoney(g*sp.biz/100)+'</div><div class="l">Business '+sp.biz+'%</div></div>'+
-        '<div class="mo-split-card"><div class="a" style="color:var(--green)">'+fmtMoney(g*sp.mine/100)+'</div><div class="l">Yours '+sp.mine+'%</div></div></div>';
+      return '<div class="mo-f-lbl" style="margin-top:12px">'+label+'</div><div class="mo-split-cards">'+
+        trio(sp).map(function(t){return '<div class="mo-split-card"><div class="a" style="color:'+t[3]+'">'+fmtMoney(g*t[2]/100)+'</div><div class="l">'+t[1]+' '+t[2]+'%</div></div>'}).join("")+'</div>';
     }
-    var h='<div class="sh-hd"><span class="e">'+ic("wallet",21)+'</span><b>Auto-split · '+sp.tax+'/'+sp.biz+'/'+sp.mine+'</b><button class="sh-x" id="spX">'+ic("x",20)+'</button></div><div class="sh-body">'+
-      '<div style="font-size:13px;color:var(--muted);line-height:1.55;padding:2px 0 4px">Every dollar you earn is sorted <b style="color:#f5c563">Taxes</b> / <b style="color:var(--accent)">Business</b> / <b style="color:var(--green)">Yours</b> — silently, in the background. Nothing moves your money; these are the amounts to set aside when you cash out.</div>'+
+    var h='<div class="sh-hd"><span class="e">'+ic("wallet",21)+'</span><b>Buckets · '+sp.you+'/'+sp.costs+'/'+sp.savings+'</b><button class="sh-x" id="spX">'+ic("x",20)+'</button></div><div class="sh-body">'+
+      '<div style="font-size:13px;color:var(--muted);line-height:1.55;padding:2px 0 4px">Every dollar you earn is sorted <b style="color:var(--mo-mine)">You</b> (your pay) / <b style="color:var(--mo-biz)">Costs</b> (supplies, gas, '+esc(jpName())+', tools) / <b style="color:var(--mo-tax)">Savings</b> (buffer + big buys) — automatically, in the background. This is how much lands in each.</div>'+
       cards(s.gross||0,"This month · "+fmtMoney(s.gross||0)+" earned")+
       cards(at.gross||0,"All-time · "+fmtMoney(at.gross||0)+" earned")+
-      '<div class="mo-f-lbl" style="margin-top:14px">Change the split (must total 100)</div>'+
+      // live calculator — type a job total, see the split
+      '<div class="mo-f-lbl" style="margin-top:16px">Try it — split any amount</div>'+
+      '<input class="mo-in" id="spCalc" type="number" inputmode="decimal" placeholder="e.g. 300" style="text-align:center;font-size:18px;font-weight:800">'+
+      '<div class="mo-split-cards" id="spCalcOut" style="margin-top:9px"></div>'+
+      // edit the split
+      '<div class="mo-f-lbl" style="margin-top:16px">Change the split — must total <b id="spTotal">100</b></div>'+
       '<div style="display:flex;gap:8px">'+
-      '<input class="mo-in" id="spTax" type="number" inputmode="numeric" value="'+sp.tax+'" style="text-align:center">'+
-      '<input class="mo-in" id="spBiz" type="number" inputmode="numeric" value="'+sp.biz+'" style="text-align:center">'+
-      '<input class="mo-in" id="spMine" type="number" inputmode="numeric" value="'+sp.mine+'" style="text-align:center"></div>'+
-      '<div style="display:flex;gap:8px;font-size:10.5px;color:var(--muted);text-align:center;padding-top:3px"><span style="flex:1">TAXES</span><span style="flex:1">BUSINESS</span><span style="flex:1">YOURS</span></div>'+
+      '<input class="mo-in spf" id="spYou" type="number" inputmode="numeric" value="'+sp.you+'" style="text-align:center">'+
+      '<input class="mo-in spf" id="spCosts" type="number" inputmode="numeric" value="'+sp.costs+'" style="text-align:center">'+
+      '<input class="mo-in spf" id="spSave2" type="number" inputmode="numeric" value="'+sp.savings+'" style="text-align:center"></div>'+
+      '<div style="display:flex;gap:8px;font-size:10.5px;color:var(--muted);text-align:center;padding-top:3px"><span style="flex:1;color:var(--mo-mine)">YOU</span><span style="flex:1;color:var(--mo-biz)">COSTS</span><span style="flex:1;color:var(--mo-tax)">SAVINGS</span></div>'+
       '<button class="mo-save" id="spSave">Save split</button></div>';
     var sh=el("moSheet");sh.innerHTML=h;el("moScrim").classList.add("show");sh.classList.add("show");
     el("spX").onclick=closeMoSheet;
+    // live calculator
+    function renderCalc(){
+      var g=parseFloat(String(el("spCalc").value).replace(/[^0-9.]/g,""))||0;
+      var cur={you:+el("spYou").value||0,costs:+el("spCosts").value||0,savings:+el("spSave2").value||0};
+      el("spCalcOut").innerHTML=[["you","You",cur.you,"var(--mo-mine)"],["costs","Costs",cur.costs,"var(--mo-biz)"],["savings","Savings",cur.savings,"var(--mo-tax)"]]
+        .map(function(t){return '<div class="mo-split-card"><div class="a" style="color:'+t[3]+'">'+fmtMoney(g*t[2]/100)+'</div><div class="l">'+t[1]+'</div></div>'}).join("");
+    }
+    // live total indicator
+    function renderTotal(){
+      var tot=(+el("spYou").value||0)+(+el("spCosts").value||0)+(+el("spSave2").value||0);
+      var el2=el("spTotal");el2.textContent=tot;el2.style.color=(tot===100)?"var(--mo-good)":"var(--mo-bad)";
+    }
+    el("spCalc").oninput=renderCalc;
+    Array.prototype.forEach.call(sh.querySelectorAll(".spf"),function(inp){inp.oninput=function(){renderCalc();renderTotal()}});
+    renderCalc();renderTotal();
     el("spSave").onclick=function(){
-      var t=Math.round(+el("spTax").value)||0,bz=Math.round(+el("spBiz").value)||0,mn=Math.round(+el("spMine").value)||0;
-      if(t+bz+mn!==100){toast("Those add up to "+(t+bz+mn)+"% — needs to be 100%",{bad:true});return}
+      var y=Math.round(+el("spYou").value)||0,c=Math.round(+el("spCosts").value)||0,v=Math.round(+el("spSave2").value)||0;
+      if(y+c+v!==100){toast("Those add up to "+(y+c+v)+"% — needs to be 100%",{bad:true});return}
       var b=el("spSave");b.disabled=true;
-      postMoCfg({split:{tax:t,biz:bz,mine:mn}}).then(function(d){if(d&&d.ok){closeMoSheet();toast("Split updated — sorting in the background")}else b.disabled=false});
+      postMoCfg({split:{costs:c,you:y,savings:v}}).then(function(d){if(d&&d.ok){closeMoSheet();toast("Buckets updated")}else b.disabled=false});
     };
   }
 
@@ -4306,7 +4330,7 @@
     h+='</div>';
     var spc=moSplitCfg();
     h+='<div class="mo-sec-h">Auto-split &amp; profit</div><div class="mo-set">';
-    h+='<div class="mo-srow"><span class="lb">The '+spc.tax+'/'+spc.biz+'/'+spc.mine+' split<small>Taxes / Business / Yours — runs silently on every dollar of income.</small></span><button class="btn" id="moSplitEdit">Edit</button></div>';
+    h+='<div class="mo-srow"><span class="lb">The '+spc.you+'/'+spc.costs+'/'+spc.savings+' split<small>You / Costs / Savings — runs silently on every dollar of income.</small></span><button class="btn" id="moSplitEdit">Edit</button></div>';
     h+='<div class="mo-srow"><span class="lb">Materials estimate<small>% of a job’s ticket assumed as supplies when you don’t log the exact cost. Used for profit-per-job.</small></span><input class="mo-in" id="moMatRate" style="width:70px;text-align:center" type="number" inputmode="decimal" value="'+esc(String(moMatRate()))+'"></div>';
     h+='</div>';
     h+='<div class="mo-sec-h">Buckets &amp; buttons</div><div class="mo-set">';
