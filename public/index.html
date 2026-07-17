@@ -912,6 +912,153 @@
   .mc-bar.gin{background:var(--green)} .mc-bar.gout{background:#ef4444;opacity:.7}
   .mc-legend{display:flex;gap:14px;font-size:11px;color:var(--muted);padding:2px 2px 8px}
   .mc-legend i{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px}
+
+  /* ======================================================================
+     MONEY v3 — the design layer. Action-first Log, progressive-disclosure
+     depth. Semantic colors (good/warn/bad) kept separate from brand red.
+     Declared after v1/v2 so equal-specificity rules win here.
+     ====================================================================== */
+  :root{
+    --mo-good:#20c46b; --mo-good-d:#159a52; --mo-warn:#f5b23d; --mo-bad:#f2564b;
+    --mo-tax:#f5b23d; --mo-biz:#5b8bff; --mo-mine:#20c46b;
+    --mo-ink:var(--text); --mo-elev:0 1px 0 rgba(255,255,255,.03),0 10px 30px -18px rgba(0,0,0,.7);
+    --mo-r:18px;
+  }
+  :root:not([data-theme="dark"]){ --mo-elev:0 1px 2px rgba(20,22,30,.05),0 14px 34px -22px rgba(20,22,30,.30); }
+  :root[data-theme="light"]{ --mo-elev:0 1px 2px rgba(20,22,30,.05),0 14px 34px -22px rgba(20,22,30,.30); }
+
+  /* ---- shell polish ---- */
+  .mo-body{padding-top:12px}
+  .mo-head{backdrop-filter:blur(12px);background:color-mix(in srgb,var(--panel) 86%,transparent)}
+  .mo-title b{font-weight:800;letter-spacing:-.02em}
+  .mo-nav{background:color-mix(in srgb,var(--panel) 92%,transparent)}
+  .mo-nav button{position:relative;transition:color .15s}
+  .mo-nav button.active::before{content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);width:26px;height:3px;border-radius:0 0 4px 4px;background:var(--accent)}
+
+  /* ---- HERO: signature card, big number, allocation bar, sparkline ---- */
+  .mo-hero{position:relative;overflow:hidden;border-radius:22px;padding:18px 20px 20px;margin-bottom:16px;
+    background:
+      radial-gradient(130% 120% at 88% -20%,rgba(255,255,255,.16),transparent 55%),
+      linear-gradient(150deg,#17a05f 0%,#0f7a48 58%,#0c6b3f 100%);
+    box-shadow:0 18px 40px -20px rgba(16,140,80,.55),0 2px 0 rgba(255,255,255,.10) inset;color:#fff}
+  .mo-hero.neg{background:radial-gradient(130% 120% at 88% -20%,rgba(255,255,255,.14),transparent 55%),linear-gradient(150deg,#e5544a 0%,#c1362d 60%,#a52a22 100%);box-shadow:0 18px 40px -20px rgba(210,60,50,.5),0 2px 0 rgba(255,255,255,.10) inset}
+  .mo-hero .mh-top{display:flex;align-items:center;gap:8px;margin-bottom:2px}
+  .mo-hero .mh-lbl{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;opacity:.9}
+  .mo-hero .mh-v{font-size:clamp(38px,12vw,52px);font-weight:850;letter-spacing:-.035em;line-height:1.02;font-variant-numeric:tabular-nums;text-shadow:0 2px 14px rgba(0,0,0,.14)}
+  .mo-hero .mh-sub{font-size:12.5px;opacity:.92;margin-top:3px;font-weight:600}
+  .mo-hero .mh-edit{position:absolute;top:14px;right:14px;background:rgba(255,255,255,.18);border:none;color:#fff;width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;backdrop-filter:blur(4px)}
+  .mo-hero .mh-edit:active{transform:scale(.9)}
+  .mo-hero .mh-spark{position:absolute;right:16px;bottom:64px;width:112px;height:38px;opacity:.9;pointer-events:none}
+  .mh-alloc{margin-top:15px;padding-top:14px;border-top:1px solid rgba(255,255,255,.22)}
+  .mh-alloc .abar{display:flex;height:8px;border-radius:99px;overflow:hidden;background:rgba(255,255,255,.18)}
+  .mh-alloc .abar i{display:block;height:100%}
+  .mh-alloc .akeys{display:flex;gap:14px;margin-top:9px;flex-wrap:wrap}
+  .mh-alloc .ak{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;opacity:.96;font-variant-numeric:tabular-nums}
+  .mh-alloc .ak i{width:8px;height:8px;border-radius:50%;flex:none}
+  .mh-alloc .ak b{font-weight:850}
+  .mh-alloc .akhint{margin-left:auto;font-size:10.5px;opacity:.8;font-weight:600;display:flex;align-items:center;gap:4px}
+
+  /* ---- primary action + quick grid (Monefy-fast) ---- */
+  .mo-actions{display:flex;gap:10px;margin:0 0 10px}
+  .mo-primary{flex:1;display:flex;align-items:center;justify-content:center;gap:9px;background:linear-gradient(135deg,var(--accent),var(--accent-dark));
+    color:#fff;border:none;border-radius:16px;padding:16px;font-size:16px;font-weight:800;letter-spacing:-.01em;cursor:pointer;
+    box-shadow:0 12px 26px -12px var(--accent);user-select:none;-webkit-user-select:none}
+  .mo-primary:active{transform:translateY(1px) scale(.99)}
+  .mo-primary .e{display:inline-flex}
+  .mo-primary .e svg{width:22px;height:22px}
+  .mo-secondary{flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:84px;
+    background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:10px 8px;font-size:11.5px;font-weight:700;color:var(--text);cursor:pointer}
+  .mo-secondary:active{transform:scale(.97)}
+  .mo-secondary .e{color:var(--muted)}
+  .mo-grid{grid-template-columns:repeat(4,1fr);gap:8px;margin:2px 0 4px}
+  .mo-btn{border-radius:16px;padding:13px 6px 10px;transition:transform .1s,border-color .12s,background .12s;box-shadow:var(--mo-elev)}
+  .mo-btn .e{font-size:23px}
+  .mo-btn:active{transform:scale(.94);border-color:var(--accent)}
+  .mo-adapt{font-size:10.5px;color:var(--muted2);text-align:center;padding:6px 0 2px;letter-spacing:.02em}
+
+  /* ---- Pulse: the collapsible at-a-glance for the Log screen ---- */
+  .mo-pulse{background:var(--panel);border:1px solid var(--line2);border-radius:var(--mo-r);box-shadow:var(--mo-elev);margin:14px 0 6px;overflow:hidden}
+  .mo-pulse .ph{display:flex;align-items:center;gap:12px;padding:14px 15px;cursor:pointer;user-select:none;-webkit-user-select:none}
+  .mo-pulse .ph .pnet{font-size:22px;font-weight:850;letter-spacing:-.025em;font-variant-numeric:tabular-nums}
+  .mo-pulse .ph .pnet.good{color:var(--mo-good)} .mo-pulse .ph .pnet.bad{color:var(--mo-bad)}
+  .mo-pulse .ph .plbl{font-size:11px;color:var(--muted2);font-weight:700;text-transform:uppercase;letter-spacing:.06em;margin-top:1px}
+  .mo-pulse .ph .pmine{margin-left:auto;text-align:right}
+  .mo-pulse .ph .pmine .v{font-size:16px;font-weight:800;color:var(--mo-mine);font-variant-numeric:tabular-nums}
+  .mo-pulse .ph .pmine .k{font-size:10px;color:var(--muted2);font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+  .mo-pulse .ph .chev{flex:none;color:var(--muted2);transition:transform .22s;display:flex}
+  .mo-pulse.open .ph .chev{transform:rotate(180deg)}
+  .mo-pulse .pbody{max-height:0;overflow:hidden;transition:max-height .28s ease}
+  .mo-pulse.open .pbody{max-height:340px}
+  .mo-pulse .pbody-in{padding:2px 15px 15px;border-top:1px solid var(--line2)}
+  .mo-mini{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:12px}
+  .mo-mini .m{background:var(--panel2);border-radius:12px;padding:11px 10px}
+  .mo-mini .m .v{font-size:16px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .mo-mini .m .k{font-size:10px;color:var(--muted2);margin-top:2px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mo-mini .m .v.good{color:var(--mo-good)} .mo-mini .m .v.warn{color:var(--mo-warn)} .mo-mini .m .v.bad{color:var(--mo-bad)}
+  .mo-pulse .pmore{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;margin-top:12px;background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:11px;font-size:13px;font-weight:750;color:var(--text);cursor:pointer}
+  .mo-pulse .pmore:active{transform:scale(.99)}
+  .mo-pulse .pmore .e{color:var(--accent-text);display:inline-flex}
+
+  /* ---- brain + buckets entry pills (compact, elegant) ---- */
+  .mo-brainrow{display:flex;gap:9px;margin:12px 0}
+  .mo-brainbtn{flex:1;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--panel);border:1px solid var(--line2);border-radius:15px;padding:13px 8px;font-size:13.5px;font-weight:750;color:var(--text);cursor:pointer;box-shadow:var(--mo-elev);transition:transform .1s,border-color .12s}
+  .mo-brainbtn:active{transform:scale(.98)}
+  .mo-brainbtn.brain{border-color:color-mix(in srgb,var(--mo-warn) 40%,var(--line2))}
+  .mo-brainbtn .e{display:inline-flex}
+  .mo-brainbtn.brain .e{color:var(--mo-warn)}
+  .mo-brainbtn.buckets .e{color:var(--mo-mine)}
+
+  /* ---- Report: range flips + KPI grid (the deep dive) ---- */
+  .mo-ranges{display:flex;gap:7px;margin:2px 0 14px;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none;padding-bottom:2px}
+  .mo-ranges::-webkit-scrollbar{display:none}
+  .mo-rng{flex:none;padding:8px 15px;border-radius:999px;border:1px solid var(--line2);background:var(--panel);color:var(--muted);font-size:13px;font-weight:750;cursor:pointer;user-select:none;-webkit-user-select:none;transition:all .13s}
+  .mo-rng.on{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 8px 18px -10px var(--accent)}
+  .mo-kgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:6px}
+  .mo-kgrid .k1{grid-column:span 2}
+  .mo-k{background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:15px 16px;box-shadow:var(--mo-elev);position:relative;overflow:hidden}
+  .mo-k .kv{font-size:26px;font-weight:850;letter-spacing:-.03em;font-variant-numeric:tabular-nums;line-height:1}
+  .mo-k .kk{font-size:11px;color:var(--muted2);margin-top:5px;font-weight:750;text-transform:uppercase;letter-spacing:.05em}
+  .mo-k .ksub{font-size:11.5px;color:var(--muted);margin-top:3px;font-weight:600}
+  .mo-k.hero1{background:linear-gradient(150deg,color-mix(in srgb,var(--mo-good) 16%,var(--panel)),var(--panel));border-color:color-mix(in srgb,var(--mo-good) 26%,var(--line2))}
+  .mo-k.hero1.bad{background:linear-gradient(150deg,color-mix(in srgb,var(--mo-bad) 15%,var(--panel)),var(--panel));border-color:color-mix(in srgb,var(--mo-bad) 26%,var(--line2))}
+  .mo-k .kv.good{color:var(--mo-good)} .mo-k .kv.warn{color:var(--mo-warn)} .mo-k .kv.bad{color:var(--mo-bad)} .mo-k .kv.mine{color:var(--mo-mine)}
+  .mo-k .kbadge{position:absolute;top:13px;right:14px;font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:99px}
+  .mo-k .kbadge.up{background:color-mix(in srgb,var(--mo-good) 18%,transparent);color:var(--mo-good)}
+  .mo-k .kbadge.down{background:color-mix(in srgb,var(--mo-bad) 18%,transparent);color:var(--mo-bad)}
+
+  /* ---- section header refresh ---- */
+  .mo-sec-h{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:22px 2px 11px}
+
+  /* ---- split strip + buckets refinement ---- */
+  .mo-split{border-radius:15px;box-shadow:var(--mo-elev);padding:12px 14px}
+  .mo-split .sbar i:nth-child(1){background:var(--mo-tax)!important}
+  .mo-split .sbar i:nth-child(2){background:var(--mo-biz)!important}
+  .mo-split .sbar i:nth-child(3){background:var(--mo-mine)!important}
+  .mo-split-card{border-radius:15px;box-shadow:var(--mo-elev);padding:14px 8px}
+
+  /* ---- owed cards ---- */
+  .mo-owe{border-radius:15px;box-shadow:var(--mo-elev)}
+
+  /* ---- entry sheet: quick-amount chips + bigger amount ---- */
+  .mo-sheet{background:var(--panel);border-top-left-radius:24px;border-top-right-radius:24px}
+  .mo-sheet .sh-hd{padding:16px 18px 6px}
+  .mo-sheet .sh-hd b{font-size:16.5px;font-weight:800;letter-spacing:-.01em}
+  .mo-amt{font-size:46px;font-weight:850;padding:10px 0 4px}
+  .mo-amt small{font-size:24px}
+  .mo-quickamts{display:flex;gap:7px;flex-wrap:wrap;justify-content:center;margin:2px 0 4px}
+  .mo-qa{flex:none;padding:7px 14px;border-radius:999px;background:var(--panel2);border:1px solid var(--line);color:var(--text);font-size:13.5px;font-weight:750;cursor:pointer;font-variant-numeric:tabular-nums}
+  .mo-qa:active{background:var(--accent-soft);border-color:var(--accent)}
+  .mo-pad button{height:52px;border-radius:14px;font-size:22px;font-weight:650}
+  .mo-save{border-radius:15px;font-weight:800;letter-spacing:.01em}
+  .mo-f-lbl{font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:750;color:var(--muted2)}
+
+  /* ---- money-brain sheet polish ---- */
+  .mo-ai-h{font-size:17px;font-weight:800;line-height:1.4}
+  .mo-ai-card{background:var(--panel2);border:1px solid var(--line2);border-radius:14px;padding:13px 15px;margin-bottom:10px}
+  .mo-ai-card .ct{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px;display:flex;align-items:center;gap:6px}
+  .mo-ai-card.win .ct{color:var(--mo-good)} .mo-ai-card.watch .ct{color:var(--mo-warn)} .mo-ai-card.move .ct{color:var(--accent-text)}
+
+  @media (prefers-reduced-motion:reduce){.mo-pulse .pbody,.mo-pulse .ph .chev,.mo-primary,.mo-btn{transition:none}}
   .budg .meter{height:12px;border-radius:7px;background:var(--panel3);overflow:hidden;position:relative}
   .budg .meter span{display:block;height:100%;border-radius:7px;transition:width 1s cubic-bezier(.4,0,.2,1);min-width:3px}
   .budg .meter span.ok{background:linear-gradient(90deg,#22c55e,#16a34a)}
@@ -1243,7 +1390,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-17·money-v2";
+  var APP_BUILD="2026-07-17·money-v3-ui";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -3343,84 +3490,101 @@
     }
     return{label:key,value:"—"};
   }
+  // tiny inline sparkline (SVG polyline) from a list of numbers
+  function moSparkline(vals,w,h,stroke){
+    vals=(vals||[]).slice(-8);if(vals.length<2)return"";
+    var mn=Math.min.apply(null,vals),mx=Math.max.apply(null,vals),rg=(mx-mn)||1,pad=3;
+    var pts=vals.map(function(v,i){var x=pad+i*((w-pad*2)/(vals.length-1));var y=h-pad-((v-mn)/rg)*(h-pad*2);return x.toFixed(1)+","+y.toFixed(1)});
+    var last=pts[pts.length-1].split(",");
+    return '<svg class="mh-spark" viewBox="0 0 '+w+' '+h+'" fill="none" preserveAspectRatio="none">'+
+      '<polyline points="'+pts.join(" ")+'" stroke="'+stroke+'" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>'+
+      '<circle cx="'+last[0]+'" cy="'+last[1]+'" r="3" fill="#fff"/></svg>';
+  }
   function moLog(box){
     var hero=(MO.cfg&&MO.cfg.hero)||{primary:"balance",stats:["monthIn","monthOut","topCat"]};
     var pm=moMetric(hero.primary);
     var title=(hero.title&&hero.title.trim())?hero.title.trim():pm.label;
+    var sp=moSplitCfg(),s=MO.summary||{},gross=s.gross||0;
+    // sparkline of recent net (from the 6-mo report if we have it)
+    var spark="";
+    if(MO.report&&MO.report.length>1)spark=moSparkline(MO.report.map(function(x){return x.net}),112,38,"rgba(255,255,255,.85)");
     var h='<div class="mo-hero'+(pm.neg?" neg":"")+'">'+
       '<button class="mh-edit" id="heroEdit" aria-label="Customize headline">'+ic("sliders",16)+'</button>'+
-      '<div class="mh-lbl">'+esc(title)+'</div>'+
+      spark+
+      '<div class="mh-top"><span class="mh-lbl">'+esc(title)+'</span></div>'+
       '<div class="mh-v">'+esc(pm.value)+'</div>'+
       (pm.sub?'<div class="mh-sub">'+esc(pm.sub)+'</div>':'');
-    var stats=(hero.stats||[]).filter(Boolean);
-    if(stats.length){
-      h+='<div class="mh-stats">'+stats.map(function(k){var m=moMetric(k);
-        return '<div class="mh-tile"><div class="tl">'+esc(m.label)+'</div><div class="tv">'+esc(m.value)+'</div>'+(m.sub?'<div class="tsub">'+esc(m.sub)+'</div>':'')+'</div>';
-      }).join("")+'</div>';
-    }
+    // signature allocation bar — the 30/30/40, always visible, tappable
+    h+='<div class="mh-alloc" id="heroAlloc">'+
+      '<div class="abar"><i style="width:'+sp.tax+'%;background:var(--mo-tax)"></i><i style="width:'+sp.biz+'%;background:var(--mo-biz)"></i><i style="width:'+sp.mine+'%;background:var(--mo-mine)"></i></div>'+
+      '<div class="akeys">'+
+        '<span class="ak"><i style="background:var(--mo-tax)"></i>Tax <b>'+fmtMoney(gross*sp.tax/100)+'</b></span>'+
+        '<span class="ak"><i style="background:var(--mo-biz)"></i>Biz <b>'+fmtMoney(gross*sp.biz/100)+'</b></span>'+
+        '<span class="ak"><i style="background:var(--mo-mine)"></i>You <b>'+fmtMoney(gross*sp.mine/100)+'</b></span>'+
+        '<span class="akhint">'+ic("chevron-right",13)+'</span>'+
+      '</div></div>';
     h+='</div>';
-    // --- the 30/30/40 strip: computed silently in the background, one tap to open ---
-    var sp=moSplitCfg(),rs=moRangeSum(),rGross=(rs&&rs.gross)||0;
-    h+='<div class="mo-split" id="moSplitStrip" title="Auto-split — tap for details">'+
-      '<span class="sl">'+ic("wallet",14)+'</span>'+
-      '<div class="sbar"><i style="width:'+sp.tax+'%;background:#f5c563"></i><i style="width:'+sp.biz+'%;background:var(--accent)"></i><i style="width:'+sp.mine+'%;background:var(--green)"></i></div>'+
-      '<span class="sl">Tax '+fmtMoney(rGross*sp.tax/100)+' · Biz '+fmtMoney(rGross*sp.biz/100)+' · <b style="color:var(--green)">You '+fmtMoney(rGross*sp.mine/100)+'</b></span></div>';
-    // --- AI brain + buckets quick buttons ---
-    h+='<div class="mo-brainrow">'+
-      '<button class="mo-brainbtn" id="moBrainBtn"><span class="e">'+ic("sparkles",16)+'</span>Money Brain</button>'+
-      '<button class="mo-brainbtn" id="moSplitBtn"><span class="e" style="color:var(--green)">'+ic("wallet",16)+'</span>Buckets</button></div>';
-    // --- time-range flips + the KPI strip the questionnaire asked for ---
-    var RANGES=[["today","Today"],["week","Week"],["month","Month"],["quarter","Quarter"],["year","Year"]];
-    h+='<div class="mo-ranges">'+RANGES.map(function(r){return '<span class="mo-rng'+(moRange()===r[0]?" on":"")+'" data-rng="'+r[0]+'">'+r[1]+'</span>'}).join("")+'</div>';
-    if(rs){
-      var mgn=rs.gross>0?Math.round((rs.net||0)/rs.gross*100):0;
-      var best="",bs=rs.byService||{},bk=Object.keys(bs);
-      if(bk.length){bk.sort(function(a,b){return bs[b].total-bs[a].total});best=bk[0]}
-      h+='<div class="mo-kpis">'+
-        '<div class="mo-kpi '+((rs.net||0)<0?"bad":"good")+'"><div class="kv">'+fmtMoney(rs.net||0)+'</div><div class="kk">Net profit</div></div>'+
-        '<div class="mo-kpi good"><div class="kv">'+fmtMoney(rGross*sp.mine/100)+'</div><div class="kk">Yours ('+sp.mine+'%)</div></div>'+
-        '<div class="mo-kpi"><div class="kv">'+(rs.jobs?fmtMoney(rs.gross/rs.jobs):"—")+'</div><div class="kk">Avg ticket</div></div>'+
-        '<div class="mo-kpi"><div class="kv">'+(rs.jobs||0)+'</div><div class="kk">Jobs</div></div>'+
-        '<div class="mo-kpi '+(mgn>=50?"good":(mgn>0?"warn":"bad"))+'"><div class="kv">'+(rs.gross>0?mgn+"%":"—")+'</div><div class="kk">Margin</div></div>'+
-        (best?'<div class="mo-kpi"><div class="kv" style="font-size:13.5px;line-height:1.3;padding-top:2px">'+esc(best)+'</div><div class="kk">Best service</div></div>':"")+
-        '<div class="mo-kpi warn"><div class="kv">'+fmtMoney(rGross*sp.tax/100)+'</div><div class="kk">Tax reserved</div></div>'+
-        ((rs.owed||0)>0?'<div class="mo-kpi bad"><div class="kv">'+fmtMoney(rs.owed)+'</div><div class="kk">Owed to you</div></div>':"")+
-        '</div>';
-    } else h+='<div class="mo-kpis"><div class="mo-kpi"><div class="kv">…</div><div class="kk">Loading</div></div></div>';
-    // --- customers who still owe you ---
+    // ===== PRIMARY ACTION — the thing you open the app to do =====
+    h+='<div class="mo-actions">'+
+      '<button class="mo-primary" data-mo="job"><span class="e">'+ic("plus",22)+'</span>Log a detail</button>'+
+      '<button class="mo-secondary" data-mo="jp"><span class="e">'+ic("users",22)+'</span>Pay '+esc(jpName())+'</button></div>';
+    // secondary quick-add grid (expenses), auto-sorted to habit
+    var off=(MO.cfg&&MO.cfg.catsOff)||[],use=moUse();
+    h+='<div class="mo-grid">';
+    MO_CATS.slice().sort(function(a,b){return (use[b[0]]||0)-(use[a[0]]||0)})
+      .forEach(function(c){if(off.indexOf(c[0])>=0)return;h+='<button class="mo-btn" data-mo="'+c[0]+'"><span class="e">'+ic(c[2],24)+'</span>'+esc(c[1])+'</button>'});
+    if(!MO.cfg||MO.cfg.personalEnabled!==false)h+='<button class="mo-btn dim" data-mo="personal"><span class="e">'+ic("user",24)+'</span>Personal</button>';
+    h+='</div>';
+    if(Object.keys(use).length>2)h+='<div class="mo-adapt">✦ buttons auto-sort to what you log most</div>';
+    // ===== ACTIONABLE ALERTS (only when they exist) =====
     (MO.owed||[]).forEach(function(o){
-      h+='<div class="mo-owe"><div class="bd"><b>'+esc(o.name||prettyPhone(o.phone)||"A customer")+'</b> still owes <b style="color:#ef4444">'+fmtMoney(o.owed)+'</b>'+
+      h+='<div class="mo-owe"><div class="bd"><b>'+esc(o.name||prettyPhone(o.phone)||"A customer")+'</b> still owes <b style="color:var(--mo-bad)">'+fmtMoney(o.owed)+'</b>'+
         '<small>'+esc(moDayLabel(o.date))+' job · '+fmtMoney(o.amount)+' total</small></div>'+
         (o.phone?'<button class="btn" data-owetext="'+esc(o.phone)+'">Text</button>':"")+
         '<button class="btn accent" data-owepaid="'+esc(o.id)+'|'+esc(o.date)+'">Paid ✓</button></div>';
     });
     if(MO.cfg&&MO.cfg.wonNudge!==false)(MO.nudges||[]).forEach(function(nd){
-      h+='<div class="mo-nudge"><div class="t"><span class="ic-inline" style="color:#f5c563">'+ic("lightbulb",14)+'</span> <b>'+esc(nd.name||prettyPhone(nd.phone))+'</b> was marked <b>Won</b> '+esc(fmtTime(nd.wonAt))+' — no job $ logged yet.</div>'+
+      h+='<div class="mo-nudge"><div class="t"><span class="ic-inline" style="color:var(--mo-warn)">'+ic("lightbulb",14)+'</span> <b>'+esc(nd.name||prettyPhone(nd.phone))+'</b> was marked <b>Won</b> '+esc(fmtTime(nd.wonAt))+' — no job $ logged yet.</div>'+
         '<div class="acts"><button class="btn accent" data-nlog="'+esc(nd.phone)+'">Log the $</button><button class="btn" data-ndis="'+esc(nd.phone)+'">Dismiss</button></div></div>';
     });
-    var off=(MO.cfg&&MO.cfg.catsOff)||[];
-    h+='<div class="mo-grid">';
-    h+='<button class="mo-btn income" data-mo="job"><span class="e">'+ic("car",26)+'</span>Detail $</button>';
-    h+='<button class="mo-btn" data-mo="jp"><span class="e">'+ic("users",26)+'</span>Pay '+esc(jpName())+'</button>';
-    // buttons quietly re-order to your habits (most-logged first)
-    var use=moUse();
-    MO_CATS.slice().sort(function(a,b){return (use[b[0]]||0)-(use[a[0]]||0)})
-      .forEach(function(c){if(off.indexOf(c[0])>=0)return;h+='<button class="mo-btn" data-mo="'+c[0]+'"><span class="e">'+ic(c[2],26)+'</span>'+esc(c[1])+'</button>'});
-    if(!MO.cfg||MO.cfg.personalEnabled!==false)h+='<button class="mo-btn dim" data-mo="personal"><span class="e">'+ic("user",26)+'</span>Personal</button>';
-    h+='</div>';
-    if(Object.keys(use).length>2)h+='<div class="mo-adapt">✦ buttons auto-sort to your habits</div>';
+    // ===== PULSE — the collapsible at-a-glance (progressive disclosure) =====
+    var mgn=gross>0?Math.round((s.net||0)/gross*100):0;
+    var open=MO.pulseOpen?" open":"";
+    h+='<div class="mo-pulse'+open+'" id="moPulse">'+
+      '<div class="ph" id="moPulseHd">'+
+        '<div><div class="pnet '+((s.net||0)<0?"bad":"good")+'">'+fmtMoney(s.net||0)+'</div><div class="plbl">Net · '+esc(monthShort(moCurMonth()))+'</div></div>'+
+        '<div class="pmine"><div class="v">'+fmtMoney(gross*sp.mine/100)+'</div><div class="k">Yours</div></div>'+
+        '<span class="chev">'+ic("chevron-down",20)+'</span>'+
+      '</div>'+
+      '<div class="pbody"><div class="pbody-in"><div class="mo-mini">'+
+        '<div class="m"><div class="v">'+(s.jobs||0)+'</div><div class="k">Jobs</div></div>'+
+        '<div class="m"><div class="v">'+(s.jobs?fmtMoney(gross/s.jobs):"—")+'</div><div class="k">Avg ticket</div></div>'+
+        '<div class="m"><div class="v '+(mgn>=50?"good":(mgn>0?"warn":"bad"))+'">'+(gross>0?mgn+"%":"—")+'</div><div class="k">Margin</div></div>'+
+        '<div class="m"><div class="v warn">'+fmtMoney(gross*sp.tax/100)+'</div><div class="k">Tax set aside</div></div>'+
+        '<div class="m"><div class="v">'+fmtMoney(gross)+'</div><div class="k">Made</div></div>'+
+        '<div class="m"><div class="v '+((s.owed||0)>0?"bad":"")+'">'+fmtMoney(s.owed||0)+'</div><div class="k">Owed to you</div></div>'+
+      '</div><button class="pmore" id="moPulseMore"><span class="e">'+ic("bar-chart",15)+'</span>Full report &amp; trends</button></div></div>'+
+    '</div>';
+    // brain + buckets — the two "dig deeper" tools
+    h+='<div class="mo-brainrow">'+
+      '<button class="mo-brainbtn brain" id="moBrainBtn"><span class="e">'+ic("sparkles",17)+'</span>Money Brain</button>'+
+      '<button class="mo-brainbtn buckets" id="moSplitBtn"><span class="e">'+ic("wallet",17)+'</span>Buckets</button></div>';
+    // ===== TODAY =====
     var today=moTodayStr();
     var todays=(MO.entries||[]).filter(function(e){return e.date===today});
-    h+='<div class="mo-sec-h">Today'+(todays.length?' <span class="n">'+todays.length+'</span>':'')+'</div>';
-    if(!todays.length)h+='<div style="color:var(--muted2);font-size:12.5px;padding:2px 2px 10px;line-height:1.5">Nothing logged today — tap a button above. Amount, done. Two taps.</div>';
+    h+='<div class="mo-sec-h">Today'+(todays.length?' · '+todays.length:'')+'</div>';
+    if(!todays.length)h+='<div style="color:var(--muted2);font-size:12.5px;padding:2px 2px 10px;line-height:1.5">Nothing logged today — tap <b style="color:var(--accent-text)">Log a detail</b>. Amount, done.</div>';
     todays.forEach(function(e){h+=moEntryRow(e,true)});
     box.innerHTML=h;
     moWireRows(box);
     el("heroEdit").onclick=function(ev){ev.stopPropagation();openHeroSheet()};
+    var ha=el("heroAlloc");if(ha)ha.onclick=openSplitSheet;
     var sb=el("moSplitBtn");if(sb)sb.onclick=openSplitSheet;
-    var ss=el("moSplitStrip");if(ss)ss.onclick=openSplitSheet;
     var bb=el("moBrainBtn");if(bb)bb.onclick=openBrainSheet;
-    Array.prototype.forEach.call(box.querySelectorAll("[data-rng]"),function(r){r.onclick=function(){vibrate(4);moSetRange(r.getAttribute("data-rng"))}});
+    var ph=el("moPulseHd");if(ph)ph.onclick=function(){MO.pulseOpen=!MO.pulseOpen;el("moPulse").classList.toggle("open",MO.pulseOpen)};
+    var pmore=el("moPulseMore");if(pmore)pmore.onclick=function(){moSetView("report")};
+    // lazily fetch the 6-mo trend so the hero sparkline fills in
+    if(!MO.report)api("/api/money/report?months=6").then(function(d){if(d&&d.ok){MO.report=d.months;if(MO.open&&MO.view==="log")moRender()}}).catch(function(){});
     Array.prototype.forEach.call(box.querySelectorAll("[data-owepaid]"),function(b){b.onclick=function(){
       var p=b.getAttribute("data-owepaid").split("|");b.disabled=true;
       post("/api/money/entry",{id:p[0],date:p[1],clearOwed:true}).then(function(d){
@@ -3429,11 +3593,11 @@
       });
     }});
     Array.prototype.forEach.call(box.querySelectorAll("[data-owetext]"),function(b){b.onclick=function(){
-      var ph=b.getAttribute("data-owetext");closeMoney();openThread(ph);
+      var ph2=b.getAttribute("data-owetext");closeMoney();openThread(ph2);
     }});
     Array.prototype.forEach.call(box.querySelectorAll("[data-mo]"),function(b){b.onclick=function(){vibrate(6);var k=b.getAttribute("data-mo");moBump(k);openMoSheet(k,null,null)}});
-    Array.prototype.forEach.call(box.querySelectorAll("[data-nlog]"),function(b){b.onclick=function(){var ph=b.getAttribute("data-nlog");var t=threadByPhone(ph);openMoSheet("job",{phone:ph,name:t?displayName(t):prettyPhone(ph)},null)}});
-    Array.prototype.forEach.call(box.querySelectorAll("[data-ndis]"),function(b){b.onclick=function(){var ph=b.getAttribute("data-ndis");postMoCfg({dismissNudge:ph}).then(function(){MO.nudges=(MO.nudges||[]).filter(function(x){return x.phone!==ph});refreshMoBadge();if(MO.open)moRender()})}});
+    Array.prototype.forEach.call(box.querySelectorAll("[data-nlog]"),function(b){b.onclick=function(){var ph2=b.getAttribute("data-nlog");var t=threadByPhone(ph2);openMoSheet("job",{phone:ph2,name:t?displayName(t):prettyPhone(ph2)},null)}});
+    Array.prototype.forEach.call(box.querySelectorAll("[data-ndis]"),function(b){b.onclick=function(){var ph2=b.getAttribute("data-ndis");postMoCfg({dismissNudge:ph2}).then(function(){MO.nudges=(MO.nudges||[]).filter(function(x){return x.phone!==ph2});refreshMoBadge();if(MO.open)moRender()})}});
   }
 
   // Shared entry row (Today list + History). Tap = edit, trash = delete.
@@ -3504,6 +3668,9 @@
     var ki=moKindInfo(kind);
     var h='<div class="sh-hd"><span class="e">'+ki.e+'</span><b>'+esc((MOS.id?"Edit · ":"")+ki.t)+'</b><button class="sh-x" id="moShX">'+ic("x",20)+'</button></div><div class="sh-body">';
     h+='<div class="mo-amt zero" id="moAmt"><small>$</small>0</div>';
+    // one-tap common amounts (your own most-used for this kind, else presets)
+    var qa=moQuickAmts(kind);
+    if(qa.length)h+='<div class="mo-quickamts" id="moQA">'+qa.map(function(a){return '<button type="button" class="mo-qa" data-qa="'+a+'">$'+a+'</button>'}).join("")+'</div>';
     h+='<div class="mo-pad" id="moPad">'+["1","2","3","4","5","6","7","8","9",".","0","⌫"].map(function(k){return '<button type="button" data-k="'+k+'">'+k+'</button>'}).join("")+'</div>';
     if(kind==="job"){
       h+='<div class="mo-f-lbl">Paid by</div><div class="mo-chips" id="moMeth">'+MO_METHODS.map(function(m){return '<span class="mo-chip'+(MOS.method===m?" on":"")+'" data-meth="'+m+'">'+m+'</span>'}).join("")+'</div>';
@@ -3538,6 +3705,7 @@
     moUpdateAmt();moSyncWhenChips();
     el("moShX").onclick=closeMoSheet;
     Array.prototype.forEach.call(el("moPad").querySelectorAll("[data-k]"),function(b){b.onclick=function(){moPadKey(b.getAttribute("data-k"))}});
+    var qaW=el("moQA");if(qaW)Array.prototype.forEach.call(qaW.querySelectorAll("[data-qa]"),function(b){b.onclick=function(){MOS.amt=b.getAttribute("data-qa");moUpdateAmt();vibrate(6)}});
     var meth=el("moMeth");if(meth)Array.prototype.forEach.call(meth.querySelectorAll("[data-meth]"),function(ch){ch.onclick=function(){var m=ch.getAttribute("data-meth");MOS.method=MOS.method===m?"":m;Array.prototype.forEach.call(meth.querySelectorAll("[data-meth]"),function(x){x.classList.toggle("on",x.getAttribute("data-meth")===MOS.method)})}});
     var svcW=el("moSvc");if(svcW)Array.prototype.forEach.call(svcW.querySelectorAll("[data-svc]"),function(ch){ch.onclick=function(){var sv=ch.getAttribute("data-svc");MOS.service=MOS.service===sv?"":sv;Array.prototype.forEach.call(svcW.querySelectorAll("[data-svc]"),function(x){x.classList.toggle("on",x.getAttribute("data-svc")===MOS.service)})}});
     var subW=el("moSubChips");if(subW)Array.prototype.forEach.call(subW.querySelectorAll("[data-sub]"),function(ch){ch.onclick=function(){var sb=ch.getAttribute("data-sub");MOS.sub=MOS.sub===sb?"":sb;Array.prototype.forEach.call(subW.querySelectorAll("[data-sub]"),function(x){x.classList.toggle("on",x.getAttribute("data-sub")===MOS.sub)})}});
@@ -3589,6 +3757,21 @@
     var inp=el("moCustQ");
     inp.oninput=function(){MOS.custQ=inp.value;moRenderCust();var ni=el("moCustQ");if(ni){ni.focus();try{ni.setSelectionRange(ni.value.length,ni.value.length)}catch(e){}}};
     Array.prototype.forEach.call(box.querySelectorAll("[data-cust]"),function(c){c.onclick=function(){var ph=c.getAttribute("data-cust");var t=threadByPhone(ph);MOS.phone=ph;MOS.name=t?displayName(t):"";moRenderCust()}});
+  }
+  // Common amounts for one-tap entry: your own most-frequent for this kind
+  // (rounded, whole-dollar), topped up with sensible detailing presets.
+  function moQuickAmts(kind){
+    var want=(kind==="job")?"job":(kind==="jp")?"jp":(kind==="personal")?"personal":"exp";
+    var freq={};
+    (MO.entries||[]).forEach(function(e){
+      var ek=(e.type==="job")?"job":(e.type==="jp")?"jp":(e.type==="personal")?"personal":"exp";
+      if(ek!==want)return;var a=Math.round(e.amount);if(a>0&&a===e.amount)freq[a]=(freq[a]||0)+1;
+    });
+    var mine=Object.keys(freq).map(Number).sort(function(a,b){return freq[b]-freq[a]||b-a}).slice(0,4);
+    var presets=(kind==="job")?[150,200,250,300]:(kind==="jp")?[40,50,100]:[10,20,30];
+    var out=[],seen={};
+    mine.concat(presets).forEach(function(a){if(a>0&&!seen[a]&&out.length<5){seen[a]=1;out.push(a)}});
+    return out.sort(function(a,b){return a-b});
   }
   function moUpdateAmt(){
     var d=el("moAmt");if(!d||!MOS)return;
@@ -3685,24 +3868,41 @@
   // ---- Report view: tiles, breakdowns, month-vs-month trend ----
   function moReport(box){
     var m=MO.month||moCurMonth();
-    var s=MO.summary||{gross:0,jp:0,exp:0,net:0,jobs:0,personal:0,byCat:{},byService:{},byMethod:{}};
-    var avg=s.jobs?s.gross/s.jobs:0;
-    var h=moMonthNav(m);
-    h+='<div class="stat-grid">'+
-      '<div class="stat"><div class="v" style="color:'+(s.net<0?"#ef4444":"var(--green)")+'">'+fmtMoney(s.net)+'</div><div class="k">Net profit</div></div>'+
-      '<div class="stat"><div class="v">'+fmtMoney(s.gross)+'</div><div class="k">Gross income</div></div>'+
-      '<div class="stat"><div class="v">'+fmtMoney(s.jp)+'</div><div class="k">'+esc(jpName())+' / labor</div></div>'+
-      '<div class="stat"><div class="v">'+fmtMoney(s.exp)+'</div><div class="k">Expenses</div></div>'+
-      '<div class="stat"><div class="v">'+s.jobs+'</div><div class="k">Jobs</div></div>'+
-      '<div class="stat"><div class="v">'+(s.jobs?fmtMoney(avg):"—")+'</div><div class="k">Avg ticket</div></div>'+
-    '</div>';
+    var range=moRange(),exactCost=(range==="month"||range==="today");
+    var rs=moRangeSum();
+    var loading=!rs;
+    var s=rs||{gross:0,jp:0,exp:0,net:0,jobs:0,personal:0,owed:0,byCat:{},byService:{},byMethod:{}};
     var sp=moSplitCfg();
-    h+='<div class="mo-split" id="moSplitStrip2" style="margin-top:12px" title="Auto-split — tap for details">'+
+    var gross=s.gross||0,avg=s.jobs?gross/s.jobs:0,mgn=gross>0?Math.round((s.net||0)/gross*100):0;
+    var RANGES=[["today","Today"],["week","Week"],["month","Month"],["quarter","Quarter"],["year","Year"]];
+    var h='<div class="mo-ranges">'+RANGES.map(function(r){return '<span class="mo-rng'+(range===r[0]?" on":"")+'" data-rng="'+r[0]+'">'+r[1]+'</span>'}).join("")+'</div>';
+    if(range==="month")h+=moMonthNav(m);
+    if(loading){box.innerHTML=h+'<div class="mo-empty" style="padding:40px 0"><span class="e">'+ic("bar-chart",34)+'</span>Crunching '+esc(range)+'…</div>';moWireReportTop(box);return}
+    // net delta vs previous month (only meaningful for month range)
+    var delta="";
+    if(range==="month"&&MO.report&&MO.report.length>=2){
+      var prev=MO.report[MO.report.length-2];
+      if(prev&&prev.net){var dp=Math.round(((s.net-prev.net)/Math.abs(prev.net))*100);delta='<span class="kbadge '+(dp>=0?"up":"down")+'">'+(dp>=0?"▲":"▼")+' '+Math.abs(dp)+'%</span>'}
+    }
+    var best="",bs=s.byService||{},bk=Object.keys(bs);
+    if(bk.length){bk.sort(function(a,b){return bs[b].total-bs[a].total});best=bk[0]}
+    // ---- the KPI grid: net hero, then the tiles the questionnaire picked ----
+    h+='<div class="mo-kgrid">'+
+      '<div class="mo-k hero1'+((s.net||0)<0?" bad":"")+' k1">'+delta+'<div class="kv '+((s.net||0)<0?"bad":"good")+'">'+fmtMoney(s.net||0)+'</div><div class="kk">Net profit</div><div class="ksub">'+fmtMoney(gross)+' in · '+fmtMoney((s.jp||0)+(s.exp||0))+' out</div></div>'+
+      '<div class="mo-k"><div class="kv mine">'+fmtMoney(gross*sp.mine/100)+'</div><div class="kk">Yours · '+sp.mine+'%</div></div>'+
+      '<div class="mo-k"><div class="kv warn">'+fmtMoney(gross*sp.tax/100)+'</div><div class="kk">Tax set aside</div></div>'+
+      '<div class="mo-k"><div class="kv">'+(s.jobs?fmtMoney(avg):"—")+'</div><div class="kk">Avg ticket</div></div>'+
+      '<div class="mo-k"><div class="kv">'+(s.jobs||0)+'</div><div class="kk">Jobs</div></div>'+
+      '<div class="mo-k"><div class="kv '+(mgn>=50?"good":(mgn>0?"warn":"bad"))+'">'+(gross>0?mgn+"%":"—")+'</div><div class="kk">Profit margin</div></div>'+
+      '<div class="mo-k"><div class="kv" style="font-size:18px;letter-spacing:-.01em">'+(best?esc(best):"—")+'</div><div class="kk">Top service</div></div>'+
+      ((s.owed||0)>0?'<div class="mo-k k1"><div class="kv bad">'+fmtMoney(s.owed)+'</div><div class="kk">Customers still owe you</div><div class="ksub">chase it on the Log screen</div></div>':"")+
+    '</div>';
+    // buckets strip → sheet
+    h+='<div class="mo-split" id="moSplitStrip2" title="Auto-split — tap for details">'+
       '<span class="sl">'+ic("wallet",14)+'</span>'+
-      '<div class="sbar"><i style="width:'+sp.tax+'%;background:#f5c563"></i><i style="width:'+sp.biz+'%;background:var(--accent)"></i><i style="width:'+sp.mine+'%;background:var(--green)"></i></div>'+
-      '<span class="sl">Tax '+fmtMoney((s.gross||0)*sp.tax/100)+' · Biz '+fmtMoney((s.gross||0)*sp.biz/100)+' · <b style="color:var(--green)">You '+fmtMoney((s.gross||0)*sp.mine/100)+'</b></span></div>';
-    if(s.owed)h+='<div class="mo-owe"><div class="bd"><b>Customers still owe you '+fmtMoney(s.owed)+'</b><small>from jobs this month — chase it on the Log screen</small></div></div>';
-    if(s.personal)h+='<div class="mo-set" style="margin-top:12px"><div class="mo-srow"><span class="lb"><span class="ic-inline" style="margin-right:5px">'+ic("user",13)+'</span>Personal spending<small>Kept completely separate — never counted in profit.</small></span><b>'+fmtMoney(s.personal)+'</b></div></div>';
+      '<div class="sbar"><i style="width:'+sp.tax+'%"></i><i style="width:'+sp.biz+'%"></i><i style="width:'+sp.mine+'%"></i></div>'+
+      '<span class="sl">Biz '+fmtMoney(gross*sp.biz/100)+'</span></div>';
+    if(s.personal)h+='<div class="mo-set"><div class="mo-srow"><span class="lb"><span class="ic-inline" style="margin-right:5px">'+ic("user",13)+'</span>Personal spending<small>Kept completely separate — never counted in profit.</small></span><b>'+fmtMoney(s.personal)+'</b></div></div>';
     var cats=Object.keys(s.byCat||{}).sort(function(a,b){return s.byCat[b]-s.byCat[a]});
     if(cats.length){
       var mx=s.byCat[cats[0]]||1;
@@ -3716,9 +3916,10 @@
     if(svcs.length){
       h+='<div class="mo-sec-h">Service scoreboard — what actually earns</div>';
       // profit ≈ ticket minus that service's helper pay + materials (exact when
-      // logged on the job, auto-estimated otherwise)
+      // logged on the job, auto-estimated otherwise). Exact only for month/today,
+      // where the loaded entries fully cover the range.
       var svcCost={};
-      (MO.entries||[]).forEach(function(e){
+      if(exactCost)(MO.entries||[]).forEach(function(e){
         if(e.type!=="job"||!e.service)return;
         var mat=(e.mat!=null&&e.mat>0)?e.mat:Math.round(e.amount*moMatRate())/100;
         svcCost[e.service]=(svcCost[e.service]||0)+(e.jp||0)+mat;
@@ -3735,10 +3936,14 @@
     var meths=Object.keys(s.byMethod||{});
     if(meths.length)h+='<div class="home-strip" style="margin-top:14px;justify-content:flex-start">'+meths.map(function(mm){return '<span>'+esc(mm)+' '+fmtMoney(s.byMethod[mm])+'</span>'}).join("")+'</div>';
     h+='<div id="moTrend"></div>';
-    box.innerHTML=h;moWireMonthNav();
+    box.innerHTML=h;moWireReportTop(box);moWireMonthNav();
     var ss2=el("moSplitStrip2");if(ss2)ss2.onclick=openSplitSheet;
     if(MO.report)renderMoTrend(MO.report);
     else api("/api/money/report?months=6").then(function(d){if(d&&d.ok){MO.report=d.months;if(MO.open&&MO.view==="report")renderMoTrend(d.months)}});
+  }
+  // range flips shared by Report (and the loading state)
+  function moWireReportTop(box){
+    Array.prototype.forEach.call(box.querySelectorAll("[data-rng]"),function(r){r.onclick=function(){vibrate(4);moSetRange(r.getAttribute("data-rng"))}});
   }
   function renderMoTrend(months){
     var host=el("moTrend");if(!host||!months||!months.length)return;
@@ -3929,21 +4134,17 @@
       '<div class="mo-f-lbl">Custom label (optional)</div><input class="mo-in" id="hsTitle" maxlength="40" placeholder="e.g. In the bank" value="'+esc(hero.title||"")+'">'+
       '<div class="mo-f-lbl">Starting balance — money you already had</div><input class="mo-in" id="hsStart" type="text" inputmode="decimal" placeholder="e.g. 500" value="'+(hero.startingBalance?esc(String(hero.startingBalance)):"")+'">'+
       '<div class="mo-f-lbl">Tax set-aside % — reserves a slice of profit so you always see your real take-home (0 = off)</div><input class="mo-in" id="hsTax" type="text" inputmode="decimal" placeholder="e.g. 25" value="'+(((MO.cfg&&MO.cfg.taxRate)||0)?esc(String(MO.cfg.taxRate)):"")+'">'+
-      '<div class="mo-f-lbl">Three stats below</div>'+
-      '<select class="mo-in" id="hsS1" style="margin-bottom:7px">'+heroOpts(st[0]||"",true)+'</select>'+
-      '<select class="mo-in" id="hsS2" style="margin-bottom:7px">'+heroOpts(st[1]||"",true)+'</select>'+
-      '<select class="mo-in" id="hsS3">'+heroOpts(st[2]||"",true)+'</select>'+
+      '<div style="font-size:11.5px;color:var(--muted2);padding:8px 2px 2px;line-height:1.5">The month’s numbers live in the tap-to-open <b>Pulse</b> card and the <b>Report</b> tab.</div>'+
       '<button class="mo-save" id="hsSave">Save headline</button>'+
       '<button class="mo-delbtn" id="hsReset">Reset to default</button>'+
       '</div>';
     var sh=el("moSheet");sh.innerHTML=h;el("moScrim").classList.add("show");sh.classList.add("show");
     el("hsX").onclick=closeMoSheet;
     el("hsSave").onclick=function(){
-      var stats=[el("hsS1").value,el("hsS2").value,el("hsS3").value].filter(Boolean);
       var start=parseFloat(String(el("hsStart").value).replace(/[^0-9.\-]/g,""))||0;
       var tax=Math.max(0,Math.min(60,parseFloat(String(el("hsTax").value).replace(/[^0-9.]/g,""))||0));
       var b=el("hsSave");b.disabled=true;
-      postMoCfg({taxRate:tax,hero:{primary:el("hsPrimary").value,stats:stats,startingBalance:start,title:el("hsTitle").value.trim()}}).then(function(d){if(d&&d.ok){closeMoSheet();toast("Headline updated")}else b.disabled=false});
+      postMoCfg({taxRate:tax,hero:{primary:el("hsPrimary").value,stats:hero.stats||[],startingBalance:start,title:el("hsTitle").value.trim()}}).then(function(d){if(d&&d.ok){closeMoSheet();toast("Headline updated")}else b.disabled=false});
     };
     el("hsReset").onclick=function(){postMoCfg({hero:{primary:"balance",stats:["monthIn","monthOut","topCat"],startingBalance:0,title:""}}).then(function(){closeMoSheet();toast("Reset to default")})};
   }
@@ -3988,12 +4189,13 @@
     function render(d){
       var body=el("mbBody");if(!body)return;
       if(!d||!d.ok){body.innerHTML='<div class="mo-empty" style="padding:24px 0"><span class="e">'+ic("alert",30)+'</span>Couldn’t think right now'+(d&&d.error?'<div style="font-size:11.5px;color:var(--muted2);margin-top:6px">'+esc(String(d.error).slice(0,120))+'</div>':"")+'</div>';return}
-      var bh='<div class="mo-ai-h">'+esc(d.headline||"Here’s where you stand.")+'</div>';
-      function sec(title,cls,arr){
+      var bh='<div class="mo-ai-h">'+esc(d.headline||"Here’s where you stand.")+'</div><div style="height:10px"></div>';
+      function sec(title,cls,icon,arr){
         if(!arr||!arr.length)return"";
-        return '<div class="mo-ai-sec">'+title+'</div>'+arr.map(function(x){return '<div class="mo-ai-li '+cls+'"><span class="d"></span><span>'+esc(x)+'</span></div>'}).join("");
+        return '<div class="mo-ai-card '+cls+'"><div class="ct">'+ic(icon,13)+title+'</div>'+
+          arr.map(function(x){return '<div class="mo-ai-li '+cls+'"><span class="d"></span><span>'+esc(x)+'</span></div>'}).join("")+'</div>';
       }
-      bh+=sec("Going well","win",d.wins)+sec("Watch out","watch",d.watch)+sec("Moves this week","move",d.moves);
+      bh+=sec("Going well","win","check-circle",d.wins)+sec("Watch out","watch","alert",d.watch)+sec("Moves this week","move","zap",d.moves);
       bh+='<button class="btn ic-btn" id="mbRefresh" style="width:100%;margin-top:16px">'+ic("refresh-cw",14)+'<span>Fresh read</span></button>';
       if(d.cached)bh+='<div style="font-size:10.5px;color:var(--muted2);text-align:center;padding-top:6px">thought about today’s numbers earlier — fresh read re-checks everything</div>';
       body.innerHTML=bh;
