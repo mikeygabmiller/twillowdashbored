@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-14·hero';
+const BUILD = '2026-07-15·vm-weekly';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -166,6 +166,7 @@ async function handle(request) {
   if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/email-setup') return apiEmailSetup(request);
   if (request.method === 'GET'  && pathname === '/api/media')      return apiMediaProxy(url);
   if (request.method === 'POST' && pathname === '/api/media-backfill') return apiMediaBackfill(request);
+  if (request.method === 'POST' && pathname === '/api/voicemail-backfill') return apiVoicemailBackfill(request);
   if (request.method === 'POST' && pathname === '/api/alert-test') return apiAlertTest();
   if (request.method === 'GET'  && pathname === '/api/followups')  return apiFollowups();
   if (request.method === 'POST' && pathname === '/api/followup')   return apiFollowupAction(request);
@@ -508,10 +509,34 @@ async function handleVoicemailDone(request) {
   const params = await formParams(request);
   if (!(await verifyTwilio(request, params))) return forbidden();
   const from = params.From || 'Unknown';
+  const fromNorm = normalizePhone(from) || from;
   const recordingUrl = params.RecordingUrl || '';
+  const recordingSid = params.RecordingSid || '';
   const duration = params.RecordingDuration || '?';
-  if (recordingUrl) {
-    await notifyMikey(`🎙️ Voicemail from ${from}`, `Voicemail from ${from} (${duration}s):\n${recordingUrl}.mp3`);
+  if (recordingUrl && fromNorm !== normalizePhone(ENV.MIKEY_PHONE)) {
+    // Drop the voicemail into the caller's thread right away — with the recording
+    // attached — so it's visible AND playable in the dashboard even if the
+    // transcript is delayed or never comes (silence/noise/non-English). The
+    // transcript callback (/voicemail-tx) fills the text into this same message,
+    // matched by RecordingSid so we never show two bubbles for one voicemail.
+    const thread = await loadThread(fromNorm);
+    const dup = (thread.messages || []).some((m) => m.kind === 'voicemail' && recordingSid && m.recordingSid === recordingSid);
+    if (!dup) {
+      thread.messages.push({
+        id: genId(),
+        dir: 'in',
+        body: `🎙️ Voicemail (${duration}s)`,
+        ts: Date.now(),
+        kind: 'voicemail',
+        recording: recordingUrl + '.mp3',
+        recordingSid: recordingSid || undefined,
+      });
+      thread.unread = (thread.unread || 0) + 1;
+      if (!thread.status) { thread.status = 'new'; thread.statusAt = Date.now(); }
+      await saveThread(thread);
+      await updateIndexEntry(thread);
+    }
+    await notifyMikey(`🎙️ Voicemail from ${from}`, `Voicemail from ${from} (${duration}s). Open the dashboard to listen.`);
   }
   return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
 }
@@ -528,19 +553,50 @@ async function handleVoicemailTranscription(request) {
   const text = (params.TranscriptionText || '').trim();
   const status = params.TranscriptionStatus || '';
   const recording = params.RecordingUrl || '';
+  const recordingSid = params.RecordingSid || '';
   if (fromNorm === normalizePhone(ENV.MIKEY_PHONE)) return new Response('', { status: 204 });
+
+  // /voicemail-done normally already stored the voicemail (with the recording).
+  // Find it by RecordingSid so we update that bubble in place instead of adding a
+  // second one. Fall back to appending if this callback somehow arrives first.
+  const thread = await loadThread(fromNorm);
+  const existing = (thread.messages || []).find((m) => m.kind === 'voicemail' && recordingSid && m.recordingSid === recordingSid);
+
   if (status !== 'completed' || !text) {
-    // Transcription failed (silence, noise, non-English). The .mp3 alert from
-    // /voicemail-done already went out, so just acknowledge.
+    // Transcription unavailable (silence, noise, non-English). Mark the stored
+    // voicemail so the UI stops implying text is still coming; the recording is
+    // still there to play. Nothing stored + no text → just acknowledge.
+    if (existing && !existing.transcript) {
+      existing.transcriptFailed = true;
+      await saveThread(thread);
+      await updateIndexEntry(thread);
+    }
     return new Response('', { status: 204 });
   }
-  await appendMessage(fromNorm, {
-    dir: 'in',
-    body: `🎙️ Voicemail: "${text}"`,
-    ts: Date.now(),
-    kind: 'voicemail',
-    recording: recording ? recording + '.mp3' : undefined,
-  });
+
+  if (existing) {
+    existing.body = `🎙️ Voicemail: "${text}"`;
+    existing.transcript = text;
+    existing.transcriptFailed = false;
+    if (!existing.recording && recording) existing.recording = recording + '.mp3';
+    await saveThread(thread);
+    await updateIndexEntry(thread);
+  } else {
+    thread.messages.push({
+      id: genId(),
+      dir: 'in',
+      body: `🎙️ Voicemail: "${text}"`,
+      ts: Date.now(),
+      kind: 'voicemail',
+      transcript: text,
+      recording: recording ? recording + '.mp3' : undefined,
+      recordingSid: recordingSid || undefined,
+    });
+    thread.unread = (thread.unread || 0) + 1;
+    if (!thread.status) { thread.status = 'new'; thread.statusAt = Date.now(); }
+    await saveThread(thread);
+    await updateIndexEntry(thread);
+  }
   notifyMikey(`🎙️ Voicemail transcript from ${from}`, `"${text}"\n\nOpen the dashboard to reply.`).catch(() => {});
   return new Response('', { status: 204 });
 }
@@ -978,6 +1034,88 @@ async function apiMediaBackfill(request) {
   }
   if (attached) { await saveThread(thread); await updateIndexEntry(thread); }
   return json({ ok: true, attached, found: twMsgs.length, thread });
+}
+
+// Recover voicemails that live only in Twilio. A voicemail recorded before the
+// thread stored it — e.g. its transcription failed, so the old /voicemail-tx
+// code saved nothing — is still sitting in Twilio's Recordings. This pulls the
+// most recent recordings, finds each caller via the call's From number, and
+// drops a playable voicemail (with transcript when Twilio has one) into that
+// caller's thread. Deduped by RecordingSid so re-running is safe. Kept to a
+// small page so we stay well under the Worker subrequest limit.
+async function apiVoicemailBackfill(request) {
+  const data = await readJson(request).catch(() => ({}));
+  const wantPhone = data && data.phone ? normalizePhone(data.phone) : '';
+  const sid = ENV.TWILIO_ACCOUNT_SID, token = ENV.TWILIO_AUTH_TOKEN;
+  if (!sid || !token) return json({ ok: false, error: 'twilio_not_configured' }, 500);
+  const auth = `Basic ${btoa(`${sid}:${token}`)}`;
+  const api = (path) => fetch(`https://api.twilio.com${path}`, { headers: { Authorization: auth } });
+
+  let recs;
+  try {
+    const r = await api(`/2010-04-01/Accounts/${sid}/Recordings.json?PageSize=15`);
+    if (!r.ok) throw new Error(`${r.status}: ${(await r.text()).slice(0, 200)}`);
+    recs = (await r.json()).recordings || [];
+  } catch (e) {
+    return json({ ok: false, error: `twilio_list_failed: ${String((e && e.message) || e)}` }, 502);
+  }
+
+  // Resolve caller + transcript per recording, grouping by caller so each
+  // thread's KV is written once.
+  const mikey = normalizePhone(ENV.MIKEY_PHONE);
+  const byPhone = new Map();
+  for (const rec of recs) {
+    const recSid = rec.sid, callSid = rec.call_sid;
+    if (!recSid || !callSid) continue;
+    let from = '';
+    try { const cr = await api(`/2010-04-01/Accounts/${sid}/Calls/${callSid}.json`); if (cr.ok) from = (await cr.json()).from || ''; } catch { /* skip */ }
+    const caller = normalizePhone(from);
+    if (!caller || caller === mikey) continue;
+    if (wantPhone && caller !== wantPhone) continue;
+    let transcript = '';
+    try {
+      const tr = await api(`/2010-04-01/Accounts/${sid}/Recordings/${recSid}/Transcriptions.json`);
+      if (tr.ok) { const done = ((await tr.json()).transcriptions || []).find((t) => t.status === 'completed' && t.transcription_text); if (done) transcript = (done.transcription_text || '').trim(); }
+    } catch { /* transcript optional — the recording is what matters */ }
+    const list = byPhone.get(caller) || [];
+    list.push({
+      recordingSid: recSid,
+      recording: `https://api.twilio.com${String(rec.uri).replace(/\.json$/, '')}.mp3`,
+      ts: rec.date_created ? new Date(rec.date_created).getTime() : Date.now(),
+      duration: rec.duration || '',
+      transcript,
+    });
+    byPhone.set(caller, list);
+  }
+
+  let added = 0;
+  for (const [caller, vms] of byPhone) {
+    const thread = await loadThread(caller);
+    let changed = false;
+    for (const vm of vms) {
+      if ((thread.messages || []).some((m) => m.kind === 'voicemail' && m.recordingSid === vm.recordingSid)) continue;
+      thread.messages.push({
+        id: genId(),
+        dir: 'in',
+        body: vm.transcript ? `🎙️ Voicemail: "${vm.transcript}"` : `🎙️ Voicemail (${vm.duration || '?'}s)`,
+        ts: vm.ts,
+        kind: 'voicemail',
+        recording: vm.recording,
+        recordingSid: vm.recordingSid,
+        transcript: vm.transcript || undefined,
+        transcriptFailed: vm.transcript ? undefined : true,
+      });
+      changed = true; added++;
+    }
+    if (changed) {
+      thread.messages.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+      thread.unread = (thread.unread || 0) + 1;
+      if (!thread.status) { thread.status = 'new'; thread.statusAt = Date.now(); }
+      await saveThread(thread);
+      await updateIndexEntry(thread);
+    }
+  }
+  return json({ ok: true, added, scanned: recs.length });
 }
 
 // One-time import of conversations from the old Netlify deployment into KV.
@@ -1692,8 +1830,9 @@ function defaultMoneyConfig() {
     jpName: 'JP',
     catsOff: [],            // category buttons hidden from the log grid
     nudgeDismissed: {},     // phone -> dismissedAt (won-nudges Mikey waved off)
-    budgets: [],            // monthly spending caps: { id, cat, amount }
+    budgets: [],            // spending caps: { id, cat, amount, period }
                             // cat ∈ MONEY_CATS ∪ {'jp','expenses','personal'}
+                            // period ∈ 'month' (default) | 'week' (Sun–Sat, auto-resets)
     goals: [],              // targets: { id, label, type, target, deadline, startMonth }
                             // type ∈ 'net'|'gross'|'jobs'|'save' (save = cumulative net by a deadline)
     hero: defaultHero(),    // the customizable Log-screen headline (see defaultHero)
@@ -1725,7 +1864,7 @@ const GOAL_TYPES = ['net', 'gross', 'jobs', 'save'];
 function sanitizeBudgets(arr) {
   return (arr || [])
     .filter((b) => b && typeof b === 'object' && +b.amount > 0 && BUDGET_CATS.includes(b.cat))
-    .map((b) => ({ id: String(b.id || genId()).slice(0, 24), cat: b.cat, amount: money2(b.amount) }))
+    .map((b) => ({ id: String(b.id || genId()).slice(0, 24), cat: b.cat, amount: money2(b.amount), period: b.period === 'week' ? 'week' : 'month' }))
     .slice(0, 20);
 }
 function sanitizeGoals(arr) {
@@ -1821,6 +1960,34 @@ function summarizeMonth(entries) {
   return s;
 }
 
+// The current Sunday–Saturday week as calendar dates (YYYY-MM-DD). Derived from
+// the business-local "today" string, so a weekly budget resets on the same clock
+// Mikey lives on. Treating the date at UTC midnight makes getUTCDay() the correct
+// weekday for that calendar date without dragging timezones back in.
+function weekWindow(todayStr) {
+  const d = new Date(todayStr + 'T00:00:00Z');
+  const dow = d.getUTCDay(); // 0=Sun … 6=Sat
+  const start = new Date(d); start.setUTCDate(d.getUTCDate() - dow);
+  const end = new Date(start); end.setUTCDate(start.getUTCDate() + 6);
+  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+}
+
+// Spend within [start,end] for the buckets a budget can cap (expense categories,
+// labor, personal). Same bucket rules as summarizeMonth, just windowed by date so
+// a weekly cap can span a month boundary. Reads only — no KV writes.
+function summarizeWeek(entries, start, end) {
+  const s = { exp: 0, personal: 0, jp: 0, byCat: {} };
+  for (const e of (entries || [])) {
+    if (!e.date || e.date < start || e.date > end) continue;
+    if (e.type === 'jp') s.jp += e.amount;
+    else if (e.type === 'personal') s.personal += e.amount;
+    else if (e.type === 'exp') { s.exp += e.amount; s.byCat[e.cat || 'misc'] = money2((s.byCat[e.cat || 'misc'] || 0) + e.amount); }
+    else if (e.type === 'job' && e.jp) s.jp += e.jp; // labor cost carried on a job
+  }
+  s.exp = money2(s.exp); s.personal = money2(s.personal); s.jp = money2(s.jp);
+  return s;
+}
+
 // Lazily post recurring bills into the CURRENT month the first time it's viewed
 // on/after each bill's day — no cron writes needed, exactly one write per month
 // with recurring bills. Returns whether the doc changed.
@@ -1890,13 +2057,18 @@ async function apiMoney(url) {
   const doc = await loadMonth(month);
   if (month === curMonth && postRecurring(cfg, month, doc, todayStr)) await saveMonth(month, doc);
   doc.entries.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0) || (b.ts - a.ts));
-  let nudges = [];
-  if (cfg.wonNudge !== false && month === curMonth) {
+  let nudges = [], week = null;
+  if (month === curMonth) {
+    // The current week can reach into last month, so combine both docs once and
+    // reuse the read for the won-lead nudges too.
     const prevDoc = await loadMonth(prevMonthKey(month));
-    nudges = await moneyWonNudges(doc.entries.concat(prevDoc.entries), cfg, now);
+    const combined = doc.entries.concat(prevDoc.entries);
+    const w = weekWindow(todayStr);
+    week = Object.assign({ start: w.start, end: w.end }, summarizeWeek(combined, w.start, w.end));
+    if (cfg.wonNudge !== false) nudges = await moneyWonNudges(combined, cfg, now);
   }
   const allTime = await allTimeSummary();
-  return json({ ok: true, month, today: todayStr, entries: doc.entries, summary: summarizeMonth(doc.entries), allTime, config: cfg, nudges });
+  return json({ ok: true, month, today: todayStr, entries: doc.entries, summary: summarizeMonth(doc.entries), week, allTime, config: cfg, nudges });
 }
 
 async function apiMoneyEntry(request) {
