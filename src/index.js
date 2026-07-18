@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-18·customize-v2';
+const BUILD = '2026-07-18·snapshot-v1';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -161,6 +161,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/call')       return apiCall(request);
   if (request.method === 'POST' && pathname === '/api/read')       return apiRead(request);
   if (request.method === 'GET'  && pathname === '/api/insights')   return apiInsights();
+  if (request.method === 'GET'  && pathname === '/api/snapshot')    return apiSnapshot(url);
   if (request.method === 'GET'  && pathname === '/api/emails')     return apiEmails();
   if (request.method === 'POST' && pathname === '/api/email-read') return apiEmailRead(request);
   if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/email-setup') return apiEmailSetup(request);
@@ -2282,6 +2283,47 @@ async function apiMoneyByPhone(url) {
     jobs: jobs.length,
     total: money2(jobs.reduce((a, e) => a + e.amount, 0)),
     entries: entries.slice(0, 20),
+  });
+}
+
+// Read-only snapshot of everything the owner sees, in one JSON bundle — a
+// "show Claude what I see" export. Password-gated (like every /api/* route),
+// never writes, and defensively strips anything secret-looking from config.
+async function apiSnapshot(url) {
+  const withMsgs = url.searchParams.get('messages') !== '0'; // default: include recent messages
+  const index = await loadIndex();
+  index.sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+  const scrub = (o) => {
+    if (!o || typeof o !== 'object') return o;
+    const out = Array.isArray(o) ? [] : {};
+    for (const k of Object.keys(o)) {
+      if (/secret|token|apikey|api_key|password|auth/i.test(k)) { out[k] = '[hidden]'; continue; }
+      out[k] = (o[k] && typeof o[k] === 'object') ? scrub(o[k]) : o[k];
+    }
+    return out;
+  };
+  const config = scrub(await loadConfig());
+  const moneyConfig = scrub(await loadMoneyConfig());
+  // all money months
+  const list = await kv().list({ prefix: 'money:m:' });
+  const money = [];
+  for (const k of (list.keys || [])) {
+    const doc = await kv().get(k.name, { type: 'json' });
+    money.push({ month: k.name.replace('money:m:', ''), entries: (doc && doc.entries) || [] });
+  }
+  money.sort((a, b) => (a.month < b.month ? -1 : 1));
+  // full conversations (bounded so the file stays sane)
+  const threadsFull = [];
+  for (const t of index.slice(0, 300)) {
+    const doc = await loadThread(t.phone);
+    const trimmed = Object.assign({}, doc);
+    if (Array.isArray(doc.messages)) { trimmed.msgTotal = doc.messages.length; if (withMsgs) trimmed.messages = doc.messages.slice(-60); else delete trimmed.messages; }
+    threadsFull.push(scrub(trimmed));
+  }
+  return json({
+    ok: true, kind: 'mikeys-app-snapshot', build: BUILD, at: new Date().toISOString(),
+    counts: { conversations: index.length, moneyMonths: money.length },
+    config, moneyConfig, leadsAndChats: index, conversations: threadsFull, money,
   });
 }
 
