@@ -1071,6 +1071,97 @@
   .mo-seg{display:flex;gap:7px;margin:2px 0 4px}
   .mo-seg button{flex:1;font-size:12.5px;font-weight:700;padding:9px 0;border-radius:11px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);cursor:pointer;font-family:inherit}
   .mo-seg button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text)}
+
+  /* ======================================================================
+     MAKE IT YOURS — customization layer + Customize hub
+     Appearance overrides key off html classes set by applyUI(). Curated
+     component list keeps the app consistent (guardrails) while still
+     visibly changing corners / density / font / background.
+     ====================================================================== */
+  /* corners */
+  html.ui-r-sharp .btn,html.ui-r-sharp .mo-btn,html.ui-r-sharp .chip,html.ui-r-sharp .mo-chip,html.ui-r-sharp .conv,html.ui-r-sharp .lead-card,html.ui-r-sharp .mo-row,html.ui-r-sharp .mo-k,html.ui-r-sharp .stat,html.ui-r-sharp .mo-kpi,html.ui-r-sharp .cz-item,html.ui-r-sharp .mo-primary,html.ui-r-sharp .mo-secondary,html.ui-r-sharp .cz-card{border-radius:8px!important}
+  html.ui-r-sharp .mo-hero,html.ui-r-sharp .mo-pulse,html.ui-r-sharp .card,html.ui-r-sharp .mo-split,html.ui-r-sharp .mo-owe{border-radius:11px!important}
+  html.ui-r-round .btn,html.ui-r-round .mo-chip,html.ui-r-round .chip,html.ui-r-round .mo-rng,html.ui-r-round .pill{border-radius:999px!important}
+  html.ui-r-round .mo-btn,html.ui-r-round .conv,html.ui-r-round .lead-card,html.ui-r-round .mo-row,html.ui-r-round .mo-k,html.ui-r-round .cz-item,html.ui-r-round .cz-card{border-radius:20px!important}
+  html.ui-r-round .mo-hero,html.ui-r-round .mo-pulse,html.ui-r-round .card{border-radius:26px!important}
+  /* density (compact) */
+  html.ui-d-compact .conv{padding-top:8px;padding-bottom:8px}
+  html.ui-d-compact .mo-row{padding:7px 11px;margin-bottom:5px}
+  html.ui-d-compact .mo-k{padding:11px 12px}
+  html.ui-d-compact .mo-body,html.ui-d-compact .app-body{padding-left:11px;padding-right:11px}
+  html.ui-d-compact .lead-card{padding:9px 11px}
+  html.ui-d-compact .mo-hero{padding:14px 16px}
+  html.ui-d-compact .mo-sec-h{margin:14px 2px 8px}
+  /* font family */
+  html.ui-f-rounded body,html.ui-f-rounded button,html.ui-f-rounded input,html.ui-f-rounded textarea,html.ui-f-rounded select{font-family:"SF Pro Rounded",ui-rounded,"Segoe UI",Verdana,system-ui,sans-serif}
+  html.ui-f-serif body,html.ui-f-serif button,html.ui-f-serif input,html.ui-f-serif textarea,html.ui-f-serif select{font-family:Georgia,"Iowan Old Style","Times New Roman",serif}
+  /* accent-tinted gradient background */
+  html.ui-bg-gradient body{background:radial-gradient(125% 100% at 50% -8%,color-mix(in srgb,var(--accent) 9%,var(--bg)),var(--bg) 58%) fixed}
+
+  /* ---- Customize hub (full-screen, mirrors the money app shell) ---- */
+  .cz{position:fixed;inset:0;z-index:90;background:var(--bg);display:none;flex-direction:column}
+  .cz.show{display:flex}
+  .cz-head{display:flex;align-items:center;gap:11px;padding:calc(10px + var(--safe-top)) 14px 11px;border-bottom:1px solid var(--line);background:var(--panel);flex:none}
+  .cz-head .t{flex:1;min-width:0}
+  .cz-head .t b{font-size:17px;font-weight:800;letter-spacing:-.01em}
+  .cz-head .t small{display:block;color:var(--muted2);font-size:11.5px;margin-top:1px}
+  .cz-head .modebadge{font-size:11px;font-weight:800;padding:5px 11px;border-radius:999px;background:var(--accent-soft);color:var(--accent-text);border:1px solid var(--accent);cursor:pointer;user-select:none;white-space:nowrap}
+  .cz-body{flex:1;overflow-y:auto;min-height:0;-webkit-overflow-scrolling:touch;padding:14px 14px calc(28px + var(--safe-bottom));max-width:640px;width:100%;margin:0 auto}
+  .cz-tabs{display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;margin-bottom:14px}
+  .cz-tabs::-webkit-scrollbar{display:none}
+  .cz-tab{flex:none;padding:8px 15px;border-radius:999px;border:1px solid var(--line2);background:var(--panel);color:var(--muted);font-size:13px;font-weight:750;cursor:pointer;user-select:none;display:flex;align-items:center;gap:7px}
+  .cz-tab.on{background:var(--accent);border-color:var(--accent);color:#fff;box-shadow:0 8px 18px -10px var(--accent)}
+  .cz-tab .e{display:inline-flex}
+  .cz-card{background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:15px 16px;margin-bottom:12px;box-shadow:var(--mo-elev)}
+  .cz-card h3{margin:0 0 3px;font-size:15px;font-weight:800;letter-spacing:-.01em}
+  .cz-card .hint{font-size:12px;color:var(--muted);margin:0 0 12px;line-height:1.5}
+  .cz-row{display:flex;align-items:center;gap:12px;padding:9px 0;border-top:1px solid var(--line2)}
+  .cz-row:first-of-type{border-top:none}
+  .cz-row .lb{flex:1;min-width:0;font-size:13.5px;font-weight:600}
+  .cz-row .lb small{display:block;font-weight:400;color:var(--muted2);font-size:11.5px;margin-top:2px}
+  .cz-seg{display:flex;gap:6px;flex:none;flex-wrap:wrap;justify-content:flex-end}
+  .cz-seg button{font-size:12.5px;font-weight:700;padding:8px 12px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);cursor:pointer;font-family:inherit}
+  .cz-seg button.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  /* theme preset cards */
+  .cz-presets{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:4px}
+  .cz-preset{border:2px solid var(--line);border-radius:14px;padding:10px;cursor:pointer;background:var(--panel2);text-align:center;transition:border-color .12s}
+  .cz-preset.sel{border-color:var(--accent)}
+  .cz-preset .prev{height:34px;border-radius:9px;margin-bottom:7px;position:relative;overflow:hidden}
+  .cz-preset .prev i{position:absolute;bottom:6px;left:8px;width:22px;height:8px;border-radius:99px}
+  .cz-preset .nm{font-size:11.5px;font-weight:750}
+  /* swatches */
+  .cz-swatches{display:flex;flex-wrap:wrap;gap:10px;margin-top:4px}
+  .cz-sw{width:34px;height:34px;border-radius:50%;cursor:pointer;border:2px solid transparent;box-shadow:0 0 0 1px var(--line) inset}
+  .cz-sw.sel{border-color:var(--text);box-shadow:0 0 0 2px var(--accent)}
+  /* slider */
+  .cz-slider{width:100%;accent-color:var(--accent);height:26px}
+  /* switches (reuse money .sw look) */
+  .cz-sw-t{width:44px;height:26px;border-radius:99px;background:var(--line);position:relative;cursor:pointer;flex:none;transition:background .16s}
+  .cz-sw-t::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:#fff;transition:transform .16s;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+  .cz-sw-t.on{background:var(--accent)}
+  .cz-sw-t.on::after{transform:translateX(18px)}
+  /* drag-to-reorder lists */
+  .cz-list{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+  .cz-item{display:flex;align-items:center;gap:11px;background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:11px 12px;touch-action:none;user-select:none;-webkit-user-select:none}
+  .cz-item.hidden-el{opacity:.5}
+  .cz-item.dragging{background:var(--panel3);border-color:var(--accent);box-shadow:0 14px 30px -12px rgba(0,0,0,.5);position:relative;z-index:3}
+  .cz-item .grip{color:var(--muted2);cursor:grab;display:flex;flex:none;touch-action:none}
+  .cz-item .grip:active{cursor:grabbing}
+  .cz-item .il{flex:1;min-width:0;font-size:13.5px;font-weight:650;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cz-item .il .em{color:var(--muted);margin-right:8px}
+  .cz-item .eye{flex:none;width:34px;height:34px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--muted);display:grid;place-items:center;cursor:pointer}
+  .cz-item .eye.off{color:var(--muted2);opacity:.6}
+  .cz-note{font-size:11.5px;color:var(--muted2);text-align:center;padding:6px 0 2px}
+  .cz-danger{color:#ff6b6b!important;border-color:rgba(255,80,80,.4)!important}
+  .cz-bigbtn{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;padding:13px;border-radius:13px;border:1px solid var(--line);background:var(--panel2);color:var(--text);font-size:14px;font-weight:750;cursor:pointer;font-family:inherit;margin-top:8px}
+  .cz-bigbtn:active{transform:scale(.99)}
+  /* first-run tour bubble */
+  .cz-tour{position:fixed;left:50%;bottom:calc(24px + var(--safe-bottom));transform:translateX(-50%);z-index:95;background:var(--ink,#111);background:var(--text);color:var(--bg);max-width:340px;width:calc(100% - 32px);border-radius:16px;padding:16px 18px;box-shadow:0 18px 50px -16px rgba(0,0,0,.7);display:none}
+  .cz-tour.show{display:block}
+  .cz-tour b{font-size:14.5px}.cz-tour p{margin:6px 0 12px;font-size:13px;line-height:1.5;opacity:.85}
+  .cz-tour button{background:var(--bg);color:var(--text);border:none;border-radius:10px;padding:9px 16px;font-weight:750;font-size:13.5px;cursor:pointer;font-family:inherit}
+  /* nav item added for Customize */
+  .navitem[data-tab="customize"].active .ic{color:var(--accent-text)}
 </style>
 </head>
 <body>
@@ -1102,6 +1193,7 @@
       <button class="navitem" data-tab="money"><span class="ic" data-ic="dollar"></span><span class="ndot" id="navMoney"></span>Money</button>
       <button class="navitem" data-tab="email"><span class="ic" data-ic="mail"></span><span class="ndot" id="navEmail"></span>Email</button>
       <button class="navitem" data-tab="insights"><span class="ic" data-ic="bar-chart"></span>Insights</button>
+      <button class="navitem" data-tab="customize"><span class="ic" data-ic="sliders"></span>Customize</button>
     </nav>
   </aside>
 
@@ -1287,6 +1379,7 @@
     <div class="playbook" id="playbookPanel"></div>
 
     <div class="sec-lbl">Appearance</div>
+    <div class="ditem" id="customizeItem"><span class="ic" data-ic="sliders"></span>Customize everything<span class="n" style="color:var(--accent-text)">new</span></div>
     <div class="theme-seg" id="themeSeg"></div>
     <div class="sec-lbl">Accent color</div>
     <div class="accent-row" id="accentRow"></div>
@@ -1352,6 +1445,20 @@
   <div class="mo-sheet" id="moSheet"></div>
 </div>
 
+<!-- Make It Yours — Customize hub -->
+<div class="cz" id="czApp">
+  <div class="cz-head">
+    <button class="btn icon" id="czBack" data-ic="chevron-left" aria-label="Done"></button>
+    <div class="t"><b>Customize</b><small>Make it yours — changes save automatically</small></div>
+    <span class="modebadge" id="czMode">Simple</span>
+  </div>
+  <div class="cz-body">
+    <div class="cz-tabs" id="czTabs"></div>
+    <div id="czPanel"></div>
+  </div>
+</div>
+<div class="cz-tour" id="czTour"></div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -1390,7 +1497,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-17·buckets-v4";
+  var APP_BUILD="2026-07-18·customize-v1";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -1582,6 +1689,218 @@
     var cur=localStorage.getItem("mkd-accent")||ACCENTS[0][0];var row=el("accentRow");row.innerHTML="";
     ACCENTS.forEach(function(a){var s=document.createElement("div");s.className="swatch"+(a[0]===cur?" sel":"");s.style.background=a[0];s.title=a[2];
       s.onclick=function(){localStorage.setItem("mkd-accent",a[0]);applyAccent(a[0],a[1]);buildAccents();vibrate(8)};row.appendChild(s)});
+  }
+
+  // ==========================================================================
+  // MAKE IT YOURS — customization engine
+  // Everything lives in one localStorage object (mkd-ui). applyUI() paints it
+  // live: appearance via <html> classes, layout via nav/money reads. Zero touch
+  // to any saved business data — this is pure presentation + arrangement.
+  // ==========================================================================
+  var UI_KEY="mkd-ui";
+  var UI_TABLIST=[["home","Home","home"],["messages","Chats","message-square"],["leads","Leads","clipboard-list"],["money","Money","dollar"],["insights","Insights","bar-chart"],["email","Email","mail"],["customize","Customize","sliders"]];
+  var UI_PRESETS=[ // id, name, accent, accentDark
+    ["crimson","Crimson","#ff2e43","#c81e30"],["ocean","Ocean","#2f9bff","#1d5fd8"],
+    ["mint","Mint","#22c55e","#15803d"],["grape","Grape","#a855f7","#7e22ce"],
+    ["sunset","Sunset","#f97316","#c2410c"],["gold","Gold","#eab308","#a16207"]];
+  var UI_MBLOCKS=[["hero","Balance headline","wallet"],["log","Log buttons","plus"],["alerts","Owed & reminders","alert"],["pulse","Month pulse","activity"],["brain","Brain & Buckets","sparkles"],["today","Today's list","list-checks"]];
+  var UI_MKPIS=[["net","Net profit"],["you","Yours"],["costs","Costs"],["savings","Savings"],["avg","Avg ticket"],["jobs","Jobs"],["margin","Margin %"],["owed","Owed to you"],["best","Top service"]];
+  function defaultUI(){return{
+    preset:"crimson", accent:["#ff2e43","#c81e30"],
+    radius:"md", density:"comfy", textScale:100, font:"system", bg:"solid",
+    mode:"simple", locked:false, tourSeen:false, listStyle:"compact",
+    tabsOrder:["home","messages","leads","money","insights","customize"], tabsHidden:[],
+    mblocks:["hero","log","alerts","pulse","brain","today"], mblocksHidden:[],
+    mkpis:["net","you","costs","savings","avg","jobs","margin","owed","best"]
+  };}
+  var UI=(function(){try{return Object.assign(defaultUI(),JSON.parse(localStorage.getItem(UI_KEY)||"{}"))}catch(e){return defaultUI()}})();
+  function saveUI(){try{localStorage.setItem(UI_KEY,JSON.stringify(UI))}catch(e){}}
+  function applyUI(){
+    var r=document.documentElement;
+    ["ui-r-sharp","ui-r-md","ui-r-round","ui-d-compact","ui-d-comfy","ui-f-system","ui-f-rounded","ui-f-serif","ui-bg-solid","ui-bg-gradient"].forEach(function(c){r.classList.remove(c)});
+    r.classList.add("ui-r-"+(UI.radius==="sm"?"sharp":UI.radius==="lg"?"round":"md"));
+    r.classList.add("ui-d-"+(UI.density==="compact"?"compact":"comfy"));
+    r.classList.add("ui-f-"+(["system","rounded","serif"].indexOf(UI.font)>=0?UI.font:"system"));
+    r.classList.add("ui-bg-"+(UI.bg==="gradient"?"gradient":"solid"));
+    try{document.body.style.zoom=String(Math.max(85,Math.min(125,UI.textScale||100))/100);}catch(e){}
+    var a=UI.accent||["#ff2e43","#c81e30"];
+    try{applyAccent(a[0],a[1]);localStorage.setItem("mkd-accent",a[0]);}catch(e){}
+    document.body.classList.toggle("list-cards",UI.listStyle==="cards");
+    applyNavTabs();
+  }
+  function applyNavTabs(){
+    var nav=el("bottomnav");if(!nav)return;
+    var order=UI.tabsOrder.filter(function(t){return UI_TABLIST.some(function(x){return x[0]===t})});
+    UI_TABLIST.forEach(function(t){if(order.indexOf(t[0])<0)order.push(t[0])});
+    var visible=order.filter(function(t){return UI.tabsHidden.indexOf(t)<0});
+    UI_TABLIST.forEach(function(t){var b=nav.querySelector('.navitem[data-tab="'+t[0]+'"]');if(b)b.style.display=(visible.indexOf(t[0])>=0)?"":"none";});
+    visible.forEach(function(k){var b=nav.querySelector('.navitem[data-tab="'+k+'"]');if(b)nav.appendChild(b)});
+  }
+
+  // ---- drag-to-reorder (pointer based, works on touch + mouse) ----
+  function czReorder(listEl,onOrder){
+    var dragging=null,startY=0,items=[];
+    function siblings(){return Array.prototype.slice.call(listEl.querySelectorAll(".cz-item"))}
+    listEl.querySelectorAll(".grip").forEach(function(g){
+      g.addEventListener("pointerdown",function(ev){
+        ev.preventDefault();dragging=g.closest(".cz-item");if(!dragging)return;
+        items=siblings();startY=ev.clientY;dragging.classList.add("dragging");
+        try{g.setPointerCapture(ev.pointerId)}catch(e){}
+        if(typeof vibrate==="function")vibrate(8);
+      });
+      g.addEventListener("pointermove",function(ev){
+        if(!dragging)return;ev.preventDefault();
+        var y=ev.clientY;
+        var after=null;
+        items.forEach(function(it){if(it===dragging)return;var r=it.getBoundingClientRect();if(y>r.top+r.height/2)after=it;});
+        if(after&&after.nextSibling!==dragging)listEl.insertBefore(dragging,after.nextSibling);
+        else if(!after&&listEl.firstChild!==dragging)listEl.insertBefore(dragging,listEl.firstChild);
+      });
+      function end(){if(!dragging)return;dragging.classList.remove("dragging");dragging=null;
+        onOrder(siblings().map(function(it){return it.getAttribute("data-key")}));}
+      g.addEventListener("pointerup",end);g.addEventListener("pointercancel",end);
+    });
+  }
+  // Build one reorder+show/hide list. items=[[key,label,icon]], hiddenArr = live hidden list.
+  function czList(items,orderArr,hiddenArr,onChange,noHideKeys){
+    noHideKeys=noHideKeys||[];
+    var ordered=orderArr.slice().filter(function(k){return items.some(function(i){return i[0]===k})});
+    items.forEach(function(i){if(ordered.indexOf(i[0])<0)ordered.push(i[0])});
+    var meta={};items.forEach(function(i){meta[i[0]]=i});
+    var wrap=document.createElement("div");wrap.className="cz-list";
+    ordered.forEach(function(k){
+      var m=meta[k];if(!m)return;var hid=hiddenArr.indexOf(k)>=0;
+      var row=document.createElement("div");row.className="cz-item"+(hid?" hidden-el":"");row.setAttribute("data-key",k);
+      var canHide=noHideKeys.indexOf(k)<0;
+      row.innerHTML='<span class="grip">'+ic("menu",18)+'</span><span class="il">'+(m[2]?'<span class="em">'+ic(m[2],15)+'</span>':'')+esc(m[1])+'</span>'+
+        (canHide?'<button class="eye'+(hid?" off":"")+'" aria-label="Show/hide">'+ic(hid?"ban":"check",16)+'</button>':'');
+      if(canHide)row.querySelector(".eye").onclick=function(){
+        var i=hiddenArr.indexOf(k);if(i>=0)hiddenArr.splice(i,1);else hiddenArr.push(k);
+        onChange();vibrate(6);
+      };
+      wrap.appendChild(row);
+    });
+    czReorder(wrap,function(newOrder){orderArr.length=0;newOrder.forEach(function(k){orderArr.push(k)});onChange(true)});
+    return wrap;
+  }
+
+  // ---- the Customize hub ----
+  var CZ={tab:"look"};
+  function openCustomize(){el("czApp").classList.add("show");czRender();if(!UI.tourSeen)setTimeout(czTour,500);}
+  function closeCustomize(){el("czApp").classList.remove("show");}
+  function czToast(m){toast(m)}
+  var CZ_TABS=[["look","Look","image"],["layout","Tabs","home"],["money","Money","dollar"],["safe","Simple & safe","check-circle"]];
+  function czRender(){
+    el("czMode").textContent=UI.mode==="pro"?"Pro":"Simple";
+    var tabs=el("czTabs");
+    tabs.innerHTML=CZ_TABS.map(function(t){return '<span class="cz-tab'+(CZ.tab===t[0]?" on":"")+'" data-czt="'+t[0]+'"><span class="e">'+ic(t[2],15)+'</span>'+t[1]+'</span>'}).join("");
+    Array.prototype.forEach.call(tabs.querySelectorAll("[data-czt]"),function(b){b.onclick=function(){CZ.tab=b.getAttribute("data-czt");czRender()}});
+    var p=el("czPanel");
+    if(UI.locked&&CZ.tab!=="safe"){p.innerHTML='<div class="cz-card"><h3>🔒 Locked</h3><p class="hint">Customizing is locked so nothing changes by accident. Unlock it under <b>Simple &amp; safe</b>.</p></div>';return;}
+    if(CZ.tab==="look")return czLook(p);
+    if(CZ.tab==="layout")return czLayout(p);
+    if(CZ.tab==="money")return czMoney(p);
+    if(CZ.tab==="safe")return czSafe(p);
+  }
+  function segRow(label,sub,opts,cur,onPick){
+    var d=document.createElement("div");d.className="cz-row";
+    d.innerHTML='<div class="lb">'+esc(label)+(sub?'<small>'+esc(sub)+'</small>':'')+'</div><div class="cz-seg">'+
+      opts.map(function(o){return '<button class="'+(cur===o[0]?"on":"")+'" data-v="'+o[0]+'">'+esc(o[1])+'</button>'}).join("")+'</div>';
+    Array.prototype.forEach.call(d.querySelectorAll("[data-v]"),function(b){b.onclick=function(){onPick(b.getAttribute("data-v"))}});
+    return d;
+  }
+  function czLook(p){
+    p.innerHTML="";
+    // theme presets
+    var c1=document.createElement("div");c1.className="cz-card";
+    c1.innerHTML='<h3>Theme</h3><p class="hint">Pick a look to start from — tweak anything below.</p><div class="cz-presets" id="czPresets"></div>';
+    p.appendChild(c1);
+    var pr=c1.querySelector("#czPresets");
+    UI_PRESETS.forEach(function(ps){
+      var d=document.createElement("div");d.className="cz-preset"+(UI.preset===ps[0]?" sel":"");
+      d.innerHTML='<div class="prev" style="background:linear-gradient(135deg,'+ps[2]+','+ps[3]+')"><i style="background:rgba(255,255,255,.85)"></i></div><div class="nm">'+ps[1]+'</div>';
+      d.onclick=function(){UI.preset=ps[0];UI.accent=[ps[2],ps[3]];saveUI();applyUI();czRender();vibrate(8);};
+      pr.appendChild(d);
+    });
+    // accent fine control
+    var c2=document.createElement("div");c2.className="cz-card";c2.innerHTML='<h3>Accent color</h3><p class="hint">Fine-tune the highlight color.</p><div class="cz-swatches" id="czSw"></div>';
+    p.appendChild(c2);var sw=c2.querySelector("#czSw");
+    ACCENTS.forEach(function(a){var s=document.createElement("div");s.className="cz-sw"+((UI.accent&&UI.accent[0]===a[0])?" sel":"");s.style.background=a[0];s.title=a[2];
+      s.onclick=function(){UI.accent=[a[0],a[1]];saveUI();applyUI();czRender();vibrate(6)};sw.appendChild(s)});
+    // controls
+    var c3=document.createElement("div");c3.className="cz-card";c3.innerHTML='<h3>Feel</h3><p class="hint">Shape, spacing, size and font.</p>';
+    c3.appendChild(segRow("Light / dark","Auto follows your phone",[["system","Auto"],["light","Light"],["dark","Dark"]],themePref(),function(v){setTheme(v)}));
+    c3.appendChild(segRow("Corners","",[["sm","Sharp"],["md","Rounded"],["lg","Pill"]],UI.radius,function(v){UI.radius=v;saveUI();applyUI();czRender()}));
+    c3.appendChild(segRow("Spacing","",[["comfy","Comfy"],["compact","Compact"]],UI.density,function(v){UI.density=v;saveUI();applyUI();czRender()}));
+    c3.appendChild(segRow("Font","",[["system","Clean"],["rounded","Rounded"],["serif","Classic"]],UI.font,function(v){UI.font=v;saveUI();applyUI();czRender()}));
+    c3.appendChild(segRow("Background","",[["solid","Solid"],["gradient","Tinted"]],UI.bg,function(v){UI.bg=v;saveUI();applyUI();czRender()}));
+    // text size slider
+    var ts=document.createElement("div");ts.className="cz-row";
+    ts.innerHTML='<div class="lb">Text size<small>'+UI.textScale+'%</small></div>';
+    var sl=document.createElement("input");sl.type="range";sl.className="cz-slider";sl.min=85;sl.max=125;sl.step=5;sl.value=UI.textScale;sl.style.flex="1.4";
+    sl.oninput=function(){UI.textScale=+sl.value;ts.querySelector(".lb small").textContent=UI.textScale+"%";try{document.body.style.zoom=String(UI.textScale/100)}catch(e){}};
+    sl.onchange=function(){saveUI();vibrate(6)};
+    ts.appendChild(sl);c3.appendChild(ts);
+    p.appendChild(c3);
+  }
+  function czLayout(p){
+    p.innerHTML="";
+    var c=document.createElement("div");c.className="cz-card";
+    c.innerHTML='<h3>Bottom tabs</h3><p class="hint">Drag the ⋮⋮ handle to reorder. Tap the eye to show or hide a tab. Home &amp; Customize stay put.</p>';
+    c.appendChild(czList(UI_TABLIST,UI.tabsOrder,UI.tabsHidden,function(){saveUI();applyUI();},["customize"]));
+    p.appendChild(c);
+    var c2=document.createElement("div");c2.className="cz-card";
+    c2.innerHTML='<h3>Chats list style</h3><p class="hint">How your conversations look.</p>';
+    c2.appendChild(segRow("Layout","",[["compact","Compact rows"],["cards","Big cards"]],UI.listStyle,function(v){UI.listStyle=v;saveUI();applyUI();if(typeof renderMain==="function")renderMain();czRender()}));
+    p.appendChild(c2);
+  }
+  function czMoney(p){
+    p.innerHTML="";
+    var c=document.createElement("div");c.className="cz-card";
+    c.innerHTML='<h3>Money screen blocks</h3><p class="hint">Reorder and show/hide the sections on your Money home.</p>';
+    c.appendChild(czList(UI_MBLOCKS,UI.mblocks,UI.mblocksHidden,function(){saveUI();if(MO.open&&MO.view==="log")moRender();}));
+    p.appendChild(c);
+    var c2=document.createElement("div");c2.className="cz-card";
+    c2.innerHTML='<h3>KPI tiles (Report)</h3><p class="hint">Pick which numbers show and their order.</p>';
+    var hidden=UI_MKPIS.map(function(k){return k[0]}).filter(function(k){return UI.mkpis.indexOf(k)<0});
+    // represent as order = current mkpis + hidden appended; hidden list = those not in mkpis
+    var order=UI.mkpis.slice();UI_MKPIS.forEach(function(k){if(order.indexOf(k[0])<0)order.push(k[0])});
+    c2.appendChild(czList(UI_MKPIS,order,hidden,function(){
+      // rebuild mkpis from the DOM order minus hidden
+      UI.mkpis=order.filter(function(k){return hidden.indexOf(k)<0});
+      saveUI();if(MO.open&&MO.view==="report")moRender();
+    }));
+    p.appendChild(c2);
+    var note=document.createElement("div");note.className="cz-note";note.textContent="Editable buckets, categories & charts live in the Money app's own settings.";
+    p.appendChild(note);
+  }
+  function czSafe(p){
+    p.innerHTML="";
+    var c=document.createElement("div");c.className="cz-card";c.innerHTML='<h3>Keep it easy</h3><p class="hint">Guardrails so it stays simple and never gets messy.</p>';
+    [["mode","Pro mode","Show every advanced option. Off = just the essentials.",UI.mode==="pro",function(on){UI.mode=on?"pro":"simple";saveUI();czRender()}],
+     ["locked","Lock customizing","Stops anything changing by accident.",UI.locked,function(on){UI.locked=on;saveUI();czRender()}]
+    ].forEach(function(t){
+      var row=document.createElement("div");row.className="cz-row";
+      row.innerHTML='<div class="lb">'+t[1]+'<small>'+t[2]+'</small></div>';
+      var sw=document.createElement("div");sw.className="cz-sw-t"+(t[3]?" on":"");sw.onclick=function(){sw.classList.toggle("on");t[4](sw.classList.contains("on"));vibrate(6)};
+      row.appendChild(sw);c.appendChild(row);
+    });
+    p.appendChild(c);
+    var c2=document.createElement("div");c2.className="cz-card";c2.innerHTML='<h3>Start over</h3><p class="hint">Nothing here touches your logged money, chats or customers — only the look &amp; layout.</p>';
+    var tidy=document.createElement("button");tidy.className="cz-bigbtn";tidy.innerHTML=ic("wand",16)+'<span>Make it tidy again</span>';
+    tidy.onclick=function(){UI.radius="md";UI.density="comfy";UI.textScale=100;UI.font="system";UI.bg="solid";saveUI();applyUI();czRender();czToast("Tidied up ✨")};
+    c2.appendChild(tidy);
+    var reset=document.createElement("button");reset.className="cz-bigbtn cz-danger";reset.innerHTML=ic("refresh-cw",16)+'<span>Reset everything to default</span>';
+    reset.onclick=function(){if(!confirm("Reset ALL customization (look + layout) to default? Your data stays safe."))return;UI=defaultUI();saveUI();applyUI();if(MO.open)moRender();czRender();czToast("Reset to default")};
+    c2.appendChild(reset);
+    p.appendChild(c2);
+    var c3=document.createElement("div");c3.className="cz-card";c3.innerHTML='<h3>About</h3><p class="hint">Make It Yours v1 · appearance, tabs &amp; money layout. Messaging deep-customization and the extra features you picked are coming next.</p>';
+    p.appendChild(c3);
+  }
+  function czTour(){
+    var t=el("czTour");if(!t)return;
+    t.innerHTML='<b>👋 Welcome to Customize</b><p>Change your app’s look, rearrange tabs, and set up your Money screen — it all saves as you go, and your data is never touched. Try tapping a theme.</p><button id="czTourX">Got it</button>';
+    t.classList.add("show");el("czTourX").onclick=function(){t.classList.remove("show");UI.tourSeen=true;saveUI()};
   }
 
   // ---- counts ----
@@ -3332,7 +3651,9 @@
     if(!e.target.closest("#toolsBtn")&&!e.target.closest("#toolsSheet"))el("toolsSheet").style.display="none";
   });
 
-  Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.onclick=function(){vibrate(6);var tb=b.getAttribute("data-tab");if(tb==="money")return openMoney();setTab(tb)}});
+  Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.onclick=function(){vibrate(6);var tb=b.getAttribute("data-tab");if(tb==="money")return openMoney();if(tb==="customize")return openCustomize();setTab(tb)}});
+  el("czBack").onclick=closeCustomize;
+  el("czMode").onclick=function(){UI.mode=UI.mode==="pro"?"simple":"pro";saveUI();czRender();vibrate(6)};
 
   el("menuBtn").onclick=openDrawer;el("myAvatar").onclick=openDrawer;el("scrim").onclick=closeDrawer;
   el("emailSetupItem").onclick=function(){closeDrawer();openEmailSetup()};
@@ -3502,6 +3823,17 @@
       '<polyline points="'+pts.join(" ")+'" stroke="'+stroke+'" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>'+
       '<circle cx="'+last[0]+'" cy="'+last[1]+'" r="3" fill="#fff"/></svg>';
   }
+  // Reorder + show/hide the Money home blocks per the Customize settings.
+  function applyMoneyBlocks(box){
+    try{
+      var order=(UI&&UI.mblocks)||["hero","log","alerts","pulse","brain","today"];
+      var hidden=(UI&&UI.mblocksHidden)||[];
+      order.forEach(function(k){var b=box.querySelector('[data-mblock="'+k+'"]');if(b)box.appendChild(b)});
+      Array.prototype.forEach.call(box.querySelectorAll("[data-mblock]"),function(b){
+        b.style.display=(hidden.indexOf(b.getAttribute("data-mblock"))>=0)?"none":"";
+      });
+    }catch(e){}
+  }
   function moLog(box){
     var hero=(MO.cfg&&MO.cfg.hero)||{primary:"balance",stats:["monthIn","monthOut","topCat"]};
     var pm=moMetric(hero.primary);
@@ -3510,7 +3842,7 @@
     // sparkline of recent net (from the 6-mo report if we have it)
     var spark="";
     if(MO.report&&MO.report.length>1)spark=moSparkline(MO.report.map(function(x){return x.net}),112,38,"rgba(255,255,255,.85)");
-    var h='<div class="mo-hero'+(pm.neg?" neg":"")+'">'+
+    var h='<div data-mblock="hero"><div class="mo-hero'+(pm.neg?" neg":"")+'">'+
       '<button class="mh-edit" id="heroEdit" aria-label="Customize headline">'+ic("sliders",16)+'</button>'+
       spark+
       '<div class="mh-top"><span class="mh-lbl">'+esc(title)+'</span></div>'+
@@ -3526,9 +3858,9 @@
         '<span class="ak"><i style="background:var(--mo-tax)"></i>Savings <b>'+fmtMoney(gross*sp.savings/100)+'</b></span>'+
         '<span class="akhint">'+ic("chevron-right",13)+'</span>'+
       '</div></div>';
-    h+='</div>';
+    h+='</div></div>';
     // ===== PRIMARY ACTION — the thing you open the app to do =====
-    h+='<div class="mo-actions">'+
+    h+='<div data-mblock="log"><div class="mo-actions">'+
       '<button class="mo-primary" data-mo="job"><span class="e">'+ic("plus",22)+'</span>Log a detail</button>'+
       '<button class="mo-secondary" data-mo="jp"><span class="e">'+ic("users",22)+'</span>Pay '+esc(jpName())+'</button></div>';
     // secondary quick-add grid (expenses), auto-sorted to habit
@@ -3539,7 +3871,9 @@
     if(!MO.cfg||MO.cfg.personalEnabled!==false)h+='<button class="mo-btn dim" data-mo="personal"><span class="e">'+ic("user",24)+'</span>Personal</button>';
     h+='</div>';
     if(Object.keys(use).length>2)h+='<div class="mo-adapt">✦ buttons auto-sort to what you log most</div>';
+    h+='</div>';
     // ===== ACTIONABLE ALERTS (only when they exist) =====
+    h+='<div data-mblock="alerts">';
     (MO.owed||[]).forEach(function(o){
       h+='<div class="mo-owe"><div class="bd"><b>'+esc(o.name||prettyPhone(o.phone)||"A customer")+'</b> still owes <b style="color:var(--mo-bad)">'+fmtMoney(o.owed)+'</b>'+
         '<small>'+esc(moDayLabel(o.date))+' job · '+fmtMoney(o.amount)+' total</small></div>'+
@@ -3550,10 +3884,11 @@
       h+='<div class="mo-nudge"><div class="t"><span class="ic-inline" style="color:var(--mo-warn)">'+ic("lightbulb",14)+'</span> <b>'+esc(nd.name||prettyPhone(nd.phone))+'</b> was marked <b>Won</b> '+esc(fmtTime(nd.wonAt))+' — no job $ logged yet.</div>'+
         '<div class="acts"><button class="btn accent" data-nlog="'+esc(nd.phone)+'">Log the $</button><button class="btn" data-ndis="'+esc(nd.phone)+'">Dismiss</button></div></div>';
     });
+    h+='</div>';
     // ===== PULSE — the collapsible at-a-glance (progressive disclosure) =====
     var mgn=gross>0?Math.round((s.net||0)/gross*100):0;
     var open=MO.pulseOpen?" open":"";
-    h+='<div class="mo-pulse'+open+'" id="moPulse">'+
+    h+='<div data-mblock="pulse"><div class="mo-pulse'+open+'" id="moPulse">'+
       '<div class="ph" id="moPulseHd">'+
         '<div><div class="pnet '+((s.net||0)<0?"bad":"good")+'">'+fmtMoney(s.net||0)+'</div><div class="plbl">Net · '+esc(monthShort(moCurMonth()))+'</div></div>'+
         '<div class="pmine"><div class="v">'+fmtMoney(gross*sp.you/100)+'</div><div class="k">Yours</div></div>'+
@@ -3567,18 +3902,20 @@
         '<div class="m"><div class="v warn">'+fmtMoney(gross*sp.savings/100)+'</div><div class="k">Savings</div></div>'+
         '<div class="m"><div class="v '+((s.owed||0)>0?"bad":"")+'">'+fmtMoney(s.owed||0)+'</div><div class="k">Owed to you</div></div>'+
       '</div><button class="pmore" id="moPulseMore"><span class="e">'+ic("bar-chart",15)+'</span>Full report &amp; trends</button></div></div>'+
-    '</div>';
+    '</div></div>';
     // brain + buckets — the two "dig deeper" tools
-    h+='<div class="mo-brainrow">'+
+    h+='<div data-mblock="brain"><div class="mo-brainrow">'+
       '<button class="mo-brainbtn brain" id="moBrainBtn"><span class="e">'+ic("sparkles",17)+'</span>Money Brain</button>'+
-      '<button class="mo-brainbtn buckets" id="moSplitBtn"><span class="e">'+ic("wallet",17)+'</span>Buckets</button></div>';
+      '<button class="mo-brainbtn buckets" id="moSplitBtn"><span class="e">'+ic("wallet",17)+'</span>Buckets</button></div></div>';
     // ===== TODAY =====
     var today=moTodayStr();
     var todays=(MO.entries||[]).filter(function(e){return e.date===today});
-    h+='<div class="mo-sec-h">Today'+(todays.length?' · '+todays.length:'')+'</div>';
+    h+='<div data-mblock="today"><div class="mo-sec-h">Today'+(todays.length?' · '+todays.length:'')+'</div>';
     if(!todays.length)h+='<div style="color:var(--muted2);font-size:12.5px;padding:2px 2px 10px;line-height:1.5">Nothing logged today — tap <b style="color:var(--accent-text)">Log a detail</b>. Amount, done.</div>';
     todays.forEach(function(e){h+=moEntryRow(e,true)});
+    h+='</div>';
     box.innerHTML=h;
+    applyMoneyBlocks(box);
     moWireRows(box);
     el("heroEdit").onclick=function(ev){ev.stopPropagation();openHeroSheet()};
     var ha=el("heroAlloc");if(ha)ha.onclick=openSplitSheet;
@@ -3889,18 +4226,21 @@
     }
     var best="",bs=s.byService||{},bk=Object.keys(bs);
     if(bk.length){bk.sort(function(a,b){return bs[b].total-bs[a].total});best=bk[0]}
-    // ---- the KPI grid: net hero, then the tiles the questionnaire picked ----
-    h+='<div class="mo-kgrid">'+
-      '<div class="mo-k hero1'+((s.net||0)<0?" bad":"")+' k1">'+delta+'<div class="kv '+((s.net||0)<0?"bad":"good")+'">'+fmtMoney(s.net||0)+'</div><div class="kk">Net profit</div><div class="ksub">'+fmtMoney(gross)+' in · '+fmtMoney((s.jp||0)+(s.exp||0))+' out</div></div>'+
-      '<div class="mo-k"><div class="kv mine">'+fmtMoney(gross*sp.you/100)+'</div><div class="kk">Yours · '+sp.you+'%</div></div>'+
-      '<div class="mo-k"><div class="kv" style="color:var(--mo-biz)">'+fmtMoney(gross*sp.costs/100)+'</div><div class="kk">Costs · '+sp.costs+'%</div></div>'+
-      '<div class="mo-k"><div class="kv warn">'+fmtMoney(gross*sp.savings/100)+'</div><div class="kk">Savings · '+sp.savings+'%</div></div>'+
-      '<div class="mo-k"><div class="kv">'+(s.jobs?fmtMoney(avg):"—")+'</div><div class="kk">Avg ticket</div></div>'+
-      '<div class="mo-k"><div class="kv">'+(s.jobs||0)+'</div><div class="kk">Jobs</div></div>'+
-      '<div class="mo-k"><div class="kv '+(mgn>=50?"good":(mgn>0?"warn":"bad"))+'">'+(gross>0?mgn+"%":"—")+'</div><div class="kk">Profit margin</div></div>'+
-      '<div class="mo-k"><div class="kv" style="font-size:18px;letter-spacing:-.01em">'+(best?esc(best):"—")+'</div><div class="kk">Top service</div></div>'+
-      ((s.owed||0)>0?'<div class="mo-k k1"><div class="kv bad">'+fmtMoney(s.owed)+'</div><div class="kk">Customers still owe you</div><div class="ksub">chase it on the Log screen</div></div>':"")+
-    '</div>';
+    // ---- the KPI grid: your chosen tiles, in your order (Customize → Money) ----
+    var kpiHtml={
+      net:'<div class="mo-k hero1'+((s.net||0)<0?" bad":"")+' k1">'+delta+'<div class="kv '+((s.net||0)<0?"bad":"good")+'">'+fmtMoney(s.net||0)+'</div><div class="kk">Net profit</div><div class="ksub">'+fmtMoney(gross)+' in · '+fmtMoney((s.jp||0)+(s.exp||0))+' out</div></div>',
+      you:'<div class="mo-k"><div class="kv mine">'+fmtMoney(gross*sp.you/100)+'</div><div class="kk">Yours · '+sp.you+'%</div></div>',
+      costs:'<div class="mo-k"><div class="kv" style="color:var(--mo-biz)">'+fmtMoney(gross*sp.costs/100)+'</div><div class="kk">Costs · '+sp.costs+'%</div></div>',
+      savings:'<div class="mo-k"><div class="kv warn">'+fmtMoney(gross*sp.savings/100)+'</div><div class="kk">Savings · '+sp.savings+'%</div></div>',
+      avg:'<div class="mo-k"><div class="kv">'+(s.jobs?fmtMoney(avg):"—")+'</div><div class="kk">Avg ticket</div></div>',
+      jobs:'<div class="mo-k"><div class="kv">'+(s.jobs||0)+'</div><div class="kk">Jobs</div></div>',
+      margin:'<div class="mo-k"><div class="kv '+(mgn>=50?"good":(mgn>0?"warn":"bad"))+'">'+(gross>0?mgn+"%":"—")+'</div><div class="kk">Profit margin</div></div>',
+      best:'<div class="mo-k"><div class="kv" style="font-size:18px;letter-spacing:-.01em">'+(best?esc(best):"—")+'</div><div class="kk">Top service</div></div>',
+      owed:((s.owed||0)>0?'<div class="mo-k k1"><div class="kv bad">'+fmtMoney(s.owed)+'</div><div class="kk">Customers still owe you</div><div class="ksub">chase it on the Log screen</div></div>':"")
+    };
+    var kpiOrder=(UI&&UI.mkpis&&UI.mkpis.length)?UI.mkpis:["net","you","costs","savings","avg","jobs","margin","owed","best"];
+    if(kpiOrder.indexOf("net")<0)kpiOrder=["net"].concat(kpiOrder); // net hero always leads
+    h+='<div class="mo-kgrid">'+kpiOrder.map(function(k){return kpiHtml[k]||""}).join("")+'</div>';
     // buckets strip → sheet
     h+='<div class="mo-split" id="moSplitStrip2" title="Auto-split — tap for details">'+
       '<span class="sl">'+ic("wallet",14)+'</span>'+
@@ -4542,11 +4882,12 @@
   Array.prototype.forEach.call(el("moNav").querySelectorAll("[data-mv]"),function(b){b.onclick=function(){vibrate(6);moSetView(b.getAttribute("data-mv"))}});
   el("moScrim").onclick=closeMoSheet;
   el("moneyItem").onclick=function(){closeDrawer();openMoney()};
+  el("customizeItem").onclick=function(){closeDrawer();openCustomize()};
 
   // ---- boot ----
   hydrateIcons();
   el("myAvatar").innerHTML=brandGlyph();el("drawerLogo").innerHTML=brandGlyph();el("loginLogo").innerHTML=brandGlyph();
-  applyTheme(themePref());loadAccent();buildAccents();buildThemeSeg();buildTplMenu();loadTemplates();buildQuickset();
+  applyTheme(themePref());loadAccent();applyUI();buildAccents();buildThemeSeg();buildTplMenu();loadTemplates();buildQuickset();
   renderFilters();refreshThreads();startPoll();checkHealth();loadConfig();showBuild();fetchEmails();fetchInsights();loadMoney();
   maybeDeepLink();
 })();
