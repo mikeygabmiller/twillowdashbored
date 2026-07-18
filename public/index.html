@@ -1162,6 +1162,18 @@
   .cz-tour button{background:var(--bg);color:var(--text);border:none;border-radius:10px;padding:9px 16px;font-weight:750;font-size:13.5px;cursor:pointer;font-family:inherit}
   /* nav item added for Customize */
   .navitem[data-tab="customize"].active .ic{color:var(--accent-text)}
+  /* home 'Today's money' widget */
+  .hw-money{display:flex;align-items:center;gap:14px;background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:15px 17px;box-shadow:var(--mo-elev);cursor:pointer}
+  .hw-money:active{transform:scale(.995)}
+  .hw-money .hm-a{font-size:26px;font-weight:850;letter-spacing:-.03em;font-variant-numeric:tabular-nums;color:var(--mo-good)}
+  .hw-money .hm-l{font-size:11px;color:var(--muted2);font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-top:2px}
+  .hw-money .hm-side{margin-left:auto;text-align:right}
+  .hw-money .hm-side b{font-size:18px;font-weight:800;font-variant-numeric:tabular-nums;display:block}
+  .hw-money .hm-side b.neg{color:var(--mo-bad)}
+  .hw-money .hm-side span{font-size:10.5px;color:var(--muted2);font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+  /* chats list-cards style */
+  body.list-cards .conv{border:1px solid var(--line2);border-radius:16px;margin:0 0 8px;padding:12px 13px;box-shadow:var(--mo-elev)}
+  body.list-cards .conv .prev{white-space:normal}
 </style>
 </head>
 <body>
@@ -1497,7 +1509,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-18·customize-v1";
+  var APP_BUILD="2026-07-18·customize-v2";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -1711,8 +1723,16 @@
     mode:"simple", locked:false, tourSeen:false, listStyle:"compact",
     tabsOrder:["home","messages","leads","money","insights","customize"], tabsHidden:[],
     mblocks:["hero","log","alerts","pulse","brain","today"], mblocksHidden:[],
-    mkpis:["net","you","costs","savings","avg","jobs","margin","owed","best"]
+    mkpis:["net","you","costs","savings","avg","jobs","margin","owed","best"],
+    // Phase 2/3
+    hwidgets:["waiting","reminders","followups","money","stats"], hwidgetsHidden:[],
+    rowFields:["time","preview","status","tags","unread"],
+    stageLabels:{}, stageColors:{}
   };}
+  // status meta with the owner's custom label/color applied (no data change)
+  var STAGE_DEF={new:["New","#3b82f6"],active:["Active","#22c55e"],won:["Won","#a855f7"],lost:["Lost","#8a93a3"]};
+  function stageMeta(key){var d=STAGE_DEF[key]||["",""];var lbl=(UI.stageLabels&&UI.stageLabels[key])||d[0];var col=(UI.stageColors&&UI.stageColors[key])||d[1];return{label:lbl,color:col};}
+  function rowHas(f){return (UI.rowFields||["time","preview","status","tags","unread"]).indexOf(f)>=0;}
   var UI=(function(){try{return Object.assign(defaultUI(),JSON.parse(localStorage.getItem(UI_KEY)||"{}"))}catch(e){return defaultUI()}})();
   function saveUI(){try{localStorage.setItem(UI_KEY,JSON.stringify(UI))}catch(e){}}
   function applyUI(){
@@ -1789,7 +1809,7 @@
   function openCustomize(){el("czApp").classList.add("show");czRender();if(!UI.tourSeen)setTimeout(czTour,500);}
   function closeCustomize(){el("czApp").classList.remove("show");}
   function czToast(m){toast(m)}
-  var CZ_TABS=[["look","Look","image"],["layout","Tabs","home"],["money","Money","dollar"],["safe","Simple & safe","check-circle"]];
+  var CZ_TABS=[["look","Look","image"],["layout","Tabs","home"],["home","Home","home"],["chats","Chats","message-square"],["leads","Leads","clipboard-list"],["money","Money","dollar"],["safe","Simple & safe","check-circle"]];
   function czRender(){
     el("czMode").textContent=UI.mode==="pro"?"Pro":"Simple";
     var tabs=el("czTabs");
@@ -1799,8 +1819,58 @@
     if(UI.locked&&CZ.tab!=="safe"){p.innerHTML='<div class="cz-card"><h3>🔒 Locked</h3><p class="hint">Customizing is locked so nothing changes by accident. Unlock it under <b>Simple &amp; safe</b>.</p></div>';return;}
     if(CZ.tab==="look")return czLook(p);
     if(CZ.tab==="layout")return czLayout(p);
+    if(CZ.tab==="home")return czHome(p);
+    if(CZ.tab==="chats")return czChats(p);
+    if(CZ.tab==="leads")return czLeads(p);
     if(CZ.tab==="money")return czMoney(p);
     if(CZ.tab==="safe")return czSafe(p);
+  }
+  var UI_HWIDGETS=[["waiting","Waiting on you","message-square"],["reminders","Reminders","clock"],["followups","Follow-ups ready","list-checks"],["money","Today’s money","dollar"],["stats","Quick stats","bar-chart"]];
+  function czHome(p){
+    p.innerHTML="";
+    var c=document.createElement("div");c.className="cz-card";
+    c.innerHTML='<h3>Home widgets</h3><p class="hint">Drag to reorder, tap the eye to hide. Your Home screen shows these top to bottom.</p>';
+    c.appendChild(czList(UI_HWIDGETS,UI.hwidgets,UI.hwidgetsHidden,function(){saveUI();if(state.tab==="home")renderHome();}));
+    p.appendChild(c);
+  }
+  var UI_ROWFIELDS=[["time","Time","clock"],["preview","Message preview","message-square"],["status","Lead status","clipboard-list"],["tags","Tags","pin"],["unread","Unread badge","bell"]];
+  function czChats(p){
+    p.innerHTML="";
+    var c=document.createElement("div");c.className="cz-card";
+    c.innerHTML='<h3>Chat list style</h3><p class="hint">How your conversations look.</p>';
+    c.appendChild(segRow("Layout","",[["compact","Compact rows"],["cards","Big cards"]],UI.listStyle,function(v){UI.listStyle=v;saveUI();applyUI();renderMain();czRender()}));
+    p.appendChild(c);
+    var c2=document.createElement("div");c2.className="cz-card";
+    c2.innerHTML='<h3>What shows on each chat</h3><p class="hint">Tap the eye to show or hide. Name is always shown.</p>';
+    // rowFields uses hidden = fields NOT in rowFields
+    var all=UI_ROWFIELDS.map(function(f){return f[0]});
+    var hidden=all.filter(function(k){return UI.rowFields.indexOf(k)<0});
+    var order=all.slice();
+    c2.appendChild(czList(UI_ROWFIELDS,order,hidden,function(){UI.rowFields=all.filter(function(k){return hidden.indexOf(k)<0});saveUI();renderMain();}));
+    p.appendChild(c2);
+  }
+  function czLeads(p){
+    p.innerHTML="";
+    var c=document.createElement("div");c.className="cz-card";
+    c.innerHTML='<h3>Pipeline stages</h3><p class="hint">Rename your stages and pick their colors. (These are labels only — your saved leads are untouched.)</p>';
+    ["new","active","won","lost"].forEach(function(k){
+      var sm=stageMeta(k);
+      var row=document.createElement("div");row.className="cz-row";
+      row.innerHTML='<div class="lb"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:'+sm.color+';margin-right:8px"></span></div>';
+      var inp=document.createElement("input");inp.className="mo-in";inp.style.flex="1";inp.value=sm.label;inp.maxLength=16;
+      inp.onchange=function(){UI.stageLabels=UI.stageLabels||{};UI.stageLabels[k]=inp.value.trim()||STAGE_DEF[k][0];saveUI();if(state.tab==="leads")renderMain();czToast("Saved")};
+      row.querySelector(".lb").appendChild(inp);
+      var sw=document.createElement("div");sw.className="cz-swatches";sw.style.flex="none";
+      ["#3b82f6","#22c55e","#a855f7","#f97316","#ef4444","#8a93a3"].forEach(function(col){
+        var s=document.createElement("div");s.className="cz-sw"+(sm.color===col?" sel":"");s.style.width="24px";s.style.height="24px";s.style.background=col;
+        s.onclick=function(){UI.stageColors=UI.stageColors||{};UI.stageColors[k]=col;saveUI();if(state.tab==="leads")renderMain();czRender();vibrate(6)};
+        sw.appendChild(s);
+      });
+      row.appendChild(sw);c.appendChild(row);
+    });
+    p.appendChild(c);
+    var note=document.createElement("div");note.className="cz-note";note.textContent="Adding brand-new stages & custom customer fields are coming next.";
+    p.appendChild(note);
   }
   function segRow(label,sub,opts,cur,onPick){
     var d=document.createElement("div");d.className="cz-row";
@@ -2050,44 +2120,68 @@
     var fu=active.filter(function(t){return t.followupDue}).sort(function(a,b){return fuUrg(b)-fuUrg(a)||((a.fu&&a.fu.dueAt)||0)-((b.fu&&b.fu.dueAt)||0)});
     var reminders=active.filter(function(t){return t.reminderDue}).sort(function(a,b){return (a.reminderAt||0)-(b.reminderAt||0)});
     var ins=state.insights||{};
-    var h='<div class="home">';
-    h+='<div class="home-head"><div class="hh-greet">'+greeting()+'</div><div class="hh-sub">Here\'s what needs you.</div></div>';
+    // ---- widgets keyed for the customizable dashboard (Customize → Home) ----
+    var W={};
+    var hero;
     if(waiting.length){
-      h+='<div class="hero-card" id="heroWaiting"><div class="hc-n">'+waiting.length+'</div>'+
+      hero='<div class="hero-card" id="heroWaiting"><div class="hc-n">'+waiting.length+'</div>'+
         '<div class="hc-txt"><div class="hc-t">'+(waiting.length===1?"person is":"people are")+' waiting on you</div>'+
         '<div class="hc-s">Longest wait '+ago(waiting[0].lastTs)+' · tap to reply</div></div>'+ic("chevron-right",22)+'</div>';
     }else{
-      h+='<div class="hero-card ok"><span class="hc-ic">'+ic("check-circle",26)+'</span>'+
+      hero='<div class="hero-card ok"><span class="hc-ic">'+ic("check-circle",26)+'</span>'+
         '<div class="hc-txt"><div class="hc-t">You\'re all caught up</div><div class="hc-s">Nobody is waiting on a reply. Nice.</div></div></div>';
     }
+    var wh=hero;
     if(waiting.length){
-      h+='<div class="home-sec-h"><span>Waiting on you</span><span class="hs-n">'+waiting.length+'</span></div>';
-      waiting.slice(0,5).forEach(function(t){h+=homeRow(t,ago(t.lastTs))});
-      if(waiting.length>5)h+='<div class="home-more" data-more="messages">See all '+waiting.length+'</div>';
+      wh+='<div class="home-sec-h"><span>Waiting on you</span><span class="hs-n">'+waiting.length+'</span></div>';
+      waiting.slice(0,5).forEach(function(t){wh+=homeRow(t,ago(t.lastTs))});
+      if(waiting.length>5)wh+='<div class="home-more" data-more="messages">See all '+waiting.length+'</div>';
     }
+    W.waiting='<div data-hwidget="waiting">'+wh+'</div>';
     if(reminders.length){
-      h+='<div class="home-sec-h"><span>⏰ Reminders</span><span class="hs-n">'+reminders.length+'</span></div>';
+      var rh='<div class="home-sec-h"><span>⏰ Reminders</span><span class="hs-n">'+reminders.length+'</span></div>';
       reminders.forEach(function(t){
-        h+='<div class="home-row" data-open="'+esc(t.phone)+'"><div class="avatar" style="width:42px;height:42px;font-size:15px;background:'+colorFor(t.phone)+'">'+esc(initials(t))+'</div>'+
+        rh+='<div class="home-row" data-open="'+esc(t.phone)+'"><div class="avatar" style="width:42px;height:42px;font-size:15px;background:'+colorFor(t.phone)+'">'+esc(initials(t))+'</div>'+
           '<div class="hr-body"><div class="hr-nm">'+esc(displayName(t))+'</div><div class="hr-prev">'+esc(t.reminderNote||"Follow up with them")+'</div></div>'+
           '<span class="hr-fu" style="color:#7dd3fc">'+ic("clock",14)+'</span></div>';
       });
-    }
+      W.reminders='<div data-hwidget="reminders">'+rh+'</div>';
+    }else W.reminders='';
     if(fu.length){
-      h+='<div class="home-sec-h"><span>Follow-ups ready</span><span class="hs-n">'+fu.length+'</span></div>';
-      fu.slice(0,4).forEach(function(t){h+=homeFuRow(t)});
-      if(fu.length>4)h+='<div class="home-more" data-more="followups">See all '+fu.length+'</div>';
-    }
+      var fh='<div class="home-sec-h"><span>Follow-ups ready</span><span class="hs-n">'+fu.length+'</span></div>';
+      fu.slice(0,4).forEach(function(t){fh+=homeFuRow(t)});
+      if(fu.length>4)fh+='<div class="home-more" data-more="followups">See all '+fu.length+'</div>';
+      W.followups='<div data-hwidget="followups">'+fh+'</div>';
+    }else W.followups='';
+    W.money='<div data-hwidget="money">'+homeMoneyWidget()+'</div>';
     var strip=[];
     strip.push((ins.open!=null?ins.open:active.length)+' open');
     if(ins.won!=null)strip.push(ins.won+' won');
     if(ins.avgReplyMs!=null)strip.push('~'+fmtDur(ins.avgReplyMs)+' reply');
-    h+='<div class="home-strip">'+strip.map(function(s){return '<span>'+esc(s)+'</span>'}).join("")+'</div>';
+    W.stats='<div data-hwidget="stats"><div class="home-strip">'+strip.map(function(s){return '<span>'+esc(s)+'</span>'}).join("")+'</div></div>';
+    var order=(UI&&UI.hwidgets)||["waiting","reminders","followups","money","stats"];
+    var hidden=(UI&&UI.hwidgetsHidden)||[];
+    var h='<div class="home"><div class="home-head"><div class="hh-greet">'+greeting()+'</div><div class="hh-sub">Here\'s what needs you.</div></div>';
+    order.forEach(function(k){if(hidden.indexOf(k)<0)h+=(W[k]||"")});
     h+='</div>';
     box.innerHTML=h;
     var hw=el("heroWaiting");if(hw&&waiting.length)hw.onclick=function(){openThread(waiting[0].phone)};
     Array.prototype.forEach.call(box.querySelectorAll("[data-open]"),function(c){c.onclick=function(){openThread(c.getAttribute("data-open"))}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-more]"),function(c){c.onclick=function(){setTab(c.getAttribute("data-more"))}});
+    Array.prototype.forEach.call(box.querySelectorAll("[data-open-money]"),function(c){c.onclick=function(){openMoney()}});
+  }
+  // Home "Today's money" widget — reuses the money summary (lazy-loads once).
+  function homeMoneyWidget(){
+    var s=MO.summary;
+    if(!s){
+      if(!MO._homeFetch){MO._homeFetch=1;api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.today=d.today;MO.entries=d.entries||[];MO.cfg=d.config;MO.owed=d.owed||[];MO.week=d.week;MO.allTime=d.allTime;if(state.tab==="home")renderHome()}}).catch(function(){});}
+      return '<div class="home-sec-h"><span>Today’s money</span></div><div class="hw-money"><div class="hm-a" style="color:var(--muted2)">…</div><div class="hm-l">loading</div></div>';
+    }
+    var today=(typeof moTodayStr==="function")?moTodayStr():"";
+    var todayIn=(MO.entries||[]).filter(function(e){return e.type==="job"&&e.date===today}).reduce(function(a,e){return a+e.amount},0);
+    return '<div class="home-sec-h"><span>Today’s money</span></div>'+
+      '<div class="hw-money" data-open-money="1"><div><div class="hm-a">'+fmtMoney(todayIn)+'</div><div class="hm-l">made today</div></div>'+
+      '<div class="hm-side"><b class="'+((s.net||0)<0?"neg":"")+'">'+fmtMoney(s.net||0)+'</b><span>net this month</span></div></div>';
   }
 
   // ---- email tab (unified inbox) ----
@@ -2175,24 +2269,25 @@
     var wrap=document.createElement("div");wrap.className="conv-wrap";
     wrap.innerHTML='<div class="swipe-bg">'+(t.archived?ic("undo",16)+' Unarchive':ic("check",16)+' Archive')+'</div>';
     var d=document.createElement("div");d.className="conv"+(t.phone===state.phone?" active":"")+(t.unread>0?" unrd":"");
-    var st=STATUS[t.status];
+    var sm=t.status?stageMeta(t.status):null;
+    var showStatus=rowHas("status")&&sm;
     d.innerHTML=
       '<div class="avatar" style="background:'+colorFor(t.phone)+'">'+esc(initials(t))+(t.pinned?'<span class="pdot">'+ic("pin",8,2.5)+'</span>':'')+'</div>'+
       '<div class="body">'+
-        '<div class="row1"><span class="nm">'+esc(displayName(t))+'</span><span class="tm">'+fmtTime(t.lastTs)+'</span></div>'+
-        '<div class="prev">'+(t.lastDir==="out"?'<span class="you">You: </span>':'')+'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(t.lastBody||"No messages yet")+'</span></div>'+
+        '<div class="row1"><span class="nm">'+esc(displayName(t))+'</span>'+(rowHas("time")?'<span class="tm">'+fmtTime(t.lastTs)+'</span>':'')+'</div>'+
+        (rowHas("preview")?'<div class="prev">'+(t.lastDir==="out"?'<span class="you">You: </span>':'')+'<span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(t.lastBody||"No messages yet")+'</span></div>':'')+
         '<div class="meta">'+
-          (st?'<span class="badge '+st.cls+'">'+st.label+'</span>':'')+
+          (showStatus?'<span class="badge" style="background:color-mix(in srgb,'+sm.color+' 18%,transparent);color:'+sm.color+'">'+esc(sm.label)+'</span>':'')+
           (t.optedOut?'<span class="dnt">'+ic("ban",10)+'Do not text</span>':'')+
           ((teamOn()&&t.assignedTo)?assignBadge(t.assignedTo):'')+
           (t.replyReady?'<span class="reply-flag">'+ic("sparkles",11)+'reply ready</span>':'')+
           (t.dateRequested?'<span class="reply-flag" style="color:#eab308;background:rgba(234,179,8,.14)">'+ic("calendar-days",11)+'date needed</span>':'')+
           (t.followupDue?'<span class="fu-flag'+(t.fu&&t.fu.urgency==="high"?" high":"")+'">'+ic("list-checks",11)+'follow-up</span>':'')+
           (t.scheduledCount>0?'<span class="sched-flag">'+ic("calendar-clock",12)+t.scheduledCount+'</span>':'')+
-          (t.tags||[]).slice(0,2).map(function(x){return '<span class="tag">'+esc(x)+'</span>'}).join('')+
+          (rowHas("tags")?(t.tags||[]).slice(0,2).map(function(x){return '<span class="tag">'+esc(x)+'</span>'}).join(''):'')+
         '</div>'+
       '</div>'+
-      (t.unread>0?'<span class="unread-pill">'+t.unread+'</span>':'');
+      ((rowHas("unread")&&t.unread>0)?'<span class="unread-pill">'+t.unread+'</span>':'');
     d.onclick=function(){if(ctxJustOpened){ctxJustOpened=false;return}openThread(t.phone)};
     attachSwipe(d,t,wrap);
     attachContextMenu(d,t);
@@ -2360,7 +2455,8 @@
       var rows=active.filter(function(t){return t.status===col[0]});
       if(!rows.length)return;
       any=true;
-      html+='<div class="lead-col"><div class="lc-head"><span class="d" style="background:'+col[2]+'"></span><span class="lbl">'+col[1]+'</span><span class="n">'+rows.length+'</span></div>';
+      var sm=stageMeta(col[0]); // custom label + color from Customize → Leads
+      html+='<div class="lead-col"><div class="lc-head"><span class="d" style="background:'+sm.color+'"></span><span class="lbl">'+esc(sm.label)+'</span><span class="n">'+rows.length+'</span></div>';
       rows.forEach(function(t){
         html+='<div class="lead-card" data-phone="'+esc(t.phone)+'">'+
           '<div class="avatar" style="width:38px;height:38px;font-size:14px;background:'+colorFor(t.phone)+'">'+esc(initials(t))+'</div>'+
