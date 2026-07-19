@@ -184,6 +184,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/ai/photo-quote') return apiAiPhotoQuote(request);
   if (request.method === 'POST' && pathname === '/api/ai/money')    return apiAiMoney(request);
   if (request.method === 'POST' && pathname === '/api/ai/command')  return apiAiCommand(request);
+  if (request.method === 'POST' && pathname === '/api/ai/analyze')  return apiAiAnalyze(request);
 
   // Money tracker (its own dashboard section — see the Money module below)
   if (request.method === 'GET'  && pathname === '/api/money')          return apiMoney(url);
@@ -1477,6 +1478,116 @@ async function apiAiCommand(request) {
     count: preview.count,
     unit: preview.unit,
     samples: preview.samples,
+  });
+}
+
+// ===========================================================================
+// AI advisor  (POST /api/ai/analyze)
+// ---------------------------------------------------------------------------
+// "Tell me what needs attention and what you'd do." Mikey taps a preset ("What
+// needs my attention?", "What should I clean up?") or types a focus, and Gemini
+// reviews a snapshot of the WHOLE dashboard against the operations playbook
+// below, then returns a prioritized advisory in three buckets:
+//   attention  — reply/act on these now, and why
+//   recommend  — next moves that move money forward, and why
+//   organize   — cleanup so the board stays tidy (each can carry a `command`
+//                phrase that runs straight through the safe command bar).
+// This is read-only: it never changes anything. Acting on a suggestion goes
+// through /api/ai/command's preview→confirm flow, so nothing happens by surprise.
+// ===========================================================================
+
+// The operating philosophy the advisor reasons from. This is deliberately about
+// HOW Mikey wants the board run — fast replies, an accurate pipeline, a clean
+// inbox, no lead left on the table — not the sales script (that's the playbook).
+function opsPlaybook() {
+  return [
+    'HOW MIKEY WANTS THIS DASHBOARD RUN (your operating principles):',
+    '1. A customer WAITING on a reply is the #1 priority — longest wait first. Every hour cold costs a booking. Flag these loudest.',
+    '2. The lead pipeline must stay accurate: every open thread should have a status (New / Active / Won / Lost). A thread with no status is invisible to planning — call it out.',
+    '3. Keep the inbox clean. Dead threads (Lost, or clearly finished Won jobs, or long-silent with no path forward) should be archived so what remains is what needs work. Archiving is reversible — treat it as "filing away", not deleting.',
+    '4. Never drop a warm lead. Date-requested, due follow-ups, and reminders coming due are money on the table — surface them.',
+    '5. Won leads that were never logged in the money tracker are lost profit visibility — worth a nudge.',
+    '6. Be concrete and efficient: say exactly what to do, tie it to a specific customer or bucket, and keep the "why" to one line. Prefer a few high-impact moves over a long list.',
+    '7. When you recommend a bulk cleanup that the command bar can do, put the exact plain-English command in the item\'s "command" field so Mikey can run it in one tap.',
+  ].join('\n');
+}
+
+// Compact, token-cheap snapshot of the whole board for the advisor to reason on.
+function boardSnapshot(index, cfg, now) {
+  const open = index.filter((e) => !e.archived);
+  const line = (e) => {
+    const ago = humanAgo(now - (e.lastTs || now));
+    const who = e.lastDir === 'in' ? `waiting ${ago}` : `you replied ${ago} ago`;
+    return `  - ${e.name || e.phone} [${e.status || 'NO STATUS'}] ${who}: "${(e.lastBody || '').slice(0, 70)}"`;
+  };
+  const waiting = open.filter((e) => e.lastDir === 'in').sort((a, b) => (a.lastTs || 0) - (b.lastTs || 0));
+  const unread = open.filter((e) => (e.unread || 0) > 0);
+  const noStatus = open.filter((e) => !e.status);
+  const dueFollow = open.filter((e) => e.followupDue);
+  const dateReq = open.filter((e) => e.dateRequested);
+  const remindDue = open.filter((e) => e.reminderDue);
+  const won = open.filter((e) => e.status === 'won');
+  const lost = open.filter((e) => e.status === 'lost');
+  const stale = open.filter((e) => e.status !== 'won' && e.status !== 'lost' && (now - (e.lastTs || now)) > 10 * 86400000);
+  const S = [];
+  S.push(`BOARD SNAPSHOT (now = ${new Date(now).toISOString()}):`);
+  S.push(`Totals: ${index.length} conversations, ${open.length} open, ${index.length - open.length} archived, ${unread.length} unread.`);
+  S.push('');
+  S.push(`WAITING ON A REPLY (${waiting.length}) — top priority, longest first:`);
+  S.push(waiting.slice(0, 18).map(line).join('\n') || '  (none)');
+  S.push('');
+  S.push(`DUE FOLLOW-UPS (${dueFollow.length}):`);
+  S.push(dueFollow.slice(0, 12).map(line).join('\n') || '  (none)');
+  S.push('');
+  S.push(`DATE REQUESTED / READY TO BOOK (${dateReq.length}):`);
+  S.push(dateReq.slice(0, 12).map(line).join('\n') || '  (none)');
+  S.push('');
+  S.push(`REMINDERS DUE (${remindDue.length}): ${remindDue.slice(0, 10).map((e) => e.name || e.phone).join(', ') || '(none)'}`);
+  S.push(`NO STATUS SET (${noStatus.length}): ${noStatus.slice(0, 14).map((e) => e.name || e.phone).join(', ') || '(none)'}`);
+  S.push(`STALE — active but silent 10+ days (${stale.length}): ${stale.slice(0, 14).map((e) => e.name || e.phone).join(', ') || '(none)'}`);
+  S.push(`LOST leads still in the open inbox (${lost.length}): ${lost.slice(0, 14).map((e) => e.name || e.phone).join(', ') || '(none)'}`);
+  S.push(`WON leads (${won.length}): ${won.slice(0, 14).map((e) => e.name || e.phone).join(', ') || '(none)'}`);
+  return S.join('\n');
+}
+
+async function apiAiAnalyze(request) {
+  if (!ENV.GEMINI_API_KEY) return json({ ok: false, error: 'ai_not_configured' }, 503);
+  const data = await readJson(request).catch(() => ({}));
+  const focus = String((data && data.focus) || '').slice(0, 300).trim();
+  const cfg = await loadConfig();
+  const index = await loadIndex();
+  const now = Date.now();
+  if (!index.filter((e) => !e.archived).length) {
+    return json({ ok: true, headline: 'Inbox is all clear — nothing open needs attention right now. 🚗', attention: [], recommend: [], organize: [] });
+  }
+  const prompt =
+    businessContext(cfg) +
+    opsPlaybook() + '\n\n' +
+    boardSnapshot(index, cfg, now) + '\n\n' +
+    (focus ? `MIKEY'S FOCUS FOR THIS REVIEW: "${focus}"\n\n` : '') +
+    `Review the board and respond with ONLY JSON (no prose, no code fences):\n` +
+    `{"headline":"one honest sentence on the overall state right now",` +
+    `"attention":[{"title":"short — usually a customer name + what's needed","detail":"one line: what to do and why it matters now"}],` +
+    `"recommend":[{"title":"short next move","detail":"one line why","command":"OPTIONAL plain-English command the command bar can run, else omit"}],` +
+    `"organize":[{"title":"short cleanup","detail":"one line why","command":"OPTIONAL plain-English command, else omit"}]}\n` +
+    `Rules: Max 6 items per bucket, fewer is better — only real, high-impact items. Ground every item in the snapshot (use real names). ` +
+    `A "command" must be a phrase like "archive everything marked lost", "mark all unread as read", "mark <name> as won", "pin the won leads" — only include it when a bulk command bar action genuinely fits. Never invent customers or facts not in the snapshot.`;
+  let raw;
+  try { raw = await geminiGenerate(prompt, { json: true, maxTokens: 2600, temperature: 0.3 }); }
+  catch (err) { return json({ ok: false, error: String(err.message || err) }, 502); }
+  let p = {};
+  try { p = JSON.parse(raw); } catch { return json({ ok: false, error: 'ai_parse_failed', raw: String(raw).slice(0, 400) }, 502); }
+  const clean = (arr) => (Array.isArray(arr) ? arr : []).slice(0, 6).map((x) => ({
+    title: String((x && x.title) || '').slice(0, 120),
+    detail: String((x && x.detail) || '').slice(0, 260),
+    command: (x && x.command) ? String(x.command).slice(0, 160) : undefined,
+  })).filter((x) => x.title || x.detail);
+  return json({
+    ok: true,
+    headline: String(p.headline || '').slice(0, 240),
+    attention: clean(p.attention),
+    recommend: clean(p.recommend),
+    organize: clean(p.organize),
   });
 }
 
