@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-18·snapshot-v1';
+const BUILD = '2026-07-19·ai-command';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -183,6 +183,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/ai/coach')   return apiAiCoach(request);
   if (request.method === 'POST' && pathname === '/api/ai/photo-quote') return apiAiPhotoQuote(request);
   if (request.method === 'POST' && pathname === '/api/ai/money')    return apiAiMoney(request);
+  if (request.method === 'POST' && pathname === '/api/ai/command')  return apiAiCommand(request);
 
   // Money tracker (its own dashboard section — see the Money module below)
   if (request.method === 'GET'  && pathname === '/api/money')          return apiMoney(url);
@@ -1295,6 +1296,188 @@ async function apiAiTriage() {
   } catch (err) {
     return json({ ok: false, error: String(err.message || err) }, 502);
   }
+}
+
+// ===========================================================================
+// AI command bar  (POST /api/ai/command)
+// ---------------------------------------------------------------------------
+// "Just tell it what you want done." Mikey types a plain-English instruction
+// ("mark all unread as read", "archive everything marked lost", "clear the
+// email inbox") and Gemini turns it into ONE bulk action + a filter. The flow
+// is two-phase and safe:
+//   Phase 1 (no confirm)  -> interpret + PREVIEW: returns the resolved action,
+//                            how many items it touches, and a few sample names.
+//                            Nothing is changed.
+//   Phase 2 (confirm+plan) -> execute the previewed plan, batched (one index
+//                            write for the whole run), and report the count.
+// There is deliberately no hard-delete: "delete / remove / clear out" a
+// conversation maps to ARCHIVE, so every action is reversible.
+// ===========================================================================
+const CMD_ACTIONS = ['mark_read', 'mark_unread', 'archive', 'unarchive', 'set_status', 'pin', 'unpin', 'block', 'unblock', 'emails_mark_read', 'none'];
+const CMD_STATUSES = ['new', 'active', 'won', 'lost'];
+
+// Resolve a plan's filter into the list of index rows it applies to. Pure (no
+// KV) so both the preview and the executor share one definition of "which".
+function selectThreads(index, filter) {
+  filter = filter || {};
+  let list = index.slice();
+  const match = filter.match || 'active';
+  if (match === 'unread') list = list.filter((t) => (t.unread || 0) > 0);
+  else if (match === 'read') list = list.filter((t) => !((t.unread || 0) > 0));
+  else if (match === 'archived') list = list.filter((t) => !!t.archived);
+  else if (match === 'active') list = list.filter((t) => !t.archived);
+  // 'all' -> no base restriction (includes archived)
+  if (filter.status && CMD_STATUSES.includes(filter.status)) list = list.filter((t) => (t.status || '') === filter.status);
+  if (Number(filter.olderThanDays) > 0) { const cut = Date.now() - Number(filter.olderThanDays) * 86400000; list = list.filter((t) => (t.lastTs || 0) < cut); }
+  if (Number(filter.newerThanDays) > 0) { const cut = Date.now() - Number(filter.newerThanDays) * 86400000; list = list.filter((t) => (t.lastTs || 0) >= cut); }
+  if (filter.nameOrPhone) {
+    const q = String(filter.nameOrPhone).toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (q) list = list.filter((t) => ((t.name || '') + (t.phone || '')).toLowerCase().replace(/[^a-z0-9]/g, '').includes(q));
+  }
+  return list;
+}
+
+// Friendly past-tense sentence for the result toast.
+function describeCount(action, n, status) {
+  if (!n) return 'Nothing needed changing — you\'re all set.';
+  const c = n + ' conversation' + (n > 1 ? 's' : '');
+  switch (action) {
+    case 'mark_read':   return 'Marked ' + c + ' as read.';
+    case 'mark_unread': return 'Marked ' + c + ' as unread.';
+    case 'archive':     return 'Archived ' + c + '.';
+    case 'unarchive':   return 'Restored ' + c + ' from the archive.';
+    case 'pin':         return 'Pinned ' + c + '.';
+    case 'unpin':       return 'Unpinned ' + c + '.';
+    case 'block':       return 'Blocked ' + n + ' number' + (n > 1 ? 's' : '') + '.';
+    case 'unblock':     return 'Unblocked ' + n + ' number' + (n > 1 ? 's' : '') + '.';
+    case 'set_status':  return 'Moved ' + c + ' to "' + (status || '') + '".';
+    default:            return 'Done — ' + c + ' updated.';
+  }
+}
+
+// Gemini: plain English -> ONE structured bulk action. Strict JSON, enum-locked.
+async function interpretCommand(text) {
+  const prompt =
+    `You translate a small-business owner's plain-English request into ONE bulk action on their SMS dashboard. ` +
+    `Return ONLY a JSON object, no prose, no code fences. Shape:\n` +
+    `{"action": one of ${JSON.stringify(CMD_ACTIONS)}, ` +
+    `"status": one of ${JSON.stringify(CMD_STATUSES)} (ONLY when action is "set_status", else null), ` +
+    `"filter": {"match": "all"|"unread"|"read"|"archived"|"active", "status": null or one of ${JSON.stringify(CMD_STATUSES)}, "olderThanDays": null or number, "newerThanDays": null or number, "nameOrPhone": null or string}, ` +
+    `"reply": "one short friendly sentence stating exactly what you will do"}\n\n` +
+    `Rules:\n` +
+    `- "mark as read / mark read / clear unread" -> mark_read. "mark unread" -> mark_unread.\n` +
+    `- "delete / remove / clear out / get rid of / hide / clean up" a conversation -> archive. This dashboard has NO hard delete; archiving is how threads are removed. "unarchive / restore / bring back" -> unarchive.\n` +
+    `- "mark won / mark lost / mark new / mark active / move to X" -> set_status with that status.\n` +
+    `- "pin / unpin" and "block / unblock" map to those actions.\n` +
+    `- "mark emails read / clear the email inbox" -> emails_mark_read.\n` +
+    `- filter.match defaults to "active" (not-archived threads). Use "unread" when they mention unread; "all" only when they clearly mean everything including archived; "archived" when they act on archived ones; "read" for already-read ones.\n` +
+    `- "old / older than a week/month" -> olderThanDays (week=7, month=30). "recent / in the last few days" -> newerThanDays.\n` +
+    `- A specific person or phone number -> nameOrPhone.\n` +
+    `- If the request is unclear, unsafe, or not one of the supported actions, use action "none" and put a short clarifying question in "reply".\n\n` +
+    `Request: ${JSON.stringify(String(text || '').slice(0, 400))}`;
+  const raw = await geminiGenerate(prompt, { json: true, maxTokens: 500, temperature: 0.1 });
+  let p = {};
+  try { p = JSON.parse(raw); } catch { p = { action: 'none', reply: 'Sorry, I didn\'t catch that — try rephrasing.' }; }
+  if (!CMD_ACTIONS.includes(p.action)) p.action = 'none';
+  if (p.action !== 'set_status') p.status = null;
+  p.filter = (p.filter && typeof p.filter === 'object') ? p.filter : {};
+  return p;
+}
+
+// Dry-run: how many items the plan touches + a few sample labels. No writes.
+async function previewCommandPlan(plan) {
+  if (plan.action === 'emails_mark_read') {
+    const list = (await kv().get('emails', { type: 'json' })) || [];
+    const un = list.filter((e) => e.unread);
+    return { count: un.length, unit: 'email', samples: un.slice(0, 6).map((e) => e.subject || e.from || '(email)') };
+  }
+  const index = await loadIndex();
+  const list = selectThreads(index, plan.filter);
+  return { count: list.length, unit: 'conversation', samples: list.slice(0, 6).map((t) => t.name || t.phone) };
+}
+
+// Execute a previewed plan. Batched: the thread ops mutate the index in memory
+// and write it ONCE at the end (see the KV-frugality note near loadIndex).
+async function executeCommandPlan(plan) {
+  const action = plan.action;
+  const cap = 500; // hard blast-radius ceiling, just in case
+  if (action === 'emails_mark_read') {
+    const list = (await kv().get('emails', { type: 'json' })) || [];
+    let n = 0;
+    for (const e of list) if (e.unread) { e.unread = 0; n++; }
+    if (n) await kv().put('emails', JSON.stringify(list));
+    return { count: n, reply: n ? ('Marked ' + n + ' email' + (n > 1 ? 's' : '') + ' as read.') : 'No unread emails to clear.' };
+  }
+  const cfg = await loadConfig();
+  const index = await loadIndex();
+  const targets = selectThreads(index, plan.filter).slice(0, cap);
+  if (action === 'block' || action === 'unblock') {
+    const next = Object.assign({}, cfg);
+    const set = new Set(Array.isArray(next.blockedNumbers) ? next.blockedNumbers : []);
+    let n = 0;
+    for (const t of targets) {
+      const has = set.has(t.phone);
+      if (action === 'block' && !has) { set.add(t.phone); n++; }
+      if (action === 'unblock' && has) { set.delete(t.phone); n++; }
+    }
+    next.blockedNumbers = Array.from(set);
+    if (n) { await kv().put('config', JSON.stringify(next)); CFG_CACHE = next; }
+    return { count: n, reply: describeCount(action, n) };
+  }
+  let n = 0, indexChanged = false;
+  for (const entry of targets) {
+    const thread = await loadThread(entry.phone);
+    let ch = false;
+    switch (action) {
+      case 'mark_read':   if (thread.unread) { thread.unread = 0; ch = true; } break;
+      case 'mark_unread': if (!thread.unread) { thread.unread = 1; ch = true; } break;
+      case 'archive':     if (!thread.archived) { thread.archived = true; ch = true; } break;
+      case 'unarchive':   if (thread.archived) { thread.archived = false; ch = true; } break;
+      case 'pin':         if (!thread.pinned) { thread.pinned = true; ch = true; } break;
+      case 'unpin':       if (thread.pinned) { thread.pinned = false; ch = true; } break;
+      case 'set_status': {
+        const s = plan.status;
+        if (CMD_STATUSES.includes(s) && thread.status !== s) { thread.status = s; thread.statusAt = Date.now(); ch = true; }
+        break;
+      }
+      default: break;
+    }
+    if (ch) { await saveThread(thread); if (applyIndexSummary(index, buildIndexSummary(thread, cfg))) indexChanged = true; n++; }
+  }
+  if (indexChanged) await saveIndex(index);
+  return { count: n, reply: describeCount(action, n, plan.status) };
+}
+
+async function apiAiCommand(request) {
+  const data = await readJson(request);
+  // Phase 2 — execute a plan the user already previewed and confirmed.
+  if (data.confirm && data.plan && CMD_ACTIONS.includes(data.plan.action) && data.plan.action !== 'none') {
+    try {
+      const r = await executeCommandPlan(data.plan);
+      return json({ ok: true, done: true, count: r.count, reply: r.reply });
+    } catch (err) {
+      return json({ ok: false, error: String(err.message || err) }, 502);
+    }
+  }
+  // Phase 1 — interpret the request and return a preview (no changes made).
+  const text = String(data.text || '').trim();
+  if (!text) return json({ ok: false, error: 'empty' }, 422);
+  if (!ENV.GEMINI_API_KEY) return json({ ok: false, error: 'ai_not_configured' }, 503);
+  let plan;
+  try { plan = await interpretCommand(text); }
+  catch (err) { return json({ ok: false, error: String(err.message || err) }, 502); }
+  if (plan.action === 'none') {
+    return json({ ok: true, action: 'none', reply: plan.reply || 'I\'m not sure what you mean — can you rephrase?' });
+  }
+  const preview = await previewCommandPlan(plan);
+  return json({
+    ok: true,
+    plan: { action: plan.action, status: plan.status || null, filter: plan.filter || {} },
+    reply: plan.reply || describeCount(plan.action, preview.count, plan.status),
+    count: preview.count,
+    unit: preview.unit,
+    samples: preview.samples,
+  });
 }
 
 // Team coach: given a conversation, tell whoever is on the phones EXACTLY what to
