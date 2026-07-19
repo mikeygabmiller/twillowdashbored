@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-19·ai-command';
+const BUILD = '2026-07-19·ai-command-center';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -185,6 +185,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/ai/money')    return apiAiMoney(request);
   if (request.method === 'POST' && pathname === '/api/ai/command')  return apiAiCommand(request);
   if (request.method === 'POST' && pathname === '/api/ai/analyze')  return apiAiAnalyze(request);
+  if (request.method === 'POST' && pathname === '/api/ai/agent')    return apiAiAgent(request);
 
   // Money tracker (its own dashboard section — see the Money module below)
   if (request.method === 'GET'  && pathname === '/api/money')          return apiMoney(url);
@@ -1542,7 +1543,9 @@ function boardSnapshot(index, cfg, now) {
   S.push(`DATE REQUESTED / READY TO BOOK (${dateReq.length}):`);
   S.push(dateReq.slice(0, 12).map(line).join('\n') || '  (none)');
   S.push('');
+  const voicemails = open.filter((e) => e.hasVoicemail);
   S.push(`REMINDERS DUE (${remindDue.length}): ${remindDue.slice(0, 10).map((e) => e.name || e.phone).join(', ') || '(none)'}`);
+  S.push(`VOICEMAILS in open threads (${voicemails.length}): ${voicemails.slice(0, 12).map((e) => e.name || e.phone).join(', ') || '(none)'}`);
   S.push(`NO STATUS SET (${noStatus.length}): ${noStatus.slice(0, 14).map((e) => e.name || e.phone).join(', ') || '(none)'}`);
   S.push(`STALE — active but silent 10+ days (${stale.length}): ${stale.slice(0, 14).map((e) => e.name || e.phone).join(', ') || '(none)'}`);
   S.push(`LOST leads still in the open inbox (${lost.length}): ${lost.slice(0, 14).map((e) => e.name || e.phone).join(', ') || '(none)'}`);
@@ -1589,6 +1592,276 @@ async function apiAiAnalyze(request) {
     recommend: clean(p.recommend),
     organize: clean(p.organize),
   });
+}
+
+// ===========================================================================
+// AI command center  (POST /api/ai/agent)
+// ---------------------------------------------------------------------------
+// The "just tell it what you want" brain. Unlike the narrow command bar, this
+// hands Gemini the WHOLE picture in one shot — every open conversation's recent
+// messages, voicemail/photo flags, lead status and tags, plus the money summary
+// — and asks it to either ANSWER (ranking leads, "how much did I make this
+// month", advice) or PROPOSE actions Mikey approves. It never executes on its
+// own: proposed actions come back to the UI, and only run on a second confirm
+// call. This mirrors how production AI assistants work (rich context + tool-
+// style actions + human-in-the-loop), while staying on a single Gemini call so
+// it's fast and cheap.
+// ===========================================================================
+
+// Load many threads without hammering KV serially — small parallel batches.
+async function batchLoadThreads(phones) {
+  const out = [];
+  const chunk = 15;
+  for (let i = 0; i < phones.length; i += chunk) {
+    const part = await Promise.all(phones.slice(i, i + chunk).map((p) => loadThread(p).catch(() => null)));
+    for (const t of part) if (t) out.push(t);
+  }
+  return out;
+}
+
+// This month + last month rollups and recent entries, for money questions and
+// logging. Reuses the same summarizeMonth the Money tab shows, so numbers match.
+async function agentMoney(cfg, now) {
+  const tz = cfg.tz;
+  const thisM = localDateStr(now, tz).slice(0, 7);
+  const lastM = prevMonthKey(thisM);
+  const [dThis, dLast] = await Promise.all([loadMonth(thisM), loadMonth(lastM)]);
+  const sThis = summarizeMonth(dThis.entries);
+  const sLast = summarizeMonth(dLast.entries);
+  const recent = (dThis.entries || []).slice(-8).reverse().map((e) => ({
+    date: e.date, type: e.type, amount: e.amount, cat: e.cat, service: e.service, note: e.note, name: e.name,
+  }));
+  return { thisMonth: thisM, thisSummary: sThis, lastMonth: lastM, lastSummary: sLast, recent, today: localDateStr(now, tz) };
+}
+
+// The single big context string handed to Gemini. Small businesses have few
+// enough threads that stuffing the whole board (capped) beats a fragile multi-
+// call tool loop — and it makes the model genuinely situationally aware.
+async function buildAgentContext({ index, cfg, now, money }) {
+  const L = [];
+  const bc = businessContext(cfg); if (bc) L.push(bc);
+  L.push(opsPlaybook());
+  L.push('');
+  const m = money;
+  const fmt = (s) => `gross $${s.gross}, expenses $${s.exp}, labor $${s.jp}, NET $${s.net}, ${s.jobs} job(s)` + (s.owed ? `, $${s.owed} still owed` : '');
+  L.push('MONEY (from the money tracker — these figures are exact, use them for money questions):');
+  L.push(`  This month (${m.thisMonth}): ${fmt(m.thisSummary)}. Personal spend $${m.thisSummary.personal}.`);
+  L.push(`  Last month (${m.lastMonth}): ${fmt(m.lastSummary)}.`);
+  if (m.recent.length) {
+    L.push('  Recent entries this month:');
+    m.recent.forEach((e) => L.push(`   - ${e.date} ${e.type} $${e.amount}${e.cat ? (' ' + e.cat) : ''}${e.service ? (' ' + e.service) : ''}${e.note ? (' "' + e.note + '"') : ''}${e.name ? (' [' + e.name + ']') : ''}`));
+  }
+  L.push(`  To LOG money: entry types = job (income), exp (expense — needs a category), jp (labor pay), personal. Expense categories: ${MONEY_CATS.join(', ')}. Today is ${m.today}.`);
+  L.push('');
+  const open = index.filter((e) => !e.archived).sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+  const cap = 60;
+  const top = open.slice(0, cap);
+  const threads = await batchLoadThreads(top.map((r) => r.phone));
+  const tById = new Map(threads.map((t) => [t.phone, t]));
+  L.push(`OPEN CONVERSATIONS (${open.length} total; showing the ${top.length} most recent). Use the exact phone= value as the handle when proposing an action on a conversation:`);
+  top.forEach((r) => {
+    const t = tById.get(r.phone);
+    const ago = humanAgo(now - (r.lastTs || now));
+    const wait = r.lastDir === 'in' ? `WAITING ${ago} for your reply` : `you replied ${ago} ago`;
+    const flags = [];
+    const hasVm = r.hasVoicemail || (t && (t.messages || []).some((x) => x.kind === 'voicemail'));
+    const hasPh = r.hasMedia || (t && (t.messages || []).some((x) => Array.isArray(x.media) && x.media.length));
+    if (hasVm) flags.push('has-voicemail');
+    if (hasPh) flags.push('has-photo');
+    if (r.unread) flags.push('unread');
+    if (r.pinned) flags.push('pinned');
+    if (r.dateRequested) flags.push('ready-to-book');
+    L.push(`- ${r.name || r.phone} | phone=${r.phone} | status=${r.status || 'NONE'} | tags=[${(r.tags || []).join(', ')}] | ${wait}${flags.length ? (' | ' + flags.join(', ')) : ''}`);
+    if (t) {
+      (t.messages || []).slice(-4).forEach((msg) => {
+        const who = msg.dir === 'in' ? 'CUST' : msg.dir === 'out' ? 'YOU' : 'SYS';
+        let b = msg.body || '';
+        if (msg.kind === 'voicemail') b = '[VOICEMAIL] ' + b;
+        if (Array.isArray(msg.media) && msg.media.length) b = '[PHOTO] ' + b;
+        L.push(`      ${who}: ${String(b).replace(/\s+/g, ' ').slice(0, 140)}`);
+      });
+    }
+  });
+  const archAll = index.filter((e) => e.archived);
+  if (archAll.length) {
+    const arch = archAll.slice(0, 40);
+    L.push('');
+    L.push(`ARCHIVED (${archAll.length} total; first ${arch.length}):`);
+    arch.forEach((r) => L.push(`- ${r.name || r.phone} | phone=${r.phone} | status=${r.status || 'NONE'}`));
+  }
+  return L.join('\n');
+}
+
+function convActionLabel(op, name, act) {
+  switch (op) {
+    case 'archive':      return 'Archive ' + name;
+    case 'unarchive':    return 'Restore ' + name;
+    case 'mark_read':    return 'Mark ' + name + ' read';
+    case 'mark_unread':  return 'Mark ' + name + ' unread';
+    case 'pin':          return 'Pin ' + name;
+    case 'unpin':        return 'Unpin ' + name;
+    case 'set_status':   return 'Set ' + name + ' → ' + act.status;
+    case 'add_tags':     return 'Label ' + name + ': ' + (act.tags || []).join(', ');
+    case 'remove_tags':  return 'Unlabel ' + name + ': ' + (act.tags || []).join(', ');
+    default:             return op + ' ' + name;
+  }
+}
+function moneyActionLabel(entry) {
+  const t = entry.type === 'job' ? 'Income' : entry.type === 'jp' ? 'Labor pay' : entry.type === 'personal' ? 'Personal' : 'Expense';
+  return 'Log ' + t + ' $' + entry.amount + (entry.cat ? (' · ' + entry.cat) : '') + (entry.service ? (' · ' + entry.service) : '') + (entry.note ? (' · ' + entry.note) : '');
+}
+
+// Validate + clean the model's proposed actions into a safe, executable list,
+// attaching a human label for the approval UI. Unknown ops / bad shapes drop out.
+const AGENT_CONV_OPS = ['archive', 'unarchive', 'mark_read', 'mark_unread', 'pin', 'unpin', 'set_status', 'add_tags', 'remove_tags'];
+function normalizeAgentActions(list, index) {
+  const byPhone = index ? new Map(index.map((e) => [e.phone, e])) : null;
+  const out = [];
+  for (const a of (Array.isArray(list) ? list : [])) {
+    if (!a || typeof a !== 'object') continue;
+    const op = String(a.op || '');
+    if (op === 'log_money') {
+      const e = a.entry || {};
+      const amount = money2(e.amount);
+      if (!(amount > 0)) continue;
+      const type = MONEY_TYPES.includes(e.type) ? e.type : 'exp';
+      const entry = { type, amount };
+      if (type === 'exp') entry.cat = MONEY_CATS.includes(e.cat) ? e.cat : 'misc';
+      if (e.service) entry.service = String(e.service).slice(0, 32);
+      if (e.note) entry.note = String(e.note).slice(0, 200);
+      if (e.name) entry.name = String(e.name).slice(0, 60);
+      if (e.phone) { const ph = normalizePhone(e.phone); if (ph) entry.phone = ph; }
+      if (e.date && /^\d{4}-\d{2}-\d{2}$/.test(e.date)) entry.date = e.date;
+      out.push({ op, entry, reason: String(a.reason || '').slice(0, 160), label: moneyActionLabel(entry) });
+    } else if (AGENT_CONV_OPS.includes(op)) {
+      const phone = normalizePhone(a.phone) || a.phone;
+      if (!phone) continue;
+      const act = { op, phone, reason: String(a.reason || '').slice(0, 160) };
+      if (op === 'set_status') { if (!CMD_STATUSES.includes(a.status)) continue; act.status = a.status; }
+      if (op === 'add_tags' || op === 'remove_tags') {
+        const tags = (Array.isArray(a.tags) ? a.tags : []).map((t) => String(t).trim().slice(0, 24)).filter(Boolean).slice(0, 10);
+        if (!tags.length) continue;
+        act.tags = tags;
+      }
+      const row = byPhone ? byPhone.get(phone) : null;
+      act.label = convActionLabel(op, (row && (row.name || row.phone)) || phone, act);
+      out.push(act);
+    }
+    if (out.length >= 200) break;
+  }
+  return out;
+}
+
+// Run an approved action list. Conversation ops are grouped per phone (one load/
+// save/index-apply each) and the index is written once; money entries append to
+// their month doc. Returns a friendly summary of what changed.
+async function executeAgentActions(actions, cfg) {
+  const now = Date.now();
+  const convActs = actions.filter((a) => a.op !== 'log_money');
+  const moneyActs = actions.filter((a) => a.op === 'log_money');
+  const index = await loadIndex();
+  let convChanged = false, nConv = 0, nMoney = 0;
+  const errors = [];
+  const phones = [...new Set(convActs.map((a) => normalizePhone(a.phone) || a.phone).filter(Boolean))];
+  for (const phone of phones) {
+    const thread = await loadThread(phone);
+    let ch = false;
+    for (const a of convActs.filter((x) => (normalizePhone(x.phone) || x.phone) === phone)) {
+      switch (a.op) {
+        case 'archive':     if (!thread.archived) { thread.archived = true; ch = true; } break;
+        case 'unarchive':   if (thread.archived) { thread.archived = false; ch = true; } break;
+        case 'mark_read':   if (thread.unread) { thread.unread = 0; ch = true; } break;
+        case 'mark_unread': if (!thread.unread) { thread.unread = 1; ch = true; } break;
+        case 'pin':         if (!thread.pinned) { thread.pinned = true; ch = true; } break;
+        case 'unpin':       if (thread.pinned) { thread.pinned = false; ch = true; } break;
+        case 'set_status':  if (CMD_STATUSES.includes(a.status) && thread.status !== a.status) { thread.status = a.status; thread.statusAt = now; ch = true; } break;
+        case 'add_tags': {
+          const cur = new Set((thread.tags || []).map(String));
+          (a.tags || []).forEach((t) => { const v = String(t).trim().slice(0, 24); if (v) cur.add(v); });
+          const arr = [...cur].slice(0, 20);
+          if (JSON.stringify(arr) !== JSON.stringify(thread.tags || [])) { thread.tags = arr; ch = true; }
+          break;
+        }
+        case 'remove_tags': {
+          const rm = new Set((a.tags || []).map((t) => String(t).trim().toLowerCase()));
+          const arr = (thread.tags || []).filter((t) => !rm.has(String(t).trim().toLowerCase()));
+          if (arr.length !== (thread.tags || []).length) { thread.tags = arr; ch = true; }
+          break;
+        }
+        default: break;
+      }
+    }
+    if (ch) { await saveThread(thread); if (applyIndexSummary(index, buildIndexSummary(thread, cfg))) convChanged = true; nConv++; }
+  }
+  if (convChanged) await saveIndex(index);
+  // Money: group by month so each month doc is written once.
+  const byMonth = {};
+  for (const a of moneyActs) {
+    const e = a.entry || {};
+    const date = (e.date && /^\d{4}-\d{2}-\d{2}$/.test(e.date)) ? e.date : localDateStr(now, cfg.tz);
+    const clean = sanitizeMoneyEntry(Object.assign({}, e, { date }), null);
+    if (!clean) { errors.push('skipped a money entry (bad amount/type)'); continue; }
+    const month = clean.date.slice(0, 7);
+    (byMonth[month] = byMonth[month] || []).push(clean);
+  }
+  for (const month of Object.keys(byMonth)) {
+    const doc = await loadMonth(month);
+    for (const clean of byMonth[month]) { doc.entries.push(clean); nMoney++; }
+    await saveMonth(month, doc);
+  }
+  const parts = [];
+  if (nConv) parts.push(nConv + ' conversation' + (nConv > 1 ? 's' : '') + ' updated');
+  if (nMoney) parts.push(nMoney + ' money entr' + (nMoney > 1 ? 'ies' : 'y') + ' logged');
+  let reply = parts.length ? ('Done — ' + parts.join(' and ') + '.') : 'Nothing needed changing.';
+  if (errors.length) reply += ' (' + errors.join('; ') + ')';
+  return { reply, nConv, nMoney };
+}
+
+async function apiAiAgent(request) {
+  const data = await readJson(request);
+  // Phase 2 — execute the actions Mikey approved.
+  if (data.confirm && Array.isArray(data.actions)) {
+    const cfg = await loadConfig();
+    const acts = normalizeAgentActions(data.actions, null);
+    if (!acts.length) return json({ ok: false, error: 'no_valid_actions' }, 422);
+    try {
+      const r = await executeAgentActions(acts, cfg);
+      return json({ ok: true, done: true, reply: r.reply, nConv: r.nConv, nMoney: r.nMoney });
+    } catch (err) {
+      return json({ ok: false, error: String(err.message || err) }, 502);
+    }
+  }
+  // Phase 1 — understand + answer, and optionally propose actions.
+  const text = String(data.text || '').trim();
+  if (!text) return json({ ok: false, error: 'empty' }, 422);
+  if (!ENV.GEMINI_API_KEY) return json({ ok: false, error: 'ai_not_configured' }, 503);
+  const cfg = await loadConfig();
+  const index = await loadIndex();
+  const now = Date.now();
+  const money = await agentMoney(cfg, now);
+  const ctx = await buildAgentContext({ index, cfg, now, money });
+  const prompt =
+    ctx + '\n\n' +
+    'YOU ARE THE COMMAND-CENTER AI for this dashboard. Two jobs: ANSWER questions from the data above, and PROPOSE actions Mikey can approve. You NEVER perform actions yourself — everything you list is shown to Mikey and only runs if he approves it.\n' +
+    'Respond with ONLY JSON (no prose, no code fences):\n' +
+    '{"answer":"your reply to Mikey — ALWAYS fill this in: answer the question fully, or clearly summarize what you\'re about to do and why","actions":[{"op":"...","phone":"exact phone from a conversation","status":"new|active|won|lost","tags":["..."],"entry":{"type":"job|exp|jp|personal","amount":0,"cat":"","service":"","note":"","name":""},"reason":"short why"}]}\n' +
+    'Conversation ops (need phone=): archive, unarchive, mark_read, mark_unread, pin, unpin, set_status (+status), add_tags (+tags), remove_tags (+tags). Money op: log_money (+entry).\n' +
+    'Rules:\n' +
+    '- Pure question or ranking ("how much did I make this month", "rank my leads highest to lowest priority") → put the full answer in "answer" and leave "actions" empty.\n' +
+    '- Reference conversations ONLY by an exact phone= shown above. Never invent people, phone numbers, or money figures.\n' +
+    '- "conversations with a voicemail" = threads flagged has-voicemail; "photos" = has-photo.\n' +
+    '- Labeling leads: use add_tags with 1-3 short, consistent tags grounded in the actual messages (vehicle type, service interest, or a stage like "hot-lead"/"needs-callback").\n' +
+    '- Prioritize by the operating principles: customers waiting for a reply first, keep every open lead statused, keep the inbox clean.\n' +
+    '- Money: amounts are positive numbers; expense entries need a category from the list; use today\'s date unless Mikey specifies one.\n' +
+    '- Only propose actions Mikey actually asked for or that directly serve his request. If you are unsure, ask in "answer" instead of guessing with actions.\n\n' +
+    'MIKEY SAYS: ' + JSON.stringify(text);
+  let raw;
+  try { raw = await geminiGenerate(prompt, { json: true, maxTokens: 4096, temperature: 0.2 }); }
+  catch (err) { return json({ ok: false, error: String(err.message || err) }, 502); }
+  let p = {};
+  try { p = JSON.parse(raw); } catch { return json({ ok: false, error: 'ai_parse_failed', raw: String(raw).slice(0, 400) }, 502); }
+  const actions = normalizeAgentActions(p.actions, index);
+  return json({ ok: true, answer: String(p.answer || '').slice(0, 4000), actions });
 }
 
 // Team coach: given a conversation, tell whoever is on the phones EXACTLY what to
@@ -3064,6 +3337,10 @@ function buildIndexSummary(thread, cfg) {
     scheduledCount: (thread.scheduled || []).length,
     replyReady: !!(thread.suggested && thread.suggested.text),
     dateRequested: !!thread.dateRequest,
+    // Cheap content flags so the AI advisor/agent can filter on "has a voicemail"
+    // or "sent a photo" without loading every thread body.
+    hasVoicemail: (thread.messages || []).some((m) => m.kind === 'voicemail'),
+    hasMedia: (thread.messages || []).some((m) => Array.isArray(m.media) && m.media.length),
     lastBody: last ? preview(last.body) : '',
     lastDir: last ? last.dir : '',
     lastTs: last ? last.ts : (thread.updatedAt || Date.now()),

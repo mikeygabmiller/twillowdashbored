@@ -409,9 +409,6 @@
   .aicmd-preset-lbl{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:9px}
   .aicmd-preset-lbl .ic-inline{color:var(--accent-text)}
   .aicmd-chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
-  #aiCmdAdvice{margin-top:0}
-  #aiCmdAdvice button{color:var(--accent-text);background:var(--accent-soft);border-color:transparent}
-  #aiCmdAdvice button:hover{border-color:var(--accent)}
   /* advisory result */
   .ar-headline{font-size:14.5px;font-weight:700;line-height:1.45;margin-bottom:4px}
   .ar-sec{margin-top:14px}
@@ -423,6 +420,13 @@
   .ar-item .ai-d{font-size:12.5px;color:var(--muted2);margin-top:3px;line-height:1.5}
   .ar-item .ai-do{margin-top:9px;font-family:inherit;font-size:12px;font-weight:600;color:#fff;background:var(--accent);border:1px solid var(--accent);border-radius:9px;padding:7px 12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
   .ar-item .ai-do:hover{filter:brightness(1.06)}
+  /* agent answer + approval checklist */
+  .ar-answer{font-size:13.5px;line-height:1.55}
+  .ar-act{display:flex;gap:10px;align-items:flex-start;background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:10px 12px;margin-bottom:7px;cursor:pointer}
+  .ar-act input{margin-top:2px;flex:none;width:17px;height:17px;accent-color:var(--accent)}
+  .ar-act-b{flex:1;min-width:0}
+  .ar-act-t{display:block;font-size:13px;font-weight:600;color:var(--text)}
+  .ar-act-r{display:block;font-size:11.5px;color:var(--muted2);margin-top:2px;line-height:1.45}
   .aicmd-chips button{font-family:inherit;font-size:12px;color:var(--muted2);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:6px 11px;cursor:pointer;transition:border-color .12s,color .12s}
   .aicmd-chips button:hover{border-color:var(--accent);color:var(--text)}
   .aicmd-result{margin-top:14px;background:var(--panel2);border:1px solid var(--line);border-radius:13px;padding:13px 14px;font-size:13.5px;line-height:1.5;color:var(--text)}
@@ -442,6 +446,29 @@
   .remind-banner .rb-when{display:block;font-size:11px;opacity:.75;margin-top:1px}
   .remind-banner .rb-edit,.remind-banner .rb-x{background:none;border:none;color:inherit;opacity:.7;cursor:pointer;padding:3px;display:inline-flex;flex:none}
   .remind-banner .rb-edit:hover,.remind-banner .rb-x:hover{opacity:1}
+  /* ---------- Home AI command center ---------- */
+  .ai-center{background:linear-gradient(160deg,var(--accent-soft),var(--panel2));border:1px solid var(--line);border-radius:18px;padding:14px 15px;margin-top:15px}
+  .aic-head{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+  .aic-ic{color:var(--accent-text);display:flex}
+  .aic-title{font-size:15px;font-weight:800;letter-spacing:-.01em}
+  .aic-refresh{margin-left:auto;background:transparent;border:0;color:var(--muted);cursor:pointer;display:inline-flex;padding:4px;border-radius:8px}
+  .aic-refresh:hover{background:var(--panel);color:var(--text)}
+  .aic-brief{font-size:13px;line-height:1.5;min-height:20px}
+  .aic-headline{font-weight:700;color:var(--text);margin-bottom:8px;line-height:1.45}
+  .aic-item{display:flex;gap:9px;align-items:flex-start;padding:6px 0}
+  .aic-dot{flex:none;width:7px;height:7px;border-radius:50%;background:#ef4444;margin-top:6px}
+  .aic-itxt{flex:1;min-width:0}
+  .aic-itxt b{display:block;font-weight:600;color:var(--text)}
+  .aic-itxt span{display:block;color:var(--muted2);font-size:12px;margin-top:1px;line-height:1.45}
+  .aic-muted{color:var(--muted2);display:flex;align-items:center;gap:7px}
+  .aic-ask{display:flex;gap:8px;margin-top:12px}
+  .aic-ask input{flex:1;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:12px;color:var(--text);padding:11px 13px;font-size:14.5px;font-family:inherit;outline:none}
+  .aic-ask input:focus{border-color:var(--accent)}
+  .aic-go{flex:none;width:44px;border:0;border-radius:12px;background:var(--accent);color:#fff;cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+  .aic-go:active{transform:scale(.96)}
+  .aic-chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+  .aic-chips button{font-family:inherit;font-size:12px;color:var(--accent-text);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 11px;cursor:pointer}
+  .aic-chips button:hover{border-color:var(--accent)}
   /* ---------- Home (landing) ---------- */
   .home{padding:6px 14px 18px;max-width:640px;margin:0 auto}
   .home-head{padding:14px 2px 2px}
@@ -1479,17 +1506,13 @@
       <button class="setup-x" id="aiCmdClose" data-ic="x" aria-label="Close"></button>
     </div>
     <div class="setup-body">
-      <div class="setup-note">Ask what needs attention, or tell it what to do. Either way it shows you what it found or plans first — nothing changes until you confirm.</div>
-
-      <div class="aicmd-preset-lbl"><span class="ic-inline" data-ic="lightbulb" data-ic-size="13"></span> Ask for advice</div>
-      <div class="aicmd-chips" id="aiCmdAdvice"></div>
-
-      <div class="aicmd-preset-lbl" style="margin-top:16px"><span class="ic-inline" data-ic="sparkles" data-ic-size="13"></span> Run a command</div>
-      <textarea id="aiCmdInput" placeholder="e.g. Mark all unread as read" style="width:100%;min-height:60px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;color:var(--text);padding:12px;font-size:15px;font-family:inherit;outline:none;resize:vertical"></textarea>
-      <div class="aicmd-chips" id="aiCmdChips"></div>
+      <div class="setup-note">Ask anything or tell it what to do — rank your leads, label them, archive voicemails, "how much did I make this month", log an expense. It answers or proposes actions you approve. <b>Nothing changes without your OK.</b></div>
+      <textarea id="aiCmdInput" placeholder="Ask or tell me anything…" style="width:100%;min-height:66px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;color:var(--text);padding:12px;font-size:15px;font-family:inherit;outline:none;resize:vertical"></textarea>
       <div class="rm-acts">
-        <button class="btn" id="aiCmdAsk" style="flex:1;background:var(--accent);color:#fff;border-color:var(--accent)"><span class="ic-inline" data-ic="sparkles" data-ic-size="15"></span> Preview command</button>
+        <button class="btn" id="aiCmdAsk" style="flex:1;background:var(--accent);color:#fff;border-color:var(--accent)"><span class="ic-inline" data-ic="sparkles" data-ic-size="15"></span> Ask</button>
       </div>
+      <div class="aicmd-preset-lbl" style="margin-top:14px"><span class="ic-inline" data-ic="lightbulb" data-ic-size="13"></span> Try</div>
+      <div class="aicmd-chips" id="aiCmdChips"></div>
 
       <div class="aicmd-result" id="aiCmdResult" style="display:none"></div>
     </div>
@@ -1567,7 +1590,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-19·ai-command";
+  var APP_BUILD="2026-07-19·ai-command-center";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -1668,106 +1691,80 @@
   // ---- AI command bar ----
   // "Just tell it what you want done." Two-phase + safe: Ask -> preview, then a
   // confirm before anything changes. Powered by /api/ai/command (Gemini).
-  var AICMD_EX=["Mark all unread as read","Archive everything marked lost","Mark the emails as read","Pin the conversations marked won","Restore everything from the archive"];
-  // Advice presets: [button label, focus hint sent to the advisor]
-  var AICMD_ADVICE=[
-    ["What needs my attention?",""],
-    ["Analyze & recommend cleanup","Focus on what I should clean up, archive, or organize to keep the board tidy and efficient."],
-    ["Who's waiting on a reply?","Focus only on customers waiting on a reply from me, most urgent first."],
-    ["Fix my pipeline","Focus on lead statuses — which open threads have no status or look mislabeled, and what to set them to and why."]
+  // Example prompts that showcase what the command center can do. Tapping one
+  // runs it immediately — actions still come back for approval, so it's safe.
+  var AICMD_EX=[
+    "What needs my attention right now?",
+    "Rank my leads by priority, highest to lowest",
+    "Label each of my leads appropriately",
+    "Archive the conversations that only have a voicemail",
+    "How much have I made this month?",
+    "Mark everything as read"
   ];
-  function openAiCmd(){
+  function openAiCmd(prefill){
     var ov=el("aiCmdOverlay");ov.style.display="flex";hydrateIcons(ov);
     el("aiCmdResult").style.display="none";el("aiCmdResult").className="aicmd-result";
-    var inp=el("aiCmdInput");inp.value="";
-    var adv=el("aiCmdAdvice");adv.innerHTML="";
-    AICMD_ADVICE.forEach(function(x){var b=document.createElement("button");b.textContent=x[0];b.onclick=function(){aiCmdAnalyze(x[1])};adv.appendChild(b)});
+    var inp=el("aiCmdInput");inp.value=prefill||"";
     var chips=el("aiCmdChips");chips.innerHTML="";
-    AICMD_EX.forEach(function(x){var b=document.createElement("button");b.textContent=x;b.onclick=function(){inp.value=x;inp.focus()};chips.appendChild(b)});
-    var ask=el("aiCmdAsk");ask.disabled=false;ask.innerHTML=ic("sparkles",15)+" Preview command";
-    setTimeout(function(){try{inp.focus()}catch(e){}},60);
-  }
-  // Advisor: "what needs attention / what do you recommend". Read-only — it never
-  // changes anything; each suggested command runs through the safe preview flow.
-  function aiCmdAnalyze(focus){
-    var res=el("aiCmdResult");res.className="aicmd-result";
-    res.innerHTML='<div class="ar-line"><span class="ar-ic"><span class="spin"></span></span><span>Reviewing your whole board…</span></div>';
-    res.style.display="block";
-    post("/api/ai/analyze",{focus:focus||""}).then(function(d){
-      if(!d||!d.ok){aiCmdShowError((d&&d.error)==="ai_not_configured"?"AI isn't set up yet — add your Gemini API key to enable this.":"Analysis failed — try again. ("+((d&&d.error)||"error")+")");return}
-      renderAdvisory(d);
-    }).catch(function(){aiCmdShowError("Network error — please try again.")});
-  }
-  function renderAdvisory(d){
-    function sec(title,color,items){
-      if(!items||!items.length)return"";
-      var h='<div class="ar-sec"><div class="ar-sec-h"><span class="dotc" style="background:'+color+'"></span>'+esc(title)+'</div>';
-      items.forEach(function(it){
-        h+='<div class="ar-item"><div class="ai-t">'+esc(it.title||"")+'</div>'+
-           (it.detail?'<div class="ai-d">'+esc(it.detail)+'</div>':"")+
-           (it.command?'<button class="ai-do" data-cmd="'+esc(it.command)+'">'+ic("sparkles",13)+'Do this</button>':"")+
-           '</div>';
-      });
-      return h+'</div>';
-    }
-    var res=el("aiCmdResult");res.className="aicmd-result";
-    var html=(d.headline?'<div class="ar-headline">'+esc(d.headline)+'</div>':"");
-    html+=sec("Needs attention","#ef4444",d.attention);
-    html+=sec("Recommended","var(--accent)",d.recommend);
-    html+=sec("Tidy up","#8a93a3",d.organize);
-    if(!d.attention.length&&!d.recommend.length&&!d.organize.length&&!d.headline)html='<div class="ar-line"><span class="ar-ic">'+ic("check",16)+'</span><span>All clear — nothing stands out right now.</span></div>';
-    res.innerHTML=html;res.style.display="block";
-    // Wire each "Do this" to load the command into the box and run the safe preview.
-    Array.prototype.forEach.call(res.querySelectorAll(".ai-do"),function(b){
-      b.onclick=function(){var cmd=b.getAttribute("data-cmd");el("aiCmdInput").value=cmd;aiCmdAsk();try{el("aiCmdInput").scrollIntoView({block:"center"})}catch(e){}};
-    });
+    AICMD_EX.forEach(function(x){var b=document.createElement("button");b.textContent=x;b.onclick=function(){inp.value=x;aiCmdAsk()};chips.appendChild(b)});
+    var ask=el("aiCmdAsk");ask.disabled=false;ask.innerHTML=ic("sparkles",15)+" Ask";
+    if(prefill){aiCmdAsk();}else{setTimeout(function(){try{inp.focus()}catch(e){}},60);}
   }
   function closeAiCmd(){el("aiCmdOverlay").style.display="none"}
+  // Ask the command-center agent. It replies with an answer and/or a set of
+  // proposed actions — which are shown for approval and never auto-run.
   function aiCmdAsk(){
     var text=(el("aiCmdInput").value||"").trim();if(!text)return;
     var ask=el("aiCmdAsk");ask.disabled=true;ask.innerHTML='<span class="spin"></span> Thinking…';
-    var res=el("aiCmdResult");res.style.display="none";res.className="aicmd-result";
-    post("/api/ai/command",{text:text}).then(function(d){
-      if(!d||!d.ok){aiCmdShowError((d&&d.error)==="ai_not_configured"?"AI isn't set up yet — add your Gemini API key to enable this.":"Couldn't understand that — try rephrasing. ("+((d&&d.error)||"error")+")");return}
-      if(d.action==="none"){aiCmdShowNote(d.reply||"I'm not sure what you mean — can you rephrase?");return}
-      if(!d.count){aiCmdShowNote((d.reply?d.reply+" ":"")+"Nothing matched, so there's nothing to change.");return}
-      aiCmdShowPreview(d);
+    var res=el("aiCmdResult");res.className="aicmd-result";
+    res.innerHTML='<div class="ar-line"><span class="ar-ic"><span class="spin"></span></span><span>Looking at your whole dashboard…</span></div>';
+    res.style.display="block";
+    post("/api/ai/agent",{text:text}).then(function(d){
+      if(!d||!d.ok){aiCmdShowError((d&&d.error)==="ai_not_configured"?"AI isn't set up yet — add your Gemini API key to enable this.":"That didn't work — try rephrasing. ("+((d&&d.error)||"error")+")");return}
+      renderAgentResult(d);
     }).catch(function(){aiCmdShowError("Network error — please try again.")})
     .then(function(){var a=el("aiCmdAsk");if(a){a.disabled=false;a.innerHTML=ic("sparkles",15)+" Ask"}});
-  }
-  function aiCmdShowNote(msg){
-    var res=el("aiCmdResult");res.className="aicmd-result";
-    res.innerHTML='<div class="ar-line"><span class="ar-ic">'+ic("sparkles",16)+'</span><span>'+esc(msg)+'</span></div>';
-    res.style.display="block";
   }
   function aiCmdShowError(msg){
     var res=el("aiCmdResult");res.className="aicmd-result ar-bad";
     res.innerHTML='<div class="ar-line"><span class="ar-ic">'+ic("alert",16)+'</span><span>'+esc(msg)+'</span></div>';
     res.style.display="block";
   }
-  function aiCmdShowPreview(d){
-    var unit=d.unit||"item";var n=d.count;var plural=n>1?(unit==="email"?"emails":unit+"s"):unit;
-    var samples=(d.samples||[]).filter(Boolean);
-    var extra=n-samples.length;
-    var sampleHtml=samples.length?'<div class="ar-samples">'+esc(samples.join(", "))+(extra>0?(" +"+extra+" more"):"")+'</div>':"";
+  // Render the agent's answer, plus an approval checklist if it proposed actions.
+  function renderAgentResult(d){
     var res=el("aiCmdResult");res.className="aicmd-result";
-    res.innerHTML='<div class="ar-line"><span class="ar-ic">'+ic("sparkles",16)+'</span><span>'+esc(d.reply||("This affects "+n+" "+plural))+
-      '<div class="ar-count" style="margin-top:5px">Affects '+n+" "+esc(plural)+'.</div>'+sampleHtml+'</span></div>'+
-      '<div class="ar-acts"><button class="btn" id="aiCmdCancel">Cancel</button>'+
-      '<button class="btn" id="aiCmdDo" style="background:var(--accent);color:#fff;border-color:var(--accent)">Do it</button></div>';
-    res.style.display="block";
-    el("aiCmdCancel").onclick=function(){res.style.display="none"};
-    el("aiCmdDo").onclick=function(){aiCmdExecute(d.plan)};
+    var acts=Array.isArray(d.actions)?d.actions:[];
+    var html='';
+    if(d.answer)html+='<div class="ar-line"><span class="ar-ic">'+ic("sparkles",16)+'</span><span class="ar-answer">'+esc(d.answer).replace(/\n/g,"<br>")+'</span></div>';
+    if(acts.length){
+      html+='<div class="ar-sec"><div class="ar-sec-h"><span class="dotc" style="background:var(--accent)"></span>'+acts.length+' action'+(acts.length>1?'s':'')+' to approve</div>';
+      acts.forEach(function(a,i){
+        html+='<label class="ar-act"><input type="checkbox" checked data-i="'+i+'"><span class="ar-act-b"><span class="ar-act-t">'+esc(a.label||a.op)+'</span>'+(a.reason?'<span class="ar-act-r">'+esc(a.reason)+'</span>':'')+'</span></label>';
+      });
+      html+='</div><div class="ar-acts"><button class="btn" id="aiCmdCancel">Cancel</button><button class="btn" id="aiCmdDo" style="background:var(--accent);color:#fff;border-color:var(--accent)">Approve &amp; do it</button></div>';
+    }
+    if(!d.answer&&!acts.length)html='<div class="ar-line"><span class="ar-ic">'+ic("check",16)+'</span><span>All clear — nothing to do.</span></div>';
+    res.innerHTML=html;res.style.display="block";
+    if(acts.length){
+      el("aiCmdCancel").onclick=function(){res.style.display="none"};
+      el("aiCmdDo").onclick=function(){
+        var chosen=[];
+        Array.prototype.forEach.call(res.querySelectorAll('input[type=checkbox]'),function(cb){if(cb.checked)chosen.push(acts[+cb.getAttribute("data-i")])});
+        if(!chosen.length){toast("Nothing selected",{bad:true});return}
+        aiCmdApprove(chosen);
+      };
+    }
   }
-  function aiCmdExecute(plan){
+  function aiCmdApprove(actions){
     var doBtn=el("aiCmdDo");if(doBtn){doBtn.disabled=true;doBtn.innerHTML='<span class="spin"></span> Working…'}
     var cancel=el("aiCmdCancel");if(cancel)cancel.disabled=true;
-    post("/api/ai/command",{confirm:true,plan:plan}).then(function(d){
+    post("/api/ai/agent",{confirm:true,actions:actions}).then(function(d){
       if(!d||!d.ok){aiCmdShowError("That didn't go through — "+((d&&d.error)||"error"));return}
       var res=el("aiCmdResult");res.className="aicmd-result ar-done";
       res.innerHTML='<div class="ar-line"><span class="ar-ic">'+ic("check",16)+'</span><span>'+esc(d.reply||"Done.")+'</span></div>';
       res.style.display="block";
-      refreshThreads();if(state.tab==="email")fetchEmails();if(typeof loadConfig==="function")loadConfig();
+      refreshThreads();if(state.tab==="email")fetchEmails();if(typeof loadMoney==="function")loadMoney();if(typeof fetchInsights==="function")fetchInsights();
+      if(typeof renderHome==="function"&&state.tab==="home")setTimeout(function(){aiBriefLoad(true)},400);
       toast(d.reply||"Done");
     }).catch(function(){aiCmdShowError("Network error — please try again.")});
   }
@@ -2342,12 +2339,21 @@
       W.followups='<div data-hwidget="followups">'+fh+'</div>';
     }else W.followups='';
     W.money='<div data-hwidget="money">'+homeMoneyWidget()+'</div>';
+    // AI command center — auto summary of what needs attention + a box to dictate.
+    W.aicenter='<div data-hwidget="aicenter"><div class="ai-center">'+
+      '<div class="aic-head"><span class="aic-ic">'+ic("sparkles",18)+'</span><span class="aic-title">AI command center</span>'+
+      '<button class="aic-refresh" id="aiHomeRefresh" aria-label="Refresh summary">'+ic("refresh-cw",15)+'</button></div>'+
+      '<div class="aic-brief" id="aiHomeBrief"><div class="aic-muted">'+ic("sparkles",14)+' Reading your dashboard…</div></div>'+
+      '<div class="aic-ask"><input id="aiHomeInput" placeholder="Ask or tell me anything…" autocomplete="off">'+
+      '<button class="aic-go" id="aiHomeGo" aria-label="Ask">'+ic("send",17)+'</button></div>'+
+      '<div class="aic-chips" id="aiHomeChips"></div></div></div>';
     var strip=[];
     strip.push((ins.open!=null?ins.open:active.length)+' open');
     if(ins.won!=null)strip.push(ins.won+' won');
     if(ins.avgReplyMs!=null)strip.push('~'+fmtDur(ins.avgReplyMs)+' reply');
     W.stats='<div data-hwidget="stats"><div class="home-strip">'+strip.map(function(s){return '<span>'+esc(s)+'</span>'}).join("")+'</div></div>';
-    var order=(UI&&UI.hwidgets)||["waiting","reminders","followups","money","stats"];
+    var order=(UI&&UI.hwidgets)||["aicenter","waiting","reminders","followups","money","stats"];
+    if(order.indexOf("aicenter")<0)order=["aicenter"].concat(order); // ensure it shows for existing users' saved layouts
     var hidden=(UI&&UI.hwidgetsHidden)||[];
     var h='<div class="home"><div class="home-head"><div class="hh-greet">'+greeting()+'</div><div class="hh-sub">Here\'s what needs you.</div></div>';
     order.forEach(function(k){if(hidden.indexOf(k)<0)h+=(W[k]||"")});
@@ -2357,6 +2363,40 @@
     Array.prototype.forEach.call(box.querySelectorAll("[data-open]"),function(c){c.onclick=function(){openThread(c.getAttribute("data-open"))}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-more]"),function(c){c.onclick=function(){setTab(c.getAttribute("data-more"))}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-open-money]"),function(c){c.onclick=function(){openMoney()}});
+    wireAiCenter();
+  }
+  // ---- Home AI command center ----
+  var AIC_CHIPS=["What needs my attention?","Rank my leads by priority","Label my leads","How much did I make this month?"];
+  function wireAiCenter(){
+    var go=el("aiHomeGo"),inp=el("aiHomeInput"),ref=el("aiHomeRefresh"),chips=el("aiHomeChips");
+    if(!inp)return;
+    function submit(){var v=(inp.value||"").trim();if(!v)return;inp.value="";openAiCmd(v)}
+    if(go)go.onclick=submit;
+    inp.addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();submit()}});
+    if(ref)ref.onclick=function(){aiBriefLoad(true)};
+    if(chips){chips.innerHTML="";AIC_CHIPS.forEach(function(x){var b=document.createElement("button");b.textContent=x;b.onclick=function(){openAiCmd(x)};chips.appendChild(b)})}
+    aiBriefLoad(false);
+  }
+  // The lightweight "what needs attention" summary (analyze endpoint). Cached in
+  // state so re-rendering Home doesn't re-hit Gemini; refresh button forces it.
+  function aiBriefLoad(force){
+    var box=el("aiHomeBrief");if(!box)return;
+    if(state.aiBrief&&!force){renderBrief(state.aiBrief);return}
+    box.innerHTML='<div class="aic-muted"><span class="spin"></span> Reading your dashboard…</div>';
+    post("/api/ai/analyze",{}).then(function(d){
+      var b=el("aiHomeBrief");if(!b)return;
+      if(!d||!d.ok){b.innerHTML='<div class="aic-muted">'+((d&&d.error)==="ai_not_configured"?"Add your Gemini API key to turn this on.":"Couldn't load the AI summary.")+'</div>';return}
+      state.aiBrief=d;renderBrief(d);
+    }).catch(function(){var b=el("aiHomeBrief");if(b)b.innerHTML='<div class="aic-muted">Network error loading summary.</div>'});
+  }
+  function renderBrief(d){
+    var box=el("aiHomeBrief");if(!box)return;
+    var html='';
+    if(d.headline)html+='<div class="aic-headline">'+esc(d.headline)+'</div>';
+    var items=(d.attention||[]).slice(0,3);
+    items.forEach(function(it){html+='<div class="aic-item"><span class="aic-dot"></span><div class="aic-itxt"><b>'+esc(it.title||"")+'</b>'+(it.detail?'<span>'+esc(it.detail)+'</span>':"")+'</div></div>'});
+    if(!d.headline&&!items.length)html='<div class="aic-muted">'+ic("check",14)+' All clear — nothing needs attention right now. 🚗</div>';
+    box.innerHTML=html;
   }
   // Home "Today's money" widget — reuses the money summary (lazy-loads once).
   function homeMoneyWidget(){
