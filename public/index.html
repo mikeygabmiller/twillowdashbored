@@ -405,6 +405,35 @@
   .setup-body input:focus{border-color:var(--accent)}
   .rm-acts{display:flex;gap:8px;margin-top:16px}
   .rm-acts .btn{padding:11px}
+  /* ---------- AI command bar ---------- */
+  .aicmd-preset-lbl{display:flex;align-items:center;gap:6px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:9px}
+  .aicmd-preset-lbl .ic-inline{color:var(--accent-text)}
+  .aicmd-chips{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
+  #aiCmdAdvice{margin-top:0}
+  #aiCmdAdvice button{color:var(--accent-text);background:var(--accent-soft);border-color:transparent}
+  #aiCmdAdvice button:hover{border-color:var(--accent)}
+  /* advisory result */
+  .ar-headline{font-size:14.5px;font-weight:700;line-height:1.45;margin-bottom:4px}
+  .ar-sec{margin-top:14px}
+  .ar-sec:first-child{margin-top:6px}
+  .ar-sec-h{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:8px}
+  .ar-sec-h .dotc{width:8px;height:8px;border-radius:50%;flex:none}
+  .ar-item{background:var(--panel);border:1px solid var(--line);border-radius:11px;padding:10px 12px;margin-bottom:8px}
+  .ar-item .ai-t{font-size:13.5px;font-weight:700;color:var(--text)}
+  .ar-item .ai-d{font-size:12.5px;color:var(--muted2);margin-top:3px;line-height:1.5}
+  .ar-item .ai-do{margin-top:9px;font-family:inherit;font-size:12px;font-weight:600;color:#fff;background:var(--accent);border:1px solid var(--accent);border-radius:9px;padding:7px 12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+  .ar-item .ai-do:hover{filter:brightness(1.06)}
+  .aicmd-chips button{font-family:inherit;font-size:12px;color:var(--muted2);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:6px 11px;cursor:pointer;transition:border-color .12s,color .12s}
+  .aicmd-chips button:hover{border-color:var(--accent);color:var(--text)}
+  .aicmd-result{margin-top:14px;background:var(--panel2);border:1px solid var(--line);border-radius:13px;padding:13px 14px;font-size:13.5px;line-height:1.5;color:var(--text)}
+  .aicmd-result .ar-line{display:flex;gap:8px;align-items:flex-start}
+  .aicmd-result .ar-ic{color:var(--accent-text);flex:none;display:flex;margin-top:1px}
+  .aicmd-result .ar-count{font-weight:700}
+  .aicmd-result .ar-samples{color:var(--muted2);font-size:12px;margin-top:6px;line-height:1.5}
+  .aicmd-result .ar-acts{display:flex;gap:8px;margin-top:13px}
+  .aicmd-result .ar-acts .btn{flex:1;padding:11px}
+  .aicmd-result.ar-done .ar-ic{color:var(--green)}
+  .aicmd-result.ar-bad .ar-ic{color:var(--red,#ef4444)}
   /* in-thread follow-up reminder banner */
   .remind-banner{margin:8px 14px 0;padding:10px 13px;background:#15212e;border:1px solid #1f3a52;border-radius:13px;align-items:center;gap:10px;color:#cfe6f5;font-size:13px}
   .remind-banner.due{background:linear-gradient(135deg,#1c1708,#171310);border-color:#4a3a12;color:#f3ead6}
@@ -1371,6 +1400,9 @@
     <div><h1>Mikey's Detailing</h1><small>Mobile Detailing • Snohomish</small></div>
   </div>
   <div class="dbody">
+    <div class="sec-lbl">AI assistant</div>
+    <div class="ditem" id="aiCmdItem"><span class="ic" data-ic="sparkles"></span>Command AI<span class="n" style="color:var(--accent-text)">new</span></div>
+
     <div class="sec-lbl">Views</div>
     <div class="ditem" data-tab="messages"><span class="ic" data-ic="message-square"></span>All messages<span class="n" id="mnAll"></span></div>
     <div class="ditem" data-tab="email"><span class="ic" data-ic="mail"></span>Email inbox<span class="n" id="mnEmail"></span></div>
@@ -1437,6 +1469,31 @@
     <button class="gx" id="guideClose" aria-label="Close">✕</button>
   </div>
   <div class="guide-body" id="guideBody"></div>
+</div>
+
+<!-- ============ AI command bar ============ -->
+<div class="setup-overlay" id="aiCmdOverlay" style="display:none">
+  <div class="setup-box" id="aiCmdBox">
+    <div class="setup-head">
+      <h3><span class="ic-inline" data-ic="sparkles" data-ic-size="16"></span> Command AI</h3>
+      <button class="setup-x" id="aiCmdClose" data-ic="x" aria-label="Close"></button>
+    </div>
+    <div class="setup-body">
+      <div class="setup-note">Ask what needs attention, or tell it what to do. Either way it shows you what it found or plans first — nothing changes until you confirm.</div>
+
+      <div class="aicmd-preset-lbl"><span class="ic-inline" data-ic="lightbulb" data-ic-size="13"></span> Ask for advice</div>
+      <div class="aicmd-chips" id="aiCmdAdvice"></div>
+
+      <div class="aicmd-preset-lbl" style="margin-top:16px"><span class="ic-inline" data-ic="sparkles" data-ic-size="13"></span> Run a command</div>
+      <textarea id="aiCmdInput" placeholder="e.g. Mark all unread as read" style="width:100%;min-height:60px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;color:var(--text);padding:12px;font-size:15px;font-family:inherit;outline:none;resize:vertical"></textarea>
+      <div class="aicmd-chips" id="aiCmdChips"></div>
+      <div class="rm-acts">
+        <button class="btn" id="aiCmdAsk" style="flex:1;background:var(--accent);color:#fff;border-color:var(--accent)"><span class="ic-inline" data-ic="sparkles" data-ic-size="15"></span> Preview command</button>
+      </div>
+
+      <div class="aicmd-result" id="aiCmdResult" style="display:none"></div>
+    </div>
+  </div>
 </div>
 
 <!-- ============ Money tracker — its own full-screen section ============ -->
@@ -1510,7 +1567,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-18·snapshot-v1";
+  var APP_BUILD="2026-07-19·ai-command";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -1606,6 +1663,113 @@
       var name=e.getAttribute("data-ic");var size=e.getAttribute("data-ic-size");var label=e.getAttribute("data-ic-label");
       e.innerHTML=ic(name,size?+size:undefined)+(label?'<span>'+esc(label)+'</span>':"");
     });
+  }
+
+  // ---- AI command bar ----
+  // "Just tell it what you want done." Two-phase + safe: Ask -> preview, then a
+  // confirm before anything changes. Powered by /api/ai/command (Gemini).
+  var AICMD_EX=["Mark all unread as read","Archive everything marked lost","Mark the emails as read","Pin the conversations marked won","Restore everything from the archive"];
+  // Advice presets: [button label, focus hint sent to the advisor]
+  var AICMD_ADVICE=[
+    ["What needs my attention?",""],
+    ["Analyze & recommend cleanup","Focus on what I should clean up, archive, or organize to keep the board tidy and efficient."],
+    ["Who's waiting on a reply?","Focus only on customers waiting on a reply from me, most urgent first."],
+    ["Fix my pipeline","Focus on lead statuses — which open threads have no status or look mislabeled, and what to set them to and why."]
+  ];
+  function openAiCmd(){
+    var ov=el("aiCmdOverlay");ov.style.display="flex";hydrateIcons(ov);
+    el("aiCmdResult").style.display="none";el("aiCmdResult").className="aicmd-result";
+    var inp=el("aiCmdInput");inp.value="";
+    var adv=el("aiCmdAdvice");adv.innerHTML="";
+    AICMD_ADVICE.forEach(function(x){var b=document.createElement("button");b.textContent=x[0];b.onclick=function(){aiCmdAnalyze(x[1])};adv.appendChild(b)});
+    var chips=el("aiCmdChips");chips.innerHTML="";
+    AICMD_EX.forEach(function(x){var b=document.createElement("button");b.textContent=x;b.onclick=function(){inp.value=x;inp.focus()};chips.appendChild(b)});
+    var ask=el("aiCmdAsk");ask.disabled=false;ask.innerHTML=ic("sparkles",15)+" Preview command";
+    setTimeout(function(){try{inp.focus()}catch(e){}},60);
+  }
+  // Advisor: "what needs attention / what do you recommend". Read-only — it never
+  // changes anything; each suggested command runs through the safe preview flow.
+  function aiCmdAnalyze(focus){
+    var res=el("aiCmdResult");res.className="aicmd-result";
+    res.innerHTML='<div class="ar-line"><span class="ar-ic"><span class="spin"></span></span><span>Reviewing your whole board…</span></div>';
+    res.style.display="block";
+    post("/api/ai/analyze",{focus:focus||""}).then(function(d){
+      if(!d||!d.ok){aiCmdShowError((d&&d.error)==="ai_not_configured"?"AI isn't set up yet — add your Gemini API key to enable this.":"Analysis failed — try again. ("+((d&&d.error)||"error")+")");return}
+      renderAdvisory(d);
+    }).catch(function(){aiCmdShowError("Network error — please try again.")});
+  }
+  function renderAdvisory(d){
+    function sec(title,color,items){
+      if(!items||!items.length)return"";
+      var h='<div class="ar-sec"><div class="ar-sec-h"><span class="dotc" style="background:'+color+'"></span>'+esc(title)+'</div>';
+      items.forEach(function(it){
+        h+='<div class="ar-item"><div class="ai-t">'+esc(it.title||"")+'</div>'+
+           (it.detail?'<div class="ai-d">'+esc(it.detail)+'</div>':"")+
+           (it.command?'<button class="ai-do" data-cmd="'+esc(it.command)+'">'+ic("sparkles",13)+'Do this</button>':"")+
+           '</div>';
+      });
+      return h+'</div>';
+    }
+    var res=el("aiCmdResult");res.className="aicmd-result";
+    var html=(d.headline?'<div class="ar-headline">'+esc(d.headline)+'</div>':"");
+    html+=sec("Needs attention","#ef4444",d.attention);
+    html+=sec("Recommended","var(--accent)",d.recommend);
+    html+=sec("Tidy up","#8a93a3",d.organize);
+    if(!d.attention.length&&!d.recommend.length&&!d.organize.length&&!d.headline)html='<div class="ar-line"><span class="ar-ic">'+ic("check",16)+'</span><span>All clear — nothing stands out right now.</span></div>';
+    res.innerHTML=html;res.style.display="block";
+    // Wire each "Do this" to load the command into the box and run the safe preview.
+    Array.prototype.forEach.call(res.querySelectorAll(".ai-do"),function(b){
+      b.onclick=function(){var cmd=b.getAttribute("data-cmd");el("aiCmdInput").value=cmd;aiCmdAsk();try{el("aiCmdInput").scrollIntoView({block:"center"})}catch(e){}};
+    });
+  }
+  function closeAiCmd(){el("aiCmdOverlay").style.display="none"}
+  function aiCmdAsk(){
+    var text=(el("aiCmdInput").value||"").trim();if(!text)return;
+    var ask=el("aiCmdAsk");ask.disabled=true;ask.innerHTML='<span class="spin"></span> Thinking…';
+    var res=el("aiCmdResult");res.style.display="none";res.className="aicmd-result";
+    post("/api/ai/command",{text:text}).then(function(d){
+      if(!d||!d.ok){aiCmdShowError((d&&d.error)==="ai_not_configured"?"AI isn't set up yet — add your Gemini API key to enable this.":"Couldn't understand that — try rephrasing. ("+((d&&d.error)||"error")+")");return}
+      if(d.action==="none"){aiCmdShowNote(d.reply||"I'm not sure what you mean — can you rephrase?");return}
+      if(!d.count){aiCmdShowNote((d.reply?d.reply+" ":"")+"Nothing matched, so there's nothing to change.");return}
+      aiCmdShowPreview(d);
+    }).catch(function(){aiCmdShowError("Network error — please try again.")})
+    .then(function(){var a=el("aiCmdAsk");if(a){a.disabled=false;a.innerHTML=ic("sparkles",15)+" Ask"}});
+  }
+  function aiCmdShowNote(msg){
+    var res=el("aiCmdResult");res.className="aicmd-result";
+    res.innerHTML='<div class="ar-line"><span class="ar-ic">'+ic("sparkles",16)+'</span><span>'+esc(msg)+'</span></div>';
+    res.style.display="block";
+  }
+  function aiCmdShowError(msg){
+    var res=el("aiCmdResult");res.className="aicmd-result ar-bad";
+    res.innerHTML='<div class="ar-line"><span class="ar-ic">'+ic("alert",16)+'</span><span>'+esc(msg)+'</span></div>';
+    res.style.display="block";
+  }
+  function aiCmdShowPreview(d){
+    var unit=d.unit||"item";var n=d.count;var plural=n>1?(unit==="email"?"emails":unit+"s"):unit;
+    var samples=(d.samples||[]).filter(Boolean);
+    var extra=n-samples.length;
+    var sampleHtml=samples.length?'<div class="ar-samples">'+esc(samples.join(", "))+(extra>0?(" +"+extra+" more"):"")+'</div>':"";
+    var res=el("aiCmdResult");res.className="aicmd-result";
+    res.innerHTML='<div class="ar-line"><span class="ar-ic">'+ic("sparkles",16)+'</span><span>'+esc(d.reply||("This affects "+n+" "+plural))+
+      '<div class="ar-count" style="margin-top:5px">Affects '+n+" "+esc(plural)+'.</div>'+sampleHtml+'</span></div>'+
+      '<div class="ar-acts"><button class="btn" id="aiCmdCancel">Cancel</button>'+
+      '<button class="btn" id="aiCmdDo" style="background:var(--accent);color:#fff;border-color:var(--accent)">Do it</button></div>';
+    res.style.display="block";
+    el("aiCmdCancel").onclick=function(){res.style.display="none"};
+    el("aiCmdDo").onclick=function(){aiCmdExecute(d.plan)};
+  }
+  function aiCmdExecute(plan){
+    var doBtn=el("aiCmdDo");if(doBtn){doBtn.disabled=true;doBtn.innerHTML='<span class="spin"></span> Working…'}
+    var cancel=el("aiCmdCancel");if(cancel)cancel.disabled=true;
+    post("/api/ai/command",{confirm:true,plan:plan}).then(function(d){
+      if(!d||!d.ok){aiCmdShowError("That didn't go through — "+((d&&d.error)||"error"));return}
+      var res=el("aiCmdResult");res.className="aicmd-result ar-done";
+      res.innerHTML='<div class="ar-line"><span class="ar-ic">'+ic("check",16)+'</span><span>'+esc(d.reply||"Done.")+'</span></div>';
+      res.style.display="block";
+      refreshThreads();if(state.tab==="email")fetchEmails();if(typeof loadConfig==="function")loadConfig();
+      toast(d.reply||"Done");
+    }).catch(function(){aiCmdShowError("Network error — please try again.")});
   }
 
   // ---- API ----
@@ -3776,6 +3940,11 @@
   el("czMode").onclick=function(){UI.mode=UI.mode==="pro"?"simple":"pro";saveUI();czRender();vibrate(6)};
 
   el("menuBtn").onclick=openDrawer;el("myAvatar").onclick=openDrawer;el("scrim").onclick=closeDrawer;
+  el("aiCmdItem").onclick=function(){closeDrawer();openAiCmd()};
+  el("aiCmdClose").onclick=closeAiCmd;
+  el("aiCmdOverlay").onclick=function(e){if(e.target===el("aiCmdOverlay"))closeAiCmd()};
+  el("aiCmdAsk").onclick=aiCmdAsk;
+  el("aiCmdInput").addEventListener("keydown",function(e){if((e.metaKey||e.ctrlKey)&&e.key==="Enter"){e.preventDefault();aiCmdAsk()}});
   el("emailSetupItem").onclick=function(){closeDrawer();openEmailSetup()};
   el("refreshItem").onclick=function(){refreshThreads();if(state.phone)loadThread();toast("Refreshed");closeDrawer()};
   el("healthItem").onclick=checkHealth;
