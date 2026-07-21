@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-19·ai-command-center';
+const BUILD = '2026-07-21·pro-dashboard';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -3335,6 +3335,7 @@ function buildIndexSummary(thread, cfg) {
     reminderNote: (thread.reminderNote || '').slice(0, 120),
     reminderDue: !!(thread.reminderAt && thread.reminderAt <= Date.now()),
     scheduledCount: (thread.scheduled || []).length,
+    nextScheduledAt: (thread.scheduled && thread.scheduled.length) ? thread.scheduled[0].sendAt : null,
     replyReady: !!(thread.suggested && thread.suggested.text),
     dateRequested: !!thread.dateRequest,
     // Cheap content flags so the AI advisor/agent can filter on "has a voicemail"

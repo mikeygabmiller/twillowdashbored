@@ -496,6 +496,130 @@
   .home-more{text-align:center;color:var(--accent-text);font-weight:700;font-size:13px;padding:9px;cursor:pointer}
   .home-strip{display:flex;flex-wrap:wrap;gap:7px;margin-top:24px;justify-content:center}
   .home-strip span{font-size:11.5px;font-weight:700;color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:5px 12px}
+
+  /* ========== Pro dashboard widgets (customizable Home) ========== */
+  .wcard{background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:15px 16px;margin-top:12px;box-shadow:0 6px 18px rgba(0,0,0,.12)}
+  :root[data-theme="light"] .wcard{box-shadow:0 4px 14px rgba(20,30,60,.05)}
+  .wc-h{display:flex;align-items:center;gap:9px;margin-bottom:12px}
+  .wc-h .wc-ic{display:flex;color:var(--accent-text)}
+  .wc-h .wc-t{font-size:14.5px;font-weight:800;letter-spacing:-.01em;flex:1;min-width:0}
+  .wc-h .wc-a{font-size:12px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);border:0;border-radius:10px;padding:5px 10px;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+  .wc-h .wc-a:active{transform:scale(.95)}
+  .wc-h .wc-badge{font-size:11px;font-weight:800;color:var(--muted2);font-variant-numeric:tabular-nums}
+  .wc-empty{color:var(--muted2);font-size:12.5px;padding:4px 0 2px;display:flex;align-items:center;gap:7px}
+
+  /* Goal ring */
+  .goal-wrap{display:flex;align-items:center;gap:18px}
+  .goal-ring{position:relative;width:104px;height:104px;flex:none}
+  .goal-ring svg{transform:rotate(-90deg);display:block}
+  .goal-ring .gr-bg{fill:none;stroke:var(--panel3);stroke-width:11}
+  .goal-ring .gr-fg{fill:none;stroke:var(--accent);stroke-width:11;stroke-linecap:round;transition:stroke-dashoffset .7s cubic-bezier(.4,0,.2,1)}
+  .goal-ring .gr-mid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .goal-ring .grm-pct{font-size:23px;font-weight:850;letter-spacing:-.03em;line-height:1}
+  .goal-ring .grm-l{font-size:9.5px;font-weight:700;color:var(--muted2);text-transform:uppercase;letter-spacing:.06em;margin-top:2px}
+  .goal-info{flex:1;min-width:0}
+  .goal-info .gi-big{font-size:20px;font-weight:850;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .goal-info .gi-sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .goal-info .gi-pace{display:inline-flex;align-items:center;gap:5px;margin-top:9px;font-size:11.5px;font-weight:800;padding:4px 10px;border-radius:999px}
+  .goal-info .gi-pace.ahead{color:#34d399;background:rgba(52,211,153,.14)}
+  .goal-info .gi-pace.behind{color:#fbbf24;background:rgba(251,191,36,.14)}
+  .goal-info .gi-proj{font-size:11px;color:var(--muted2);margin-top:7px}
+
+  /* Sparkline / trend */
+  .spark-row{display:flex;align-items:flex-end;justify-content:center;gap:14px;margin-bottom:2px}
+  .spark-svg{width:100%;height:56px;display:block;overflow:visible}
+  .spark-svg .sp-bar{fill:var(--accent);opacity:.85;transition:height .5s}
+  .spark-svg .sp-bar.dim{opacity:.28}
+  .trend-foot{display:flex;justify-content:space-between;align-items:center;margin-top:10px;font-size:11.5px;color:var(--muted2)}
+  .trend-delta{font-weight:800}.trend-delta.up{color:#34d399}.trend-delta.down{color:#fb7185}
+
+  /* Funnel */
+  .funnel-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+  .funnel-row .fr-l{width:58px;flex:none;font-size:12px;font-weight:700;color:var(--muted)}
+  .funnel-row .fr-track{flex:1;height:22px;background:var(--panel2);border-radius:7px;overflow:hidden;position:relative}
+  .funnel-row .fr-fill{height:100%;border-radius:7px;min-width:3px;transition:width .6s cubic-bezier(.4,0,.2,1)}
+  .funnel-row .fr-n{position:absolute;right:8px;top:0;line-height:22px;font-size:11.5px;font-weight:800;color:var(--text)}
+  .funnel-foot{display:flex;gap:8px;margin-top:11px}
+  .funnel-stat{flex:1;text-align:center;background:var(--panel2);border-radius:11px;padding:9px 4px}
+  .funnel-stat b{display:block;font-size:17px;font-weight:850;letter-spacing:-.02em}
+  .funnel-stat span{font-size:10px;color:var(--muted2);font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+
+  /* KPI / stat tiles + SLA */
+  .kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+  .kpi{background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:11px 12px}
+  .kpi .k-v{font-size:19px;font-weight:850;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .kpi .k-l{font-size:10.5px;color:var(--muted2);font-weight:700;margin-top:2px}
+  .kpi.good .k-v{color:#34d399}.kpi.warn .k-v{color:#fbbf24}.kpi.bad .k-v{color:#fb7185}
+  .sla-gauge{height:8px;border-radius:6px;background:var(--panel3);overflow:hidden;margin:2px 0 13px}
+  .sla-gauge .sg-fill{height:100%;border-radius:6px;transition:width .6s}
+
+  /* Rebook / VIP list rows */
+  .plist{display:flex;flex-direction:column;gap:7px}
+  .prow{display:flex;align-items:center;gap:11px;background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:9px 11px;cursor:pointer;transition:border-color .14s,transform .08s}
+  .prow:hover{border-color:var(--line)}.prow:active{transform:scale(.99)}
+  .prow .pr-av{width:36px;height:36px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#fff}
+  .prow .pr-b{flex:1;min-width:0}
+  .prow .pr-nm{font-weight:700;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .prow .pr-sub{font-size:11.5px;color:var(--muted2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .prow .pr-r{flex:none;text-align:right}
+  .prow .pr-amt{font-size:13.5px;font-weight:850;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
+  .prow .pr-tag{font-size:10px;font-weight:800;padding:3px 8px;border-radius:999px;white-space:nowrap}
+  .pr-tag.due{color:#fbbf24;background:rgba(251,191,36,.14)}
+  .pr-tag.vip{color:var(--accent-text);background:var(--accent-soft)}
+
+  /* Quick actions */
+  .qa-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
+  .qa-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;background:var(--panel2);border:1px solid var(--line2);border-radius:13px;padding:14px 6px;cursor:pointer;transition:border-color .14s,transform .08s,background .14s;color:var(--text)}
+  .qa-btn:hover{border-color:var(--accent);background:var(--panel3)}
+  .qa-btn:active{transform:scale(.96)}
+  .qa-btn .qa-ic{display:flex;color:var(--accent-text)}
+  .qa-btn .qa-l{font-size:11.5px;font-weight:700;text-align:center;line-height:1.2}
+
+  /* Weather planner */
+  .wx-today{display:flex;align-items:center;gap:14px;padding-bottom:12px;border-bottom:1px solid var(--line2);margin-bottom:11px}
+  .wx-temp{font-size:34px;font-weight:850;letter-spacing:-.03em;line-height:1}
+  .wx-emoji{font-size:36px;line-height:1}
+  .wx-tb{flex:1;min-width:0}
+  .wx-score{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:800;padding:4px 11px;border-radius:999px}
+  .wx-score.good{color:#34d399;background:rgba(52,211,153,.14)}
+  .wx-score.ok{color:#fbbf24;background:rgba(251,191,36,.14)}
+  .wx-score.bad{color:#fb7185;background:rgba(251,113,133,.14)}
+  .wx-desc{font-size:12px;color:var(--muted);margin-top:5px}
+  .wx-days{display:flex;gap:7px}
+  .wx-day{flex:1;text-align:center;background:var(--panel2);border-radius:11px;padding:9px 3px}
+  .wx-day .wd-d{font-size:10.5px;font-weight:800;color:var(--muted2);text-transform:uppercase}
+  .wx-day .wd-e{font-size:21px;margin:3px 0}
+  .wx-day .wd-t{font-size:11.5px;font-weight:700}
+  .wx-day .wd-dot{width:6px;height:6px;border-radius:50%;margin:5px auto 0}
+
+  /* Tasks / scratchpad */
+  .tk-add{display:flex;gap:8px;margin-bottom:11px}
+  .tk-add input{flex:1;min-width:0;background:var(--panel2);border:1px solid var(--line);border-radius:11px;color:var(--text);padding:10px 12px;font-size:14px;outline:none;font-family:inherit}
+  .tk-add input:focus{border-color:var(--accent)}
+  .tk-add button{flex:none;width:42px;border:0;border-radius:11px;background:var(--accent);color:#fff;display:inline-flex;align-items:center;justify-content:center;cursor:pointer}
+  .tk-add button:active{transform:scale(.95)}
+  .tk-list{display:flex;flex-direction:column;gap:6px}
+  .tk-item{display:flex;align-items:center;gap:11px;padding:9px 4px;border-bottom:1px solid var(--line2)}
+  .tk-item:last-child{border-bottom:0}
+  .tk-box{width:21px;height:21px;flex:none;border:2px solid var(--line);border-radius:7px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;transition:background .14s,border-color .14s}
+  .tk-box.on{background:var(--accent);border-color:var(--accent)}
+  .tk-txt{flex:1;min-width:0;font-size:14px;cursor:pointer}
+  .tk-item.done .tk-txt{color:var(--muted2);text-decoration:line-through}
+  .tk-del{flex:none;background:none;border:0;color:var(--muted2);cursor:pointer;padding:5px;display:flex;border-radius:7px}
+  .tk-del:hover{color:var(--accent);background:var(--panel2)}
+
+  /* Schedule / agenda timeline */
+  .agn{display:flex;flex-direction:column;gap:2px}
+  .agn-row{display:flex;gap:12px;align-items:flex-start;cursor:pointer;padding:2px 0}
+  .agn-time{flex:none;width:62px;text-align:right;font-size:11.5px;font-weight:800;color:var(--muted);padding-top:9px;font-variant-numeric:tabular-nums}
+  .agn-rail{flex:none;width:14px;display:flex;flex-direction:column;align-items:center;align-self:stretch}
+  .agn-dot{width:11px;height:11px;border-radius:50%;margin-top:10px;border:2px solid var(--panel)}
+  .agn-line{flex:1;width:2px;background:var(--line);margin-top:2px}
+  .agn-body{flex:1;min-width:0;background:var(--panel2);border:1px solid var(--line2);border-radius:11px;padding:9px 11px;margin-bottom:8px;transition:border-color .14s}
+  .agn-body:hover{border-color:var(--line)}
+  .agn-t{font-weight:700;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .agn-s{font-size:11.5px;color:var(--muted2);margin-top:1px}
+
   /* ---------- Email tab (unified inbox) ---------- */
   .email-card{padding:13px 16px;border-bottom:1px solid var(--line2);cursor:pointer;background:var(--panel);transition:background .12s}
   .email-card:hover{background:var(--panel2)}
@@ -1590,7 +1714,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-19·ai-command-center";
+  var APP_BUILD="2026-07-21·pro-dashboard";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -1887,7 +2011,7 @@
     mblocks:["hero","log","alerts","pulse","brain","today"], mblocksHidden:[],
     mkpis:["net","you","costs","savings","avg","jobs","margin","owed","best"],
     // Phase 2/3
-    hwidgets:["waiting","reminders","followups","money","stats"], hwidgetsHidden:[],
+    hwidgets:["goal","schedule","quickactions","waiting","sla","followups","rebook","money","trend","vip","funnel","weather","tasks","reminders","stats"], hwidgetsHidden:[],
     rowFields:["time","preview","status","tags","unread"],
     stageLabels:{}, stageColors:{}
   };}
@@ -1987,7 +2111,23 @@
     if(CZ.tab==="money")return czMoney(p);
     if(CZ.tab==="safe")return czSafe(p);
   }
-  var UI_HWIDGETS=[["waiting","Waiting on you","message-square"],["reminders","Reminders","clock"],["followups","Follow-ups ready","list-checks"],["money","Today’s money","dollar"],["stats","Quick stats","bar-chart"]];
+  var UI_HWIDGETS=[
+    ["goal","Revenue goal","dollar"],
+    ["schedule","Today’s schedule","clock"],
+    ["quickactions","Quick actions","sparkles"],
+    ["waiting","Waiting on you","message-square"],
+    ["sla","Response health","activity"],
+    ["followups","Follow-ups ready","list-checks"],
+    ["rebook","Rebook radar","refresh-cw"],
+    ["money","Today’s money","dollar"],
+    ["trend","Revenue trend","bar-chart"],
+    ["vip","Top customers","trophy"],
+    ["funnel","Lead pipeline","clipboard-list"],
+    ["weather","Weather planner","activity"],
+    ["tasks","To-do list","check-circle"],
+    ["reminders","Reminders","clock"],
+    ["stats","Quick stats","bar-chart"]
+  ];
   function czHome(p){
     p.innerHTML="";
     var c=document.createElement("div");c.className="cz-card";
@@ -2352,8 +2492,21 @@
     if(ins.won!=null)strip.push(ins.won+' won');
     if(ins.avgReplyMs!=null)strip.push('~'+fmtDur(ins.avgReplyMs)+' reply');
     W.stats='<div data-hwidget="stats"><div class="home-strip">'+strip.map(function(s){return '<span>'+esc(s)+'</span>'}).join("")+'</div></div>';
-    var order=(UI&&UI.hwidgets)||["aicenter","waiting","reminders","followups","money","stats"];
-    if(order.indexOf("aicenter")<0)order=["aicenter"].concat(order); // ensure it shows for existing users' saved layouts
+    // ---- Pro dashboard widgets (all toggleable in Customize → Home) ----
+    W.goal='<div data-hwidget="goal">'+homeGoalWidget()+'</div>';
+    W.schedule='<div data-hwidget="schedule">'+homeScheduleWidget(active,reminders)+'</div>';
+    W.quickactions='<div data-hwidget="quickactions">'+homeQuickActions()+'</div>';
+    W.sla='<div data-hwidget="sla">'+homeSlaWidget(ins,waiting,active)+'</div>';
+    W.rebook='<div data-hwidget="rebook">'+homeRebookWidget()+'</div>';
+    W.trend='<div data-hwidget="trend">'+homeTrendWidget()+'</div>';
+    W.vip='<div data-hwidget="vip">'+homeVipWidget()+'</div>';
+    W.funnel='<div data-hwidget="funnel">'+homeFunnelWidget(active)+'</div>';
+    W.weather='<div data-hwidget="weather">'+homeWeatherWidget()+'</div>';
+    W.tasks='<div data-hwidget="tasks">'+homeTasksWidget()+'</div>';
+    var order=(UI&&UI.hwidgets)?UI.hwidgets.slice():defaultUI().hwidgets.slice();
+    if(order.indexOf("aicenter")<0)order=["aicenter"].concat(order); // AI center always leads
+    // Make newly-shipped widgets appear for users with an older saved layout.
+    UI_HWIDGETS.forEach(function(w){if(order.indexOf(w[0])<0)order.push(w[0])});
     var hidden=(UI&&UI.hwidgetsHidden)||[];
     var h='<div class="home"><div class="home-head"><div class="hh-greet">'+greeting()+'</div><div class="hh-sub">Here\'s what needs you.</div></div>';
     order.forEach(function(k){if(hidden.indexOf(k)<0)h+=(W[k]||"")});
@@ -2363,7 +2516,221 @@
     Array.prototype.forEach.call(box.querySelectorAll("[data-open]"),function(c){c.onclick=function(){openThread(c.getAttribute("data-open"))}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-more]"),function(c){c.onclick=function(){setTab(c.getAttribute("data-more"))}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-open-money]"),function(c){c.onclick=function(){openMoney()}});
+    wireHomeWidgets(box);
     wireAiCenter();
+  }
+  // ===== Pro dashboard widgets ===============================================
+  // A monthly revenue goal the owner sets; the ring tracks net vs. goal, with a
+  // pace signal (ahead/behind the day-of-month run rate) and a month-end forecast.
+  function homeGoalKey(){return "mkd-goal-"+moCurMonth()}
+  function homeGoal(){try{var v=+localStorage.getItem(homeGoalKey());if(v>0)return v;var last=+localStorage.getItem("mkd-goal-last");return last>0?last:0}catch(e){return 0}}
+  function homeGoalWidget(){
+    var goal=homeGoal();var s=MO.summary;
+    if(!s){if(!MO._homeFetch){MO._homeFetch=1;api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.today=d.today;MO.entries=d.entries||[];MO.cfg=d.config;MO.owed=d.owed||[];MO.week=d.week;MO.allTime=d.allTime;if(state.tab==="home")renderHome()}}).catch(function(){});}}
+    var net=(s&&s.net)||0;
+    var now=new Date();var dim=new Date(now.getFullYear(),now.getMonth()+1,0).getDate();var day=now.getDate();
+    var pct=goal>0?Math.max(0,Math.min(100,Math.round(net/goal*100))):0;
+    var R=46,C=2*Math.PI*R,off=C*(1-pct/100);
+    var proj=day>0?net/day*dim:0;
+    var expected=goal*day/dim;var ahead=net>=expected;
+    var head='<div class="wc-h"><span class="wc-ic">'+ic("target",18)+'</span><span class="wc-t">Revenue goal</span><button class="wc-a" data-goal-edit="1">'+ic("pencil",13)+(goal>0?"Edit":"Set goal")+'</button></div>';
+    if(goal<=0){return '<div class="wcard">'+head+'<div class="wc-empty">'+ic("target",15)+' Set a monthly net-profit target to track your pace and month-end forecast.</div></div>';}
+    return '<div class="wcard">'+head+
+      '<div class="goal-wrap"><div class="goal-ring"><svg viewBox="0 0 104 104" width="104" height="104">'+
+      '<circle class="gr-bg" cx="52" cy="52" r="'+R+'"/>'+
+      '<circle class="gr-fg" cx="52" cy="52" r="'+R+'" stroke-dasharray="'+C.toFixed(1)+'" stroke-dashoffset="'+off.toFixed(1)+'"/></svg>'+
+      '<div class="gr-mid"><div class="grm-pct">'+pct+'%</div><div class="grm-l">of goal</div></div></div>'+
+      '<div class="goal-info"><div class="gi-big">'+fmtMoney(net)+'</div><div class="gi-sub">of '+fmtMoney(goal)+' · net this month</div>'+
+      '<span class="gi-pace '+(ahead?"ahead":"behind")+'">'+ic(ahead?"trending-up":"activity",13)+(ahead?"On pace":"Behind pace")+'</span>'+
+      '<div class="gi-proj">Projected month-end ~<b>'+fmtMoney(proj)+'</b> · '+(dim-day)+' days left</div></div></div></div>';
+  }
+  // Today's schedule — a timeline built from reminders due today, scheduled sends,
+  // and jobs already logged today, sorted by time.
+  function homeScheduleWidget(active,reminders){
+    var today=moTodayStr();var items=[];
+    (reminders||[]).forEach(function(t){if(!t.reminderAt)return;var d=new Date(t.reminderAt);if(dstrOf(d)!==today)return;
+      items.push({ts:t.reminderAt,color:"#7dd3fc",t:displayName(t),s:t.reminderNote||"Follow-up reminder",phone:t.phone});});
+    (active||[]).forEach(function(t){if(t.scheduledCount&&t.nextScheduledAt){var d=new Date(t.nextScheduledAt);if(dstrOf(d)===today)items.push({ts:t.nextScheduledAt,color:"var(--accent)",t:displayName(t),s:"Scheduled text goes out",phone:t.phone});}});
+    (MO.entries||[]).forEach(function(e){if(e.type==="job"&&e.date===today){items.push({ts:e.ts||Date.parse(today),color:"#34d399",t:(e.name||"Job logged"),s:(e.service?e.service+" · ":"")+fmtMoney(e.amount),phone:e.phone||""});}});
+    var head='<div class="wc-h"><span class="wc-ic">'+ic("calendar-days",18)+'</span><span class="wc-t">Today’s schedule</span><span class="wc-badge">'+items.length+'</span></div>';
+    if(!items.length)return '<div class="wcard">'+head+'<div class="wc-empty">'+ic("check",15)+' Nothing on the calendar today. Set a reminder or schedule a text to see it here.</div></div>';
+    items.sort(function(a,b){return a.ts-b.ts});
+    var rows="";items.slice(0,6).forEach(function(it,i){
+      var last=i===Math.min(items.length,6)-1;
+      rows+='<div class="agn-row"'+(it.phone?' data-open="'+esc(it.phone)+'"':'')+'><div class="agn-time">'+fmtTime(it.ts)+'</div>'+
+        '<div class="agn-rail"><div class="agn-dot" style="background:'+it.color+'"></div>'+(last?"":'<div class="agn-line"></div>')+'</div>'+
+        '<div class="agn-body"><div class="agn-t">'+esc(it.t)+'</div><div class="agn-s">'+esc(it.s)+'</div></div></div>';
+    });
+    return '<div class="wcard">'+head+'<div class="agn">'+rows+'</div></div>';
+  }
+  var QA_ACTIONS=[["new","New text","send"],["logjob","Log a job","dollar"],["logexp","Log expense","receipt"],["money","Money","wallet"],["followups","Follow-ups","list-checks"],["insights","Insights","bar-chart"]];
+  function homeQuickActions(){
+    var head='<div class="wc-h"><span class="wc-ic">'+ic("sparkles",18)+'</span><span class="wc-t">Quick actions</span></div>';
+    var g=QA_ACTIONS.map(function(a){return '<button class="qa-btn" data-qa="'+a[0]+'"><span class="qa-ic">'+ic(a[2],21)+'</span><span class="qa-l">'+esc(a[1])+'</span></button>'}).join("");
+    return '<div class="wcard">'+head+'<div class="qa-grid">'+g+'</div></div>';
+  }
+  // Response health — how fast replies go out, who's waiting, and a gauge scored
+  // against a 1-hour target (green under 1h, amber to 4h, red beyond).
+  function homeSlaWidget(ins,waiting,active){
+    var avgMs=ins.avgReplyMs;var wait=(waiting||[]).length;
+    var oldest=wait?ago(waiting[0].lastTs):"—";
+    var target=3600000; // 1h
+    var score=avgMs==null?70:Math.max(4,Math.min(100,Math.round(100-(avgMs/target)*45)));
+    var col=score>=70?"#34d399":score>=40?"#fbbf24":"#fb7185";
+    var head='<div class="wc-h"><span class="wc-ic">'+ic("activity",18)+'</span><span class="wc-t">Response health</span></div>';
+    return '<div class="wcard">'+head+
+      '<div class="sla-gauge"><div class="sg-fill" style="width:'+score+'%;background:'+col+'"></div></div>'+
+      '<div class="kpi-grid"><div class="kpi '+(avgMs!=null&&avgMs<target?"good":avgMs!=null&&avgMs<target*4?"warn":avgMs!=null?"bad":"")+'"><div class="k-v">'+(avgMs!=null?fmtDur(avgMs):"—")+'</div><div class="k-l">Avg reply</div></div>'+
+      '<div class="kpi '+(wait?"warn":"good")+'"><div class="k-v">'+wait+'</div><div class="k-l">Waiting</div></div>'+
+      '<div class="kpi"><div class="k-v" style="font-size:15px">'+esc(oldest)+'</div><div class="k-l">Oldest wait</div></div></div></div>';
+  }
+  // Rebook radar — detailing recurs; find customers whose last logged job was 45+
+  // days ago with nothing newer. These are due for a rebook nudge (recurring $).
+  function homeRebookWidget(){
+    var s=MO.summary;if(!s&&!MO._homeFetch){MO._homeFetch=1;api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.today=d.today;MO.entries=d.entries||[];MO.cfg=d.config;MO.owed=d.owed||[];MO.week=d.week;MO.allTime=d.allTime;if(state.tab==="home")renderHome()}}).catch(function(){});}
+    var byPhone={};
+    (MO.entries||[]).forEach(function(e){if(e.type!=="job"||!e.phone)return;var k=e.phone;var ts=e.ts||Date.parse((e.date||"")+"T12:00:00");if(!byPhone[k]||ts>byPhone[k].ts)byPhone[k]={ts:ts,name:e.name||"",amount:e.amount};});
+    var now=Date.now(),DAY=86400000;var due=[];
+    Object.keys(byPhone).forEach(function(k){var v=byPhone[k];var days=Math.floor((now-v.ts)/DAY);if(days>=45&&days<=400)due.push({phone:k,name:v.name,days:days,amount:v.amount});});
+    due.sort(function(a,b){return b.days-a.days});
+    var head='<div class="wc-h"><span class="wc-ic">'+ic("refresh-cw",18)+'</span><span class="wc-t">Rebook radar</span><span class="wc-badge">'+due.length+'</span></div>';
+    if(!due.length)return "";
+    var rows=due.slice(0,5).map(function(d){var nm=d.name||prettyPhone(d.phone);
+      return '<div class="prow" data-open="'+esc(d.phone)+'"><div class="pr-av" style="background:'+colorFor(d.phone)+'">'+esc((nm[0]||"#").toUpperCase())+'</div>'+
+        '<div class="pr-b"><div class="pr-nm">'+esc(nm)+'</div><div class="pr-sub">Last detail '+d.days+' days ago · '+fmtMoney(d.amount)+'</div></div>'+
+        '<span class="pr-tag due">Due</span></div>';}).join("");
+    return '<div class="wcard">'+head+'<p class="hint" style="margin:-4px 0 11px">Customers overdue for another detail — tap to send a rebook text.</p><div class="plist">'+rows+'</div></div>';
+  }
+  // 30-day revenue trend — daily gross as a bar sparkline, plus this-week vs
+  // last-week delta. Uses the loaded month entries (best-effort window).
+  function homeTrendWidget(){
+    var s=MO.summary;if(!s&&!MO._homeFetch){MO._homeFetch=1;api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.today=d.today;MO.entries=d.entries||[];MO.cfg=d.config;MO.owed=d.owed||[];MO.week=d.week;MO.allTime=d.allTime;if(state.tab==="home")renderHome()}}).catch(function(){});}
+    var days=14;var buckets=[];var labels=[];var now=new Date();
+    for(var i=days-1;i>=0;i--){var d=new Date(now.getFullYear(),now.getMonth(),now.getDate()-i);buckets.push({key:dstrOf(d),total:0});}
+    var idx={};buckets.forEach(function(b,i){idx[b.key]=i});
+    (MO.entries||[]).forEach(function(e){if(e.type==="job"&&idx[e.date]!=null)buckets[idx[e.date]].total+=e.amount;});
+    var max=Math.max(1,Math.max.apply(null,buckets.map(function(b){return b.total})));
+    var thisWk=buckets.slice(7).reduce(function(a,b){return a+b.total},0);
+    var lastWk=buckets.slice(0,7).reduce(function(a,b){return a+b.total},0);
+    var delta=lastWk>0?Math.round((thisWk-lastWk)/lastWk*100):(thisWk>0?100:0);
+    var head='<div class="wc-h"><span class="wc-ic">'+ic("bar-chart",18)+'</span><span class="wc-t">Revenue trend</span><span class="wc-badge">14 days</span></div>';
+    var W=280,H=56,bw=W/days;
+    var bars=buckets.map(function(b,i){var bh=Math.max(2,Math.round(b.total/max*H));var x=i*bw;var recent=i>=7;
+      return '<rect class="sp-bar'+(recent?"":" dim")+'" x="'+(x+1).toFixed(1)+'" y="'+(H-bh)+'" width="'+(bw-2).toFixed(1)+'" height="'+bh+'" rx="2"/>';}).join("");
+    return '<div class="wcard">'+head+
+      '<svg class="spark-svg" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+bars+'</svg>'+
+      '<div class="trend-foot"><span>This week <b style="color:var(--text)">'+fmtMoney(thisWk)+'</b></span>'+
+      '<span class="trend-delta '+(delta>=0?"up":"down")+'">'+(delta>=0?"▲ +":"▼ ")+Math.abs(delta)+'% vs last week</span></div></div>';
+  }
+  // Top customers — lifetime (loaded-month) spend leaders. Tap to open the thread.
+  function homeVipWidget(){
+    var s=MO.summary;if(!s&&!MO._homeFetch){MO._homeFetch=1;api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.today=d.today;MO.entries=d.entries||[];MO.cfg=d.config;MO.owed=d.owed||[];MO.week=d.week;MO.allTime=d.allTime;if(state.tab==="home")renderHome()}}).catch(function(){});}
+    var by={};(MO.entries||[]).forEach(function(e){if(e.type!=="job")return;var k=e.phone||("n:"+(e.name||"?"));var v=by[k]=by[k]||{total:0,n:0,name:e.name||"",phone:e.phone||""};v.total+=e.amount;v.n++;if(e.name&&!v.name)v.name=e.name;});
+    var list=Object.keys(by).map(function(k){return by[k]}).filter(function(v){return v.total>0}).sort(function(a,b){return b.total-a.total});
+    var head='<div class="wc-h"><span class="wc-ic">'+ic("trophy",18)+'</span><span class="wc-t">Top customers</span><span class="wc-badge">this month</span></div>';
+    if(!list.length)return "";
+    var rows=list.slice(0,5).map(function(v){var nm=v.name||(v.phone?prettyPhone(v.phone):"Customer");
+      return '<div class="prow"'+(v.phone?' data-open="'+esc(v.phone)+'"':'')+'><div class="pr-av" style="background:'+colorFor(v.phone||nm)+'">'+esc((nm[0]||"#").toUpperCase())+'</div>'+
+        '<div class="pr-b"><div class="pr-nm">'+esc(nm)+'</div><div class="pr-sub">'+v.n+(v.n===1?" job":" jobs")+' this month</div></div>'+
+        '<div class="pr-r"><div class="pr-amt">'+fmtMoney(v.total)+'</div></div></div>';}).join("");
+    return '<div class="wcard">'+head+'<div class="plist">'+rows+'</div></div>';
+  }
+  // Lead pipeline — funnel of New→Active→Won→Lost with win rate & open value.
+  function homeFunnelWidget(active){
+    var counts={new:0,active:0,won:0,lost:0};
+    (state.threads||[]).forEach(function(t){if(t.archived)return;if(counts[t.status]!=null)counts[t.status]++;});
+    var total=counts.new+counts.active+counts.won+counts.lost;
+    if(!total)return "";
+    var max=Math.max(1,counts.new,counts.active,counts.won,counts.lost);
+    var rowsDef=[["new","New","#3b82f6"],["active","Active","#22c55e"],["won","Won","#a855f7"],["lost","Lost","#8a93a3"]];
+    var rows=rowsDef.map(function(r){var n=counts[r[0]];var w=Math.round(n/max*100);
+      return '<div class="funnel-row"><span class="fr-l">'+r[1]+'</span><div class="fr-track"><div class="fr-fill" style="width:'+w+'%;background:'+r[2]+'"></div><span class="fr-n">'+n+'</span></div></div>';}).join("");
+    var decided=counts.won+counts.lost;var winRate=decided?Math.round(counts.won/decided*100):0;
+    var head='<div class="wc-h"><span class="wc-ic">'+ic("clipboard-list",18)+'</span><span class="wc-t">Lead pipeline</span><span class="wc-badge">'+total+' open</span></div>';
+    return '<div class="wcard">'+head+rows+
+      '<div class="funnel-foot"><div class="funnel-stat"><b>'+winRate+'%</b><span>Win rate</span></div>'+
+      '<div class="funnel-stat"><b>'+(counts.new+counts.active)+'</b><span>In play</span></div>'+
+      '<div class="funnel-stat"><b>'+counts.won+'</b><span>Won</span></div></div></div>';
+  }
+  // Weather planner — a mobile detailer lives and dies by the sky. Free Open-Meteo
+  // forecast (no key), scored for detailing (rain/wind = bad). Cached per session.
+  var WX={data:null,loading:false,err:false};
+  function wxScore(code,pop,wind){ // WMO code, precip %, wind mph
+    if(code>=61||code>=71&&code<=86||[95,96,99].indexOf(code)>=0)return 0;
+    if(pop>=55||wind>=22)return 1; if(pop>=30||code>=51||wind>=15)return 2; return 3;
+  }
+  function wxEmoji(code){if([0,1].indexOf(code)>=0)return"☀️";if([2].indexOf(code)>=0)return"⛅";if([3,45,48].indexOf(code)>=0)return"☁️";if(code>=71&&code<=86)return"🌨️";if([95,96,99].indexOf(code)>=0)return"⛈️";if(code>=51)return"🌧️";return"🌤️";}
+  function homeWeatherWidget(){
+    var head='<div class="wc-h"><span class="wc-ic">'+ic("activity",18)+'</span><span class="wc-t">Weather planner</span><span class="wc-badge">Snohomish</span></div>';
+    if(WX.err)return '<div class="wcard">'+head+'<div class="wc-empty">'+ic("info",15)+' Couldn’t load the forecast right now.</div></div>';
+    if(!WX.data)return '<div class="wcard">'+head+'<div class="wc-empty"><span class="spin"></span> Loading forecast…</div></div>';
+    var d=WX.data;var sc=["bad","bad","ok","good"];var lbl=["Not today","Poor","Fair","Great day to detail"];
+    var s0=wxScore(d.today.code,d.today.pop,d.today.wind);
+    var days=d.days.map(function(day){var sc2=wxScore(day.code,day.pop,day.wind);var col=["#fb7185","#fb7185","#fbbf24","#34d399"][sc2];
+      return '<div class="wx-day"><div class="wd-d">'+esc(day.dow)+'</div><div class="wd-e">'+wxEmoji(day.code)+'</div><div class="wd-t">'+Math.round(day.hi)+'°/'+Math.round(day.lo)+'°</div><div class="wd-dot" style="background:'+col+'"></div></div>';}).join("");
+    return '<div class="wcard">'+head+
+      '<div class="wx-today"><span class="wx-emoji">'+wxEmoji(d.today.code)+'</span><div class="wx-tb"><div class="wx-temp">'+Math.round(d.today.temp)+'°F</div>'+
+      '<div class="wx-desc">'+esc(d.today.desc)+' · '+d.today.pop+'% rain · '+Math.round(d.today.wind)+' mph wind</div></div>'+
+      '<span class="wx-score '+sc[s0]+'">'+lbl[s0]+'</span></div>'+
+      '<div class="wx-days">'+days+'</div></div>';
+  }
+  function wxLoad(){
+    if(WX.data||WX.loading)return;WX.loading=true;
+    // Snohomish, WA. Open-Meteo is free + keyless + CORS-enabled.
+    var u="https://api.open-meteo.com/v1/forecast?latitude=47.913&longitude=-122.098&current=temperature_2m,weather_code,precipitation_probability,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America%2FLos_Angeles&forecast_days=5";
+    fetch(u).then(function(r){return r.json()}).then(function(j){
+      if(!j||!j.daily){WX.err=true;WX.loading=false;if(state.tab==="home")renderHome();return}
+      var wc=WMO_DESC;var c=j.current||{};
+      WX.data={today:{temp:c.temperature_2m,code:c.weather_code,pop:c.precipitation_probability||j.daily.precipitation_probability_max[0]||0,wind:c.wind_speed_10m||0,desc:(wc[c.weather_code]||"—")},days:[]};
+      var dn=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+      for(var i=0;i<j.daily.time.length;i++){var dt=new Date(j.daily.time[i]+"T12:00:00");
+        WX.data.days.push({dow:i===0?"Today":dn[dt.getDay()],code:j.daily.weather_code[i],hi:j.daily.temperature_2m_max[i],lo:j.daily.temperature_2m_min[i],pop:j.daily.precipitation_probability_max[i]||0,wind:j.daily.wind_speed_10m_max[i]||0});}
+      WX.loading=false;if(state.tab==="home")renderHome();
+    }).catch(function(){WX.err=true;WX.loading=false;if(state.tab==="home")renderHome();});
+  }
+  var WMO_DESC={0:"Clear sky",1:"Mostly clear",2:"Partly cloudy",3:"Overcast",45:"Fog",48:"Rime fog",51:"Light drizzle",53:"Drizzle",55:"Heavy drizzle",61:"Light rain",63:"Rain",65:"Heavy rain",71:"Light snow",73:"Snow",75:"Heavy snow",80:"Rain showers",81:"Rain showers",82:"Violent showers",95:"Thunderstorm",96:"Storm w/ hail",99:"Storm w/ hail"};
+  // To-do list — a persistent daily checklist (localStorage). Simple, used daily.
+  function homeTasks(){try{return JSON.parse(localStorage.getItem("mkd-tasks")||"[]")}catch(e){return[]}}
+  function homeSaveTasks(t){try{localStorage.setItem("mkd-tasks",JSON.stringify(t))}catch(e){}}
+  function homeTasksWidget(){
+    var t=homeTasks();var openN=t.filter(function(x){return !x.done}).length;
+    var head='<div class="wc-h"><span class="wc-ic">'+ic("check-circle",18)+'</span><span class="wc-t">To-do list</span><span class="wc-badge">'+openN+' open</span></div>';
+    var rows=t.map(function(x,i){return '<div class="tk-item'+(x.done?" done":"")+'"><div class="tk-box'+(x.done?" on":"")+'" data-tk-toggle="'+i+'">'+(x.done?ic("check",13):"")+'</div>'+
+      '<div class="tk-txt" data-tk-toggle="'+i+'">'+esc(x.text)+'</div><button class="tk-del" data-tk-del="'+i+'" aria-label="Delete">'+ic("x",15)+'</button></div>';}).join("");
+    if(!rows)rows='<div class="wc-empty">'+ic("plus",15)+' Add your first to-do — jobs to book, supplies to grab, calls to make.</div>';
+    return '<div class="wcard">'+head+'<div class="tk-add"><input id="tkInput" placeholder="Add a to-do…" autocomplete="off" maxlength="120"><button id="tkAdd" aria-label="Add">'+ic("plus",18)+'</button></div><div class="tk-list">'+rows+'</div></div>';
+  }
+  function dstrOf(d){var p=function(x){return (x<10?"0":"")+x};return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())}
+  // Wire up the interactive widgets after Home renders.
+  function wireHomeWidgets(box){
+    // Weather: kick off the fetch lazily the first time the widget is on screen.
+    if(box.querySelector('[data-hwidget="weather"]'))wxLoad();
+    // Revenue goal editor.
+    var ge=box.querySelector("[data-goal-edit]");
+    if(ge)ge.onclick=function(){
+      var cur=homeGoal();var v=prompt("Monthly net-profit goal ($):",cur>0?String(cur):"");
+      if(v==null)return;var n=Math.round(+String(v).replace(/[^0-9.]/g,""));
+      if(n>0){try{localStorage.setItem(homeGoalKey(),String(n));localStorage.setItem("mkd-goal-last",String(n))}catch(e){}toast("Goal set to "+fmtMoney(n))}
+      else{try{localStorage.removeItem(homeGoalKey())}catch(e){}}
+      renderHome();
+    };
+    // Quick actions.
+    Array.prototype.forEach.call(box.querySelectorAll("[data-qa]"),function(b){b.onclick=function(){vibrate(6);
+      var a=b.getAttribute("data-qa");
+      if(a==="new")return newConversation();
+      if(a==="money")return openMoney();
+      if(a==="logjob"){openMoney();setTimeout(function(){if(typeof openMoSheet==="function")openMoSheet("job")},60);return}
+      if(a==="logexp"){openMoney();setTimeout(function(){if(typeof openMoSheet==="function")openMoSheet("exp")},60);return}
+      if(a==="followups")return setTab("followups");
+      if(a==="insights")return setTab("insights");
+    };});
+    // To-do list.
+    var tkAdd=box.querySelector("#tkAdd"),tkInput=box.querySelector("#tkInput");
+    function addTask(){var v=(tkInput.value||"").trim();if(!v)return;var t=homeTasks();t.unshift({text:v.slice(0,120),done:false});homeSaveTasks(t);tkInput.value="";renderHome();setTimeout(function(){var n=el("tkInput");if(n)n.focus()},30);}
+    if(tkAdd)tkAdd.onclick=addTask;
+    if(tkInput)tkInput.addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();addTask()}});
+    Array.prototype.forEach.call(box.querySelectorAll("[data-tk-toggle]"),function(b){b.onclick=function(){var i=+b.getAttribute("data-tk-toggle");var t=homeTasks();if(t[i]){t[i].done=!t[i].done;homeSaveTasks(t);renderHome()}};});
+    Array.prototype.forEach.call(box.querySelectorAll("[data-tk-del]"),function(b){b.onclick=function(){var i=+b.getAttribute("data-tk-del");var t=homeTasks();t.splice(i,1);homeSaveTasks(t);renderHome()};});
   }
   // ---- Home AI command center ----
   var AIC_CHIPS=["What needs my attention?","Rank my leads by priority","Label my leads","How much did I make this month?"];
