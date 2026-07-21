@@ -77,6 +77,32 @@ sending domain, keep `ALERT_FROM` unset — Resend then sends from
 `ALERT_EMAIL` to that same address). To send from your own domain, add and
 verify it in Resend, then set `ALERT_FROM` to an address on it.
 
+## Website analytics command center (Grow → Website)
+The Website tab is an all-in-one analytics dashboard that pulls **Google
+Analytics 4**, **Microsoft Clarity**, the built-in first-party pixel, and your
+job/revenue data into one scannable view: live "people on your site right now",
+KPI tiles with vs-prior-period deltas, plain-English insights, a
+visit→call→job→revenue funnel, a Clarity UX-health grade (dead/rage clicks,
+scroll depth, JS errors), top pages / sources / cities / devices / busiest
+hours, and an **AI deep read** (Gemini) that tells you what to do this week.
+
+**Connecting (one-time, in the app — no terminal):** open Grow → Website and
+paste two things:
+1. **Google Analytics** — the service-account JSON file (the same one the
+   daily-email function uses; the service account must be a *Viewer* on the GA4
+   property). Property ID defaults to Mikey's.
+2. **Clarity** — an API token from Clarity → Settings → **Data Export** →
+   Generate new API token.
+
+Both are stored in Worker KV, never in this repo, and are never echoed back by
+the API. Alternatively set them as Worker secrets (these win over pasted
+values): `GOOGLE_SERVICE_ACCOUNT_JSON`, `CLARITY_API_TOKEN`, `GA4_PROPERTY_ID`.
+
+**Caching / limits:** GA responses cache ~30 min per range (10 min for Today);
+GA realtime is fetched live. Clarity's export API allows only **10 calls per
+project per day**, so responses cache 6 h and a budget counter stops at 8
+calls/day (stale data is served after that — the UI labels it).
+
 ## Twilio webhooks (your business number)
 - **Messaging** → "A message comes in" → **POST** `https://texting.mikeysdetailingsnohomish.workers.dev/sms`
 - **Voice** → "A call comes in" → **POST** `https://texting.mikeysdetailingsnohomish.workers.dev/call`
@@ -106,4 +132,6 @@ Dashboard API: `/api/health` `/api/threads` `/api/thread` `/api/send` `/api/meta
 `/api/schedule` `/api/unschedule` `/api/call` `/api/read` `/api/insights`
 `/api/alert-test` `/api/templates` `/api/migrate`
 `/api/followups` `/api/followup` `/api/config` `/api/block`
+Website analytics: `/api/analytics` (pixel) `/api/webstats` `/api/webstats/status`
+`/api/webstats/connect` `/api/webstats/disconnect` `/api/webstats/ai`
 AI (Gemini): `/api/ai/summary` `/api/ai/draft` `/api/ai/triage`
