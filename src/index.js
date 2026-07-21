@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-21·booking-settings';
+const BUILD = '2026-07-21·booking+redesign';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -205,6 +205,13 @@ async function handle(request) {
 
   // Website analytics (Grow hub) — rollup of the /px pixel data.
   if (request.method === 'GET'  && pathname === '/api/analytics')   return apiAnalytics(url);
+
+  // Website analytics command center — GA4 + Microsoft Clarity, merged & cached.
+  if (request.method === 'GET'  && pathname === '/api/webstats')            return apiWebstats(url);
+  if (request.method === 'GET'  && pathname === '/api/webstats/status')     return apiWebstatsStatus();
+  if (request.method === 'POST' && pathname === '/api/webstats/connect')    return apiWebstatsConnect(request);
+  if (request.method === 'POST' && pathname === '/api/webstats/disconnect') return apiWebstatsDisconnect(request);
+  if (request.method === 'POST' && pathname === '/api/webstats/ai')         return apiWebstatsAi(request);
 
   // Money tracker (its own dashboard section — see the Money module below)
   if (request.method === 'GET'  && pathname === '/api/money')          return apiMoney(url);
@@ -991,8 +998,7 @@ function trimCountMap(m, max) {
   const top = keys.sort((a, b) => m[b] - m[a]).slice(0, max);
   const out = {}; for (const k of top) out[k] = m[k]; return out;
 }
-async function apiAnalytics(url) {
-  const days = Math.min(60, Math.max(7, parseInt(url.searchParams.get('days') || '14', 10)));
+async function pixelRollup(days) {
   const now = Date.now();
   const series = [];
   const paths = {}; const refs = {};
@@ -1006,7 +1012,438 @@ async function apiAnalytics(url) {
     for (const [k, v] of Object.entries(doc.refs || {})) refs[k] = (refs[k] || 0) + v;
   }
   const topList = (m) => Object.keys(m).sort((a, b) => m[b] - m[a]).slice(0, 8).map((k) => ({ k, n: m[k] }));
-  return json({ ok: true, days, totalViews, totalVisitors, series, topPaths: topList(paths), topRefs: topList(refs), origin: BASE_URL });
+  return { ok: true, days, totalViews, totalVisitors, series, topPaths: topList(paths), topRefs: topList(refs), origin: BASE_URL };
+}
+async function apiAnalytics(url) {
+  const days = Math.min(60, Math.max(7, parseInt(url.searchParams.get('days') || '14', 10)));
+  return json(await pixelRollup(days));
+}
+
+// ===========================================================================
+// Website analytics command center — GA4 + Microsoft Clarity
+// ---------------------------------------------------------------------------
+// One merged, heavily-cached payload for the Grow → Website tab: Google
+// Analytics 4 (via a service account — the SAME JSON file the daily-email
+// function on Netlify uses), Microsoft Clarity's data-export API, the
+// first-party /px pixel, and GA realtime ("N people on the site right now").
+//
+// Credentials are pasted ONCE inside the dashboard (Website tab → Connect) and
+// stored in KV — or provided as Worker secrets, which always win:
+//   GOOGLE_SERVICE_ACCOUNT_JSON   service-account JSON (Viewer on the property)
+//   CLARITY_API_TOKEN             Clarity → Settings → Data Export → token
+//   GA4_PROPERTY_ID               defaults to Mikey's property below
+// They are never echoed back by any endpoint and never appear in this repo.
+//
+// KV-write budget (see warning at the top of this file): everything here is
+// read-mostly. GA responses cache 30 min per range (10 min for "today"),
+// realtime is fetched live but never written, and Clarity caches for 6 hours —
+// their API allows only TEN calls per project per day, so a budget counter
+// hard-stops us at 8 and serves stale data after that.
+// ===========================================================================
+const GA4_DEFAULT_PROPERTY = '489075814';
+const WEBSTATS_EVENTS = { qqc: 'qqc_submission', phone: 'phone_click' };
+const CLARITY_DAILY_BUDGET = 8; // Clarity's hard API limit is 10/day — keep headroom
+const WEBSTATS_RANGES = {
+  today: { cur: { startDate: 'today', endDate: 'today' },       prev: { startDate: 'yesterday', endDate: 'yesterday' },   days: 1 },
+  '7d':  { cur: { startDate: '6daysAgo', endDate: 'today' },    prev: { startDate: '13daysAgo', endDate: '7daysAgo' },    days: 7 },
+  '28d': { cur: { startDate: '27daysAgo', endDate: 'today' },   prev: { startDate: '55daysAgo', endDate: '28daysAgo' },   days: 28 },
+  '90d': { cur: { startDate: '89daysAgo', endDate: 'today' },   prev: { startDate: '179daysAgo', endDate: '90daysAgo' }, days: 90 },
+};
+
+async function webstatsSecrets() {
+  const saved = (await kv().get('webstats:secrets', { type: 'json' })) || {};
+  return {
+    gaJson: String(ENV.GOOGLE_SERVICE_ACCOUNT_JSON || saved.gaJson || ''),
+    clarityToken: String(ENV.CLARITY_API_TOKEN || saved.clarityToken || ''),
+    propertyId: String(ENV.GA4_PROPERTY_ID || saved.propertyId || GA4_DEFAULT_PROPERTY),
+    gaVia: ENV.GOOGLE_SERVICE_ACCOUNT_JSON ? 'secret' : (saved.gaJson ? 'saved' : ''),
+    clarityVia: ENV.CLARITY_API_TOKEN ? 'secret' : (saved.clarityToken ? 'saved' : ''),
+  };
+}
+
+// --- Google service-account auth (JWT-bearer, signed with WebCrypto RS256) ---
+function b64urlFromBytes(bytes) {
+  let s = '';
+  for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function pemToArrayBuffer(pem) {
+  const b64 = String(pem || '').replace(/-----[^-]+-----/g, '').replace(/\s+/g, '');
+  const bin = atob(b64);
+  const buf = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+  return buf.buffer;
+}
+async function gaAccessToken(creds) {
+  const cached = await kv().get('webstats:gatok', { type: 'json' });
+  if (cached && cached.email === creds.client_email && cached.exp > Date.now() + 120000) return cached.token;
+  const iat = Math.floor(Date.now() / 1000);
+  const aud = creds.token_uri || 'https://oauth2.googleapis.com/token';
+  const enc = (obj) => b64urlFromBytes(new TextEncoder().encode(JSON.stringify(obj)));
+  const unsigned = enc({ alg: 'RS256', typ: 'JWT' }) + '.' + enc({
+    iss: creds.client_email,
+    scope: 'https://www.googleapis.com/auth/analytics.readonly',
+    aud, iat, exp: iat + 3600,
+  });
+  const key = await crypto.subtle.importKey('pkcs8', pemToArrayBuffer(creds.private_key),
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(unsigned));
+  const jwt = unsigned + '.' + b64urlFromBytes(new Uint8Array(sig));
+  const res = await fetch(aud, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: 'grant_type=' + encodeURIComponent('urn:ietf:params:oauth:grant-type:jwt-bearer') + '&assertion=' + jwt,
+  });
+  if (!res.ok) throw new Error('Google auth ' + res.status + ': ' + (await res.text()).slice(0, 180));
+  const data = await res.json();
+  // Cache ~55 min (1 KV write per hour of active use, max).
+  await kv().put('webstats:gatok', JSON.stringify({
+    token: data.access_token, email: creds.client_email,
+    exp: Date.now() + Math.max(60, (data.expires_in || 3600) - 300) * 1000,
+  }), { expirationTtl: 3600 });
+  return data.access_token;
+}
+
+// --- GA4 Data API ---
+async function gaBatch(propertyId, token, requests) {
+  const res = await fetch('https://analyticsdata.googleapis.com/v1beta/properties/' + propertyId + ':batchRunReports', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requests }),
+  });
+  if (!res.ok) throw new Error('GA4 ' + res.status + ': ' + (await res.text()).slice(0, 220));
+  return (await res.json()).reports || [];
+}
+function gaRows(rep) { return (rep && rep.rows) || []; }
+function gaNum(mv, i) { return parseFloat((((mv || [])[i] || {}).value) || '0') || 0; }
+function gaDim(dv, i) { return String((((dv || [])[i] || {}).value) || ''); }
+
+async function gaBundle(sec, rangeKey, force) {
+  const cacheKey = 'webstats:ga:' + rangeKey;
+  const freshMs = rangeKey === 'today' ? 600000 : 1800000;
+  const cached = await kv().get(cacheKey, { type: 'json' });
+  if (cached && !force && Date.now() - cached.fetchedAt < freshMs) {
+    return Object.assign({}, cached.ga, { fetchedAt: cached.fetchedAt, cached: true });
+  }
+  let creds;
+  try { creds = JSON.parse(sec.gaJson); } catch { throw new Error('Saved service-account JSON is not valid JSON'); }
+  const token = await gaAccessToken(creds);
+  const R = WEBSTATS_RANGES[rangeKey];
+  const evFilter = { filter: { fieldName: 'eventName', inListFilter: { values: [WEBSTATS_EVENTS.qqc, WEBSTATS_EVENTS.phone] } } };
+  const m = (names) => names.map((n) => ({ name: n }));
+  const [a, b] = await Promise.all([
+    gaBatch(sec.propertyId, token, [
+      { dateRanges: [R.cur], dimensions: m(['date']), metrics: m(['sessions', 'totalUsers', 'screenPageViews', 'engagedSessions']), orderBys: [{ dimension: { dimensionName: 'date' } }], limit: 400 },
+      { dateRanges: [R.cur], dimensions: m(['date', 'eventName']), metrics: m(['eventCount']), dimensionFilter: evFilter, limit: 500 },
+      { dateRanges: [R.cur, R.prev], metrics: m(['sessions', 'totalUsers', 'screenPageViews', 'engagedSessions', 'averageSessionDuration', 'newUsers']) },
+      { dateRanges: [R.cur, R.prev], dimensions: m(['eventName']), metrics: m(['eventCount']), dimensionFilter: evFilter },
+      { dateRanges: [R.cur], dimensions: m(['pagePath']), metrics: m(['screenPageViews', 'activeUsers']), orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }], limit: 12 },
+    ]),
+    gaBatch(sec.propertyId, token, [
+      { dateRanges: [R.cur], dimensions: m(['sessionDefaultChannelGroup', 'sessionSource']), metrics: m(['sessions']), orderBys: [{ metric: { metricName: 'sessions' }, desc: true }], limit: 30 },
+      { dateRanges: [R.cur], dimensions: m(['city']), metrics: m(['sessions']), orderBys: [{ metric: { metricName: 'sessions' }, desc: true }], limit: 10 },
+      { dateRanges: [R.cur], dimensions: m(['deviceCategory']), metrics: m(['sessions']) },
+      { dateRanges: [R.cur], dimensions: m(['hour']), metrics: m(['sessions']), limit: 30 },
+      { dateRanges: [R.cur], dimensions: m(['pagePath', 'eventName']), metrics: m(['eventCount']), dimensionFilter: evFilter, orderBys: [{ metric: { metricName: 'eventCount' }, desc: true }], limit: 24 },
+    ]),
+  ]);
+  const ga = gaShape(a, b);
+  ga.propertyId = sec.propertyId;
+  await kv().put(cacheKey, JSON.stringify({ fetchedAt: Date.now(), ga }), { expirationTtl: 7200 });
+  return Object.assign({}, ga, { fetchedAt: Date.now(), cached: false });
+}
+
+// Turn the two batchRunReports responses into one compact, UI-ready object.
+// Note: when a request has TWO dateRanges, GA appends an implicit "dateRange"
+// dimension as the LAST dimension value (date_range_0 = current period).
+function gaShape(a, b) {
+  const seriesR = a[0], evSeriesR = a[1], totalsR = a[2], evTotalsR = a[3], pagesR = a[4];
+  const srcR = b[0], citiesR = b[1], devicesR = b[2], hoursR = b[3], pageEvR = b[4];
+
+  const byDate = {};
+  for (const r of gaRows(seriesR)) {
+    const d = gaDim(r.dimensionValues, 0);
+    byDate[d] = { d, sessions: gaNum(r.metricValues, 0), users: gaNum(r.metricValues, 1), views: gaNum(r.metricValues, 2), engaged: gaNum(r.metricValues, 3), qqc: 0, phone: 0 };
+  }
+  for (const r of gaRows(evSeriesR)) {
+    const d = gaDim(r.dimensionValues, 0), ev = gaDim(r.dimensionValues, 1), n = gaNum(r.metricValues, 0);
+    if (!byDate[d]) byDate[d] = { d, sessions: 0, users: 0, views: 0, engaged: 0, qqc: 0, phone: 0 };
+    if (ev === WEBSTATS_EVENTS.qqc) byDate[d].qqc = n;
+    else if (ev === WEBSTATS_EVENTS.phone) byDate[d].phone = n;
+  }
+  const series = Object.values(byDate).sort((x, y) => (x.d < y.d ? -1 : 1));
+
+  const blank = () => ({ sessions: 0, users: 0, views: 0, engaged: 0, avgDur: 0, newUsers: 0, qqc: 0, phone: 0 });
+  const totals = blank(), prev = blank();
+  for (const r of gaRows(totalsR)) {
+    const t = gaDim(r.dimensionValues, 0) === 'date_range_1' ? prev : totals;
+    t.sessions = gaNum(r.metricValues, 0); t.users = gaNum(r.metricValues, 1); t.views = gaNum(r.metricValues, 2);
+    t.engaged = gaNum(r.metricValues, 3); t.avgDur = Math.round(gaNum(r.metricValues, 4)); t.newUsers = gaNum(r.metricValues, 5);
+  }
+  for (const r of gaRows(evTotalsR)) {
+    const ev = gaDim(r.dimensionValues, 0);
+    const t = gaDim(r.dimensionValues, 1) === 'date_range_1' ? prev : totals;
+    const n = gaNum(r.metricValues, 0);
+    if (ev === WEBSTATS_EVENTS.qqc) t.qqc = n;
+    else if (ev === WEBSTATS_EVENTS.phone) t.phone = n;
+  }
+
+  const pages = gaRows(pagesR).map((r) => ({ path: gaDim(r.dimensionValues, 0).slice(0, 120), views: gaNum(r.metricValues, 0), users: gaNum(r.metricValues, 1), qqc: 0, phone: 0 }));
+  const pageIdx = {};
+  pages.forEach((p) => { pageIdx[p.path] = p; });
+  for (const r of gaRows(pageEvR)) {
+    const path = gaDim(r.dimensionValues, 0).slice(0, 120), ev = gaDim(r.dimensionValues, 1), n = gaNum(r.metricValues, 0);
+    let p = pageIdx[path];
+    if (!p) { p = { path, views: 0, users: 0, qqc: 0, phone: 0 }; pageIdx[path] = p; pages.push(p); }
+    if (ev === WEBSTATS_EVENTS.qqc) p.qqc += n;
+    else if (ev === WEBSTATS_EVENTS.phone) p.phone += n;
+  }
+
+  const channels = {}, sources = {};
+  for (const r of gaRows(srcR)) {
+    const ch = gaDim(r.dimensionValues, 0) || '(other)';
+    const src = gaDim(r.dimensionValues, 1) || '(direct)';
+    const n = gaNum(r.metricValues, 0);
+    channels[ch] = (channels[ch] || 0) + n;
+    sources[src] = (sources[src] || 0) + n;
+  }
+  const topList = (mObj, cap) => Object.keys(mObj).sort((x, y) => mObj[y] - mObj[x]).slice(0, cap).map((k) => ({ k, n: mObj[k] }));
+
+  const cities = gaRows(citiesR)
+    .map((r) => ({ k: gaDim(r.dimensionValues, 0), n: gaNum(r.metricValues, 0) }))
+    .filter((c) => c.k && c.k !== '(not set)');
+  const devices = gaRows(devicesR).map((r) => ({ k: gaDim(r.dimensionValues, 0), n: gaNum(r.metricValues, 0) }));
+  const hours = new Array(24).fill(0);
+  for (const r of gaRows(hoursR)) {
+    const h = parseInt(gaDim(r.dimensionValues, 0), 10);
+    if (h >= 0 && h < 24) hours[h] = gaNum(r.metricValues, 0);
+  }
+
+  return { series, totals, prev, pages: pages.slice(0, 12), channels: topList(channels, 8), sources: topList(sources, 10), cities, devices, hours };
+}
+
+async function gaRealtime(sec) {
+  let creds;
+  try { creds = JSON.parse(sec.gaJson); } catch { return null; }
+  const token = await gaAccessToken(creds);
+  const res = await fetch('https://analyticsdata.googleapis.com/v1beta/properties/' + sec.propertyId + ':runRealtimeReport', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ metrics: [{ name: 'activeUsers' }] }),
+  });
+  if (!res.ok) throw new Error('GA realtime ' + res.status);
+  const data = await res.json();
+  const row = (data.rows || [])[0];
+  return { active: row ? Math.round(gaNum(row.metricValues, 0)) : 0 };
+}
+
+// --- Microsoft Clarity data-export API ---
+function clarityNum(v) { const n = parseFloat(v); return isFinite(n) ? n : 0; }
+function clarityPctCount(info) { return { pct: clarityNum(info.sessionsWithMetricPercentage), count: clarityNum(info.subTotal) }; }
+function clarityParseOverall(arr) {
+  const out = {};
+  for (const mtr of (Array.isArray(arr) ? arr : [])) {
+    const name = mtr.metricName || '';
+    const info = (mtr.information || [])[0] || {};
+    if (name === 'Traffic') {
+      out.sessions = clarityNum(info.totalSessionCount);
+      out.bots = clarityNum(info.totalBotSessionCount);
+      out.users = clarityNum(info.distinctUserCount);
+      out.pagesPerSession = clarityNum(info.pagesPerSessionPercentage);
+    } else if (name === 'EngagementTime') { out.totalSecs = clarityNum(info.totalTime); out.activeSecs = clarityNum(info.activeTime); }
+    else if (name === 'ScrollDepth') out.scrollDepth = clarityNum(info.averageScrollDepth);
+    else if (name === 'DeadClickCount') out.dead = clarityPctCount(info);
+    else if (name === 'RageClickCount') out.rage = clarityPctCount(info);
+    else if (name === 'QuickbackClick') out.quickback = clarityPctCount(info);
+    else if (name === 'ExcessiveScroll') out.excessiveScroll = clarityPctCount(info);
+    else if (name === 'ScriptErrorCount') out.scriptErrors = clarityNum(info.subTotal);
+    else if (name === 'ErrorClickCount') out.errorClicks = clarityNum(info.subTotal);
+  }
+  return out;
+}
+function clarityParsePages(arr) {
+  if (!Array.isArray(arr)) return [];
+  const rowsFor = (name) => { const mtr = arr.find((x) => x.metricName === name); return (mtr && mtr.information) || []; };
+  const urlOf = (r) => String(r.URL || r.Url || r.url || '').slice(0, 200);
+  const map = {};
+  for (const r of rowsFor('Traffic')) {
+    const u = urlOf(r);
+    if (!u) continue;
+    map[u] = { url: u, sessions: clarityNum(r.totalSessionCount), deadPct: 0, ragePct: 0 };
+  }
+  for (const r of rowsFor('DeadClickCount')) { const u = urlOf(r); if (map[u]) map[u].deadPct = clarityNum(r.sessionsWithMetricPercentage); }
+  for (const r of rowsFor('RageClickCount')) { const u = urlOf(r); if (map[u]) map[u].ragePct = clarityNum(r.sessionsWithMetricPercentage); }
+  return Object.values(map).filter((p) => p.sessions > 0).sort((x, y) => y.sessions - x.sessions).slice(0, 8);
+}
+async function clarityFetch(token, force) {
+  const cacheKey = 'webstats:clarity';
+  const cached = await kv().get(cacheKey, { type: 'json' });
+  const fresh = cached && Date.now() - cached.fetchedAt < 6 * 3600 * 1000;
+  if (cached && fresh && !force) return Object.assign({}, cached, { stale: false });
+  const day = utcDayStr(Date.now());
+  const budgetKey = 'webstats:clarity:calls:' + day;
+  const used = parseInt((await kv().get(budgetKey)) || '0', 10);
+  if (used >= CLARITY_DAILY_BUDGET) {
+    // Out of API budget for today — stale data beats no data.
+    return cached ? Object.assign({}, cached, { stale: true, callsToday: used }) : null;
+  }
+  // Count the calls BEFORE making them so a failure can't retry us into the limit.
+  await kv().put(budgetKey, String(used + 2), { expirationTtl: 90000 });
+  const call = async (params) => {
+    const res = await fetch('https://www.clarity.ms/export-data/api/v1/project-live-insights?' + params, {
+      headers: { Authorization: 'Bearer ' + token },
+    });
+    if (!res.ok) throw new Error('Clarity ' + res.status + ': ' + (await res.text()).slice(0, 160));
+    return res.json();
+  };
+  const overallRaw = await call('numOfDays=3');
+  let byUrlRaw = null;
+  try { byUrlRaw = await call('numOfDays=3&dimension1=URL'); } catch (e) { /* per-page detail is optional */ }
+  const doc = { fetchedAt: Date.now(), days: 3, overall: clarityParseOverall(overallRaw), pages: clarityParsePages(byUrlRaw) };
+  await kv().put(cacheKey, JSON.stringify(doc), { expirationTtl: 26 * 3600 });
+  return Object.assign({}, doc, { stale: false, callsToday: used + 2 });
+}
+
+// --- The merged endpoint the Website tab polls ---
+async function apiWebstats(url) {
+  const rangeKey = WEBSTATS_RANGES[url.searchParams.get('range')] ? url.searchParams.get('range') : '7d';
+  const force = url.searchParams.get('force') === '1';
+  const sec = await webstatsSecrets();
+  const out = {
+    ok: true, range: rangeKey, generatedAt: Date.now(),
+    connected: { ga: !!sec.gaJson, clarity: !!sec.clarityToken },
+    ga: null, realtime: null, clarity: null, pixel: null, errors: {},
+  };
+  const jobs = [pixelRollup(14).then((d) => { out.pixel = d; }).catch(() => {})];
+  if (sec.gaJson) {
+    jobs.push(gaBundle(sec, rangeKey, force).then((d) => { out.ga = d; }).catch((e) => { out.errors.ga = String(e.message || e).slice(0, 200); }));
+    jobs.push(gaRealtime(sec).then((d) => { out.realtime = d; }).catch(() => {}));
+  }
+  if (sec.clarityToken) {
+    jobs.push(clarityFetch(sec.clarityToken, force).then((d) => { out.clarity = d; }).catch((e) => { out.errors.clarity = String(e.message || e).slice(0, 200); }));
+  }
+  await Promise.all(jobs);
+  return json(out);
+}
+
+async function apiWebstatsStatus() {
+  const sec = await webstatsSecrets();
+  let gaEmail = '';
+  if (sec.gaJson) { try { gaEmail = JSON.parse(sec.gaJson).client_email || ''; } catch (e) {} }
+  const used = parseInt((await kv().get('webstats:clarity:calls:' + utcDayStr(Date.now()))) || '0', 10);
+  return json({
+    ok: true,
+    ga: { connected: !!sec.gaJson, via: sec.gaVia, email: gaEmail, propertyId: sec.propertyId },
+    clarity: { connected: !!sec.clarityToken, via: sec.clarityVia, callsToday: used, budget: CLARITY_DAILY_BUDGET },
+  });
+}
+
+async function apiWebstatsConnect(request) {
+  const data = await readJson(request);
+  const saved = (await kv().get('webstats:secrets', { type: 'json' })) || {};
+  const out = { ok: true };
+
+  if (typeof data.ga === 'string' && data.ga.trim()) {
+    let creds;
+    try { creds = JSON.parse(data.ga); } catch {
+      return json({ ok: false, error: 'ga_bad_json', hint: 'That does not look like the service-account file. Paste the WHOLE .json file, starting with {' }, 422);
+    }
+    if (!creds.client_email || !creds.private_key) {
+      return json({ ok: false, error: 'ga_missing_fields', hint: 'The JSON needs client_email and private_key — use the key file downloaded from Google Cloud.' }, 422);
+    }
+    const pid = String(data.propertyId || saved.propertyId || ENV.GA4_PROPERTY_ID || GA4_DEFAULT_PROPERTY).replace(/\D/g, '') || GA4_DEFAULT_PROPERTY;
+    try {
+      const token = await gaAccessToken(creds);
+      const res = await fetch('https://analyticsdata.googleapis.com/v1beta/properties/' + pid + ':runReport', {
+        method: 'POST',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dateRanges: [{ startDate: 'yesterday', endDate: 'today' }], metrics: [{ name: 'sessions' }] }),
+      });
+      if (!res.ok) {
+        return json({ ok: false, error: 'ga_verify_failed', hint: 'Google said ' + res.status + '. Make sure ' + creds.client_email + ' is added as a Viewer on GA property ' + pid + ' (Admin → Property access management).' }, 422);
+      }
+    } catch (e) {
+      return json({ ok: false, error: 'ga_auth_failed', hint: String(e.message || e).slice(0, 200) }, 422);
+    }
+    saved.gaJson = data.ga.trim();
+    saved.propertyId = pid;
+    out.ga = { connected: true, email: creds.client_email, propertyId: pid };
+  } else if (data.propertyId && saved.gaJson) {
+    saved.propertyId = String(data.propertyId).replace(/\D/g, '') || saved.propertyId;
+  }
+
+  if (typeof data.clarity === 'string' && data.clarity.trim()) {
+    const tok = data.clarity.trim();
+    const budgetKey = 'webstats:clarity:calls:' + utcDayStr(Date.now());
+    const used = parseInt((await kv().get(budgetKey)) || '0', 10);
+    if (used >= CLARITY_DAILY_BUDGET) {
+      saved.clarityToken = tok;
+      out.clarity = { connected: true, verified: false, note: 'Saved — today\'s Clarity API budget is used up, so it will verify on tomorrow\'s first load.' };
+    } else {
+      await kv().put(budgetKey, String(used + 1), { expirationTtl: 90000 });
+      const res = await fetch('https://www.clarity.ms/export-data/api/v1/project-live-insights?numOfDays=1', {
+        headers: { Authorization: 'Bearer ' + tok },
+      });
+      if (!res.ok) {
+        return json({ ok: false, error: 'clarity_verify_failed', hint: 'Clarity said ' + res.status + '. Generate a fresh token: Clarity → your project → Settings → Data Export → Generate new API token.' }, 422);
+      }
+      saved.clarityToken = tok;
+      out.clarity = { connected: true, verified: true };
+    }
+  }
+
+  await kv().put('webstats:secrets', JSON.stringify(saved));
+  return json(out);
+}
+
+async function apiWebstatsDisconnect(request) {
+  const data = await readJson(request);
+  const saved = (await kv().get('webstats:secrets', { type: 'json' })) || {};
+  if (data.source === 'ga') { delete saved.gaJson; }
+  else if (data.source === 'clarity') { delete saved.clarityToken; }
+  else return json({ ok: false, error: 'bad_source' }, 422);
+  await kv().put('webstats:secrets', JSON.stringify(saved));
+  return json({ ok: true });
+}
+
+// AI deep-read: compress the current stats into a text brief and let Gemini
+// write the "what does this mean & what should I do" narrative.
+async function apiWebstatsAi(request) {
+  if (!ENV.GEMINI_API_KEY) return json({ ok: false, error: 'ai_not_configured' }, 503);
+  const data = await readJson(request);
+  const rangeKey = WEBSTATS_RANGES[data.range] ? data.range : '7d';
+  const sec = await webstatsSecrets();
+  if (!sec.gaJson) return json({ ok: false, error: 'ga_not_connected' }, 400);
+  let ga;
+  try { ga = await gaBundle(sec, rangeKey, false); } catch (e) {
+    return json({ ok: false, error: 'ga_error', detail: String(e.message || e).slice(0, 180) }, 502);
+  }
+  let clar = null;
+  if (sec.clarityToken) { try { clar = await clarityFetch(sec.clarityToken, false); } catch (e) {} }
+  const L = [];
+  const t = ga.totals, p = ga.prev;
+  const label = { today: 'today', '7d': 'the last 7 days', '28d': 'the last 28 days', '90d': 'the last 90 days' }[rangeKey];
+  L.push('Period: ' + label + ' (vs the period before it).');
+  L.push('Sessions ' + t.sessions + ' (prev ' + p.sessions + '), visitors ' + t.users + ' (prev ' + p.users + '), page views ' + t.views + ' (prev ' + p.views + '), engaged sessions ' + t.engaged + ', avg session ' + t.avgDur + 's, new visitors ' + t.newUsers + '.');
+  L.push('Phone-call clicks ' + t.phone + ' (prev ' + p.phone + '), quote-form submissions ' + t.qqc + ' (prev ' + p.qqc + ').');
+  if (ga.channels.length) L.push('Traffic by channel: ' + ga.channels.map((c) => c.k + ' ' + c.n).join(', ') + '.');
+  if (ga.sources.length) L.push('Top sources: ' + ga.sources.slice(0, 5).map((c) => c.k + ' ' + c.n).join(', ') + '.');
+  if (ga.pages.length) L.push('Top pages (views | phone | quote): ' + ga.pages.slice(0, 6).map((pg) => pg.path + ' ' + pg.views + '|' + pg.phone + '|' + pg.qqc).join(', ') + '.');
+  if (ga.cities.length) L.push('Top cities: ' + ga.cities.slice(0, 5).map((c) => c.k + ' ' + c.n).join(', ') + '.');
+  if (ga.devices.length) L.push('Devices: ' + ga.devices.map((c) => c.k + ' ' + c.n).join(', ') + '.');
+  if (clar && clar.overall) {
+    const o = clar.overall;
+    L.push('Clarity UX (last 3 days): ' + (o.sessions || 0) + ' sessions, avg scroll depth ' + (o.scrollDepth || 0).toFixed(0) + '%, dead clicks in ' + ((o.dead || {}).pct || 0).toFixed(1) + '% of sessions, rage clicks ' + ((o.rage || {}).pct || 0).toFixed(1) + '%, quick-backs ' + ((o.quickback || {}).pct || 0).toFixed(1) + '%, JS errors ' + (o.scriptErrors || 0) + '.');
+  }
+  if (data.extra) L.push('From the SMS dashboard: ' + String(data.extra).slice(0, 300));
+  const prompt = 'You are the sharp, no-nonsense marketing analyst for Mikey\'s Mobile Detailing, a one-man mobile car detailing business in Snohomish County, WA. His website stats:\n\n' + L.join('\n') +
+    '\n\nWrite for a busy owner reading on his phone:\n1. THREE short bullets — the most important things happening, in plain English, each citing its number.\n2. One line starting "DO THIS WEEK:" — the single highest-impact action.\nNo jargon, no fluff, no headings other than the bullets and that final line.';
+  try {
+    const text = await geminiGenerate(prompt, { temperature: 0.5, maxTokens: 700 });
+    return json({ ok: true, text });
+  } catch (e) {
+    return json({ ok: false, error: 'ai_error', detail: String(e.message || e).slice(0, 200) }, 502);
+  }
 }
 
 // AI content generator (Grow hub → SEO / Content Studio). One flexible endpoint

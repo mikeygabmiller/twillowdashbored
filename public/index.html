@@ -1341,6 +1341,61 @@
   .cs-seg button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text)}
   .cs-out{background:var(--panel);border:1px solid var(--line2);border-radius:13px;padding:14px;font-size:14px;line-height:1.6;white-space:pre-wrap;min-height:80px;margin-top:11px}
   .cs-out.empty{color:var(--muted2);display:flex;align-items:center;gap:8px;min-height:60px}
+  /* ---- Website analytics command center (Grow → Website) ---- */
+  .wa-top{display:flex;align-items:center;gap:8px;margin:2px 0 12px}
+  .wa-seg{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;flex:1}
+  .wa-seg::-webkit-scrollbar{display:none}
+  .wa-seg button{flex:none;font-size:12px;font-weight:800;color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:7px 12px;cursor:pointer}
+  .wa-seg button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text)}
+  .wa-gear{flex:none;width:34px;height:34px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .wa-live{display:flex;align-items:center;gap:9px;background:var(--panel);border:1px solid var(--line2);border-radius:13px;padding:11px 13px;font-size:13px;margin-bottom:12px}
+  .wa-live b{font-weight:900}
+  .wa-live .wa-upd{color:var(--muted2);font-size:11px;margin-left:auto;text-align:right;flex:none}
+  .wa-dot{width:9px;height:9px;border-radius:50%;background:#34d399;flex:none;position:relative}
+  .wa-dot.on::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:2px solid #34d399;opacity:.5;animation:waPulse 1.6s ease-out infinite}
+  .wa-dot.off{background:var(--muted2)}
+  @keyframes waPulse{0%{transform:scale(.55);opacity:.7}100%{transform:scale(1.5);opacity:0}}
+  .wa-tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+  .wa-tile{background:var(--panel);border:1px solid var(--line2);border-radius:15px;padding:13px 14px 11px}
+  .wa-tile .t-l{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted2);display:flex;align-items:center;gap:5px}
+  .wa-tile .t-v{font-size:26px;font-weight:900;letter-spacing:-.02em;margin-top:3px}
+  .wa-spark{width:100%;height:26px;display:block;margin-top:7px}
+  .wa-spark rect{fill:var(--accent);opacity:.5}
+  .wa-panel{background:var(--panel);border:1px solid var(--line2);border-radius:15px;padding:13px 14px;margin-bottom:12px}
+  .wa-panel .p-t{font-size:12px;font-weight:800;color:var(--muted);display:flex;align-items:center;gap:7px;margin-bottom:8px}
+  .wa-panel .p-t small{margin-left:auto;color:var(--muted2);font-weight:700;font-size:10.5px;text-align:right}
+  .wa-chart rect{fill:var(--accent);opacity:.8}
+  .wa-xlab{display:flex;justify-content:space-between;font-size:10px;color:var(--muted2);font-weight:700;margin-top:4px}
+  .wa-ins{border-radius:13px;border:1px solid var(--line2);background:var(--panel);padding:12px 13px;margin-bottom:8px;display:flex;gap:10px;align-items:flex-start;font-size:13.5px;line-height:1.5}
+  .wa-ins .i-ic{flex:none;width:28px;height:28px;border-radius:9px;display:flex;align-items:center;justify-content:center;margin-top:1px}
+  .wa-ins.good .i-ic{background:rgba(52,211,153,.14);color:#34d399}
+  .wa-ins.warn .i-ic{background:rgba(234,179,8,.16);color:var(--gold)}
+  .wa-ins.bad .i-ic{background:rgba(251,113,133,.14);color:#fb7185}
+  .wa-ins.info .i-ic{background:var(--panel2);color:var(--muted)}
+  .wa-fun{margin-bottom:8px}
+  .wa-fun .f-top{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;margin-bottom:4px;gap:8px}
+  .wa-fun .f-top b{font-weight:800}
+  .wa-fun .f-n{font-weight:900}
+  .wa-fun .f-p{color:var(--muted2);font-weight:700;font-size:10.5px;margin-left:5px}
+  .wa-track{height:14px;border-radius:7px;background:var(--panel2);overflow:hidden}
+  .wa-fill{height:100%;border-radius:7px;background:var(--accent);min-width:3px;transition:width .5s}
+  .wa-meter{display:flex;align-items:center;gap:9px;margin-bottom:8px;font-size:12.5px}
+  .wa-meter .m-k{flex:none;width:122px;color:var(--text);font-weight:600}
+  .wa-meter .m-track{flex:1;height:8px;border-radius:4px;background:var(--panel2);overflow:hidden}
+  .wa-meter .m-fill{height:100%;border-radius:4px}
+  .wa-meter .m-n{flex:none;width:46px;text-align:right;font-weight:800;color:var(--muted)}
+  .wa-grade{width:46px;height:46px;border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900;flex:none}
+  .wa-pills{display:flex;gap:8px;flex-wrap:wrap}
+  .wa-pill{background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:6px 11px;font-size:12px;font-weight:700;color:var(--muted)}
+  .wa-pill b{color:var(--text);font-weight:900}
+  .wa-src{display:inline-flex;align-items:center;gap:5px;background:var(--panel2);border-radius:8px;padding:4px 8px;font-size:11px;font-weight:700;color:var(--muted);margin:0 6px 6px 0}
+  .wa-badge{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:800;color:var(--muted2);margin-left:7px;vertical-align:1px}
+  .wa-conn{border:1px dashed var(--line);border-radius:13px;padding:13px;margin-bottom:10px;font-size:13px}
+  .wa-conn .c-h{display:flex;align-items:center;gap:8px;font-weight:800;margin-bottom:4px;flex-wrap:wrap}
+  .wa-ok{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;border-radius:999px;padding:3px 9px;background:rgba(52,211,153,.14);color:#34d399}
+  .wa-no{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;border-radius:999px;padding:3px 9px;background:var(--panel2);color:var(--muted2)}
+  .wa-hint{color:var(--muted2);font-size:12px;line-height:1.5;margin:4px 0 8px}
+  .wa-ai{white-space:pre-wrap;font-size:13.5px;line-height:1.65}
   /* generic grow input */
   .gr-input{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:12px;color:var(--text);padding:12px 13px;font-size:14.5px;font-family:inherit;outline:none}
   .gr-input:focus{border-color:var(--accent)}
@@ -1422,6 +1477,84 @@
   /* chats list-cards style */
   body.list-cards .conv{border:1px solid var(--line2);border-radius:16px;margin:0 0 8px;padding:12px 13px;box-shadow:var(--mo-elev)}
   body.list-cards .conv .prev{white-space:normal}
+
+  /* =======================================================================
+     Dashboard redesign polish — 5-tab IA, Home rundown, unified Analytics.
+     Appended last so it layers cleanly over the base rules above.
+     ======================================================================= */
+  /* Bottom nav: theme-aware surface + a crisp active indicator bar. */
+  .bottomnav{background:color-mix(in srgb,var(--panel) 90%,transparent)}
+  .navitem{padding-top:8px;transition:color .15s}
+  .navitem::after{content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);width:0;height:3px;border-radius:0 0 4px 4px;background:var(--accent);transition:width .2s ease}
+  .navitem.active::after{width:24px}
+  .navitem.active .ic{transform:translateY(-1px) scale(1.08)}
+
+  /* Home header + AI hero. */
+  .home-head{padding:16px 2px 4px}
+  .hh-greet{font-size:26px}
+  .hh-sub{font-size:13.5px;color:var(--muted2);font-weight:600}
+  .ai-center{margin-top:16px;padding:16px 16px 15px;box-shadow:0 12px 32px -16px var(--accent-soft)}
+  .aic-title{font-size:15.5px}
+  .aic-chips button{font-weight:650}
+  .aic-try{display:flex;align-items:center;gap:5px;margin-top:13px;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted2)}
+  .aic-try svg{opacity:.8}
+
+  /* "Needs your attention" — the always-on at-a-glance rundown. */
+  .needs{margin-top:16px;background:var(--panel);border:1px solid var(--line2);border-radius:18px;padding:5px 7px 8px;box-shadow:var(--mo-elev)}
+  .needs.ok{display:flex;align-items:center;gap:14px;padding:16px 18px;background:linear-gradient(135deg,color-mix(in srgb,var(--green) 14%,var(--panel)),var(--panel));border-color:color-mix(in srgb,var(--green) 26%,var(--line2))}
+  .needs .nd-ok{display:flex;flex:none;color:var(--green)}
+  .needs .nd-ok-t{font-size:16px;font-weight:800;letter-spacing:-.01em}
+  .needs .nd-ok-s{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .nd-head{display:flex;align-items:center;gap:8px;padding:11px 11px 8px;font-size:13.5px;font-weight:800;letter-spacing:-.01em}
+  .nd-head .nd-h-l{display:flex;align-items:center;gap:7px}
+  .nd-head .nd-h-l svg{color:var(--accent)}
+  .nd-head .nd-h-n{margin-left:auto;font-size:12px;font-weight:800;color:#fff;background:var(--accent);min-width:22px;height:22px;border-radius:11px;display:inline-flex;align-items:center;justify-content:center;padding:0 6px;font-variant-numeric:tabular-nums}
+  .nd-list{display:flex;flex-direction:column;gap:2px}
+  .nd-row{display:flex;align-items:center;gap:12px;padding:9px 10px;border-radius:13px;cursor:pointer;transition:background .12s,transform .08s}
+  .nd-row:hover{background:var(--panel2)}
+  .nd-row:active{transform:scale(.994)}
+  .nd-row .nd-b{flex:1;min-width:0}
+  .nd-row .nd-nm{font-weight:750;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .nd-row .nd-sub{color:var(--muted);font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+  .nd-sig{flex:none;display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:800;padding:4px 9px;border-radius:999px;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .nd-sig svg{width:12px;height:12px}
+  .nd-sig.wait{color:var(--accent-text);background:var(--accent-soft)}
+  .nd-sig.fu{color:#eab308;background:rgba(234,179,8,.14)}
+  .nd-sig.fu.high{color:#ff8388;background:var(--accent-soft)}
+  .nd-sig.rem{color:#38bdf8;background:rgba(56,189,248,.14)}
+
+  /* Analytics section labels + gold "train your AI" nudge (theme-aware). */
+  .an-lbl{display:flex;align-items:center;gap:8px;margin:22px 2px 11px;font-size:13.5px;font-weight:800;letter-spacing:-.01em}
+  .an-lbl svg{color:var(--accent-text)}
+  .an-lbl .an-n{margin-left:auto;font-size:12px;font-weight:800;color:var(--muted2);font-variant-numeric:tabular-nums}
+  .ins .an-lbl:first-child,.ins .gold-card:first-child{margin-top:4px}
+  .ai-card.gold-card{background:linear-gradient(135deg,#241b0c,#191307);border-color:#3a2b12}
+  .ai-card.gold-card .ttl{color:#f5c563}
+  .ai-card.gold-card .txt{color:#e9dcc0;text-transform:none;letter-spacing:normal}
+  :root[data-theme="light"] .ai-card.gold-card{background:linear-gradient(135deg,#fdf6e3,#fbeecb);border-color:#e9d19a}
+  :root[data-theme="light"] .ai-card.gold-card .ttl{color:#a86a12}
+  :root[data-theme="light"] .ai-card.gold-card .txt{color:#7a5a10}
+
+  /* Delta badges: keep the trending icon glued to the % text. */
+  .trend-delta{display:inline-flex;align-items:center;gap:3px}
+  .trend-delta svg{width:13px;height:13px}
+  .bt-d{display:inline-flex;align-items:center;gap:3px}
+  .bt-d svg{width:12px;height:12px;flex:none}
+  .mo-k .kbadge{display:inline-flex;align-items:center;gap:2px}
+  .mo-k .kbadge svg{width:11px;height:11px}
+
+  /* Weather icons replaced the emoji glyphs — center the SVGs. */
+  .wx-emoji{display:flex;align-items:center;justify-content:center}
+  .wx-day .wd-e{display:flex;align-items:center;justify-content:center;margin:4px 0 2px}
+  .wx-i{display:inline-flex}
+
+  /* Website-analytics hero + the 2-segment Analytics sub-nav. */
+  .gr-hero-web{background:linear-gradient(135deg,#7c3aed,#4f46e5);box-shadow:0 12px 28px rgba(124,58,237,.2)}
+  .gr-nav-2 button{flex:1;position:relative}
+  .gr-nav-2 button.active::before{content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);width:34px;height:3px;border-radius:0 0 3px 3px;background:var(--accent)}
+
+  /* Customize: locked-panel heading with inline icon. */
+  .cz-card h3.cz-h-ic{display:flex;align-items:center;gap:7px}
 </style>
 </head>
 <body>
@@ -1449,12 +1582,9 @@
     <nav class="bottomnav" id="bottomnav">
       <button class="navitem active" data-tab="home"><span class="ic" data-ic="home"></span><span class="ndot" id="navHome"></span>Home</button>
       <button class="navitem" data-tab="messages"><span class="ic" data-ic="message-square"></span><span class="ndot" id="navUnread"></span>Chats</button>
-      <button class="navitem" data-tab="leads"><span class="ic" data-ic="clipboard-list"></span>Leads</button>
+      <button class="navitem" data-tab="leads"><span class="ic" data-ic="clipboard-list"></span><span class="ndot" id="navLeads"></span>Leads</button>
       <button class="navitem" data-tab="money"><span class="ic" data-ic="dollar"></span><span class="ndot" id="navMoney"></span>Money</button>
-      <button class="navitem" data-tab="email"><span class="ic" data-ic="mail"></span><span class="ndot" id="navEmail"></span>Email</button>
-      <button class="navitem" data-tab="grow"><span class="ic" data-ic="rocket"></span>Grow</button>
-      <button class="navitem" data-tab="insights"><span class="ic" data-ic="bar-chart"></span>Insights</button>
-      <button class="navitem" data-tab="customize"><span class="ic" data-ic="sliders"></span>Customize</button>
+      <button class="navitem" data-tab="analytics"><span class="ic" data-ic="bar-chart"></span>Analytics</button>
     </nav>
   </aside>
 
@@ -1626,14 +1756,13 @@
     <div class="sec-lbl">Views</div>
     <div class="ditem" id="bookingsItem" onclick="location.href='/bookings.html'"><span class="ic" data-ic="calendar-days"></span>Bookings<span class="n" style="color:var(--accent-text)">new</span></div>
     <div class="ditem" data-tab="messages"><span class="ic" data-ic="message-square"></span>All messages<span class="n" id="mnAll"></span></div>
-    <div class="ditem" data-tab="email"><span class="ic" data-ic="mail"></span>Email inbox<span class="n" id="mnEmail"></span></div>
-    <div class="ditem" data-filter="unread"><span class="ic" data-ic="mail"></span>Unread<span class="n" id="mnUnread"></span></div>
+    <div class="ditem" data-filter="unread"><span class="ic" data-ic="bell"></span>Unread<span class="n" id="mnUnread"></span></div>
     <div class="ditem" data-tab="leads"><span class="ic" data-ic="clipboard-list"></span>Leads pipeline</div>
     <div class="ditem" data-tab="followups"><span class="ic" data-ic="list-checks"></span>Follow-ups<span class="n" id="mnFollow"></span></div>
     <div class="ditem" data-tab="scheduled"><span class="ic" data-ic="calendar-days"></span>Scheduled<span class="n" id="mnSched"></span></div>
     <div class="ditem" data-tab="archived"><span class="ic" data-ic="archive"></span>Archived<span class="n" id="mnArch"></span></div>
     <div class="ditem" id="moneyItem"><span class="ic" data-ic="dollar"></span>Money tracker</div>
-    <div class="ditem" id="growItem"><span class="ic" data-ic="rocket"></span>Grow — business suite<span class="n" style="color:var(--accent-text)">new</span></div>
+    <div class="ditem" id="analyticsItem"><span class="ic" data-ic="bar-chart"></span>Analytics — website &amp; business</div>
 
     <div class="sec-lbl">Auto follow-up settings</div>
     <div class="fu-settings" id="fuSettings"></div>
@@ -1651,7 +1780,6 @@
     <div class="accent-row" id="accentRow"></div>
 
     <div class="sec-lbl">Tools</div>
-    <div class="ditem" id="emailSetupItem"><span class="ic" data-ic="mail"></span>Connect email</div>
     <div class="ditem" id="snapshotItem"><span class="ic" data-ic="download"></span>Snapshot for Claude</div>
     <div class="ditem" id="refreshItem"><span class="ic" data-ic="refresh-cw"></span>Refresh now</div>
     <div class="ditem" id="healthItem"><span class="ic" data-ic="activity"></span>Connection<span class="n"><span class="health" id="healthBadge"><span class="dotc"></span><span id="healthTxt">check</span></span></span></div>
@@ -1747,21 +1875,17 @@
 </div>
 <div class="cz-tour" id="czTour"></div>
 
-<!-- Grow — business growth suite (CRM, Reviews, Website analytics, Local SEO, Content) -->
+<!-- Analytics — business KPIs (Overview) + website intelligence (GA4 / Clarity / pixel) -->
 <div class="grow" id="growApp">
   <div class="gr-head">
     <button class="btn icon" id="grBack" data-ic="chevron-left" aria-label="Back"></button>
-    <div class="gr-title"><b id="grTitle">Grow</b><small id="grSub">Tools to grow Mikey's Mobile Detailing</small></div>
+    <div class="gr-title"><b id="grTitle">Analytics</b><small id="grSub">Mikey's Mobile Detailing</small></div>
     <button class="btn icon" id="grRefresh" data-ic="refresh-cw" aria-label="Refresh"></button>
   </div>
   <div class="gr-body" id="grBody"></div>
-  <nav class="gr-nav" id="grNav">
-    <button data-gv="home" class="active"><span class="e" data-ic="rocket" data-ic-size="20"></span>Grow</button>
-    <button data-gv="crm"><span class="e" data-ic="users" data-ic-size="20"></span>Customers</button>
-    <button data-gv="reviews"><span class="e" data-ic="trophy" data-ic-size="20"></span>Reviews</button>
+  <nav class="gr-nav gr-nav-2" id="grNav">
+    <button data-gv="overview" class="active"><span class="e" data-ic="activity" data-ic-size="20"></span>Overview</button>
     <button data-gv="analytics"><span class="e" data-ic="bar-chart" data-ic-size="20"></span>Website</button>
-    <button data-gv="seo"><span class="e" data-ic="target" data-ic-size="20"></span>Local SEO</button>
-    <button data-gv="content"><span class="e" data-ic="sparkles" data-ic-size="20"></span>Content</button>
   </nav>
 </div>
 
@@ -1803,7 +1927,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-21·booking-settings";
+  var APP_BUILD="2026-07-21·booking+redesign";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -1886,7 +2010,17 @@
     "settings":'<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
     "lightbulb":'<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>',
     "credit-card":'<rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/>',
-    "sliders":'<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="1" x2="7" y1="14" y2="14"/><line x1="9" x2="15" y1="8" y2="8"/><line x1="17" x2="23" y1="16" y2="16"/>'
+    "sliders":'<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="1" x2="7" y1="14" y2="14"/><line x1="9" x2="15" y1="8" y2="8"/><line x1="17" x2="23" y1="16" y2="16"/>',
+    "trending-down":'<polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/>',
+    "lock":'<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
+    "star":'<path d="M11.525 2.295a.53.53 0 0 1 .95 0l2.31 4.679a2.12 2.12 0 0 0 1.595 1.16l5.166.756a.53.53 0 0 1 .294.904l-3.736 3.638a2.12 2.12 0 0 0-.611 1.878l.882 5.14a.53.53 0 0 1-.771.56l-4.618-2.428a2.12 2.12 0 0 0-1.973 0L6.396 21.01a.53.53 0 0 1-.77-.56l.881-5.139a2.12 2.12 0 0 0-.611-1.879L2.16 9.795a.53.53 0 0 1 .294-.906l5.165-.755a2.12 2.12 0 0 0 1.597-1.16z"/>',
+    "sun":'<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>',
+    "cloud":'<path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/>',
+    "cloud-sun":'<path d="M12 2v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="M20 12h2"/><path d="m19.07 4.93-1.41 1.41"/><path d="M15.947 12.65a4 4 0 0 0-5.925-4.128"/><path d="M13 22H7a5 5 0 1 1 4.9-6H13a3 3 0 0 1 0 6Z"/>',
+    "cloud-rain":'<path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M16 14v6"/><path d="M8 14v6"/><path d="M12 16v6"/>',
+    "cloud-drizzle":'<path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M8 19v1"/><path d="M8 14v1"/><path d="M16 19v1"/><path d="M16 14v1"/><path d="M12 21v1"/><path d="M12 16v1"/>',
+    "cloud-snow":'<path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M8 15h.01"/><path d="M8 19h.01"/><path d="M12 17h.01"/><path d="M12 21h.01"/><path d="M16 15h.01"/><path d="M16 19h.01"/>',
+    "cloud-lightning":'<path d="M6 16.326A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 1.5 8.742"/><path d="m13 12-3 5h4l-3 5"/>'
   };
   function ic(name,size,strokeW){
     size=size||22;var p=ICONS[name];if(p==null)return"";
@@ -1976,7 +2110,7 @@
       var res=el("aiCmdResult");res.className="aicmd-result ar-done";
       res.innerHTML='<div class="ar-line"><span class="ar-ic">'+ic("check",16)+'</span><span>'+esc(d.reply||"Done.")+'</span></div>';
       res.style.display="block";
-      refreshThreads();if(state.tab==="email")fetchEmails();if(typeof loadMoney==="function")loadMoney();if(typeof fetchInsights==="function")fetchInsights();
+      refreshThreads();if(typeof loadMoney==="function")loadMoney();if(typeof fetchInsights==="function")fetchInsights();
       if(typeof renderHome==="function"&&state.tab==="home")setTimeout(function(){aiBriefLoad(true)},400);
       toast(d.reply||"Done");
     }).catch(function(){aiCmdShowError("Network error — please try again.")});
@@ -1989,7 +2123,7 @@
   function submitLogin(value,wrongMsg){
     el("loginErr").textContent="";
     post("/api/login",{password:value}).then(function(d){
-      if(d&&d.ok){pin="";if(el("loginPass"))el("loginPass").value="";hideLogin();refreshThreads();loadTemplates();checkHealth();startPoll();loadConfig();fetchEmails();fetchInsights();loadMoney();showBuild();if(state.pendingC)openThread(state.pendingC)}
+      if(d&&d.ok){pin="";if(el("loginPass"))el("loginPass").value="";hideLogin();refreshThreads();loadTemplates();checkHealth();startPoll();loadConfig();fetchInsights();loadMoney();showBuild();if(state.pendingC)openThread(state.pendingC)}
       else{
         el("loginErr").textContent=wrongMsg||"Wrong PIN — try again";
         var box=el("loginBox");if(box){box.classList.remove("pin-shake");void box.offsetWidth;box.classList.add("pin-shake")}
@@ -2085,7 +2219,7 @@
   // to any saved business data — this is pure presentation + arrangement.
   // ==========================================================================
   var UI_KEY="mkd-ui";
-  var UI_TABLIST=[["home","Home","home"],["messages","Chats","message-square"],["leads","Leads","clipboard-list"],["money","Money","dollar"],["grow","Grow","rocket"],["insights","Insights","bar-chart"],["email","Email","mail"],["customize","Customize","sliders"]];
+  var UI_TABLIST=[["home","Home","home"],["messages","Chats","message-square"],["leads","Leads","clipboard-list"],["money","Money","dollar"],["analytics","Analytics","bar-chart"]];
   var UI_PRESETS=[ // id, name, accent, accentDark
     ["crimson","Crimson","#ff2e43","#c81e30"],["ocean","Ocean","#2f9bff","#1d5fd8"],
     ["mint","Mint","#22c55e","#15803d"],["grape","Grape","#a855f7","#7e22ce"],
@@ -2096,11 +2230,11 @@
     preset:"crimson", accent:["#ff2e43","#c81e30"],
     radius:"md", density:"comfy", textScale:100, font:"system", bg:"solid",
     mode:"simple", locked:false, tourSeen:false, listStyle:"compact",
-    tabsOrder:["home","messages","leads","money","insights","customize"], tabsHidden:[],
+    tabsOrder:["home","messages","leads","money","analytics"], tabsHidden:[],
     mblocks:["hero","log","alerts","pulse","brain","today"], mblocksHidden:[],
     mkpis:["net","you","costs","savings","avg","jobs","margin","owed","best"],
     // Phase 2/3
-    hwidgets:["goal","schedule","quickactions","waiting","sla","followups","rebook","money","trend","vip","funnel","weather","tasks","reminders","stats"], hwidgetsHidden:[],
+    hwidgets:["money","quickactions","schedule","goal","rebook","sla","tasks","trend","funnel","vip","weather","stats"], hwidgetsHidden:["trend","funnel","vip","weather","stats"],
     rowFields:["time","preview","status","tags","unread"],
     stageLabels:{}, stageColors:{}
   };}
@@ -2191,7 +2325,7 @@
     tabs.innerHTML=CZ_TABS.map(function(t){return '<span class="cz-tab'+(CZ.tab===t[0]?" on":"")+'" data-czt="'+t[0]+'"><span class="e">'+ic(t[2],15)+'</span>'+t[1]+'</span>'}).join("");
     Array.prototype.forEach.call(tabs.querySelectorAll("[data-czt]"),function(b){b.onclick=function(){CZ.tab=b.getAttribute("data-czt");czRender()}});
     var p=el("czPanel");
-    if(UI.locked&&CZ.tab!=="safe"){p.innerHTML='<div class="cz-card"><h3>🔒 Locked</h3><p class="hint">Customizing is locked so nothing changes by accident. Unlock it under <b>Simple &amp; safe</b>.</p></div>';return;}
+    if(UI.locked&&CZ.tab!=="safe"){p.innerHTML='<div class="cz-card"><h3 class="cz-h-ic">'+ic("lock",15)+' Locked</h3><p class="hint">Customizing is locked so nothing changes by accident. Unlock it under <b>Simple &amp; safe</b>.</p></div>';return;}
     if(CZ.tab==="look")return czLook(p);
     if(CZ.tab==="layout")return czLayout(p);
     if(CZ.tab==="home")return czHome(p);
@@ -2201,20 +2335,17 @@
     if(CZ.tab==="safe")return czSafe(p);
   }
   var UI_HWIDGETS=[
-    ["goal","Revenue goal","dollar"],
-    ["schedule","Today’s schedule","clock"],
-    ["quickactions","Quick actions","sparkles"],
-    ["waiting","Waiting on you","message-square"],
-    ["sla","Response health","activity"],
-    ["followups","Follow-ups ready","list-checks"],
-    ["rebook","Rebook radar","refresh-cw"],
     ["money","Today’s money","dollar"],
-    ["trend","Revenue trend","bar-chart"],
-    ["vip","Top customers","trophy"],
-    ["funnel","Lead pipeline","clipboard-list"],
-    ["weather","Weather planner","activity"],
+    ["quickactions","Quick actions","sparkles"],
+    ["schedule","Today’s schedule","calendar-days"],
+    ["goal","Revenue goal","target"],
+    ["rebook","Rebook radar","refresh-cw"],
+    ["sla","Response health","activity"],
     ["tasks","To-do list","check-circle"],
-    ["reminders","Reminders","clock"],
+    ["trend","Revenue trend","bar-chart"],
+    ["funnel","Lead pipeline","clipboard-list"],
+    ["vip","Top customers","trophy"],
+    ["weather","Weather planner","cloud-sun"],
     ["stats","Quick stats","bar-chart"]
   ];
   function czHome(p){
@@ -2307,8 +2438,8 @@
   function czLayout(p){
     p.innerHTML="";
     var c=document.createElement("div");c.className="cz-card";
-    c.innerHTML='<h3>Bottom tabs</h3><p class="hint">Drag the ⋮⋮ handle to reorder. Tap the eye to show or hide a tab. Home &amp; Customize stay put.</p>';
-    c.appendChild(czList(UI_TABLIST,UI.tabsOrder,UI.tabsHidden,function(){saveUI();applyUI();},["customize"]));
+    c.innerHTML='<h3>Bottom tabs</h3><p class="hint">Drag the handle to reorder. Tap the eye to show or hide a tab — Home always stays.</p>';
+    c.appendChild(czList(UI_TABLIST,UI.tabsOrder,UI.tabsHidden,function(){saveUI();applyUI();},["home"]));
     p.appendChild(c);
     var c2=document.createElement("div");c2.className="cz-card";
     c2.innerHTML='<h3>Chats list style</h3><p class="hint">How your conversations look.</p>';
@@ -2365,7 +2496,7 @@
   }
   function czTour(){
     var t=el("czTour");if(!t)return;
-    t.innerHTML='<b>👋 Welcome to Customize</b><p>Change your app’s look, rearrange tabs, and set up your Money screen — it all saves as you go, and your data is never touched. Try tapping a theme.</p><button id="czTourX">Got it</button>';
+    t.innerHTML='<b>Welcome to Customize</b><p>Change your app’s look, rearrange tabs, and set up your Money screen — it all saves as you go, and your data is never touched. Try tapping a theme.</p><button id="czTourX">Got it</button>';
     t.classList.add("show");el("czTourX").onclick=function(){t.classList.remove("show");UI.tourSeen=true;saveUI()};
   }
   // Bundle everything the owner sees into one file to hand to Claude — read-only.
@@ -2404,7 +2535,6 @@
     var nu=el("navUnread");nu.textContent=c.unread;nu.className="ndot"+(c.unread?" show":"");
     var ns=el("navSched");if(ns){ns.textContent=c.sched;ns.className="ndot"+(c.sched?" show":"")}
     var nh=el("navHome");if(nh){nh.textContent=c.needs;nh.className="ndot"+(c.needs?" show":"")}
-    refreshEmailBadge();
     var nn=el("navNeeds");if(nn){nn.textContent=c.needs;nn.className="ndot"+(c.needs?" show":"")}
     var nf=el("navFollow");if(nf){nf.textContent=c.follow;nf.className="ndot"+(c.follow?" show":"")}
     el("mnAll").textContent=c.all||"";el("mnUnread").textContent=c.unread||"";
@@ -2503,10 +2633,8 @@
     if(state.tab==="home"&&!state.search)return renderHome();
     if(state.tab==="leads")return renderLeads();
     if(state.tab==="followups")return renderFollowups();
-    if(state.tab==="insights")return renderInsights();
     if(state.tab==="scheduled")return renderList("scheduled");
     if(state.tab==="archived")return renderList("archived");
-    if(state.tab==="email")return renderEmails();
     return renderList("messages");
   }
 
@@ -2526,6 +2654,32 @@
       '<div class="hr-body"><div class="hr-nm">'+esc(displayName(t))+'</div><div class="hr-prev">'+esc(reason)+'</div></div>'+
       '<span class="hr-fu'+((t.fu&&t.fu.urgency==="high")?" high":"")+'">'+ic("list-checks",14)+'</span></div>';
   }
+  // The single, always-on "what needs my help" rundown — the heart of the Home screen.
+  // Merges people waiting on a reply, follow-ups that are due, and today's reminders
+  // into one prioritized, de-duplicated list (waiting > follow-up > reminder).
+  function homeNeeds(waiting,fu,reminders){
+    var seen={},items=[];
+    (waiting||[]).forEach(function(t){if(seen[t.phone])return;seen[t.phone]=1;
+      items.push({t:t,sub:(t.lastBody||"Sent you a message"),sig:'<span class="nd-sig wait">'+ic("clock",12)+esc(ago(t.lastTs))+'</span>'});});
+    (fu||[]).forEach(function(t){if(seen[t.phone])return;seen[t.phone]=1;
+      items.push({t:t,sub:((t.fu&&t.fu.reason)||"Follow-up ready"),sig:'<span class="nd-sig fu'+((t.fu&&t.fu.urgency==="high")?" high":"")+'">'+ic("list-checks",12)+'Follow-up</span>'});});
+    (reminders||[]).forEach(function(t){if(seen[t.phone])return;seen[t.phone]=1;
+      items.push({t:t,sub:(t.reminderNote||"Reminder set for today"),sig:'<span class="nd-sig rem">'+ic("bell",12)+'Reminder</span>'});});
+    if(!items.length){
+      return '<div class="needs ok"><span class="nd-ok">'+ic("check-circle",26)+'</span>'+
+        '<div><div class="nd-ok-t">You\'re all caught up</div><div class="nd-ok-s">Nobody\'s waiting and nothing\'s due right now. Nice work.</div></div></div>';
+    }
+    var head='<div class="nd-head"><span class="nd-h-l">'+ic("alert",15)+'Needs your attention</span><span class="nd-h-n">'+items.length+'</span></div>';
+    var rows="";
+    items.slice(0,6).forEach(function(it){var t=it.t;
+      rows+='<div class="nd-row" data-open="'+esc(t.phone)+'">'+
+        '<div class="avatar" style="width:40px;height:40px;font-size:14px;background:'+colorFor(t.phone)+'">'+esc(initials(t))+'</div>'+
+        '<div class="nd-b"><div class="nd-nm">'+esc(displayName(t))+'</div><div class="nd-sub">'+esc(it.sub)+'</div></div>'+
+        it.sig+'</div>';
+    });
+    var more=items.length>6?'<div class="home-more" data-more="messages">See all '+items.length+' in Chats</div>':'';
+    return '<div class="needs">'+head+'<div class="nd-list">'+rows+'</div>'+more+'</div>';
+  }
   function renderHome(){
     var box=el("scroll");
     if(!state.loadedOnce&&!state.threads.length){box.innerHTML='<div class="home">'+skeletonList(5)+'</div>';return}
@@ -2535,38 +2689,9 @@
     var reminders=active.filter(function(t){return t.reminderDue}).sort(function(a,b){return (a.reminderAt||0)-(b.reminderAt||0)});
     var ins=state.insights||{};
     // ---- widgets keyed for the customizable dashboard (Customize → Home) ----
+    // Note: the old "waiting / follow-ups / reminders" widgets are now consolidated
+    // into the always-on "Needs your attention" rundown (homeNeeds) below the AI center.
     var W={};
-    var hero;
-    if(waiting.length){
-      hero='<div class="hero-card" id="heroWaiting"><div class="hc-n">'+waiting.length+'</div>'+
-        '<div class="hc-txt"><div class="hc-t">'+(waiting.length===1?"person is":"people are")+' waiting on you</div>'+
-        '<div class="hc-s">Longest wait '+ago(waiting[0].lastTs)+' · tap to reply</div></div>'+ic("chevron-right",22)+'</div>';
-    }else{
-      hero='<div class="hero-card ok"><span class="hc-ic">'+ic("check-circle",26)+'</span>'+
-        '<div class="hc-txt"><div class="hc-t">You\'re all caught up</div><div class="hc-s">Nobody is waiting on a reply. Nice.</div></div></div>';
-    }
-    var wh=hero;
-    if(waiting.length){
-      wh+='<div class="home-sec-h"><span>Waiting on you</span><span class="hs-n">'+waiting.length+'</span></div>';
-      waiting.slice(0,5).forEach(function(t){wh+=homeRow(t,ago(t.lastTs))});
-      if(waiting.length>5)wh+='<div class="home-more" data-more="messages">See all '+waiting.length+'</div>';
-    }
-    W.waiting='<div data-hwidget="waiting">'+wh+'</div>';
-    if(reminders.length){
-      var rh='<div class="home-sec-h"><span>⏰ Reminders</span><span class="hs-n">'+reminders.length+'</span></div>';
-      reminders.forEach(function(t){
-        rh+='<div class="home-row" data-open="'+esc(t.phone)+'"><div class="avatar" style="width:42px;height:42px;font-size:15px;background:'+colorFor(t.phone)+'">'+esc(initials(t))+'</div>'+
-          '<div class="hr-body"><div class="hr-nm">'+esc(displayName(t))+'</div><div class="hr-prev">'+esc(t.reminderNote||"Follow up with them")+'</div></div>'+
-          '<span class="hr-fu" style="color:#7dd3fc">'+ic("clock",14)+'</span></div>';
-      });
-      W.reminders='<div data-hwidget="reminders">'+rh+'</div>';
-    }else W.reminders='';
-    if(fu.length){
-      var fh='<div class="home-sec-h"><span>Follow-ups ready</span><span class="hs-n">'+fu.length+'</span></div>';
-      fu.slice(0,4).forEach(function(t){fh+=homeFuRow(t)});
-      if(fu.length>4)fh+='<div class="home-more" data-more="followups">See all '+fu.length+'</div>';
-      W.followups='<div data-hwidget="followups">'+fh+'</div>';
-    }else W.followups='';
     W.money='<div data-hwidget="money">'+homeMoneyWidget()+'</div>';
     // AI command center — auto summary of what needs attention + a box to dictate.
     W.aicenter='<div data-hwidget="aicenter"><div class="ai-center">'+
@@ -2575,6 +2700,7 @@
       '<div class="aic-brief" id="aiHomeBrief"><div class="aic-muted">'+ic("sparkles",14)+' Reading your dashboard…</div></div>'+
       '<div class="aic-ask"><input id="aiHomeInput" placeholder="Ask or tell me anything…" autocomplete="off">'+
       '<button class="aic-go" id="aiHomeGo" aria-label="Ask">'+ic("send",17)+'</button></div>'+
+      '<div class="aic-try">'+ic("lightbulb",12)+' Try asking</div>'+
       '<div class="aic-chips" id="aiHomeChips"></div></div></div>';
     var strip=[];
     strip.push((ins.open!=null?ins.open:active.length)+' open');
@@ -2593,18 +2719,22 @@
     W.weather='<div data-hwidget="weather">'+homeWeatherWidget()+'</div>';
     W.tasks='<div data-hwidget="tasks">'+homeTasksWidget()+'</div>';
     var order=(UI&&UI.hwidgets)?UI.hwidgets.slice():defaultUI().hwidgets.slice();
-    if(order.indexOf("aicenter")<0)order=["aicenter"].concat(order); // AI center always leads
     // Make newly-shipped widgets appear for users with an older saved layout.
     UI_HWIDGETS.forEach(function(w){if(order.indexOf(w[0])<0)order.push(w[0])});
     var hidden=(UI&&UI.hwidgetsHidden)||[];
-    var h='<div class="home"><div class="home-head"><div class="hh-greet">'+greeting()+'</div><div class="hh-sub">Here\'s what needs you.</div></div>';
+    // The AI center and the Needs rundown are core — always on, always first, never toggleable.
+    order=order.filter(function(k){return ["aicenter","needs","waiting","followups","reminders"].indexOf(k)<0});
+    var dateLine=new Date().toLocaleDateString([],{weekday:"long",month:"long",day:"numeric"});
+    var h='<div class="home"><div class="home-head"><div class="hh-greet">'+greeting()+', Mikey</div><div class="hh-sub">'+esc(dateLine)+'</div></div>';
+    h+=W.aicenter;
+    h+=homeNeeds(waiting,fu,reminders);
     order.forEach(function(k){if(hidden.indexOf(k)<0)h+=(W[k]||"")});
     h+='</div>';
     box.innerHTML=h;
-    var hw=el("heroWaiting");if(hw&&waiting.length)hw.onclick=function(){openThread(waiting[0].phone)};
     Array.prototype.forEach.call(box.querySelectorAll("[data-open]"),function(c){c.onclick=function(){openThread(c.getAttribute("data-open"))}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-more]"),function(c){c.onclick=function(){setTab(c.getAttribute("data-more"))}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-open-money]"),function(c){c.onclick=function(){openMoney()}});
+    Array.prototype.forEach.call(box.querySelectorAll("[data-open-analytics]"),function(c){c.onclick=function(){openAnalytics()}});
     wireHomeWidgets(box);
     wireAiCenter();
   }
@@ -2652,7 +2782,7 @@
     });
     return '<div class="wcard">'+head+'<div class="agn">'+rows+'</div></div>';
   }
-  var QA_ACTIONS=[["new","New text","send"],["logjob","Log a job","dollar"],["logexp","Log expense","receipt"],["money","Money","wallet"],["followups","Follow-ups","list-checks"],["insights","Insights","bar-chart"]];
+  var QA_ACTIONS=[["new","New text","send"],["logjob","Log a job","dollar"],["logexp","Log expense","receipt"],["money","Money","wallet"],["followups","Follow-ups","list-checks"],["analytics","Analytics","bar-chart"]];
   function homeQuickActions(){
     var head='<div class="wc-h"><span class="wc-ic">'+ic("sparkles",18)+'</span><span class="wc-t">Quick actions</span></div>';
     var g=QA_ACTIONS.map(function(a){return '<button class="qa-btn" data-qa="'+a[0]+'"><span class="qa-ic">'+ic(a[2],21)+'</span><span class="qa-l">'+esc(a[1])+'</span></button>'}).join("");
@@ -2709,7 +2839,7 @@
     return '<div class="wcard">'+head+
       '<svg class="spark-svg" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+bars+'</svg>'+
       '<div class="trend-foot"><span>This week <b style="color:var(--text)">'+fmtMoney(thisWk)+'</b></span>'+
-      '<span class="trend-delta '+(delta>=0?"up":"down")+'">'+(delta>=0?"▲ +":"▼ ")+Math.abs(delta)+'% vs last week</span></div></div>';
+      '<span class="trend-delta '+(delta>=0?"up":"down")+'">'+(delta>=0?ic("trending-up",13)+" +":ic("trending-down",13)+" ")+Math.abs(delta)+'% vs last week</span></div></div>';
   }
   // Top customers — lifetime (loaded-month) spend leaders. Tap to open the thread.
   function homeVipWidget(){
@@ -2748,7 +2878,18 @@
     if(code>=61||code>=71&&code<=86||[95,96,99].indexOf(code)>=0)return 0;
     if(pop>=55||wind>=22)return 1; if(pop>=30||code>=51||wind>=15)return 2; return 3;
   }
-  function wxEmoji(code){if([0,1].indexOf(code)>=0)return"☀️";if([2].indexOf(code)>=0)return"⛅";if([3,45,48].indexOf(code)>=0)return"☁️";if(code>=71&&code<=86)return"🌨️";if([95,96,99].indexOf(code)>=0)return"⛈️";if(code>=51)return"🌧️";return"🌤️";}
+  // WMO weather code → Lucide icon name + a tint that suits it.
+  function wxIcon(code,size){size=size||20;
+    var n="cloud-sun",c="var(--gold)";
+    if([0,1].indexOf(code)>=0){n="sun";c="#fbbf24";}
+    else if(code===2){n="cloud-sun";c="var(--gold)";}
+    else if([3,45,48].indexOf(code)>=0){n="cloud";c="var(--muted)";}
+    else if(code>=71&&code<=86){n="cloud-snow";c="#93c5fd";}
+    else if([95,96,99].indexOf(code)>=0){n="cloud-lightning";c="#a78bfa";}
+    else if(code>=61){n="cloud-rain";c="#60a5fa";}
+    else if(code>=51){n="cloud-drizzle";c="#7dd3fc";}
+    return '<span class="wx-i" style="color:'+c+'">'+ic(n,size)+'</span>';
+  }
   function homeWeatherWidget(){
     var head='<div class="wc-h"><span class="wc-ic">'+ic("activity",18)+'</span><span class="wc-t">Weather planner</span><span class="wc-badge">Snohomish</span></div>';
     if(WX.err)return '<div class="wcard">'+head+'<div class="wc-empty">'+ic("info",15)+' Couldn’t load the forecast right now.</div></div>';
@@ -2756,9 +2897,9 @@
     var d=WX.data;var sc=["bad","bad","ok","good"];var lbl=["Not today","Poor","Fair","Great day to detail"];
     var s0=wxScore(d.today.code,d.today.pop,d.today.wind);
     var days=d.days.map(function(day){var sc2=wxScore(day.code,day.pop,day.wind);var col=["#fb7185","#fb7185","#fbbf24","#34d399"][sc2];
-      return '<div class="wx-day"><div class="wd-d">'+esc(day.dow)+'</div><div class="wd-e">'+wxEmoji(day.code)+'</div><div class="wd-t">'+Math.round(day.hi)+'°/'+Math.round(day.lo)+'°</div><div class="wd-dot" style="background:'+col+'"></div></div>';}).join("");
+      return '<div class="wx-day"><div class="wd-d">'+esc(day.dow)+'</div><div class="wd-e">'+wxIcon(day.code,22)+'</div><div class="wd-t">'+Math.round(day.hi)+'°/'+Math.round(day.lo)+'°</div><div class="wd-dot" style="background:'+col+'"></div></div>';}).join("");
     return '<div class="wcard">'+head+
-      '<div class="wx-today"><span class="wx-emoji">'+wxEmoji(d.today.code)+'</span><div class="wx-tb"><div class="wx-temp">'+Math.round(d.today.temp)+'°F</div>'+
+      '<div class="wx-today"><span class="wx-emoji">'+wxIcon(d.today.code,34)+'</span><div class="wx-tb"><div class="wx-temp">'+Math.round(d.today.temp)+'°F</div>'+
       '<div class="wx-desc">'+esc(d.today.desc)+' · '+d.today.pop+'% rain · '+Math.round(d.today.wind)+' mph wind</div></div>'+
       '<span class="wx-score '+sc[s0]+'">'+lbl[s0]+'</span></div>'+
       '<div class="wx-days">'+days+'</div></div>';
@@ -2811,7 +2952,7 @@
       if(a==="logjob"){openMoney();setTimeout(function(){if(typeof openMoSheet==="function")openMoSheet("job")},60);return}
       if(a==="logexp"){openMoney();setTimeout(function(){if(typeof openMoSheet==="function")openMoSheet("exp")},60);return}
       if(a==="followups")return setTab("followups");
-      if(a==="insights")return setTab("insights");
+      if(a==="analytics")return openAnalytics();
     };});
     // To-do list.
     var tkAdd=box.querySelector("#tkAdd"),tkInput=box.querySelector("#tkInput");
@@ -2851,7 +2992,7 @@
     if(d.headline)html+='<div class="aic-headline">'+esc(d.headline)+'</div>';
     var items=(d.attention||[]).slice(0,3);
     items.forEach(function(it){html+='<div class="aic-item"><span class="aic-dot"></span><div class="aic-itxt"><b>'+esc(it.title||"")+'</b>'+(it.detail?'<span>'+esc(it.detail)+'</span>':"")+'</div></div>'});
-    if(!d.headline&&!items.length)html='<div class="aic-muted">'+ic("check",14)+' All clear — nothing needs attention right now. 🚗</div>';
+    if(!d.headline&&!items.length)html='<div class="aic-muted">'+ic("check",14)+' All clear — nothing needs your attention right now.</div>';
     box.innerHTML=html;
   }
   // Home "Today's money" widget — reuses the money summary (lazy-loads once).
@@ -2868,87 +3009,7 @@
       '<div class="hm-side"><b class="'+((s.net||0)<0?"neg":"")+'">'+fmtMoney(s.net||0)+'</b><span>net this month</span></div></div>';
   }
 
-  // ---- email tab (unified inbox) ----
-  function emailUnread(){return (state.emails||[]).reduce(function(a,e){return a+(e.unread?1:0)},0)}
-  function refreshEmailBadge(){var n=el("navEmail");if(n){var u=emailUnread();n.textContent=u;n.className="ndot"+(u?" show":"")}var mn=el("mnEmail");if(mn)mn.textContent=(state.emails||[]).length||""}
-  function fetchEmails(){return api("/api/emails").then(function(d){if(d&&d.ok){state.emails=d.emails||[];refreshEmailBadge();if(state.tab==="email")renderEmails()}}).catch(function(){})}
-  function fmtEmailDate(ts){var d=new Date(ts),now=new Date();if(d.toDateString()===now.toDateString())return fmtTime(ts);if((now-d)/86400000<7)return d.toLocaleDateString([],{weekday:"short"});return d.toLocaleDateString([],{month:"short",day:"numeric"})}
-  function renderEmails(){
-    var box=el("scroll");var list=state.emails||[];
-    if(!list.length){box.innerHTML='<div class="emptyview"><div class="big">'+ic("mail",46)+'</div><div>No emails yet</div><div class="sub">Connect your Gmail and recent emails land here — texts and email in one place.</div><button class="btn accent ic-btn" id="emailConnectBtn" style="margin-top:15px">'+ic("mail",16)+'<span>Connect Gmail</span></button></div>';var ecb=el("emailConnectBtn");if(ecb)ecb.onclick=openEmailSetup;return}
-    var html="";
-    list.forEach(function(e){
-      html+='<div class="email-card'+(e.unread?" unrd":"")+'" data-eid="'+esc(e.id)+'">'+
-        '<div class="ec-top"><span class="ec-from">'+esc(e.fromName||e.from||"Unknown")+'</span><span class="ec-date">'+fmtEmailDate(e.date)+'</span></div>'+
-        '<div class="ec-subj">'+esc(e.subject||"(no subject)")+'</div>'+
-        '<div class="ec-snip">'+esc(e.snippet||"")+'</div>'+
-      '</div>';
-    });
-    box.innerHTML=html;
-    Array.prototype.forEach.call(box.querySelectorAll(".email-card"),function(c){c.onclick=function(){openEmail(c.getAttribute("data-eid"))}});
-  }
-  function emailAppsScript(url,token){
-    return "const WORKER_URL = '"+url+"';\n"+
-      "const TOKEN = '"+token+"';\n\n"+
-      "function pushRecentEmails() {\n"+
-      "  const threads = GmailApp.search('in:inbox newer_than:2d', 0, 25);\n"+
-      "  const props = PropertiesService.getScriptProperties();\n"+
-      "  const seen = JSON.parse(props.getProperty('seen') || '{}');\n"+
-      "  const now = {};\n"+
-      "  threads.forEach(function (t) {\n"+
-      "    const msgs = t.getMessages(); const m = msgs[msgs.length - 1];\n"+
-      "    const id = m.getId(); now[id] = 1; if (seen[id]) return;\n"+
-      "    const from = m.getFrom(); const nm = from.match(/^\"?([^\"<]*)\"?\\s*<?/);\n"+
-      "    UrlFetchApp.fetch(WORKER_URL, {\n"+
-      "      method: 'post', contentType: 'application/json',\n"+
-      "      headers: { 'X-Ingest-Token': TOKEN }, muteHttpExceptions: true,\n"+
-      "      payload: JSON.stringify({\n"+
-      "        messageId: id, from: from,\n"+
-      "        fromName: (nm && nm[1].trim()) || from,\n"+
-      "        subject: m.getSubject(),\n"+
-      "        snippet: m.getPlainBody().slice(0, 240),\n"+
-      "        body: m.getPlainBody().slice(0, 20000),\n"+
-      "        date: m.getDate().getTime()\n"+
-      "      })\n"+
-      "    });\n"+
-      "  });\n"+
-      "  props.setProperty('seen', JSON.stringify(now));\n"+
-      "}";
-  }
-  function openEmailSetup(){
-    api("/api/email-setup").then(function(d){
-      if(!d||!d.ok){toast("Couldn't load email setup",{bad:true});return}
-      var script=emailAppsScript(d.url,d.token);
-      var o=document.createElement("div");o.className="setup-overlay";
-      o.innerHTML='<div class="setup-box"><div class="setup-head"><h3>Connect your Gmail</h3><button class="setup-x" aria-label="Close">'+ic("x",20)+'</button></div>'+
-        '<div class="setup-body">'+
-          (d.connected?'<div class="setup-ok">'+ic("check-circle",16)+' Connected · '+d.count+' emails synced</div>':'<div class="setup-note">Takes ~3 minutes, it\'s free, and you never touch Cloudflare. Your Gmail sends a copy of recent mail to your dashboard on a schedule.</div>')+
-          '<ol class="setup-steps">'+
-            '<li>Open <a href="https://script.google.com" target="_blank" rel="noopener">script.google.com</a> → <b>New project</b>.</li>'+
-            '<li>Delete what\'s there, paste the script below, hit <b>Save</b> (💾).</li>'+
-            '<li>Press <b>Run</b> once and allow the Google permission prompt.</li>'+
-            '<li>Left sidebar → <b>Triggers</b> (clock icon) → <b>Add Trigger</b> → function <b>pushRecentEmails</b>, event source <b>Time-driven</b>, <b>Every 15 minutes</b> → Save.</li>'+
-          '</ol>'+
-          '<textarea id="setupScript" readonly>'+esc(script)+'</textarea>'+
-          '<button class="btn accent ic-btn" id="setupCopy" style="width:100%">'+ic("copy",16)+'<span>Copy the script</span></button>'+
-          '<div class="setup-foot">Emails appear here within ~15 minutes of finishing. Only a copy of recent mail is sent — your Google password never leaves Google.</div>'+
-        '</div></div>';
-      document.body.appendChild(o);
-      o.querySelector(".setup-x").onclick=function(){o.remove()};
-      o.addEventListener("click",function(e){if(e.target===o)o.remove()});
-      el("setupCopy").onclick=function(){var ta=el("setupScript");ta.focus();ta.select();var ok=function(){toast("Script copied — paste it at script.google.com")};if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(ta.value).then(ok,function(){try{document.execCommand("copy");ok()}catch(e){}});else{try{document.execCommand("copy");ok()}catch(e){}}};
-    }).catch(function(){toast("Network error",{bad:true})});
-  }
-  function openEmail(id){
-    var e=(state.emails||[]).find(function(x){return x.id===id});if(!e)return;
-    if(e.unread){e.unread=0;refreshEmailBadge();renderEmails();post("/api/email-read",{id:id}).then(function(d){if(d&&d.ok)state.emails=d.emails})}
-    var o=document.createElement("div");o.className="email-reader";
-    o.innerHTML='<div class="er-head"><button class="er-back" aria-label="Back">'+ic("chevron-left",22)+'</button><div class="er-hh"><div class="er-from">'+esc(e.fromName||e.from||"Unknown")+'</div><div class="er-addr">'+esc(e.from||"")+'</div></div></div>'+
-      '<div class="er-body-wrap"><div class="er-subj">'+esc(e.subject||"(no subject)")+'</div><div class="er-date">'+fmtFull(e.date)+'</div><div class="er-body">'+esc((e.body||e.snippet||"").trim())+'</div></div>';
-    o.querySelector(".er-back").onclick=function(){o.remove()};
-    document.body.appendChild(o);
-  }
-
+  // ---- email removed — texting-first dashboard (backend /api/emails left dormant) ----
   function convNode(t){
     var wrap=document.createElement("div");wrap.className="conv-wrap";
     wrap.innerHTML='<div class="swipe-bg">'+(t.archived?ic("undo",16)+' Unarchive':ic("check",16)+' Archive')+'</div>';
@@ -3105,7 +3166,7 @@
           (unread?'<span class="sum-pill">'+unread+' unread</span>':'')+
           (sched?'<span class="sum-pill">'+sched+' scheduled</span>':'')+
         '</span>'+
-        '<span class="sum-tog">'+(collapsed?"▸":"▾")+'</span>'+
+        '<span class="sum-tog">'+(collapsed?ic("chevron-right",15):ic("chevron-down",15))+'</span>'+
       '</div>';
     if(!collapsed){
       h+='<div class="sum-body">';
@@ -3127,7 +3188,7 @@
     var head=el("sumHead");if(!head)return;
     head.onclick=function(){var c=localStorage.getItem("mkd-sum")==="0";localStorage.setItem("mkd-sum",c?"1":"0");vibrate(6);renderMain()};
     Array.prototype.forEach.call(document.querySelectorAll(".sum-row"),function(r){r.onclick=function(){openThread(r.getAttribute("data-phone"))}});
-    var more=el("sumMore");if(more)more.onclick=function(){setTab("insights")};
+    var more=el("sumMore");if(more)more.onclick=function(){openAnalytics()};
   }
 
   function renderLeads(){
@@ -3171,8 +3232,11 @@
     openDrawer();
     setTimeout(function(){var el2=el("playbookPanel");if(el2){el2.scrollIntoView({block:"start",behavior:"smooth"});var ta=el2.querySelector(".pb-ta");if(ta)setTimeout(function(){ta.focus()},350)}},120);
   }
-  function renderInsights(){
-    var box=el("scroll");
+  // ---- Analytics · Overview — business KPIs, pipeline, response health, spend,
+  // AI briefing (this replaces the old standalone Insights tab; it renders into the
+  // Analytics section's body so business + website numbers live under one roof). ----
+  function growOverview(box){
+    box=box||el("grBody");
     var active=state.threads.filter(function(t){return !t.archived});
     var needs=active.filter(function(t){return t.lastDir==="in"}).sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
     var ins=state.insights||{};
@@ -3181,45 +3245,49 @@
 
     var html='<div class="ins">';
 
-    // Playbook onboarding nudge (UX-06): the AI is only as good as the playbook,
-    // so surface how complete it is right where Mikey looks, until it's filled in.
+    // Playbook onboarding nudge — the AI is only as good as the playbook.
     var pb=playbookPct();
     if(pb.pct<100){
-      html+='<div class="ai-card" style="border-color:#3a2b12">'+
-        '<div class="ttl" style="color:#f5c563">'+ic("sparkles",15)+' Train your AI · Playbook '+pb.pct+'% complete</div>'+
-        '<div class="txt" style="color:#e9dcc0">Fill in '+esc(pb.missing.join(", "))+' so every AI draft, the Coach and auto follow-ups quote your real info and sound like you.</div>'+
+      html+='<div class="ai-card gold-card">'+
+        '<div class="ttl">'+ic("sparkles",15)+' Train your AI · Playbook '+pb.pct+'% complete</div>'+
+        '<div class="txt">Fill in '+esc(pb.missing.join(", "))+' so every AI draft, the Coach and auto follow-ups quote your real info and sound like you.</div>'+
         '<div class="pb-bar"><span style="width:'+pb.pct+'%"></span></div>'+
         '<button class="btn accent" id="pbNudgeBtn" style="width:100%;margin-top:11px">Complete your Playbook</button>'+
       '</div>';
     }
 
+    html+='<div class="an-lbl">'+ic("activity",15)+'Business at a glance</div>';
     html+='<div class="stat-grid">'+
-      '<div class="stat hot"><div class="v">'+(needs.length)+'</div><div class="k">Need a reply</div></div>'+
+      '<div class="stat'+(needs.length?" hot":"")+'"><div class="v">'+(needs.length)+'</div><div class="k">Need a reply</div></div>'+
       '<div class="stat"><div class="v">'+avg+'</div><div class="k">Avg reply time</div></div>'+
       '<div class="stat"><div class="v">'+active.length+'</div><div class="k">Open convos</div></div>'+
       '<div class="stat"><div class="v">'+won+'</div><div class="k">Won leads</div></div>'+
     '</div>';
 
-    // This month's Twilio spend
+    // Pipeline + response health (shared with the Home widgets — one source of truth).
+    html+=homeFunnelWidget(active);
+    html+=homeSlaWidget(ins,needs,active);
+
+    // This month's texting spend.
     var cm=ins.costMonth;
     if(cm){
       var mo=new Date().toLocaleDateString([],{month:"long"});
-      html+='<div class="ins-sec"><div class="h"><div class="t" style="display:flex;align-items:center;gap:6px">'+ic("dollar",15)+esc(mo)+' Twilio spend</div></div>'+
+      html+='<div class="an-lbl">'+ic("dollar",15)+esc(mo)+' texting spend</div>'+
         '<div class="cost-card"><div class="cost-big">~$'+(cm.usd||0).toFixed(2)+'</div>'+
         '<div class="cost-rows"><span>'+(cm.segOut||0)+' sent</span><span>'+(cm.msgsIn||0)+' received</span><span>$1.15 number</span></div>'+
         '<div class="cost-note">Estimate at ~$0.0079 per text segment. Exact billing lives in your Twilio console.</div>'+
-        '</div></div>';
+        '</div>';
     }
 
-    // AI briefing
-    html+='<div class="ins-sec"><div class="h"><div class="t" style="display:flex;align-items:center;gap:6px"><span style="color:#c9a4f7">'+ic("sparkles",15)+'</span> AI briefing</div></div>'+
+    // AI briefing.
+    html+='<div class="an-lbl">'+ic("sparkles",15)+'AI briefing</div>'+
       '<div class="ai-card"><div class="ttl">'+ic("bot",15)+' Who to respond to first</div>'+
       '<div class="txt" id="briefTxt" style="color:var(--muted2)">Tap below to have AI prioritize your inbox.</div>'+
-      '<button class="btn ic-btn" id="briefBtn" style="width:100%;margin-top:11px">'+ic("sparkles",16)+'<span>Generate briefing</span></button></div></div>';
+      '<button class="btn ic-btn" id="briefBtn" style="width:100%;margin-top:11px">'+ic("sparkles",16)+'<span>Generate briefing</span></button></div>';
 
-    // Needs reply
-    html+='<div class="ins-sec"><div class="h"><div class="t">Waiting on you<span class="n">'+needs.length+'</span></div></div>';
-    if(!needs.length)html+='<div class="sub" style="color:var(--muted2);font-size:13px;padding:4px 2px;display:flex;align-items:center;gap:7px"><span style="color:var(--green)">'+ic("check-circle",16)+'</span> You\'re all caught up — nobody is waiting.</div>';
+    // Who's waiting.
+    html+='<div class="an-lbl">'+ic("message-square",15)+'Waiting on you<span class="an-n">'+needs.length+'</span></div>';
+    if(!needs.length)html+='<div class="wc-empty">'+ic("check-circle",15)+' You\'re all caught up — nobody is waiting.</div>';
     needs.forEach(function(t){
       var st=STATUS[t.status];
       html+='<div class="need-card" data-phone="'+esc(t.phone)+'">'+
@@ -3228,16 +3296,18 @@
         '<div class="prev">'+esc(t.lastBody||"")+'</div></div>'+
         '<span class="wait">'+ago(t.lastTs)+'</span></div>';
     });
-    html+='</div></div>';
+    html+='</div>';
     box.innerHTML=html;
 
-    Array.prototype.forEach.call(box.querySelectorAll(".need-card"),function(c){c.onclick=function(){openThread(c.getAttribute("data-phone"))}});
-    el("briefBtn").onclick=function(){runBriefing()};
+    Array.prototype.forEach.call(box.querySelectorAll(".need-card"),function(c){c.onclick=function(){closeAnalytics();openThread(c.getAttribute("data-phone"))}});
+    var bb=el("briefBtn");if(bb)bb.onclick=function(){runBriefing()};
     var pbn=el("pbNudgeBtn");if(pbn)pbn.onclick=openPlaybook;
   }
 
   function fetchInsights(){
-    return api("/api/insights").then(function(d){if(d&&d.ok){state.insights=d;if(state.tab==="insights")renderInsights();else if(state.tab==="home")renderHome()}});
+    return api("/api/insights").then(function(d){if(d&&d.ok){state.insights=d;
+      if(el("growApp").classList.contains("show")&&GROW.view==="overview")growRender();
+      else if(state.tab==="home")renderHome();}});
   }
   function runBriefing(){
     var b=el("briefBtn"),tx=el("briefTxt");if(!b)return;
@@ -4297,9 +4367,8 @@
     Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.classList.toggle("active",b.getAttribute("data-tab")===tab)});
     el("scroll").scrollTop=0;
     renderMain();
-    if(tab==="insights"||tab==="home")fetchInsights();
+    if(tab==="home")fetchInsights();
     if(tab==="followups")refreshThreads();
-    if(tab==="email")fetchEmails();
   }
 
   // ---- drawer ----
@@ -4339,7 +4408,6 @@
   }
   function runPoll(){
     pollTimer=null;
-    fetchEmails(); // keep the unified-inbox badge live (cheap KV read)
     var p=state.phone?loadThread():refreshThreads();
     p.then(function(){
       var s=sig();
@@ -4431,7 +4499,7 @@
     if(!e.target.closest("#toolsBtn")&&!e.target.closest("#toolsSheet"))el("toolsSheet").style.display="none";
   });
 
-  Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.onclick=function(){vibrate(6);var tb=b.getAttribute("data-tab");if(tb==="money")return openMoney();if(tb==="grow")return openGrow();if(tb==="customize")return openCustomize();setTab(tb)}});
+  Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.onclick=function(){vibrate(6);var tb=b.getAttribute("data-tab");if(tb==="money")return openMoney();if(tb==="analytics")return openAnalytics();setTab(tb)}});
   el("czBack").onclick=closeCustomize;
   el("czMode").onclick=function(){UI.mode=UI.mode==="pro"?"simple":"pro";saveUI();czRender();vibrate(6)};
 
@@ -4441,7 +4509,6 @@
   el("aiCmdOverlay").onclick=function(e){if(e.target===el("aiCmdOverlay"))closeAiCmd()};
   el("aiCmdAsk").onclick=aiCmdAsk;
   el("aiCmdInput").addEventListener("keydown",function(e){if((e.metaKey||e.ctrlKey)&&e.key==="Enter"){e.preventDefault();aiCmdAsk()}});
-  el("emailSetupItem").onclick=function(){closeDrawer();openEmailSetup()};
   el("refreshItem").onclick=function(){refreshThreads();if(state.phone)loadThread();toast("Refreshed");closeDrawer()};
   el("healthItem").onclick=checkHealth;
   el("alertTestItem").onclick=function(){
@@ -4456,223 +4523,359 @@
   Array.prototype.forEach.call(document.querySelectorAll(".drawer [data-filter]"),function(it){it.onclick=function(){state.tab="messages";state.filter=it.getAttribute("data-filter");setTab("messages");state.filter=it.getAttribute("data-filter");renderFilters();renderMain();closeDrawer()}});
 
   // ============================================================
-  // 🚀 Grow — business growth suite (full-screen section).
-  // One clean entry point for the tools that grow the business:
-  // Customers (CRM), Reviews & reputation, first-party Website
-  // analytics, Local SEO / Google Business Profile, and an AI
-  // content studio. Keeps the bottom nav lean while adding depth.
+  // Analytics — full-screen section, two segments:
+  //   Overview  → business KPIs, pipeline, response health, spend,
+  //               AI briefing (the old Insights tab, consolidated).
+  //   Website   → GA4 + Microsoft Clarity + first-party pixel, merged
+  //               into one command center (live visitors, funnel, UX).
+  // Reuses the former Grow shell (#growApp / grBody / grNav).
   // ============================================================
-  var GROW={view:"home",wired:false,analytics:null,aLoading:false,aErr:false,crmQ:"",csTask:"gbp_post",csText:"",csLoading:false,csCtx:""};
-  var GROW_VIEWS={home:["Grow","Tools to grow Mikey's Mobile Detailing"],crm:["Customers","Your customer directory & history"],reviews:["Reviews","Turn happy jobs into 5-star reviews"],analytics:["Website","Live traffic on your website"],seo:["Local SEO","Get found on Google in Snohomish"],content:["Content studio","AI-written posts, replies & promos"]};
-  function openGrow(){
+  var GROW={view:"overview",wired:false,
+    web:{range:"7d",data:null,loading:false,err:"",settings:false,status:null,ai:"",aiRange:"",aiLoading:false,savingGa:false,savingCl:false}};
+  var GROW_VIEWS={overview:["Analytics","Business overview · Mikey's Mobile Detailing"],analytics:["Analytics","Your website, decoded — live"]};
+  function openAnalytics(){
     el("growApp").classList.add("show");
     if(!GROW.wired){growWire();GROW.wired=true;}
     if(!MO.summary&&!MO._homeFetch){MO._homeFetch=1;api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.today=d.today;MO.entries=d.entries||[];MO.cfg=d.config;MO.owed=d.owed||[];MO.week=d.week;MO.allTime=d.allTime;if(el("growApp").classList.contains("show"))growRender();}}).catch(function(){});}
+    if(!state.insights)fetchInsights();
     growRender();
   }
-  function closeGrow(){el("growApp").classList.remove("show");}
+  function closeAnalytics(){el("growApp").classList.remove("show");}
   function growSet(v){GROW.view=v;Array.prototype.forEach.call(el("grNav").querySelectorAll("[data-gv]"),function(b){b.classList.toggle("active",b.getAttribute("data-gv")===v)});growRender();el("grBody").scrollTop=0;}
   function growWire(){
-    el("grBack").onclick=closeGrow;
+    el("grBack").onclick=closeAnalytics;
     Array.prototype.forEach.call(el("grNav").querySelectorAll("[data-gv]"),function(b){b.onclick=function(){vibrate(6);growSet(b.getAttribute("data-gv"))}});
-    el("grRefresh").onclick=function(){vibrate(6);if(GROW.view==="analytics"){GROW.analytics=null;growLoadAnalytics()}else{refreshThreads();api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.entries=d.entries||[];MO.today=d.today;MO.week=d.week;MO.allTime=d.allTime}growRender()});}toast("Refreshed")};
+    el("grRefresh").onclick=function(){vibrate(6);if(GROW.view==="analytics"){growLoadWeb(true)}else{refreshThreads();fetchInsights();api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.entries=d.entries||[];MO.today=d.today;MO.week=d.week;MO.allTime=d.allTime}growRender()});}toast("Refreshed")};
   }
   function growRender(){
-    var meta=GROW_VIEWS[GROW.view]||GROW_VIEWS.home;
+    var meta=GROW_VIEWS[GROW.view]||GROW_VIEWS.overview;
     el("grTitle").textContent=meta[0];el("grSub").textContent=meta[1];
-    el("grRefresh").style.visibility=(GROW.view==="reviews"||GROW.view==="seo"||GROW.view==="content")?"hidden":"visible";
+    el("grRefresh").style.visibility="visible";
     var b=el("grBody");
-    if(GROW.view==="home")return growHome(b);
-    if(GROW.view==="crm")return growCRM(b);
-    if(GROW.view==="reviews")return growReviews(b);
     if(GROW.view==="analytics")return growAnalytics(b);
-    if(GROW.view==="seo")return growSEO(b);
-    if(GROW.view==="content")return growContent(b);
+    return growOverview(b);
   }
-  // ---- Grow landing ----
-  var GROW_TOOLS=[
-    ["crm","users","Customers","Every customer, their history & lifetime value"],
-    ["reviews","trophy","Reviews","Ask happy customers for 5-star reviews in one tap"],
-    ["analytics","bar-chart","Website analytics","See who's visiting your site, live"],
-    ["seo","target","Local SEO","Rank higher on Google Business Profile"],
-    ["content","sparkles","Content studio","AI writes your posts, replies & promos"]];
-  function growHome(box){
-    var custN=Object.keys(growCustomerMap()).length;
-    var h='<div class="gr-hero"><h2>Grow your business 🚀</h2><p>Five pro tools in one place — win more jobs, keep customers coming back, and get found online.</p></div>';
-    h+='<div class="gr-tools">';
-    GROW_TOOLS.forEach(function(t){h+='<button class="gr-tool" data-goto="'+t[0]+'"><span class="gt-ic">'+ic(t[1],20)+'</span><span class="gt-b"><span class="gt-t">'+esc(t[2])+'</span><span class="gt-s">'+esc(t[3])+'</span></span></button>';});
-    h+='</div>';
-    // a couple of live numbers so the landing feels alive
-    var won=(state.threads||[]).filter(function(t){return !t.archived&&t.status==="won"}).length;
-    h+='<div class="gr-sec"><span class="gs-ic">'+ic("activity",16)+'</span>At a glance</div>';
-    h+='<div class="big-tiles"><div class="big-tile"><div class="bt-v">'+custN+'</div><div class="bt-l">Customers on file</div></div>'+
-       '<div class="big-tile"><div class="bt-v">'+won+'</div><div class="bt-l">Won leads</div></div></div>';
-    box.innerHTML=h;
-    Array.prototype.forEach.call(box.querySelectorAll("[data-goto]"),function(t){t.onclick=function(){vibrate(6);growSet(t.getAttribute("data-goto"))}});
+  // ---- Website analytics — the all-in-one command center ----
+  // GA4 + Microsoft Clarity + the first-party pixel + live job money, merged
+  // into one scannable view: live visitors, KPI deltas vs the prior period,
+  // plain-English insights, the visit→job funnel, a UX-health grade, and
+  // breakdowns. All data arrives pre-merged from /api/webstats, which caches
+  // hard server-side (GA ~30 min, Clarity 6 h — their API allows 10 calls/day),
+  // so tapping refresh or switching ranges is always cheap.
+  var WA_RANGES=[["today","Today"],["7d","7 days"],["28d","28 days"],["90d","90 days"]];
+  var WA_DAYS={today:1,"7d":7,"28d":28,"90d":90};
+  function growLoadWeb(force){
+    if(GROW.web.loading)return;
+    GROW.web.loading=true;GROW.web.err="";growRender();
+    api("/api/webstats?range="+GROW.web.range+(force?"&force=1":"")).then(function(d){
+      GROW.web.loading=false;
+      if(d&&d.ok){GROW.web.data=d}else if(!GROW.web.data){GROW.web.err=(d&&d.error)||"Couldn't load"}
+      if(el("growApp").classList.contains("show")&&GROW.view==="analytics")growRender();
+    }).catch(function(){GROW.web.loading=false;if(!GROW.web.data)GROW.web.err="Network error";if(el("growApp").classList.contains("show")&&GROW.view==="analytics")growRender();});
   }
-  // ---- Customers (CRM) ----
-  function growCustomerMap(){
-    var map={};
-    (state.threads||[]).forEach(function(t){if(t.archived)return;map[t.phone]={phone:t.phone,name:t.name||"",status:t.status||"",lastTs:t.lastTs||0,tags:t.tags||[],spend:0,jobs:0,lastJob:0};});
-    (MO.entries||[]).forEach(function(e){if(e.type!=="job")return;var k=e.phone;if(!k)return;if(!map[k])map[k]={phone:k,name:e.name||"",status:"",lastTs:0,tags:[],spend:0,jobs:0,lastJob:0};map[k].spend+=e.amount;map[k].jobs++;if(e.name&&!map[k].name)map[k].name=e.name;var ts=e.ts||Date.parse((e.date||"")+"T12:00:00");if(ts>map[k].lastJob)map[k].lastJob=ts;});
-    return map;
+  function waN(n){n=Math.round(n||0);if(n>=10000)return Math.round(n/1000)+"k";if(n>=1000)return(n/1000).toFixed(1).replace(/\.0$/,"")+"k";return String(n)}
+  function waSecsFmt(s){s=Math.round(s||0);if(s<60)return s+"s";var m=Math.floor(s/60);return m+"m"+(s%60?" "+(s%60)+"s":"")}
+  function waDay(d){if(!d||String(d).length<8)return String(d||"");d=String(d);return new Date(+d.slice(0,4),+d.slice(4,6)-1,+d.slice(6,8),12).toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}
+  function waDelta(cur,prev){
+    if(!(prev>0))return cur>0?'<div class="bt-d up">'+ic("trending-up",12)+' new</div>':'<div class="bt-d" style="color:var(--muted2)">—</div>';
+    var pd=Math.round((cur-prev)/prev*100);
+    if(pd===0)return '<div class="bt-d" style="color:var(--muted2)">same as before</div>';
+    return '<div class="bt-d '+(pd>0?"up":"down")+'">'+(pd>0?ic("trending-up",12)+" +":ic("trending-down",12)+" −")+Math.abs(pd)+'% vs prior</div>';
   }
-  function growCRM(box){
-    var map=growCustomerMap();var list=Object.keys(map).map(function(k){return map[k]});
-    var q=(GROW.crmQ||"").toLowerCase();
-    var filtered=q?list.filter(function(c){return (c.name||"").toLowerCase().indexOf(q)>=0||(c.phone||"").indexOf(q)>=0}):list;
-    filtered.sort(function(a,b){return (b.lastTs||b.lastJob||0)-(a.lastTs||a.lastJob||0)});
-    var totalSpend=list.reduce(function(a,c){return a+c.spend},0);
-    var withJobs=list.filter(function(c){return c.jobs>0}).length;
-    var h='<div class="big-tiles"><div class="big-tile"><div class="bt-v">'+list.length+'</div><div class="bt-l">Customers</div></div>'+
-      '<div class="big-tile"><div class="bt-v">'+fmtMoney(totalSpend)+'</div><div class="bt-l">Billed this month</div></div></div>';
-    h+='<input class="gr-input" id="crmSearch" placeholder="Search name or number…" value="'+esc(GROW.crmQ||"")+'" autocomplete="off" style="margin:12px 0 6px">';
-    h+='<div class="gr-sec" style="margin-top:12px"><span class="gs-ic">'+ic("users",16)+'</span>'+(q?filtered.length+" match"+(filtered.length===1?"":"es"):list.length+" total")+(withJobs?" · "+withJobs+" with jobs":"")+'</div>';
-    if(!filtered.length){h+='<div class="wc-empty">'+ic("users",15)+' '+(q?"No customers match that search.":"No customers yet — they'll appear here as texts and jobs come in.")+'</div>';}
-    else{h+='<div class="plist">';filtered.slice(0,60).forEach(function(c){
-      var nm=c.name||prettyPhone(c.phone);var sm=c.status?stageMeta(c.status):null;
-      var sub=[];if(c.jobs)sub.push(c.jobs+(c.jobs===1?" job":" jobs"));if(c.lastTs)sub.push("texted "+ago(c.lastTs));
-      h+='<div class="prow" data-open="'+esc(c.phone)+'"><div class="pr-av" style="background:'+colorFor(c.phone)+'">'+esc((nm[0]||"#").toUpperCase())+'</div>'+
-        '<div class="pr-b"><div class="pr-nm">'+esc(nm)+(sm?' <span class="pr-tag" style="color:'+sm.color+';background:color-mix(in srgb,'+sm.color+' 16%,transparent)">'+esc(sm.label)+'</span>':'')+'</div>'+
-        '<div class="pr-sub">'+esc(sub.join(" · ")||prettyPhone(c.phone))+'</div></div>'+
-        (c.spend?'<div class="pr-r"><div class="pr-amt">'+fmtMoney(c.spend)+'</div></div>':'')+'</div>';
-    });h+='</div>';if(filtered.length>60)h+='<div class="wc-empty" style="justify-content:center">Showing first 60</div>';}
-    box.innerHTML=h;
-    Array.prototype.forEach.call(box.querySelectorAll("[data-open]"),function(r){r.onclick=function(){closeGrow();openThread(r.getAttribute("data-open"))}});
-    var s=el("crmSearch");if(s)s.oninput=function(){GROW.crmQ=s.value;var pos=s.selectionStart;growCRM(box);var n=el("crmSearch");if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(e){}}};
+  function waSpark(series,key){
+    if(!series||series.length<2)return"";
+    var W=120,H=26,n=series.length,bw=W/n,max=1;
+    series.forEach(function(x){if((x[key]||0)>max)max=x[key]});
+    var out='<svg class="wa-spark" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" aria-hidden="true">';
+    series.forEach(function(x,i){var v=x[key]||0,bh=Math.max(1.5,v/max*H);
+      out+='<rect x="'+(i*bw+.5).toFixed(1)+'" y="'+(H-bh).toFixed(1)+'" width="'+Math.max(1,bw-1).toFixed(1)+'" height="'+bh.toFixed(1)+'" rx="1"></rect>'});
+    return out+"</svg>";
   }
-  // ---- Reviews & reputation ----
-  function growReviewCfg(){try{return Object.assign({url:"",goal:25,collected:0},JSON.parse(localStorage.getItem("mkd-reviewcfg")||"{}"))}catch(e){return{url:"",goal:25,collected:0}}}
-  function growSaveReviewCfg(c){try{localStorage.setItem("mkd-reviewcfg",JSON.stringify(c))}catch(e){}}
-  function growReviews(box){
-    var cfg=growReviewCfg();
-    var won=(state.threads||[]).filter(function(t){return !t.archived&&t.status==="won"}).sort(function(a,b){return (b.statusAt||b.lastTs||0)-(a.statusAt||a.lastTs||0)});
-    var pct=cfg.goal>0?Math.min(100,Math.round(cfg.collected/cfg.goal*100)):0;
-    var h='<div class="gr-hero" style="background:linear-gradient(135deg,#eab308,#a16207);box-shadow:0 12px 28px rgba(234,179,8,.18)"><h2>⭐ Reviews grow trust</h2><p>Reviews are the #1 driver of new local customers. Ask every happy customer — it takes one tap.</p></div>';
-    // progress
-    h+='<div class="gr-sec"><span class="gs-ic">'+ic("target",16)+'</span>Review goal</div>';
-    h+='<div class="ck-progress"><div class="ckp" style="width:'+pct+'%"></div></div>';
-    h+='<div style="display:flex;gap:10px;align-items:center;margin:-6px 0 4px"><b style="font-size:22px;letter-spacing:-.02em">'+cfg.collected+'</b><span style="color:var(--muted)">of '+cfg.goal+' reviews</span>'+
-      '<button class="btn" id="revMinus" style="margin-left:auto;padding:6px 12px">–</button><button class="btn accent" id="revPlus" style="padding:6px 12px">+1</button></div>';
-    h+='<button class="gr-back" id="revGoalEdit" style="margin-top:6px">'+ic("pencil",13)+' Edit goal</button>';
-    // review link
-    h+='<div class="gr-sec" style="margin-top:16px"><span class="gs-ic">'+ic("link",16)+'</span>Your Google review link</div>';
-    if(cfg.url){h+='<div class="code-box" style="font-size:12px">'+esc(cfg.url)+'</div>'+
-      '<div style="display:flex;gap:8px;margin-top:9px"><button class="btn ic-btn" id="revCopy">'+ic("copy",15)+'<span>Copy link</span></button><button class="btn" id="revEdit">Change</button></div>';}
-    else{h+='<p class="hint" style="margin:0 0 9px">Paste your Google review link (from your Business Profile → "Get more reviews") so every ask includes it.</p><button class="btn accent ic-btn" id="revSet">'+ic("plus",15)+'<span>Add review link</span></button>';}
-    // ask a won customer
-    h+='<div class="gr-sec" style="margin-top:18px"><span class="gs-ic">'+ic("trophy",16)+'</span>Ask a happy customer<span class="hs-n" style="color:var(--muted2);margin-left:6px">'+won.length+' won</span></div>';
-    if(!won.length){h+='<div class="wc-empty">'+ic("trophy",15)+' Mark a lead as "Won" and they\'ll show here, ready for a review ask.</div>';}
-    else{h+='<div class="plist">';won.slice(0,12).forEach(function(t){var nm=displayName(t);
-      h+='<div class="prow" data-ask="'+esc(t.phone)+'"><div class="pr-av" style="background:'+colorFor(t.phone)+'">'+esc(initials(t))+'</div>'+
-        '<div class="pr-b"><div class="pr-nm">'+esc(nm)+'</div><div class="pr-sub">Won '+(t.statusAt?ago(t.statusAt):"recently")+'</div></div>'+
-        '<span class="pr-tag vip">'+ic("send",13)+' Ask</span></div>';});h+='</div>';}
-    box.innerHTML=h;
-    // wiring
-    var rp=el("revPlus");if(rp)rp.onclick=function(){cfg.collected++;growSaveReviewCfg(cfg);vibrate(8);growReviews(box);toast("Nice! "+cfg.collected+" reviews")};
-    var rm=el("revMinus");if(rm)rm.onclick=function(){cfg.collected=Math.max(0,cfg.collected-1);growSaveReviewCfg(cfg);growReviews(box)};
-    var rge=el("revGoalEdit");if(rge)rge.onclick=function(){var v=prompt("Review goal:",String(cfg.goal));if(v==null)return;var n=parseInt(v,10);if(n>0){cfg.goal=n;growSaveReviewCfg(cfg);growReviews(box)}};
-    function setLink(){var v=prompt("Paste your Google review link:",cfg.url||"https://g.page/r/…/review");if(v==null)return;cfg.url=v.trim();growSaveReviewCfg(cfg);growReviews(box)}
-    var rs=el("revSet");if(rs)rs.onclick=setLink;var re=el("revEdit");if(re)re.onclick=setLink;
-    var rc=el("revCopy");if(rc)rc.onclick=function(){growCopy(cfg.url,"Review link copied")};
-    Array.prototype.forEach.call(box.querySelectorAll("[data-ask]"),function(r){r.onclick=function(){
-      var phone=r.getAttribute("data-ask");var t=(state.threads||[]).filter(function(x){return x.phone===phone})[0];
-      var nm=t?(t.name&&t.name.split(" ")[0]):"";
-      var msg="Hey"+(nm?" "+nm:"")+"! Thanks again for choosing Mikey's Mobile Detailing 🚗✨ If you were happy with the detail, would you mind leaving us a quick review? It really helps a ton"+(cfg.url?": "+cfg.url:".");
-      growPrefillThread(phone,msg);
-    };});
+  function waBarChart(series,key,H,titleFn){
+    var W=320,n=series.length,bw=W/Math.max(1,n),max=1;
+    series.forEach(function(x){if((x[key]||0)>max)max=x[key]});
+    var out='<svg class="wa-chart" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" style="width:100%;height:'+H+'px;display:block">';
+    series.forEach(function(x,i){var v=x[key]||0,bh=v>0?Math.max(2,v/max*H):1.2;
+      out+='<rect x="'+(i*bw+.8).toFixed(1)+'" y="'+(H-bh).toFixed(1)+'" width="'+Math.max(1.2,bw-1.6).toFixed(1)+'" height="'+bh.toFixed(1)+'" rx="1.5"><title>'+esc(titleFn(x,v))+"</title></rect>"});
+    return out+"</svg>";
   }
-  // ---- Website analytics ----
-  function growLoadAnalytics(){
-    if(GROW.analytics||GROW.aLoading)return growRender();
-    GROW.aLoading=true;GROW.aErr=false;growRender();
-    api("/api/analytics?days=14").then(function(d){GROW.aLoading=false;if(d&&d.ok){GROW.analytics=d}else{GROW.aErr=true}if(el("growApp").classList.contains("show"))growRender();}).catch(function(){GROW.aLoading=false;GROW.aErr=true;if(el("growApp").classList.contains("show"))growRender();});
+  function waPeak(series,key){var best=null;series.forEach(function(x){if(!best||(x[key]||0)>(best[key]||0))best=x});return best}
+  function waJobsInRange(rangeKey){
+    var out={jobs:0,rev:0},since;
+    if(rangeKey==="today"){var t0=new Date();t0.setHours(0,0,0,0);since=t0.getTime()}
+    else since=Date.now()-(WA_DAYS[rangeKey]||7)*86400000;
+    (MO.entries||[]).forEach(function(e){
+      if(e.type!=="job")return;
+      var ts=e.ts||Date.parse((e.date||"")+"T12:00:00");
+      if(ts&&ts>=since){out.jobs++;out.rev+=e.amount||0}
+    });
+    return out;
+  }
+  function waFunnel(steps,revLine){
+    var base=Math.max(1,steps[0].n),h="";
+    steps.forEach(function(s,i){
+      var conv=i>0?(steps[i-1].n>0?Math.round(s.n/steps[i-1].n*100):0):null;
+      h+='<div class="wa-fun"><div class="f-top"><b>'+esc(s.k)+'</b><span><span class="f-n">'+waN(s.n)+'</span>'+(conv!=null?'<span class="f-p">'+conv+'% of previous</span>':'')+'</span></div>'+
+         '<div class="wa-track"><div class="wa-fill" style="width:'+Math.max(2,Math.round(s.n/base*100))+'%;opacity:'+(1-i*0.16).toFixed(2)+'"></div></div></div>';
+    });
+    if(revLine)h+='<div style="font-size:12.5px;color:var(--muted);margin-top:9px;display:flex;align-items:center;gap:6px">'+revLine+"</div>";
+    return h;
+  }
+  function waInsights(d){
+    var out=[],ga=d.ga,cl=d.clarity&&d.clarity.overall;
+    if(ga){
+      var t=ga.totals,p=ga.prev;
+      var acts=(t.qqc||0)+(t.phone||0),pacts=(p.qqc||0)+(p.phone||0);
+      var cr=t.sessions>0?acts/t.sessions*100:0,pcr=p.sessions>0?pacts/p.sessions*100:0;
+      if(t.sessions>=5){
+        if(pcr>0){var up=cr>=pcr;out.push({t:up?"good":"warn",ic:"target",h:"<b>"+cr.toFixed(1)+"% of visits became a call or quote</b> — "+(up?"up":"down")+" from "+pcr.toFixed(1)+"% the period before."})}
+        else out.push({t:acts>0?"good":"info",ic:"target",h:"<b>"+cr.toFixed(1)+"% of visits became a call or quote.</b>"});
+      }
+      var money=null;(ga.pages||[]).forEach(function(pg){var a=(pg.qqc||0)+(pg.phone||0);if(a>0&&(!money||a>(money.qqc||0)+(money.phone||0)))money=pg});
+      if(money)out.push({t:"good",ic:"trophy",h:"<b>"+esc(money.path)+"</b> is your money page — "+((money.qqc||0)+(money.phone||0))+" calls/quotes from "+waN(money.views)+" views."});
+      if(ga.channels&&ga.channels.length){var tot=0;ga.channels.forEach(function(c){tot+=c.n});var c0=ga.channels[0];
+        if(tot>0&&c0.n/tot>=0.4)out.push({t:"info",ic:"link",h:"<b>"+Math.round(c0.n/tot*100)+"%</b> of traffic comes from <b>"+esc(c0.k)+"</b>"+(ga.sources&&ga.sources[0]?" (top source: "+esc(ga.sources[0].k)+")":"")+"."});}
+      if(ga.devices&&ga.devices.length){var dtot=0,mob=0;ga.devices.forEach(function(x){dtot+=x.n;if(x.k==="mobile")mob=x.n});
+        if(dtot>0&&mob/dtot>=0.7)out.push({t:"info",ic:"phone",h:"<b>"+Math.round(mob/dtot*100)+"%</b> of visitors are on their phone — keep everything thumb-friendly."});}
+      if((ga.series||[]).length>6){var bd=waPeak(ga.series,"sessions");if(bd&&bd.sessions>0)out.push({t:"info",ic:"calendar-days",h:"Busiest day: <b>"+esc(waDay(bd.d))+"</b> with "+waN(bd.sessions)+" visits."})}
+    }
+    if(cl){
+      if((cl.scriptErrors||0)>0)out.unshift({t:"bad",ic:"alert",h:"<b>"+waN(cl.scriptErrors)+" JavaScript errors</b> hit real visitors in the last 3 days — that can silently break your quote form. Watch a session in Clarity."});
+      if(cl.rage&&cl.rage.pct>=3)out.unshift({t:"bad",ic:"alert",h:"<b>"+cl.rage.pct.toFixed(1)+"% of sessions rage-clicked</b> — people tapping something that won't respond."});
+      else if(cl.dead&&cl.dead.pct>=8)out.push({t:"warn",ic:"alert",h:"<b>"+cl.dead.pct.toFixed(1)+"% of sessions had dead clicks</b> — taps on things that look clickable but aren't."});
+      if(typeof cl.scrollDepth==="number"&&cl.scrollDepth>0&&cl.scrollDepth<40)out.push({t:"warn",ic:"chevron-down",h:"Visitors only scroll <b>"+cl.scrollDepth.toFixed(0)+"%</b> of the page on average — keep your number and quote button near the top."});
+    }
+    return out.slice(0,5);
+  }
+  function waGrade(cl){
+    var score=100;
+    score-=(cl.rage?cl.rage.pct:0)*6;
+    score-=(cl.dead?cl.dead.pct:0)*2;
+    score-=(cl.quickback?cl.quickback.pct:0)*1.5;
+    if((cl.scriptErrors||0)>0)score-=10;
+    if(typeof cl.scrollDepth==="number"&&cl.scrollDepth>0&&cl.scrollDepth<45)score-=8;
+    score=Math.max(0,Math.min(100,Math.round(score)));
+    var g=score>=90?["A","#34d399"]:score>=80?["B","#34d399"]:score>=70?["C","var(--gold)"]:score>=60?["D","#fb7185"]:["F","#fb7185"];
+    return {score:score,letter:g[0],color:g[1]};
+  }
+  function waMeter(label,pct,color){
+    pct=pct||0;
+    return '<div class="wa-meter"><span class="m-k">'+esc(label)+'</span><div class="m-track"><div class="m-fill" style="width:'+Math.min(100,Math.max(pct>0?2:0,pct)).toFixed(1)+'%;background:'+color+'"></div></div><span class="m-n">'+pct.toFixed(1)+'%</span></div>';
+  }
+  function waPixelSnippet(){
+    return '<script>(function(){var i=new Image();i.src="'+location.origin+'/px?p="+encodeURIComponent(location.pathname)+"&r="+encodeURIComponent(document.referrer)+"&t="+Date.now();})();<\/script>';
+  }
+  function waPixelHtml(px,primary){
+    var h='<div class="gr-sec" style="margin-top:18px"><span class="gs-ic">'+ic("zap",16)+'</span>'+(primary?"Built-in tracker":"Built-in backup tracker")+'</div>';
+    if(px&&(px.totalViews>0||px.totalVisitors>0)){
+      h+='<div class="big-tiles"><div class="big-tile"><div class="bt-v">'+waN(px.totalViews)+'</div><div class="bt-l">Pixel views · 14 days</div></div>'+
+         '<div class="big-tile"><div class="bt-v">'+waN(px.totalVisitors)+'</div><div class="bt-l">Unique visitors</div></div></div>';
+      if(primary){
+        var s=px.series||[];
+        if(s.length>1){
+          h+='<div class="wa-panel" style="margin-top:10px"><div class="p-t">'+ic("bar-chart",14)+' Daily pixel views</div>';
+          h+=waBarChart(s.map(function(x){return{d:x.day.replace(/-/g,""),n:x.views}}),"n",56,function(x,v){return waDay(x.d)+" — "+v+" views"})+"</div>";
+        }
+        if((px.topPaths||[]).length){var pmax=Math.max(1,px.topPaths[0].n);
+          h+='<div class="gr-sec"><span class="gs-ic">'+ic("file-text",16)+'</span>Top pages (pixel)</div>';
+          px.topPaths.forEach(function(p){h+='<div class="hbar"><div class="hbar-top"><span class="hb-k">'+esc(p.k)+'</span><span class="hb-n">'+p.n+'</span></div><div class="hbar-track"><div class="hbar-fill" style="width:'+Math.round(p.n/pmax*100)+'%"></div></div></div>'});}
+      }
+    } else {
+      h+='<p class="hint" style="margin:0 0 9px">Your own cookie-free visit counter — it keeps counting even for visitors whose ad-blockers hide Google Analytics. Paste this once before <code>&lt;/body&gt;</code> on the site:</p>';
+      h+='<div class="code-box">'+esc(waPixelSnippet())+'</div><button class="btn ic-btn code-copy" id="pxCopy" style="margin-top:8px">'+ic("copy",15)+"<span>Copy snippet</span></button>";
+    }
+    return h;
+  }
+  function waSettingsHtml(d){
+    var st=GROW.web.status,conn=(d&&d.connected)||{};
+    var h='<div class="wa-conn">';
+    h+='<div class="c-h">'+ic("bar-chart",15)+' Google Analytics '+(conn.ga?'<span class="wa-ok">'+ic("check",11)+' connected</span>':'<span class="wa-no">not connected</span>')+"</div>";
+    if(conn.ga){
+      if(st&&st.ga&&st.ga.email)h+='<div class="wa-hint">as '+esc(st.ga.email)+' · property '+esc(st.ga.propertyId||"")+(st.ga.via==="secret"?" · set as a Worker secret":"")+"</div>";
+      if(st&&st.ga&&st.ga.via!=="secret")h+='<button class="gr-back" id="waGaOff">'+ic("x",12)+" Disconnect</button>";
+    } else {
+      h+='<div class="wa-hint">Paste the <b>service-account JSON file</b> — the exact same one your daily email already uses. Get it from Netlify → your stats site → Site configuration → Environment variables → <b>GOOGLE_SERVICE_ACCOUNT_JSON</b> → copy the value. It\'s stored privately in your Worker, never in code.</div>';
+      h+='<textarea class="gr-input" id="waGaJson" placeholder=\'{ "type": "service_account", ... }\' style="min-height:64px;font-family:ui-monospace,monospace;font-size:11px"></textarea>';
+      h+='<input class="gr-input" id="waGaProp" placeholder="GA4 property ID" value="'+esc((st&&st.ga&&st.ga.propertyId)||"489075814")+'" style="margin-top:7px">';
+      h+='<button class="btn accent" id="waGaSave" style="margin-top:8px">'+(GROW.web.savingGa?'<span class="spin"></span> Checking with Google…':"Connect Google Analytics")+"</button>";
+    }
+    h+='</div><div class="wa-conn">';
+    h+='<div class="c-h">'+ic("activity",15)+' Microsoft Clarity '+(conn.clarity?'<span class="wa-ok">'+ic("check",11)+' connected</span>':'<span class="wa-no">not connected</span>')+"</div>";
+    if(conn.clarity){
+      if(st&&st.clarity)h+='<div class="wa-hint">API calls today: '+st.clarity.callsToday+" of "+st.clarity.budget+" — Clarity only allows 10/day, so this data refreshes every ~6 hours"+(st.clarity.via==="secret"?" · set as a Worker secret":"")+"</div>";
+      if(st&&st.clarity&&st.clarity.via!=="secret")h+='<button class="gr-back" id="waClOff">'+ic("x",12)+" Disconnect</button>";
+    } else {
+      h+='<div class="wa-hint">In Clarity: your project → <b>Settings → Data Export → Generate new API token</b>. Copy the long token and paste it here.</div>';
+      h+='<textarea class="gr-input" id="waClTok" placeholder="eyJhbGciOi…" style="min-height:48px;font-family:ui-monospace,monospace;font-size:11px"></textarea>';
+      h+='<button class="btn accent" id="waClSave" style="margin-top:8px">'+(GROW.web.savingCl?'<span class="spin"></span> Checking with Clarity…':"Connect Clarity")+"</button>";
+    }
+    h+="</div>";
+    return h;
   }
   function growAnalytics(box){
-    if(!GROW.analytics&&!GROW.aLoading&&!GROW.aErr){growLoadAnalytics();return;}
-    var base=location.origin;
-    var snippet='<script>(function(){var i=new Image();i.src="'+base+'/px?p="+encodeURIComponent(location.pathname)+"&r="+encodeURIComponent(document.referrer)+"&t="+Date.now();})();<\/script>';
-    var h='';
-    if(GROW.aLoading&&!GROW.analytics){h+='<div class="wc-empty"><span class="spin"></span> Loading traffic…</div>';}
-    else if(GROW.aErr&&!GROW.analytics){h+='<div class="wc-empty">'+ic("info",15)+' Couldn\'t load analytics right now.</div>';}
-    else{
-      var d=GROW.analytics;
-      // 7-day vs prior-7 delta on views
-      var s=d.series||[];var recent=s.slice(-7).reduce(function(a,x){return a+x.views},0);var prior=s.slice(0,Math.max(0,s.length-7)).reduce(function(a,x){return a+x.views},0);
-      var delta=prior>0?Math.round((recent-prior)/prior*100):(recent>0?100:0);
-      h+='<div class="big-tiles"><div class="big-tile"><div class="bt-v">'+d.totalViews+'</div><div class="bt-l">Page views · 14 days</div>'+(s.length>7?'<div class="bt-d '+(delta>=0?"up":"down")+'">'+(delta>=0?"▲ +":"▼ ")+Math.abs(delta)+'% vs prior week</div>':'')+'</div>'+
-        '<div class="big-tile"><div class="bt-v">'+d.totalVisitors+'</div><div class="bt-l">Unique visitors</div></div></div>';
-      // chart
-      var max=Math.max(1,Math.max.apply(null,s.map(function(x){return x.views})));
-      var W=300,H=64,n=s.length,bw=W/Math.max(1,n);
-      var bars=s.map(function(x,i){var bh=Math.max(2,Math.round(x.views/max*H));return '<rect class="sp-bar" x="'+(i*bw+1).toFixed(1)+'" y="'+(H-bh)+'" width="'+(bw-2).toFixed(1)+'" height="'+bh+'" rx="2"><title>'+x.day+': '+x.views+' views</title></rect>';}).join("");
-      h+='<div class="gr-sec"><span class="gs-ic">'+ic("bar-chart",16)+'</span>Daily page views</div>';
-      h+='<svg class="spark-svg" style="height:64px" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+bars+'</svg>';
-      // top pages
-      h+='<div class="gr-sec" style="margin-top:18px"><span class="gs-ic">'+ic("file-text",16)+'</span>Top pages</div>';
-      if((d.topPaths||[]).length){var pmax=d.topPaths[0].n;d.topPaths.forEach(function(p){h+='<div class="hbar"><div class="hbar-top"><span class="hb-k">'+esc(p.k)+'</span><span class="hb-n">'+p.n+'</span></div><div class="hbar-track"><div class="hbar-fill" style="width:'+Math.round(p.n/pmax*100)+'%"></div></div></div>';});}
-      else h+='<div class="wc-empty">No page data yet.</div>';
-      // top referrers
-      h+='<div class="gr-sec" style="margin-top:16px"><span class="gs-ic">'+ic("link",16)+'</span>Where visitors come from</div>';
-      if((d.topRefs||[]).length){var rmax=d.topRefs[0].n;d.topRefs.forEach(function(p){h+='<div class="hbar"><div class="hbar-top"><span class="hb-k">'+esc(p.k)+'</span><span class="hb-n">'+p.n+'</span></div><div class="hbar-track"><div class="hbar-fill" style="width:'+Math.round(p.n/rmax*100)+'%"></div></div></div>';});}
-      else h+='<div class="wc-empty">Direct / no referrer data yet.</div>';
+    var wd=GROW.web;
+    if(!wd.data&&!wd.loading&&!wd.err){growLoadWeb(false);return}
+    var d=wd.data,h="";
+    if(!d){
+      h=wd.loading?'<div class="wc-empty"><span class="spin"></span> Pulling your numbers…</div>'
+        :'<div class="wc-empty">'+ic("info",15)+" "+esc(wd.err||"Couldn't load")+'</div><button class="btn" id="waRetry" style="margin-top:8px">Try again</button>';
+      box.innerHTML=h;return waWire(box,null);
     }
-    // install snippet — always shown
-    h+='<div class="gr-sec" style="margin-top:20px"><span class="gs-ic">'+ic("zap",16)+'</span>Turn it on (30 seconds)</div>';
-    h+='<p class="hint" style="margin:0 0 9px">Paste this once before <code>&lt;/body&gt;</code> on your website. That\'s it — visits show up here automatically. No cookies, no third party, 100% yours.</p>';
-    h+='<div class="code-box" id="pxSnippet">'+esc(snippet)+'</div>';
-    h+='<button class="btn accent ic-btn code-copy" id="pxCopy">'+ic("copy",15)+'<span>Copy snippet</span></button>';
+    var conn=d.connected||{};
+    if(!conn.ga&&!conn.clarity){
+      h+='<div class="gr-hero gr-hero-web"><h2>Your site, decoded</h2><p>Two quick pastes and this tab becomes mission control — live visitors, calls &amp; quotes, what\'s working and what\'s broken. No more digging through Google Analytics.</p></div>';
+      h+=waSettingsHtml(d);
+      h+=waPixelHtml(d.pixel,true);
+      box.innerHTML=h;return waWire(box,d);
+    }
+    h+='<div class="wa-top"><div class="wa-seg">';
+    WA_RANGES.forEach(function(r){h+='<button data-wr="'+r[0]+'" class="'+(wd.range===r[0]?"on":"")+'">'+r[1]+"</button>"});
+    h+='</div><button class="wa-gear" id="waGear" aria-label="Connections">'+ic("settings",16)+"</button></div>";
+    if(wd.loading)h+='<div class="wc-empty" style="margin-bottom:8px"><span class="spin"></span> Refreshing…</div>';
+    if(wd.settings)h+=waSettingsHtml(d);
+    var ga=d.ga;
+    if(d.realtime){
+      var act=d.realtime.active||0;
+      h+='<div class="wa-live"><span class="wa-dot '+(act>0?"on":"off")+'"></span><span>'+(act>0?"<b>"+act+(act===1?" person":" people")+"</b> on your site right now":"Nobody on the site this second")+"</span>"+
+         (ga&&ga.fetchedAt?'<span class="wa-upd">stats '+ago(ga.fetchedAt)+" old</span>":"")+"</div>";
+    }
+    if(d.errors&&d.errors.ga)h+='<div class="wa-ins bad"><span class="i-ic">'+ic("alert",15)+'</span><div>Google Analytics: '+esc(d.errors.ga)+"</div></div>";
+    if(ga){
+      var t=ga.totals||{},p=ga.prev||{},s=ga.series||[];
+      var tiles=[["Visitors",t.sessions,p.sessions,"users","sessions"],["Page views",t.views,p.views,"file-text","views"],["Phone taps",t.phone,p.phone,"phone","phone"],["Quote requests",t.qqc,p.qqc,"clipboard-list","qqc"]];
+      h+='<div class="wa-tiles">';
+      tiles.forEach(function(tl){h+='<div class="wa-tile"><div class="t-l">'+ic(tl[3],12)+" "+tl[0]+'</div><div class="t-v">'+waN(tl[1])+"</div>"+waDelta(tl[1]||0,tl[2]||0)+waSpark(s,tl[4])+"</div>"});
+      h+="</div>";
+      var ins=waInsights(d);
+      if(ins.length){
+        h+='<div class="gr-sec"><span class="gs-ic">'+ic("lightbulb",16)+'</span>What\'s happening</div>';
+        ins.forEach(function(x){h+='<div class="wa-ins '+x.t+'"><span class="i-ic">'+ic(x.ic,15)+"</span><div>"+x.h+"</div></div>"});
+      }
+      h+='<button class="btn ic-btn" id="waAi" style="width:100%;justify-content:center;margin:2px 0 10px">'+ic("sparkles",15)+"<span>"+(wd.aiLoading?"Reading your numbers…":"AI deep read — what should I do?")+"</span></button>";
+      if(wd.ai)h+='<div class="wa-panel"><div class="p-t">'+ic("bot",14)+' AI read <small>'+esc(wd.aiRange||"")+"</small></div><div class=\"wa-ai\">"+esc(wd.ai)+"</div></div>";
+      if(wd.range!=="today"&&s.length>1){
+        var pk=waPeak(s,"sessions");
+        h+='<div class="wa-panel"><div class="p-t">'+ic("bar-chart",14)+" Visits per day <small>peak "+waN(pk?pk.sessions:0)+" · "+esc(pk?waDay(pk.d):"")+"</small></div>";
+        h+=waBarChart(s,"sessions",74,function(x,v){return waDay(x.d)+" — "+v+" visits"});
+        h+='<div class="wa-xlab"><span>'+esc(waDay(s[0].d))+"</span><span>"+esc(waDay(s[s.length-1].d))+"</span></div>";
+        var acts=s.map(function(x){return{d:x.d,acts:(x.qqc||0)+(x.phone||0)}});
+        var apk=waPeak(acts,"acts");
+        h+='<div class="p-t" style="margin-top:13px">'+ic("zap",14)+" Calls + quotes per day <small>"+(apk&&apk.acts>0?"peak "+apk.acts+" · "+esc(waDay(apk.d)):"none this period")+"</small></div>";
+        h+=waBarChart(acts,"acts",34,function(x,v){return waDay(x.d)+" — "+v+" calls/quotes"});
+        h+="</div>";
+      }
+      var jr=waJobsInRange(wd.range);
+      var steps=[{k:"Visited the site",n:t.sessions||0},{k:"Stuck around",n:t.engaged||0},{k:"Called or asked for a quote",n:(t.qqc||0)+(t.phone||0)},{k:"Booked a job"+(wd.range==="90d"?" (this month)":""),n:jr.jobs}];
+      h+='<div class="gr-sec"><span class="gs-ic">'+ic("trending-up",16)+'</span>From visit to paycheck</div>';
+      h+='<div class="wa-panel">'+waFunnel(steps,jr.rev>0?ic("dollar",13)+" <b>"+fmtMoney(jr.rev)+"</b> billed from those jobs":"")+"</div>";
+    }
+    var cl=d.clarity&&d.clarity.overall;
+    if(cl){
+      var gr=waGrade(cl);
+      var avgT=(cl.sessions>0&&cl.totalSecs>0)?cl.totalSecs/cl.sessions:cl.totalSecs||0;
+      if(avgT<2&&(cl.totalSecs||0)>=2)avgT=cl.totalSecs;
+      h+='<div class="gr-sec"><span class="gs-ic">'+ic("activity",16)+'</span>Visitor experience<span class="hs-n" style="margin-left:auto;color:var(--muted2);font-weight:700;font-size:10.5px">Clarity · last 3 days'+(d.clarity.stale?" · older data (daily API limit)":"")+"</span></div>";
+      h+='<div class="wa-panel"><div style="display:flex;gap:12px;align-items:center;margin-bottom:11px">'+
+         '<div class="wa-grade" style="color:'+gr.color+';background:color-mix(in srgb,'+gr.color+' 14%,transparent)">'+gr.letter+"</div>"+
+         '<div><div style="font-weight:800;font-size:14.5px">Experience score: '+gr.score+"/100</div>"+
+         '<div style="color:var(--muted2);font-size:12px">'+waN(cl.sessions||0)+" real sessions · ~"+waSecsFmt(avgT)+" per visit · scrolls "+(cl.scrollDepth||0).toFixed(0)+"% deep</div></div></div>";
+      h+=waMeter("Dead clicks",(cl.dead||{}).pct||0,"var(--gold)");
+      h+=waMeter("Rage clicks",(cl.rage||{}).pct||0,"#fb7185");
+      h+=waMeter("Quick bounces",(cl.quickback||{}).pct||0,"var(--gold)");
+      h+=waMeter("Marathon scrolling",(cl.excessiveScroll||{}).pct||0,"var(--muted2)");
+      if((cl.scriptErrors||0)>0)h+='<div style="font-size:12.5px;color:#fb7185;font-weight:700;margin-top:4px;display:flex;align-items:center;gap:6px">'+ic("alert",13)+" "+waN(cl.scriptErrors)+" JavaScript errors — watch a recording in Clarity</div>";
+      var worst=(d.clarity.pages||[]).filter(function(pg){return pg.sessions>=5&&(pg.deadPct>=8||pg.ragePct>=3)}).slice(0,3);
+      if(worst.length){
+        h+='<div style="font-size:11px;color:var(--muted2);font-weight:800;text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px">Pages to look at</div>';
+        worst.forEach(function(pg){var pth=pg.url.replace(/^https?:\/\/[^\/]+/,"")||"/";
+          h+='<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;gap:8px"><span style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(pth)+'</span><span style="color:var(--muted2);flex:none">'+(pg.ragePct>=3?pg.ragePct.toFixed(0)+"% rage":pg.deadPct.toFixed(0)+"% dead")+"</span></div>"});
+      }
+      h+="</div>";
+    }
+    if(d.errors&&d.errors.clarity)h+='<div class="wa-ins warn"><span class="i-ic">'+ic("info",15)+'</span><div>Clarity: '+esc(d.errors.clarity)+"</div></div>";
+    if(ga){
+      h+='<div class="gr-sec"><span class="gs-ic">'+ic("file-text",16)+'</span>Top pages</div>';
+      var pgs=(ga.pages||[]).slice(0,8);
+      if(pgs.length){
+        var pmax=Math.max(1,pgs[0].views||1);
+        pgs.forEach(function(pg){
+          var badges="";
+          if(pg.phone)badges+='<span class="wa-badge">'+ic("phone",11)+" "+pg.phone+"</span>";
+          if(pg.qqc)badges+='<span class="wa-badge">'+ic("clipboard-list",11)+" "+pg.qqc+"</span>";
+          h+='<div class="hbar"><div class="hbar-top"><span class="hb-k">'+esc(pg.path)+badges+'</span><span class="hb-n">'+waN(pg.views)+'</span></div><div class="hbar-track"><div class="hbar-fill" style="width:'+Math.round((pg.views||0)/pmax*100)+'%"></div></div></div>';
+        });
+      } else h+='<div class="wc-empty">No page data in this period.</div>';
+      h+='<div class="gr-sec"><span class="gs-ic">'+ic("link",16)+'</span>Where visitors come from</div>';
+      if((ga.channels||[]).length){
+        var cmax=Math.max(1,ga.channels[0].n);
+        ga.channels.forEach(function(c){h+='<div class="hbar"><div class="hbar-top"><span class="hb-k">'+esc(c.k)+'</span><span class="hb-n">'+waN(c.n)+'</span></div><div class="hbar-track"><div class="hbar-fill" style="width:'+Math.round(c.n/cmax*100)+'%"></div></div></div>'});
+        if((ga.sources||[]).length){h+='<div style="margin-top:8px">';ga.sources.slice(0,6).forEach(function(sx){h+='<span class="wa-src">'+esc(sx.k)+' <b>'+waN(sx.n)+"</b></span>"});h+="</div>"}
+      } else h+='<div class="wc-empty">No source data in this period.</div>';
+      var cts=(ga.cities||[]).slice(0,6);
+      h+='<div class="gr-sec"><span class="gs-ic">'+ic("home",16)+'</span>Cities</div>';
+      if(cts.length){
+        var ctmax=Math.max(1,cts[0].n);
+        cts.forEach(function(c){h+='<div class="hbar"><div class="hbar-top"><span class="hb-k">'+esc(c.k)+'</span><span class="hb-n">'+waN(c.n)+'</span></div><div class="hbar-track"><div class="hbar-fill" style="width:'+Math.round(c.n/ctmax*100)+'%"></div></div></div>'});
+      } else h+='<div class="wc-empty">No city data yet.</div>';
+      var dvs=ga.devices||[],dtot=0;dvs.forEach(function(x){dtot+=x.n});
+      if(dtot>0){
+        h+='<div class="gr-sec"><span class="gs-ic">'+ic("phone",16)+'</span>Devices</div><div class="wa-pills">';
+        dvs.forEach(function(x){h+='<span class="wa-pill">'+esc(x.k)+" <b>"+Math.round(x.n/dtot*100)+"%</b></span>"});
+        h+="</div>";
+      }
+      var hrs=ga.hours||[],hmax=0;hrs.forEach(function(v){if(v>hmax)hmax=v});
+      if(hmax>0){
+        h+='<div class="gr-sec"><span class="gs-ic">'+ic("clock",16)+'</span>When people browse<span class="hs-n" style="margin-left:auto;color:var(--muted2);font-size:10.5px;font-weight:700">Pacific time</span></div>';
+        h+='<div class="wa-panel" style="padding-bottom:9px">';
+        h+=waBarChart(hrs.map(function(v,i){return{d:String(i),n:v}}),"n",44,function(x,v){var hh=+x.d,lab=hh===0?"12am":hh<12?hh+"am":hh===12?"12pm":(hh-12)+"pm";return lab+" — "+v+" visits"});
+        h+='<div class="wa-xlab"><span>12am</span><span>6am</span><span>12pm</span><span>6pm</span><span>11pm</span></div></div>';
+      }
+    }
+    h+=waPixelHtml(d.pixel,!ga);
+    h+='<div style="color:var(--muted2);font-size:10.5px;text-align:center;margin:14px 0 4px">'+
+       (ga&&ga.fetchedAt?"GA updated "+ago(ga.fetchedAt)+" ago":"")+
+       (d.clarity&&d.clarity.fetchedAt?" · Clarity "+ago(d.clarity.fetchedAt)+" ago":"")+" · tap ↻ to refresh</div>";
     box.innerHTML=h;
-    var pc=el("pxCopy");if(pc)pc.onclick=function(){growCopy(snippet,"Snippet copied — paste it on your site")};
+    waWire(box,d);
   }
-  // ---- Local SEO / Google Business Profile ----
-  var SEO_TASKS=[
-    ["claim","Claim & verify your Google Business Profile","The foundation of local ranking — verify you own the listing."],
-    ["nap","Match name, address & phone everywhere","Google trusts consistent NAP across your site, GBP, Yelp, Facebook."],
-    ["cats","Set the right primary category","Use \"Car detailing service\" as primary + relevant secondaries."],
-    ["photos","Add 10+ real photos (before/after)","Listings with photos get far more calls and direction requests."],
-    ["hours","Fill hours, service area & services","List every city you serve and every detailing package with prices."],
-    ["posts","Post weekly on your profile","Fresh GBP posts signal an active business — use the Content studio."],
-    ["reviews","Get to 25+ reviews & reply to all","Volume + fresh reviews + owner replies = higher local rank."],
-    ["keywords","Put \"mobile detailing + city\" in your description","Natural keywords in the profile and website titles help you rank."],
-    ["website","Link a fast, mobile-friendly website","Add the analytics snippet so you can see what's working."],
-    ["citations","List on Yelp, Facebook, Nextdoor, Apple Maps","More consistent citations build local authority."]];
-  function growSEOState(){try{return JSON.parse(localStorage.getItem("mkd-seo")||"{}")}catch(e){return{}}}
-  function growSaveSEO(s){try{localStorage.setItem("mkd-seo",JSON.stringify(s))}catch(e){}}
-  function growSEO(box){
-    var st=growSEOState();var done=SEO_TASKS.filter(function(t){return st[t[0]]}).length;
-    var pct=Math.round(done/SEO_TASKS.length*100);
-    var h='<div class="gr-hero" style="background:linear-gradient(135deg,#2f9bff,#1d5fd8);box-shadow:0 12px 28px rgba(47,155,255,.18)"><h2>📍 Own local Google</h2><p>Work this checklist to show up when people near you search "mobile detailing." Most shops never do — that\'s your edge.</p></div>';
-    h+='<div class="gr-sec"><span class="gs-ic">'+ic("check-circle",16)+'</span>Optimization checklist<span class="hs-n" style="margin-left:auto;color:var(--muted2)">'+done+'/'+SEO_TASKS.length+'</span></div>';
-    h+='<div class="ck-progress"><div class="ckp" style="width:'+pct+'%;background:#2f9bff"></div></div>';
-    SEO_TASKS.forEach(function(t){var on=!!st[t[0]];
-      h+='<div class="ck-item'+(on?" done":"")+'"><div class="ck-box'+(on?" on":"")+'" data-seo="'+t[0]+'" style="'+(on?"background:#2f9bff;border-color:#2f9bff":"")+'">'+(on?ic("check",14):"")+'</div>'+
-        '<div class="ck-b"><div class="ck-t">'+esc(t[1])+'</div><div class="ck-s">'+esc(t[2])+'</div></div></div>';});
-    h+='<button class="btn ic-btn" id="seoContent" style="margin-top:16px;width:100%;justify-content:center">'+ic("sparkles",16)+'<span>Write a Google post with AI →</span></button>';
-    box.innerHTML=h;
-    Array.prototype.forEach.call(box.querySelectorAll("[data-seo]"),function(b){b.onclick=function(){var k=b.getAttribute("data-seo");st[k]=!st[k];growSaveSEO(st);vibrate(6);growSEO(box)};});
-    var sc=el("seoContent");if(sc)sc.onclick=function(){GROW.csTask="gbp_post";growSet("content")};
-  }
-  // ---- AI content studio ----
-  var CS_TASKS=[["gbp_post","Google post"],["review_response","Review reply"],["promo_text","Promo text"],["social_caption","Social caption"],["service_desc","Service blurb"],["email_blast","Email blast"]];
-  var CS_HINTS={gbp_post:"Topic (e.g. this week's special, a before/after)…",review_response:"Paste the customer's review to reply to…",promo_text:"The offer (e.g. $30 off full details in July)…",social_caption:"What's the post about?",service_desc:"Which service (e.g. ceramic coating)?",email_blast:"The offer or news to send past customers…"};
-  function growContent(box){
-    var h='<div class="cs-seg">';
-    CS_TASKS.forEach(function(t){h+='<button data-cs="'+t[0]+'" class="'+(GROW.csTask===t[0]?"on":"")+'">'+esc(t[1])+'</button>';});
-    h+='</div>';
-    h+='<textarea class="gr-input" id="csCtx" placeholder="'+esc(CS_HINTS[GROW.csTask]||"Add a few details…")+'">'+esc(GROW.csCtx||"")+'</textarea>';
-    h+='<button class="btn accent ic-btn" id="csGo" style="margin-top:10px;width:100%;justify-content:center">'+ic("sparkles",16)+'<span>'+(GROW.csLoading?"Writing…":"Generate")+'</span></button>';
-    if(GROW.csLoading)h+='<div class="cs-out empty"><span class="spin"></span> Writing your '+esc((CS_TASKS.filter(function(t){return t[0]===GROW.csTask})[0]||["",""])[1].toLowerCase())+'…</div>';
-    else if(GROW.csText)h+='<div class="cs-out" id="csOut">'+esc(GROW.csText)+'</div><div style="display:flex;gap:8px;margin-top:9px"><button class="btn ic-btn" id="csCopy">'+ic("copy",15)+'<span>Copy</span></button><button class="btn" id="csAgain">Regenerate</button></div>';
-    else h+='<div class="cs-out empty">'+ic("sparkles",15)+' Your AI-written copy appears here.</div>';
-    box.innerHTML=h;
-    Array.prototype.forEach.call(box.querySelectorAll("[data-cs]"),function(b){b.onclick=function(){GROW.csTask=b.getAttribute("data-cs");GROW.csText="";growContent(box)};});
-    var cc=el("csCtx");if(cc)cc.oninput=function(){GROW.csCtx=cc.value};
-    function gen(){var ctx=(el("csCtx")?el("csCtx").value:"").trim();GROW.csCtx=ctx;GROW.csLoading=true;GROW.csText="";growContent(box);
-      post("/api/ai/generate",{task:GROW.csTask,context:ctx}).then(function(d){GROW.csLoading=false;if(d&&d.ok){GROW.csText=d.text||""}else{toast(d&&d.error==="ai_not_configured"?"Add your Gemini API key to use this":"Couldn't generate — try again",{bad:true})}if(el("growApp").classList.contains("show")&&GROW.view==="content")growContent(box);}).catch(function(){GROW.csLoading=false;toast("Network error",{bad:true});growContent(box)});}
-    var cg=el("csGo");if(cg)cg.onclick=gen;
-    var ca=el("csAgain");if(ca)ca.onclick=gen;
-    var cp=el("csCopy");if(cp)cp.onclick=function(){growCopy(GROW.csText,"Copied")};
+  function waWire(box,d){
+    Array.prototype.forEach.call(box.querySelectorAll("[data-wr]"),function(b){b.onclick=function(){vibrate(6);GROW.web.range=b.getAttribute("data-wr");growLoadWeb(false)}});
+    var g=el("waGear");if(g)g.onclick=function(){vibrate(6);GROW.web.settings=!GROW.web.settings;if(GROW.web.settings&&!GROW.web.status){api("/api/webstats/status").then(function(s){if(s&&s.ok){GROW.web.status=s;if(GROW.view==="analytics"&&el("growApp").classList.contains("show"))growRender()}})}growRender()};
+    var rr=el("waRetry");if(rr)rr.onclick=function(){GROW.web.err="";growLoadWeb(true)};
+    var pc=el("pxCopy");if(pc)pc.onclick=function(){growCopy(waPixelSnippet(),"Snippet copied — paste it on your site")};
+    var ai=el("waAi");if(ai)ai.onclick=function(){
+      if(GROW.web.aiLoading)return;
+      GROW.web.aiLoading=true;growRender();
+      var jr=waJobsInRange(GROW.web.range);
+      post("/api/webstats/ai",{range:GROW.web.range,extra:"Jobs booked in this period: "+jr.jobs+", revenue $"+Math.round(jr.rev)}).then(function(r){
+        GROW.web.aiLoading=false;
+        if(r&&r.ok){GROW.web.ai=r.text;GROW.web.aiRange=(WA_RANGES.filter(function(x){return x[0]===GROW.web.range})[0]||["","this period"])[1]}
+        else toast(r&&r.error==="ai_not_configured"?"Add a Gemini key to use AI":"AI couldn't read the stats right now",{bad:true});
+        if(GROW.view==="analytics"&&el("growApp").classList.contains("show"))growRender();
+      }).catch(function(){GROW.web.aiLoading=false;growRender()});
+    };
+    var gs=el("waGaSave");if(gs)gs.onclick=function(){
+      var ta=el("waGaJson"),pr=el("waGaProp"),v=ta?ta.value.trim():"";
+      if(!v)return toast("Paste the JSON file first");
+      GROW.web.savingGa=true;growRender();
+      post("/api/webstats/connect",{ga:v,propertyId:pr?pr.value.trim():""}).then(function(r){
+        GROW.web.savingGa=false;
+        if(r&&r.ok){toast("Google Analytics connected ✓");GROW.web.status=null;GROW.web.data=null;GROW.web.settings=false;growLoadWeb(true)}
+        else{toast((r&&r.hint)||"Couldn't connect — check the JSON",{bad:true});growRender()}
+      }).catch(function(){GROW.web.savingGa=false;toast("Network error",{bad:true});growRender()});
+    };
+    var cs=el("waClSave");if(cs)cs.onclick=function(){
+      var ta=el("waClTok"),v=ta?ta.value.trim():"";
+      if(!v)return toast("Paste the Clarity token first");
+      GROW.web.savingCl=true;growRender();
+      post("/api/webstats/connect",{clarity:v}).then(function(r){
+        GROW.web.savingCl=false;
+        if(r&&r.ok){toast("Clarity connected ✓");GROW.web.status=null;GROW.web.data=null;GROW.web.settings=false;growLoadWeb(true)}
+        else{toast((r&&r.hint)||"Couldn't connect — generate a fresh token",{bad:true});growRender()}
+      }).catch(function(){GROW.web.savingCl=false;toast("Network error",{bad:true});growRender()});
+    };
+    var go=el("waGaOff");if(go)go.onclick=function(){if(!confirm("Disconnect Google Analytics?"))return;post("/api/webstats/disconnect",{source:"ga"}).then(function(){GROW.web.status=null;GROW.web.data=null;growLoadWeb(true)})};
+    var co=el("waClOff");if(co)co.onclick=function(){if(!confirm("Disconnect Clarity?"))return;post("/api/webstats/disconnect",{source:"clarity"}).then(function(){GROW.web.status=null;GROW.web.data=null;growLoadWeb(true)})};
   }
   // ---- small helpers ----
   function growCopy(text,okMsg){
@@ -4680,10 +4883,6 @@
     growFallbackCopy(text,okMsg);
   }
   function growFallbackCopy(text,okMsg){try{var ta=document.createElement("textarea");ta.value=text;ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);toast(okMsg||"Copied")}catch(e){toast("Copy failed",{bad:true})}}
-  function growPrefillThread(phone,text){
-    closeGrow();openThread(phone);
-    setTimeout(function(){var m=el("msgInput");if(m){m.value=text;try{if(typeof autoGrow==="function")autoGrow()}catch(e){}try{if(typeof updateCount==="function")updateCount()}catch(e){}try{m.focus()}catch(e){}}toast("Message ready — review & send")},160);
-  }
 
   // ============================================================
   // 💵 Money tracker — its own full-screen section.
@@ -4885,7 +5084,7 @@
       .forEach(function(c){if(off.indexOf(c[0])>=0)return;h+='<button class="mo-btn" data-mo="'+c[0]+'"><span class="e">'+ic(c[2],24)+'</span>'+esc(c[1])+'</button>'});
     if(!MO.cfg||MO.cfg.personalEnabled!==false)h+='<button class="mo-btn dim" data-mo="personal"><span class="e">'+ic("user",24)+'</span>Personal</button>';
     h+='</div>';
-    if(Object.keys(use).length>2)h+='<div class="mo-adapt">✦ buttons auto-sort to what you log most</div>';
+    if(Object.keys(use).length>2)h+='<div class="mo-adapt">'+ic("sparkles",12)+' buttons auto-sort to what you log most</div>';
     h+='</div>';
     // ===== ACTIONABLE ALERTS (only when they exist) =====
     h+='<div data-mblock="alerts">';
@@ -5237,7 +5436,7 @@
     var delta="";
     if(range==="month"&&MO.report&&MO.report.length>=2){
       var prev=MO.report[MO.report.length-2];
-      if(prev&&prev.net){var dp=Math.round(((s.net-prev.net)/Math.abs(prev.net))*100);delta='<span class="kbadge '+(dp>=0?"up":"down")+'">'+(dp>=0?"▲":"▼")+' '+Math.abs(dp)+'%</span>'}
+      if(prev&&prev.net){var dp=Math.round(((s.net-prev.net)/Math.abs(prev.net))*100);delta='<span class="kbadge '+(dp>=0?"up":"down")+'">'+(dp>=0?ic("trending-up",11):ic("trending-down",11))+' '+Math.abs(dp)+'%</span>'}
     }
     var best="",bs=s.byService||{},bk=Object.keys(bs);
     if(bk.length){bk.sort(function(a,b){return bs[b].total-bs[a].total});best=bk[0]}
@@ -5897,7 +6096,7 @@
   Array.prototype.forEach.call(el("moNav").querySelectorAll("[data-mv]"),function(b){b.onclick=function(){vibrate(6);moSetView(b.getAttribute("data-mv"))}});
   el("moScrim").onclick=closeMoSheet;
   el("moneyItem").onclick=function(){closeDrawer();openMoney()};
-  var growI=el("growItem");if(growI)growI.onclick=function(){closeDrawer();openGrow()};
+  var anI=el("analyticsItem");if(anI)anI.onclick=function(){closeDrawer();openAnalytics()};
   el("customizeItem").onclick=function(){closeDrawer();openCustomize()};
   el("snapshotItem").onclick=function(){closeDrawer();snapshotForClaude()};
 
@@ -5905,7 +6104,7 @@
   hydrateIcons();
   el("myAvatar").innerHTML=brandGlyph();el("drawerLogo").innerHTML=brandGlyph();el("loginLogo").innerHTML=brandGlyph();
   applyTheme(themePref());loadAccent();applyUI();buildAccents();buildThemeSeg();buildTplMenu();loadTemplates();buildQuickset();
-  renderFilters();refreshThreads();startPoll();checkHealth();loadConfig();showBuild();fetchEmails();fetchInsights();loadMoney();
+  renderFilters();refreshThreads();startPoll();checkHealth();loadConfig();showBuild();fetchInsights();loadMoney();
   maybeDeepLink();
 })();
 </script>
