@@ -1341,6 +1341,61 @@
   .cs-seg button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text)}
   .cs-out{background:var(--panel);border:1px solid var(--line2);border-radius:13px;padding:14px;font-size:14px;line-height:1.6;white-space:pre-wrap;min-height:80px;margin-top:11px}
   .cs-out.empty{color:var(--muted2);display:flex;align-items:center;gap:8px;min-height:60px}
+  /* ---- Website analytics command center (Grow → Website) ---- */
+  .wa-top{display:flex;align-items:center;gap:8px;margin:2px 0 12px}
+  .wa-seg{display:flex;gap:6px;overflow-x:auto;scrollbar-width:none;flex:1}
+  .wa-seg::-webkit-scrollbar{display:none}
+  .wa-seg button{flex:none;font-size:12px;font-weight:800;color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:7px 12px;cursor:pointer}
+  .wa-seg button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text)}
+  .wa-gear{flex:none;width:34px;height:34px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .wa-live{display:flex;align-items:center;gap:9px;background:var(--panel);border:1px solid var(--line2);border-radius:13px;padding:11px 13px;font-size:13px;margin-bottom:12px}
+  .wa-live b{font-weight:900}
+  .wa-live .wa-upd{color:var(--muted2);font-size:11px;margin-left:auto;text-align:right;flex:none}
+  .wa-dot{width:9px;height:9px;border-radius:50%;background:#34d399;flex:none;position:relative}
+  .wa-dot.on::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:2px solid #34d399;opacity:.5;animation:waPulse 1.6s ease-out infinite}
+  .wa-dot.off{background:var(--muted2)}
+  @keyframes waPulse{0%{transform:scale(.55);opacity:.7}100%{transform:scale(1.5);opacity:0}}
+  .wa-tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+  .wa-tile{background:var(--panel);border:1px solid var(--line2);border-radius:15px;padding:13px 14px 11px}
+  .wa-tile .t-l{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted2);display:flex;align-items:center;gap:5px}
+  .wa-tile .t-v{font-size:26px;font-weight:900;letter-spacing:-.02em;margin-top:3px}
+  .wa-spark{width:100%;height:26px;display:block;margin-top:7px}
+  .wa-spark rect{fill:var(--accent);opacity:.5}
+  .wa-panel{background:var(--panel);border:1px solid var(--line2);border-radius:15px;padding:13px 14px;margin-bottom:12px}
+  .wa-panel .p-t{font-size:12px;font-weight:800;color:var(--muted);display:flex;align-items:center;gap:7px;margin-bottom:8px}
+  .wa-panel .p-t small{margin-left:auto;color:var(--muted2);font-weight:700;font-size:10.5px;text-align:right}
+  .wa-chart rect{fill:var(--accent);opacity:.8}
+  .wa-xlab{display:flex;justify-content:space-between;font-size:10px;color:var(--muted2);font-weight:700;margin-top:4px}
+  .wa-ins{border-radius:13px;border:1px solid var(--line2);background:var(--panel);padding:12px 13px;margin-bottom:8px;display:flex;gap:10px;align-items:flex-start;font-size:13.5px;line-height:1.5}
+  .wa-ins .i-ic{flex:none;width:28px;height:28px;border-radius:9px;display:flex;align-items:center;justify-content:center;margin-top:1px}
+  .wa-ins.good .i-ic{background:rgba(52,211,153,.14);color:#34d399}
+  .wa-ins.warn .i-ic{background:rgba(234,179,8,.16);color:var(--gold)}
+  .wa-ins.bad .i-ic{background:rgba(251,113,133,.14);color:#fb7185}
+  .wa-ins.info .i-ic{background:var(--panel2);color:var(--muted)}
+  .wa-fun{margin-bottom:8px}
+  .wa-fun .f-top{display:flex;justify-content:space-between;align-items:baseline;font-size:12.5px;margin-bottom:4px;gap:8px}
+  .wa-fun .f-top b{font-weight:800}
+  .wa-fun .f-n{font-weight:900}
+  .wa-fun .f-p{color:var(--muted2);font-weight:700;font-size:10.5px;margin-left:5px}
+  .wa-track{height:14px;border-radius:7px;background:var(--panel2);overflow:hidden}
+  .wa-fill{height:100%;border-radius:7px;background:var(--accent);min-width:3px;transition:width .5s}
+  .wa-meter{display:flex;align-items:center;gap:9px;margin-bottom:8px;font-size:12.5px}
+  .wa-meter .m-k{flex:none;width:122px;color:var(--text);font-weight:600}
+  .wa-meter .m-track{flex:1;height:8px;border-radius:4px;background:var(--panel2);overflow:hidden}
+  .wa-meter .m-fill{height:100%;border-radius:4px}
+  .wa-meter .m-n{flex:none;width:46px;text-align:right;font-weight:800;color:var(--muted)}
+  .wa-grade{width:46px;height:46px;border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:900;flex:none}
+  .wa-pills{display:flex;gap:8px;flex-wrap:wrap}
+  .wa-pill{background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:6px 11px;font-size:12px;font-weight:700;color:var(--muted)}
+  .wa-pill b{color:var(--text);font-weight:900}
+  .wa-src{display:inline-flex;align-items:center;gap:5px;background:var(--panel2);border-radius:8px;padding:4px 8px;font-size:11px;font-weight:700;color:var(--muted);margin:0 6px 6px 0}
+  .wa-badge{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:800;color:var(--muted2);margin-left:7px;vertical-align:1px}
+  .wa-conn{border:1px dashed var(--line);border-radius:13px;padding:13px;margin-bottom:10px;font-size:13px}
+  .wa-conn .c-h{display:flex;align-items:center;gap:8px;font-weight:800;margin-bottom:4px;flex-wrap:wrap}
+  .wa-ok{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;border-radius:999px;padding:3px 9px;background:rgba(52,211,153,.14);color:#34d399}
+  .wa-no{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;border-radius:999px;padding:3px 9px;background:var(--panel2);color:var(--muted2)}
+  .wa-hint{color:var(--muted2);font-size:12px;line-height:1.5;margin:4px 0 8px}
+  .wa-ai{white-space:pre-wrap;font-size:13.5px;line-height:1.65}
   /* generic grow input */
   .gr-input{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:12px;color:var(--text);padding:12px 13px;font-size:14.5px;font-family:inherit;outline:none}
   .gr-input:focus{border-color:var(--accent)}
@@ -1802,7 +1857,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-21·grow-suite";
+  var APP_BUILD="2026-07-21·webstats";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4461,8 +4516,9 @@
   // analytics, Local SEO / Google Business Profile, and an AI
   // content studio. Keeps the bottom nav lean while adding depth.
   // ============================================================
-  var GROW={view:"home",wired:false,analytics:null,aLoading:false,aErr:false,crmQ:"",csTask:"gbp_post",csText:"",csLoading:false,csCtx:""};
-  var GROW_VIEWS={home:["Grow","Tools to grow Mikey's Mobile Detailing"],crm:["Customers","Your customer directory & history"],reviews:["Reviews","Turn happy jobs into 5-star reviews"],analytics:["Website","Live traffic on your website"],seo:["Local SEO","Get found on Google in Snohomish"],content:["Content studio","AI-written posts, replies & promos"]};
+  var GROW={view:"home",wired:false,analytics:null,aLoading:false,aErr:false,crmQ:"",csTask:"gbp_post",csText:"",csLoading:false,csCtx:"",
+    web:{range:"7d",data:null,loading:false,err:"",settings:false,status:null,ai:"",aiRange:"",aiLoading:false,savingGa:false,savingCl:false}};
+  var GROW_VIEWS={home:["Grow","Tools to grow Mikey's Mobile Detailing"],crm:["Customers","Your customer directory & history"],reviews:["Reviews","Turn happy jobs into 5-star reviews"],analytics:["Website","Your website, decoded — live"],seo:["Local SEO","Get found on Google in Snohomish"],content:["Content studio","AI-written posts, replies & promos"]};
   function openGrow(){
     el("growApp").classList.add("show");
     if(!GROW.wired){growWire();GROW.wired=true;}
@@ -4474,7 +4530,7 @@
   function growWire(){
     el("grBack").onclick=closeGrow;
     Array.prototype.forEach.call(el("grNav").querySelectorAll("[data-gv]"),function(b){b.onclick=function(){vibrate(6);growSet(b.getAttribute("data-gv"))}});
-    el("grRefresh").onclick=function(){vibrate(6);if(GROW.view==="analytics"){GROW.analytics=null;growLoadAnalytics()}else{refreshThreads();api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.entries=d.entries||[];MO.today=d.today;MO.week=d.week;MO.allTime=d.allTime}growRender()});}toast("Refreshed")};
+    el("grRefresh").onclick=function(){vibrate(6);if(GROW.view==="analytics"){growLoadWeb(true)}else{refreshThreads();api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.entries=d.entries||[];MO.today=d.today;MO.week=d.week;MO.allTime=d.allTime}growRender()});}toast("Refreshed")};
   }
   function growRender(){
     var meta=GROW_VIEWS[GROW.view]||GROW_VIEWS.home;
@@ -4492,7 +4548,7 @@
   var GROW_TOOLS=[
     ["crm","users","Customers","Every customer, their history & lifetime value"],
     ["reviews","trophy","Reviews","Ask happy customers for 5-star reviews in one tap"],
-    ["analytics","bar-chart","Website analytics","See who's visiting your site, live"],
+    ["analytics","bar-chart","Website analytics","Live visitors, calls & quotes, UX issues — all in one"],
     ["seo","target","Local SEO","Rank higher on Google Business Profile"],
     ["content","sparkles","Content studio","AI writes your posts, replies & promos"]];
   function growHome(box){
@@ -4581,48 +4637,327 @@
       growPrefillThread(phone,msg);
     };});
   }
-  // ---- Website analytics ----
-  function growLoadAnalytics(){
-    if(GROW.analytics||GROW.aLoading)return growRender();
-    GROW.aLoading=true;GROW.aErr=false;growRender();
-    api("/api/analytics?days=14").then(function(d){GROW.aLoading=false;if(d&&d.ok){GROW.analytics=d}else{GROW.aErr=true}if(el("growApp").classList.contains("show"))growRender();}).catch(function(){GROW.aLoading=false;GROW.aErr=true;if(el("growApp").classList.contains("show"))growRender();});
+  // ---- Website analytics — the all-in-one command center ----
+  // GA4 + Microsoft Clarity + the first-party pixel + live job money, merged
+  // into one scannable view: live visitors, KPI deltas vs the prior period,
+  // plain-English insights, the visit→job funnel, a UX-health grade, and
+  // breakdowns. All data arrives pre-merged from /api/webstats, which caches
+  // hard server-side (GA ~30 min, Clarity 6 h — their API allows 10 calls/day),
+  // so tapping refresh or switching ranges is always cheap.
+  var WA_RANGES=[["today","Today"],["7d","7 days"],["28d","28 days"],["90d","90 days"]];
+  var WA_DAYS={today:1,"7d":7,"28d":28,"90d":90};
+  function growLoadWeb(force){
+    if(GROW.web.loading)return;
+    GROW.web.loading=true;GROW.web.err="";growRender();
+    api("/api/webstats?range="+GROW.web.range+(force?"&force=1":"")).then(function(d){
+      GROW.web.loading=false;
+      if(d&&d.ok){GROW.web.data=d}else if(!GROW.web.data){GROW.web.err=(d&&d.error)||"Couldn't load"}
+      if(el("growApp").classList.contains("show")&&GROW.view==="analytics")growRender();
+    }).catch(function(){GROW.web.loading=false;if(!GROW.web.data)GROW.web.err="Network error";if(el("growApp").classList.contains("show")&&GROW.view==="analytics")growRender();});
+  }
+  function waN(n){n=Math.round(n||0);if(n>=10000)return Math.round(n/1000)+"k";if(n>=1000)return(n/1000).toFixed(1).replace(/\.0$/,"")+"k";return String(n)}
+  function waSecsFmt(s){s=Math.round(s||0);if(s<60)return s+"s";var m=Math.floor(s/60);return m+"m"+(s%60?" "+(s%60)+"s":"")}
+  function waDay(d){if(!d||String(d).length<8)return String(d||"");d=String(d);return new Date(+d.slice(0,4),+d.slice(4,6)-1,+d.slice(6,8),12).toLocaleDateString("en-US",{weekday:"short",month:"short",day:"numeric"})}
+  function waDelta(cur,prev){
+    if(!(prev>0))return cur>0?'<div class="bt-d up">▲ new</div>':'<div class="bt-d" style="color:var(--muted2)">—</div>';
+    var pd=Math.round((cur-prev)/prev*100);
+    if(pd===0)return '<div class="bt-d" style="color:var(--muted2)">same as before</div>';
+    return '<div class="bt-d '+(pd>0?"up":"down")+'">'+(pd>0?"▲ +":"▼ −")+Math.abs(pd)+'% vs prior</div>';
+  }
+  function waSpark(series,key){
+    if(!series||series.length<2)return"";
+    var W=120,H=26,n=series.length,bw=W/n,max=1;
+    series.forEach(function(x){if((x[key]||0)>max)max=x[key]});
+    var out='<svg class="wa-spark" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" aria-hidden="true">';
+    series.forEach(function(x,i){var v=x[key]||0,bh=Math.max(1.5,v/max*H);
+      out+='<rect x="'+(i*bw+.5).toFixed(1)+'" y="'+(H-bh).toFixed(1)+'" width="'+Math.max(1,bw-1).toFixed(1)+'" height="'+bh.toFixed(1)+'" rx="1"></rect>'});
+    return out+"</svg>";
+  }
+  function waBarChart(series,key,H,titleFn){
+    var W=320,n=series.length,bw=W/Math.max(1,n),max=1;
+    series.forEach(function(x){if((x[key]||0)>max)max=x[key]});
+    var out='<svg class="wa-chart" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" style="width:100%;height:'+H+'px;display:block">';
+    series.forEach(function(x,i){var v=x[key]||0,bh=v>0?Math.max(2,v/max*H):1.2;
+      out+='<rect x="'+(i*bw+.8).toFixed(1)+'" y="'+(H-bh).toFixed(1)+'" width="'+Math.max(1.2,bw-1.6).toFixed(1)+'" height="'+bh.toFixed(1)+'" rx="1.5"><title>'+esc(titleFn(x,v))+"</title></rect>"});
+    return out+"</svg>";
+  }
+  function waPeak(series,key){var best=null;series.forEach(function(x){if(!best||(x[key]||0)>(best[key]||0))best=x});return best}
+  function waJobsInRange(rangeKey){
+    var out={jobs:0,rev:0},since;
+    if(rangeKey==="today"){var t0=new Date();t0.setHours(0,0,0,0);since=t0.getTime()}
+    else since=Date.now()-(WA_DAYS[rangeKey]||7)*86400000;
+    (MO.entries||[]).forEach(function(e){
+      if(e.type!=="job")return;
+      var ts=e.ts||Date.parse((e.date||"")+"T12:00:00");
+      if(ts&&ts>=since){out.jobs++;out.rev+=e.amount||0}
+    });
+    return out;
+  }
+  function waFunnel(steps,revLine){
+    var base=Math.max(1,steps[0].n),h="";
+    steps.forEach(function(s,i){
+      var conv=i>0?(steps[i-1].n>0?Math.round(s.n/steps[i-1].n*100):0):null;
+      h+='<div class="wa-fun"><div class="f-top"><b>'+esc(s.k)+'</b><span><span class="f-n">'+waN(s.n)+'</span>'+(conv!=null?'<span class="f-p">'+conv+'% of previous</span>':'')+'</span></div>'+
+         '<div class="wa-track"><div class="wa-fill" style="width:'+Math.max(2,Math.round(s.n/base*100))+'%;opacity:'+(1-i*0.16).toFixed(2)+'"></div></div></div>';
+    });
+    if(revLine)h+='<div style="font-size:12.5px;color:var(--muted);margin-top:9px;display:flex;align-items:center;gap:6px">'+revLine+"</div>";
+    return h;
+  }
+  function waInsights(d){
+    var out=[],ga=d.ga,cl=d.clarity&&d.clarity.overall;
+    if(ga){
+      var t=ga.totals,p=ga.prev;
+      var acts=(t.qqc||0)+(t.phone||0),pacts=(p.qqc||0)+(p.phone||0);
+      var cr=t.sessions>0?acts/t.sessions*100:0,pcr=p.sessions>0?pacts/p.sessions*100:0;
+      if(t.sessions>=5){
+        if(pcr>0){var up=cr>=pcr;out.push({t:up?"good":"warn",ic:"target",h:"<b>"+cr.toFixed(1)+"% of visits became a call or quote</b> — "+(up?"up":"down")+" from "+pcr.toFixed(1)+"% the period before."})}
+        else out.push({t:acts>0?"good":"info",ic:"target",h:"<b>"+cr.toFixed(1)+"% of visits became a call or quote.</b>"});
+      }
+      var money=null;(ga.pages||[]).forEach(function(pg){var a=(pg.qqc||0)+(pg.phone||0);if(a>0&&(!money||a>(money.qqc||0)+(money.phone||0)))money=pg});
+      if(money)out.push({t:"good",ic:"trophy",h:"<b>"+esc(money.path)+"</b> is your money page — "+((money.qqc||0)+(money.phone||0))+" calls/quotes from "+waN(money.views)+" views."});
+      if(ga.channels&&ga.channels.length){var tot=0;ga.channels.forEach(function(c){tot+=c.n});var c0=ga.channels[0];
+        if(tot>0&&c0.n/tot>=0.4)out.push({t:"info",ic:"link",h:"<b>"+Math.round(c0.n/tot*100)+"%</b> of traffic comes from <b>"+esc(c0.k)+"</b>"+(ga.sources&&ga.sources[0]?" (top source: "+esc(ga.sources[0].k)+")":"")+"."});}
+      if(ga.devices&&ga.devices.length){var dtot=0,mob=0;ga.devices.forEach(function(x){dtot+=x.n;if(x.k==="mobile")mob=x.n});
+        if(dtot>0&&mob/dtot>=0.7)out.push({t:"info",ic:"phone",h:"<b>"+Math.round(mob/dtot*100)+"%</b> of visitors are on their phone — keep everything thumb-friendly."});}
+      if((ga.series||[]).length>6){var bd=waPeak(ga.series,"sessions");if(bd&&bd.sessions>0)out.push({t:"info",ic:"calendar-days",h:"Busiest day: <b>"+esc(waDay(bd.d))+"</b> with "+waN(bd.sessions)+" visits."})}
+    }
+    if(cl){
+      if((cl.scriptErrors||0)>0)out.unshift({t:"bad",ic:"alert",h:"<b>"+waN(cl.scriptErrors)+" JavaScript errors</b> hit real visitors in the last 3 days — that can silently break your quote form. Watch a session in Clarity."});
+      if(cl.rage&&cl.rage.pct>=3)out.unshift({t:"bad",ic:"alert",h:"<b>"+cl.rage.pct.toFixed(1)+"% of sessions rage-clicked</b> — people tapping something that won't respond."});
+      else if(cl.dead&&cl.dead.pct>=8)out.push({t:"warn",ic:"alert",h:"<b>"+cl.dead.pct.toFixed(1)+"% of sessions had dead clicks</b> — taps on things that look clickable but aren't."});
+      if(typeof cl.scrollDepth==="number"&&cl.scrollDepth>0&&cl.scrollDepth<40)out.push({t:"warn",ic:"chevron-down",h:"Visitors only scroll <b>"+cl.scrollDepth.toFixed(0)+"%</b> of the page on average — keep your number and quote button near the top."});
+    }
+    return out.slice(0,5);
+  }
+  function waGrade(cl){
+    var score=100;
+    score-=(cl.rage?cl.rage.pct:0)*6;
+    score-=(cl.dead?cl.dead.pct:0)*2;
+    score-=(cl.quickback?cl.quickback.pct:0)*1.5;
+    if((cl.scriptErrors||0)>0)score-=10;
+    if(typeof cl.scrollDepth==="number"&&cl.scrollDepth>0&&cl.scrollDepth<45)score-=8;
+    score=Math.max(0,Math.min(100,Math.round(score)));
+    var g=score>=90?["A","#34d399"]:score>=80?["B","#34d399"]:score>=70?["C","var(--gold)"]:score>=60?["D","#fb7185"]:["F","#fb7185"];
+    return {score:score,letter:g[0],color:g[1]};
+  }
+  function waMeter(label,pct,color){
+    pct=pct||0;
+    return '<div class="wa-meter"><span class="m-k">'+esc(label)+'</span><div class="m-track"><div class="m-fill" style="width:'+Math.min(100,Math.max(pct>0?2:0,pct)).toFixed(1)+'%;background:'+color+'"></div></div><span class="m-n">'+pct.toFixed(1)+'%</span></div>';
+  }
+  function waPixelSnippet(){
+    return '<script>(function(){var i=new Image();i.src="'+location.origin+'/px?p="+encodeURIComponent(location.pathname)+"&r="+encodeURIComponent(document.referrer)+"&t="+Date.now();})();<\/script>';
+  }
+  function waPixelHtml(px,primary){
+    var h='<div class="gr-sec" style="margin-top:18px"><span class="gs-ic">'+ic("zap",16)+'</span>'+(primary?"Built-in tracker":"Built-in backup tracker")+'</div>';
+    if(px&&(px.totalViews>0||px.totalVisitors>0)){
+      h+='<div class="big-tiles"><div class="big-tile"><div class="bt-v">'+waN(px.totalViews)+'</div><div class="bt-l">Pixel views · 14 days</div></div>'+
+         '<div class="big-tile"><div class="bt-v">'+waN(px.totalVisitors)+'</div><div class="bt-l">Unique visitors</div></div></div>';
+      if(primary){
+        var s=px.series||[];
+        if(s.length>1){
+          h+='<div class="wa-panel" style="margin-top:10px"><div class="p-t">'+ic("bar-chart",14)+' Daily pixel views</div>';
+          h+=waBarChart(s.map(function(x){return{d:x.day.replace(/-/g,""),n:x.views}}),"n",56,function(x,v){return waDay(x.d)+" — "+v+" views"})+"</div>";
+        }
+        if((px.topPaths||[]).length){var pmax=Math.max(1,px.topPaths[0].n);
+          h+='<div class="gr-sec"><span class="gs-ic">'+ic("file-text",16)+'</span>Top pages (pixel)</div>';
+          px.topPaths.forEach(function(p){h+='<div class="hbar"><div class="hbar-top"><span class="hb-k">'+esc(p.k)+'</span><span class="hb-n">'+p.n+'</span></div><div class="hbar-track"><div class="hbar-fill" style="width:'+Math.round(p.n/pmax*100)+'%"></div></div></div>'});}
+      }
+    } else {
+      h+='<p class="hint" style="margin:0 0 9px">Your own cookie-free visit counter — it keeps counting even for visitors whose ad-blockers hide Google Analytics. Paste this once before <code>&lt;/body&gt;</code> on the site:</p>';
+      h+='<div class="code-box">'+esc(waPixelSnippet())+'</div><button class="btn ic-btn code-copy" id="pxCopy" style="margin-top:8px">'+ic("copy",15)+"<span>Copy snippet</span></button>";
+    }
+    return h;
+  }
+  function waSettingsHtml(d){
+    var st=GROW.web.status,conn=(d&&d.connected)||{};
+    var h='<div class="wa-conn">';
+    h+='<div class="c-h">'+ic("bar-chart",15)+' Google Analytics '+(conn.ga?'<span class="wa-ok">'+ic("check",11)+' connected</span>':'<span class="wa-no">not connected</span>')+"</div>";
+    if(conn.ga){
+      if(st&&st.ga&&st.ga.email)h+='<div class="wa-hint">as '+esc(st.ga.email)+' · property '+esc(st.ga.propertyId||"")+(st.ga.via==="secret"?" · set as a Worker secret":"")+"</div>";
+      if(st&&st.ga&&st.ga.via!=="secret")h+='<button class="gr-back" id="waGaOff">'+ic("x",12)+" Disconnect</button>";
+    } else {
+      h+='<div class="wa-hint">Paste the <b>service-account JSON file</b> — the exact same one your daily email already uses. Get it from Netlify → your stats site → Site configuration → Environment variables → <b>GOOGLE_SERVICE_ACCOUNT_JSON</b> → copy the value. It\'s stored privately in your Worker, never in code.</div>';
+      h+='<textarea class="gr-input" id="waGaJson" placeholder=\'{ "type": "service_account", ... }\' style="min-height:64px;font-family:ui-monospace,monospace;font-size:11px"></textarea>';
+      h+='<input class="gr-input" id="waGaProp" placeholder="GA4 property ID" value="'+esc((st&&st.ga&&st.ga.propertyId)||"489075814")+'" style="margin-top:7px">';
+      h+='<button class="btn accent" id="waGaSave" style="margin-top:8px">'+(GROW.web.savingGa?'<span class="spin"></span> Checking with Google…':"Connect Google Analytics")+"</button>";
+    }
+    h+='</div><div class="wa-conn">';
+    h+='<div class="c-h">'+ic("activity",15)+' Microsoft Clarity '+(conn.clarity?'<span class="wa-ok">'+ic("check",11)+' connected</span>':'<span class="wa-no">not connected</span>')+"</div>";
+    if(conn.clarity){
+      if(st&&st.clarity)h+='<div class="wa-hint">API calls today: '+st.clarity.callsToday+" of "+st.clarity.budget+" — Clarity only allows 10/day, so this data refreshes every ~6 hours"+(st.clarity.via==="secret"?" · set as a Worker secret":"")+"</div>";
+      if(st&&st.clarity&&st.clarity.via!=="secret")h+='<button class="gr-back" id="waClOff">'+ic("x",12)+" Disconnect</button>";
+    } else {
+      h+='<div class="wa-hint">In Clarity: your project → <b>Settings → Data Export → Generate new API token</b>. Copy the long token and paste it here.</div>';
+      h+='<textarea class="gr-input" id="waClTok" placeholder="eyJhbGciOi…" style="min-height:48px;font-family:ui-monospace,monospace;font-size:11px"></textarea>';
+      h+='<button class="btn accent" id="waClSave" style="margin-top:8px">'+(GROW.web.savingCl?'<span class="spin"></span> Checking with Clarity…':"Connect Clarity")+"</button>";
+    }
+    h+="</div>";
+    return h;
   }
   function growAnalytics(box){
-    if(!GROW.analytics&&!GROW.aLoading&&!GROW.aErr){growLoadAnalytics();return;}
-    var base=location.origin;
-    var snippet='<script>(function(){var i=new Image();i.src="'+base+'/px?p="+encodeURIComponent(location.pathname)+"&r="+encodeURIComponent(document.referrer)+"&t="+Date.now();})();<\/script>';
-    var h='';
-    if(GROW.aLoading&&!GROW.analytics){h+='<div class="wc-empty"><span class="spin"></span> Loading traffic…</div>';}
-    else if(GROW.aErr&&!GROW.analytics){h+='<div class="wc-empty">'+ic("info",15)+' Couldn\'t load analytics right now.</div>';}
-    else{
-      var d=GROW.analytics;
-      // 7-day vs prior-7 delta on views
-      var s=d.series||[];var recent=s.slice(-7).reduce(function(a,x){return a+x.views},0);var prior=s.slice(0,Math.max(0,s.length-7)).reduce(function(a,x){return a+x.views},0);
-      var delta=prior>0?Math.round((recent-prior)/prior*100):(recent>0?100:0);
-      h+='<div class="big-tiles"><div class="big-tile"><div class="bt-v">'+d.totalViews+'</div><div class="bt-l">Page views · 14 days</div>'+(s.length>7?'<div class="bt-d '+(delta>=0?"up":"down")+'">'+(delta>=0?"▲ +":"▼ ")+Math.abs(delta)+'% vs prior week</div>':'')+'</div>'+
-        '<div class="big-tile"><div class="bt-v">'+d.totalVisitors+'</div><div class="bt-l">Unique visitors</div></div></div>';
-      // chart
-      var max=Math.max(1,Math.max.apply(null,s.map(function(x){return x.views})));
-      var W=300,H=64,n=s.length,bw=W/Math.max(1,n);
-      var bars=s.map(function(x,i){var bh=Math.max(2,Math.round(x.views/max*H));return '<rect class="sp-bar" x="'+(i*bw+1).toFixed(1)+'" y="'+(H-bh)+'" width="'+(bw-2).toFixed(1)+'" height="'+bh+'" rx="2"><title>'+x.day+': '+x.views+' views</title></rect>';}).join("");
-      h+='<div class="gr-sec"><span class="gs-ic">'+ic("bar-chart",16)+'</span>Daily page views</div>';
-      h+='<svg class="spark-svg" style="height:64px" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+bars+'</svg>';
-      // top pages
-      h+='<div class="gr-sec" style="margin-top:18px"><span class="gs-ic">'+ic("file-text",16)+'</span>Top pages</div>';
-      if((d.topPaths||[]).length){var pmax=d.topPaths[0].n;d.topPaths.forEach(function(p){h+='<div class="hbar"><div class="hbar-top"><span class="hb-k">'+esc(p.k)+'</span><span class="hb-n">'+p.n+'</span></div><div class="hbar-track"><div class="hbar-fill" style="width:'+Math.round(p.n/pmax*100)+'%"></div></div></div>';});}
-      else h+='<div class="wc-empty">No page data yet.</div>';
-      // top referrers
-      h+='<div class="gr-sec" style="margin-top:16px"><span class="gs-ic">'+ic("link",16)+'</span>Where visitors come from</div>';
-      if((d.topRefs||[]).length){var rmax=d.topRefs[0].n;d.topRefs.forEach(function(p){h+='<div class="hbar"><div class="hbar-top"><span class="hb-k">'+esc(p.k)+'</span><span class="hb-n">'+p.n+'</span></div><div class="hbar-track"><div class="hbar-fill" style="width:'+Math.round(p.n/rmax*100)+'%"></div></div></div>';});}
-      else h+='<div class="wc-empty">Direct / no referrer data yet.</div>';
+    var wd=GROW.web;
+    if(!wd.data&&!wd.loading&&!wd.err){growLoadWeb(false);return}
+    var d=wd.data,h="";
+    if(!d){
+      h=wd.loading?'<div class="wc-empty"><span class="spin"></span> Pulling your numbers…</div>'
+        :'<div class="wc-empty">'+ic("info",15)+" "+esc(wd.err||"Couldn't load")+'</div><button class="btn" id="waRetry" style="margin-top:8px">Try again</button>';
+      box.innerHTML=h;return waWire(box,null);
     }
-    // install snippet — always shown
-    h+='<div class="gr-sec" style="margin-top:20px"><span class="gs-ic">'+ic("zap",16)+'</span>Turn it on (30 seconds)</div>';
-    h+='<p class="hint" style="margin:0 0 9px">Paste this once before <code>&lt;/body&gt;</code> on your website. That\'s it — visits show up here automatically. No cookies, no third party, 100% yours.</p>';
-    h+='<div class="code-box" id="pxSnippet">'+esc(snippet)+'</div>';
-    h+='<button class="btn accent ic-btn code-copy" id="pxCopy">'+ic("copy",15)+'<span>Copy snippet</span></button>';
+    var conn=d.connected||{};
+    if(!conn.ga&&!conn.clarity){
+      h+='<div class="gr-hero" style="background:linear-gradient(135deg,#7c3aed,#4f46e5);box-shadow:0 12px 28px rgba(124,58,237,.2)"><h2>📊 Your site, decoded</h2><p>Two quick pastes and this tab becomes mission control — live visitors, calls &amp; quotes, what\'s working and what\'s broken. No more digging through Google Analytics.</p></div>';
+      h+=waSettingsHtml(d);
+      h+=waPixelHtml(d.pixel,true);
+      box.innerHTML=h;return waWire(box,d);
+    }
+    h+='<div class="wa-top"><div class="wa-seg">';
+    WA_RANGES.forEach(function(r){h+='<button data-wr="'+r[0]+'" class="'+(wd.range===r[0]?"on":"")+'">'+r[1]+"</button>"});
+    h+='</div><button class="wa-gear" id="waGear" aria-label="Connections">'+ic("settings",16)+"</button></div>";
+    if(wd.loading)h+='<div class="wc-empty" style="margin-bottom:8px"><span class="spin"></span> Refreshing…</div>';
+    if(wd.settings)h+=waSettingsHtml(d);
+    var ga=d.ga;
+    if(d.realtime){
+      var act=d.realtime.active||0;
+      h+='<div class="wa-live"><span class="wa-dot '+(act>0?"on":"off")+'"></span><span>'+(act>0?"<b>"+act+(act===1?" person":" people")+"</b> on your site right now":"Nobody on the site this second")+"</span>"+
+         (ga&&ga.fetchedAt?'<span class="wa-upd">stats '+ago(ga.fetchedAt)+" old</span>":"")+"</div>";
+    }
+    if(d.errors&&d.errors.ga)h+='<div class="wa-ins bad"><span class="i-ic">'+ic("alert",15)+'</span><div>Google Analytics: '+esc(d.errors.ga)+"</div></div>";
+    if(ga){
+      var t=ga.totals||{},p=ga.prev||{},s=ga.series||[];
+      var tiles=[["Visitors",t.sessions,p.sessions,"users","sessions"],["Page views",t.views,p.views,"file-text","views"],["Phone taps",t.phone,p.phone,"phone","phone"],["Quote requests",t.qqc,p.qqc,"clipboard-list","qqc"]];
+      h+='<div class="wa-tiles">';
+      tiles.forEach(function(tl){h+='<div class="wa-tile"><div class="t-l">'+ic(tl[3],12)+" "+tl[0]+'</div><div class="t-v">'+waN(tl[1])+"</div>"+waDelta(tl[1]||0,tl[2]||0)+waSpark(s,tl[4])+"</div>"});
+      h+="</div>";
+      var ins=waInsights(d);
+      if(ins.length){
+        h+='<div class="gr-sec"><span class="gs-ic">'+ic("lightbulb",16)+'</span>What\'s happening</div>';
+        ins.forEach(function(x){h+='<div class="wa-ins '+x.t+'"><span class="i-ic">'+ic(x.ic,15)+"</span><div>"+x.h+"</div></div>"});
+      }
+      h+='<button class="btn ic-btn" id="waAi" style="width:100%;justify-content:center;margin:2px 0 10px">'+ic("sparkles",15)+"<span>"+(wd.aiLoading?"Reading your numbers…":"AI deep read — what should I do?")+"</span></button>";
+      if(wd.ai)h+='<div class="wa-panel"><div class="p-t">'+ic("bot",14)+' AI read <small>'+esc(wd.aiRange||"")+"</small></div><div class=\"wa-ai\">"+esc(wd.ai)+"</div></div>";
+      if(wd.range!=="today"&&s.length>1){
+        var pk=waPeak(s,"sessions");
+        h+='<div class="wa-panel"><div class="p-t">'+ic("bar-chart",14)+" Visits per day <small>peak "+waN(pk?pk.sessions:0)+" · "+esc(pk?waDay(pk.d):"")+"</small></div>";
+        h+=waBarChart(s,"sessions",74,function(x,v){return waDay(x.d)+" — "+v+" visits"});
+        h+='<div class="wa-xlab"><span>'+esc(waDay(s[0].d))+"</span><span>"+esc(waDay(s[s.length-1].d))+"</span></div>";
+        var acts=s.map(function(x){return{d:x.d,acts:(x.qqc||0)+(x.phone||0)}});
+        var apk=waPeak(acts,"acts");
+        h+='<div class="p-t" style="margin-top:13px">'+ic("zap",14)+" Calls + quotes per day <small>"+(apk&&apk.acts>0?"peak "+apk.acts+" · "+esc(waDay(apk.d)):"none this period")+"</small></div>";
+        h+=waBarChart(acts,"acts",34,function(x,v){return waDay(x.d)+" — "+v+" calls/quotes"});
+        h+="</div>";
+      }
+      var jr=waJobsInRange(wd.range);
+      var steps=[{k:"Visited the site",n:t.sessions||0},{k:"Stuck around",n:t.engaged||0},{k:"Called or asked for a quote",n:(t.qqc||0)+(t.phone||0)},{k:"Booked a job"+(wd.range==="90d"?" (this month)":""),n:jr.jobs}];
+      h+='<div class="gr-sec"><span class="gs-ic">'+ic("trending-up",16)+'</span>From visit to paycheck</div>';
+      h+='<div class="wa-panel">'+waFunnel(steps,jr.rev>0?ic("dollar",13)+" <b>"+fmtMoney(jr.rev)+"</b> billed from those jobs":"")+"</div>";
+    }
+    var cl=d.clarity&&d.clarity.overall;
+    if(cl){
+      var gr=waGrade(cl);
+      var avgT=(cl.sessions>0&&cl.totalSecs>0)?cl.totalSecs/cl.sessions:cl.totalSecs||0;
+      if(avgT<2&&(cl.totalSecs||0)>=2)avgT=cl.totalSecs;
+      h+='<div class="gr-sec"><span class="gs-ic">'+ic("activity",16)+'</span>Visitor experience<span class="hs-n" style="margin-left:auto;color:var(--muted2);font-weight:700;font-size:10.5px">Clarity · last 3 days'+(d.clarity.stale?" · older data (daily API limit)":"")+"</span></div>";
+      h+='<div class="wa-panel"><div style="display:flex;gap:12px;align-items:center;margin-bottom:11px">'+
+         '<div class="wa-grade" style="color:'+gr.color+';background:color-mix(in srgb,'+gr.color+' 14%,transparent)">'+gr.letter+"</div>"+
+         '<div><div style="font-weight:800;font-size:14.5px">Experience score: '+gr.score+"/100</div>"+
+         '<div style="color:var(--muted2);font-size:12px">'+waN(cl.sessions||0)+" real sessions · ~"+waSecsFmt(avgT)+" per visit · scrolls "+(cl.scrollDepth||0).toFixed(0)+"% deep</div></div></div>";
+      h+=waMeter("Dead clicks",(cl.dead||{}).pct||0,"var(--gold)");
+      h+=waMeter("Rage clicks",(cl.rage||{}).pct||0,"#fb7185");
+      h+=waMeter("Quick bounces",(cl.quickback||{}).pct||0,"var(--gold)");
+      h+=waMeter("Marathon scrolling",(cl.excessiveScroll||{}).pct||0,"var(--muted2)");
+      if((cl.scriptErrors||0)>0)h+='<div style="font-size:12.5px;color:#fb7185;font-weight:700;margin-top:4px;display:flex;align-items:center;gap:6px">'+ic("alert",13)+" "+waN(cl.scriptErrors)+" JavaScript errors — watch a recording in Clarity</div>";
+      var worst=(d.clarity.pages||[]).filter(function(pg){return pg.sessions>=5&&(pg.deadPct>=8||pg.ragePct>=3)}).slice(0,3);
+      if(worst.length){
+        h+='<div style="font-size:11px;color:var(--muted2);font-weight:800;text-transform:uppercase;letter-spacing:.05em;margin:10px 0 6px">Pages to look at</div>';
+        worst.forEach(function(pg){var pth=pg.url.replace(/^https?:\/\/[^\/]+/,"")||"/";
+          h+='<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;gap:8px"><span style="font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(pth)+'</span><span style="color:var(--muted2);flex:none">'+(pg.ragePct>=3?pg.ragePct.toFixed(0)+"% rage":pg.deadPct.toFixed(0)+"% dead")+"</span></div>"});
+      }
+      h+="</div>";
+    }
+    if(d.errors&&d.errors.clarity)h+='<div class="wa-ins warn"><span class="i-ic">'+ic("info",15)+'</span><div>Clarity: '+esc(d.errors.clarity)+"</div></div>";
+    if(ga){
+      h+='<div class="gr-sec"><span class="gs-ic">'+ic("file-text",16)+'</span>Top pages</div>';
+      var pgs=(ga.pages||[]).slice(0,8);
+      if(pgs.length){
+        var pmax=Math.max(1,pgs[0].views||1);
+        pgs.forEach(function(pg){
+          var badges="";
+          if(pg.phone)badges+='<span class="wa-badge">'+ic("phone",11)+" "+pg.phone+"</span>";
+          if(pg.qqc)badges+='<span class="wa-badge">'+ic("clipboard-list",11)+" "+pg.qqc+"</span>";
+          h+='<div class="hbar"><div class="hbar-top"><span class="hb-k">'+esc(pg.path)+badges+'</span><span class="hb-n">'+waN(pg.views)+'</span></div><div class="hbar-track"><div class="hbar-fill" style="width:'+Math.round((pg.views||0)/pmax*100)+'%"></div></div></div>';
+        });
+      } else h+='<div class="wc-empty">No page data in this period.</div>';
+      h+='<div class="gr-sec"><span class="gs-ic">'+ic("link",16)+'</span>Where visitors come from</div>';
+      if((ga.channels||[]).length){
+        var cmax=Math.max(1,ga.channels[0].n);
+        ga.channels.forEach(function(c){h+='<div class="hbar"><div class="hbar-top"><span class="hb-k">'+esc(c.k)+'</span><span class="hb-n">'+waN(c.n)+'</span></div><div class="hbar-track"><div class="hbar-fill" style="width:'+Math.round(c.n/cmax*100)+'%"></div></div></div>'});
+        if((ga.sources||[]).length){h+='<div style="margin-top:8px">';ga.sources.slice(0,6).forEach(function(sx){h+='<span class="wa-src">'+esc(sx.k)+' <b>'+waN(sx.n)+"</b></span>"});h+="</div>"}
+      } else h+='<div class="wc-empty">No source data in this period.</div>';
+      var cts=(ga.cities||[]).slice(0,6);
+      h+='<div class="gr-sec"><span class="gs-ic">'+ic("home",16)+'</span>Cities</div>';
+      if(cts.length){
+        var ctmax=Math.max(1,cts[0].n);
+        cts.forEach(function(c){h+='<div class="hbar"><div class="hbar-top"><span class="hb-k">'+esc(c.k)+'</span><span class="hb-n">'+waN(c.n)+'</span></div><div class="hbar-track"><div class="hbar-fill" style="width:'+Math.round(c.n/ctmax*100)+'%"></div></div></div>'});
+      } else h+='<div class="wc-empty">No city data yet.</div>';
+      var dvs=ga.devices||[],dtot=0;dvs.forEach(function(x){dtot+=x.n});
+      if(dtot>0){
+        h+='<div class="gr-sec"><span class="gs-ic">'+ic("phone",16)+'</span>Devices</div><div class="wa-pills">';
+        dvs.forEach(function(x){h+='<span class="wa-pill">'+esc(x.k)+" <b>"+Math.round(x.n/dtot*100)+"%</b></span>"});
+        h+="</div>";
+      }
+      var hrs=ga.hours||[],hmax=0;hrs.forEach(function(v){if(v>hmax)hmax=v});
+      if(hmax>0){
+        h+='<div class="gr-sec"><span class="gs-ic">'+ic("clock",16)+'</span>When people browse<span class="hs-n" style="margin-left:auto;color:var(--muted2);font-size:10.5px;font-weight:700">Pacific time</span></div>';
+        h+='<div class="wa-panel" style="padding-bottom:9px">';
+        h+=waBarChart(hrs.map(function(v,i){return{d:String(i),n:v}}),"n",44,function(x,v){var hh=+x.d,lab=hh===0?"12am":hh<12?hh+"am":hh===12?"12pm":(hh-12)+"pm";return lab+" — "+v+" visits"});
+        h+='<div class="wa-xlab"><span>12am</span><span>6am</span><span>12pm</span><span>6pm</span><span>11pm</span></div></div>';
+      }
+    }
+    h+=waPixelHtml(d.pixel,!ga);
+    h+='<div style="color:var(--muted2);font-size:10.5px;text-align:center;margin:14px 0 4px">'+
+       (ga&&ga.fetchedAt?"GA updated "+ago(ga.fetchedAt)+" ago":"")+
+       (d.clarity&&d.clarity.fetchedAt?" · Clarity "+ago(d.clarity.fetchedAt)+" ago":"")+" · tap ↻ to refresh</div>";
     box.innerHTML=h;
-    var pc=el("pxCopy");if(pc)pc.onclick=function(){growCopy(snippet,"Snippet copied — paste it on your site")};
+    waWire(box,d);
+  }
+  function waWire(box,d){
+    Array.prototype.forEach.call(box.querySelectorAll("[data-wr]"),function(b){b.onclick=function(){vibrate(6);GROW.web.range=b.getAttribute("data-wr");growLoadWeb(false)}});
+    var g=el("waGear");if(g)g.onclick=function(){vibrate(6);GROW.web.settings=!GROW.web.settings;if(GROW.web.settings&&!GROW.web.status){api("/api/webstats/status").then(function(s){if(s&&s.ok){GROW.web.status=s;if(GROW.view==="analytics"&&el("growApp").classList.contains("show"))growRender()}})}growRender()};
+    var rr=el("waRetry");if(rr)rr.onclick=function(){GROW.web.err="";growLoadWeb(true)};
+    var pc=el("pxCopy");if(pc)pc.onclick=function(){growCopy(waPixelSnippet(),"Snippet copied — paste it on your site")};
+    var ai=el("waAi");if(ai)ai.onclick=function(){
+      if(GROW.web.aiLoading)return;
+      GROW.web.aiLoading=true;growRender();
+      var jr=waJobsInRange(GROW.web.range);
+      post("/api/webstats/ai",{range:GROW.web.range,extra:"Jobs booked in this period: "+jr.jobs+", revenue $"+Math.round(jr.rev)}).then(function(r){
+        GROW.web.aiLoading=false;
+        if(r&&r.ok){GROW.web.ai=r.text;GROW.web.aiRange=(WA_RANGES.filter(function(x){return x[0]===GROW.web.range})[0]||["","this period"])[1]}
+        else toast(r&&r.error==="ai_not_configured"?"Add a Gemini key to use AI":"AI couldn't read the stats right now",{bad:true});
+        if(GROW.view==="analytics"&&el("growApp").classList.contains("show"))growRender();
+      }).catch(function(){GROW.web.aiLoading=false;growRender()});
+    };
+    var gs=el("waGaSave");if(gs)gs.onclick=function(){
+      var ta=el("waGaJson"),pr=el("waGaProp"),v=ta?ta.value.trim():"";
+      if(!v)return toast("Paste the JSON file first");
+      GROW.web.savingGa=true;growRender();
+      post("/api/webstats/connect",{ga:v,propertyId:pr?pr.value.trim():""}).then(function(r){
+        GROW.web.savingGa=false;
+        if(r&&r.ok){toast("Google Analytics connected ✓");GROW.web.status=null;GROW.web.data=null;GROW.web.settings=false;growLoadWeb(true)}
+        else{toast((r&&r.hint)||"Couldn't connect — check the JSON",{bad:true});growRender()}
+      }).catch(function(){GROW.web.savingGa=false;toast("Network error",{bad:true});growRender()});
+    };
+    var cs=el("waClSave");if(cs)cs.onclick=function(){
+      var ta=el("waClTok"),v=ta?ta.value.trim():"";
+      if(!v)return toast("Paste the Clarity token first");
+      GROW.web.savingCl=true;growRender();
+      post("/api/webstats/connect",{clarity:v}).then(function(r){
+        GROW.web.savingCl=false;
+        if(r&&r.ok){toast("Clarity connected ✓");GROW.web.status=null;GROW.web.data=null;GROW.web.settings=false;growLoadWeb(true)}
+        else{toast((r&&r.hint)||"Couldn't connect — generate a fresh token",{bad:true});growRender()}
+      }).catch(function(){GROW.web.savingCl=false;toast("Network error",{bad:true});growRender()});
+    };
+    var go=el("waGaOff");if(go)go.onclick=function(){if(!confirm("Disconnect Google Analytics?"))return;post("/api/webstats/disconnect",{source:"ga"}).then(function(){GROW.web.status=null;GROW.web.data=null;growLoadWeb(true)})};
+    var co=el("waClOff");if(co)co.onclick=function(){if(!confirm("Disconnect Clarity?"))return;post("/api/webstats/disconnect",{source:"clarity"}).then(function(){GROW.web.status=null;GROW.web.data=null;growLoadWeb(true)})};
   }
   // ---- Local SEO / Google Business Profile ----
   var SEO_TASKS=[
