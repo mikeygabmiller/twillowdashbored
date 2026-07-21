@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-21·pro-dashboard';
+const BUILD = '2026-07-21·grow-suite';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -143,6 +143,9 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/voicemail-tx')   return handleVoicemailTranscription(request);
   if (request.method === 'POST' && pathname === '/status')         return handleStatusCallback(request);
   if (request.method === 'POST' && pathname === '/email-in')       return handleEmailIn(request);
+  // First-party website analytics pixel (public, no auth — it's called from the
+  // owner's marketing site). Accepts GET beacons and returns a 1x1 GIF.
+  if (request.method === 'GET'  && pathname === '/px')             return handlePixel(url, request);
 
   if (request.method === 'GET'  && pathname === '/api/version')    return json({ ok: true, build: BUILD });
   if (request.method === 'POST' && pathname === '/api/login')      return apiLogin(request);
@@ -186,6 +189,10 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/ai/command')  return apiAiCommand(request);
   if (request.method === 'POST' && pathname === '/api/ai/analyze')  return apiAiAnalyze(request);
   if (request.method === 'POST' && pathname === '/api/ai/agent')    return apiAiAgent(request);
+  if (request.method === 'POST' && pathname === '/api/ai/generate') return apiAiGenerate(request);
+
+  // Website analytics (Grow hub) — rollup of the /px pixel data.
+  if (request.method === 'GET'  && pathname === '/api/analytics')   return apiAnalytics(url);
 
   // Money tracker (its own dashboard section — see the Money module below)
   if (request.method === 'GET'  && pathname === '/api/money')          return apiMoney(url);
@@ -908,6 +915,113 @@ async function apiInsights() {
     needsReply, possibleLinks,
     costMonth: { segOut, msgsIn, usd: costUsd },
   });
+}
+
+// ===========================================================================
+// First-party website analytics
+// ---------------------------------------------------------------------------
+// A tiny, self-hosted analytics system. The owner drops a one-line snippet on
+// their marketing site; every page load hits GET /px, and we roll counts into a
+// per-day KV doc (analytics:day:YYYY-MM-DD). No third-party service, no cookies
+// beyond a same-day de-dupe key, no PII stored (IPs are hashed, never kept).
+// ---------------------------------------------------------------------------
+const PX_GIF = Uint8Array.from([0x47, 0x49, 0x46, 0x38, 0x39, 0x61, 0x01, 0x00, 0x01, 0x00, 0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0x21, 0xf9, 0x04, 0x01, 0x00, 0x00, 0x00, 0x00, 0x2c, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x02, 0x02, 0x44, 0x01, 0x00, 0x3b]);
+function pxResponse() {
+  return new Response(PX_GIF, { status: 200, headers: {
+    'Content-Type': 'image/gif',
+    'Cache-Control': 'no-store, no-cache, must-revalidate, private',
+    'Access-Control-Allow-Origin': '*',
+  } });
+}
+async function fnv1aHex(str) {
+  // Cheap non-cryptographic hash — enough to de-dupe a visitor within a day
+  // without ever storing their IP.
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = (h + ((h << 1) + (h << 4) + (h << 7) + (h << 8) + (h << 24))) >>> 0; }
+  return h.toString(16);
+}
+function analyticsDayKey(d) { return 'analytics:day:' + d; }
+function utcDayStr(ts) { return new Date(ts).toISOString().slice(0, 10); }
+async function handlePixel(url, request) {
+  try {
+    const now = Date.now();
+    const day = utcDayStr(now);
+    let path = (url.searchParams.get('p') || '/').slice(0, 120);
+    try { path = decodeURIComponent(path); } catch (e) {}
+    let ref = (url.searchParams.get('r') || '').slice(0, 200);
+    // Reduce a referrer to its hostname so the top-referrers list stays tidy.
+    let refHost = '';
+    if (ref) { try { refHost = new URL(ref).hostname.replace(/^www\./, ''); } catch (e) { refHost = ref.slice(0, 60); } }
+    const ip = request.headers.get('CF-Connecting-IP') || '';
+    const ua = request.headers.get('User-Agent') || '';
+    const doc = (await kv().get(analyticsDayKey(day), { type: 'json' })) || { views: 0, visitors: 0, paths: {}, refs: {} };
+    doc.views = (doc.views || 0) + 1;
+    doc.paths = doc.paths || {}; doc.refs = doc.refs || {};
+    if (path) doc.paths[path] = (doc.paths[path] || 0) + 1;
+    if (refHost && !/mikeysdetailingsnohomish/i.test(refHost)) doc.refs[refHost] = (doc.refs[refHost] || 0) + 1;
+    // Same-day unique-visitor de-dupe: hash IP+UA, keep a 26h TTL marker.
+    if (ip) {
+      const vh = await fnv1aHex(ip + '|' + ua + '|' + day);
+      const seenKey = 'analytics:seen:' + day + ':' + vh;
+      const seen = await kv().get(seenKey);
+      if (!seen) { doc.visitors = (doc.visitors || 0) + 1; await kv().put(seenKey, '1', { expirationTtl: 93600 }); }
+    }
+    // Keep the maps bounded so a busy day can't bloat the doc.
+    doc.paths = trimCountMap(doc.paths, 60);
+    doc.refs = trimCountMap(doc.refs, 40);
+    await kv().put(analyticsDayKey(day), JSON.stringify(doc));
+  } catch (e) { /* never let analytics break the pixel */ }
+  return pxResponse();
+}
+function trimCountMap(m, max) {
+  const keys = Object.keys(m);
+  if (keys.length <= max) return m;
+  const top = keys.sort((a, b) => m[b] - m[a]).slice(0, max);
+  const out = {}; for (const k of top) out[k] = m[k]; return out;
+}
+async function apiAnalytics(url) {
+  const days = Math.min(60, Math.max(7, parseInt(url.searchParams.get('days') || '14', 10)));
+  const now = Date.now();
+  const series = [];
+  const paths = {}; const refs = {};
+  let totalViews = 0, totalVisitors = 0;
+  for (let i = days - 1; i >= 0; i--) {
+    const day = utcDayStr(now - i * 86400000);
+    const doc = (await kv().get(analyticsDayKey(day), { type: 'json' })) || { views: 0, visitors: 0, paths: {}, refs: {} };
+    series.push({ day, views: doc.views || 0, visitors: doc.visitors || 0 });
+    totalViews += doc.views || 0; totalVisitors += doc.visitors || 0;
+    for (const [k, v] of Object.entries(doc.paths || {})) paths[k] = (paths[k] || 0) + v;
+    for (const [k, v] of Object.entries(doc.refs || {})) refs[k] = (refs[k] || 0) + v;
+  }
+  const topList = (m) => Object.keys(m).sort((a, b) => m[b] - m[a]).slice(0, 8).map((k) => ({ k, n: m[k] }));
+  return json({ ok: true, days, totalViews, totalVisitors, series, topPaths: topList(paths), topRefs: topList(refs), origin: BASE_URL });
+}
+
+// AI content generator (Grow hub → SEO / Content Studio). One flexible endpoint
+// that turns a task + short context into ready-to-use marketing copy via Gemini.
+async function apiAiGenerate(request) {
+  if (!ENV.GEMINI_API_KEY) return json({ ok: false, error: 'ai_not_configured' }, 503);
+  const data = await readJson(request);
+  const task = String(data.task || '').slice(0, 60);
+  const context = String(data.context || '').slice(0, 1200);
+  const cfg = await loadConfig();
+  const biz = (cfg.playbook && cfg.playbook.business) || "Mikey's Mobile Detailing";
+  const area = (cfg.playbook && cfg.playbook.area) || 'Snohomish, WA and surrounding areas';
+  const PROMPTS = {
+    gbp_post: `Write a short, upbeat Google Business Profile post for ${biz}, a mobile auto detailing business serving ${area}. Keep it 2-3 sentences, friendly and local, with a soft call to action. Do not use hashtags or emojis. Topic/details: ${context || 'a general promo for this week'}.`,
+    review_response: `Write a warm, professional 1-2 sentence reply from the owner of ${biz} responding to this customer review. Sound genuine and human, thank them, and invite them back. Review: "${context || 'Great job, my car looks brand new!'}"`,
+    promo_text: `Write a short SMS promo (under 300 characters, no links) for ${biz} to send past customers. Friendly, local, one clear offer and call to action. Details: ${context || 'a seasonal detailing special'}.`,
+    social_caption: `Write an engaging social media caption for ${biz} (mobile auto detailing in ${area}). 1-2 sentences plus up to 3 relevant hashtags. Topic: ${context || 'before-and-after of a full detail'}.`,
+    service_desc: `Write a polished, benefit-focused service description (2-3 sentences) for ${biz}. Service: ${context || 'Full interior + exterior detail'}.`,
+    email_blast: `Write a short marketing email (subject line + 3-4 sentence body) for ${biz} to past customers. Warm, local, one clear offer. Details: ${context || 'a limited-time detailing special'}.`,
+  };
+  const prompt = PROMPTS[task] || (`You are the marketing assistant for ${biz}, a mobile auto detailing business in ${area}. ${context}`);
+  try {
+    const text = await geminiGenerate(prompt, { temperature: 0.8, maxTokens: 600 });
+    return json({ ok: true, task, text });
+  } catch (e) {
+    return json({ ok: false, error: 'ai_error', detail: String(e.message || e).slice(0, 200) }, 502);
+  }
 }
 
 // ===========================================================================
