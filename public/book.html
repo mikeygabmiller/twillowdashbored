@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d0f">
+<title>Book Your Detail · Mikey's Mobile Detailing</title>
+<meta name="description" content="Book your mobile car detailing appointment with Mikey — he comes to your driveway in Snohomish County. Pick your service and time in under 2 minutes.">
+<style>
+  :root{
+    --red:#e11020; --red2:#ff2d3f; --ink:#111114; --ink2:#2a2a30;
+    --bg:#f6f6f7; --card:#ffffff; --line:#e6e6ea; --line2:#d7d7dd;
+    --muted:#66666f; --faint:#9a9aa2; --good:#12a150; --gold:#f5a524;
+    --radius:16px; --shadow:0 2px 10px rgba(0,0,0,.06); --shadow2:0 10px 30px rgba(0,0,0,.12);
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font);font-size:16px;line-height:1.5;
+    -webkit-font-smoothing:antialiased;padding-bottom:96px;}
+  .wrap{max-width:640px;margin:0 auto;padding:0 16px;}
+  h1,h2,h3{letter-spacing:-.3px;margin:0;}
+  button{font-family:var(--font);cursor:pointer;}
+
+  /* header */
+  header{background:var(--ink);color:#fff;}
+  .head-in{max-width:640px;margin:0 auto;padding:14px 16px;display:flex;align-items:center;gap:12px;}
+  .logo{font-weight:800;font-size:16px;display:flex;align-items:center;gap:8px;}
+  .logo .dot{width:9px;height:9px;border-radius:50%;background:var(--red2);box-shadow:0 0 12px var(--red2);}
+  .head-proof{margin-left:auto;font-size:12.5px;color:#d8d8dc;display:flex;align-items:center;gap:10px;text-align:right;}
+  .head-proof b{color:#fff;}
+  .stars{color:var(--gold);letter-spacing:1px;}
+  .callbtn{color:#fff;text-decoration:none;font-size:12.5px;border:1px solid #3a3a42;padding:6px 10px;border-radius:999px;white-space:nowrap;}
+
+  /* trust bar */
+  .trust{background:linear-gradient(90deg,var(--red),var(--red2));color:#fff;text-align:center;font-size:13px;
+    font-weight:600;padding:8px 16px;}
+
+  /* progress */
+  .steps{position:sticky;top:0;z-index:30;background:rgba(246,246,247,.94);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);}
+  .steps-in{max-width:640px;margin:0 auto;padding:11px 16px;display:flex;align-items:center;gap:8px;}
+  .sdot{flex:1;height:6px;border-radius:999px;background:#e2e2e7;overflow:hidden;position:relative;}
+  .sdot i{position:absolute;inset:0;background:var(--red);transform:scaleX(0);transform-origin:left;transition:transform .3s;}
+  .sdot.done i{transform:scaleX(1);} .sdot.active i{transform:scaleX(.5);}
+  .steplabel{font-size:12px;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums;}
+
+  /* panels */
+  main{padding-top:20px;}
+  .panel{display:none;animation:fade .25s ease;}
+  .panel.on{display:block;}
+  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .eyebrow{font-size:12px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--red);}
+  .ptitle{font-size:23px;font-weight:800;margin:6px 0 4px;}
+  .psub{color:var(--muted);font-size:14.5px;margin:0 0 18px;}
+
+  /* option cards */
+  .opt{display:flex;align-items:flex-start;gap:13px;width:100%;text-align:left;background:var(--card);
+    border:2px solid var(--line);border-radius:14px;padding:15px 15px;margin-bottom:11px;transition:.12s;box-shadow:var(--shadow);}
+  .opt:hover{border-color:var(--line2);}
+  .opt.sel{border-color:var(--red);box-shadow:0 0 0 3px rgba(225,16,32,.12);}
+  .opt .mk{flex:0 0 auto;width:22px;height:22px;border-radius:50%;border:2px solid var(--line2);margin-top:2px;
+    display:flex;align-items:center;justify-content:center;transition:.12s;}
+  .opt.multi .mk{border-radius:7px;}
+  .opt.sel .mk{border-color:var(--red);background:var(--red);}
+  .opt .mk svg{width:13px;height:13px;opacity:0;} .opt.sel .mk svg{opacity:1;}
+  .opt .body{flex:1;min-width:0;}
+  .opt .t{font-weight:700;font-size:16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .opt .d{color:var(--muted);font-size:13px;margin-top:3px;line-height:1.45;}
+  .opt .pr{font-weight:800;font-size:17px;white-space:nowrap;margin-left:8px;}
+  .opt .pr small{font-weight:600;color:var(--faint);font-size:11.5px;display:block;text-align:right;}
+  .tag{font-size:10.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;padding:2px 7px;border-radius:6px;}
+  .tag.pop{background:var(--red);color:#fff;} .tag.save{background:#e8f7ee;color:var(--good);}
+
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;}
+  @media(max-width:480px){.grid3{grid-template-columns:1fr;}}
+  .grid3 .opt{flex-direction:column;align-items:center;text-align:center;margin:0;padding:16px 10px;}
+  .grid3 .opt .mk{display:none;} .grid3 .opt .t{justify-content:center;} .grid3 .opt .pr{margin:6px 0 0;}
+
+  /* fields */
+  .field{margin-bottom:15px;}
+  label.flab{display:block;font-weight:600;font-size:14px;margin-bottom:6px;}
+  label.flab .req{color:var(--red);}
+  .hint{color:var(--faint);font-size:12.5px;margin-top:5px;}
+  input.in,select.in,textarea.in{width:100%;background:var(--card);border:1.5px solid var(--line2);border-radius:12px;
+    padding:13px 14px;font-size:16px;font-family:var(--font);color:var(--ink);transition:.12s;}
+  input.in:focus,select.in:focus,textarea.in:focus{outline:none;border-color:var(--red);box-shadow:0 0 0 3px rgba(225,16,32,.1);}
+  textarea.in{min-height:80px;resize:vertical;}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+  @media(max-width:440px){.two{grid-template-columns:1fr;}}
+  .check{display:flex;gap:11px;align-items:flex-start;background:var(--card);border:1.5px solid var(--line2);
+    border-radius:12px;padding:13px 14px;margin-bottom:12px;}
+  .check input{margin-top:3px;width:19px;height:19px;accent-color:var(--red);flex:0 0 auto;}
+  .check label{font-size:13.5px;color:var(--ink2);}
+  .check .sub{color:var(--faint);font-size:12px;}
+
+  /* date + time */
+  .days{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;scrollbar-width:none;-webkit-overflow-scrolling:touch;}
+  .days::-webkit-scrollbar{display:none}
+  .day{flex:0 0 auto;min-width:62px;text-align:center;border:2px solid var(--line);background:var(--card);border-radius:12px;
+    padding:9px 6px;box-shadow:var(--shadow);}
+  .day.sel{border-color:var(--red);background:#fff5f5;}
+  .day.off{opacity:.35;pointer-events:none;}
+  .day .dow{font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:700;}
+  .day .dnum{font-size:19px;font-weight:800;margin-top:1px;} .day .mon{font-size:10.5px;color:var(--faint);}
+  .slots{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-top:16px;}
+  @media(max-width:400px){.slots{grid-template-columns:repeat(2,1fr);}}
+  .slot{border:2px solid var(--line);background:var(--card);border-radius:11px;padding:12px 6px;font-weight:700;
+    font-size:14.5px;box-shadow:var(--shadow);}
+  .slot.sel{border-color:var(--red);background:var(--red);color:#fff;}
+  .slots-msg{grid-column:1/-1;color:var(--muted);font-size:14px;text-align:center;padding:16px;}
+
+  /* callouts */
+  .note{display:flex;gap:10px;background:#fff8e6;border:1px solid #f2d98a;border-radius:12px;padding:12px 14px;
+    font-size:13px;color:#7a5b12;margin:14px 0;}
+  .note.red{background:#fff2f3;border-color:#f5b8bd;color:#8f1420;}
+  .note.green{background:#eafaf0;border-color:#a5e3bf;color:#0d6b38;}
+  .note b{color:inherit;}
+
+  /* review */
+  .rev{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);overflow:hidden;margin-bottom:16px;}
+  .rev-row{display:flex;justify-content:space-between;gap:12px;padding:13px 16px;border-bottom:1px solid var(--line);font-size:14.5px;}
+  .rev-row:last-child{border-bottom:none;} .rev-row .k{color:var(--muted);} .rev-row .v{font-weight:700;text-align:right;}
+  .rev-total{background:var(--ink);color:#fff;display:flex;justify-content:space-between;padding:15px 16px;font-weight:800;font-size:18px;}
+  .rev-total small{display:block;font-weight:500;font-size:11.5px;color:#b9b9c0;text-align:right;margin-top:2px;}
+
+  /* sticky footer nav */
+  .foot{position:fixed;left:0;right:0;bottom:0;z-index:40;background:rgba(255,255,255,.96);backdrop-filter:blur(10px);
+    border-top:1px solid var(--line);}
+  .foot-in{max-width:640px;margin:0 auto;padding:11px 16px calc(11px + env(safe-area-inset-bottom));display:flex;align-items:center;gap:12px;}
+  .total{font-size:13px;color:var(--muted);line-height:1.2;}
+  .total b{display:block;font-size:20px;color:var(--ink);font-weight:800;}
+  .btn{margin-left:auto;border:none;background:var(--red);color:#fff;font-weight:800;font-size:16px;padding:14px 26px;
+    border-radius:13px;box-shadow:0 6px 18px rgba(225,16,32,.32);display:inline-flex;align-items:center;gap:8px;transition:.1s;}
+  .btn:disabled{background:#c9c9cf;box-shadow:none;}
+  .btn:active:not(:disabled){transform:translateY(1px);}
+  .btn.ghost{background:#fff;color:var(--ink);border:1.5px solid var(--line2);box-shadow:none;margin-left:0;padding:14px 18px;}
+
+  /* success */
+  #done{text-align:center;padding:40px 6px;}
+  .big-check{width:74px;height:74px;border-radius:50%;background:var(--good);display:flex;align-items:center;justify-content:center;
+    margin:0 auto 18px;box-shadow:0 10px 30px rgba(18,161,80,.35);}
+  #done h2{font-size:26px;font-weight:800;} #done p{color:var(--muted);max-width:42ch;margin:10px auto;}
+  .done-card{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);
+    padding:18px;margin:22px auto 0;max-width:380px;text-align:left;}
+  footer{text-align:center;color:var(--faint);font-size:12px;padding:26px 16px 40px;}
+  .spin{width:16px;height:16px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;
+    display:inline-block;animation:sp .7s linear infinite;} @keyframes sp{to{transform:rotate(360deg)}}
+</style>
+</head>
+<body>
+<header>
+  <div class="head-in">
+    <div class="logo"><span class="dot"></span> Mikey's Mobile Detailing</div>
+    <div class="head-proof">
+      <span><span class="stars">★★★★★</span> <b>5.0</b> · 39 reviews<br>300+ cars detailed</span>
+      <a class="callbtn" href="tel:+14256007897">Call</a>
+    </div>
+  </div>
+</header>
+<div class="trust">🚗 Mobile — Mikey comes to your driveway · You don't pay until you love it</div>
+
+<div class="steps">
+  <div class="steps-in">
+    <div class="sdot" data-s="0"><i></i></div>
+    <div class="sdot" data-s="1"><i></i></div>
+    <div class="sdot" data-s="2"><i></i></div>
+    <div class="sdot" data-s="3"><i></i></div>
+    <div class="sdot" data-s="4"><i></i></div>
+    <span class="steplabel" id="steplabel">Step 1 of 5</span>
+  </div>
+</div>
+
+<main class="wrap">
+
+  <!-- STEP 1: SERVICE -->
+  <section class="panel on" data-panel="0">
+    <div class="eyebrow">Step 1 · Pick your detail</div>
+    <h1 class="ptitle">What does your car need?</h1>
+    <p class="psub">Every price is a starting point — Mikey confirms it before your appointment. First full detail? Your exterior wash &amp; wax (a $160 value) is <b>free</b>. 🎁</p>
+    <div id="serviceList"></div>
+    <div class="note">💬 <span>Want <b>ceramic coating</b> or <b>paint correction</b>? Pick a service above and check the box on the next steps — Mikey will text you a custom quote.</span></div>
+  </section>
+
+  <!-- STEP 2: VEHICLE -->
+  <section class="panel" data-panel="1">
+    <div class="eyebrow">Step 2 · Your vehicle</div>
+    <h1 class="ptitle">Tell me about the ride</h1>
+    <p class="psub">Size sets the price tier. You can add the exact year/make/model too.</p>
+    <div class="field"><label class="flab">Vehicle size <span class="req">*</span></label>
+      <div class="grid3" id="sizeList"></div>
+    </div>
+    <div class="field"><label class="flab" for="vehicle">Year / Make / Model</label>
+      <input class="in" id="vehicle" placeholder="e.g. 2019 Toyota 4Runner" autocomplete="off">
+      <div class="hint">Optional, but it helps Mikey lock in your exact price.</div>
+    </div>
+  </section>
+
+  <!-- STEP 3: ADD-ONS -->
+  <section class="panel" data-panel="2">
+    <div class="eyebrow">Step 3 · Add-ons (optional)</div>
+    <h1 class="ptitle">Make it extra 🔥</h1>
+    <p class="psub">Tack on anything you want — or skip straight to picking a time.</p>
+    <div id="addonList"></div>
+    <div class="field" style="margin-top:16px">
+      <label class="check" style="margin:0">
+        <input type="checkbox" id="wantQuote">
+        <span><b>I'm also interested in ceramic coating / paint correction.</b><br>
+        <span class="sub">Mikey will text you a separate custom quote for these.</span></span>
+      </label>
+    </div>
+  </section>
+
+  <!-- STEP 4: DATE + TIME -->
+  <section class="panel" data-panel="3">
+    <div class="eyebrow">Step 4 · Pick a time</div>
+    <h1 class="ptitle">When works for you?</h1>
+    <p class="psub">These are Mikey's open slots. He'll text to confirm and lock it in — usually within the hour.</p>
+    <div class="days" id="dayStrip"></div>
+    <div class="slots" id="slotGrid"><div class="slots-msg">Pick a day above to see open times.</div></div>
+    <div class="note green" id="urgencyNote" style="display:none">⚡ <span><b>Booking fast</b> — Mikey only takes 2 jobs a day. Grab your spot!</span></div>
+  </section>
+
+  <!-- STEP 5: DETAILS -->
+  <section class="panel" data-panel="4">
+    <div class="eyebrow">Step 5 · Your info</div>
+    <h1 class="ptitle">Last step — where &amp; who?</h1>
+    <p class="psub">Mikey comes to you. He just needs where, and how to reach you.</p>
+    <div class="two">
+      <div class="field"><label class="flab" for="name">Name <span class="req">*</span></label>
+        <input class="in" id="name" placeholder="First & last" autocomplete="name"></div>
+      <div class="field"><label class="flab" for="phone">Mobile phone <span class="req">*</span></label>
+        <input class="in" id="phone" type="tel" placeholder="(425) 555-0123" autocomplete="tel"></div>
+    </div>
+    <div class="field"><label class="flab" for="address">Service address <span class="req">*</span></label>
+      <input class="in" id="address" placeholder="Street address where the car will be" autocomplete="street-address"></div>
+    <div class="two">
+      <div class="field"><label class="flab" for="city">City <span class="req">*</span></label>
+        <select class="in" id="city"></select></div>
+      <div class="field"><label class="flab" for="email">Email</label>
+        <input class="in" id="email" type="email" placeholder="Optional" autocomplete="email"></div>
+    </div>
+    <div class="field"><label class="flab" for="notes">Anything Mikey should know?</label>
+      <textarea class="in" id="notes" placeholder="Gate code, extra dirty, pet hair, parking notes, etc."></textarea></div>
+
+    <label class="check">
+      <input type="checkbox" id="ackWaterPower" checked>
+      <span><b>I can provide water &amp; power near the vehicle.</b>
+      <span class="sub">Mikey needs both within ~20 ft. No outlet or spigot? Still book — he'll reach out to sort it.</span></span>
+    </label>
+    <label class="check">
+      <input type="checkbox" id="smsConsent" checked>
+      <span>Text me booking updates &amp; my confirmation.
+      <span class="sub">Msg &amp; data rates may apply. Reply STOP to opt out anytime.</span></span>
+    </label>
+    <div class="note">🔒 <span>Your info goes straight to Mikey — never shared. No deposit, no charge now.</span></div>
+  </section>
+
+  <!-- REVIEW -->
+  <section class="panel" data-panel="5">
+    <div class="eyebrow">Almost done</div>
+    <h1 class="ptitle">Look good?</h1>
+    <p class="psub">Double-check and send it over. Mikey confirms your final price before the appointment.</p>
+    <div class="rev" id="reviewCard"></div>
+    <div class="note green">✅ <span><b>You don't pay until you love it.</b> Send this request and Mikey will text you to confirm.</span></div>
+  </section>
+
+  <!-- SUCCESS -->
+  <section class="panel" data-panel="6">
+    <div id="done">
+      <div class="big-check"><svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+      <h2>Request sent! 🎉</h2>
+      <p id="doneMsg">Mikey got it and will text you shortly to lock in your time — usually within the hour.</p>
+      <div class="done-card" id="doneCard"></div>
+      <p style="margin-top:22px;font-size:14px">Need it sooner? <a href="tel:+14256007897" style="color:var(--red);font-weight:700">Call/text (425) 600-7897</a></p>
+    </div>
+  </section>
+</main>
+
+<div class="foot" id="foot">
+  <div class="foot-in">
+    <button class="btn ghost" id="backBtn" style="display:none">← Back</button>
+    <div class="total" id="totalWrap" style="display:none">Estimated total<b id="totalVal">$0</b></div>
+    <button class="btn" id="nextBtn" disabled>Continue →</button>
+  </div>
+</div>
+
+<footer>Mikey's Mobile Detailing · Snohomish County, WA · <a href="tel:+14256007897" style="color:var(--muted)">(425) 600-7897</a></footer>
+
+<script>
+"use strict";
+// ---- Config (kept in sync with the Worker's bookingConfig) ----
+const CONFIG = {
+  phoneDisplay: "(425) 600-7897",
+  sizes: [
+    { id:"sedan", label:"Car / Sedan", d:"Coupes, sedans, small cars" },
+    { id:"suv",   label:"SUV / Crossover", d:"Midsize SUVs & crossovers" },
+    { id:"truck", label:"Truck / Van / XL", d:"Trucks, vans, 3-row SUVs" },
+  ],
+  services: [
+    { id:"full", name:"Full Detail — In & Out", popular:true,
+      d:"The works: deep interior + full exterior. First-timers ~3–4 hrs.",
+      price:{sedan:299,suv:339,truck:379} },
+    { id:"interior", name:"Interior Detail",
+      d:"Full vacuum, carpets & seats, all surfaces, windows, pet hair.",
+      price:{sedan:200,suv:240,truck:280} },
+    { id:"exterior", name:"Exterior Detail",
+      d:"Hand wash, wheels & tires, bug & tar, polish, spray wax.",
+      price:{sedan:160,suv:200,truck:240} },
+  ],
+  addons: [
+    { id:"carpet",   name:"Carpet & upholstery shampoo", d:"Hot-water extraction — lifts deep stains", price:60, popular:true },
+    { id:"pethair",  name:"Pet hair removal", d:"Special process for stubborn fur", price:40 },
+    { id:"wax",      name:"Wax / paint sealant", d:"Extra shine & protection", price:40 },
+    { id:"steam",    name:"Steam clean & sanitize", d:"Deep sanitize + odor knockdown", price:40 },
+    { id:"leather",  name:"Leather conditioning", d:"Clean + condition leather seats", price:30 },
+    { id:"headlight",name:"Headlight restoration", d:"Clear up foggy headlights", price:50 },
+  ],
+  cities: ["Everett","Bothell","Lake Stevens","Mill Creek","Monroe","Marysville","Duvall","Snohomish","Other / nearby"],
+};
+
+// ---- State ----
+const S = { step:0, service:null, size:null, addons:new Set(), wantQuote:false,
+  date:null, dateLabel:"", slot:null, name:"", phone:"", address:"", city:"", email:"", notes:"",
+  ackWaterPower:true, smsConsent:true };
+const TOTAL_STEPS = 6; // 0..5 input steps; 6 = success
+const $=(s,r=document)=>r.querySelector(s); const $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const svgCheck='<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+const money=n=>"$"+Math.round(n);
+const svc=()=>CONFIG.services.find(s=>s.id===S.service);
+const basePrice=()=> (S.service&&S.size)? svc().price[S.size] : 0;
+const addonsTotal=()=>[...S.addons].reduce((a,id)=>a+(CONFIG.addons.find(x=>x.id===id)?.price||0),0);
+const total=()=>basePrice()+addonsTotal();
+
+// ---- Render step 1: services ----
+function renderServices(){
+  $("#serviceList").innerHTML = CONFIG.services.map(s=>{
+    const from = Math.min(...Object.values(s.price));
+    return `<button class="opt ${S.service===s.id?'sel':''}" data-svc="${s.id}">
+      <span class="mk">${svgCheck}</span>
+      <span class="body"><span class="t">${s.name}${s.popular?'<span class="tag pop">Most popular</span>':''}</span>
+        <span class="d">${s.d}</span></span>
+      <span class="pr">${money(from)}<small>starting</small></span></button>`;
+  }).join("");
+  $$("#serviceList .opt").forEach(b=>b.onclick=()=>{ S.service=b.dataset.svc; renderServices(); sync(); });
+}
+// ---- Render step 2: sizes ----
+function renderSizes(){
+  $("#sizeList").innerHTML = CONFIG.sizes.map(z=>{
+    const p = S.service? svc().price[z.id] : null;
+    return `<button class="opt ${S.size===z.id?'sel':''}" data-size="${z.id}">
+      <span class="body"><span class="t">${z.label}</span><span class="d">${z.d}</span></span>
+      ${p?`<span class="pr">${money(p)}</span>`:''}</button>`;
+  }).join("");
+  $$("#sizeList .opt").forEach(b=>b.onclick=()=>{ S.size=b.dataset.size; renderSizes(); sync(); });
+}
+// ---- Render step 3: addons ----
+function renderAddons(){
+  $("#addonList").innerHTML = CONFIG.addons.map(a=>{
+    const on=S.addons.has(a.id);
+    return `<button class="opt multi ${on?'sel':''}" data-add="${a.id}">
+      <span class="mk">${svgCheck}</span>
+      <span class="body"><span class="t">${a.name}${a.popular?'<span class="tag pop">Popular</span>':''}</span>
+        <span class="d">${a.d}</span></span>
+      <span class="pr">+${money(a.price)}</span></button>`;
+  }).join("");
+  $$("#addonList .opt").forEach(b=>b.onclick=()=>{ const id=b.dataset.add;
+    S.addons.has(id)?S.addons.delete(id):S.addons.add(id); renderAddons(); sync(); });
+}
+// ---- Render step 4: days + slots ----
+function renderDays(){
+  const days=[]; const now=new Date();
+  for(let i=0;i<21;i++){ const d=new Date(now); d.setDate(now.getDate()+i);
+    const dow=d.getDay(); const isWork = dow>=1 && dow<=6; // Mon–Sat
+    days.push({d, iso:isoDate(d), isWork,
+      dow:d.toLocaleDateString('en-US',{weekday:'short'}),
+      num:d.getDate(), mon:d.toLocaleDateString('en-US',{month:'short'})});
+  }
+  $("#dayStrip").innerHTML = days.map(x=>`<button class="day ${x.isWork?'':'off'} ${S.date===x.iso?'sel':''}"
+    data-iso="${x.iso}" data-label="${x.dow}, ${x.mon} ${x.num}" ${x.isWork?'':'disabled'}>
+    <div class="dow">${x.dow}</div><div class="dnum">${x.num}</div><div class="mon">${x.mon}</div></button>`).join("");
+  $$("#dayStrip .day").forEach(b=>{ if(b.classList.contains('off'))return;
+    b.onclick=()=>{ S.date=b.dataset.iso; S.dateLabel=b.dataset.label; S.slot=null; renderDays(); loadSlots(); sync(); }; });
+}
+async function loadSlots(){
+  const grid=$("#slotGrid"); if(!S.date){grid.innerHTML='<div class="slots-msg">Pick a day above.</div>';return;}
+  grid.innerHTML='<div class="slots-msg">Loading Mikey\'s open times…</div>';
+  try{
+    const r=await fetch(`/api/availability?date=${S.date}&service=${S.service}&size=${S.size}`);
+    const j=await r.json();
+    const slots=(j&&j.slots)||[];
+    if(!slots.length){ grid.innerHTML='<div class="slots-msg">No open times that day — try another. Mikey only takes 2 jobs a day.</div>';
+      $("#urgencyNote").style.display='none'; return; }
+    grid.innerHTML=slots.map(t=>`<button class="slot ${S.slot===t?'sel':''}" data-t="${t}">${fmtTime(t)}</button>`).join("");
+    $$("#slotGrid .slot").forEach(b=>b.onclick=()=>{ S.slot=b.dataset.t; $$("#slotGrid .slot").forEach(x=>x.classList.remove('sel')); b.classList.add('sel'); sync(); });
+    $("#urgencyNote").style.display = slots.length<=3 ? 'flex' : 'none';
+  }catch(e){
+    grid.innerHTML='<div class="slots-msg">Couldn\'t load times right now. Please <a href="tel:+14256007897" style="color:var(--red);font-weight:700">call/text (425) 600-7897</a> and Mikey will get you in.</div>';
+  }
+}
+// ---- Details ----
+function fillCities(){ $("#city").innerHTML='<option value="" disabled selected>Choose your city…</option>'+
+  CONFIG.cities.map(c=>`<option>${c}</option>`).join(""); }
+function bindDetails(){
+  const map={name:"name",phone:"phone",address:"address",city:"city",email:"email",notes:"notes"};
+  Object.entries(map).forEach(([id,key])=>{ const el=$("#"+id);
+    el.addEventListener("input",()=>{ S[key]=el.value; sync(); });
+    el.addEventListener("change",()=>{ S[key]=el.value; sync(); }); });
+  $("#ackWaterPower").addEventListener("change",e=>{S.ackWaterPower=e.target.checked;});
+  $("#smsConsent").addEventListener("change",e=>{S.smsConsent=e.target.checked;});
+  $("#wantQuote").addEventListener("change",e=>{S.wantQuote=e.target.checked;});
+}
+// ---- Review ----
+function renderReview(){
+  const rows=[];
+  rows.push(["Service", svc()?svc().name:""]);
+  rows.push(["Vehicle", (CONFIG.sizes.find(z=>z.id===S.size)?.label||"") + (S.vehicle?` · ${S.vehicle}`:"") ]);
+  if(S.addons.size) rows.push(["Add-ons", [...S.addons].map(id=>CONFIG.addons.find(a=>a.id===id).name).join(", ")]);
+  if(S.wantQuote) rows.push(["Also wants","Ceramic / paint quote"]);
+  rows.push(["When", `${S.dateLabel} · ${fmtTime(S.slot)}`]);
+  rows.push(["Where", `${S.address}, ${S.city}`]);
+  rows.push(["Name", S.name]); rows.push(["Phone", S.phone]);
+  $("#reviewCard").innerHTML = rows.filter(r=>r[1]).map(r=>
+    `<div class="rev-row"><span class="k">${r[0]}</span><span class="v">${escapeHtml(r[1])}</span></div>`).join("")
+    + `<div class="rev-total"><span>Estimated total</span><span>${money(total())}<small>final price confirmed by Mikey</small></span></div>`;
+}
+// vehicle text lives outside the input map (separate step)
+$("#vehicle").addEventListener("input",e=>{S.vehicle=e.target.value;});
+
+// ---- Navigation / validation ----
+function canAdvance(){
+  switch(S.step){
+    case 0: return !!S.service;
+    case 1: return !!S.size;
+    case 2: return true;
+    case 3: return !!(S.date&&S.slot);
+    case 4: return !!(S.name.trim()&&normalizePhone(S.phone)&&S.address.trim()&&S.city);
+    case 5: return true;
+    default: return false;
+  }
+}
+function sync(){
+  $$(".sdot").forEach(d=>{ const s=+d.dataset.s;
+    d.classList.toggle('done', s<Math.min(S.step,4)); d.classList.toggle('active', s===Math.min(S.step,4)); });
+  $("#steplabel").textContent = S.step<=4?`Step ${S.step+1} of 5`:"Review";
+  const showTotal = S.step>=1 && total()>0 && S.step<6;
+  $("#totalWrap").style.display = showTotal?'block':'none';
+  $("#totalVal").textContent = money(total());
+  $("#backBtn").style.display = (S.step>0&&S.step<6)?'inline-flex':'none';
+  const nb=$("#nextBtn");
+  if(S.step===5){ nb.textContent="Send my request →"; }
+  else if(S.step===4){ nb.textContent="Review →"; }
+  else { nb.textContent="Continue →"; }
+  nb.disabled = !canAdvance();
+  if(S.step===6){ $("#foot").style.display='none'; } else { $("#foot").style.display='block'; }
+}
+function show(step){
+  S.step=step;
+  $$(".panel").forEach(p=>p.classList.toggle('on', +p.dataset.panel===step));
+  window.scrollTo({top:0,behavior:'smooth'});
+  if(step===3&&S.date) loadSlots();
+  if(step===5) renderReview();
+  sync();
+}
+$("#nextBtn").onclick=async()=>{
+  if(!canAdvance())return;
+  if(S.step===5){ await submit(); return; }
+  show(S.step+1);
+};
+$("#backBtn").onclick=()=>{ if(S.step>0) show(S.step-1); };
+
+// ---- Submit ----
+async function submit(){
+  const nb=$("#nextBtn"); nb.disabled=true; nb.innerHTML='<span class="spin"></span> Sending…';
+  const payload={
+    service:S.service, serviceName:svc().name, size:S.size,
+    sizeLabel:CONFIG.sizes.find(z=>z.id===S.size)?.label,
+    vehicle:S.vehicle||"", addons:[...S.addons].map(id=>CONFIG.addons.find(a=>a.id===id).name),
+    wantQuote:S.wantQuote, date:S.date, dateLabel:S.dateLabel, slot:S.slot,
+    estimate:total(), name:S.name.trim(), phone:S.phone.trim(), address:S.address.trim(),
+    city:S.city, email:S.email.trim(), notes:S.notes.trim(),
+    ackWaterPower:S.ackWaterPower, smsConsent:S.smsConsent,
+    website:"" // honeypot (kept empty)
+  };
+  try{
+    const r=await fetch("/api/book",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});
+    const j=await r.json();
+    if(!j.ok) throw new Error(j.error||"failed");
+    $("#doneMsg").textContent = S.smsConsent
+      ? "Mikey got your request and just texted you a heads-up. He'll confirm and lock in your time — usually within the hour."
+      : "Mikey got your request and will call/text you shortly to confirm and lock in your time — usually within the hour.";
+    $("#doneCard").innerHTML =
+      `<div class="rev-row"><span class="k">Service</span><span class="v">${escapeHtml(svc().name)}</span></div>
+       <div class="rev-row"><span class="k">Requested</span><span class="v">${escapeHtml(S.dateLabel)} · ${fmtTime(S.slot)}</span></div>
+       <div class="rev-row"><span class="k">Estimate</span><span class="v">${money(total())}</span></div>`;
+    show(6);
+  }catch(e){
+    nb.disabled=false; nb.textContent="Send my request →";
+    alert("Something went wrong sending your request. Please call or text Mikey at (425) 600-7897 and he'll get you booked!");
+  }
+}
+
+// ---- helpers ----
+function isoDate(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function fmtTime(hhmm){ if(!hhmm)return""; let [h,m]=hhmm.split(":").map(Number); const ap=h>=12?"PM":"AM"; let hr=h%12; if(hr===0)hr=12; return `${hr}:${String(m).padStart(2,"0")} ${ap}`; }
+function normalizePhone(raw){ if(!raw)return null; const d=String(raw).replace(/\D/g,""); if(d.length===10)return "+1"+d; if(d.length===11&&d[0]==="1")return "+"+d; if(/^\+1\d{10}$/.test(raw))return raw; return null; }
+function escapeHtml(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+// ---- init ----
+renderServices(); renderSizes(); renderAddons(); renderDays(); fillCities(); bindDetails(); sync();
+</script>
+</body>
+</html>

@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-21·grow-suite';
+const BUILD = '2026-07-21·booking';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -147,6 +147,12 @@ async function handle(request) {
   // owner's marketing site). Accepts GET beacons and returns a 1x1 GIF.
   if (request.method === 'GET'  && pathname === '/px')             return handlePixel(url, request);
 
+  // ---- Public booking API (customer-facing /book.html — MUST stay above the /api auth gate) ----
+  if (request.method === 'GET'  && (pathname === '/book' || pathname === '/book/')) return Response.redirect(new URL('/book.html', request.url).toString(), 302);
+  if (request.method === 'GET'  && pathname === '/api/book-config')  return apiBookConfig();
+  if (request.method === 'GET'  && pathname === '/api/availability') return apiAvailability(url);
+  if (request.method === 'POST' && pathname === '/api/book')         return apiBook(request);
+
   if (request.method === 'GET'  && pathname === '/api/version')    return json({ ok: true, build: BUILD });
   if (request.method === 'POST' && pathname === '/api/login')      return apiLogin(request);
   if (request.method === 'POST' && pathname === '/api/logout')     return apiLogout();
@@ -176,6 +182,9 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/followup')   return apiFollowupAction(request);
   if (request.method === 'GET'  && pathname === '/api/config')     return apiGetConfig();
   if (request.method === 'POST' && pathname === '/api/config')     return apiSaveConfig(request);
+  // ---- Booking management (authed — the Bookings dashboard view) ----
+  if (request.method === 'GET'  && pathname === '/api/bookings')   return apiBookings(url);
+  if (request.method === 'POST' && pathname === '/api/booking')    return apiBookingAction(request);
   if (request.method === 'POST' && pathname === '/api/block')      return apiBlock(request);
   if (request.method === 'GET'  && pathname === '/api/migrate')    return apiMigrate(url);
   if (request.method === 'GET'  && pathname === '/api/templates')  return apiGetTemplates();
@@ -3887,4 +3896,215 @@ function cors(response) {
   r.headers.set('Access-Control-Allow-Origin', '*');
   r.headers.set('Access-Control-Allow-Headers', 'Content-Type');
   return r;
+}
+
+// ===========================================================================
+// Booking + calendar  (customer page: /book.html · admin view: Bookings tab)
+// ---------------------------------------------------------------------------
+// Additive module. Bookings live in ONE KV value (bk:index) — a small array of
+// full records — so a create is 1 write and an availability check is 1 read.
+// Availability = work rules (Mon–Sat 7a–4p last start, 2 jobs/day, 60-min drive
+// buffer, per-service durations) MINUS the day's pending/confirmed jobs. Every
+// booking also mirrors into the SMS dashboard as a lead thread so Mikey can talk
+// to the customer, and reminders reuse the existing scheduled-send cron.
+// v1 ships with the owner's approval as the double-book gate; Google Calendar
+// free/busy sync layers in next (busy times auto-hide from availability).
+// ===========================================================================
+function bookingConfig() {
+  return {
+    tz: 'America/Los_Angeles',
+    workDays: [1, 2, 3, 4, 5, 6],      // Mon–Sat (0 = Sun, off)
+    dayStart: '07:00', lastStart: '16:00',
+    stepMin: 30, bufferMin: 60, maxJobsPerDay: 2,
+    minLeadMin: 120, windowDays: 30,   // same-day OK (2h notice), 30 days out
+    durations: {                       // minutes, by service + vehicle size
+      full:     { sedan: 180, suv: 210, truck: 240 },
+      interior: { sedan: 90,  suv: 110, truck: 120 },
+      exterior: { sedan: 45,  suv: 60,  truck: 75 },
+    },
+    prices: {                          // "starting at", by size (from mikeysdetailing.com)
+      full:     { sedan: 299, suv: 339, truck: 379 },
+      interior: { sedan: 200, suv: 240, truck: 280 },
+      exterior: { sedan: 160, suv: 200, truck: 240 },
+    },
+    serviceNames: { full: 'Full Detail — In & Out', interior: 'Interior Detail', exterior: 'Exterior Detail' },
+    cities: ['Everett', 'Bothell', 'Lake Stevens', 'Mill Creek', 'Monroe', 'Marysville', 'Duvall', 'Snohomish'],
+  };
+}
+
+const BK_INDEX = 'bk:index';
+async function loadBookings() { return (await kv().get(BK_INDEX, { type: 'json' })) || []; }
+// ⚠ KV WRITE — one per booking create/confirm/cancel (user actions, not cron). Cheap.
+async function saveBookings(list) { await kv().put(BK_INDEX, JSON.stringify(list)); }
+
+// --- small time helpers (Pacific-aware, DST-correct) ---
+function bkHm2min(hm) { const p = String(hm).split(':'); return (+p[0]) * 60 + (+(p[1] || 0)); }
+function bkMin2hm(x) { return String(Math.floor(x / 60)).padStart(2, '0') + ':' + String(x % 60).padStart(2, '0'); }
+function bkFmt12(hm) { let [h, m] = String(hm).split(':').map(Number); const ap = h >= 12 ? 'PM' : 'AM'; let hr = h % 12; if (hr === 0) hr = 12; return `${hr}:${String(m || 0).padStart(2, '0')} ${ap}`; }
+function bkNiceDate(date) { return new Date(date + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }); }
+// Minutes to add to a Pacific wall-clock (treated as UTC) to get the real UTC epoch.
+function bkLaOffsetMin(ts) {
+  const s = new Date(ts).toLocaleString('en-US', { timeZone: 'America/Los_Angeles', hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const m = s.match(/(\d{2})\/(\d{2})\/(\d{4})[,\s]+(\d{2}):(\d{2}):(\d{2})/);
+  if (!m) return -480;
+  const asUTC = Date.UTC(+m[3], +m[1] - 1, +m[2], +m[4], +m[5], +m[6]);
+  return Math.round((asUTC - ts) / 60000);
+}
+function bkLaEpoch(dateStr, hhmm) {
+  const naive = Date.parse(dateStr + 'T' + hhmm + ':00Z');   // wall clock treated as UTC
+  return naive - bkLaOffsetMin(naive) * 60000;               // shift by the Pacific offset
+}
+
+// Open start-times for a date, given service + size. Read-only.
+async function bkAvailability(date, service, size) {
+  const cfg = bookingConfig();
+  const durMap = cfg.durations[service] || cfg.durations.full;
+  const dur = durMap[size] || durMap.suv || 180;
+  const dow = new Date(date + 'T12:00:00Z').getUTCDay();
+  if (!cfg.workDays.includes(dow)) return [];
+  const now = Date.now();
+  if (bkLaEpoch(date, cfg.dayStart) - now > cfg.windowDays * 86400000) return [];
+  if (bkLaEpoch(date, cfg.lastStart) < now) return [];       // day already past
+  const day = (await loadBookings()).filter((b) => b.date === date && (b.status === 'pending' || b.status === 'confirmed'));
+  if (day.length >= cfg.maxJobsPerDay) return [];
+  const occ = day.map((b) => ({ s: bkHm2min(b.slot), e: bkHm2min(b.slot) + (b.durationMin || dur) }));
+  const B = cfg.bufferMin, out = [];
+  for (let t = bkHm2min(cfg.dayStart); t <= bkHm2min(cfg.lastStart); t += cfg.stepMin) {
+    const start = t, end = t + dur;
+    if (bkLaEpoch(date, bkMin2hm(t)) < now + cfg.minLeadMin * 60000) continue;   // too soon / past
+    if (occ.some((o) => start < o.e + B && o.s < end + B)) continue;             // clashes w/ buffer
+    out.push(bkMin2hm(t));
+  }
+  return out;
+}
+
+function apiBookConfig() {
+  const c = bookingConfig();
+  return json({ ok: true, config: { services: c.serviceNames, prices: c.prices, cities: c.cities, durations: c.durations } });
+}
+
+async function apiAvailability(url) {
+  const date = url.searchParams.get('date') || '';
+  const service = url.searchParams.get('service') || 'full';
+  const size = url.searchParams.get('size') || 'suv';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return json({ ok: false, error: 'bad_date' }, 422);
+  return json({ ok: true, date, slots: await bkAvailability(date, service, size) });
+}
+
+// Customer submits the booking wizard. Stores the booking (pending), mirrors it
+// into the SMS dashboard as a lead, instant-texts the customer, alerts Mikey.
+async function apiBook(request) {
+  let b; try { b = await request.json(); } catch { return cors(json({ ok: false, error: 'bad_json' }, 400)); }
+  if (b && (b.website || b._gotcha || b.hp)) return cors(json({ ok: true, id: 'skipped' }, 200)); // honeypot
+  const ip = request.headers.get('CF-Connecting-IP') || '';
+  if (ip) {
+    const rk = 'rl:book:' + ip;
+    const n = parseInt((await kv().get(rk)) || '0', 10);
+    if (n >= 6) return cors(json({ ok: false, error: 'rate_limited' }, 429));
+    await kv().put(rk, String(n + 1), { expirationTtl: 3600 });
+  }
+  const cfg = bookingConfig();
+  const service = String(b.service || ''), size = String(b.size || '');
+  const date = String(b.date || ''), slot = String(b.slot || '');
+  const name = String(b.name || '').trim(), phone = normalizePhone(b.phone);
+  const address = String(b.address || '').trim(), city = String(b.city || '').trim();
+  if (!cfg.serviceNames[service] || !cfg.durations[service]) return cors(json({ ok: false, error: 'bad_service' }, 422));
+  if (!(cfg.prices[service] && cfg.prices[service][size])) return cors(json({ ok: false, error: 'bad_size' }, 422));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(slot)) return cors(json({ ok: false, error: 'bad_time' }, 422));
+  if (!name || !phone) return cors(json({ ok: false, error: 'missing_contact' }, 422));
+  if (!address || !city) return cors(json({ ok: false, error: 'missing_address' }, 422));
+  // Re-check the slot so two customers can't grab the same time between load and submit.
+  if (!(await bkAvailability(date, service, size)).includes(slot)) return cors(json({ ok: false, error: 'slot_taken' }, 409));
+
+  const first = name.split(/\s+/)[0];
+  const durationMin = cfg.durations[service][size], base = cfg.prices[service][size];
+  const addons = Array.isArray(b.addons) ? b.addons.map((x) => String(x)).slice(0, 12) : [];
+  const estimate = Math.max(0, Math.round(Number(b.estimate) || base));
+  const dateLabel = String(b.dateLabel || bkNiceDate(date));
+  const rec = {
+    id: genId(), status: 'pending', createdAt: Date.now(),
+    service, serviceName: cfg.serviceNames[service], size, sizeLabel: String(b.sizeLabel || size),
+    vehicle: String(b.vehicle || '').trim(), addons, wantQuote: !!b.wantQuote,
+    date, slot, dateLabel, apptAt: bkLaEpoch(date, slot), durationMin,
+    estimate, base, name, phone, address, city, email: String(b.email || '').trim(),
+    notes: String(b.notes || '').trim(), ackWaterPower: b.ackWaterPower !== false, smsConsent: b.smsConsent !== false,
+  };
+  const all = await loadBookings(); all.unshift(rec); await saveBookings(all);
+
+  const detail = [
+    `🗓 BOOKING REQUEST (pending)`,
+    `${rec.serviceName} · ${rec.sizeLabel}${rec.vehicle ? ` · ${rec.vehicle}` : ''}`,
+    rec.addons.length ? `Add-ons: ${rec.addons.join(', ')}` : null,
+    rec.wantQuote ? `Also wants: ceramic / paint quote` : null,
+    `When: ${dateLabel} at ${bkFmt12(slot)}`,
+    `Where: ${address}, ${city}`,
+    `Estimate: $${estimate}`,
+    rec.email ? `Email: ${rec.email}` : null,
+    `Water & power on site: ${rec.ackWaterPower ? 'yes' : 'NEEDS to sort out'}`,
+    rec.notes ? `Notes: ${rec.notes}` : null,
+  ].filter(Boolean).join('\n');
+
+  const thread = await loadThread(phone);
+  if (!thread.name) thread.name = name;
+  if (!thread.status) { thread.status = 'new'; thread.statusAt = Date.now(); }
+  if (!thread.tags.includes('booking')) thread.tags.push('booking');
+  thread.appointmentAt = rec.apptAt;
+  const stamp = new Date().toLocaleString('en-US', { timeZone: cfg.tz });
+  thread.notes = (thread.notes ? thread.notes + '\n\n' : '') + `${detail}\n(received ${stamp})`;
+  if (rec.smsConsent) {
+    const msg = `Hey ${first}, it's Mikey! Got your request for ${dateLabel} at ${bkFmt12(slot)} (${rec.serviceName}). I'll text you shortly to confirm and lock it in. Talk soon! - Mikey`;
+    try { await sendSms(phone, msg); thread.messages.push({ id: genId(), dir: 'out', body: msg, ts: Date.now(), kind: 'booking', status: 'sent' }); } catch (e) {}
+  }
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+  notifyMikey(`🗓 New booking — ${name}`, `${detail}\n\nOpen your dashboard → Bookings to confirm.`).catch(() => {});
+
+  return cors(json({ ok: true, id: rec.id }, 200));
+}
+
+async function apiBookings(url) {
+  const status = url.searchParams.get('status') || '';
+  let all = await loadBookings();
+  if (status) all = all.filter((b) => b.status === status);
+  const rank = { pending: 0, confirmed: 1, done: 2, declined: 3, cancelled: 4 };
+  all.sort((a, b) => (rank[a.status] - rank[b.status]) || (a.apptAt - b.apptAt));
+  return json({ ok: true, bookings: all });
+}
+
+// Confirm / decline / cancel / complete a booking. Confirm texts the customer and
+// queues the 24h + morning-of reminders through the existing scheduled-send cron.
+async function apiBookingAction(request) {
+  const d = await readJson(request);
+  const id = String(d.id || ''), action = String(d.action || '');
+  const all = await loadBookings();
+  const bk = all.find((x) => x.id === id);
+  if (!bk) return json({ ok: false, error: 'not_found' }, 404);
+
+  if (action === 'confirm') {
+    bk.status = 'confirmed'; bk.confirmedAt = Date.now();
+    const first = (bk.name || '').split(/\s+/)[0];
+    const when = `${bk.dateLabel} at ${bkFmt12(bk.slot)}`;
+    const thread = await loadThread(bk.phone);
+    if (!thread.tags.includes('booking')) thread.tags.push('booking');
+    thread.appointmentAt = bk.apptAt;
+    if (bk.smsConsent) {
+      try { await sendSms(bk.phone, `You're all set for ${when} — ${bk.serviceName}. I come to you; just have water & power within about 20 ft of the car. I'll text when I'm on my way. - Mikey`); } catch (e) {}
+      const now = Date.now(), r24 = bk.apptAt - 86400000, rAm = bkLaEpoch(bk.date, '07:30');
+      const add = [];
+      if (r24 > now + 60000) add.push({ id: genId(), body: `Quick reminder: I'm detailing your ${bk.vehicle || 'car'} tomorrow at ${bkFmt12(bk.slot)}. Please have it accessible with water & power within ~20 ft. See you then! - Mikey`, sendAt: r24 });
+      if (rAm > now + 60000 && rAm < bk.apptAt) add.push({ id: genId(), body: `Morning ${first}! I'm detailing your car today at ${bkFmt12(bk.slot)}. I'll text when I'm headed your way. - Mikey`, sendAt: rAm });
+      if (add.length) { thread.scheduled.push(...add); thread.scheduled.sort((a, b) => a.sendAt - b.sendAt); }
+    }
+    await saveThread(thread);
+    await updateIndexEntry(thread);
+  } else if (action === 'decline' || action === 'cancel') {
+    bk.status = action === 'decline' ? 'declined' : 'cancelled';
+  } else if (action === 'complete') {
+    bk.status = 'done';
+  } else {
+    return json({ ok: false, error: 'bad_action' }, 422);
+  }
+  await saveBookings(all);
+  return json({ ok: true, booking: bk });
 }

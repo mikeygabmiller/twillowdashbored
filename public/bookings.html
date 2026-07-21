@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d0f">
+<title>Bookings · Mikey's Detailing</title>
+<link rel="icon" href="/favicon.svg">
+<style>
+  :root{
+    --bg:#0c0c0e; --card:#17171b; --card2:#1f1f25; --line:#2a2a31; --line2:#37373f;
+    --txt:#f4f4f6; --muted:#a2a2ac; --faint:#71717a;
+    --red:#ff2d3f; --red2:#e11020; --amber:#f5a524; --green:#2fd07a; --blue:#4c9ffe;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:var(--font);font-size:16px;line-height:1.5;
+    -webkit-font-smoothing:antialiased;padding-bottom:40px;}
+  .wrap{max-width:680px;margin:0 auto;padding:0 15px;}
+  a{color:var(--red);}
+  header{position:sticky;top:0;z-index:20;background:rgba(12,12,14,.9);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);}
+  .head-in{max-width:680px;margin:0 auto;padding:12px 15px;display:flex;align-items:center;gap:12px;}
+  .back{color:var(--muted);text-decoration:none;font-size:14px;display:flex;align-items:center;gap:5px;}
+  .htitle{font-weight:800;font-size:17px;display:flex;align-items:center;gap:8px;}
+  .htitle .dot{width:8px;height:8px;border-radius:50%;background:var(--red);box-shadow:0 0 10px var(--red);}
+  .refresh{margin-left:auto;background:var(--card2);border:1px solid var(--line2);color:var(--txt);
+    padding:7px 13px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;}
+  .refresh:active{transform:translateY(1px);}
+
+  .tabs{display:flex;gap:8px;padding:14px 0 6px;position:sticky;top:53px;background:var(--bg);z-index:10;}
+  .tab{flex:1;text-align:center;background:var(--card);border:1.5px solid var(--line);color:var(--muted);
+    padding:10px 8px;border-radius:11px;font-weight:700;font-size:13.5px;cursor:pointer;}
+  .tab.on{border-color:var(--red);color:#fff;background:rgba(255,45,63,.1);}
+  .tab .c{display:inline-block;min-width:19px;font-size:11px;background:var(--red);color:#fff;border-radius:9px;
+    padding:0 5px;margin-left:5px;vertical-align:1px;}
+  .tab.on .c{background:var(--red);}
+
+  .list{padding:8px 0 0;}
+  .empty{text-align:center;color:var(--faint);padding:50px 20px;font-size:15px;}
+  .msg{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;text-align:center;color:var(--muted);margin-top:20px;}
+  .msg b{color:var(--txt);}
+
+  .bk{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:15px 16px;margin-bottom:13px;box-shadow:0 2px 10px rgba(0,0,0,.2);}
+  .bk-top{display:flex;align-items:flex-start;gap:10px;}
+  .bk-when{flex:0 0 auto;text-align:center;background:var(--card2);border:1px solid var(--line2);border-radius:12px;
+    padding:8px 11px;min-width:64px;}
+  .bk-when .dow{font-size:11px;color:var(--muted);text-transform:uppercase;font-weight:700;}
+  .bk-when .dnum{font-size:22px;font-weight:800;line-height:1.1;} .bk-when .mon{font-size:10px;color:var(--faint);text-transform:uppercase;}
+  .bk-when .time{font-size:11.5px;color:var(--red);font-weight:700;margin-top:3px;border-top:1px solid var(--line2);padding-top:3px;}
+  .bk-main{flex:1;min-width:0;}
+  .bk-name{font-weight:800;font-size:17px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+  .pill{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;padding:2px 8px;border-radius:999px;}
+  .pill.pending{background:rgba(245,165,36,.16);color:var(--amber);}
+  .pill.confirmed{background:rgba(47,208,122,.16);color:var(--green);}
+  .pill.done{background:rgba(120,120,130,.2);color:var(--muted);}
+  .pill.declined,.pill.cancelled{background:rgba(120,120,130,.14);color:var(--faint);}
+  .bk-svc{color:var(--txt);font-size:14.5px;margin-top:3px;font-weight:600;}
+  .bk-meta{color:var(--muted);font-size:13px;margin-top:5px;line-height:1.5;}
+  .bk-meta .row{display:flex;gap:7px;} .bk-meta .row .k{color:var(--faint);flex:0 0 auto;}
+  .est{font-weight:800;color:var(--txt);}
+  .warn{color:var(--amber);font-weight:600;}
+  .quote{color:var(--blue);font-weight:600;}
+  .bk-actions{display:flex;gap:9px;margin-top:14px;flex-wrap:wrap;}
+  .b{flex:1;min-width:120px;border:none;border-radius:11px;padding:12px;font-weight:800;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;}
+  .b:active{transform:translateY(1px);}
+  .b.primary{background:var(--green);color:#08361d;}
+  .b.call{background:var(--card2);color:var(--txt);border:1.5px solid var(--line2);}
+  .b.ghost{background:transparent;color:var(--muted);border:1.5px solid var(--line);}
+  .b.danger{background:transparent;color:#ff6b78;border:1.5px solid #4a2226;}
+  .b.sm{flex:0 0 auto;min-width:0;padding:10px 14px;}
+  .contact{display:flex;gap:9px;margin-top:11px;}
+  .contact a{flex:1;text-align:center;background:var(--card2);border:1.5px solid var(--line2);color:var(--txt);
+    text-decoration:none;padding:10px;border-radius:11px;font-weight:700;font-size:13.5px;}
+  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(20px);background:var(--green);
+    color:#08361d;padding:11px 20px;border-radius:12px;font-weight:800;font-size:14px;opacity:0;pointer-events:none;transition:.3s;z-index:50;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+  .toast.err{background:#ff4d5e;color:#fff;}
+  .spin{width:26px;height:26px;border:3px solid var(--line2);border-top-color:var(--red);border-radius:50%;
+    animation:sp .7s linear infinite;margin:44px auto;} @keyframes sp{to{transform:rotate(360deg)}}
+  .book-link{background:var(--card);border:1px dashed var(--line2);border-radius:12px;padding:12px 14px;margin:6px 0 2px;
+    font-size:13px;color:var(--muted);display:flex;align-items:center;gap:8px;justify-content:space-between;flex-wrap:wrap;}
+  .book-link a{font-weight:700;}
+</style>
+</head>
+<body>
+<header>
+  <div class="head-in">
+    <a class="back" href="/">← Dashboard</a>
+    <div class="htitle"><span class="dot"></span> Bookings</div>
+    <button class="refresh" id="refreshBtn">↻ Refresh</button>
+  </div>
+</header>
+
+<div class="wrap">
+  <div class="book-link">
+    <span>🔗 Your customer booking link:</span>
+    <a href="/book.html" target="_blank" id="bookUrl">/book.html</a>
+  </div>
+
+  <div class="tabs">
+    <div class="tab on" data-f="pending">Pending<span class="c" id="cPending">0</span></div>
+    <div class="tab" data-f="upcoming">Upcoming<span class="c" id="cUpcoming">0</span></div>
+    <div class="tab" data-f="all">All</div>
+  </div>
+
+  <div class="list" id="list"><div class="spin"></div></div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+var $=function(s,r){return (r||document).querySelector(s);};
+var state={filter:"pending", bookings:null};
+
+function api(path,opts){ return fetch(path,Object.assign({headers:{"Content-Type":"application/json"}},opts||{})).then(function(r){
+  if(r.status===401){ throw {auth:true}; } return r.json(); }); }
+
+function load(){
+  $("#list").innerHTML='<div class="spin"></div>';
+  api("/api/bookings").then(function(d){
+    state.bookings=(d&&d.bookings)||[];
+    render();
+  }).catch(function(e){
+    if(e&&e.auth){ $("#list").innerHTML='<div class="msg">🔒 <b>Please log in first.</b><br>Open your <a href="/">dashboard</a>, enter your PIN, then come back here.</div>'; }
+    else { $("#list").innerHTML='<div class="msg">Couldn\'t load bookings. <a href="#" onclick="load();return false">Try again</a>.</div>'; }
+  });
+}
+
+function counts(){
+  var b=state.bookings||[], now=Date.now();
+  var pending=b.filter(function(x){return x.status==="pending";}).length;
+  var upcoming=b.filter(function(x){return x.status==="confirmed" && x.apptAt>=now-3600000;}).length;
+  $("#cPending").textContent=pending; $("#cUpcoming").textContent=upcoming;
+  $("#cPending").style.display=pending?"":"none";
+}
+
+function visible(){
+  var b=state.bookings||[], now=Date.now();
+  if(state.filter==="pending") return b.filter(function(x){return x.status==="pending";});
+  if(state.filter==="upcoming") return b.filter(function(x){return x.status==="confirmed" && x.apptAt>=now-3600000;});
+  return b;
+}
+
+function render(){
+  counts();
+  var items=visible();
+  if(!items.length){
+    var msg=state.filter==="pending"?"No pending requests. 🎉":state.filter==="upcoming"?"No upcoming jobs booked yet.":"No bookings yet.";
+    $("#list").innerHTML='<div class="empty">'+msg+'</div>'; return;
+  }
+  $("#list").innerHTML=items.map(card).join("");
+  bindCards();
+}
+
+function card(b){
+  var d=new Date(b.date+"T12:00:00Z");
+  var dow=d.toLocaleDateString("en-US",{weekday:"short",timeZone:"UTC"});
+  var dnum=d.toLocaleDateString("en-US",{day:"numeric",timeZone:"UTC"});
+  var mon=d.toLocaleDateString("en-US",{month:"short",timeZone:"UTC"});
+  var meta=[];
+  meta.push('<div class="row"><span class="k">Vehicle</span><span>'+esc(b.sizeLabel||b.size)+(b.vehicle?" · "+esc(b.vehicle):"")+'</span></div>');
+  if(b.addons&&b.addons.length) meta.push('<div class="row"><span class="k">Add-ons</span><span>'+esc(b.addons.join(", "))+'</span></div>');
+  if(b.wantQuote) meta.push('<div class="row"><span class="k">Also</span><span class="quote">Wants ceramic / paint quote</span></div>');
+  meta.push('<div class="row"><span class="k">Where</span><span>'+esc(b.address||"")+", "+esc(b.city||"")+'</span></div>');
+  meta.push('<div class="row"><span class="k">Est.</span><span class="est">$'+ (b.estimate||b.base||0) +'</span></div>');
+  if(b.ackWaterPower===false) meta.push('<div class="row"><span class="k">⚠</span><span class="warn">No water/power confirmed — sort out on site</span></div>');
+  if(b.notes) meta.push('<div class="row"><span class="k">Notes</span><span>'+esc(b.notes)+'</span></div>');
+
+  var actions="";
+  var tel=(b.phone||"").replace(/[^\d+]/g,"");
+  if(b.status==="pending"){
+    actions='<div class="contact"><a href="tel:'+tel+'">📞 Call</a><a href="sms:'+tel+'">💬 Text</a></div>'
+      +'<div class="bk-actions">'
+      +'<button class="b primary" data-act="confirm" data-id="'+b.id+'">✓ Confirm &amp; text</button>'
+      +'<button class="b danger sm" data-act="decline" data-id="'+b.id+'">Decline</button></div>';
+  } else if(b.status==="confirmed"){
+    actions='<div class="contact"><a href="tel:'+tel+'">📞 Call</a><a href="sms:'+tel+'">💬 Text</a></div>'
+      +'<div class="bk-actions">'
+      +'<button class="b call" data-act="complete" data-id="'+b.id+'">Mark done</button>'
+      +'<button class="b ghost sm" data-act="cancel" data-id="'+b.id+'">Cancel</button></div>';
+  }
+  return '<div class="bk">'
+    +'<div class="bk-top">'
+      +'<div class="bk-when"><div class="dow">'+dow+'</div><div class="dnum">'+dnum+'</div><div class="mon">'+mon+'</div><div class="time">'+esc(fmt12(b.slot))+'</div></div>'
+      +'<div class="bk-main">'
+        +'<div class="bk-name">'+esc(b.name||"—")+' <span class="pill '+b.status+'">'+b.status+'</span></div>'
+        +'<div class="bk-svc">'+esc(b.serviceName||b.service||"")+'</div>'
+        +'<div class="bk-meta">'+meta.join("")+'</div>'
+      +'</div>'
+    +'</div>'
+    +actions
+  +'</div>';
+}
+
+function bindCards(){
+  Array.prototype.forEach.call(document.querySelectorAll("[data-act]"),function(btn){
+    btn.onclick=function(){
+      var act=btn.getAttribute("data-act"), id=btn.getAttribute("data-id");
+      var confirmMsg={confirm:"Confirm this booking and text the customer their confirmation + reminders?",
+        decline:"Decline this request? (The slot frees up. The customer is NOT auto-texted — reach out yourself.)",
+        cancel:"Cancel this confirmed booking?", complete:"Mark this job as done?"}[act];
+      if(confirmMsg && !window.confirm(confirmMsg)) return;
+      btn.disabled=true; btn.textContent="…";
+      api("/api/booking",{method:"POST",body:JSON.stringify({id:id,action:act})}).then(function(d){
+        if(d&&d.ok){ toast(act==="confirm"?"Confirmed & customer texted ✓":"Updated ✓"); load(); }
+        else { toast((d&&d.error)||"Failed",true); btn.disabled=false; }
+      }).catch(function(e){ toast(e&&e.auth?"Please log in":"Network error",true); btn.disabled=false; });
+    };
+  });
+}
+
+function toast(m,err){ var t=$("#toast"); t.textContent=m; t.className="toast show"+(err?" err":""); setTimeout(function(){t.className="toast";},2200); }
+function esc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+function fmt12(hm){ if(!hm)return""; var p=String(hm).split(":"),h=+p[0],m=+p[1]||0; var ap=h>=12?"PM":"AM"; var hr=h%12; if(hr===0)hr=12; return hr+":"+String(m).padStart(2,"0")+" "+ap; }
+
+Array.prototype.forEach.call(document.querySelectorAll(".tab"),function(t){
+  t.onclick=function(){ state.filter=t.getAttribute("data-f");
+    Array.prototype.forEach.call(document.querySelectorAll(".tab"),function(x){x.classList.toggle("on",x===t);});
+    render(); };
+});
+$("#refreshBtn").onclick=load;
+try{ $("#bookUrl").textContent=location.origin+"/book.html"; $("#bookUrl").href="/book.html"; }catch(e){}
+load();
+</script>
+</body>
+</html>

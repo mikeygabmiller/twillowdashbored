@@ -1624,6 +1624,7 @@
     <div class="ditem" id="aiCmdItem"><span class="ic" data-ic="sparkles"></span>Command AI<span class="n" style="color:var(--accent-text)">new</span></div>
 
     <div class="sec-lbl">Views</div>
+    <div class="ditem" id="bookingsItem" onclick="location.href='/bookings.html'"><span class="ic" data-ic="calendar-days"></span>Bookings<span class="n" style="color:var(--accent-text)">new</span></div>
     <div class="ditem" data-tab="messages"><span class="ic" data-ic="message-square"></span>All messages<span class="n" id="mnAll"></span></div>
     <div class="ditem" data-tab="email"><span class="ic" data-ic="mail"></span>Email inbox<span class="n" id="mnEmail"></span></div>
     <div class="ditem" data-filter="unread"><span class="ic" data-ic="mail"></span>Unread<span class="n" id="mnUnread"></span></div>
@@ -1802,7 +1803,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-21·grow-suite";
+  var APP_BUILD="2026-07-21·booking";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
