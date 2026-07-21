@@ -526,8 +526,33 @@ async function loadLiveConfig(){
       if(pl) pl.innerHTML='<span class="stars">★★★★★</span> <b>'+escapeHtml(c.proof.rating||"5.0")+'</b> · '+escapeHtml(String(c.proof.reviews||""))+' reviews<br>'+escapeHtml(c.proof.cars||"")+' cars detailed'; }
   }catch(e){ /* offline / not deployed yet → use baked defaults */ }
 }
+// ---- prefill from the QQC handoff (/book?service=&size=&name=&phone=&email=&city=&vehicle=) ----
+function readPrefillIntoState(){
+  try{
+    var p=new URLSearchParams(location.search);
+    var svc=p.get("service"); if(svc && CONFIG.services.some(function(s){return s.id===svc;})) S.service=svc;
+    var size=p.get("size"); if(size && CONFIG.sizes.some(function(z){return z.id===size;})) S.size=size;
+    var nm=p.get("name"); if(nm) S.name=nm;
+    var ph=p.get("phone"); if(ph) S.phone=ph;
+    var em=p.get("email"); if(em) S.email=em;
+    var vh=p.get("vehicle"); if(vh) S.vehicle=vh;
+    var ct=p.get("city"); if(ct && CONFIG.cities.indexOf(ct)>=0) S.city=ct;
+    if(S.service && S.size) return 3;  // everything known → jump straight to the time-picker
+    if(S.service) return 1;
+  }catch(e){}
+  return 0;
+}
+function setPrefillInputs(){
+  var m={name:S.name,phone:S.phone,email:S.email,vehicle:S.vehicle,city:S.city},el;
+  for(var id in m){ if(m[id] && (el=document.getElementById(id))) el.value=m[id]; }
+}
 // ---- init ----
-(async function(){ await loadLiveConfig(); renderServices(); renderSizes(); renderAddons(); renderDays(); fillCities(); bindDetails(); sync(); })();
+(async function(){
+  await loadLiveConfig();
+  var start=readPrefillIntoState();
+  renderServices(); renderSizes(); renderAddons(); renderDays(); fillCities(); bindDetails(); setPrefillInputs();
+  if(start) show(start); else sync();
+})();
 </script>
 </body>
 </html>
