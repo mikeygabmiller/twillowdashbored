@@ -1278,6 +1278,74 @@
   /* accent-tinted gradient background */
   html.ui-bg-gradient body{background:radial-gradient(125% 100% at 50% -8%,color-mix(in srgb,var(--accent) 9%,var(--bg)),var(--bg) 58%) fixed}
 
+  /* ---- Grow hub (full-screen business-growth suite, mirrors money shell) ---- */
+  .grow{position:fixed;inset:0;z-index:85;background:var(--bg);display:none;flex-direction:column}
+  .grow.show{display:flex}
+  .gr-head{display:flex;align-items:center;gap:10px;padding:calc(10px + var(--safe-top)) 12px 10px;border-bottom:1px solid var(--line);background:var(--panel);flex:none}
+  .gr-title{flex:1;min-width:0}
+  .gr-title b{font-size:17px;letter-spacing:-.01em}
+  .gr-title small{display:block;color:var(--muted2);font-size:11.5px;margin-top:1px}
+  .gr-body{flex:1;overflow-y:auto;min-height:0;-webkit-overflow-scrolling:touch;padding:14px 14px calc(88px + var(--safe-bottom));max-width:660px;width:100%;margin:0 auto}
+  .gr-nav{position:absolute;left:0;right:0;bottom:0;display:flex;background:color-mix(in srgb,var(--panel) 92%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line2);padding-bottom:var(--safe-bottom);z-index:4;overflow-x:auto;scrollbar-width:none}
+  .gr-nav::-webkit-scrollbar{display:none}
+  .gr-nav button{flex:1 0 auto;min-width:72px;background:none;border:none;color:var(--muted2);font-size:10.5px;font-weight:700;padding:9px 8px 11px;display:flex;flex-direction:column;gap:3px;align-items:center;user-select:none;-webkit-user-select:none}
+  .gr-nav button .e{display:flex;line-height:1}.gr-nav button .e svg{width:20px;height:20px}
+  .gr-nav button.active{color:var(--accent-text)}
+  /* Grow hub landing hero */
+  .gr-hero{background:linear-gradient(135deg,var(--accent),var(--accent-dark));color:#fff;border-radius:18px;padding:18px;margin-bottom:6px;box-shadow:0 12px 28px var(--accent-soft)}
+  .gr-hero h2{margin:0;font-size:21px;letter-spacing:-.02em}
+  .gr-hero p{margin:6px 0 0;font-size:13px;opacity:.92;line-height:1.5}
+  .gr-tools{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+  .gr-tool{display:flex;gap:12px;align-items:flex-start;background:var(--panel);border:1px solid var(--line2);border-radius:15px;padding:14px;cursor:pointer;transition:border-color .14s,transform .08s;text-align:left}
+  .gr-tool:hover{border-color:var(--accent)}.gr-tool:active{transform:scale(.98)}
+  .gr-tool .gt-ic{flex:none;width:40px;height:40px;border-radius:11px;background:var(--accent-soft);color:var(--accent-text);display:flex;align-items:center;justify-content:center}
+  .gr-tool .gt-b{min-width:0}
+  .gr-tool .gt-t{font-weight:800;font-size:14px;letter-spacing:-.01em}
+  .gr-tool .gt-s{font-size:11.5px;color:var(--muted);margin-top:3px;line-height:1.4}
+  .gr-sec{font-size:13px;font-weight:800;margin:20px 2px 10px;display:flex;align-items:center;gap:8px}
+  .gr-sec .gs-ic{color:var(--accent-text);display:flex}
+  .gr-back{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:700;color:var(--accent-text);background:none;border:0;cursor:pointer;padding:2px 0;margin-bottom:4px}
+  /* code / snippet box */
+  .code-box{background:#0c0e13;border:1px solid var(--line);border-radius:12px;padding:12px 13px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;color:#c7d0dd;white-space:pre-wrap;word-break:break-all;line-height:1.5;position:relative}
+  :root[data-theme="light"] .code-box{background:#0f1420;color:#d6deea}
+  .code-copy{margin-top:9px}
+  /* big number tiles */
+  .big-tiles{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:4px}
+  .big-tile{background:var(--panel);border:1px solid var(--line2);border-radius:15px;padding:15px 16px}
+  .big-tile .bt-v{font-size:29px;font-weight:850;letter-spacing:-.03em;font-variant-numeric:tabular-nums}
+  .big-tile .bt-l{font-size:11.5px;color:var(--muted2);font-weight:700;margin-top:2px}
+  .big-tile .bt-d{font-size:11px;font-weight:800;margin-top:6px}
+  .bt-d.up{color:#34d399}.bt-d.down{color:#fb7185}
+  /* horizontal bar list (top pages / referrers) */
+  .hbar{margin-bottom:9px}
+  .hbar-top{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px;gap:10px}
+  .hbar-top .hb-k{color:var(--text);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hbar-top .hb-n{color:var(--muted2);font-weight:800;flex:none}
+  .hbar-track{height:7px;background:var(--panel2);border-radius:5px;overflow:hidden}
+  .hbar-fill{height:100%;background:var(--accent);border-radius:5px;transition:width .5s}
+  /* checklist (SEO/GBP) */
+  .ck-item{display:flex;gap:12px;align-items:flex-start;padding:12px 2px;border-bottom:1px solid var(--line2)}
+  .ck-item:last-child{border-bottom:0}
+  .ck-box{width:23px;height:23px;flex:none;border:2px solid var(--line);border-radius:7px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#fff;transition:.14s;margin-top:1px}
+  .ck-box.on{background:var(--green);border-color:var(--green)}
+  .ck-b{flex:1;min-width:0}
+  .ck-t{font-weight:700;font-size:13.5px}
+  .ck-item.done .ck-t{color:var(--muted2);text-decoration:line-through}
+  .ck-s{font-size:11.5px;color:var(--muted);margin-top:2px;line-height:1.45}
+  .ck-progress{height:9px;border-radius:6px;background:var(--panel2);overflow:hidden;margin:4px 0 14px}
+  .ck-progress .ckp{height:100%;background:var(--green);border-radius:6px;transition:width .5s}
+  /* AI content studio */
+  .cs-seg{display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;padding-bottom:4px;margin-bottom:11px}
+  .cs-seg::-webkit-scrollbar{display:none}
+  .cs-seg button{flex:none;font-size:12px;font-weight:700;color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:7px 13px;white-space:nowrap;cursor:pointer}
+  .cs-seg button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text)}
+  .cs-out{background:var(--panel);border:1px solid var(--line2);border-radius:13px;padding:14px;font-size:14px;line-height:1.6;white-space:pre-wrap;min-height:80px;margin-top:11px}
+  .cs-out.empty{color:var(--muted2);display:flex;align-items:center;gap:8px;min-height:60px}
+  /* generic grow input */
+  .gr-input{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:12px;color:var(--text);padding:12px 13px;font-size:14.5px;font-family:inherit;outline:none}
+  .gr-input:focus{border-color:var(--accent)}
+  textarea.gr-input{min-height:70px;resize:vertical}
+
   /* ---- Customize hub (full-screen, mirrors the money app shell) ---- */
   .cz{position:fixed;inset:0;z-index:90;background:var(--bg);display:none;flex-direction:column}
   .cz.show{display:flex}
@@ -1384,6 +1452,7 @@
       <button class="navitem" data-tab="leads"><span class="ic" data-ic="clipboard-list"></span>Leads</button>
       <button class="navitem" data-tab="money"><span class="ic" data-ic="dollar"></span><span class="ndot" id="navMoney"></span>Money</button>
       <button class="navitem" data-tab="email"><span class="ic" data-ic="mail"></span><span class="ndot" id="navEmail"></span>Email</button>
+      <button class="navitem" data-tab="grow"><span class="ic" data-ic="rocket"></span>Grow</button>
       <button class="navitem" data-tab="insights"><span class="ic" data-ic="bar-chart"></span>Insights</button>
       <button class="navitem" data-tab="customize"><span class="ic" data-ic="sliders"></span>Customize</button>
     </nav>
@@ -1563,6 +1632,7 @@
     <div class="ditem" data-tab="scheduled"><span class="ic" data-ic="calendar-days"></span>Scheduled<span class="n" id="mnSched"></span></div>
     <div class="ditem" data-tab="archived"><span class="ic" data-ic="archive"></span>Archived<span class="n" id="mnArch"></span></div>
     <div class="ditem" id="moneyItem"><span class="ic" data-ic="dollar"></span>Money tracker</div>
+    <div class="ditem" id="growItem"><span class="ic" data-ic="rocket"></span>Grow — business suite<span class="n" style="color:var(--accent-text)">new</span></div>
 
     <div class="sec-lbl">Auto follow-up settings</div>
     <div class="fu-settings" id="fuSettings"></div>
@@ -1676,6 +1746,24 @@
 </div>
 <div class="cz-tour" id="czTour"></div>
 
+<!-- Grow — business growth suite (CRM, Reviews, Website analytics, Local SEO, Content) -->
+<div class="grow" id="growApp">
+  <div class="gr-head">
+    <button class="btn icon" id="grBack" data-ic="chevron-left" aria-label="Back"></button>
+    <div class="gr-title"><b id="grTitle">Grow</b><small id="grSub">Tools to grow Mikey's Mobile Detailing</small></div>
+    <button class="btn icon" id="grRefresh" data-ic="refresh-cw" aria-label="Refresh"></button>
+  </div>
+  <div class="gr-body" id="grBody"></div>
+  <nav class="gr-nav" id="grNav">
+    <button data-gv="home" class="active"><span class="e" data-ic="rocket" data-ic-size="20"></span>Grow</button>
+    <button data-gv="crm"><span class="e" data-ic="users" data-ic-size="20"></span>Customers</button>
+    <button data-gv="reviews"><span class="e" data-ic="trophy" data-ic-size="20"></span>Reviews</button>
+    <button data-gv="analytics"><span class="e" data-ic="bar-chart" data-ic-size="20"></span>Website</button>
+    <button data-gv="seo"><span class="e" data-ic="target" data-ic-size="20"></span>Local SEO</button>
+    <button data-gv="content"><span class="e" data-ic="sparkles" data-ic-size="20"></span>Content</button>
+  </nav>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -1714,7 +1802,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-21·pro-dashboard";
+  var APP_BUILD="2026-07-21·grow-suite";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -1996,7 +2084,7 @@
   // to any saved business data — this is pure presentation + arrangement.
   // ==========================================================================
   var UI_KEY="mkd-ui";
-  var UI_TABLIST=[["home","Home","home"],["messages","Chats","message-square"],["leads","Leads","clipboard-list"],["money","Money","dollar"],["insights","Insights","bar-chart"],["email","Email","mail"],["customize","Customize","sliders"]];
+  var UI_TABLIST=[["home","Home","home"],["messages","Chats","message-square"],["leads","Leads","clipboard-list"],["money","Money","dollar"],["grow","Grow","rocket"],["insights","Insights","bar-chart"],["email","Email","mail"],["customize","Customize","sliders"]];
   var UI_PRESETS=[ // id, name, accent, accentDark
     ["crimson","Crimson","#ff2e43","#c81e30"],["ocean","Ocean","#2f9bff","#1d5fd8"],
     ["mint","Mint","#22c55e","#15803d"],["grape","Grape","#a855f7","#7e22ce"],
@@ -4342,7 +4430,7 @@
     if(!e.target.closest("#toolsBtn")&&!e.target.closest("#toolsSheet"))el("toolsSheet").style.display="none";
   });
 
-  Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.onclick=function(){vibrate(6);var tb=b.getAttribute("data-tab");if(tb==="money")return openMoney();if(tb==="customize")return openCustomize();setTab(tb)}});
+  Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.onclick=function(){vibrate(6);var tb=b.getAttribute("data-tab");if(tb==="money")return openMoney();if(tb==="grow")return openGrow();if(tb==="customize")return openCustomize();setTab(tb)}});
   el("czBack").onclick=closeCustomize;
   el("czMode").onclick=function(){UI.mode=UI.mode==="pro"?"simple":"pro";saveUI();czRender();vibrate(6)};
 
@@ -4365,6 +4453,236 @@
   };
   Array.prototype.forEach.call(document.querySelectorAll(".drawer [data-tab]"),function(it){it.onclick=function(){setTab(it.getAttribute("data-tab"));closeDrawer()}});
   Array.prototype.forEach.call(document.querySelectorAll(".drawer [data-filter]"),function(it){it.onclick=function(){state.tab="messages";state.filter=it.getAttribute("data-filter");setTab("messages");state.filter=it.getAttribute("data-filter");renderFilters();renderMain();closeDrawer()}});
+
+  // ============================================================
+  // 🚀 Grow — business growth suite (full-screen section).
+  // One clean entry point for the tools that grow the business:
+  // Customers (CRM), Reviews & reputation, first-party Website
+  // analytics, Local SEO / Google Business Profile, and an AI
+  // content studio. Keeps the bottom nav lean while adding depth.
+  // ============================================================
+  var GROW={view:"home",wired:false,analytics:null,aLoading:false,aErr:false,crmQ:"",csTask:"gbp_post",csText:"",csLoading:false,csCtx:""};
+  var GROW_VIEWS={home:["Grow","Tools to grow Mikey's Mobile Detailing"],crm:["Customers","Your customer directory & history"],reviews:["Reviews","Turn happy jobs into 5-star reviews"],analytics:["Website","Live traffic on your website"],seo:["Local SEO","Get found on Google in Snohomish"],content:["Content studio","AI-written posts, replies & promos"]};
+  function openGrow(){
+    el("growApp").classList.add("show");
+    if(!GROW.wired){growWire();GROW.wired=true;}
+    if(!MO.summary&&!MO._homeFetch){MO._homeFetch=1;api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.today=d.today;MO.entries=d.entries||[];MO.cfg=d.config;MO.owed=d.owed||[];MO.week=d.week;MO.allTime=d.allTime;if(el("growApp").classList.contains("show"))growRender();}}).catch(function(){});}
+    growRender();
+  }
+  function closeGrow(){el("growApp").classList.remove("show");}
+  function growSet(v){GROW.view=v;Array.prototype.forEach.call(el("grNav").querySelectorAll("[data-gv]"),function(b){b.classList.toggle("active",b.getAttribute("data-gv")===v)});growRender();el("grBody").scrollTop=0;}
+  function growWire(){
+    el("grBack").onclick=closeGrow;
+    Array.prototype.forEach.call(el("grNav").querySelectorAll("[data-gv]"),function(b){b.onclick=function(){vibrate(6);growSet(b.getAttribute("data-gv"))}});
+    el("grRefresh").onclick=function(){vibrate(6);if(GROW.view==="analytics"){GROW.analytics=null;growLoadAnalytics()}else{refreshThreads();api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.entries=d.entries||[];MO.today=d.today;MO.week=d.week;MO.allTime=d.allTime}growRender()});}toast("Refreshed")};
+  }
+  function growRender(){
+    var meta=GROW_VIEWS[GROW.view]||GROW_VIEWS.home;
+    el("grTitle").textContent=meta[0];el("grSub").textContent=meta[1];
+    el("grRefresh").style.visibility=(GROW.view==="reviews"||GROW.view==="seo"||GROW.view==="content")?"hidden":"visible";
+    var b=el("grBody");
+    if(GROW.view==="home")return growHome(b);
+    if(GROW.view==="crm")return growCRM(b);
+    if(GROW.view==="reviews")return growReviews(b);
+    if(GROW.view==="analytics")return growAnalytics(b);
+    if(GROW.view==="seo")return growSEO(b);
+    if(GROW.view==="content")return growContent(b);
+  }
+  // ---- Grow landing ----
+  var GROW_TOOLS=[
+    ["crm","users","Customers","Every customer, their history & lifetime value"],
+    ["reviews","trophy","Reviews","Ask happy customers for 5-star reviews in one tap"],
+    ["analytics","bar-chart","Website analytics","See who's visiting your site, live"],
+    ["seo","target","Local SEO","Rank higher on Google Business Profile"],
+    ["content","sparkles","Content studio","AI writes your posts, replies & promos"]];
+  function growHome(box){
+    var custN=Object.keys(growCustomerMap()).length;
+    var h='<div class="gr-hero"><h2>Grow your business 🚀</h2><p>Five pro tools in one place — win more jobs, keep customers coming back, and get found online.</p></div>';
+    h+='<div class="gr-tools">';
+    GROW_TOOLS.forEach(function(t){h+='<button class="gr-tool" data-goto="'+t[0]+'"><span class="gt-ic">'+ic(t[1],20)+'</span><span class="gt-b"><span class="gt-t">'+esc(t[2])+'</span><span class="gt-s">'+esc(t[3])+'</span></span></button>';});
+    h+='</div>';
+    // a couple of live numbers so the landing feels alive
+    var won=(state.threads||[]).filter(function(t){return !t.archived&&t.status==="won"}).length;
+    h+='<div class="gr-sec"><span class="gs-ic">'+ic("activity",16)+'</span>At a glance</div>';
+    h+='<div class="big-tiles"><div class="big-tile"><div class="bt-v">'+custN+'</div><div class="bt-l">Customers on file</div></div>'+
+       '<div class="big-tile"><div class="bt-v">'+won+'</div><div class="bt-l">Won leads</div></div></div>';
+    box.innerHTML=h;
+    Array.prototype.forEach.call(box.querySelectorAll("[data-goto]"),function(t){t.onclick=function(){vibrate(6);growSet(t.getAttribute("data-goto"))}});
+  }
+  // ---- Customers (CRM) ----
+  function growCustomerMap(){
+    var map={};
+    (state.threads||[]).forEach(function(t){if(t.archived)return;map[t.phone]={phone:t.phone,name:t.name||"",status:t.status||"",lastTs:t.lastTs||0,tags:t.tags||[],spend:0,jobs:0,lastJob:0};});
+    (MO.entries||[]).forEach(function(e){if(e.type!=="job")return;var k=e.phone;if(!k)return;if(!map[k])map[k]={phone:k,name:e.name||"",status:"",lastTs:0,tags:[],spend:0,jobs:0,lastJob:0};map[k].spend+=e.amount;map[k].jobs++;if(e.name&&!map[k].name)map[k].name=e.name;var ts=e.ts||Date.parse((e.date||"")+"T12:00:00");if(ts>map[k].lastJob)map[k].lastJob=ts;});
+    return map;
+  }
+  function growCRM(box){
+    var map=growCustomerMap();var list=Object.keys(map).map(function(k){return map[k]});
+    var q=(GROW.crmQ||"").toLowerCase();
+    var filtered=q?list.filter(function(c){return (c.name||"").toLowerCase().indexOf(q)>=0||(c.phone||"").indexOf(q)>=0}):list;
+    filtered.sort(function(a,b){return (b.lastTs||b.lastJob||0)-(a.lastTs||a.lastJob||0)});
+    var totalSpend=list.reduce(function(a,c){return a+c.spend},0);
+    var withJobs=list.filter(function(c){return c.jobs>0}).length;
+    var h='<div class="big-tiles"><div class="big-tile"><div class="bt-v">'+list.length+'</div><div class="bt-l">Customers</div></div>'+
+      '<div class="big-tile"><div class="bt-v">'+fmtMoney(totalSpend)+'</div><div class="bt-l">Billed this month</div></div></div>';
+    h+='<input class="gr-input" id="crmSearch" placeholder="Search name or number…" value="'+esc(GROW.crmQ||"")+'" autocomplete="off" style="margin:12px 0 6px">';
+    h+='<div class="gr-sec" style="margin-top:12px"><span class="gs-ic">'+ic("users",16)+'</span>'+(q?filtered.length+" match"+(filtered.length===1?"":"es"):list.length+" total")+(withJobs?" · "+withJobs+" with jobs":"")+'</div>';
+    if(!filtered.length){h+='<div class="wc-empty">'+ic("users",15)+' '+(q?"No customers match that search.":"No customers yet — they'll appear here as texts and jobs come in.")+'</div>';}
+    else{h+='<div class="plist">';filtered.slice(0,60).forEach(function(c){
+      var nm=c.name||prettyPhone(c.phone);var sm=c.status?stageMeta(c.status):null;
+      var sub=[];if(c.jobs)sub.push(c.jobs+(c.jobs===1?" job":" jobs"));if(c.lastTs)sub.push("texted "+ago(c.lastTs));
+      h+='<div class="prow" data-open="'+esc(c.phone)+'"><div class="pr-av" style="background:'+colorFor(c.phone)+'">'+esc((nm[0]||"#").toUpperCase())+'</div>'+
+        '<div class="pr-b"><div class="pr-nm">'+esc(nm)+(sm?' <span class="pr-tag" style="color:'+sm.color+';background:color-mix(in srgb,'+sm.color+' 16%,transparent)">'+esc(sm.label)+'</span>':'')+'</div>'+
+        '<div class="pr-sub">'+esc(sub.join(" · ")||prettyPhone(c.phone))+'</div></div>'+
+        (c.spend?'<div class="pr-r"><div class="pr-amt">'+fmtMoney(c.spend)+'</div></div>':'')+'</div>';
+    });h+='</div>';if(filtered.length>60)h+='<div class="wc-empty" style="justify-content:center">Showing first 60</div>';}
+    box.innerHTML=h;
+    Array.prototype.forEach.call(box.querySelectorAll("[data-open]"),function(r){r.onclick=function(){closeGrow();openThread(r.getAttribute("data-open"))}});
+    var s=el("crmSearch");if(s)s.oninput=function(){GROW.crmQ=s.value;var pos=s.selectionStart;growCRM(box);var n=el("crmSearch");if(n){n.focus();try{n.setSelectionRange(pos,pos)}catch(e){}}};
+  }
+  // ---- Reviews & reputation ----
+  function growReviewCfg(){try{return Object.assign({url:"",goal:25,collected:0},JSON.parse(localStorage.getItem("mkd-reviewcfg")||"{}"))}catch(e){return{url:"",goal:25,collected:0}}}
+  function growSaveReviewCfg(c){try{localStorage.setItem("mkd-reviewcfg",JSON.stringify(c))}catch(e){}}
+  function growReviews(box){
+    var cfg=growReviewCfg();
+    var won=(state.threads||[]).filter(function(t){return !t.archived&&t.status==="won"}).sort(function(a,b){return (b.statusAt||b.lastTs||0)-(a.statusAt||a.lastTs||0)});
+    var pct=cfg.goal>0?Math.min(100,Math.round(cfg.collected/cfg.goal*100)):0;
+    var h='<div class="gr-hero" style="background:linear-gradient(135deg,#eab308,#a16207);box-shadow:0 12px 28px rgba(234,179,8,.18)"><h2>⭐ Reviews grow trust</h2><p>Reviews are the #1 driver of new local customers. Ask every happy customer — it takes one tap.</p></div>';
+    // progress
+    h+='<div class="gr-sec"><span class="gs-ic">'+ic("target",16)+'</span>Review goal</div>';
+    h+='<div class="ck-progress"><div class="ckp" style="width:'+pct+'%"></div></div>';
+    h+='<div style="display:flex;gap:10px;align-items:center;margin:-6px 0 4px"><b style="font-size:22px;letter-spacing:-.02em">'+cfg.collected+'</b><span style="color:var(--muted)">of '+cfg.goal+' reviews</span>'+
+      '<button class="btn" id="revMinus" style="margin-left:auto;padding:6px 12px">–</button><button class="btn accent" id="revPlus" style="padding:6px 12px">+1</button></div>';
+    h+='<button class="gr-back" id="revGoalEdit" style="margin-top:6px">'+ic("pencil",13)+' Edit goal</button>';
+    // review link
+    h+='<div class="gr-sec" style="margin-top:16px"><span class="gs-ic">'+ic("link",16)+'</span>Your Google review link</div>';
+    if(cfg.url){h+='<div class="code-box" style="font-size:12px">'+esc(cfg.url)+'</div>'+
+      '<div style="display:flex;gap:8px;margin-top:9px"><button class="btn ic-btn" id="revCopy">'+ic("copy",15)+'<span>Copy link</span></button><button class="btn" id="revEdit">Change</button></div>';}
+    else{h+='<p class="hint" style="margin:0 0 9px">Paste your Google review link (from your Business Profile → "Get more reviews") so every ask includes it.</p><button class="btn accent ic-btn" id="revSet">'+ic("plus",15)+'<span>Add review link</span></button>';}
+    // ask a won customer
+    h+='<div class="gr-sec" style="margin-top:18px"><span class="gs-ic">'+ic("trophy",16)+'</span>Ask a happy customer<span class="hs-n" style="color:var(--muted2);margin-left:6px">'+won.length+' won</span></div>';
+    if(!won.length){h+='<div class="wc-empty">'+ic("trophy",15)+' Mark a lead as "Won" and they\'ll show here, ready for a review ask.</div>';}
+    else{h+='<div class="plist">';won.slice(0,12).forEach(function(t){var nm=displayName(t);
+      h+='<div class="prow" data-ask="'+esc(t.phone)+'"><div class="pr-av" style="background:'+colorFor(t.phone)+'">'+esc(initials(t))+'</div>'+
+        '<div class="pr-b"><div class="pr-nm">'+esc(nm)+'</div><div class="pr-sub">Won '+(t.statusAt?ago(t.statusAt):"recently")+'</div></div>'+
+        '<span class="pr-tag vip">'+ic("send",13)+' Ask</span></div>';});h+='</div>';}
+    box.innerHTML=h;
+    // wiring
+    var rp=el("revPlus");if(rp)rp.onclick=function(){cfg.collected++;growSaveReviewCfg(cfg);vibrate(8);growReviews(box);toast("Nice! "+cfg.collected+" reviews")};
+    var rm=el("revMinus");if(rm)rm.onclick=function(){cfg.collected=Math.max(0,cfg.collected-1);growSaveReviewCfg(cfg);growReviews(box)};
+    var rge=el("revGoalEdit");if(rge)rge.onclick=function(){var v=prompt("Review goal:",String(cfg.goal));if(v==null)return;var n=parseInt(v,10);if(n>0){cfg.goal=n;growSaveReviewCfg(cfg);growReviews(box)}};
+    function setLink(){var v=prompt("Paste your Google review link:",cfg.url||"https://g.page/r/…/review");if(v==null)return;cfg.url=v.trim();growSaveReviewCfg(cfg);growReviews(box)}
+    var rs=el("revSet");if(rs)rs.onclick=setLink;var re=el("revEdit");if(re)re.onclick=setLink;
+    var rc=el("revCopy");if(rc)rc.onclick=function(){growCopy(cfg.url,"Review link copied")};
+    Array.prototype.forEach.call(box.querySelectorAll("[data-ask]"),function(r){r.onclick=function(){
+      var phone=r.getAttribute("data-ask");var t=(state.threads||[]).filter(function(x){return x.phone===phone})[0];
+      var nm=t?(t.name&&t.name.split(" ")[0]):"";
+      var msg="Hey"+(nm?" "+nm:"")+"! Thanks again for choosing Mikey's Mobile Detailing 🚗✨ If you were happy with the detail, would you mind leaving us a quick review? It really helps a ton"+(cfg.url?": "+cfg.url:".");
+      growPrefillThread(phone,msg);
+    };});
+  }
+  // ---- Website analytics ----
+  function growLoadAnalytics(){
+    if(GROW.analytics||GROW.aLoading)return growRender();
+    GROW.aLoading=true;GROW.aErr=false;growRender();
+    api("/api/analytics?days=14").then(function(d){GROW.aLoading=false;if(d&&d.ok){GROW.analytics=d}else{GROW.aErr=true}if(el("growApp").classList.contains("show"))growRender();}).catch(function(){GROW.aLoading=false;GROW.aErr=true;if(el("growApp").classList.contains("show"))growRender();});
+  }
+  function growAnalytics(box){
+    if(!GROW.analytics&&!GROW.aLoading&&!GROW.aErr){growLoadAnalytics();return;}
+    var base=location.origin;
+    var snippet='<script>(function(){var i=new Image();i.src="'+base+'/px?p="+encodeURIComponent(location.pathname)+"&r="+encodeURIComponent(document.referrer)+"&t="+Date.now();})();<\/script>';
+    var h='';
+    if(GROW.aLoading&&!GROW.analytics){h+='<div class="wc-empty"><span class="spin"></span> Loading traffic…</div>';}
+    else if(GROW.aErr&&!GROW.analytics){h+='<div class="wc-empty">'+ic("info",15)+' Couldn\'t load analytics right now.</div>';}
+    else{
+      var d=GROW.analytics;
+      // 7-day vs prior-7 delta on views
+      var s=d.series||[];var recent=s.slice(-7).reduce(function(a,x){return a+x.views},0);var prior=s.slice(0,Math.max(0,s.length-7)).reduce(function(a,x){return a+x.views},0);
+      var delta=prior>0?Math.round((recent-prior)/prior*100):(recent>0?100:0);
+      h+='<div class="big-tiles"><div class="big-tile"><div class="bt-v">'+d.totalViews+'</div><div class="bt-l">Page views · 14 days</div>'+(s.length>7?'<div class="bt-d '+(delta>=0?"up":"down")+'">'+(delta>=0?"▲ +":"▼ ")+Math.abs(delta)+'% vs prior week</div>':'')+'</div>'+
+        '<div class="big-tile"><div class="bt-v">'+d.totalVisitors+'</div><div class="bt-l">Unique visitors</div></div></div>';
+      // chart
+      var max=Math.max(1,Math.max.apply(null,s.map(function(x){return x.views})));
+      var W=300,H=64,n=s.length,bw=W/Math.max(1,n);
+      var bars=s.map(function(x,i){var bh=Math.max(2,Math.round(x.views/max*H));return '<rect class="sp-bar" x="'+(i*bw+1).toFixed(1)+'" y="'+(H-bh)+'" width="'+(bw-2).toFixed(1)+'" height="'+bh+'" rx="2"><title>'+x.day+': '+x.views+' views</title></rect>';}).join("");
+      h+='<div class="gr-sec"><span class="gs-ic">'+ic("bar-chart",16)+'</span>Daily page views</div>';
+      h+='<svg class="spark-svg" style="height:64px" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none">'+bars+'</svg>';
+      // top pages
+      h+='<div class="gr-sec" style="margin-top:18px"><span class="gs-ic">'+ic("file-text",16)+'</span>Top pages</div>';
+      if((d.topPaths||[]).length){var pmax=d.topPaths[0].n;d.topPaths.forEach(function(p){h+='<div class="hbar"><div class="hbar-top"><span class="hb-k">'+esc(p.k)+'</span><span class="hb-n">'+p.n+'</span></div><div class="hbar-track"><div class="hbar-fill" style="width:'+Math.round(p.n/pmax*100)+'%"></div></div></div>';});}
+      else h+='<div class="wc-empty">No page data yet.</div>';
+      // top referrers
+      h+='<div class="gr-sec" style="margin-top:16px"><span class="gs-ic">'+ic("link",16)+'</span>Where visitors come from</div>';
+      if((d.topRefs||[]).length){var rmax=d.topRefs[0].n;d.topRefs.forEach(function(p){h+='<div class="hbar"><div class="hbar-top"><span class="hb-k">'+esc(p.k)+'</span><span class="hb-n">'+p.n+'</span></div><div class="hbar-track"><div class="hbar-fill" style="width:'+Math.round(p.n/rmax*100)+'%"></div></div></div>';});}
+      else h+='<div class="wc-empty">Direct / no referrer data yet.</div>';
+    }
+    // install snippet — always shown
+    h+='<div class="gr-sec" style="margin-top:20px"><span class="gs-ic">'+ic("zap",16)+'</span>Turn it on (30 seconds)</div>';
+    h+='<p class="hint" style="margin:0 0 9px">Paste this once before <code>&lt;/body&gt;</code> on your website. That\'s it — visits show up here automatically. No cookies, no third party, 100% yours.</p>';
+    h+='<div class="code-box" id="pxSnippet">'+esc(snippet)+'</div>';
+    h+='<button class="btn accent ic-btn code-copy" id="pxCopy">'+ic("copy",15)+'<span>Copy snippet</span></button>';
+    box.innerHTML=h;
+    var pc=el("pxCopy");if(pc)pc.onclick=function(){growCopy(snippet,"Snippet copied — paste it on your site")};
+  }
+  // ---- Local SEO / Google Business Profile ----
+  var SEO_TASKS=[
+    ["claim","Claim & verify your Google Business Profile","The foundation of local ranking — verify you own the listing."],
+    ["nap","Match name, address & phone everywhere","Google trusts consistent NAP across your site, GBP, Yelp, Facebook."],
+    ["cats","Set the right primary category","Use \"Car detailing service\" as primary + relevant secondaries."],
+    ["photos","Add 10+ real photos (before/after)","Listings with photos get far more calls and direction requests."],
+    ["hours","Fill hours, service area & services","List every city you serve and every detailing package with prices."],
+    ["posts","Post weekly on your profile","Fresh GBP posts signal an active business — use the Content studio."],
+    ["reviews","Get to 25+ reviews & reply to all","Volume + fresh reviews + owner replies = higher local rank."],
+    ["keywords","Put \"mobile detailing + city\" in your description","Natural keywords in the profile and website titles help you rank."],
+    ["website","Link a fast, mobile-friendly website","Add the analytics snippet so you can see what's working."],
+    ["citations","List on Yelp, Facebook, Nextdoor, Apple Maps","More consistent citations build local authority."]];
+  function growSEOState(){try{return JSON.parse(localStorage.getItem("mkd-seo")||"{}")}catch(e){return{}}}
+  function growSaveSEO(s){try{localStorage.setItem("mkd-seo",JSON.stringify(s))}catch(e){}}
+  function growSEO(box){
+    var st=growSEOState();var done=SEO_TASKS.filter(function(t){return st[t[0]]}).length;
+    var pct=Math.round(done/SEO_TASKS.length*100);
+    var h='<div class="gr-hero" style="background:linear-gradient(135deg,#2f9bff,#1d5fd8);box-shadow:0 12px 28px rgba(47,155,255,.18)"><h2>📍 Own local Google</h2><p>Work this checklist to show up when people near you search "mobile detailing." Most shops never do — that\'s your edge.</p></div>';
+    h+='<div class="gr-sec"><span class="gs-ic">'+ic("check-circle",16)+'</span>Optimization checklist<span class="hs-n" style="margin-left:auto;color:var(--muted2)">'+done+'/'+SEO_TASKS.length+'</span></div>';
+    h+='<div class="ck-progress"><div class="ckp" style="width:'+pct+'%;background:#2f9bff"></div></div>';
+    SEO_TASKS.forEach(function(t){var on=!!st[t[0]];
+      h+='<div class="ck-item'+(on?" done":"")+'"><div class="ck-box'+(on?" on":"")+'" data-seo="'+t[0]+'" style="'+(on?"background:#2f9bff;border-color:#2f9bff":"")+'">'+(on?ic("check",14):"")+'</div>'+
+        '<div class="ck-b"><div class="ck-t">'+esc(t[1])+'</div><div class="ck-s">'+esc(t[2])+'</div></div></div>';});
+    h+='<button class="btn ic-btn" id="seoContent" style="margin-top:16px;width:100%;justify-content:center">'+ic("sparkles",16)+'<span>Write a Google post with AI →</span></button>';
+    box.innerHTML=h;
+    Array.prototype.forEach.call(box.querySelectorAll("[data-seo]"),function(b){b.onclick=function(){var k=b.getAttribute("data-seo");st[k]=!st[k];growSaveSEO(st);vibrate(6);growSEO(box)};});
+    var sc=el("seoContent");if(sc)sc.onclick=function(){GROW.csTask="gbp_post";growSet("content")};
+  }
+  // ---- AI content studio ----
+  var CS_TASKS=[["gbp_post","Google post"],["review_response","Review reply"],["promo_text","Promo text"],["social_caption","Social caption"],["service_desc","Service blurb"],["email_blast","Email blast"]];
+  var CS_HINTS={gbp_post:"Topic (e.g. this week's special, a before/after)…",review_response:"Paste the customer's review to reply to…",promo_text:"The offer (e.g. $30 off full details in July)…",social_caption:"What's the post about?",service_desc:"Which service (e.g. ceramic coating)?",email_blast:"The offer or news to send past customers…"};
+  function growContent(box){
+    var h='<div class="cs-seg">';
+    CS_TASKS.forEach(function(t){h+='<button data-cs="'+t[0]+'" class="'+(GROW.csTask===t[0]?"on":"")+'">'+esc(t[1])+'</button>';});
+    h+='</div>';
+    h+='<textarea class="gr-input" id="csCtx" placeholder="'+esc(CS_HINTS[GROW.csTask]||"Add a few details…")+'">'+esc(GROW.csCtx||"")+'</textarea>';
+    h+='<button class="btn accent ic-btn" id="csGo" style="margin-top:10px;width:100%;justify-content:center">'+ic("sparkles",16)+'<span>'+(GROW.csLoading?"Writing…":"Generate")+'</span></button>';
+    if(GROW.csLoading)h+='<div class="cs-out empty"><span class="spin"></span> Writing your '+esc((CS_TASKS.filter(function(t){return t[0]===GROW.csTask})[0]||["",""])[1].toLowerCase())+'…</div>';
+    else if(GROW.csText)h+='<div class="cs-out" id="csOut">'+esc(GROW.csText)+'</div><div style="display:flex;gap:8px;margin-top:9px"><button class="btn ic-btn" id="csCopy">'+ic("copy",15)+'<span>Copy</span></button><button class="btn" id="csAgain">Regenerate</button></div>';
+    else h+='<div class="cs-out empty">'+ic("sparkles",15)+' Your AI-written copy appears here.</div>';
+    box.innerHTML=h;
+    Array.prototype.forEach.call(box.querySelectorAll("[data-cs]"),function(b){b.onclick=function(){GROW.csTask=b.getAttribute("data-cs");GROW.csText="";growContent(box)};});
+    var cc=el("csCtx");if(cc)cc.oninput=function(){GROW.csCtx=cc.value};
+    function gen(){var ctx=(el("csCtx")?el("csCtx").value:"").trim();GROW.csCtx=ctx;GROW.csLoading=true;GROW.csText="";growContent(box);
+      post("/api/ai/generate",{task:GROW.csTask,context:ctx}).then(function(d){GROW.csLoading=false;if(d&&d.ok){GROW.csText=d.text||""}else{toast(d&&d.error==="ai_not_configured"?"Add your Gemini API key to use this":"Couldn't generate — try again",{bad:true})}if(el("growApp").classList.contains("show")&&GROW.view==="content")growContent(box);}).catch(function(){GROW.csLoading=false;toast("Network error",{bad:true});growContent(box)});}
+    var cg=el("csGo");if(cg)cg.onclick=gen;
+    var ca=el("csAgain");if(ca)ca.onclick=gen;
+    var cp=el("csCopy");if(cp)cp.onclick=function(){growCopy(GROW.csText,"Copied")};
+  }
+  // ---- small helpers ----
+  function growCopy(text,okMsg){
+    try{if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(function(){toast(okMsg||"Copied")},function(){growFallbackCopy(text,okMsg)});return}}catch(e){}
+    growFallbackCopy(text,okMsg);
+  }
+  function growFallbackCopy(text,okMsg){try{var ta=document.createElement("textarea");ta.value=text;ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);toast(okMsg||"Copied")}catch(e){toast("Copy failed",{bad:true})}}
+  function growPrefillThread(phone,text){
+    closeGrow();openThread(phone);
+    setTimeout(function(){var m=el("msgInput");if(m){m.value=text;try{if(typeof autoGrow==="function")autoGrow()}catch(e){}try{if(typeof updateCount==="function")updateCount()}catch(e){}try{m.focus()}catch(e){}}toast("Message ready — review & send")},160);
+  }
 
   // ============================================================
   // 💵 Money tracker — its own full-screen section.
@@ -5578,6 +5896,7 @@
   Array.prototype.forEach.call(el("moNav").querySelectorAll("[data-mv]"),function(b){b.onclick=function(){vibrate(6);moSetView(b.getAttribute("data-mv"))}});
   el("moScrim").onclick=closeMoSheet;
   el("moneyItem").onclick=function(){closeDrawer();openMoney()};
+  var growI=el("growItem");if(growI)growI.onclick=function(){closeDrawer();openGrow()};
   el("customizeItem").onclick=function(){closeDrawer();openCustomize()};
   el("snapshotItem").onclick=function(){closeDrawer();snapshotForClaude()};
 
