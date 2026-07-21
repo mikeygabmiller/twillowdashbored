@@ -151,9 +151,9 @@
 <body>
 <header>
   <div class="head-in">
-    <div class="logo"><span class="dot"></span> Mikey's Mobile Detailing</div>
+    <div class="logo"><span class="dot"></span> <span id="bizName">Mikey's Mobile Detailing</span></div>
     <div class="head-proof">
-      <span><span class="stars">★★★★★</span> <b>5.0</b> · 39 reviews<br>300+ cars detailed</span>
+      <span id="proofLine"><span class="stars">★★★★★</span> <b>5.0</b> · 39 reviews<br>300+ cars detailed</span>
       <a class="callbtn" href="tel:+14256007897">Call</a>
     </div>
   </div>
@@ -177,7 +177,7 @@
   <section class="panel on" data-panel="0">
     <div class="eyebrow">Step 1 · Pick your detail</div>
     <h1 class="ptitle">What does your car need?</h1>
-    <p class="psub">Every price is a starting point — Mikey confirms it before your appointment. First full detail? Your exterior wash &amp; wax (a $160 value) is <b>free</b>. 🎁</p>
+    <p class="psub">Every price is a starting point — Mikey confirms it before your appointment. <span id="hookLine">First full detail? Your exterior wash &amp; wax (a $160 value) is <b>free</b>. 🎁</span></p>
     <div id="serviceList"></div>
     <div class="note">💬 <span>Want <b>ceramic coating</b> or <b>paint correction</b>? Pick a service above and check the box on the next steps — Mikey will text you a custom quote.</span></div>
   </section>
@@ -506,8 +506,28 @@ function fmtTime(hhmm){ if(!hhmm)return""; let [h,m]=hhmm.split(":").map(Number)
 function normalizePhone(raw){ if(!raw)return null; const d=String(raw).replace(/\D/g,""); if(d.length===10)return "+1"+d; if(d.length===11&&d[0]==="1")return "+"+d; if(/^\+1\d{10}$/.test(raw))return raw; return null; }
 function escapeHtml(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 
+// ---- live config from the dashboard Settings tab (baked values are the fallback) ----
+async function loadLiveConfig(){
+  try{
+    const r=await fetch("/api/book-config"); const j=await r.json();
+    const c=j&&j.config; if(!c) return;
+    if(Array.isArray(c.sizes)&&c.sizes.length) CONFIG.sizes=c.sizes.map(z=>({id:z.id,label:z.label,d:""}));
+    if(Array.isArray(c.services)){ const en=c.services.filter(s=>s.enabled!==false);
+      if(en.length) CONFIG.services=en.map(s=>({id:s.id,name:s.name,popular:!!s.popular,d:s.blurb||"",price:s.price||{}})); }
+    if(Array.isArray(c.addons)) CONFIG.addons=c.addons.filter(a=>a.enabled!==false)
+      .map(a=>({id:a.id,name:a.name,d:a.blurb||"",price:+a.price||0,popular:!!a.popular}));
+    if(Array.isArray(c.cities)&&c.cities.length) CONFIG.cities=c.cities.concat(["Other / nearby"]);
+    if(c.content){
+      var bn=document.getElementById("bizName"); if(bn&&c.content.businessName) bn.textContent=c.content.businessName;
+      var hk=document.getElementById("hookLine"); if(hk&&c.content.freeWax!==false&&c.content.hook) hk.textContent=c.content.hook;
+      else if(hk&&c.content.freeWax===false) hk.textContent="";
+    }
+    if(c.proof){ var pl=document.getElementById("proofLine");
+      if(pl) pl.innerHTML='<span class="stars">★★★★★</span> <b>'+escapeHtml(c.proof.rating||"5.0")+'</b> · '+escapeHtml(String(c.proof.reviews||""))+' reviews<br>'+escapeHtml(c.proof.cars||"")+' cars detailed'; }
+  }catch(e){ /* offline / not deployed yet → use baked defaults */ }
+}
 // ---- init ----
-renderServices(); renderSizes(); renderAddons(); renderDays(); fillCities(); bindDetails(); sync();
+(async function(){ await loadLiveConfig(); renderServices(); renderSizes(); renderAddons(); renderDays(); fillCities(); bindDetails(); sync(); })();
 </script>
 </body>
 </html>
