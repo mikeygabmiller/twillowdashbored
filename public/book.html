@@ -262,6 +262,7 @@
     <h1 class="ptitle">Look good?</h1>
     <p class="psub">Double-check and send it over. Mikey confirms your final price before the appointment.</p>
     <div class="rev" id="reviewCard"></div>
+    <div class="note" id="reviewDisclaimer" style="display:none"></div>
     <div class="note green">✅ <span><b>You don't pay until you love it.</b> Send this request and Mikey will text you to confirm.</span></div>
   </section>
 
@@ -272,6 +273,7 @@
       <h2>Request sent! 🎉</h2>
       <p id="doneMsg">Mikey got it and will text you shortly to lock in your time — usually within the hour.</p>
       <div class="done-card" id="doneCard"></div>
+      <p id="doneDisclaimer" style="display:none;color:var(--muted);font-size:13.5px;margin:16px auto 0;max-width:40ch"></p>
       <p style="margin-top:22px;font-size:14px">Need it sooner? <a href="tel:+14256007897" style="color:var(--red);font-weight:700">Call/text (425) 600-7897</a></p>
     </div>
   </section>
@@ -423,7 +425,10 @@ function renderReview(){
   $("#reviewCard").innerHTML = rows.filter(r=>r[1]).map(r=>
     `<div class="rev-row"><span class="k">${r[0]}</span><span class="v">${escapeHtml(r[1])}</span></div>`).join("")
     + `<div class="rev-total"><span>Estimated total</span><span>${money(total())}<small>final price confirmed by Mikey</small></span></div>`;
+  var dc=$("#reviewDisclaimer");
+  if(dc){ if(outOfArea()){ dc.innerHTML='⏱ <span>Heads up — '+escapeHtml(S.city)+" is outside Mikey's main Monroe/Snohomish area, so this time is an <b>estimate</b>. He'll confirm it works with his route before it's locked in.</span>"; dc.style.display='flex'; } else dc.style.display='none'; }
 }
+function outOfArea(){ var c=(S.city||"").toLowerCase(); return !!c && c.indexOf("monroe")<0 && c.indexOf("snohomish")<0; }
 // vehicle text lives outside the input map (separate step)
 $("#vehicle").addEventListener("input",e=>{S.vehicle=e.target.value;});
 
@@ -493,6 +498,7 @@ async function submit(){
       `<div class="rev-row"><span class="k">Service</span><span class="v">${escapeHtml(svc().name)}</span></div>
        <div class="rev-row"><span class="k">Requested</span><span class="v">${escapeHtml(S.dateLabel)} · ${fmtTime(S.slot)}</span></div>
        <div class="rev-row"><span class="k">Estimate</span><span class="v">${money(total())}</span></div>`;
+    var dd=$("#doneDisclaimer"); if(dd){ if(outOfArea()){ dd.textContent="Since "+S.city+" is outside Mikey's main Monroe/Snohomish area, your time is an estimate — he'll confirm it works for the drive."; dd.style.display="block"; } else dd.style.display="none"; }
     show(6);
   }catch(e){
     nb.disabled=false; nb.textContent="Send my request →";
