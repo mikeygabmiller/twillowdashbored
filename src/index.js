@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-21·redesign';
+const BUILD = '2026-07-21·booking+redesign';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -147,6 +147,12 @@ async function handle(request) {
   // owner's marketing site). Accepts GET beacons and returns a 1x1 GIF.
   if (request.method === 'GET'  && pathname === '/px')             return handlePixel(url, request);
 
+  // ---- Public booking API (customer-facing /book.html — MUST stay above the /api auth gate) ----
+  if (request.method === 'GET'  && (pathname === '/book' || pathname === '/book/')) return Response.redirect(new URL('/book.html', request.url).toString(), 302);
+  if (request.method === 'GET'  && pathname === '/api/book-config')  return apiBookConfig();
+  if (request.method === 'GET'  && pathname === '/api/availability') return apiAvailability(url);
+  if (request.method === 'POST' && pathname === '/api/book')         return apiBook(request);
+
   if (request.method === 'GET'  && pathname === '/api/version')    return json({ ok: true, build: BUILD });
   if (request.method === 'POST' && pathname === '/api/login')      return apiLogin(request);
   if (request.method === 'POST' && pathname === '/api/logout')     return apiLogout();
@@ -176,6 +182,12 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/followup')   return apiFollowupAction(request);
   if (request.method === 'GET'  && pathname === '/api/config')     return apiGetConfig();
   if (request.method === 'POST' && pathname === '/api/config')     return apiSaveConfig(request);
+  // ---- Booking management (authed — the Bookings dashboard view) ----
+  if (request.method === 'GET'  && pathname === '/api/bookings')   return apiBookings(url);
+  if (request.method === 'POST' && pathname === '/api/booking')    return apiBookingAction(request);
+  if (request.method === 'GET'  && pathname === '/api/booking-settings') return apiBookingSettings();
+  if (request.method === 'POST' && pathname === '/api/booking-settings') return apiSaveBookingSettings(request);
+  if (request.method === 'POST' && pathname === '/api/booking-cal-test') return apiCalTest(request);
   if (request.method === 'POST' && pathname === '/api/block')      return apiBlock(request);
   if (request.method === 'GET'  && pathname === '/api/migrate')    return apiMigrate(url);
   if (request.method === 'GET'  && pathname === '/api/templates')  return apiGetTemplates();
@@ -4324,4 +4336,460 @@ function cors(response) {
   r.headers.set('Access-Control-Allow-Origin', '*');
   r.headers.set('Access-Control-Allow-Headers', 'Content-Type');
   return r;
+}
+
+// ===========================================================================
+// Booking + calendar  (customer page: /book.html · admin view: Bookings tab)
+// ---------------------------------------------------------------------------
+// Additive module. Bookings live in ONE KV value (bk:index) — a small array of
+// full records — so a create is 1 write and an availability check is 1 read.
+// Availability = work rules (Mon–Sat 7a–4p last start, 2 jobs/day, 60-min drive
+// buffer, per-service durations) MINUS the day's pending/confirmed jobs. Every
+// booking also mirrors into the SMS dashboard as a lead thread so Mikey can talk
+// to the customer, and reminders reuse the existing scheduled-send cron.
+// v1 ships with the owner's approval as the double-book gate; Google Calendar
+// free/busy sync layers in next (busy times auto-hide from availability).
+// ===========================================================================
+// Editable settings live in KV (bk:config), merged over these defaults. The
+// Settings tab writes them; the customer page + availability engine read them.
+// Defaults hold Mikey's real menu so everything works before he edits anything.
+const BK_CONFIG_KEY = 'bk:config';
+function bookingDefaults() {
+  return {
+    tz: 'America/Los_Angeles',
+    workDays: [1, 2, 3, 4, 5, 6],      // Mon–Sat (0 = Sun, off)
+    dayStart: '07:00', lastStart: '16:00',
+    stepMin: 30, bufferMin: 60, maxJobsPerDay: 2, minLeadMin: 120, windowDays: 30,
+    sizes: [
+      { id: 'sedan', label: 'Car / Sedan' },
+      { id: 'suv',   label: 'SUV / Crossover' },
+      { id: 'truck', label: 'Truck / Van / XL' },
+    ],
+    services: [
+      { id: 'full', name: 'Full Detail — In & Out', enabled: true, popular: true,
+        blurb: 'The works: deep interior + full exterior. First-timers ~3–4 hrs.',
+        price: { sedan: 299, suv: 339, truck: 379 }, duration: { sedan: 180, suv: 210, truck: 240 } },
+      { id: 'interior', name: 'Interior Detail', enabled: true, popular: false,
+        blurb: 'Full vacuum, carpets & seats, all surfaces, windows, pet hair.',
+        price: { sedan: 200, suv: 240, truck: 280 }, duration: { sedan: 90, suv: 110, truck: 120 } },
+      { id: 'exterior', name: 'Exterior Detail', enabled: true, popular: false,
+        blurb: 'Hand wash, wheels & tires, bug & tar, polish, spray wax.',
+        price: { sedan: 160, suv: 200, truck: 240 }, duration: { sedan: 45, suv: 60, truck: 75 } },
+    ],
+    addons: [
+      { id: 'carpet',   name: 'Carpet & upholstery shampoo', price: 60, enabled: true, popular: true,  blurb: 'Hot-water extraction — lifts deep stains' },
+      { id: 'pethair',  name: 'Pet hair removal',            price: 40, enabled: true, popular: false, blurb: 'Special process for stubborn fur' },
+      { id: 'wax',      name: 'Wax / paint sealant',         price: 40, enabled: true, popular: false, blurb: 'Extra shine & protection' },
+      { id: 'steam',    name: 'Steam clean & sanitize',      price: 40, enabled: true, popular: false, blurb: 'Deep sanitize + odor knockdown' },
+      { id: 'leather',  name: 'Leather conditioning',        price: 30, enabled: true, popular: false, blurb: 'Clean + condition leather seats' },
+      { id: 'headlight',name: 'Headlight restoration',       price: 50, enabled: true, popular: false, blurb: 'Clear up foggy headlights' },
+    ],
+    cities: ['Everett', 'Bothell', 'Lake Stevens', 'Mill Creek', 'Monroe', 'Marysville', 'Duvall', 'Snohomish'],
+    content: {
+      businessName: "Mikey's Mobile Detailing", phoneDisplay: '(425) 600-7897', phone: '+14256007897',
+      hook: 'First full detail? Your exterior wash & wax (a $160 value) is free.',
+      guarantee: "You don't pay until you love it.",
+      urgency: true, freeWax: true,
+    },
+    proof: { rating: '5.0', reviews: 39, cars: '300+' },
+    calendar: { icalUrl: '', enabled: false },   // Google Calendar "secret iCal" URL
+    blockedDates: [],                             // ['2026-08-01', …] days Mikey is off
+  };
+}
+// Merge saved overrides over the defaults (arrays replace, objects deep-merge).
+async function loadBookingConfig() {
+  const saved = (await kv().get(BK_CONFIG_KEY, { type: 'json' })) || {};
+  const d = bookingDefaults();
+  return Object.assign({}, d, saved, {
+    content:  Object.assign({}, d.content,  saved.content  || {}),
+    proof:    Object.assign({}, d.proof,    saved.proof    || {}),
+    calendar: Object.assign({}, d.calendar, saved.calendar || {}),
+    sizes:    saved.sizes    || d.sizes,
+    services: saved.services || d.services,
+    addons:   saved.addons   || d.addons,
+    cities:   saved.cities   || d.cities,
+    blockedDates: saved.blockedDates || d.blockedDates,
+  });
+}
+// ⚠ KV WRITE — only when Mikey saves settings (rare). Cheap.
+async function saveBookingConfig(cfg) { await kv().put(BK_CONFIG_KEY, JSON.stringify(cfg)); }
+function bkSvc(cfg, id) { return (cfg.services || []).find((s) => s.id === id && s.enabled !== false); }
+
+const BK_INDEX = 'bk:index';
+async function loadBookings() { return (await kv().get(BK_INDEX, { type: 'json' })) || []; }
+// ⚠ KV WRITE — one per booking create/confirm/cancel (user actions, not cron). Cheap.
+async function saveBookings(list) { await kv().put(BK_INDEX, JSON.stringify(list)); }
+
+// --- small time helpers (Pacific-aware, DST-correct) ---
+function bkHm2min(hm) { const p = String(hm).split(':'); return (+p[0]) * 60 + (+(p[1] || 0)); }
+function bkMin2hm(x) { return String(Math.floor(x / 60)).padStart(2, '0') + ':' + String(x % 60).padStart(2, '0'); }
+function bkFmt12(hm) { let [h, m] = String(hm).split(':').map(Number); const ap = h >= 12 ? 'PM' : 'AM'; let hr = h % 12; if (hr === 0) hr = 12; return `${hr}:${String(m || 0).padStart(2, '0')} ${ap}`; }
+function bkNiceDate(date) { return new Date(date + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }); }
+// Minutes to add to a Pacific wall-clock (treated as UTC) to get the real UTC epoch.
+function bkLaOffsetMin(ts) {
+  const s = new Date(ts).toLocaleString('en-US', { timeZone: 'America/Los_Angeles', hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const m = s.match(/(\d{2})\/(\d{2})\/(\d{4})[,\s]+(\d{2}):(\d{2}):(\d{2})/);
+  if (!m) return -480;
+  const asUTC = Date.UTC(+m[3], +m[1] - 1, +m[2], +m[4], +m[5], +m[6]);
+  return Math.round((asUTC - ts) / 60000);
+}
+function bkLaEpoch(dateStr, hhmm) {
+  const naive = Date.parse(dateStr + 'T' + hhmm + ':00Z');   // wall clock treated as UTC
+  return naive - bkLaOffsetMin(naive) * 60000;               // shift by the Pacific offset
+}
+
+// Open start-times for a date, given service + size. Read-only.
+// Availability = work rules − existing jobs − Google Calendar busy − blocked dates.
+async function bkAvailability(date, service, size) {
+  const cfg = await loadBookingConfig();
+  if ((cfg.blockedDates || []).includes(date)) return [];      // Mikey marked the day off
+  const svc = bkSvc(cfg, service);
+  if (!svc) return [];
+  const dur = (svc.duration && svc.duration[size]) || (svc.duration && svc.duration.suv) || 180;
+  const dow = new Date(date + 'T12:00:00Z').getUTCDay();
+  if (!(cfg.workDays || []).includes(dow)) return [];
+  const now = Date.now();
+  if (bkLaEpoch(date, cfg.dayStart) - now > cfg.windowDays * 86400000) return [];
+  if (bkLaEpoch(date, cfg.lastStart) < now) return [];         // day already past
+  const day = (await loadBookings()).filter((b) => b.date === date && (b.status === 'pending' || b.status === 'confirmed'));
+  if (day.length >= cfg.maxJobsPerDay) return [];
+  const occ = day.map((b) => ({ s: bkHm2min(b.slot), e: bkHm2min(b.slot) + (b.durationMin || dur) }));
+  // Google Calendar busy times so Mikey is never offered a slot he's already booked.
+  for (const iv of await bkCalBusy(cfg, date)) {
+    if (iv.s <= 0 && iv.e >= 1440) return [];                  // all-day event → whole day off
+    occ.push(iv);
+  }
+  const B = cfg.bufferMin, out = [];
+  for (let t = bkHm2min(cfg.dayStart); t <= bkHm2min(cfg.lastStart); t += cfg.stepMin) {
+    const start = t, end = t + dur;
+    if (bkLaEpoch(date, bkMin2hm(t)) < now + cfg.minLeadMin * 60000) continue;   // too soon / past
+    if (occ.some((o) => start < o.e + B && o.s < end + B)) continue;             // clashes w/ buffer
+    out.push(bkMin2hm(t));
+  }
+  return out;
+}
+
+// Public config for the customer page. Never leak the secret iCal URL.
+async function apiBookConfig() {
+  const cfg = await loadBookingConfig();
+  const pub = Object.assign({}, cfg, { calendar: { enabled: !!(cfg.calendar && cfg.calendar.enabled) }, blockedDates: undefined });
+  return json({ ok: true, config: pub });
+}
+
+async function apiAvailability(url) {
+  const date = url.searchParams.get('date') || '';
+  const service = url.searchParams.get('service') || 'full';
+  const size = url.searchParams.get('size') || 'suv';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return json({ ok: false, error: 'bad_date' }, 422);
+  return json({ ok: true, date, slots: await bkAvailability(date, service, size) });
+}
+
+// Customer submits the booking wizard. Stores the booking (pending), mirrors it
+// into the SMS dashboard as a lead, instant-texts the customer, alerts Mikey.
+async function apiBook(request) {
+  let b; try { b = await request.json(); } catch { return cors(json({ ok: false, error: 'bad_json' }, 400)); }
+  if (b && (b.website || b._gotcha || b.hp)) return cors(json({ ok: true, id: 'skipped' }, 200)); // honeypot
+  const ip = request.headers.get('CF-Connecting-IP') || '';
+  if (ip) {
+    const rk = 'rl:book:' + ip;
+    const n = parseInt((await kv().get(rk)) || '0', 10);
+    if (n >= 6) return cors(json({ ok: false, error: 'rate_limited' }, 429));
+    await kv().put(rk, String(n + 1), { expirationTtl: 3600 });
+  }
+  const cfg = await loadBookingConfig();
+  const service = String(b.service || ''), size = String(b.size || '');
+  const date = String(b.date || ''), slot = String(b.slot || '');
+  const name = String(b.name || '').trim(), phone = normalizePhone(b.phone);
+  const address = String(b.address || '').trim(), city = String(b.city || '').trim();
+  const svc = bkSvc(cfg, service);
+  if (!svc) return cors(json({ ok: false, error: 'bad_service' }, 422));
+  if (!(svc.price && svc.price[size])) return cors(json({ ok: false, error: 'bad_size' }, 422));
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(slot)) return cors(json({ ok: false, error: 'bad_time' }, 422));
+  if (!name || !phone) return cors(json({ ok: false, error: 'missing_contact' }, 422));
+  if (!address || !city) return cors(json({ ok: false, error: 'missing_address' }, 422));
+  // Re-check the slot so two customers can't grab the same time between load and submit.
+  if (!(await bkAvailability(date, service, size)).includes(slot)) return cors(json({ ok: false, error: 'slot_taken' }, 409));
+
+  const first = name.split(/\s+/)[0];
+  const durationMin = svc.duration[size], base = svc.price[size];
+  const addons = Array.isArray(b.addons) ? b.addons.map((x) => String(x)).slice(0, 12) : [];
+  const estimate = Math.max(0, Math.round(Number(b.estimate) || base));
+  const dateLabel = String(b.dateLabel || bkNiceDate(date));
+  const rec = {
+    id: genId(), status: 'pending', createdAt: Date.now(),
+    service, serviceName: svc.name, size, sizeLabel: String(b.sizeLabel || size),
+    vehicle: String(b.vehicle || '').trim(), addons, wantQuote: !!b.wantQuote,
+    date, slot, dateLabel, apptAt: bkLaEpoch(date, slot), durationMin,
+    estimate, base, name, phone, address, city, email: String(b.email || '').trim(),
+    notes: String(b.notes || '').trim(), ackWaterPower: b.ackWaterPower !== false, smsConsent: b.smsConsent !== false,
+  };
+  const all = await loadBookings(); all.unshift(rec); await saveBookings(all);
+
+  const detail = [
+    `🗓 BOOKING REQUEST (pending)`,
+    `${rec.serviceName} · ${rec.sizeLabel}${rec.vehicle ? ` · ${rec.vehicle}` : ''}`,
+    rec.addons.length ? `Add-ons: ${rec.addons.join(', ')}` : null,
+    rec.wantQuote ? `Also wants: ceramic / paint quote` : null,
+    `When: ${dateLabel} at ${bkFmt12(slot)}`,
+    `Where: ${address}, ${city}`,
+    `Estimate: $${estimate}`,
+    rec.email ? `Email: ${rec.email}` : null,
+    `Water & power on site: ${rec.ackWaterPower ? 'yes' : 'NEEDS to sort out'}`,
+    rec.notes ? `Notes: ${rec.notes}` : null,
+  ].filter(Boolean).join('\n');
+
+  const thread = await loadThread(phone);
+  if (!thread.name) thread.name = name;
+  if (!thread.status) { thread.status = 'new'; thread.statusAt = Date.now(); }
+  if (!thread.tags.includes('booking')) thread.tags.push('booking');
+  thread.appointmentAt = rec.apptAt;
+  const stamp = new Date().toLocaleString('en-US', { timeZone: cfg.tz });
+  thread.notes = (thread.notes ? thread.notes + '\n\n' : '') + `${detail}\n(received ${stamp})`;
+  if (rec.smsConsent) {
+    const msg = `Hey ${first}, it's Mikey! Got your request for ${dateLabel} at ${bkFmt12(slot)} (${rec.serviceName}). I'll text you shortly to confirm and lock it in. Talk soon! - Mikey`;
+    try { await sendSms(phone, msg); thread.messages.push({ id: genId(), dir: 'out', body: msg, ts: Date.now(), kind: 'booking', status: 'sent' }); } catch (e) {}
+  }
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+  notifyMikey(`🗓 New booking — ${name}`, `${detail}\n\nOpen your dashboard → Bookings to confirm.`).catch(() => {});
+
+  return cors(json({ ok: true, id: rec.id }, 200));
+}
+
+async function apiBookings(url) {
+  const status = url.searchParams.get('status') || '';
+  let all = await loadBookings();
+  if (status) all = all.filter((b) => b.status === status);
+  const rank = { pending: 0, confirmed: 1, done: 2, declined: 3, cancelled: 4 };
+  all.sort((a, b) => (rank[a.status] - rank[b.status]) || (a.apptAt - b.apptAt));
+  return json({ ok: true, bookings: all });
+}
+
+// Confirm / decline / cancel / complete a booking. Confirm texts the customer and
+// queues the 24h + morning-of reminders through the existing scheduled-send cron.
+async function apiBookingAction(request) {
+  const d = await readJson(request);
+  const id = String(d.id || ''), action = String(d.action || '');
+  const all = await loadBookings();
+  const bk = all.find((x) => x.id === id);
+  if (!bk) return json({ ok: false, error: 'not_found' }, 404);
+
+  if (action === 'confirm') {
+    bk.status = 'confirmed'; bk.confirmedAt = Date.now();
+    const first = (bk.name || '').split(/\s+/)[0];
+    const when = `${bk.dateLabel} at ${bkFmt12(bk.slot)}`;
+    const thread = await loadThread(bk.phone);
+    if (!thread.tags.includes('booking')) thread.tags.push('booking');
+    thread.appointmentAt = bk.apptAt;
+    if (bk.smsConsent) {
+      try { await sendSms(bk.phone, `You're all set for ${when} — ${bk.serviceName}. I come to you; just have water & power within about 20 ft of the car. I'll text when I'm on my way. - Mikey`); } catch (e) {}
+      const now = Date.now(), r24 = bk.apptAt - 86400000, rAm = bkLaEpoch(bk.date, '07:30');
+      const add = [];
+      if (r24 > now + 60000) add.push({ id: genId(), body: `Quick reminder: I'm detailing your ${bk.vehicle || 'car'} tomorrow at ${bkFmt12(bk.slot)}. Please have it accessible with water & power within ~20 ft. See you then! - Mikey`, sendAt: r24 });
+      if (rAm > now + 60000 && rAm < bk.apptAt) add.push({ id: genId(), body: `Morning ${first}! I'm detailing your car today at ${bkFmt12(bk.slot)}. I'll text when I'm headed your way. - Mikey`, sendAt: rAm });
+      if (add.length) { thread.scheduled.push(...add); thread.scheduled.sort((a, b) => a.sendAt - b.sendAt); }
+    }
+    await saveThread(thread);
+    await updateIndexEntry(thread);
+  } else if (action === 'decline' || action === 'cancel') {
+    bk.status = action === 'decline' ? 'declined' : 'cancelled';
+  } else if (action === 'complete') {
+    bk.status = 'done';
+  } else {
+    return json({ ok: false, error: 'bad_action' }, 422);
+  }
+  await saveBookings(all);
+  return json({ ok: true, booking: bk });
+}
+
+// ===========================================================================
+// Google Calendar sync (best-effort) — the "secret iCal address" from Google
+// Calendar → Settings → your calendar → "Secret address in iCal format". We
+// fetch + parse it and subtract busy times from availability. Setup is a paste,
+// no OAuth. Google caches the feed (can lag a bit), and Mikey's approval is the
+// final gate, so it augments — not replaces — his control. Blocked dates and
+// manual settings give him instant, exact control alongside it.
+// ===========================================================================
+let CAL_CACHE = { url: '', at: 0, events: [] };
+async function bkFetchCal(url) {
+  const now = Date.now();
+  if (CAL_CACHE.url === url && (now - CAL_CACHE.at) < 600000) return CAL_CACHE.events;
+  const res = await fetch(url, { cf: { cacheTtl: 300 } });
+  if (!res.ok) throw new Error('ical ' + res.status);
+  const events = bkParseIcs(await res.text());
+  CAL_CACHE = { url, at: now, events };
+  return events;
+}
+// Busy intervals (LA minutes-of-day) on `date`, from the iCal feed. Never throws.
+async function bkCalBusy(cfg, date) {
+  try {
+    if (!(cfg.calendar && cfg.calendar.enabled && cfg.calendar.icalUrl)) return [];
+    const events = await bkFetchCal(cfg.calendar.icalUrl);
+    const out = [];
+    for (const ev of events) { const iv = bkEventBusyOnDate(ev, date); if (iv) out.push(iv); }
+    return out;
+  } catch (e) { return []; }
+}
+// LA-local {date:'YYYY-MM-DD', min:minutesOfDay, dow:0-6} for an epoch.
+function bkLocalParts(ms) {
+  const s = new Date(ms).toLocaleString('en-US', { timeZone: 'America/Los_Angeles', hourCycle: 'h23',
+    weekday: 'short', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const m = s.match(/(\w{3}),?\s*(\d{2})\/(\d{2})\/(\d{4}),?\s*(\d{2}):(\d{2})/);
+  if (!m) return { date: '', min: 0, dow: 0 };
+  const dm = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  return { date: `${m[4]}-${m[2]}-${m[3]}`, min: (+m[5]) * 60 + (+m[6]), dow: dm[m[1]] || 0 };
+}
+function bkIcsDate(val) {
+  if (/^\d{8}$/.test(val)) return { allDay: true, date: `${val.slice(0,4)}-${val.slice(4,6)}-${val.slice(6,8)}` };
+  const m = val.match(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})(Z)?$/);
+  if (!m) return null;
+  if (m[7]) return { allDay: false, ms: Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]) };
+  return { allDay: false, ms: bkLaEpoch(`${m[1]}-${m[2]}-${m[3]}`, `${m[4]}:${m[5]}`) + (+m[6]) * 1000 };
+}
+function bkAddDays(dateStr, n) { const d = new Date(dateStr + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10); }
+function bkParseRrule(s) {
+  const o = {}; s.split(';').forEach((p) => { const i = p.indexOf('='); if (i > 0) o[p.slice(0, i)] = p.slice(i + 1); });
+  const dm = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 };
+  const byday = (o.BYDAY || '').split(',').map((x) => dm[x.trim().slice(-2)]).filter((x) => x != null);
+  let untilMs = null;
+  if (o.UNTIL) { const p = bkIcsDate(o.UNTIL); untilMs = p ? (p.allDay ? bkLaEpoch(p.date, '23:59') : p.ms) : null; }
+  return { freq: o.FREQ, byday, untilMs };
+}
+// Parse VEVENTs into a shape bkEventBusyOnDate can evaluate against any date.
+function bkParseIcs(text) {
+  const unfolded = String(text || '').replace(/\r?\n[ \t]/g, '');
+  const lines = unfolded.split(/\r?\n/);
+  const events = []; let cur = null;
+  for (const line of lines) {
+    if (line === 'BEGIN:VEVENT') { cur = {}; continue; }
+    if (line === 'END:VEVENT') { if (cur) { const ev = bkBuildEvent(cur); if (ev) events.push(ev); } cur = null; continue; }
+    if (!cur) continue;
+    const c = line.indexOf(':'); if (c < 0) continue;
+    let key = line.slice(0, c); const val = line.slice(c + 1);
+    const name = key.split(';')[0].toUpperCase();
+    if (name === 'DTSTART') { cur.startRaw = val; cur.startName = key; }
+    else if (name === 'DTEND') { cur.endRaw = val; }
+    else if (name === 'RRULE') cur.rrule = val;
+    else if (name === 'TRANSP') cur.transp = val;
+    else if (name === 'STATUS') cur.status = val;
+    else if (name === 'DURATION') cur.durationRaw = val;
+  }
+  return events;
+}
+function bkBuildEvent(c) {
+  if (!c.startRaw) return null;
+  if ((c.transp || '').toUpperCase() === 'TRANSPARENT') return null;   // marked "free"
+  if ((c.status || '').toUpperCase() === 'CANCELLED') return null;
+  const start = bkIcsDate(c.startRaw); if (!start) return null;
+  const rrule = c.rrule ? bkParseRrule(c.rrule) : null;
+  if (start.allDay) {
+    const end = c.endRaw ? bkIcsDate(c.endRaw) : null;
+    const endDate = (end && end.allDay) ? end.date : bkAddDays(start.date, 1);
+    const p = { date: start.date, dow: new Date(start.date + 'T12:00:00Z').getUTCDay() };
+    return { allDay: true, startDate: start.date, endDate, rrule, baseDayMs: bkLaEpoch(start.date, '00:00'), baseDow: p.dow };
+  }
+  let endMs;
+  if (c.endRaw) { const e = bkIcsDate(c.endRaw); endMs = e && !e.allDay ? e.ms : start.ms + 3600000; }
+  else endMs = start.ms + 3600000;
+  const sp = bkLocalParts(start.ms);
+  return { allDay: false, startMs: start.ms, endMs, rrule,
+    baseDayMs: bkLaEpoch(sp.date, '00:00'), baseDow: sp.dow, baseStartMin: sp.min,
+    durMin: Math.max(15, Math.round((endMs - start.ms) / 60000)) };
+}
+// Busy interval {s,e} (LA minutes) this event occupies on `date`, or null.
+function bkEventBusyOnDate(ev, date) {
+  const dayStartMs = bkLaEpoch(date, '00:00'), dayEndMs = dayStartMs + 86400000;
+  const dow = new Date(date + 'T12:00:00Z').getUTCDay();
+  if (ev.rrule) {
+    const r = ev.rrule;
+    if (dayStartMs < ev.baseDayMs) return null;
+    if (r.untilMs && dayStartMs > r.untilMs) return null;
+    let hit = false;
+    if (r.freq === 'DAILY') hit = true;
+    else if (r.freq === 'WEEKLY') hit = (r.byday.length ? r.byday : [ev.baseDow]).includes(dow);
+    else return null; // MONTHLY / YEARLY not expanded (avoids over-blocking)
+    if (!hit) return null;
+    if (ev.allDay) return { s: 0, e: 1440 };
+    return { s: Math.max(0, ev.baseStartMin), e: Math.min(1440, ev.baseStartMin + ev.durMin) };
+  }
+  if (ev.allDay) return (date >= ev.startDate && date < ev.endDate) ? { s: 0, e: 1440 } : null;
+  if (ev.endMs <= dayStartMs || ev.startMs >= dayEndMs) return null;
+  const s = Math.max(0, Math.round((ev.startMs - dayStartMs) / 60000));
+  const e = Math.min(1440, Math.round((ev.endMs - dayStartMs) / 60000));
+  return e > s ? { s, e } : null;
+}
+
+// ===========================================================================
+// Booking settings API (authed) — powers the Settings tab
+// ===========================================================================
+async function apiBookingSettings() { return json({ ok: true, config: await loadBookingConfig() }); }
+async function apiSaveBookingSettings(request) {
+  const d = await readJson(request);
+  const clean = bkSanitizeConfig(d && d.config ? d.config : d);
+  await saveBookingConfig(clean);
+  return json({ ok: true, config: clean });
+}
+async function apiCalTest(request) {
+  const d = await readJson(request);
+  let url = String((d && d.url) || '').trim().replace(/^webcal:\/\//i, 'https://');
+  if (!/^https?:\/\//i.test(url)) return json({ ok: false, error: 'Enter a valid https:// iCal URL' });
+  try { CAL_CACHE = { url: '', at: 0, events: [] }; const evs = await bkFetchCal(url); return json({ ok: true, count: evs.length }); }
+  catch (e) { return json({ ok: false, error: 'Could not read that calendar feed (' + String(e.message || e) + ')' }); }
+}
+function bkSanitizeConfig(input) {
+  const d = bookingDefaults(), c = input || {};
+  const num = (v, def) => { const n = Number(v); return isFinite(n) ? n : def; };
+  const time = (v, def) => { const s = String(v || ''); if (!/^\d{1,2}:\d{2}$/.test(s)) return def; return s.length === 4 ? '0' + s : s; };
+  const sizes = (Array.isArray(c.sizes) && c.sizes.length)
+    ? c.sizes.map((s) => ({ id: (String(s.id || '').trim().replace(/\s+/g, '-').toLowerCase()) || 'size', label: String(s.label || '').trim() || 'Vehicle' })).slice(0, 6)
+    : d.sizes;
+  const sizeIds = sizes.map((z) => z.id);
+  let ical = String((c.calendar && c.calendar.icalUrl) || '').trim().replace(/^webcal:\/\//i, 'https://');
+  if (ical && !/^https?:\/\//i.test(ical)) ical = '';
+  return {
+    tz: d.tz,
+    workDays: Array.isArray(c.workDays) ? [...new Set(c.workDays.map(Number).filter((x) => x >= 0 && x <= 6))] : d.workDays,
+    dayStart: time(c.dayStart, d.dayStart),
+    lastStart: time(c.lastStart, d.lastStart),
+    stepMin: Math.min(120, Math.max(15, num(c.stepMin, d.stepMin))),
+    bufferMin: Math.min(240, Math.max(0, num(c.bufferMin, d.bufferMin))),
+    maxJobsPerDay: Math.min(12, Math.max(1, num(c.maxJobsPerDay, d.maxJobsPerDay))),
+    minLeadMin: Math.max(0, num(c.minLeadMin, d.minLeadMin)),
+    windowDays: Math.min(180, Math.max(1, num(c.windowDays, d.windowDays))),
+    sizes,
+    services: (Array.isArray(c.services) && c.services.length ? c.services : d.services).map((s, i) => {
+      const price = {}, duration = {};
+      sizeIds.forEach((z) => {
+        price[z] = Math.max(0, Math.round(num(s.price && s.price[z], (d.services[i] && d.services[i].price && d.services[i].price[z]) || 0)));
+        duration[z] = Math.max(15, Math.round(num(s.duration && s.duration[z], (d.services[i] && d.services[i].duration && d.services[i].duration[z]) || 60)));
+      });
+      return { id: (String(s.id || ('svc' + i)).trim().replace(/\s+/g, '-').toLowerCase()) || ('svc' + i),
+        name: String(s.name || 'Service').trim().slice(0, 60), enabled: s.enabled !== false, popular: !!s.popular,
+        blurb: String(s.blurb || '').trim().slice(0, 160), price, duration };
+    }).slice(0, 12),
+    addons: (Array.isArray(c.addons) ? c.addons : d.addons).map((a, i) => ({
+      id: (String(a.id || ('add' + i)).trim().replace(/\s+/g, '-').toLowerCase()) || ('add' + i),
+      name: String(a.name || '').trim().slice(0, 60), price: Math.max(0, Math.round(num(a.price, 0))),
+      enabled: a.enabled !== false, popular: !!a.popular, blurb: String(a.blurb || '').trim().slice(0, 120),
+    })).filter((a) => a.name).slice(0, 30),
+    cities: Array.isArray(c.cities) ? c.cities.map((x) => String(x).trim()).filter(Boolean).slice(0, 40) : d.cities,
+    content: {
+      businessName: String((c.content && c.content.businessName) || d.content.businessName).trim().slice(0, 80),
+      phoneDisplay: String((c.content && c.content.phoneDisplay) || d.content.phoneDisplay).trim().slice(0, 40),
+      phone: normalizePhone((c.content && c.content.phone) || d.content.phone) || d.content.phone,
+      hook: String((c.content && c.content.hook) != null ? c.content.hook : d.content.hook).trim().slice(0, 200),
+      guarantee: String((c.content && c.content.guarantee) != null ? c.content.guarantee : d.content.guarantee).trim().slice(0, 200),
+      urgency: !(c.content && c.content.urgency === false),
+      freeWax: !(c.content && c.content.freeWax === false),
+    },
+    proof: {
+      rating: String((c.proof && c.proof.rating) || d.proof.rating).trim().slice(0, 8),
+      reviews: Math.max(0, Math.round(num(c.proof && c.proof.reviews, d.proof.reviews))),
+      cars: String((c.proof && c.proof.cars) || d.proof.cars).trim().slice(0, 12),
+    },
+    calendar: { enabled: !!(c.calendar && c.calendar.enabled) && !!ical, icalUrl: ical },
+    blockedDates: Array.isArray(c.blockedDates) ? [...new Set(c.blockedDates.map((x) => String(x).trim()).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)))].slice(0, 200) : [],
+  };
 }
