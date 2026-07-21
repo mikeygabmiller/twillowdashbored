@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d0f">
+<title>Mikey's Detailing — Booking &amp; Calendar Questionnaire</title>
+<style>
+  :root{
+    --bg:#0c0c0e; --bg2:#111114; --card:#17171b; --card2:#1d1d22;
+    --line:#2a2a31; --line2:#34343d;
+    --txt:#f4f4f6; --muted:#a2a2ac; --faint:#75757f;
+    --red:#ff2d3f; --red2:#e11020; --redsoft:rgba(255,45,63,.14);
+    --good:#37d67a; --gold:#ffb020;
+    --radius:16px; --maxw:820px;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;background:var(--bg);color:var(--txt);font-family:var(--font);
+    font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased;padding-bottom:120px;
+  }
+  a{color:var(--red);}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 18px;}
+
+  /* ---------- sticky header + progress ---------- */
+  .topbar{position:sticky;top:0;z-index:50;background:rgba(12,12,14,.86);backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--line);}
+  .topbar-inner{max-width:var(--maxw);margin:0 auto;padding:10px 18px 12px;}
+  .topbar h1{margin:0;font-size:15px;font-weight:700;letter-spacing:.2px;display:flex;align-items:center;gap:8px;}
+  .topbar h1 .dot{width:9px;height:9px;border-radius:50%;background:var(--red);box-shadow:0 0 12px var(--red);}
+  .progrow{display:flex;align-items:center;gap:12px;margin-top:9px;}
+  .progbar{flex:1;height:8px;border-radius:999px;background:#26262d;overflow:hidden;}
+  .progfill{height:100%;width:0;background:linear-gradient(90deg,var(--red2),var(--red));border-radius:999px;transition:width .35s ease;}
+  .progpct{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:104px;text-align:right;}
+  .navchips{display:flex;gap:7px;overflow-x:auto;margin-top:11px;padding-bottom:2px;scrollbar-width:none;}
+  .navchips::-webkit-scrollbar{display:none}
+  .navchips a{flex:0 0 auto;font-size:12px;color:var(--muted);text-decoration:none;border:1px solid var(--line);
+    padding:5px 11px;border-radius:999px;background:var(--card);white-space:nowrap;}
+  .navchips a:hover{color:var(--txt);border-color:var(--line2);}
+
+  /* ---------- hero ---------- */
+  .hero{padding:34px 0 10px;}
+  .kicker{display:inline-block;font-size:12px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;
+    color:var(--red);background:var(--redsoft);border:1px solid rgba(255,45,63,.3);padding:5px 11px;border-radius:999px;}
+  .hero h2{font-size:30px;line-height:1.15;margin:16px 0 8px;font-weight:800;letter-spacing:-.4px;}
+  .hero p{color:var(--muted);margin:0 0 6px;max-width:62ch;}
+  .hero .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;}
+  .pill{font-size:12.5px;color:var(--muted);background:var(--card);border:1px solid var(--line);
+    padding:6px 11px;border-radius:999px;display:inline-flex;align-items:center;gap:6px;}
+  .howto{margin-top:20px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;}
+  .howto h3{margin:0 0 10px;font-size:14px;letter-spacing:.3px;text-transform:uppercase;color:var(--faint);}
+  .howto ol{margin:0;padding-left:20px;}
+  .howto li{margin:6px 0;color:var(--txt);}
+  .howto li b{color:var(--red);}
+  .legend{margin-top:12px;font-size:12.5px;color:var(--faint);}
+  .rec-tag{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#0b0b0c;
+    background:var(--gold);padding:2px 7px;border-radius:6px;vertical-align:middle;letter-spacing:.2px;}
+
+  /* ---------- sections ---------- */
+  section.sec{margin:26px 0;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    overflow:hidden;scroll-margin-top:150px;}
+  .sec-head{display:flex;align-items:center;gap:13px;padding:18px 20px;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,rgba(255,45,63,.05),transparent);}
+  .sec-num{flex:0 0 auto;width:34px;height:34px;border-radius:10px;background:var(--red);color:#fff;font-weight:800;
+    display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 4px 14px rgba(255,45,63,.35);}
+  .sec-head h3{margin:0;font-size:19px;font-weight:800;letter-spacing:-.2px;}
+  .sec-head .sub{color:var(--muted);font-size:13px;margin-top:2px;}
+  .sec-body{padding:6px 20px 18px;}
+
+  /* ---------- question ---------- */
+  .q{padding:18px 0;border-bottom:1px solid var(--line);}
+  .q:last-child{border-bottom:none;}
+  .q-title{font-size:16px;font-weight:650;margin:0 0 3px;display:block;}
+  .q-title .num{color:var(--faint);font-weight:600;margin-right:7px;font-variant-numeric:tabular-nums;}
+  .q-sub{color:var(--muted);font-size:13.5px;margin:0 0 12px;}
+  .tip{display:flex;gap:8px;background:var(--redsoft);border:1px solid rgba(255,45,63,.22);border-radius:10px;
+    padding:9px 12px;margin:10px 0 13px;font-size:13px;color:#ffd9dd;}
+  .tip b{color:#fff;}
+  .tip .ic{flex:0 0 auto;}
+
+  .opts{display:flex;flex-direction:column;gap:9px;margin-top:12px;}
+  .opts.grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;}
+  @media(max-width:560px){.opts.grid{grid-template-columns:1fr;}}
+  .opt{position:relative;display:flex;align-items:flex-start;gap:11px;padding:13px 14px;border:1.5px solid var(--line);
+    border-radius:12px;background:var(--card2);cursor:pointer;transition:border-color .12s,background .12s;}
+  .opt:hover{border-color:var(--line2);}
+  .opt input{position:absolute;opacity:0;pointer-events:none;}
+  .opt .mark{flex:0 0 auto;width:20px;height:20px;border:2px solid var(--line2);background:#0e0e11;margin-top:1px;
+    display:flex;align-items:center;justify-content:center;transition:all .12s;}
+  .opt[data-type="single"] .mark{border-radius:50%;}
+  .opt[data-type="multi"] .mark{border-radius:6px;}
+  .opt .mark svg{width:12px;height:12px;opacity:0;transform:scale(.6);transition:all .12s;}
+  .opt .otext{flex:1;font-size:14.5px;}
+  .opt .otext small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px;line-height:1.4;}
+  .opt.is-checked{border-color:var(--red);background:rgba(255,45,63,.09);}
+  .opt.is-checked .mark{border-color:var(--red);background:var(--red);}
+  .opt.is-checked .mark svg{opacity:1;transform:scale(1);}
+  .opt .rec{margin-left:6px;}
+
+  .field{margin-top:12px;}
+  .field label.flab{display:block;font-size:13px;color:var(--muted);margin-bottom:6px;}
+  input.txt,textarea.txt,select.txt{width:100%;background:#0e0e11;border:1.5px solid var(--line);color:var(--txt);
+    border-radius:11px;padding:12px 13px;font-family:var(--font);font-size:15px;transition:border-color .12s;}
+  input.txt:focus,textarea.txt:focus,select.txt:focus{outline:none;border-color:var(--red);}
+  textarea.txt{min-height:88px;resize:vertical;line-height:1.5;}
+  input.txt::placeholder,textarea.txt::placeholder{color:#5c5c66;}
+  .other-wrap{margin-top:9px;}
+  .other-wrap input{max-width:100%;}
+
+  /* ---------- export ---------- */
+  #export{margin:32px 0;border:1.5px solid var(--red);border-radius:var(--radius);overflow:hidden;
+    background:linear-gradient(180deg,rgba(255,45,63,.08),var(--card));scroll-margin-top:120px;}
+  #export .sec-head{border-bottom:1px solid rgba(255,45,63,.3);background:none;}
+  #export .sec-body{padding:18px 20px 22px;}
+  #export p.lead{color:var(--muted);margin:0 0 16px;}
+  .btnrow{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;}
+  .btn{border:none;font-family:var(--font);font-size:15px;font-weight:700;padding:13px 20px;border-radius:12px;
+    cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:transform .08s,filter .12s;}
+  .btn:active{transform:translateY(1px);}
+  .btn-primary{background:var(--red);color:#fff;box-shadow:0 6px 18px rgba(255,45,63,.35);}
+  .btn-primary:hover{filter:brightness(1.08);}
+  .btn-ghost{background:var(--card2);color:var(--txt);border:1.5px solid var(--line2);}
+  .btn-ghost:hover{border-color:var(--muted);}
+  textarea#output{width:100%;min-height:230px;background:#0a0a0c;border:1px solid var(--line);border-radius:12px;
+    color:#d7d7dd;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.55;
+    padding:14px;resize:vertical;white-space:pre;}
+  .toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%) translateY(20px);background:var(--good);
+    color:#062;padding:11px 20px;border-radius:12px;font-weight:700;font-size:14px;opacity:0;pointer-events:none;
+    transition:all .3s;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.4);}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  /* ---------- floating finish button ---------- */
+  #floater{position:fixed;right:16px;bottom:18px;z-index:60;background:var(--red);color:#fff;border:none;
+    font-family:var(--font);font-weight:700;font-size:14.5px;padding:14px 20px;border-radius:999px;cursor:pointer;
+    box-shadow:0 8px 26px rgba(255,45,63,.45);display:inline-flex;align-items:center;gap:8px;}
+  #floater:active{transform:translateY(1px);}
+  #floater .fp{font-variant-numeric:tabular-nums;opacity:.85;font-weight:600;}
+
+  footer{color:var(--faint);font-size:12.5px;text-align:center;padding:8px 0 30px;}
+  footer a{color:var(--muted);}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <h1><span class="dot"></span> Mikey's Detailing — Booking Build</h1>
+    <div class="progrow">
+      <div class="progbar"><div class="progfill" id="progfill"></div></div>
+      <div class="progpct" id="progpct">0 of 0 answered</div>
+    </div>
+    <nav class="navchips" id="navchips"></nav>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="hero">
+    <span class="kicker">Booking &amp; Calendar Questionnaire</span>
+    <h2>Let's design a booking flow that actually books more jobs.</h2>
+    <p>Answer these and I'll build you a booking + calendar system tuned for one thing: <b>turning visitors into paid appointments</b> with the least back-and-forth. Most are quick taps. A few are fill-in-the-blanks so I get your exact numbers.</p>
+    <div class="meta">
+      <span class="pill">⏱ ~10–12 minutes</span>
+      <span class="pill">💾 Saves automatically on this device</span>
+      <span class="pill">📋 Exports clean text to send back</span>
+    </div>
+
+    <div class="howto">
+      <h3>How this works</h3>
+      <ol>
+        <li>Go through the sections — tap answers, type where it asks.</li>
+        <li>Skip anything that doesn't apply. Nothing is required.</li>
+        <li>At the bottom, hit <b>"Get my answers"</b> — then <b>Copy</b> or <b>Download</b> and send it back to me.</li>
+      </ol>
+      <div class="legend">The <span class="rec-tag">★ Recommended</span> tag marks the option that converts best for mobile detailers, based on how the top booking apps and shops do it. It's just a suggestion — pick whatever's true for you.</div>
+    </div>
+  </div>
+
+  <div id="form"><!-- rendered by JS --></div>
+
+  <section id="export" class="sec">
+    <div class="sec-head">
+      <div class="sec-num" style="background:#0b0b0c;border:1.5px solid var(--red);color:var(--red)">✓</div>
+      <div><h3>Get my answers</h3><div class="sub">Send this back to me and I'll start building.</div></div>
+    </div>
+    <div class="sec-body">
+      <p class="lead">Click generate, then copy the text (or download the file) and paste it back into our chat.</p>
+      <div class="btnrow">
+        <button class="btn btn-primary" id="btnGen">⚡ Generate my answers</button>
+        <button class="btn btn-ghost" id="btnCopy">📋 Copy to clipboard</button>
+        <button class="btn btn-ghost" id="btnDl">⬇ Download .txt</button>
+        <button class="btn btn-ghost" id="btnReset" style="margin-left:auto">↺ Start over</button>
+      </div>
+      <textarea id="output" readonly placeholder="Your answers will appear here when you click &quot;Generate my answers&quot;…"></textarea>
+    </div>
+  </section>
+
+  <footer>
+    Built for Mikey's Mobile Detailing • Snohomish County, WA • This file works offline — nothing is sent anywhere until <em>you</em> copy or download it.
+  </footer>
+</div>
+
+<button id="floater" onclick="document.getElementById('export').scrollIntoView()">
+  Finish &amp; get answers <span class="fp" id="floatpct"></span>
+</button>
+<div class="toast" id="toast">Copied!</div>
+
+<script>
+/* ============================================================
+   SURVEY DEFINITION
+   type: single | multi | text | textarea
+   opts: [{v:label, sub?:hint, rec?:true}]  (v is stored + shown)
+   pre: pre-selected value(s) (facts pulled from Mikey's site — editable)
+   other: true -> adds an "Other:" text field
+   ============================================================ */
+const SURVEY = [
+{
+  id:"basics", title:"The Basics", sub:"Who gets the booking, and where your schedule lives.",
+  qs:[
+    {id:"biz_name", type:"text", q:"What business name should show at the top of the booking page?", ph:"Mikey's Mobile Detailing"},
+    {id:"alert_phone", type:"text", q:"When a booking comes in, which phone number should get the instant text alert?", sub:"This is you — the owner alert, not the customer.", ph:"(425) 600-7897"},
+    {id:"alert_email", type:"text", q:"Which email should also get a booking notification? (optional)", ph:"mikeysdetailing4u@gmail.com"},
+    {id:"calendar", type:"single", q:"What calendar do you actually live by day-to-day?",
+      tip:"I can sync your booking calendar both ways with this — so a booked job shows up on your phone, and your personal stuff blocks off slots automatically. No double-bookings.",
+      opts:[{v:"Google Calendar", rec:true, sub:"Syncs cleanest — recommended"},{v:"Apple / iCloud Calendar"},{v:"Outlook / Microsoft"},{v:"I don't really use one yet"}], other:true},
+    {id:"who_runs", type:"single", q:"Who's actually doing the jobs?",
+      opts:[{v:"Just me"},{v:"Me + 1 helper"},{v:"A small crew (2–3+)"}]},
+    {id:"timezone", type:"single", q:"Timezone for the calendar?",
+      opts:[{v:"Pacific (Seattle)", rec:true},{v:"Mountain"},{v:"Central"},{v:"Eastern"}], other:true}
+  ]
+},
+{
+  id:"services", title:"What Can People Book?", sub:"Your menu — what's instantly bookable vs. quote-first.",
+  qs:[
+    {id:"bookable", type:"multi", q:"Which services should customers be able to book online?", grid:true,
+      sub:"Pre-checked from your current site — uncheck anything you don't want bookable.",
+      opts:[{v:"Exterior Detail (from $160)"},{v:"Interior Detail (from $200)"},{v:"Full Detail — inside & out (from $299)"},{v:"Ceramic Coating"},{v:"Paint Correction"},{v:"Headlight Restoration"},{v:"Engine Bay Cleaning"},{v:"Pet Hair Removal"},{v:"Odor / Ozone Treatment"},{v:"Clean Club / Maintenance Membership"}],
+      pre:["Exterior Detail (from $160)","Interior Detail (from $200)","Full Detail — inside & out (from $299)","Ceramic Coating"], other:true},
+    {id:"bigticket", type:"single", q:"For big custom jobs (ceramic coating, paint correction), how should it work?",
+      tip:"Best practice: let the simple, fixed-price services book instantly, but send big-ticket jobs through a quick quote first — so you can eyeball the car and price it right without under-charging.",
+      opts:[{v:"Book & pay a deposit online, same as everything else"},{v:"Request a quote first, then I send them a booking link", rec:true, sub:"Protects your pricing on custom work"},{v:"Don't offer those online at all — phone only"}]},
+    {id:"menu_style", type:"single", q:"How should your service menu be laid out?",
+      tip:"Good-Better-Best tiers reliably lift the average ticket — most people pick the middle option, and it makes your premium package look reasonable.",
+      opts:[{v:"Simple list of individual services"},{v:"Good-Better-Best packages (e.g. Express / Signature / Showroom)", rec:true, sub:"Raises average order value"},{v:"Both — packages up top, add-ons below"}]},
+    {id:"tier_details", type:"textarea", q:"If you use packages, name them and what's in each.", ph:"e.g.  Express — exterior wash + wax\nSignature — full interior + exterior\nShowroom — full detail + ceramic spray + engine bay"}
+  ]
+},
+{
+  id:"pricing", title:"Pricing & Instant Quote", sub:"How money shows up on the page — and your real numbers.",
+  qs:[
+    {id:"price_display", type:"single", q:"How should prices show on the booking page?",
+      tip:"Showing prices (even 'from $X') consistently beats hiding them — price-shoppers bounce off 'call for quote'. Transparency is one of the biggest trust levers in booking.",
+      opts:[{v:"Show exact prices"},{v:"Show 'from $X' / 'starting at' and adjust by size", rec:true, sub:"Sets expectations, still flexible"},{v:"Hide prices — collect info and I'll quote"}]},
+    {id:"size_pricing", type:"single", q:"Does your price change by vehicle size?",
+      opts:[{v:"Yes — Sedan / SUV / Truck tiers", rec:true, sub:"Matches your current site"},{v:"No — flat price per service"},{v:"Depends on the service"}]},
+    {id:"price_ext", type:"text", q:"Exterior Detail price — Sedan / SUV / Truck", ph:"e.g. $160 / $200 / $240"},
+    {id:"price_int", type:"text", q:"Interior Detail price — Sedan / SUV / Truck", ph:"e.g. $200 / $240 / $280"},
+    {id:"price_full", type:"text", q:"Full Detail price — Sedan / SUV / Truck", ph:"e.g. $299 / $339 / $379"},
+    {id:"price_ceramic", type:"text", q:"Ceramic coating — starting price / how you quote it", ph:"e.g. from $499, quoted after I see the car"},
+    {id:"instant_quote", type:"single", q:"Want a live price total as they pick service + size + add-ons?",
+      tip:"A running total ('Your detail: $240') as they build the booking means way fewer 'how much?' texts and more completed checkouts. It's the single biggest 'reduce back-and-forth' win.",
+      opts:[{v:"Yes — show a live running total", rec:true},{v:"No — just show the 'from' price"},{v:"Just collect info, I'll send the price"}]}
+  ]
+},
+{
+  id:"addons", title:"Add-ons & Upsells", sub:"Where the extra revenue per job comes from.",
+  qs:[
+    {id:"addon_list", type:"multi", q:"Which add-ons can customers tack on at booking?", grid:true,
+      sub:"Pre-checked from your site — adjust freely.",
+      opts:[{v:"Wax / Sealant"},{v:"Clay bar"},{v:"Carpet & upholstery shampoo"},{v:"Leather conditioning"},{v:"Steam clean"},{v:"Pet hair removal"},{v:"Odor / ozone treatment"},{v:"Headlight restoration"},{v:"Engine bay"},{v:"Interior fabric/ceramic guard"},{v:"Wheel & tire deep clean"}],
+      pre:["Wax / Sealant","Clay bar","Carpet & upholstery shampoo","Leather conditioning","Steam clean","Pet hair removal"], other:true},
+    {id:"addon_prices", type:"textarea", q:"Rough prices for those add-ons (so the live total adds up right).", ph:"e.g. Pet hair +$40, Wax +$30, Shampoo +$40, Steam +$25, Engine bay +$30"},
+    {id:"upsell_when", type:"multi", q:"When should we nudge add-ons to lift the ticket?",
+      opts:[{v:"As checkboxes on the service page", rec:true},{v:"A one-tap 'Add this?' step right before checkout", rec:true, sub:"Classic high-converting upsell moment"},{v:"In the confirmation text afterward"},{v:"Don't push add-ons"}]},
+    {id:"top_upsell", type:"text", q:"If there's ONE upgrade you most want to push, what is it?", ph:"e.g. ceramic spray upgrade, or the Clean Club membership"}
+  ]
+},
+{
+  id:"area", title:"Service Area & Travel", sub:"Where you'll go, and what the customer needs ready.",
+  qs:[
+    {id:"mobile_shop", type:"single", q:"Are you mobile, shop-based, or both?",
+      opts:[{v:"Mobile — I come to them", rec:true, sub:"Your current model"},{v:"Shop — they come to me"},{v:"Both"}]},
+    {id:"cities", type:"multi", q:"Which areas do you cover?", grid:true,
+      tip:"The booking form can check the address and politely block out-of-area requests — so you never drive an hour for a job you can't take, and never waste a slot.",
+      opts:[{v:"Everett"},{v:"Bothell"},{v:"Lake Stevens"},{v:"Mill Creek"},{v:"Monroe"},{v:"Marysville"},{v:"Duvall"},{v:"Snohomish"}],
+      pre:["Everett","Bothell","Lake Stevens","Mill Creek","Monroe","Marysville","Duvall","Snohomish"], other:true},
+    {id:"radius", type:"text", q:"Home-base ZIP and how far you'll travel?", ph:"e.g. base 98201, up to 25 miles"},
+    {id:"travel_fee", type:"single", q:"How do you handle travel to farther jobs?",
+      opts:[{v:"No travel fee inside my area", rec:true, sub:"Simplest, fewest surprises"},{v:"Free within X miles, small fee beyond"},{v:"Always a small travel fee"},{v:"Case by case"}]},
+    {id:"travel_detail", type:"text", q:"If you charge for travel, what's the rule?", ph:"e.g. free within 15 mi, then $1/mile"},
+    {id:"self_contained", type:"single", q:"Do you bring your own water & power?",
+      tip:"If you're fully self-contained, we advertise 'no water or power needed' right on the booking page — it removes a real objection for apartment and condo customers.",
+      opts:[{v:"Yes — fully self-contained (water + power)", rec:true},{v:"I need access to their water"},{v:"I need access to their power"},{v:"I need both from the customer"}]}
+  ]
+},
+{
+  id:"availability", title:"Your Availability & Calendar", sub:"The core of it — when the calendar shows open slots.",
+  qs:[
+    {id:"work_days", type:"multi", q:"Which days are you available for jobs?", grid:true,
+      opts:[{v:"Monday"},{v:"Tuesday"},{v:"Wednesday"},{v:"Thursday"},{v:"Friday"},{v:"Saturday"},{v:"Sunday"}]},
+    {id:"work_hours", type:"text", q:"What hours? (earliest job start → latest job start)", ph:"e.g. first job 8:00am, last job starts 3:00pm"},
+    {id:"jobs_per_day", type:"single", q:"Max jobs per day you want the calendar to allow?",
+      sub:"Once you hit this, that day stops showing open slots.",
+      opts:[{v:"1"},{v:"2"},{v:"3"},{v:"4+"},{v:"Depends on job size"}]},
+    {id:"durations", type:"textarea", q:"Roughly how long does each service take? (so we block the right amount of time)", ph:"e.g. Exterior ~1.5h, Interior ~2h, Full detail ~3–4h, Ceramic ~full day"},
+    {id:"buffer", type:"single", q:"Buffer time between jobs for driving & setup?",
+      tip:"A travel buffer stops the calendar from booking you across the county with no gap. For mobile detailing, 45–60 min is the sweet spot.",
+      opts:[{v:"None — back to back"},{v:"30 minutes"},{v:"45 minutes"},{v:"60 minutes", rec:true},{v:"90 minutes"}]},
+    {id:"lead_time", type:"single", q:"Minimum notice before a job can be booked?",
+      tip:"Allowing same-day / next-day booking captures impulse customers who'd otherwise call a competitor — but only turn it on if you can realistically say yes.",
+      opts:[{v:"Same-day OK", sub:"Highest conversion if you can handle it"},{v:"At least 1 day ahead", rec:true},{v:"At least 2 days"},{v:"3+ days"}]},
+    {id:"booking_window", type:"single", q:"How far ahead can people book?",
+      opts:[{v:"2 weeks"},{v:"30 days", rec:true},{v:"60 days"},{v:"90 days"},{v:"No limit"}]},
+    {id:"confirm_mode", type:"single", q:"When someone books an open slot, should it…",
+      tip:"Instant auto-confirm converts far better than 'we'll get back to you' — speed-to-lead is everything. Since your slots already reflect your real availability, letting it confirm itself is safe and feels premium.",
+      opts:[{v:"Auto-confirm instantly", rec:true, sub:"Highest conversion"},{v:"Hold as 'pending' until I approve it"},{v:"Auto-confirm small jobs, approve big ones"}]},
+    {id:"blackouts", type:"textarea", q:"Any recurring times to ALWAYS block off? And how will you mark vacations?", ph:"e.g. block Sundays before noon (church), Weds 5–7pm (gym), and I'll mark vacation weeks on Google Calendar"}
+  ]
+},
+{
+  id:"form", title:"The Booking Form", sub:"What you ask customers — kept short on purpose.",
+  qs:[
+    {id:"collect", type:"multi", q:"What info should the booking form collect?", grid:true,
+      tip:"Every extra required field lowers completion. Keep required fields to the essentials (name, phone, address, vehicle, service, time) and make the rest optional.",
+      opts:[{v:"Name"},{v:"Phone (for the instant text)"},{v:"Service address"},{v:"Vehicle year/make/model"},{v:"Vehicle size/type"},{v:"Service + add-ons"},{v:"Preferred date/time"},{v:"Email"},{v:"How'd you hear about us?"},{v:"Photos of the vehicle"},{v:"Gate code / parking notes"},{v:"Any pets in the car?"}],
+      pre:["Name","Phone (for the instant text)","Service address","Vehicle year/make/model","Vehicle size/type","Service + add-ons","Preferred date/time"]},
+    {id:"photos", type:"single", q:"Let customers upload photos of the car for an accurate quote?",
+      opts:[{v:"Yes — optional", rec:true, sub:"Better quotes, fewer on-site surprises"},{v:"Yes — required for certain services"},{v:"No"}]},
+    {id:"account", type:"single", q:"Make customers create an account to book?",
+      tip:"Forcing account creation is one of the biggest booking killers online. Guest checkout wins almost every time.",
+      opts:[{v:"No — guest booking", rec:true},{v:"Optional — offer it, don't force it"},{v:"Required account"}]},
+    {id:"form_feel", type:"single", q:"How should the form feel?",
+      opts:[{v:"One short scrolling page"},{v:"Step-by-step wizard (service → vehicle → date → details → confirm)", rec:true, sub:"Feels easy, shows progress"},{v:"No preference"}]}
+  ]
+},
+{
+  id:"payment", title:"Deposits & Payment", sub:"The no-show killer, and how you get paid.",
+  qs:[
+    {id:"deposit", type:"single", q:"Require a deposit to lock in a booking?",
+      tip:"Deposits are the #1 no-show killer for detailers — they give the customer a reason to show up or reschedule instead of ghosting, and they protect the long time-blocks your jobs need.",
+      opts:[{v:"Yes — deposit required", rec:true, sub:"Cuts no-shows, protects your day"},{v:"No deposit"},{v:"Only for big jobs / ceramic"}]},
+    {id:"deposit_amt", type:"text", q:"If yes — how much? (flat or %?)", ph:"e.g. $25 flat, or 20% of the job"},
+    {id:"deposit_policy", type:"single", q:"Deposit policy?",
+      opts:[{v:"Applied to the total", rec:true},{v:"Non-refundable if they no-show / late-cancel"},{v:"Fully refundable"}], other:true},
+    {id:"pay_timing", type:"single", q:"When do they pay the rest?",
+      opts:[{v:"After the job, in person"},{v:"Full amount upfront, online"},{v:"Card on file, charged when the job's done", rec:true, sub:"Fastest, most reliable"},{v:"Their choice"}]},
+    {id:"pay_methods", type:"multi", q:"What payment methods do you take?", grid:true,
+      opts:[{v:"Card (Stripe/Square)"},{v:"Apple Pay / Google Pay"},{v:"Cash"},{v:"Venmo"},{v:"Zelle"},{v:"Cash App"}],
+      pre:["Card (Stripe/Square)","Apple Pay / Google Pay","Cash"]},
+    {id:"processor", type:"text", q:"Do you already use Square, Stripe, Venmo, etc.? Which one(s)?", ph:"e.g. I use Square + Venmo"}
+  ]
+},
+{
+  id:"boosters", title:"Conversion Boosters", sub:"The stuff that turns 'maybe' into 'booked'.",
+  qs:[
+    {id:"social_proof", type:"multi", q:"What proof should show right on the booking page?", grid:true,
+      tip:"Proof sitting next to the 'Book' button is one of the biggest lifts to booking rate. You've got a killer stack — use all of it.",
+      opts:[{v:"5.0★ star rating"},{v:"Review count (39 reviews)"},{v:"'300+ cars detailed'"},{v:"Before/after photos"},{v:"Live Google reviews feed"},{v:"Trust badges (insured, satisfaction guarantee)"}],
+      pre:["5.0★ star rating","Review count (39 reviews)","'300+ cars detailed'","Before/after photos"]},
+    {id:"urgency", type:"single", q:"Show availability / urgency cues?",
+      tip:"Honest scarcity ('2 slots left this weekend') nudges fence-sitters to book now instead of 'later' (which usually means never). Only ever show what's real.",
+      opts:[{v:"Yes — 'only 2 slots left this weekend' / 'booking fast'", rec:true, sub:"Honest scarcity"},{v:"Just show open slots, no urgency text"},{v:"No urgency cues"}]},
+    {id:"first_offer", type:"single", q:"Offer a first-time hook to win the booking?",
+      tip:"You already advertise a free exterior wash & wax ($160 value). Putting that right on the booking button is a proven conversion magnet — keep it.",
+      opts:[{v:"Yes — keep the free exterior wash & wax ($160 value)", rec:true},{v:"A first-time % or $ off"},{v:"A free add-on"},{v:"No first-time offer"}], other:true},
+    {id:"guarantee", type:"single", q:"Show a guarantee on the page?",
+      opts:[{v:"Yes — 'You don't pay until you love it'", rec:true, sub:"It's already your brand voice"},{v:"Satisfaction guarantee"},{v:"No guarantee"}], other:true},
+    {id:"membership", type:"single", q:"Promote the Clean Club / recurring membership in the flow?",
+      tip:"Recurring members = predictable income. The best moment to offer it is right after a great job, in the thank-you/confirmation — 'keep it looking like this for $X/mo.'",
+      opts:[{v:"Yes — offer it after booking / after the job", rec:true},{v:"Yes — put it on the menu too"},{v:"Not yet — maybe later"},{v:"No"}]},
+    {id:"referral", type:"single", q:"Add a referral incentive?",
+      opts:[{v:"Yes — $ off for referring a friend"},{v:"Not right now"}]},
+    {id:"abandon", type:"single", q:"If someone starts booking but doesn't finish, text them a nudge?",
+      tip:"You already run the Twilio follow-up machine — recovering abandoned bookings with an automatic 'still want that detail?' text is basically free money.",
+      opts:[{v:"Yes — auto-text to recover it", rec:true},{v:"No"}]}
+  ]
+},
+{
+  id:"comms", title:"Confirmations, Reminders & Follow-up", sub:"Wire it into your Twilio machine.",
+  qs:[
+    {id:"confirm_channel", type:"single", q:"How should customers get their booking confirmation?",
+      opts:[{v:"Text", rec:true, sub:"You already run Twilio — instant + high open rate"},{v:"Email"},{v:"Both text & email"}]},
+    {id:"reminders", type:"multi", q:"When should we remind them before the appointment?", grid:true,
+      tip:"Reminders are the other big no-show killer. A 24h reminder + a morning-of text is the standard combo.",
+      opts:[{v:"24 hours before"},{v:"Morning of the appointment"},{v:"1 hour before"},{v:"'On my way' text when I leave"},{v:"2 days before"}],
+      pre:["24 hours before","Morning of the appointment","'On my way' text when I leave"]},
+    {id:"review_ask", type:"single", q:"Text a review link after the job?",
+      tip:"Auto-requesting a review after every job is how you keep the 5.0★ growing — and review velocity is what pushes you up the Google Map Pack, your #1 lead source.",
+      opts:[{v:"Yes — automatically after the job", rec:true},{v:"Only when I trigger it"},{v:"No"}]},
+    {id:"rebook", type:"single", q:"Remind past customers when it's time for their next detail?",
+      opts:[{v:"Yes — automatic rebooking reminder", rec:true, sub:"Brings back repeat business"},{v:"No"}]},
+    {id:"rebook_interval", type:"text", q:"How often should a customer re-detail? (for that reminder)", ph:"e.g. every 8–12 weeks"},
+    {id:"noshow", type:"single", q:"If someone no-shows or cancels last-minute?",
+      opts:[{v:"Keep the deposit + auto-text to rebook", rec:true},{v:"Just send a rebook text"},{v:"Handle it manually"}]}
+  ]
+},
+{
+  id:"lookfeel", title:"Look, Feel & Voice", sub:"So it feels like your brand, not a generic form.",
+  qs:[
+    {id:"colors", type:"single", q:"Stick with your red & black look?",
+      opts:[{v:"Yes — red & black", rec:true, sub:"Matches your brand"},{v:"Tweak it (tell me below)"},{v:"Open to a fresh look"}]},
+    {id:"colors_detail", type:"text", q:"Any exact colors, or a logo I should match?", ph:"e.g. that red is #ff2d3f, match my logo"},
+    {id:"tone", type:"single", q:"What vibe should the booking page have?",
+      opts:[{v:"Premium & sleek"},{v:"Friendly & local"},{v:"Fast & no-nonsense"},{v:"Rugged / tough"}]},
+    {id:"admire", type:"textarea", q:"Any booking flows you love? Paste links or names — a detailer, a barber app, Calendly, anything.", ph:"Drop links or names and I'll study what makes them work."},
+    {id:"avoid", type:"textarea", q:"Anything you HATE in booking flows? Pet peeves to avoid?", ph:"e.g. too many steps, forcing an account, no prices shown"}
+  ]
+},
+{
+  id:"priorities", title:"Priorities & Anything Else", sub:"So I build around what matters most to you.",
+  qs:[
+    {id:"top_goals", type:"multi", q:"What matters most? (pick your top 3)", grid:true,
+      tip:"I'll optimize the whole build around whatever you pick here.",
+      opts:[{v:"More bookings / higher conversion"},{v:"Fewer no-shows"},{v:"Less back-and-forth texting"},{v:"Higher average ticket (upsells)"},{v:"Filling the gaps in my day"},{v:"More repeat / membership business"},{v:"Looking professional & trustworthy"}]},
+    {id:"launch", type:"single", q:"When do you want this live?",
+      opts:[{v:"ASAP"},{v:"This month"},{v:"Next month"},{v:"Just planning for now"}]},
+    {id:"must_have", type:"textarea", q:"Any must-have features or specific requests?", ph:"Anything that's non-negotiable for you."},
+    {id:"anything", type:"textarea", q:"Anything else I should know to build this exactly how you want it?", ph:"The more you tell me here, the closer the first version lands."}
+  ]
+}
+];
+
+/* ============================================================
+   RENDER + STATE
+   ============================================================ */
+const LS_KEY = "mikeys-booking-questionnaire-v1";
+const $ = (s,el=document)=>el.querySelector(s);
+const state = load();
+
+function load(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)) || {}; }catch(e){ return {}; } }
+function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} }
+
+const svg = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+
+let qCount = 0;
+const allQ = [];
+
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+function render(){
+  const form = $("#form");
+  const nav = $("#navchips");
+  let qn = 0;
+  SURVEY.forEach((sec, si)=>{
+    // nav chip
+    const chip = document.createElement("a");
+    chip.href = "#sec-"+sec.id; chip.textContent = (si+1)+". "+sec.title;
+    nav.appendChild(chip);
+
+    const el = document.createElement("section");
+    el.className = "sec"; el.id = "sec-"+sec.id;
+    let html = '<div class="sec-head"><div class="sec-num">'+(si+1)+'</div><div><h3>'+esc(sec.title)+'</h3>'+(sec.sub?'<div class="sub">'+esc(sec.sub)+'</div>':'')+'</div></div><div class="sec-body">';
+
+    sec.qs.forEach(q=>{
+      qn++; qCount++; allQ.push(q);
+      // seed pre-selected defaults into state (only first load, if untouched)
+      if(q.pre && state[q.id]===undefined){ state[q.id] = q.type==="multi" ? q.pre.slice() : q.pre; }
+      html += '<div class="q" id="q-'+q.id+'">';
+      html += '<label class="q-title"><span class="num">'+qn+'.</span>'+esc(q.q)+'</label>';
+      if(q.sub) html += '<div class="q-sub">'+esc(q.sub)+'</div>';
+      if(q.tip) html += '<div class="tip"><span class="ic">💡</span><span><b>Pro tip:</b> '+esc(q.tip)+'</span></div>';
+
+      if(q.type==="single" || q.type==="multi"){
+        html += '<div class="opts'+(q.grid?' grid':'')+'">';
+        q.opts.forEach((o,oi)=>{
+          const val = typeof o==="string"?o:o.v;
+          const checked = isChecked(q,val);
+          html += '<label class="opt'+(checked?' is-checked':'')+'" data-type="'+q.type+'" data-q="'+q.id+'" data-v="'+esc(val)+'">'
+            + '<input type="'+(q.type==="single"?"radio":"checkbox")+'" name="'+q.id+'" value="'+esc(val)+'"'+(checked?' checked':'')+'>'
+            + '<span class="mark">'+svg+'</span>'
+            + '<span class="otext">'+esc(val)+ (o.rec?' <span class="rec rec-tag">★ Recommended</span>':'') + (o.sub?'<small>'+esc(o.sub)+'</small>':'') +'</span>'
+            + '</label>';
+        });
+        html += '</div>';
+        if(q.other){
+          const ov = state[q.id+"__other"]||"";
+          html += '<div class="other-wrap"><input class="txt" type="text" data-other="'+q.id+'" placeholder="Other / add your own…" value="'+esc(ov)+'"></div>';
+        }
+      } else if(q.type==="text"){
+        html += '<div class="field"><input class="txt" type="text" data-text="'+q.id+'" placeholder="'+esc(q.ph||"")+'" value="'+esc(state[q.id]||"")+'"></div>';
+      } else if(q.type==="textarea"){
+        html += '<div class="field"><textarea class="txt" data-text="'+q.id+'" placeholder="'+esc(q.ph||"")+'">'+esc(state[q.id]||"")+'</textarea></div>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+    el.innerHTML = html;
+    form.appendChild(el);
+  });
+  save(); // persist any seeded defaults
+  attach();
+  updateProgress();
+}
+
+function isChecked(q,val){
+  const s = state[q.id];
+  if(q.type==="multi") return Array.isArray(s) && s.indexOf(val)>-1;
+  return s===val;
+}
+
+function attach(){
+  // option clicks
+  document.querySelectorAll(".opt").forEach(opt=>{
+    const input = opt.querySelector("input");
+    input.addEventListener("change", ()=>{
+      const qid = opt.dataset.q, val = opt.dataset.v, type = opt.dataset.type;
+      if(type==="single"){
+        state[qid] = val;
+        document.querySelectorAll('.opt[data-q="'+qid+'"]').forEach(o=>o.classList.toggle("is-checked", o.dataset.v===val));
+      } else {
+        let arr = Array.isArray(state[qid])?state[qid]:[];
+        if(input.checked){ if(arr.indexOf(val)<0) arr.push(val); }
+        else { arr = arr.filter(x=>x!==val); }
+        state[qid] = arr;
+        opt.classList.toggle("is-checked", input.checked);
+      }
+      save(); updateProgress();
+    });
+  });
+  // text + textarea
+  document.querySelectorAll("[data-text]").forEach(inp=>{
+    inp.addEventListener("input", ()=>{ state[inp.dataset.text] = inp.value; save(); updateProgress(); });
+  });
+  // other fields
+  document.querySelectorAll("[data-other]").forEach(inp=>{
+    inp.addEventListener("input", ()=>{ state[inp.dataset.other+"__other"] = inp.value; save(); updateProgress(); });
+  });
+}
+
+function answered(q){
+  const s = state[q.id];
+  const other = state[q.id+"__other"];
+  if(q.type==="multi") return (Array.isArray(s)&&s.length>0) || (other&&other.trim());
+  if(q.type==="single") return (s&&s.length) || (other&&other.trim());
+  return s && String(s).trim().length>0;
+}
+
+function updateProgress(){
+  let done = 0;
+  allQ.forEach(q=>{ if(answered(q)) done++; });
+  const pct = qCount? Math.round(done/qCount*100):0;
+  $("#progfill").style.width = pct+"%";
+  $("#progpct").textContent = done+" of "+qCount+" answered";
+  $("#floatpct").textContent = pct+"%";
+}
+
+/* ============================================================
+   EXPORT
+   ============================================================ */
+function buildReport(){
+  const now = new Date();
+  let done=0; allQ.forEach(q=>{ if(answered(q)) done++; });
+  let out = "";
+  out += "MIKEY'S DETAILING — BOOKING & CALENDAR SETUP\n";
+  out += "Filled out: " + now.toLocaleString() + "\n";
+  out += "Completed: " + done + " of " + qCount + " questions\n";
+  out += "Paste this whole thing back to Claude to start the build.\n";
+
+  SURVEY.forEach((sec,si)=>{
+    out += "\n============================================================\n";
+    out += (si+1)+". "+sec.title.toUpperCase()+"\n";
+    out += "============================================================\n";
+    sec.qs.forEach(q=>{
+      out += "\n• " + q.q + "\n";
+      let ans = "";
+      if(q.type==="multi"){
+        const arr = Array.isArray(state[q.id])?state[q.id].slice():[];
+        const other = (state[q.id+"__other"]||"").trim();
+        if(other) arr.push("Other: "+other);
+        ans = arr.length ? arr.map(a=>"    - "+a).join("\n") : "";
+        out += ans ? ans+"\n" : "    → (skipped)\n";
+      } else if(q.type==="single"){
+        let v = state[q.id]||"";
+        const other = (state[q.id+"__other"]||"").trim();
+        if(other) v = (v? v+" / ":"") + "Other: "+other;
+        out += v ? "    → "+v+"\n" : "    → (skipped)\n";
+      } else {
+        const v = (state[q.id]||"").trim();
+        out += v ? "    → "+v.replace(/\n/g,"\n      ")+"\n" : "    → (skipped)\n";
+      }
+    });
+  });
+  out += "\n— end —\n";
+  return out;
+}
+
+function generate(){ const t=buildReport(); $("#output").value=t; return t; }
+
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),1900); }
+
+function copyText(text){
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(()=>toast("Copied! Paste it back to me."),()=>fallbackCopy(text));
+  } else { fallbackCopy(text); }
+}
+function fallbackCopy(text){
+  const ta=$("#output"); ta.value=text; ta.removeAttribute("readonly"); ta.focus(); ta.select();
+  try{ document.execCommand("copy"); toast("Copied! Paste it back to me."); }
+  catch(e){ toast("Select the text below & copy"); }
+  ta.setAttribute("readonly","");
+}
+function download(text){
+  const blob=new Blob([text],{type:"text/plain"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url; a.download="mikeys-booking-answers.txt";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  toast("Downloaded — attach it in our chat.");
+}
+
+/* wire buttons */
+document.addEventListener("DOMContentLoaded", ()=>{
+  render();
+  $("#btnGen").addEventListener("click", ()=>{ generate(); $("#output").scrollIntoView({block:"center"}); toast("Generated below ⤵"); });
+  $("#btnCopy").addEventListener("click", ()=>copyText(generate()));
+  $("#btnDl").addEventListener("click", ()=>download(generate()));
+  $("#btnReset").addEventListener("click", ()=>{
+    if(confirm("Start over? This clears all your answers on this device.")){
+      localStorage.removeItem(LS_KEY);
+      location.reload();
+    }
+  });
+});
+</script>
+</body>
+</html>
