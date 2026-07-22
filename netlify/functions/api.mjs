@@ -61,7 +61,8 @@ async function handleSubmit(request) {
   let body;
   try { body = await request.json(); } catch { return cors(json({ ok: false, error: 'bad_json' }, 400)); }
 
-  const { name, phone, email, location, total, vehicle, condition, services, notes, smsConsent } = body;
+  const { name, phone, email, location, total, vehicle, condition, services, notes, smsConsent,
+          date, slot, appointment, type } = body;
   // Only auto-text the client if they ticked the SMS consent box on the form
   // (A2P/compliance). Mikey's lead alert + the dashboard lead always go through.
   const consent = smsConsent === true || smsConsent === 'true';
@@ -72,13 +73,24 @@ async function handleSubmit(request) {
   const serviceList = Array.isArray(services) ? services.join(', ') : (services || '');
   const quoteLine = total ? `$${total}` : 'TBD';
 
-  const clientMsg =
-    `Hey ${name.split(' ')[0]}, it's Mikey. I got your quote submission on my site. ` +
-    `Whenever you have a minute, feel free to send over the year, make, and model of the car ` +
-    `you'd like detailed, and I'll confirm that price. Talk soon!`;
+  // A "Pick your time" booking carries a date (YYYY-MM-DD) + slot (HH:MM). Turn that
+  // into a real appointment timestamp in Mikey's timezone, so it lands in the
+  // dashboard's Appointment field and pre-fills the reminder tool.
+  const apptMs = zonedTimeToUtcMs(date, slot, BUSINESS_TZ);
+  const isBooking = type === 'booking' || apptMs != null;
+  const whenLabel = (appointment && String(appointment).trim()) || (apptMs != null ? fmtAppt(apptMs) : '');
+
+  const clientMsg = isBooking
+    ? `Hey ${name.split(' ')[0]}, it's Mikey — thanks for booking${whenLabel ? ` for ${whenLabel}` : ''}! ` +
+      `I'll text you shortly to confirm. Need to change anything? Just reply here.`
+    : `Hey ${name.split(' ')[0]}, it's Mikey. I got your quote submission on my site. ` +
+      `Whenever you have a minute, feel free to send over the year, make, and model of the car ` +
+      `you'd like detailed, and I'll confirm that price. Talk soon!`;
 
   const mikeyMsg = [
-    `🔔 NEW QUOTE — ${name}`, `Phone: ${clientPhone}`,
+    isBooking ? `📅 NEW BOOKING — ${name}` : `🔔 NEW QUOTE — ${name}`,
+    isBooking && whenLabel ? `When: ${whenLabel}` : null,
+    `Phone: ${clientPhone}`,
     email ? `Email: ${email}` : null, location ? `City: ${location}` : null,
     `Quote: ${quoteLine}`, vehicle ? `Vehicle: ${vehicle}` : null,
     condition ? `Condition: ${condition}` : null, serviceList ? `Services: ${serviceList}` : null,
@@ -94,20 +106,26 @@ async function handleSubmit(request) {
   const thread = await loadThread(clientPhone);
   if (!thread.name) thread.name = name;
   if (!thread.status) thread.status = 'new';
+  // A website booking sets the appointment (reflect the latest one) and gets a
+  // "Booked" tag so it's easy to spot in the list.
+  if (apptMs != null) thread.appointmentAt = apptMs;
+  if (isBooking && Array.isArray(thread.tags) && !thread.tags.includes('Booked')) {
+    thread.tags = [...thread.tags, 'Booked'].slice(0, 20);
+  }
   const detail = [
     vehicle ? `Vehicle: ${vehicle}` : null, condition ? `Condition: ${condition}` : null,
     serviceList ? `Services: ${serviceList}` : null, `Quote: ${quoteLine}`,
     email ? `Email: ${email}` : null, location ? `City: ${location}` : null,
     notes ? `Notes: ${notes}` : null,
   ].filter(Boolean).join('\n');
-  if (detail && !thread.notes) thread.notes = `Quote request (${new Date().toLocaleDateString()}):\n${detail}`;
+  if (detail && !thread.notes) thread.notes = `${isBooking ? 'Booking' : 'Quote request'} (${new Date().toLocaleDateString()}):\n${detail}`;
   // Record the auto-text in the thread only if we actually sent it.
   if (consent) thread.messages.push({ id: genId(), dir: 'out', body: clientMsg, ts: Date.now(), kind: 'auto' });
   await saveThread(thread);
   await updateIndexEntry(thread);
 
   const ok = r1.status === 'fulfilled' && r2.status === 'fulfilled';
-  return cors(json({ ok, clientSms: r1.status, mikeySms: r2.status }, ok ? 200 : 207));
+  return cors(json({ ok, booking: isBooking, appointmentAt: apptMs, clientSms: r1.status, mikeySms: r2.status }, ok ? 200 : 207));
 }
 
 async function handleInboundSms(request) {
@@ -412,6 +430,39 @@ function humanAgo(ms) {
 async function readJson(request) { try { return await request.json(); } catch { return {}; } }
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), { status, headers: { 'Content-Type': 'application/json' } });
+}
+
+// Mikey works out of Snohomish County, WA — appointment wall-clock times are Pacific.
+const BUSINESS_TZ = 'America/Los_Angeles';
+
+// Convert a wall-clock date ('YYYY-MM-DD') + time ('HH:MM') in an IANA timezone into
+// a UTC epoch-ms timestamp, correct across DST. Returns null if either part is missing
+// or malformed (i.e. a plain quote with no chosen time).
+function zonedTimeToUtcMs(dateStr, timeStr, tz) {
+  const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr || '').trim());
+  const tm = /^(\d{1,2}):(\d{2})$/.exec(String(timeStr || '').trim());
+  if (!dm || !tm) return null;
+  const y = +dm[1], mo = +dm[2], d = +dm[3], h = +tm[1], mi = +tm[2];
+  if (mo < 1 || mo > 12 || d < 1 || d > 31 || h > 23 || mi > 59) return null;
+  const guess = Date.UTC(y, mo - 1, d, h, mi);
+  // What wall-clock time does that UTC instant show in `tz`? The difference is the offset.
+  const parts = {};
+  for (const p of new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+  }).formatToParts(new Date(guess))) parts[p.type] = p.value;
+  const shown = Date.UTC(+parts.year, +parts.month - 1, +parts.day, (+parts.hour) % 24, +parts.minute, +parts.second);
+  return guess - (shown - guess);
+}
+
+// Friendly label for an appointment timestamp, rendered in Mikey's timezone.
+function fmtAppt(ms) {
+  try {
+    return new Intl.DateTimeFormat('en-US', {
+      timeZone: BUSINESS_TZ, weekday: 'short', month: 'short', day: 'numeric',
+      hour: 'numeric', minute: '2-digit',
+    }).format(new Date(ms));
+  } catch { return ''; }
 }
 function twiml(message) {
   const xml = message
