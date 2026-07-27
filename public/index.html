@@ -2045,7 +2045,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-27·deep-analytics";
+  var APP_BUILD="2026-07-27·placeid-finder";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4652,7 +4652,8 @@
     web:{range:"7d",data:null,loading:false,err:"",settings:false,status:null,ai:"",aiRange:"",aiLoading:false,savingGa:false,savingCl:false},
     map:{mode:"area",area:{size:9,radius:12,metric:"rev",months:12},
          rank:{data:null,loading:false,err:"",setup:false,saving:false,
-               size:7,radius:5,keyword:"",scanning:false,done:0,total:0,live:null,viewId:""}}};
+               size:7,radius:5,keyword:"",scanning:false,done:0,total:0,live:null,viewId:"",
+               finding:false,found:null}}};
   var GROW_VIEWS={overview:["Analytics","Business overview · Mikey's Mobile Detailing"],
     customers:["Analytics","Who your customers are — and who's slipping away"],
     profit:["Analytics","What each job is really worth"],
@@ -5777,7 +5778,13 @@
       '<p class="wa-hint">Rank data needs a Google Cloud API key with <b>Places API (New)</b> enabled and billing on. Create one at console.cloud.google.com → APIs &amp; Services → Credentials. Leave it unrestricted by HTTP referrer — the call comes from this server, not your browser.</p>'+
       (d.connected?"":'<div class="gg-field"><label>API key</label><input class="gr-input" id="ggKey" placeholder="AIza…" autocapitalize="none" autocomplete="off"></div>')+
       '<div class="gg-field"><label>Your business name on Google</label><input class="gr-input" id="ggBiz" value="'+esc(c.bizName||"")+'" placeholder="Mikey\'s Mobile Detailing"></div>'+
-      '<div class="gg-field"><label>Place ID <span style="text-transform:none;font-weight:600">(optional — exact match, beats the name)</span></label><input class="gr-input" id="ggPid" value="'+esc(c.placeId||"")+'" placeholder="ChIJ…" autocapitalize="none"></div>'+
+      '<div class="gg-field"><label>Place ID <span style="text-transform:none;font-weight:600">(optional — exact match, on top of the name)</span></label>'+
+        '<input class="gr-input" id="ggPid" value="'+esc(c.placeId||"")+'" placeholder="ChIJ… (leave blank to match on name)" autocapitalize="none">'+
+        (d.connected?'<button class="btn" id="ggFind" style="width:100%;margin-top:7px">'+(GROW.map.rank.finding?'<span class="spin"></span> Searching…':ic("search",15)+' Find my Place ID')+'</button>':'')+
+        '<div class="wa-hint" style="margin:6px 0 0">Not the long number from a Maps link — that\'s a CID and won\'t match. Tap the button and pick yourself from the list.</div>'+
+        (GROW.map.rank.found?'<div style="margin-top:8px">'+GROW.map.rank.found.map(function(r){
+          return '<div class="iv-row tap" data-gg-pick="'+esc(r.id)+'" style="margin-bottom:6px"><span class="b"><span class="t">'+esc(r.name)+'</span><span class="s">'+esc(r.address)+'</span></span><span class="r"><span class="s">use</span></span></div>'}).join("")+'</div>':'')+
+        '</div>'+
       '<div class="gg-two">'+
         '<div class="gg-field"><label>Centre lat</label><input class="gr-input" id="ggLat" value="'+esc(c.centerLat)+'" inputmode="decimal"></div>'+
         '<div class="gg-field"><label>Centre lng</label><input class="gr-input" id="ggLng" value="'+esc(c.centerLng)+'" inputmode="decimal"></div>'+
@@ -5803,6 +5810,23 @@
         else{toast((r&&r.hint)||"Google rejected that key",{bad:true});ggRenderRank()}
       }).catch(function(){R.saving=false;toast("Network error",{bad:true});ggRenderRank()});
     };
+    var fb=el("ggFind");
+    if(fb)fb.onclick=function(){
+      if(R.finding)return;
+      var q=((el("ggBiz")||{}).value||"").trim();
+      if(!q)return toast("Type your business name first",{bad:true});
+      R.finding=true;ggRenderRank();
+      post("/api/geogrid/find",{q:q}).then(function(r){
+        R.finding=false;
+        if(r&&r.ok){R.found=r.results||[];if(!R.found.length)toast("No matches — try the exact name on your Google listing",{bad:true})}
+        else toast((r&&r.hint)||"Lookup failed",{bad:true});
+        ggRenderRank();
+      }).catch(function(){R.finding=false;toast("Network error",{bad:true});ggRenderRank()});
+    };
+    Array.prototype.forEach.call(box.querySelectorAll("[data-gg-pick]"),function(el2){
+      el2.onclick=function(){vibrate(6);var pid=el2.getAttribute("data-gg-pick");
+        var f=el("ggPid");if(f)f.value=pid;R.found=null;ggRenderRank();toast("Place ID filled in — now tap Save")};
+    });
     var off=el("ggOff");
     if(off)off.onclick=function(){
       if(!confirm("Disconnect the Places API key? Saved scans stay."))return;
