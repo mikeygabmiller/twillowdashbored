@@ -2321,7 +2321,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-27·jobday";
+  var APP_BUILD="2026-07-27·jobday+places-diag";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4966,7 +4966,7 @@
     map:{mode:"area",area:{size:9,radius:12,metric:"rev",months:12},
          rank:{data:null,loading:false,err:"",setup:false,saving:false,
                size:7,radius:5,keyword:"",scanning:false,done:0,total:0,live:null,viewId:"",
-               finding:false,found:null}}};
+               finding:false,found:null,fail:null}}};
   var GROW_VIEWS={overview:["Analytics","Business overview · Mikey's Mobile Detailing"],
     customers:["Analytics","Who your customers are — and who's slipping away"],
     profit:["Analytics","What each job is really worth"],
@@ -6102,9 +6102,26 @@
         '<div class="gg-field"><label>Centre lat</label><input class="gr-input" id="ggLat" value="'+esc(c.centerLat)+'" inputmode="decimal"></div>'+
         '<div class="gg-field"><label>Centre lng</label><input class="gr-input" id="ggLng" value="'+esc(c.centerLng)+'" inputmode="decimal"></div>'+
       '</div>'+
+      ggFailHTML()+
       '<button class="btn accent" id="ggSave" style="width:100%">'+(GROW.map.rank.saving?'<span class="spin"></span> Checking with Google…':(d.connected?"Save settings":"Connect"))+'</button>'+
       (d.connected&&d.via!=="secret"?'<button class="btn" id="ggOff" style="width:100%;margin-top:8px">Disconnect key</button>':"")+
       '</div>';
+  }
+  // Google's 403 body names the real cause (API not enabled / billing off /
+  // referrer-restricted key) and usually carries a direct console link to fix it.
+  // Showing our own generic hint alone leaves the owner guessing between three
+  // very different problems, so the raw message is surfaced verbatim.
+  function ggFailHTML(){
+    var f=GROW.map.rank.fail;
+    if(!f)return"";
+    var link=(f.detail||"").match(/https?:\/\/[^\s"'\\)]+/);
+    var d=String(f.detail||"").replace(/\s+/g," ").trim();
+    return '<div class="wa-ins bad" style="margin:2px 0 10px"><span class="i-ic">'+ic("alert",15)+'</span><div>'+
+      '<b>'+esc(f.hint)+'</b>'+
+      (d?'<div style="margin-top:7px;font-size:12px;color:var(--muted2);line-height:1.5"><b>Google\'s exact words:</b><br>'+esc(d)+'</div>':'')+
+      (link?'<a href="'+esc(link[0])+'" target="_blank" rel="noopener" style="display:inline-block;margin-top:8px;font-weight:800;font-size:12.5px;color:var(--accent-text)">Open the fix page in Google Cloud →</a>':'')+
+      '<div style="margin-top:9px;font-size:12px;color:var(--muted2);line-height:1.55">Most common cause: the key is restricted to <b>Places API</b> (the old one) instead of <b>Places API (New)</b> — they are two separate services in the console.</div>'+
+      '</div></div>';
   }
   function ggWireSetup(box){
     var R=GROW.map.rank;
@@ -6119,9 +6136,9 @@
       post("/api/geogrid/connect",{key:key.trim(),bizName:biz.trim(),placeId:pid.trim(),
         centerLat:isFinite(la)?la:undefined,centerLng:isFinite(ln)?ln:undefined}).then(function(r){
         R.saving=false;
-        if(r&&r.ok){toast("Saved ✓");R.setup=false;R.data=null;ggLoadRank(true)}
-        else{toast((r&&r.hint)||"Google rejected that key",{bad:true});ggRenderRank()}
-      }).catch(function(){R.saving=false;toast("Network error",{bad:true});ggRenderRank()});
+        if(r&&r.ok){R.fail=null;toast("Saved ✓");R.setup=false;R.data=null;ggLoadRank(true)}
+        else{R.fail={hint:(r&&r.hint)||"Google rejected that key",detail:(r&&r.detail)||""};toast("Google rejected that key",{bad:true});ggRenderRank()}
+      }).catch(function(){R.saving=false;R.fail={hint:"Couldn't reach the server.",detail:""};toast("Network error",{bad:true});ggRenderRank()});
     };
     var fb=el("ggFind");
     if(fb)fb.onclick=function(){
