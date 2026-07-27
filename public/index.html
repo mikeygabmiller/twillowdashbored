@@ -729,8 +729,12 @@
 
   .toast{position:fixed;left:50%;bottom:calc(var(--nav-h) + var(--safe-bottom) + 18px);transform:translateX(-50%) translateY(10px);
     background:#eceff4;color:#15161a;padding:13px 18px;border-radius:14px;font-size:13.5px;font-weight:500;
-    box-shadow:0 12px 40px rgba(0,0,0,.5);z-index:100;opacity:0;transition:opacity .2s,transform .2s;display:flex;align-items:center;gap:16px;max-width:calc(100vw - 28px)}
-  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+    box-shadow:0 12px 40px rgba(0,0,0,.5);z-index:100;opacity:0;transition:opacity .2s,transform .2s;display:flex;align-items:center;gap:16px;max-width:calc(100vw - 28px);
+    /* Invisible toasts must not eat taps — it sits right over the bottom of the
+       screen, where sheet buttons and the nav live. Only the visible toast (and
+       its Undo button) is clickable. */
+    pointer-events:none}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
   .toast.bad{background:#3a1518;color:#ffd0d0}
   .toast .undo{color:var(--accent);font-weight:700;background:none;border:none;font-size:13.5px;flex:none}
   .toast.bad .undo{color:#ff8a93}
@@ -1669,6 +1673,232 @@
 
   /* Customize: locked-panel heading with inline icon. */
   .cz-card h3.cz-h-ic{display:flex;align-items:center;gap:7px}
+
+  /* =====================================================================
+     JOB DAY SUITE — Today's Run, Quotes, Get Paid, Garage, Voice.
+     Shares the app's tokens (--accent, --panel, --line …) so it themes,
+     recolors and light/dark-flips with everything else for free.
+     ===================================================================== */
+  .jd{position:fixed;inset:0;z-index:82;background:var(--bg);display:none;flex-direction:column}
+  .jd.show{display:flex}
+  .jd-head{display:flex;align-items:center;gap:10px;padding:calc(10px + var(--safe-top)) 12px 10px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--panel) 92%,transparent);backdrop-filter:blur(12px);flex:none}
+  .jd-title{flex:1;min-width:0}
+  .jd-title b{font-size:17px;letter-spacing:-.015em;font-weight:800}
+  .jd-title small{display:block;color:var(--muted2);font-size:11.5px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .jd-body{flex:1;overflow-y:auto;min-height:0;-webkit-overflow-scrolling:touch;padding:14px 14px calc(88px + var(--safe-bottom));max-width:660px;width:100%;margin:0 auto}
+  .jd-nav{position:absolute;left:0;right:0;bottom:0;display:flex;background:color-mix(in srgb,var(--panel) 94%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line2);padding-bottom:var(--safe-bottom);z-index:4}
+  .jd-nav button{flex:1;background:none;border:none;color:var(--muted2);font-size:10.5px;font-weight:700;padding:9px 0 11px;display:flex;flex-direction:column;gap:3px;align-items:center;user-select:none;-webkit-user-select:none}
+  .jd-nav button .e{line-height:0;display:flex}
+  .jd-nav button.active{color:var(--accent-text)}
+
+  /* ---- day strip ---- */
+  .jd-days{display:flex;gap:7px;overflow-x:auto;padding:2px 0 12px;scrollbar-width:none}
+  .jd-days::-webkit-scrollbar{display:none}
+  .jd-day{flex:none;min-width:56px;padding:8px 6px 9px;border-radius:14px;background:var(--panel2);border:1px solid var(--line);text-align:center;cursor:pointer;transition:all .14s}
+  .jd-day .dw{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted2)}
+  .jd-day .dd{font-size:19px;font-weight:800;letter-spacing:-.02em;margin-top:2px}
+  .jd-day .dn{height:5px;margin-top:5px;display:flex;gap:3px;justify-content:center}
+  .jd-day .dn i{width:5px;height:5px;border-radius:50%;background:var(--accent);opacity:.75}
+  .jd-day.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text)}
+  .jd-day.on .dw{color:var(--accent-text)}
+
+  /* ---- the run hero ---- */
+  .jd-hero{border-radius:20px;padding:16px 17px 15px;background:linear-gradient(135deg,var(--accent),var(--accent-dark));color:#fff;box-shadow:0 16px 34px -18px var(--accent);margin-bottom:14px;position:relative;overflow:hidden}
+  .jd-hero:after{content:"";position:absolute;right:-40px;top:-50px;width:170px;height:170px;border-radius:50%;background:rgba(255,255,255,.10)}
+  .jd-hero .hl{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;opacity:.86}
+  .jd-hero .hv{font-size:30px;font-weight:800;letter-spacing:-.03em;margin-top:3px;line-height:1.1}
+  .jd-hero .hs{font-size:13px;opacity:.94;margin-top:5px;position:relative}
+  .jd-hero .hstats{display:flex;gap:14px;margin-top:14px;padding-top:12px;border-top:1px solid rgba(255,255,255,.22);position:relative}
+  .jd-hero .hst{flex:1;min-width:0}
+  .jd-hero .hst .l{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;opacity:.82}
+  .jd-hero .hst .v{font-size:17px;font-weight:800;margin-top:2px;letter-spacing:-.02em}
+  .jd-hero .hbar{height:7px;border-radius:99px;background:rgba(255,255,255,.22);margin-top:13px;overflow:hidden;position:relative}
+  .jd-hero .hbar i{display:block;height:100%;border-radius:99px;background:#fff;transition:width .5s ease}
+
+  /* ---- job cards ---- */
+  .jd-card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:14px 15px;margin-bottom:11px;position:relative;transition:border-color .15s}
+  .jd-card.st-enroute{border-color:var(--gold)}
+  .jd-card.st-onsite{border-color:var(--blue)}
+  .jd-card.st-done{opacity:.62}
+  .jd-card.st-skipped{opacity:.45}
+  .jd-card.next{border-color:var(--accent);box-shadow:0 12px 30px -20px var(--accent)}
+  .jc-top{display:flex;align-items:flex-start;gap:11px}
+  .jc-time{flex:none;text-align:center;min-width:52px}
+  .jc-time .t{font-size:15.5px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .jc-time .ap{font-size:9.5px;font-weight:800;color:var(--muted2);letter-spacing:.05em}
+  .jc-main{flex:1;min-width:0}
+  .jc-name{font-size:16px;font-weight:750;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .jc-sub{font-size:12.5px;color:var(--muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .jc-where{font-size:12px;color:var(--muted2);margin-top:3px;display:flex;align-items:center;gap:5px}
+  .jc-where svg{width:13px;height:13px;flex:none}
+  .jc-right{flex:none;text-align:right}
+  .jc-price{font-size:16px;font-weight:800;letter-spacing:-.02em}
+  .jc-chip{display:inline-flex;align-items:center;gap:4px;font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;padding:3px 7px;border-radius:8px;margin-top:5px}
+  .chip-queued{background:var(--panel3);color:var(--muted)}
+  .chip-enroute{background:rgba(234,179,8,.16);color:var(--gold)}
+  .chip-onsite{background:rgba(59,130,246,.16);color:var(--blue)}
+  .chip-done{background:rgba(34,197,94,.16);color:var(--green)}
+  .chip-skipped{background:var(--panel3);color:var(--muted2)}
+  .chip-pending{background:var(--accent-soft);color:var(--accent-text)}
+  .chip-rain{background:rgba(59,130,246,.16);color:var(--blue)}
+  .jc-acts{display:flex;gap:7px;margin-top:12px;flex-wrap:wrap}
+  .jc-acts button{flex:1;min-width:74px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;color:var(--text);
+    font-size:12.5px;font-weight:700;padding:10px 6px;display:flex;align-items:center;justify-content:center;gap:5px;transition:all .13s;white-space:nowrap}
+  .jc-acts button svg{width:15px;height:15px;flex:none}
+  .jc-acts button:active{transform:scale(.97)}
+  /* The primary action gets extra room so "On my way" never wraps to two lines. */
+  .jc-acts button.pri{flex:1.7;background:linear-gradient(135deg,var(--accent),var(--accent-dark));border-color:transparent;color:#fff}
+  .jc-acts button.gone{opacity:.55}
+  .jc-timer{font-size:11.5px;color:var(--muted2);margin-top:9px;display:flex;align-items:center;gap:6px;font-variant-numeric:tabular-nums}
+  .jc-timer b{color:var(--text);font-variant-numeric:tabular-nums}
+  .jc-track{margin-top:10px;background:rgba(234,179,8,.10);border:1px solid rgba(234,179,8,.35);border-radius:12px;padding:9px 11px;font-size:12px;color:var(--gold);display:flex;align-items:center;gap:8px}
+  .jc-track button{margin-left:auto;background:none;border:none;color:var(--gold);font-size:11.5px;font-weight:800;text-decoration:underline;padding:0}
+
+  /* ---- generic pieces reused across the suite ---- */
+  .jd-sec{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--muted2);margin:20px 0 9px;display:flex;align-items:center;gap:7px}
+  .jd-sec svg{width:14px;height:14px}
+  .jd-empty{background:var(--panel);border:1px dashed var(--line);border-radius:16px;padding:22px 18px;text-align:center;color:var(--muted2);font-size:13.5px;line-height:1.55}
+  .jd-empty b{display:block;color:var(--text);font-size:15px;font-weight:750;margin-bottom:5px}
+  .jd-btn{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:14px;color:var(--text);font-size:14px;font-weight:700;padding:13px;display:flex;align-items:center;justify-content:center;gap:8px;transition:all .13s}
+  .jd-btn svg{width:17px;height:17px}
+  .jd-btn:active{transform:scale(.985)}
+  .jd-btn.pri{background:linear-gradient(135deg,var(--accent),var(--accent-dark));border-color:transparent;color:#fff;box-shadow:0 10px 24px -14px var(--accent)}
+  .jd-btn.ghost{background:none}
+  .jd-row{display:flex;gap:9px}
+  .jd-field{margin-bottom:12px}
+  .jd-field label{display:block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted2);margin-bottom:6px}
+  .jd-field input,.jd-field select,.jd-field textarea{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:12px;color:var(--text);padding:11px 13px;font-size:15px;outline:none}
+  .jd-field input:focus,.jd-field select:focus,.jd-field textarea:focus{border-color:var(--accent)}
+  .jd-field textarea{min-height:88px;resize:vertical;line-height:1.5;font-size:14px}
+  .jd-pills{display:flex;gap:7px;flex-wrap:wrap}
+  .jd-pill{background:var(--panel2);border:1px solid var(--line);border-radius:11px;color:var(--muted);font-size:13px;font-weight:700;padding:9px 13px;transition:all .13s}
+  .jd-pill.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text)}
+  .jd-note{font-size:12px;color:var(--muted2);line-height:1.55;margin-top:8px}
+
+  /* ---- bottom sheet used by every flow in the suite ---- */
+  .jd-scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:90;opacity:0;pointer-events:none;transition:opacity .2s}
+  .jd-scrim.show{opacity:1;pointer-events:auto}
+  .jd-sheet{position:fixed;left:0;right:0;bottom:0;z-index:91;background:var(--panel);border-radius:22px 22px 0 0;border-top:1px solid var(--line);
+    max-height:90vh;overflow-y:auto;-webkit-overflow-scrolling:touch;transform:translateY(102%);transition:transform .28s cubic-bezier(.32,.72,0,1);
+    padding:8px 16px calc(20px + var(--safe-bottom));max-width:660px;margin:0 auto}
+  .jd-sheet.show{transform:translateY(0)}
+  .jd-grip{width:38px;height:4px;border-radius:3px;background:var(--line);margin:6px auto 12px}
+  .jd-sh-title{font-size:19px;font-weight:800;letter-spacing:-.02em;margin-bottom:3px}
+  .jd-sh-sub{font-size:12.5px;color:var(--muted2);margin-bottom:16px;line-height:1.5}
+
+  /* ---- quote total card ---- */
+  .qt-total{background:linear-gradient(135deg,var(--accent),var(--accent-dark));color:#fff;border-radius:18px;padding:16px 18px;margin:4px 0 14px;box-shadow:0 14px 30px -18px var(--accent)}
+  .qt-total .l{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;opacity:.85}
+  .qt-total .v{font-size:40px;font-weight:800;letter-spacing:-.04em;line-height:1;margin-top:3px}
+  .qt-total .s{font-size:12.5px;opacity:.92;margin-top:6px}
+  .qt-lines{margin-top:12px;padding-top:11px;border-top:1px solid rgba(255,255,255,.22);font-size:12.5px}
+  .qt-lines div{display:flex;justify-content:space-between;padding:2px 0;opacity:.94}
+  .qt-preview{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:13px 14px;font-size:13.5px;line-height:1.55;white-space:pre-wrap;color:var(--text);max-height:230px;overflow-y:auto}
+
+  /* ---- money / invoice rows ---- */
+  .jd-item{display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:15px;padding:13px 14px;margin-bottom:9px}
+  .jd-item .av{width:40px;height:40px;border-radius:12px;flex:none;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:14px;color:#fff}
+  .jd-item .mid{flex:1;min-width:0}
+  .jd-item .nm{font-size:14.5px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .jd-item .sb{font-size:12px;color:var(--muted2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .jd-item .rt{flex:none;text-align:right}
+  .jd-item .amt{font-size:15.5px;font-weight:800;letter-spacing:-.02em}
+  .jd-item .st{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;margin-top:3px}
+  .st-open{color:var(--gold)}.st-paid{color:var(--green)}.st-void{color:var(--muted2)}
+  .st-sent{color:var(--blue)}.st-accepted{color:var(--green)}.st-declined{color:var(--muted2)}.st-draft{color:var(--muted2)}
+
+  /* ---- before / after ---- */
+  .ba-wrap{position:relative;border-radius:16px;overflow:hidden;background:var(--panel2);border:1px solid var(--line);aspect-ratio:4/3;touch-action:none}
+  .ba-wrap img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;user-select:none;-webkit-user-drag:none}
+  .ba-wrap .after{clip-path:inset(0 0 0 var(--split,50%))}
+  .ba-handle{position:absolute;top:0;bottom:0;left:var(--split,50%);width:3px;background:#fff;box-shadow:0 0 12px rgba(0,0,0,.5);pointer-events:none}
+  .ba-handle:after{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:38px;height:38px;border-radius:50%;background:#fff;box-shadow:0 3px 12px rgba(0,0,0,.4)}
+  .ba-lbl{position:absolute;bottom:9px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:#fff;background:rgba(0,0,0,.55);padding:4px 9px;border-radius:8px;backdrop-filter:blur(4px)}
+  .ba-lbl.l{left:9px}.ba-lbl.r{right:9px}
+  .ba-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:10px}
+  .ba-slot{aspect-ratio:1;border-radius:14px;border:1px dashed var(--line);background:var(--panel2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;color:var(--muted2);font-size:12px;font-weight:700;position:relative;overflow:hidden}
+  .ba-slot img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+  .ba-slot svg{width:22px;height:22px}
+  .ba-slot .del{position:absolute;top:6px;right:6px;width:26px;height:26px;border-radius:8px;background:rgba(0,0,0,.6);border:none;color:#fff;display:flex;align-items:center;justify-content:center;z-index:2}
+  .ba-slot .del svg{width:14px;height:14px}
+
+  /* ---- garage ---- */
+  .gr-veh{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:12px 13px;margin-bottom:9px;position:relative}
+  .gr-veh .vt{font-size:14.5px;font-weight:750;letter-spacing:-.01em}
+  .gr-veh .vs{font-size:12px;color:var(--muted2);margin-top:2px}
+  .gr-veh .vx{position:absolute;top:9px;right:9px;background:none;border:none;color:var(--muted2);padding:4px}
+  .gr-veh .vx svg{width:15px;height:15px}
+  .gr-facts{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
+  .gr-fact{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:9px 11px}
+  .gr-fact .l{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted2)}
+  .gr-fact .v{font-size:13.5px;font-weight:650;margin-top:3px;word-break:break-word}
+  .gr-ltv{display:flex;gap:10px;margin-bottom:12px}
+  .gr-ltv .t{flex:1;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;text-align:center}
+  .gr-ltv .t .v{font-size:20px;font-weight:800;letter-spacing:-.02em}
+  .gr-ltv .t .l{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted2);margin-top:2px}
+
+  /* ---- voice control ---- */
+  .vx-app{position:fixed;inset:0;z-index:120;background:rgba(8,8,11,.93);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+    display:none;flex-direction:column;align-items:center;justify-content:center;padding:28px;text-align:center;color:#f2f4f8}
+  .vx-app.show{display:flex}
+  .vx-orb{width:150px;height:150px;border-radius:50%;display:flex;align-items:center;justify-content:center;position:relative;
+    background:radial-gradient(circle at 40% 35%,var(--accent),var(--accent-dark));box-shadow:0 0 70px -8px var(--accent);cursor:pointer}
+  .vx-orb svg{width:56px;height:56px;color:#fff;position:relative;z-index:2}
+  .vx-orb:before,.vx-orb:after{content:"";position:absolute;inset:0;border-radius:50%;border:2px solid var(--accent);opacity:0}
+  .vx-app.listening .vx-orb:before{animation:vxp 1.8s ease-out infinite}
+  .vx-app.listening .vx-orb:after{animation:vxp 1.8s ease-out .8s infinite}
+  @keyframes vxp{0%{transform:scale(1);opacity:.6}100%{transform:scale(1.65);opacity:0}}
+  .vx-app.thinking .vx-orb{animation:vxspin 1.4s linear infinite}
+  @keyframes vxspin{to{transform:rotate(360deg)}}
+  .vx-status{font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.14em;color:var(--accent-text);margin-top:28px}
+  .vx-heard{font-size:23px;font-weight:750;letter-spacing:-.02em;margin-top:12px;min-height:34px;max-width:520px;line-height:1.3}
+  .vx-answer{font-size:15.5px;line-height:1.6;color:#c9cfda;margin-top:16px;max-width:520px;max-height:34vh;overflow-y:auto;white-space:pre-wrap}
+  .vx-hint{position:absolute;bottom:calc(30px + var(--safe-bottom));font-size:12.5px;color:#6b7280;line-height:1.6;max-width:420px}
+  .vx-close{position:absolute;top:calc(16px + var(--safe-top));right:16px;width:42px;height:42px;border-radius:14px;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);color:#fff;display:flex;align-items:center;justify-content:center}
+  .vx-close svg{width:20px;height:20px}
+  .vx-chips{display:flex;gap:7px;flex-wrap:wrap;justify-content:center;margin-top:20px;max-width:520px}
+  .vx-chips button{background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.13);color:#c9cfda;border-radius:99px;padding:8px 14px;font-size:12.5px;font-weight:650}
+
+  /* ---- Home: brief + push widgets ---- */
+  .br-card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:15px 16px;margin-top:12px}
+  .br-h{display:flex;align-items:center;gap:8px;margin-bottom:11px}
+  .br-h .i{color:var(--accent-text);display:flex}
+  .br-h .t{font-size:14.5px;font-weight:750;letter-spacing:-.01em;flex:1}
+  .br-h .b{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted2);background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:3px 8px}
+  .br-pri{background:var(--accent-soft);border:1px solid var(--accent);border-radius:13px;padding:11px 13px;font-size:13.5px;font-weight:650;line-height:1.5;color:var(--text);margin-bottom:11px}
+  .br-pri .l{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--accent-text);display:block;margin-bottom:3px}
+  .br-tiles{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+  .br-tile{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:9px 6px;text-align:center}
+  .br-tile .v{font-size:17px;font-weight:800;letter-spacing:-.02em}
+  .br-tile .l{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--muted2);margin-top:2px}
+  .br-jobs{margin-top:11px}
+  .br-job{display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--line2);font-size:13px}
+  .br-job .tm{font-size:11.5px;font-weight:800;color:var(--muted2);min-width:58px;font-variant-numeric:tabular-nums}
+  .br-job .nm{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-weight:650}
+  .br-job .rn{font-size:10.5px;font-weight:800;color:var(--blue)}
+  .br-wx{margin-top:11px;font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:7px}
+  .br-wx svg{width:15px;height:15px;color:var(--accent-text)}
+
+  /* Push enable nudge */
+  .pn-card{background:linear-gradient(135deg,var(--accent),var(--accent-dark));color:#fff;border-radius:18px;padding:15px 16px;margin-top:12px;box-shadow:0 14px 32px -20px var(--accent)}
+  .pn-card .t{font-size:15px;font-weight:800;letter-spacing:-.01em;display:flex;align-items:center;gap:8px}
+  .pn-card .s{font-size:12.5px;opacity:.93;margin-top:5px;line-height:1.5}
+  .pn-card button{margin-top:12px;width:100%;background:#fff;border:none;border-radius:12px;padding:11px;font-size:14px;font-weight:800;color:var(--accent-dark)}
+  .pn-card .later{background:none;color:#fff;opacity:.8;font-weight:650;font-size:12.5px;margin-top:6px;padding:6px}
+
+  /* floating hands-free mic on the main shell */
+  .vx-fab{position:absolute;right:18px;bottom:calc(var(--nav-h) + var(--safe-bottom) + 86px);width:48px;height:48px;border-radius:16px;
+    background:var(--panel);border:1px solid var(--line);color:var(--accent-text);display:flex;align-items:center;justify-content:center;
+    box-shadow:0 8px 22px -10px rgba(0,0,0,.5);z-index:21;transition:transform .12s}
+  .vx-fab svg{width:21px;height:21px}
+  .vx-fab:active{transform:scale(.93)}
+  body.viewing .vx-fab{display:none}
+
+  @media (min-width:900px){
+    .jd-body{padding-bottom:calc(96px + var(--safe-bottom))}
+    .vx-fab{bottom:24px;right:24px}
+  }
+
 </style>
 </head>
 <body>
@@ -1689,6 +1919,8 @@
 
     <div class="scroll" id="scroll"></div>
 
+    <button class="vx-fab" id="vxFab" data-ic="mic" aria-label="Hands-free voice control"></button>
+
     <button class="fab" id="fab" aria-label="New message">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
     </button>
@@ -1697,6 +1929,7 @@
       <button class="navitem active" data-tab="home"><span class="ic" data-ic="home"></span><span class="ndot" id="navHome"></span>Home</button>
       <button class="navitem" data-tab="messages"><span class="ic" data-ic="message-square"></span><span class="ndot" id="navUnread"></span>Chats</button>
       <button class="navitem" data-tab="leads"><span class="ic" data-ic="clipboard-list"></span><span class="ndot" id="navLeads"></span>Leads</button>
+      <button class="navitem" data-tab="jobs"><span class="ic" data-ic="route"></span><span class="ndot" id="navJobs"></span>Jobs</button>
       <button class="navitem" data-tab="money"><span class="ic" data-ic="dollar"></span><span class="ndot" id="navMoney"></span>Money</button>
       <button class="navitem" data-tab="analytics"><span class="ic" data-ic="bar-chart"></span>Analytics</button>
     </nav>
@@ -1875,6 +2108,12 @@
     <div class="ditem" data-tab="followups"><span class="ic" data-ic="list-checks"></span>Follow-ups<span class="n" id="mnFollow"></span></div>
     <div class="ditem" data-tab="scheduled"><span class="ic" data-ic="calendar-days"></span>Scheduled<span class="n" id="mnSched"></span></div>
     <div class="ditem" data-tab="archived"><span class="ic" data-ic="archive"></span>Archived<span class="n" id="mnArch"></span></div>
+    <div class="ditem" id="runItem"><span class="ic" data-ic="route"></span>Today's Run<span class="n" style="color:var(--accent-text)">new</span></div>
+    <div class="ditem" id="quotesItem"><span class="ic" data-ic="file-text"></span>Quote builder<span class="n" style="color:var(--accent-text)">new</span></div>
+    <div class="ditem" id="payItem"><span class="ic" data-ic="credit-card"></span>Get paid<span class="n" style="color:var(--accent-text)">new</span></div>
+    <div class="ditem" id="garageItem"><span class="ic" data-ic="car"></span>Customer garage<span class="n" style="color:var(--accent-text)">new</span></div>
+    <div class="ditem" id="voiceItem"><span class="ic" data-ic="mic"></span>Talk to your dashboard<span class="n" style="color:var(--accent-text)">new</span></div>
+    <div class="ditem" id="pushItem"><span class="ic" data-ic="bell"></span>Phone notifications<span class="n" id="pushState">off</span></div>
     <div class="ditem" id="moneyItem"><span class="ic" data-ic="dollar"></span>Money tracker</div>
     <div class="ditem" id="analyticsItem"><span class="ic" data-ic="bar-chart"></span>Analytics — website &amp; business</div>
 
@@ -2007,6 +2246,43 @@
   </nav>
 </div>
 
+<!-- ============================================================
+     Jobs — the Job Day suite. Four segments:
+       Run     · today's run sheet (bookings + manual jobs + live state)
+       Quotes  · priced quote builder, texted + tracked
+       Pay     · payment requests, deposits, who still owes
+       Garage  · vehicles, gate codes, water/power, lifetime value
+     Before/after photos, live-ETA tracking and neighborhood blasts open
+     from a job inside Run.
+     ============================================================ -->
+<div class="jd" id="jdApp">
+  <div class="jd-head">
+    <button class="btn icon" id="jdBack" data-ic="chevron-left" aria-label="Back"></button>
+    <div class="jd-title"><b id="jdTitle">Today's Run</b><small id="jdSub">Mikey's Mobile Detailing</small></div>
+    <button class="btn icon" id="jdRefresh" data-ic="refresh-cw" aria-label="Refresh"></button>
+  </div>
+  <div class="jd-body" id="jdBody"></div>
+  <nav class="jd-nav" id="jdNav">
+    <button data-jv="run" class="active"><span class="e" data-ic="route" data-ic-size="20"></span>Run</button>
+    <button data-jv="quotes"><span class="e" data-ic="file-text" data-ic-size="20"></span>Quotes</button>
+    <button data-jv="pay"><span class="e" data-ic="credit-card" data-ic-size="20"></span>Pay</button>
+    <button data-jv="garage"><span class="e" data-ic="car" data-ic-size="20"></span>Garage</button>
+  </nav>
+</div>
+<div class="jd-scrim" id="jdScrim"></div>
+<div class="jd-sheet" id="jdSheet"></div>
+
+<!-- Hands-free voice control — talk to the dashboard with wet hands. -->
+<div class="vx-app" id="vxApp">
+  <button class="vx-close" id="vxClose" data-ic="x" aria-label="Close"></button>
+  <div class="vx-orb" id="vxOrb" data-ic="mic" data-ic-size="56"></div>
+  <div class="vx-status" id="vxStatus">Tap to talk</div>
+  <div class="vx-heard" id="vxHeard"></div>
+  <div class="vx-answer" id="vxAnswer"></div>
+  <div class="vx-chips" id="vxChips"></div>
+  <div class="vx-hint" id="vxHint">Try “what's on today”, “text Sarah I'm running 15 late”, or “how much did I make this week”.</div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -2045,7 +2321,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-27·places-diagnostics";
+  var APP_BUILD="2026-07-27·jobday+places-diag";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -2064,6 +2340,14 @@
   // ---- inline icon system (Lucide paths, MIT) — crisp & consistent across devices ----
   var ICONS={
     "menu":'<line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="18" y2="18"/>',
+    // Job Day suite
+    "route":'<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>',
+    "navigation":'<polygon points="3 11 22 2 13 21 11 13 3 11"/>',
+    "map-pin":'<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+    "camera":'<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3Z"/><circle cx="12" cy="13" r="3"/>',
+    "share":'<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/>',
+    "play":'<polygon points="6 3 20 12 6 21 6 3"/>',
+    "flag":'<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>',
     "message-square":'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
     "message-circle":'<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
     "clipboard-list":'<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>',
@@ -2337,7 +2621,7 @@
   // to any saved business data — this is pure presentation + arrangement.
   // ==========================================================================
   var UI_KEY="mkd-ui";
-  var UI_TABLIST=[["home","Home","home"],["messages","Chats","message-square"],["leads","Leads","clipboard-list"],["money","Money","dollar"],["analytics","Analytics","bar-chart"]];
+  var UI_TABLIST=[["home","Home","home"],["messages","Chats","message-square"],["leads","Leads","clipboard-list"],["jobs","Jobs","route"],["money","Money","dollar"],["analytics","Analytics","bar-chart"]];
   var UI_PRESETS=[ // id, name, accent, accentDark
     ["crimson","Crimson","#ff2e43","#c81e30"],["ocean","Ocean","#2f9bff","#1d5fd8"],
     ["mint","Mint","#22c55e","#15803d"],["grape","Grape","#a855f7","#7e22ce"],
@@ -2348,11 +2632,11 @@
     preset:"crimson", accent:["#ff2e43","#c81e30"],
     radius:"md", density:"comfy", textScale:100, font:"system", bg:"solid",
     mode:"simple", locked:false, tourSeen:false, listStyle:"compact",
-    tabsOrder:["home","messages","leads","money","analytics"], tabsHidden:[],
+    tabsOrder:["home","messages","leads","jobs","money","analytics"], tabsHidden:[],
     mblocks:["hero","log","alerts","pulse","brain","today"], mblocksHidden:[],
     mkpis:["net","you","costs","savings","avg","jobs","margin","owed","best"],
     // Phase 2/3
-    hwidgets:["money","quickactions","schedule","goal","rebook","sla","tasks","trend","funnel","vip","weather","stats"], hwidgetsHidden:["trend","funnel","vip","weather","stats"],
+    hwidgets:["brief","money","quickactions","schedule","goal","rebook","sla","tasks","trend","funnel","vip","weather","stats"], hwidgetsHidden:["trend","funnel","vip","weather","stats"],
     rowFields:["time","preview","status","tags","unread"],
     stageLabels:{}, stageColors:{}
   };}
@@ -2453,6 +2737,7 @@
     if(CZ.tab==="safe")return czSafe(p);
   }
   var UI_HWIDGETS=[
+    ["brief","Today at a glance","sun"],
     ["money","Today’s money","dollar"],
     ["quickactions","Quick actions","sparkles"],
     ["schedule","Today’s schedule","calendar-days"],
@@ -2836,6 +3121,8 @@
     W.funnel='<div data-hwidget="funnel">'+homeFunnelWidget(active)+'</div>';
     W.weather='<div data-hwidget="weather">'+homeWeatherWidget()+'</div>';
     W.tasks='<div data-hwidget="tasks">'+homeTasksWidget()+'</div>';
+    // Job Day suite: the morning brief, and the one-time push-notification nudge.
+    W.brief='<div data-hwidget="brief">'+homeBriefWidget()+'</div>';
     var order=(UI&&UI.hwidgets)?UI.hwidgets.slice():defaultUI().hwidgets.slice();
     // Make newly-shipped widgets appear for users with an older saved layout.
     UI_HWIDGETS.forEach(function(w){if(order.indexOf(w[0])<0)order.push(w[0])});
@@ -2845,6 +3132,7 @@
     var dateLine=new Date().toLocaleDateString([],{weekday:"long",month:"long",day:"numeric"});
     var h='<div class="home"><div class="home-head"><div class="hh-greet">'+greeting()+', Mikey</div><div class="hh-sub">'+esc(dateLine)+'</div></div>';
     h+=W.aicenter;
+    h+=homePushWidget();          // one-time "turn on notifications" nudge
     h+=homeNeeds(waiting,fu,reminders);
     order.forEach(function(k){if(hidden.indexOf(k)<0)h+=(W[k]||"")});
     h+='</div>';
@@ -2855,6 +3143,14 @@
     Array.prototype.forEach.call(box.querySelectorAll("[data-open-analytics]"),function(c){c.onclick=function(){openAnalytics()}});
     wireHomeWidgets(box);
     wireAiCenter();
+    wireJdHome(box);
+  }
+  // Job Day pieces that live on Home: the brief card and the push nudge.
+  function wireJdHome(box){
+    var r=box.querySelector("#brRefresh");if(r)r.onclick=function(){vibrate(6);toast("Refreshing your brief…");loadBrief(true)};
+    var o=box.querySelector("#brOpenRun");if(o)o.onclick=function(){vibrate(6);openJobs("run")};
+    var g=box.querySelector("#pnGo");if(g)g.onclick=function(){pushEnable()};
+    var l=box.querySelector("#pnLater");if(l)l.onclick=function(){try{localStorage.setItem("mkd-push-skip","1")}catch(e){}renderHome()};
   }
   // ===== Pro dashboard widgets ===============================================
   // A monthly revenue goal the owner sets; the ring tracks net vs. goal, with a
@@ -4617,7 +4913,18 @@
     if(!e.target.closest("#toolsBtn")&&!e.target.closest("#toolsSheet"))el("toolsSheet").style.display="none";
   });
 
-  Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.onclick=function(){vibrate(6);var tb=b.getAttribute("data-tab");if(tb==="money")return openMoney();if(tb==="analytics")return openAnalytics();setTab(tb)}});
+  Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.onclick=function(){vibrate(6);var tb=b.getAttribute("data-tab");if(tb==="money")return openMoney();if(tb==="analytics")return openAnalytics();if(tb==="jobs")return openJobs();setTab(tb)}});
+  // Job Day suite + hands-free voice
+  el("vxFab").onclick=vxOpen;
+  el("vxClose").onclick=vxClose;
+  el("vxOrb").onclick=vxToggle;
+  el("vxApp").addEventListener("click",function(e){if(e.target===el("vxApp"))vxClose()});
+  document.addEventListener("keydown",function(e){
+    if(e.key!=="Escape")return;
+    if(el("vxApp").classList.contains("show"))return vxClose();
+    if(JD.sheetOpen)return jdSheetClose();
+    if(el("jdApp").classList.contains("show"))return closeJobs();
+  });
   el("czBack").onclick=closeCustomize;
   el("czMode").onclick=function(){UI.mode=UI.mode==="pro"?"simple":"pro";saveUI();czRender();vibrate(6)};
 
@@ -4627,6 +4934,12 @@
   el("aiCmdOverlay").onclick=function(e){if(e.target===el("aiCmdOverlay"))closeAiCmd()};
   el("aiCmdAsk").onclick=aiCmdAsk;
   el("aiCmdInput").addEventListener("keydown",function(e){if((e.metaKey||e.ctrlKey)&&e.key==="Enter"){e.preventDefault();aiCmdAsk()}});
+  el("runItem").onclick=function(){closeDrawer();openJobs("run")};
+  el("quotesItem").onclick=function(){closeDrawer();openJobs("quotes")};
+  el("payItem").onclick=function(){closeDrawer();openJobs("pay")};
+  el("garageItem").onclick=function(){closeDrawer();openJobs("garage")};
+  el("voiceItem").onclick=function(){closeDrawer();vxOpen()};
+  el("pushItem").onclick=function(){closeDrawer();jdPushSheet()};
   el("refreshItem").onclick=function(){refreshThreads();if(state.phone)loadThread();toast("Refreshed");closeDrawer()};
   el("healthItem").onclick=checkHealth;
   el("alertTestItem").onclick=function(){
@@ -7153,11 +7466,1443 @@
   el("customizeItem").onclick=function(){closeDrawer();openCustomize()};
   el("snapshotItem").onclick=function(){closeDrawer();snapshotForClaude()};
 
+  // ============================================================
+  // JOB DAY SUITE — Today's Run · Quotes · Get Paid · Garage
+  // (+ live ETA tracking, before/after photos, neighborhood blasts)
+  //
+  // One full-screen section, four segments, one shared bottom sheet. Every
+  // flow that touches a customer shows exactly what will be texted before it
+  // sends — nothing here messages anyone without a deliberate tap.
+  // ============================================================
+  var JD={view:"run",date:"",day:null,loading:false,wired:false,err:"",
+    quotes:null,qcfg:null,qdraft:null,pay:null,garage:null,garageOne:null,
+    track:{token:"",jobId:"",watch:null,timer:null,eta:0,startedAt:0},
+    photos:{},sheetOpen:false};
+  var JD_VIEWS={
+    run:["Today's Run","Your day, stop by stop"],
+    quotes:["Quotes","Price it, text it, track it"],
+    pay:["Get Paid","Payment requests & who still owes"],
+    garage:["Garage","Every customer, every vehicle"]
+  };
+
+  function jdDstr(d){var p=function(x){return (x<10?"0":"")+x};return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())}
+  function jdToday(){return jdDstr(new Date())}
+  function jdParse(ds){return new Date(ds+"T12:00:00")}
+  function jd12(hm){if(!hm)return["--",""];var p=String(hm).split(":"),h=+p[0],m=p[1]||"00";var ap=h>=12?"PM":"AM";h=h%12||12;return [h+":"+m,ap]}
+  function jdNiceDate(ds){var d=jdParse(ds),t=jdToday();
+    if(ds===t)return "Today";
+    if(ds===jdDstr(new Date(Date.now()+86400000)))return "Tomorrow";
+    if(ds===jdDstr(new Date(Date.now()-86400000)))return "Yesterday";
+    return d.toLocaleDateString([],{weekday:"long",month:"long",day:"numeric"})}
+  function jdDur(ms){if(!ms||ms<0)return "0m";var m=Math.floor(ms/60000),h=Math.floor(m/60);return h?h+"h "+(m%60)+"m":m+"m"}
+
+  function openJobs(view){
+    el("jdApp").classList.add("show");
+    if(!JD.wired){jdWire();JD.wired=true}
+    if(!JD.date)JD.date=jdToday();
+    if(view)JD.view=view;
+    jdSyncNav();
+    jdRender();
+    if(JD.view==="run"&&!JD.day)jdLoadDay();
+    if(JD.view==="quotes"&&!JD.qcfg)jdLoadQuotes();
+    if(JD.view==="pay"&&!JD.pay)jdLoadPay();
+    if(JD.view==="garage"&&!JD.garage)jdLoadGarage();
+  }
+  function closeJobs(){el("jdApp").classList.remove("show");jdSheetClose();jdTrackDetach()}
+  function jdSyncNav(){Array.prototype.forEach.call(el("jdNav").querySelectorAll("[data-jv]"),function(b){b.classList.toggle("active",b.getAttribute("data-jv")===JD.view)})}
+  function jdSet(v){
+    JD.view=v;jdSyncNav();jdRender();el("jdBody").scrollTop=0;
+    if(v==="run"&&!JD.day)jdLoadDay();
+    if(v==="quotes"&&!JD.qcfg)jdLoadQuotes();
+    if(v==="pay"&&!JD.pay)jdLoadPay();
+    if(v==="garage"&&!JD.garage)jdLoadGarage();
+  }
+  function jdWire(){
+    el("jdBack").onclick=closeJobs;
+    Array.prototype.forEach.call(el("jdNav").querySelectorAll("[data-jv]"),function(b){b.onclick=function(){vibrate(6);jdSet(b.getAttribute("data-jv"))}});
+    el("jdRefresh").onclick=function(){
+      vibrate(6);toast("Refreshing…");
+      if(JD.view==="run")jdLoadDay(true);
+      else if(JD.view==="quotes")jdLoadQuotes(true);
+      else if(JD.view==="pay")jdLoadPay(true);
+      else jdLoadGarage(true);
+    };
+    el("jdScrim").onclick=jdSheetClose;
+  }
+  function jdRender(){
+    var m=JD_VIEWS[JD.view]||JD_VIEWS.run;
+    el("jdTitle").textContent=m[0];
+    el("jdSub").textContent=JD.view==="run"?(jdNiceDate(JD.date)+" · "+m[1]):m[1];
+    var b=el("jdBody");
+    if(JD.view==="run")return jdRunView(b);
+    if(JD.view==="quotes")return jdQuotesView(b);
+    if(JD.view==="pay")return jdPayView(b);
+    return jdGarageView(b);
+  }
+
+  // ---- shared bottom sheet ----
+  function jdSheetOpen(html){
+    var s=el("jdSheet");
+    s.innerHTML='<div class="jd-grip"></div>'+html;
+    el("jdScrim").classList.add("show");
+    requestAnimationFrame(function(){s.classList.add("show")});
+    JD.sheetOpen=true;
+    hydrateIcons(s);
+    return s;
+  }
+  function jdSheetClose(){
+    el("jdSheet").classList.remove("show");
+    el("jdScrim").classList.remove("show");
+    JD.sheetOpen=false;
+  }
+
+  // ============================================================
+  // 1 · TODAY'S RUN
+  // ============================================================
+  function jdLoadDay(force){
+    if(JD.loading&&!force)return;
+    JD.loading=true;JD.err="";
+    if(!JD.day)jdRender();
+    api("/api/day?date="+encodeURIComponent(JD.date)).then(function(d){
+      JD.loading=false;
+      if(!d||!d.ok){JD.err=(d&&d.error)||"load_failed";jdRender();return}
+      JD.day=d;jdRender();updateJobsBadge();
+    }).catch(function(){JD.loading=false;JD.err="network";jdRender()});
+  }
+
+  function jdDayStrip(){
+    var out='<div class="jd-days" id="jdDays">';
+    for(var i=-1;i<7;i++){
+      var d=new Date();d.setDate(d.getDate()+i);
+      var ds=jdDstr(d),on=ds===JD.date;
+      var n=(JD.day&&JD.day.date===ds)?JD.day.jobs.length:0;
+      var dots="";for(var k=0;k<Math.min(3,n);k++)dots+="<i></i>";
+      out+='<div class="jd-day'+(on?" on":"")+'" data-jdate="'+ds+'"><div class="dw">'+
+        (i===0?"Today":d.toLocaleDateString([],{weekday:"short"}))+'</div><div class="dd">'+d.getDate()+'</div><div class="dn">'+dots+'</div></div>';
+    }
+    return out+'</div>';
+  }
+
+  function jdRunView(box){
+    var h=jdDayStrip();
+    if(!JD.day||JD.day.date!==JD.date){
+      h+='<div class="jd-empty"><span class="spin"></span> Loading your run…</div>';
+      box.innerHTML=h;jdWireDays(box);return;
+    }
+    if(JD.err){
+      h+='<div class="jd-empty"><b>Couldn\'t load the day</b>Check your connection and pull refresh.</div>';
+      box.innerHTML=h;jdWireDays(box);return;
+    }
+    var day=JD.day,s=day.summary,jobs=day.jobs;
+    var nextJob=jobs.filter(function(j){return j.state!=="done"&&j.state!=="skipped"})[0];
+    var pct=s.total?Math.round(s.done/s.total*100):0;
+
+    // hero
+    h+='<div class="jd-hero"><div class="hl">'+esc(jdNiceDate(JD.date))+'</div>';
+    if(!s.total){
+      h+='<div class="hv">Nothing booked</div><div class="hs">A clear day — good time to chase rebooks or run a neighborhood offer.</div>';
+    }else if(!s.remaining){
+      h+='<div class="hv">Day complete 🎉</div><div class="hs">'+s.done+' job'+(s.done===1?"":"s")+' finished · $'+s.earned+' earned</div>';
+    }else{
+      h+='<div class="hv">'+s.remaining+' stop'+(s.remaining===1?"":"s")+' to go</div>'+
+        '<div class="hs">'+(nextJob?("Next: "+esc(nextJob.name||"your "+jd12(nextJob.slot)[0]+" job")+(nextJob.city?" · "+esc(nextJob.city):"")):"")+'</div>';
+    }
+    h+='<div class="hbar"><i style="width:'+Math.max(3,pct)+'%"></i></div>'+
+      '<div class="hstats">'+
+      '<div class="hst"><div class="l">Booked</div><div class="v">$'+s.booked+'</div></div>'+
+      '<div class="hst"><div class="l">Done</div><div class="v">'+s.done+'/'+s.total+'</div></div>'+
+      '<div class="hst"><div class="l">Wheels</div><div class="v">'+s.hours+'h</div></div>'+
+      '</div></div>';
+
+    if(JD.track.token){
+      var mins=Math.max(0,Math.round((JD.track.eta-Date.now())/60000));
+      h+='<div class="jc-track" style="margin:0 0 12px">'+ic("navigation",15)+'<span>Live tracking on · ~'+mins+' min ETA shared</span>'+
+        '<button data-jdtrackstop="1">Stop</button></div>';
+    }
+
+    if(!jobs.length){
+      h+='<div class="jd-empty"><b>No jobs on the board</b>Bookings land here automatically. You can also add a cash job by hand.</div>';
+    }else{
+      jobs.forEach(function(j){h+=jdJobCard(j,nextJob&&j.id===nextJob.id)});
+    }
+    h+='<button class="jd-btn ghost" data-jdadd="1" style="margin-top:12px">'+ic("plus",17)+' Add a job by hand</button>';
+    h+='<div class="jd-row" style="margin-top:9px">'+
+      '<button class="jd-btn ghost" data-jdblast="1">'+ic("megaphone",17)+' Neighborhood offer</button>'+
+      '<button class="jd-btn ghost" data-jdbrief="1">'+ic("sun",17)+' Day brief</button></div>';
+    box.innerHTML=h;
+    hydrateIcons(box);
+    jdWireDays(box);
+    jdWireRun(box);
+  }
+
+  function jdJobCard(j,isNext){
+    var t=jd12(j.slot);
+    var cls="jd-card st-"+j.state+(isNext?" next":"");
+    var sub=[j.service,j.size,j.vehicle].filter(Boolean).join(" · ");
+    var chips="";
+    if(j.pending)chips+='<span class="jc-chip chip-pending">Needs confirm</span>';
+    chips+='<span class="jc-chip chip-'+j.state+'">'+({queued:"Up next",enroute:"On my way",onsite:"Working",done:"Done",skipped:"Skipped"}[j.state])+'</span>';
+    var h='<div class="'+cls+'" data-jdjob="'+esc(j.id)+'">'+
+      '<div class="jc-top">'+
+        '<div class="jc-time"><div class="t">'+t[0]+'</div><div class="ap">'+t[1]+'</div></div>'+
+        '<div class="jc-main"><div class="jc-name">'+esc(j.name||"Job")+'</div>'+
+          (sub?'<div class="jc-sub">'+esc(sub)+'</div>':'')+
+          (j.mapQuery?'<div class="jc-where">'+ic("map-pin",13)+esc(j.mapQuery)+'</div>':'')+
+        '</div>'+
+        '<div class="jc-right">'+(j.price?'<div class="jc-price">$'+j.price+'</div>':'')+chips+'</div>'+
+      '</div>';
+    // live timer while a job is running
+    if(j.state==="onsite"&&j.startedAt)h+='<div class="jc-timer">'+ic("clock",13)+' Working <b data-jdtimer="'+j.startedAt+'">'+jdDur(Date.now()-j.startedAt)+'</b></div>';
+    if(j.state==="done"&&j.startedAt&&j.doneAt)h+='<div class="jc-timer">'+ic("check",13)+' Took <b>'+jdDur(j.doneAt-j.startedAt)+'</b>'+(j.photos?' · '+j.photos+' photo'+(j.photos===1?"":"s"):"")+'</div>';
+    if(j.trackToken&&j.state==="enroute")h+='<div class="jc-track">'+ic("navigation",15)+'<span>Customer is watching your ETA</span><button data-jdcopy="'+esc(j.trackToken)+'">Copy link</button></div>';
+
+    // actions — one obvious primary, everything else one tap away
+    h+='<div class="jc-acts">';
+    if(j.state==="queued")h+='<button class="pri" data-jdgo="'+esc(j.id)+'">'+ic("navigation",15)+' On my way</button>';
+    if(j.state==="enroute")h+='<button class="pri" data-jdarrive="'+esc(j.id)+'">'+ic("play",15)+' I\'m here</button>';
+    if(j.state==="onsite")h+='<button class="pri" data-jddone="'+esc(j.id)+'">'+ic("check",15)+' Finish</button>';
+    if(j.state==="done"||j.state==="skipped")h+='<button data-jdreset="'+esc(j.id)+'">'+ic("undo",15)+' Reopen</button>';
+    if(j.mapQuery)h+='<button data-jdnav="'+esc(j.mapQuery)+'">'+ic("map-pin",15)+' Navigate</button>';
+    if(j.phone)h+='<button data-jdchat="'+esc(j.phone)+'">'+ic("message-square",15)+' Text</button>';
+    h+='<button data-jdmore="'+esc(j.id)+'">'+ic("sliders",15)+' More</button>';
+    h+='</div></div>';
+    return h;
+  }
+
+  function jdWireDays(box){
+    Array.prototype.forEach.call(box.querySelectorAll("[data-jdate]"),function(c){
+      c.onclick=function(){vibrate(6);JD.date=c.getAttribute("data-jdate");JD.day=null;jdRender();jdLoadDay(true)};
+    });
+  }
+  function jdWireRun(box){
+    var q=function(sel,fn){Array.prototype.forEach.call(box.querySelectorAll(sel),fn)};
+    q("[data-jdgo]",function(b){b.onclick=function(){jdOnMyWay(b.getAttribute("data-jdgo"))}});
+    q("[data-jdarrive]",function(b){b.onclick=function(){jdSetState(b.getAttribute("data-jdarrive"),"onsite",{text:false})}});
+    q("[data-jddone]",function(b){b.onclick=function(){jdFinish(b.getAttribute("data-jddone"))}});
+    q("[data-jdreset]",function(b){b.onclick=function(){jdSetState(b.getAttribute("data-jdreset"),"queued",{text:false})}});
+    q("[data-jdnav]",function(b){b.onclick=function(){jdNavigate(b.getAttribute("data-jdnav"))}});
+    q("[data-jdchat]",function(b){b.onclick=function(){closeJobs();openThread(b.getAttribute("data-jdchat"))}});
+    q("[data-jdmore]",function(b){b.onclick=function(){jdJobSheet(b.getAttribute("data-jdmore"))}});
+    q("[data-jdcopy]",function(b){b.onclick=function(){jdCopy(location.origin+"/t/"+b.getAttribute("data-jdcopy"),"Tracking link copied")}});
+    q("[data-jdadd]",function(b){b.onclick=function(){jdJobForm(null)}});
+    q("[data-jdblast]",function(b){b.onclick=function(){jdBlastSheet(null)}});
+    q("[data-jdbrief]",function(b){b.onclick=function(){jdBriefSheet()}});
+    q("[data-jdtrackstop]",function(b){b.onclick=function(){jdTrackStop()}});
+    jdStartTimers(box);
+  }
+  // Keep the "working 42m" counters honest without re-rendering the whole list.
+  function jdStartTimers(box){
+    if(JD._tick)clearInterval(JD._tick);
+    var els=box.querySelectorAll("[data-jdtimer]");
+    if(!els.length)return;
+    JD._tick=setInterval(function(){
+      var live=document.querySelectorAll("[data-jdtimer]");
+      if(!live.length||!el("jdApp").classList.contains("show")){clearInterval(JD._tick);JD._tick=null;return}
+      Array.prototype.forEach.call(live,function(n){n.textContent=jdDur(Date.now()-(+n.getAttribute("data-jdtimer")))});
+    },30000);
+  }
+
+  function jdJob(id){return (JD.day&&JD.day.jobs||[]).filter(function(j){return j.id===id})[0]||null}
+
+  function jdSetState(jobId,state,opts){
+    opts=opts||{};
+    var body={date:JD.date,jobId:jobId,state:state};
+    if(opts.text)body.text=true;
+    if(opts.body)body.body=opts.body;
+    if(opts.track)body.track=true;
+    if(opts.etaMin)body.etaMin=opts.etaMin;
+    vibrate(8);
+    return post("/api/day/state",body).then(function(d){
+      if(!d||!d.ok){toast("Couldn't update that job",{bad:true});return d}
+      JD.day=d.day;jdRender();updateJobsBadge();
+      if(d.track&&d.track.token)jdTrackAttach(d.track,jobId,opts.etaMin||20);
+      if(opts.text)toast(d.texted?"Customer texted ✓":"Job updated — the text didn't send",{bad:!d.texted});
+      return d;
+    }).catch(function(){toast("Network error",{bad:true})});
+  }
+
+  // "On my way" — the single most-used button in the app. Pick an ETA, choose
+  // whether to text and whether to share live tracking, then go.
+  function jdOnMyWay(jobId){
+    var j=jdJob(jobId);if(!j)return;
+    var etas=[10,15,20,30,45];
+    var h='<div class="jd-sh-title">On my way</div>'+
+      '<div class="jd-sh-sub">'+esc(j.name||"This job")+(j.mapQuery?' · '+esc(j.mapQuery):'')+'</div>'+
+      '<div class="jd-field"><label>How far out?</label><div class="jd-pills" id="jdEtaPills">'+
+      etas.map(function(m,i){return '<button class="jd-pill'+(i===2?" on":"")+'" data-eta="'+m+'">'+m+' min</button>'}).join("")+
+      '</div></div>';
+    if(j.phone){
+      h+='<label class="jd-field" style="display:flex;align-items:center;gap:10px;cursor:pointer;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px 13px">'+
+        '<input type="checkbox" id="jdGoText" checked style="width:20px;height:20px;flex:none;accent-color:var(--accent)">'+
+        '<span style="flex:1"><b style="font-size:14px;font-weight:700">Text them I\'m coming</b><br><span style="font-size:12px;color:var(--muted2)">Sends the heads-up with your ETA</span></span></label>'+
+      '<label class="jd-field" style="display:flex;align-items:center;gap:10px;cursor:pointer;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px 13px">'+
+        '<input type="checkbox" id="jdGoTrack" checked style="width:20px;height:20px;flex:none;accent-color:var(--accent)">'+
+        '<span style="flex:1"><b style="font-size:14px;font-weight:700">Share live tracking</b><br><span style="font-size:12px;color:var(--muted2)">They get a live ETA page — like a food delivery</span></span></label>';
+    }else{
+      h+='<div class="jd-note">No phone number on this job, so nothing gets texted.</div>';
+    }
+    h+='<button class="jd-btn pri" id="jdGoConfirm" style="margin-top:6px">'+ic("navigation",17)+' Start the drive</button>'+
+      '<button class="jd-btn ghost" id="jdGoCancel" style="margin-top:8px">Cancel</button>';
+    var s=jdSheetOpen(h);
+    var eta=20;
+    Array.prototype.forEach.call(s.querySelectorAll("[data-eta]"),function(b){
+      b.onclick=function(){eta=+b.getAttribute("data-eta");
+        Array.prototype.forEach.call(s.querySelectorAll("[data-eta]"),function(x){x.classList.toggle("on",x===b)})};
+    });
+    s.querySelector("#jdGoCancel").onclick=jdSheetClose;
+    s.querySelector("#jdGoConfirm").onclick=function(){
+      var wantText=j.phone&&s.querySelector("#jdGoText").checked;
+      var wantTrack=j.phone&&s.querySelector("#jdGoTrack").checked;
+      jdSheetClose();
+      jdSetState(jobId,"enroute",{text:wantText,track:wantTrack,etaMin:eta});
+    };
+  }
+
+  // Finishing a job is where the money happens — log it, ask for payment, ask
+  // for the review, all from one place so nothing gets forgotten in the drive.
+  function jdFinish(jobId){
+    var j=jdJob(jobId);if(!j)return;
+    var h='<div class="jd-sh-title">Finish this job</div>'+
+      '<div class="jd-sh-sub">'+esc(j.name||"Job")+(j.service?' · '+esc(j.service):'')+'</div>'+
+      '<div class="jd-field"><label>What did you collect?</label>'+
+      '<input id="jdFinAmt" type="number" inputmode="decimal" step="0.01" value="'+(j.price||"")+'" placeholder="0.00"></div>'+
+      '<div class="jd-pills" style="margin-bottom:14px">'+
+      '<button class="jd-pill on" data-fpaid="paid">Paid in full</button>'+
+      '<button class="jd-pill" data-fpaid="owes">Still owes</button>'+
+      '<button class="jd-pill" data-fpaid="skip">Don\'t log</button></div>';
+    if(j.phone){
+      h+='<label class="jd-field" style="display:flex;align-items:center;gap:10px;cursor:pointer;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px 13px">'+
+        '<input type="checkbox" id="jdFinText" checked style="width:20px;height:20px;flex:none;accent-color:var(--accent)">'+
+        '<span style="flex:1"><b style="font-size:14px;font-weight:700">Text "all finished" + review ask</b><br>'+
+        '<span style="font-size:12px;color:var(--muted2)">Your review link goes out with it</span></span></label>';
+    }
+    h+='<button class="jd-btn pri" id="jdFinGo">'+ic("check",17)+' Mark done</button>'+
+      '<button class="jd-btn ghost" id="jdFinCancel" style="margin-top:8px">Cancel</button>';
+    var s=jdSheetOpen(h);
+    var mode="paid";
+    Array.prototype.forEach.call(s.querySelectorAll("[data-fpaid]"),function(b){
+      b.onclick=function(){mode=b.getAttribute("data-fpaid");
+        Array.prototype.forEach.call(s.querySelectorAll("[data-fpaid]"),function(x){x.classList.toggle("on",x===b)})};
+    });
+    s.querySelector("#jdFinCancel").onclick=jdSheetClose;
+    s.querySelector("#jdFinGo").onclick=function(){
+      var amt=+(s.querySelector("#jdFinAmt").value||0);
+      var wantText=j.phone&&s.querySelector("#jdFinText")&&s.querySelector("#jdFinText").checked;
+      jdSheetClose();
+      jdTrackStop(true);
+      jdSetState(jobId,"done",{text:wantText}).then(function(){
+        if(mode==="skip"||!(amt>0))return;
+        // Log it straight into the money ledger — same shape the Money tab writes.
+        post("/api/money/entry",{type:"job",amount:amt,date:JD.date,phone:j.phone||"",name:j.name||"",
+          service:j.service||"",note:"Job day",owed:mode==="owes"?amt:0}).then(function(r){
+          if(r&&r.ok){toast("Logged $"+amt+" to Money ✓");if(typeof loadMoney==="function")loadMoney()}
+        });
+        if(mode==="owes"&&j.phone)setTimeout(function(){jdPayRequestSheet({phone:j.phone,name:j.name,amount:amt,memo:j.service||"Mobile detailing",jobId:j.id})},400);
+      });
+    };
+  }
+
+  function jdNavigate(query){
+    vibrate(6);
+    var q=encodeURIComponent(query);
+    // Apple Maps on iOS, Google Maps everywhere else — both open the native app.
+    var ios=/iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+    window.open(ios?("https://maps.apple.com/?daddr="+q):("https://www.google.com/maps/dir/?api=1&destination="+q),"_blank");
+  }
+  function jdCopy(text,msg){
+    var done=function(){toast(msg||"Copied")};
+    if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(text).then(done).catch(function(){prompt("Copy this:",text)});
+    else prompt("Copy this:",text);
+  }
+
+  // ---- the job sheet: everything else you can do to a stop ----
+  function jdJobSheet(jobId){
+    var j=jdJob(jobId);if(!j)return;
+    var h='<div class="jd-sh-title">'+esc(j.name||"Job")+'</div>'+
+      '<div class="jd-sh-sub">'+esc([jd12(j.slot)[0]+" "+jd12(j.slot)[1],j.service,j.mapQuery].filter(Boolean).join(" · "))+'</div>';
+    h+='<div class="jd-sec">'+ic("camera",14)+' Before &amp; after</div><div id="jdPhotoBox"><div class="jd-empty"><span class="spin"></span> Loading photos…</div></div>';
+    h+='<div class="jd-sec">'+ic("zap",14)+' Actions</div>';
+    if(j.phone){
+      h+='<button class="jd-btn" data-jsact="pay">'+ic("credit-card",17)+' Request payment</button>'+
+        '<button class="jd-btn" data-jsact="quote" style="margin-top:8px">'+ic("file-text",17)+' Build a quote</button>'+
+        '<button class="jd-btn" data-jsact="track" style="margin-top:8px">'+ic("navigation",17)+' Send a live ETA link</button>'+
+        '<button class="jd-btn" data-jsact="garage" style="margin-top:8px">'+ic("car",17)+' Vehicle &amp; access notes</button>';
+    }
+    if(j.city)h+='<button class="jd-btn" data-jsact="blast" style="margin-top:8px">'+ic("megaphone",17)+' Offer neighbors in '+esc(j.city)+'</button>';
+    h+='<button class="jd-btn" data-jsact="skip" style="margin-top:8px">'+ic("ban",17)+' Skip this stop</button>';
+    if(j.source==="manual")h+='<button class="jd-btn ghost" data-jsact="edit" style="margin-top:8px">'+ic("pencil",17)+' Edit job</button>'+
+      '<button class="jd-btn ghost" data-jsact="del" style="margin-top:8px;color:var(--accent-text)">'+ic("trash",17)+' Remove job</button>';
+    h+='<button class="jd-btn ghost" data-jsact="close" style="margin-top:14px">Close</button>';
+    var s=jdSheetOpen(h);
+    jdLoadPhotos(j);
+    Array.prototype.forEach.call(s.querySelectorAll("[data-jsact]"),function(b){
+      b.onclick=function(){
+        var a=b.getAttribute("data-jsact");
+        if(a==="close")return jdSheetClose();
+        if(a==="skip"){jdSheetClose();return jdSetState(j.id,"skipped",{text:false})}
+        if(a==="del"){if(!confirm("Remove this job from the day?"))return;jdSheetClose();
+          return post("/api/day/remove",{date:JD.date,jobId:j.id}).then(function(d){if(d&&d.ok){JD.day=d.day;jdRender();toast("Job removed")}})}
+        if(a==="edit"){jdSheetClose();return jdJobForm(j)}
+        if(a==="pay"){jdSheetClose();return jdPayRequestSheet({phone:j.phone,name:j.name,amount:j.price,memo:j.service||"Mobile detailing",jobId:j.id})}
+        if(a==="quote"){jdSheetClose();JD.view="quotes";jdSyncNav();jdSet("quotes");
+          return jdLoadQuotes(true,function(){jdQuoteSheet({phone:j.phone,name:j.name,vehicle:j.vehicle})})}
+        if(a==="track"){jdSheetClose();return jdTrackSheet(j)}
+        if(a==="garage"){jdSheetClose();return jdGarageSheet(j.phone,j.name)}
+        if(a==="blast"){jdSheetClose();return jdBlastSheet(j)}
+      };
+    });
+  }
+
+  // ---- add / edit a hand-entered job ----
+  function jdJobForm(job){
+    var j=job||{};
+    var h='<div class="jd-sh-title">'+(job?"Edit job":"Add a job")+'</div>'+
+      '<div class="jd-sh-sub">'+esc(jdNiceDate(JD.date))+' — cash jobs, favors, re-dos. Anything not booked online.</div>'+
+      '<div class="jd-row"><div class="jd-field" style="flex:1"><label>Customer</label><input id="jfName" value="'+esc(j.name||"")+'" placeholder="Name"></div>'+
+      '<div class="jd-field" style="width:118px"><label>Start</label><input id="jfSlot" type="time" value="'+esc(j.slot||"09:00")+'"></div></div>'+
+      '<div class="jd-field"><label>Phone (optional)</label><input id="jfPhone" type="tel" inputmode="tel" value="'+esc(j.phone||"")+'" placeholder="(425) 555-0123"></div>'+
+      '<div class="jd-row"><div class="jd-field" style="flex:2"><label>Address</label><input id="jfAddr" value="'+esc(j.address||"")+'" placeholder="123 Main St"></div>'+
+      '<div class="jd-field" style="flex:1"><label>City</label><input id="jfCity" value="'+esc(j.city||"")+'" placeholder="Snohomish"></div></div>'+
+      '<div class="jd-row"><div class="jd-field" style="flex:2"><label>Service</label><input id="jfSvc" value="'+esc(j.service||"")+'" placeholder="Full detail"></div>'+
+      '<div class="jd-field" style="flex:1"><label>Price</label><input id="jfPrice" type="number" inputmode="decimal" value="'+(j.price||"")+'" placeholder="0"></div></div>'+
+      '<div class="jd-row"><div class="jd-field" style="flex:2"><label>Vehicle</label><input id="jfVeh" value="'+esc(j.vehicle||"")+'" placeholder="2019 Tacoma"></div>'+
+      '<div class="jd-field" style="flex:1"><label>Minutes</label><input id="jfDur" type="number" inputmode="numeric" value="'+(j.durationMin||120)+'"></div></div>'+
+      '<div class="jd-field"><label>Notes</label><textarea id="jfNotes" placeholder="Gate code, where to park, what they want…">'+esc(j.notes||"")+'</textarea></div>'+
+      '<button class="jd-btn pri" id="jfSave">'+ic("check",17)+' '+(job?"Save changes":"Add to the day")+'</button>'+
+      '<button class="jd-btn ghost" id="jfCancel" style="margin-top:8px">Cancel</button>';
+    var s=jdSheetOpen(h);
+    s.querySelector("#jfCancel").onclick=jdSheetClose;
+    s.querySelector("#jfSave").onclick=function(){
+      var body={date:JD.date,id:job?job.id:null,
+        name:s.querySelector("#jfName").value,phone:s.querySelector("#jfPhone").value,
+        address:s.querySelector("#jfAddr").value,city:s.querySelector("#jfCity").value,
+        service:s.querySelector("#jfSvc").value,vehicle:s.querySelector("#jfVeh").value,
+        slot:s.querySelector("#jfSlot").value,price:s.querySelector("#jfPrice").value,
+        durationMin:s.querySelector("#jfDur").value,notes:s.querySelector("#jfNotes").value};
+      if(!body.name&&!body.phone&&!body.address)return toast("Give it a name at least",{bad:true});
+      post("/api/day/job",body).then(function(d){
+        if(!d||!d.ok)return toast("Couldn't save that job",{bad:true});
+        JD.day=d.day;jdSheetClose();jdRender();updateJobsBadge();toast(job?"Job updated":"Job added ✓");
+      });
+    };
+  }
+
+
+  // ============================================================
+  // 2 · LIVE ETA TRACKING
+  // ============================================================
+  // While a trip is live the phone's GPS feeds the customer's page. Pings are
+  // deliberately slow (45s) — the Worker throttles writes too, so a long drive
+  // costs a handful of KV writes, not hundreds.
+  function jdTrackAttach(track,jobId,etaMin){
+    jdTrackDetach();
+    JD.track={token:track.token,jobId:jobId,watch:null,timer:null,eta:track.etaAt||(Date.now()+etaMin*60000),startedAt:Date.now()};
+    if(navigator.geolocation){
+      try{
+        JD.track.watch=navigator.geolocation.watchPosition(function(pos){
+          JD.track.last={lat:pos.coords.latitude,lng:pos.coords.longitude,at:Date.now()};
+        },function(){},{enableHighAccuracy:true,maximumAge:20000,timeout:15000});
+      }catch(e){}
+    }
+    JD.track.timer=setInterval(jdTrackPing,45000);
+    setTimeout(jdTrackPing,4000);
+    toast("Live tracking on — they can watch your ETA");
+  }
+  function jdTrackPing(){
+    if(!JD.track.token)return;
+    var body={token:JD.track.token};
+    if(JD.track.last&&Date.now()-JD.track.last.at<180000){body.lat=JD.track.last.lat;body.lng=JD.track.last.lng}
+    var mins=Math.max(0,Math.round((JD.track.eta-Date.now())/60000));
+    body.etaMin=mins;
+    post("/api/track/ping",body).catch(function(){});
+  }
+  function jdTrackDetach(){
+    if(JD.track.watch!=null&&navigator.geolocation){try{navigator.geolocation.clearWatch(JD.track.watch)}catch(e){}}
+    if(JD.track.timer)clearInterval(JD.track.timer);
+    JD.track={token:"",jobId:"",watch:null,timer:null,eta:0,startedAt:0};
+  }
+  function jdTrackStop(arrived){
+    if(!JD.track.token){if(!arrived)toast("No trip is running");return}
+    var tok=JD.track.token;
+    jdTrackDetach();
+    post("/api/track/stop",{token:tok,status:arrived?"arrived":"ended"}).then(function(){
+      if(!arrived)toast("Tracking stopped");
+      if(el("jdApp").classList.contains("show"))jdRender();
+    }).catch(function(){});
+  }
+  // Send a tracking link on its own (no job state change) — handy when you're
+  // already rolling and just want someone to stop calling for an update.
+  function jdTrackSheet(j){
+    var h='<div class="jd-sh-title">Send a live ETA</div>'+
+      '<div class="jd-sh-sub">'+esc(j.name||"Customer")+' gets a page that counts down and updates itself.</div>'+
+      '<div class="jd-field"><label>Minutes out</label><input id="jtEta" type="number" inputmode="numeric" value="20"></div>'+
+      '<button class="jd-btn pri" id="jtGo">'+ic("navigation",17)+' Text the link</button>'+
+      '<button class="jd-btn ghost" id="jtCancel" style="margin-top:8px">Cancel</button>';
+    var s=jdSheetOpen(h);
+    s.querySelector("#jtCancel").onclick=jdSheetClose;
+    s.querySelector("#jtGo").onclick=function(){
+      var eta=Math.max(1,+s.querySelector("#jtEta").value||20);
+      jdSheetClose();
+      post("/api/track/start",{phone:j.phone,name:j.name,etaMin:eta,address:j.address,city:j.city,jobId:j.id,date:JD.date})
+        .then(function(d){
+          if(!d||!d.ok)return toast("Couldn't start tracking",{bad:true});
+          jdTrackAttach(d.track,j.id,eta);
+          if(el("jdApp").classList.contains("show"))jdRender();
+        });
+    };
+  }
+
+  // ============================================================
+  // 8 · BEFORE / AFTER PHOTOS
+  // ============================================================
+  function jdLoadPhotos(j){
+    api("/api/photos?job="+encodeURIComponent(j.id)).then(function(d){
+      JD.photos[j.id]=(d&&d.ok)?d.photos:[];
+      jdRenderPhotos(j);
+    }).catch(function(){JD.photos[j.id]=[];jdRenderPhotos(j)});
+  }
+  function jdRenderPhotos(j){
+    var box=el("jdSheet").querySelector("#jdPhotoBox");
+    if(!box)return;
+    var list=JD.photos[j.id]||[];
+    var before=list.filter(function(p){return p.phase==="before"}).slice(-1)[0];
+    var after=list.filter(function(p){return p.phase==="after"}).slice(-1)[0];
+    var h="";
+    if(before&&after){
+      h+='<div class="ba-wrap" id="baWrap" style="--split:50%">'+
+        '<img src="/api/photos/img?id='+esc(before.id)+'" alt="Before">'+
+        '<img class="after" src="/api/photos/img?id='+esc(after.id)+'" alt="After">'+
+        '<div class="ba-handle"></div><span class="ba-lbl l">Before</span><span class="ba-lbl r">After</span></div>'+
+        '<div class="jd-row" style="margin-top:9px"><button class="jd-btn ghost" data-baretake="before">'+ic("camera",16)+' Retake before</button>'+
+        '<button class="jd-btn ghost" data-baretake="after">'+ic("camera",16)+' Retake after</button></div>';
+    }else{
+      h+='<div class="ba-grid">'+
+        jdPhotoSlot("before","Before",before)+
+        jdPhotoSlot("after","After",after)+
+        '</div><div class="jd-note">Tap a box to snap it. Before/after sells the next job better than any ad — and it lands in the customer\'s thread.</div>';
+    }
+    if(before||after)h+='<button class="jd-btn ghost" data-basend="1" style="margin-top:9px">'+ic("send",16)+' Text these to the customer</button>';
+    box.innerHTML=h;
+    hydrateIcons(box);
+    jdWirePhotos(j,box);
+  }
+  function jdPhotoSlot(phase,label,p){
+    if(p)return '<div class="ba-slot" data-bashot="'+phase+'"><img src="/api/photos/img?id='+esc(p.id)+'" alt="'+label+'">'+
+      '<button class="del" data-badel="'+esc(p.id)+'" aria-label="Delete">'+ic("x",14)+'</button></div>';
+    return '<div class="ba-slot" data-bashot="'+phase+'">'+ic("camera",22)+label+'</div>';
+  }
+  function jdWirePhotos(j,box){
+    Array.prototype.forEach.call(box.querySelectorAll("[data-bashot]"),function(n){
+      n.onclick=function(e){if(e.target.closest("[data-badel]"))return;jdShoot(j,n.getAttribute("data-bashot"))};
+    });
+    Array.prototype.forEach.call(box.querySelectorAll("[data-baretake]"),function(n){
+      n.onclick=function(){jdShoot(j,n.getAttribute("data-baretake"))};
+    });
+    Array.prototype.forEach.call(box.querySelectorAll("[data-badel]"),function(n){
+      n.onclick=function(e){e.stopPropagation();
+        post("/api/photos/delete",{job:j.id,id:n.getAttribute("data-badel")}).then(function(d){
+          if(d&&d.ok){JD.photos[j.id]=d.photos;jdRenderPhotos(j);toast("Photo deleted")}})};
+    });
+    var send=box.querySelector("[data-basend]");
+    if(send)send.onclick=function(){
+      if(!j.phone)return toast("No phone number on this job",{bad:true});
+      toast("Opening the thread — attach from there");
+      jdSheetClose();closeJobs();openThread(j.phone);
+    };
+    var wrap=box.querySelector("#baWrap");
+    if(wrap)jdWireSlider(wrap);
+  }
+  // Drag the before/after divider.
+  function jdWireSlider(wrap){
+    var down=false;
+    var move=function(clientX){
+      var r=wrap.getBoundingClientRect();
+      var pct=Math.max(0,Math.min(100,(clientX-r.left)/r.width*100));
+      wrap.style.setProperty("--split",pct+"%");
+    };
+    wrap.addEventListener("pointerdown",function(e){down=true;wrap.setPointerCapture(e.pointerId);move(e.clientX)});
+    wrap.addEventListener("pointermove",function(e){if(down)move(e.clientX)});
+    wrap.addEventListener("pointerup",function(){down=false});
+    wrap.addEventListener("pointercancel",function(){down=false});
+  }
+  // Capture + compress in the browser so a 4MB phone photo becomes ~120KB.
+  function jdShoot(j,phase){
+    var inp=document.createElement("input");
+    inp.type="file";inp.accept="image/*";inp.capture="environment";
+    inp.onchange=function(){
+      var f=inp.files&&inp.files[0];if(!f)return;
+      toast("Processing photo…");
+      jdCompress(f,1280,.72).then(function(dataUrl){
+        return post("/api/photos",{job:j.id,phase:phase,img:dataUrl,date:JD.date});
+      }).then(function(d){
+        if(!d||!d.ok)return toast("Upload failed — try a smaller photo",{bad:true});
+        JD.photos[j.id]=d.photos;jdRenderPhotos(j);vibrate(10);toast(phase==="before"?"Before shot saved ✓":"After shot saved ✓");
+        if(JD.day)jdLoadDay(true);
+      }).catch(function(){toast("Couldn't save that photo",{bad:true})});
+    };
+    inp.click();
+  }
+  function jdCompress(file,maxPx,quality){
+    return new Promise(function(res,rej){
+      var img=new Image(),url=URL.createObjectURL(file);
+      img.onload=function(){
+        var w=img.width,h=img.height,sc=Math.min(1,maxPx/Math.max(w,h));
+        var c=document.createElement("canvas");c.width=Math.round(w*sc);c.height=Math.round(h*sc);
+        c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+        URL.revokeObjectURL(url);
+        var out=c.toDataURL("image/jpeg",quality);
+        if(out.length>860000)out=c.toDataURL("image/jpeg",.55);
+        res(out);
+      };
+      img.onerror=function(){URL.revokeObjectURL(url);rej(new Error("bad image"))};
+      img.src=url;
+    });
+  }
+
+  // ============================================================
+  // 4 · QUOTE BUILDER
+  // ============================================================
+  function jdLoadQuotes(force,then){
+    if(JD.qcfg&&!force){if(then)then();return}
+    api("/api/quote/config").then(function(d){
+      if(d&&d.ok){JD.qcfg=d;JD.quotes=d.quotes||[]}
+      if(JD.view==="quotes")jdRender();
+      if(then)then();
+    }).catch(function(){});
+  }
+  function jdQuotesView(box){
+    if(!JD.qcfg){box.innerHTML='<div class="jd-empty"><span class="spin"></span> Loading your price list…</div>';return}
+    var qs=JD.quotes||[];
+    var sent=qs.filter(function(q){return q.status==="sent"});
+    var won=qs.filter(function(q){return q.status==="accepted"});
+    var winRate=(sent.length+won.length)?Math.round(won.length/(sent.length+won.length)*100):0;
+    var h='<button class="jd-btn pri" id="jdNewQuote">'+ic("plus",17)+' Build a quote</button>';
+    h+='<div class="gr-ltv" style="margin-top:14px">'+
+      '<div class="t"><div class="v">'+sent.length+'</div><div class="l">Out there</div></div>'+
+      '<div class="t"><div class="v">'+won.length+'</div><div class="l">Accepted</div></div>'+
+      '<div class="t"><div class="v">'+winRate+'%</div><div class="l">Win rate</div></div></div>';
+    if(!qs.length){
+      h+='<div class="jd-empty"><b>No quotes yet</b>Pick a service, a vehicle size and how rough it is — you get a priced, ready-to-send quote with your real prices in it.</div>';
+    }else{
+      h+='<div class="jd-sec">'+ic("file-text",14)+' Recent quotes</div>';
+      qs.slice(0,30).forEach(function(q){
+        var col=q.status==="accepted"?"var(--green)":q.status==="declined"?"var(--gray)":"var(--accent)";
+        h+='<div class="jd-item" data-jq="'+esc(q.id)+'">'+
+          '<div class="av" style="background:'+col+'">'+esc((q.name||"?").slice(0,1).toUpperCase())+'</div>'+
+          '<div class="mid"><div class="nm">'+esc(q.name||prettyPhone(q.phone))+'</div>'+
+          '<div class="sb">'+esc(q.serviceName||"")+' · '+new Date(q.createdAt).toLocaleDateString([],{month:"short",day:"numeric"})+'</div></div>'+
+          '<div class="rt"><div class="amt">$'+q.total+'</div><div class="st st-'+esc(q.status)+'">'+esc(q.status)+'</div></div></div>';
+      });
+    }
+    box.innerHTML=h;hydrateIcons(box);
+    box.querySelector("#jdNewQuote").onclick=function(){jdQuoteSheet(null)};
+    Array.prototype.forEach.call(box.querySelectorAll("[data-jq]"),function(n){
+      n.onclick=function(){jdQuoteDetail(n.getAttribute("data-jq"))};
+    });
+  }
+
+  function jdQuoteSheet(seed){
+    var cfg=JD.qcfg;if(!cfg)return toast("Still loading your price list…");
+    var svcs=cfg.services||[],sizes=cfg.sizes||[],addons=cfg.addons||[],conds=cfg.conditions||[];
+    JD.qdraft={phone:(seed&&seed.phone)||"",name:(seed&&seed.name)||"",vehicle:(seed&&seed.vehicle)||"",
+      service:(svcs[0]||{}).id||"",size:(sizes[0]||{}).id||"suv",sizeLabel:(sizes[0]||{}).label||"",
+      addons:[],condition:"clean",travel:0,discount:0,note:"",expiresDays:14};
+    var h='<div class="jd-sh-title">Build a quote</div>'+
+      '<div class="jd-sh-sub">Your real prices, priced live. Nothing sends until you tap send.</div>'+
+      '<div class="jd-row"><div class="jd-field" style="flex:1"><label>Name</label><input id="qbName" value="'+esc(JD.qdraft.name)+'" placeholder="Customer"></div>'+
+      '<div class="jd-field" style="flex:1"><label>Phone</label><input id="qbPhone" type="tel" inputmode="tel" value="'+esc(JD.qdraft.phone)+'" placeholder="(425) 555-0123"></div></div>'+
+      '<div class="jd-field"><label>Vehicle</label><input id="qbVeh" value="'+esc(JD.qdraft.vehicle)+'" placeholder="2019 Tacoma"></div>'+
+      '<div class="jd-field"><label>Service</label><div class="jd-pills" id="qbSvc">'+
+        svcs.map(function(s,i){return '<button class="jd-pill'+(i===0?" on":"")+'" data-qsvc="'+esc(s.id)+'">'+esc(s.name)+'</button>'}).join("")+'</div></div>'+
+      '<div class="jd-field"><label>Vehicle size</label><div class="jd-pills" id="qbSize">'+
+        sizes.map(function(s,i){return '<button class="jd-pill'+(i===0?" on":"")+'" data-qsize="'+esc(s.id)+'" data-qsizel="'+esc(s.label||s.id)+'">'+esc(s.label||s.id)+'</button>'}).join("")+'</div></div>'+
+      '<div class="jd-field"><label>Condition</label><div class="jd-pills" id="qbCond">'+
+        conds.map(function(c,i){return '<button class="jd-pill'+(i===0?" on":"")+'" data-qcond="'+esc(c.id)+'">'+esc(c.label)+'</button>'}).join("")+'</div></div>';
+    if(addons.length)h+='<div class="jd-field"><label>Add-ons</label><div class="jd-pills" id="qbAdd">'+
+        addons.map(function(a){return '<button class="jd-pill" data-qadd="'+esc(a.id)+'">'+esc(a.name)+(a.price?' +$'+a.price:'')+'</button>'}).join("")+'</div></div>';
+    h+='<div class="jd-row"><div class="jd-field" style="flex:1"><label>Travel $</label><input id="qbTravel" type="number" inputmode="decimal" value="0"></div>'+
+      '<div class="jd-field" style="flex:1"><label>Discount $</label><input id="qbDisc" type="number" inputmode="decimal" value="0"></div></div>'+
+      '<div class="jd-field"><label>Personal note (optional)</label><input id="qbNote" placeholder="Can do Thursday morning if that helps"></div>'+
+      '<div id="qbCalc"></div>'+
+      '<button class="jd-btn pri" id="qbSend">'+ic("send",17)+' Text this quote</button>'+
+      '<button class="jd-btn ghost" id="qbCancel" style="margin-top:8px">Cancel</button>';
+    var s=jdSheetOpen(h);
+    var pick=function(sel,attr,key,extra){
+      Array.prototype.forEach.call(s.querySelectorAll(sel+" ["+attr+"]"),function(b){
+        b.onclick=function(){
+          JD.qdraft[key]=b.getAttribute(attr);
+          if(extra)JD.qdraft[extra[0]]=b.getAttribute(extra[1]);
+          Array.prototype.forEach.call(s.querySelectorAll(sel+" ["+attr+"]"),function(x){x.classList.toggle("on",x===b)});
+          jdQuoteCalc(s);
+        };
+      });
+    };
+    pick("#qbSvc","data-qsvc","service");
+    pick("#qbSize","data-qsize","size",["sizeLabel","data-qsizel"]);
+    pick("#qbCond","data-qcond","condition");
+    Array.prototype.forEach.call(s.querySelectorAll("[data-qadd]"),function(b){
+      b.onclick=function(){
+        var id=b.getAttribute("data-qadd"),i=JD.qdraft.addons.indexOf(id);
+        if(i<0)JD.qdraft.addons.push(id);else JD.qdraft.addons.splice(i,1);
+        b.classList.toggle("on",i<0);jdQuoteCalc(s);
+      };
+    });
+    ["qbTravel","qbDisc","qbNote","qbName","qbVeh"].forEach(function(id){
+      var n=s.querySelector("#"+id);if(n)n.oninput=function(){jdQuoteCalc(s)};
+    });
+    s.querySelector("#qbCancel").onclick=jdSheetClose;
+    s.querySelector("#qbSend").onclick=function(){jdQuoteSend(s)};
+    jdQuoteCalc(s);
+  }
+  function jdQuoteBody(s){
+    var d=JD.qdraft;
+    d.name=s.querySelector("#qbName").value;
+    d.phone=s.querySelector("#qbPhone").value;
+    d.vehicle=s.querySelector("#qbVeh").value;
+    d.travel=+s.querySelector("#qbTravel").value||0;
+    d.discount=+s.querySelector("#qbDisc").value||0;
+    d.note=s.querySelector("#qbNote").value;
+    return d;
+  }
+  function jdQuoteCalc(s){
+    var d=jdQuoteBody(s);
+    var box=s.querySelector("#qbCalc");
+    box.innerHTML='<div class="qt-total"><div class="l">Quote total</div><div class="v">…</div></div>';
+    post("/api/quote",Object.assign({preview:true},d)).then(function(r){
+      if(!r||!r.ok){box.innerHTML='<div class="jd-empty">Pick a service to price it.</div>';return}
+      var c=r.calc;
+      var lines='<div><span>'+esc(c.serviceName)+' ('+esc(d.sizeLabel||d.size)+')</span><span>$'+c.base+'</span></div>';
+      if(c.condMult!==1)lines+='<div><span>Condition · '+esc(c.condLabel)+'</span><span>+$'+(Math.round(c.base*c.condMult)-c.base)+'</span></div>';
+      c.addons.forEach(function(a){lines+='<div><span>'+esc(a.name)+'</span><span>+$'+(a.price||0)+'</span></div>'});
+      if(c.travel)lines+='<div><span>Travel</span><span>+$'+c.travel+'</span></div>';
+      if(c.discount)lines+='<div><span>Discount</span><span>-$'+c.discount+'</span></div>';
+      box.innerHTML='<div class="qt-total"><div class="l">Quote total</div><div class="v">$'+c.total+'</div>'+
+        '<div class="s">about '+(Math.round(c.durationMin/30)/2)+' hours on site</div>'+
+        '<div class="qt-lines">'+lines+'</div></div>'+
+        '<div class="jd-sec">'+ic("message-square",14)+' What they\'ll get</div>'+
+        '<div class="qt-preview">'+esc(r.body)+'</div>';
+      hydrateIcons(box);
+      JD.qdraft._body=r.body;
+    }).catch(function(){box.innerHTML='<div class="jd-empty">Couldn\'t price that — check your connection.</div>'});
+  }
+  function jdQuoteSend(s){
+    var d=jdQuoteBody(s);
+    if(!d.phone)return toast("Add a phone number first",{bad:true});
+    var btn=s.querySelector("#qbSend");btn.disabled=true;btn.innerHTML='<span class="spin"></span> Sending…';
+    post("/api/quote",Object.assign({},d,{send:true,body:d._body})).then(function(r){
+      btn.disabled=false;btn.innerHTML=ic("send",17)+" Text this quote";
+      if(!r||!r.ok)return toast("Quote didn't send — "+((r&&r.error)||"try again"),{bad:true});
+      jdSheetClose();vibrate(12);
+      toast(r.texted?("Quote for $"+r.quote.total+" sent ✓"):"Quote saved, but the text failed",{bad:!r.texted});
+      jdLoadQuotes(true);refreshThreads();
+    }).catch(function(){btn.disabled=false;btn.innerHTML=ic("send",17)+" Text this quote";toast("Network error",{bad:true})});
+  }
+  function jdQuoteDetail(id){
+    var q=(JD.quotes||[]).filter(function(x){return x.id===id})[0];if(!q)return;
+    var h='<div class="jd-sh-title">$'+q.total+' · '+esc(q.name||prettyPhone(q.phone))+'</div>'+
+      '<div class="jd-sh-sub">'+esc(q.serviceName||"")+' · sent '+new Date(q.sentAt||q.createdAt).toLocaleDateString([],{month:"short",day:"numeric"})+' · '+esc(q.status)+'</div>'+
+      '<div class="qt-preview">'+esc(q.body||"")+'</div>'+
+      '<div class="jd-row" style="margin-top:12px"><button class="jd-btn pri" data-qa="accept">'+ic("check",16)+' They said yes</button>'+
+      '<button class="jd-btn" data-qa="decline">'+ic("x",16)+' Passed</button></div>'+
+      '<button class="jd-btn ghost" data-qa="resend" style="margin-top:8px">'+ic("send",16)+' Send it again</button>'+
+      (q.phone?'<button class="jd-btn ghost" data-qa="chat" style="margin-top:8px">'+ic("message-square",16)+' Open the conversation</button>':'')+
+      '<button class="jd-btn ghost" data-qa="delete" style="margin-top:8px;color:var(--accent-text)">'+ic("trash",16)+' Delete quote</button>';
+    var s=jdSheetOpen(h);
+    Array.prototype.forEach.call(s.querySelectorAll("[data-qa]"),function(b){
+      b.onclick=function(){
+        var a=b.getAttribute("data-qa");
+        if(a==="chat"){jdSheetClose();closeJobs();return openThread(q.phone)}
+        if(a==="delete"&&!confirm("Delete this quote?"))return;
+        post("/api/quote/action",{id:q.id,action:a}).then(function(r){
+          if(!r||!r.ok)return toast("That didn't work",{bad:true});
+          jdSheetClose();jdLoadQuotes(true);
+          toast(a==="accept"?"Marked won — nice! 🎉":a==="resend"?"Sent again ✓":"Updated");
+          if(a==="accept")refreshThreads();
+        });
+      };
+    });
+  }
+
+  // ============================================================
+  // 5 · GET PAID
+  // ============================================================
+  function jdLoadPay(force,then){
+    if(JD.pay&&!force){if(then)then();return}
+    api("/api/pay").then(function(d){
+      if(d&&d.ok)JD.pay=d;
+      if(JD.view==="pay")jdRender();
+      if(then)then();
+    }).catch(function(){});
+  }
+  function jdPayView(box){
+    if(!JD.pay){box.innerHTML='<div class="jd-empty"><span class="spin"></span> Loading…</div>';return}
+    var p=JD.pay,inv=p.invoices||[],cfg=p.config||{};
+    var ready=!!(cfg.venmo||cfg.cashapp||cfg.paypal||cfg.zelle||cfg.link);
+    var h='';
+    if(!ready){
+      h+='<div class="jd-empty" style="border-color:var(--accent);background:var(--accent-soft)"><b>Set up how you get paid</b>'+
+        'Add your Venmo / Cash App handle once, and every payment request becomes a tap-to-pay link. Takes 20 seconds.</div>'+
+        '<button class="jd-btn pri" id="jdPaySetup" style="margin-top:10px">'+ic("settings",17)+' Set up payments</button>';
+    }
+    h+='<div class="jd-hero" style="'+(ready?"":"margin-top:14px")+'"><div class="hl">Still owed to you</div>'+
+      '<div class="hv">$'+(p.outstanding||0)+'</div>'+
+      '<div class="hs">'+(p.openCount||0)+' open request'+(p.openCount===1?"":"s")+'</div></div>';
+    h+='<button class="jd-btn pri" id="jdNewPay">'+ic("credit-card",17)+' Request a payment</button>';
+    if(ready)h+='<button class="jd-btn ghost" id="jdPaySetup2" style="margin-top:8px">'+ic("settings",16)+' Payment settings</button>';
+    if(!inv.length){
+      h+='<div class="jd-empty" style="margin-top:14px"><b>Nothing outstanding</b>Every request you send shows up here with one tap to mark it paid.</div>';
+    }else{
+      h+='<div class="jd-sec">'+ic("receipt",14)+' Requests</div>';
+      inv.forEach(function(i){
+        var col=i.status==="paid"?"var(--green)":i.status==="void"?"var(--gray)":"var(--gold)";
+        h+='<div class="jd-item" data-jpay="'+esc(i.id)+'">'+
+          '<div class="av" style="background:'+col+'">'+ic(i.status==="paid"?"check":"clock",17)+'</div>'+
+          '<div class="mid"><div class="nm">'+esc(i.name||prettyPhone(i.phone))+'</div>'+
+          '<div class="sb">'+esc(i.memo)+' · '+new Date(i.createdAt).toLocaleDateString([],{month:"short",day:"numeric"})+(i.kind==="deposit"?" · deposit":"")+'</div></div>'+
+          '<div class="rt"><div class="amt">$'+i.amount+'</div><div class="st st-'+esc(i.status)+'">'+esc(i.status)+'</div></div></div>';
+      });
+    }
+    box.innerHTML=h;hydrateIcons(box);
+    var setup=box.querySelector("#jdPaySetup")||box.querySelector("#jdPaySetup2");
+    if(setup)setup.onclick=jdPaySettings;
+    box.querySelector("#jdNewPay").onclick=function(){jdPayRequestSheet(null)};
+    Array.prototype.forEach.call(box.querySelectorAll("[data-jpay]"),function(n){
+      n.onclick=function(){jdPayDetail(n.getAttribute("data-jpay"))};
+    });
+  }
+  function jdPaySettings(){
+    var c=(JD.pay&&JD.pay.config)||{};
+    var h='<div class="jd-sh-title">How you get paid</div>'+
+      '<div class="jd-sh-sub">Fill in whatever you use. Each one becomes a tap-to-pay button on the page your customer opens.</div>'+
+      '<div class="jd-field"><label>Venmo username</label><input id="pcVenmo" value="'+esc(c.venmo||"")+'" placeholder="Mikey-Miller"></div>'+
+      '<div class="jd-field"><label>Cash App $cashtag</label><input id="pcCash" value="'+esc(c.cashapp||"")+'" placeholder="mikeysdetailing"></div>'+
+      '<div class="jd-field"><label>PayPal.me username</label><input id="pcPaypal" value="'+esc(c.paypal||"")+'" placeholder="mikeysdetailing"></div>'+
+      '<div class="jd-field"><label>Zelle (phone or email)</label><input id="pcZelle" value="'+esc(c.zelle||"")+'" placeholder="360-555-0123"></div>'+
+      '<div class="jd-field"><label>Card link (Stripe / Square — optional)</label><input id="pcLink" value="'+esc(c.link||"")+'" placeholder="https://buy.stripe.com/..."></div>'+
+      '<div class="jd-row"><div class="jd-field" style="flex:1"><label>Deposit %</label><input id="pcDep" type="number" inputmode="numeric" value="'+(c.depositPct||0)+'"></div>'+
+      '<div class="jd-field" style="flex:1"><label>Auto-nudge after (days)</label><input id="pcRem" type="number" inputmode="numeric" value="'+(c.remindDays||0)+'"></div></div>'+
+      '<div class="jd-note">Auto-nudge texts one polite reminder if an invoice is still open after that many days. Set it to 0 to never nudge.</div>'+
+      '<button class="jd-btn pri" id="pcSave" style="margin-top:14px">'+ic("check",17)+' Save</button>'+
+      '<button class="jd-btn ghost" id="pcCancel" style="margin-top:8px">Cancel</button>';
+    var s=jdSheetOpen(h);
+    s.querySelector("#pcCancel").onclick=jdSheetClose;
+    s.querySelector("#pcSave").onclick=function(){
+      post("/api/pay/config",{venmo:s.querySelector("#pcVenmo").value,cashapp:s.querySelector("#pcCash").value,
+        paypal:s.querySelector("#pcPaypal").value,zelle:s.querySelector("#pcZelle").value,link:s.querySelector("#pcLink").value,
+        depositPct:s.querySelector("#pcDep").value,remindDays:s.querySelector("#pcRem").value}).then(function(d){
+        if(!d||!d.ok)return toast("Couldn't save",{bad:true});
+        if(JD.pay)JD.pay.config=d.config;
+        jdSheetClose();jdRender();toast("Payment settings saved ✓");
+      });
+    };
+  }
+  function jdPayRequestSheet(seed){
+    seed=seed||{};
+    var c=(JD.pay&&JD.pay.config)||{};
+    var h='<div class="jd-sh-title">Request a payment</div>'+
+      '<div class="jd-sh-sub">They get a text with a link that opens your payment options.</div>'+
+      '<div class="jd-row"><div class="jd-field" style="flex:1"><label>Name</label><input id="prName" value="'+esc(seed.name||"")+'" placeholder="Customer"></div>'+
+      '<div class="jd-field" style="flex:1"><label>Phone</label><input id="prPhone" type="tel" inputmode="tel" value="'+esc(seed.phone||"")+'" placeholder="(425) 555-0123"></div></div>'+
+      '<div class="jd-field"><label>Amount</label><input id="prAmt" type="number" inputmode="decimal" step="0.01" value="'+(seed.amount||"")+'" placeholder="0.00"></div>'+
+      '<div class="jd-field"><label>What for</label><input id="prMemo" value="'+esc(seed.memo||"Mobile detailing")+'"></div>'+
+      '<div class="jd-pills" style="margin-bottom:14px"><button class="jd-pill on" data-pkind="invoice">Full amount</button>'+
+      '<button class="jd-pill" data-pkind="deposit">Deposit'+(c.depositPct?" ("+c.depositPct+"%)":"")+'</button></div>'+
+      '<button class="jd-btn pri" id="prGo">'+ic("send",17)+' Text the request</button>'+
+      '<button class="jd-btn ghost" id="prCancel" style="margin-top:8px">Cancel</button>';
+    var s=jdSheetOpen(h);
+    var kind="invoice",full=+(seed.amount||0);
+    Array.prototype.forEach.call(s.querySelectorAll("[data-pkind]"),function(b){
+      b.onclick=function(){
+        kind=b.getAttribute("data-pkind");
+        Array.prototype.forEach.call(s.querySelectorAll("[data-pkind]"),function(x){x.classList.toggle("on",x===b)});
+        var amt=s.querySelector("#prAmt");
+        if(kind==="deposit"&&c.depositPct&&full>0)amt.value=Math.round(full*c.depositPct)/100;
+        else if(full>0)amt.value=full;
+      };
+    });
+    s.querySelector("#prAmt").oninput=function(){if(kind==="invoice")full=+s.querySelector("#prAmt").value||0};
+    s.querySelector("#prCancel").onclick=jdSheetClose;
+    s.querySelector("#prGo").onclick=function(){
+      var body={phone:s.querySelector("#prPhone").value,name:s.querySelector("#prName").value,
+        amount:s.querySelector("#prAmt").value,memo:s.querySelector("#prMemo").value,
+        deposit:kind==="deposit",jobId:seed.jobId||"",date:JD.date};
+      if(!body.phone)return toast("Add a phone number",{bad:true});
+      if(!(+body.amount>0))return toast("Add an amount",{bad:true});
+      var btn=s.querySelector("#prGo");btn.disabled=true;btn.innerHTML='<span class="spin"></span> Sending…';
+      post("/api/pay/request",body).then(function(d){
+        if(!d||!d.ok){btn.disabled=false;btn.innerHTML=ic("send",17)+" Text the request";return toast("Couldn't send that",{bad:true})}
+        jdSheetClose();vibrate(12);jdLoadPay(true);refreshThreads();
+        toast(d.texted?("Payment request for $"+d.invoice.amount+" sent ✓"):"Saved, but the text failed",{bad:!d.texted});
+      }).catch(function(){btn.disabled=false;btn.innerHTML=ic("send",17)+" Text the request";toast("Network error",{bad:true})});
+    };
+  }
+  function jdPayDetail(id){
+    var i=((JD.pay&&JD.pay.invoices)||[]).filter(function(x){return x.id===id})[0];if(!i)return;
+    var h='<div class="jd-sh-title">$'+i.amount+' · '+esc(i.name||prettyPhone(i.phone))+'</div>'+
+      '<div class="jd-sh-sub">'+esc(i.memo)+' · '+esc(i.status)+' · sent '+new Date(i.createdAt).toLocaleDateString([],{month:"short",day:"numeric"})+'</div>';
+    if(i.status==="open"){
+      h+='<button class="jd-btn pri" data-pa="paid">'+ic("check",17)+' Mark paid</button>'+
+        '<button class="jd-btn" data-pa="remind" style="margin-top:8px">'+ic("bell",16)+' Send a nudge</button>';
+    }
+    h+='<button class="jd-btn ghost" data-pa="copy" style="margin-top:8px">'+ic("copy",16)+' Copy the pay link</button>'+
+      (i.phone?'<button class="jd-btn ghost" data-pa="chat" style="margin-top:8px">'+ic("message-square",16)+' Open the conversation</button>':'')+
+      '<button class="jd-btn ghost" data-pa="delete" style="margin-top:8px;color:var(--accent-text)">'+ic("trash",16)+' Delete</button>';
+    var s=jdSheetOpen(h);
+    Array.prototype.forEach.call(s.querySelectorAll("[data-pa]"),function(b){
+      b.onclick=function(){
+        var a=b.getAttribute("data-pa");
+        if(a==="copy")return jdCopy(i.url||(location.origin+"/p/"+i.token),"Pay link copied");
+        if(a==="chat"){jdSheetClose();closeJobs();return openThread(i.phone)}
+        if(a==="delete"&&!confirm("Delete this payment request?"))return;
+        post("/api/pay/action",{id:i.id,action:a}).then(function(d){
+          if(!d||!d.ok)return toast("That didn't work",{bad:true});
+          jdSheetClose();jdLoadPay(true);
+          toast(a==="paid"?"Marked paid ✓":a==="remind"?"Nudge sent ✓":"Deleted");
+        });
+      };
+    });
+  }
+
+
+  // ============================================================
+  // 6 · CUSTOMER GARAGE
+  // ============================================================
+  function jdLoadGarage(force){
+    if(JD.garage&&!force)return;
+    api("/api/garage").then(function(d){
+      if(d&&d.ok)JD.garage=d.customers||[];
+      if(JD.view==="garage")jdRender();
+    }).catch(function(){});
+  }
+  function jdGarageView(box){
+    if(!JD.garage){box.innerHTML='<div class="jd-empty"><span class="spin"></span> Loading your customers…</div>';return}
+    var rows=JD.garage;
+    var total=rows.reduce(function(s,r){return s+(r.total||0)},0);
+    var jobs=rows.reduce(function(s,r){return s+(r.jobs||0)},0);
+    var h='<div class="gr-ltv">'+
+      '<div class="t"><div class="v">'+rows.length+'</div><div class="l">Customers</div></div>'+
+      '<div class="t"><div class="v">'+jobs+'</div><div class="l">Jobs done</div></div>'+
+      '<div class="t"><div class="v">'+fmtMoney(total)+'</div><div class="l">Lifetime</div></div></div>';
+    if(!rows.length){
+      h+='<div class="jd-empty"><b>Your garage is empty</b>Every customer with a logged job shows up here. Open any conversation and add their vehicle, gate code and where to park — you\'ll never ask twice again.</div>';
+    }else{
+      h+='<div class="jd-field"><input id="jdGrSearch" placeholder="Search name, vehicle or city…" autocomplete="off"></div>';
+      h+='<div id="jdGrList">'+jdGarageRows(rows)+'</div>';
+    }
+    box.innerHTML=h;hydrateIcons(box);
+    var si=box.querySelector("#jdGrSearch");
+    if(si)si.oninput=function(){
+      var q=si.value.toLowerCase().trim();
+      var f=q?rows.filter(function(r){return (r.name+" "+r.vehicles+" "+r.city+" "+r.phone).toLowerCase().indexOf(q)>=0}):rows;
+      el("jdGrList").innerHTML=jdGarageRows(f);
+      jdWireGarageRows(box);
+    };
+    jdWireGarageRows(box);
+  }
+  function jdGarageRows(rows){
+    if(!rows.length)return '<div class="jd-empty">No match.</div>';
+    return rows.map(function(r){
+      var sub=[r.vehicles,r.city,r.jobs?(r.jobs+" job"+(r.jobs===1?"":"s")):""].filter(Boolean).join(" · ");
+      return '<div class="jd-item" data-jgr="'+esc(r.phone)+'" data-jgrn="'+esc(r.name||"")+'">'+
+        '<div class="av" style="background:'+colorFor(r.phone)+'">'+esc((r.name||"?").trim().slice(0,1).toUpperCase()||"#")+'</div>'+
+        '<div class="mid"><div class="nm">'+esc(r.name||prettyPhone(r.phone))+'</div>'+
+        '<div class="sb">'+esc(sub||"No vehicle saved yet")+'</div></div>'+
+        '<div class="rt"><div class="amt">'+fmtMoney(r.total||0)+'</div>'+
+        (r.lastJob?'<div class="st st-open">'+esc(r.lastJob.slice(5))+'</div>':'')+'</div></div>';
+    }).join("");
+  }
+  function jdWireGarageRows(box){
+    Array.prototype.forEach.call(box.querySelectorAll("[data-jgr]"),function(n){
+      n.onclick=function(){jdGarageSheet(n.getAttribute("data-jgr"),n.getAttribute("data-jgrn"))};
+    });
+  }
+
+  // The garage record for one customer — vehicles + how to get in + what they like.
+  function jdGarageSheet(phone,name){
+    if(!phone)return toast("No phone number for this customer",{bad:true});
+    var s=jdSheetOpen('<div class="jd-sh-title">'+esc(name||prettyPhone(phone))+'</div>'+
+      '<div class="jd-sh-sub">Loading their garage…</div><div class="jd-empty"><span class="spin"></span></div>');
+    api("/api/garage?phone="+encodeURIComponent(phone)).then(function(d){
+      if(!d||!d.ok)return;
+      JD.garageOne={phone:phone,name:d.name||name||"",g:d.garage||{vehicles:[]},spend:d.spend||{jobs:0,total:0,lastDate:""}};
+      jdGarageForm();
+    }).catch(function(){toast("Couldn't load that garage",{bad:true})});
+  }
+  function jdGarageForm(){
+    var G=JD.garageOne;if(!G)return;
+    var g=G.g||{},veh=g.vehicles||[];
+    var h='<div class="jd-sh-title">'+esc(G.name||prettyPhone(G.phone))+'</div>'+
+      '<div class="jd-sh-sub">'+esc(prettyPhone(G.phone))+' — everything you\'d otherwise have to ask again.</div>'+
+      '<div class="gr-ltv"><div class="t"><div class="v">'+G.spend.jobs+'</div><div class="l">Jobs</div></div>'+
+      '<div class="t"><div class="v">'+fmtMoney(G.spend.total)+'</div><div class="l">Lifetime</div></div>'+
+      '<div class="t"><div class="v">'+(G.spend.lastDate?esc(G.spend.lastDate.slice(5)):"—")+'</div><div class="l">Last job</div></div></div>';
+    h+='<div class="jd-sec">'+ic("car",14)+' Vehicles</div>';
+    veh.forEach(function(v,i){
+      h+='<div class="gr-veh"><button class="vx" data-gvdel="'+i+'" aria-label="Remove">'+ic("x",15)+'</button>'+
+        '<div class="vt">'+esc([v.year,v.color,v.make,v.model].filter(Boolean).join(" ")||"Vehicle")+'</div>'+
+        '<div class="vs">'+esc([v.plate?"Plate "+v.plate:"",v.size,v.notes].filter(Boolean).join(" · ")||"No extra notes")+'</div></div>';
+    });
+    h+='<button class="jd-btn ghost" id="gvAdd">'+ic("plus",16)+' Add a vehicle</button>';
+    h+='<div class="jd-sec">'+ic("map-pin",14)+' Where &amp; how</div>'+
+      '<div class="jd-field"><label>Address</label><input id="gAddr" value="'+esc(g.address||"")+'" placeholder="123 Main St"></div>'+
+      '<div class="jd-row"><div class="jd-field" style="flex:2"><label>City</label><input id="gCity" value="'+esc(g.city||"")+'" placeholder="Snohomish"></div>'+
+      '<div class="jd-field" style="flex:1"><label>ZIP</label><input id="gZip" inputmode="numeric" value="'+esc(g.zip||"")+'" placeholder="98290"></div></div>'+
+      '<div class="jd-field"><label>Gate / door code</label><input id="gGate" value="'+esc(g.gate||"")+'" placeholder="#4821"></div>'+
+      '<div class="jd-field"><label>Where to park / set up</label><input id="gPark" value="'+esc(g.parking||"")+'" placeholder="Driveway, spigot on the left side"></div>'+
+      '<div class="jd-field"><label>On site</label><div class="jd-pills" id="gUtil">'+
+      '<button class="jd-pill'+(g.water?" on":"")+'" data-gutil="water">Water ✓</button>'+
+      '<button class="jd-pill'+(g.power?" on":"")+'" data-gutil="power">Power ✓</button></div></div>'+
+      '<div class="jd-sec">'+ic("star",14)+' Preferences</div>'+
+      '<div class="jd-field"><label>What they like</label><textarea id="gPrefs" placeholder="No air freshener, loves the tire shine, always tips cash">'+esc(g.prefs||"")+'</textarea></div>'+
+      '<div class="jd-field"><label>Avoid / careful with</label><input id="gAvoid" value="'+esc(g.avoid||"")+'" placeholder="Aftermarket wrap on the hood — no polish"></div>'+
+      '<button class="jd-btn pri" id="gSave">'+ic("check",17)+' Save garage</button>'+
+      '<button class="jd-btn ghost" id="gChat" style="margin-top:8px">'+ic("message-square",16)+' Open the conversation</button>';
+    var s=jdSheetOpen(h);
+    Array.prototype.forEach.call(s.querySelectorAll("[data-gvdel]"),function(b){
+      b.onclick=function(){G.g.vehicles.splice(+b.getAttribute("data-gvdel"),1);jdGarageForm()};
+    });
+    Array.prototype.forEach.call(s.querySelectorAll("[data-gutil]"),function(b){
+      b.onclick=function(){var k=b.getAttribute("data-gutil");G.g[k]=!G.g[k];b.classList.toggle("on",!!G.g[k])};
+    });
+    s.querySelector("#gvAdd").onclick=function(){jdVehicleForm()};
+    s.querySelector("#gChat").onclick=function(){jdSheetClose();closeJobs();openThread(G.phone)};
+    s.querySelector("#gSave").onclick=function(){
+      G.g.address=s.querySelector("#gAddr").value;G.g.city=s.querySelector("#gCity").value;
+      G.g.zip=s.querySelector("#gZip").value;G.g.gate=s.querySelector("#gGate").value;
+      G.g.parking=s.querySelector("#gPark").value;G.g.prefs=s.querySelector("#gPrefs").value;
+      G.g.avoid=s.querySelector("#gAvoid").value;
+      post("/api/meta",{phone:G.phone,garage:G.g}).then(function(d){
+        if(!d||!d.ok)return toast("Couldn't save",{bad:true});
+        jdSheetClose();jdLoadGarage(true);refreshThreads();toast("Garage saved ✓");
+      });
+    };
+  }
+  function jdVehicleForm(){
+    var G=JD.garageOne;if(!G)return;
+    var h='<div class="jd-sh-title">Add a vehicle</div><div class="jd-sh-sub">For '+esc(G.name||prettyPhone(G.phone))+'</div>'+
+      '<div class="jd-row"><div class="jd-field" style="width:88px"><label>Year</label><input id="vYear" inputmode="numeric" maxlength="4" placeholder="2019"></div>'+
+      '<div class="jd-field" style="flex:1"><label>Make</label><input id="vMake" placeholder="Toyota"></div>'+
+      '<div class="jd-field" style="flex:1"><label>Model</label><input id="vModel" placeholder="Tacoma"></div></div>'+
+      '<div class="jd-row"><div class="jd-field" style="flex:1"><label>Color</label><input id="vColor" placeholder="Silver"></div>'+
+      '<div class="jd-field" style="flex:1"><label>Plate</label><input id="vPlate" placeholder="ABC1234"></div></div>'+
+      '<div class="jd-field"><label>Size</label><div class="jd-pills" id="vSize">'+
+      ["Car / Sedan","SUV / Crossover","Truck / Van / XL"].map(function(x,i){return '<button class="jd-pill'+(i===1?" on":"")+'" data-vsz="'+esc(x)+'">'+esc(x)+'</button>'}).join("")+'</div></div>'+
+      '<div class="jd-field"><label>Notes</label><input id="vNotes" placeholder="Ceramic coated · black trim scratches easily"></div>'+
+      '<button class="jd-btn pri" id="vSave">'+ic("check",17)+' Add vehicle</button>'+
+      '<button class="jd-btn ghost" id="vCancel" style="margin-top:8px">Back</button>';
+    var s=jdSheetOpen(h);
+    var size="SUV / Crossover";
+    Array.prototype.forEach.call(s.querySelectorAll("[data-vsz]"),function(b){
+      b.onclick=function(){size=b.getAttribute("data-vsz");
+        Array.prototype.forEach.call(s.querySelectorAll("[data-vsz]"),function(x){x.classList.toggle("on",x===b)})};
+    });
+    s.querySelector("#vCancel").onclick=jdGarageForm;
+    s.querySelector("#vSave").onclick=function(){
+      var v={year:s.querySelector("#vYear").value,make:s.querySelector("#vMake").value,model:s.querySelector("#vModel").value,
+        color:s.querySelector("#vColor").value,plate:s.querySelector("#vPlate").value,size:size,notes:s.querySelector("#vNotes").value};
+      if(!v.make&&!v.model)return toast("At least a make or model",{bad:true});
+      G.g.vehicles=G.g.vehicles||[];G.g.vehicles.push(v);
+      jdGarageForm();
+    };
+  }
+
+  // ============================================================
+  // 7 · NEIGHBORHOOD BLAST
+  // ============================================================
+  function jdBlastSheet(job){
+    var city=(job&&job.city)||"";
+    var h='<div class="jd-sh-title">I\'ll be in your neighborhood</div>'+
+      '<div class="jd-sh-sub">Fill the drive. Past customers near a booked job get first shot at the same-day slot.</div>'+
+      '<div class="jd-field"><label>Town or ZIP</label><input id="blCity" value="'+esc(city)+'" placeholder="Snohomish"></div>'+
+      '<button class="jd-btn" id="blFind">'+ic("search",16)+' Find customers there</button>'+
+      '<div id="blResult"></div>';
+    var s=jdSheetOpen(h);
+    var find=function(){
+      var v=s.querySelector("#blCity").value.trim();
+      if(!v)return toast("Type a town or ZIP",{bad:true});
+      var r=s.querySelector("#blResult");
+      r.innerHTML='<div class="jd-empty" style="margin-top:12px"><span class="spin"></span> Looking…</div>';
+      var qs=/^\d{5}$/.test(v)?("zip="+encodeURIComponent(v)):("city="+encodeURIComponent(v));
+      if(job&&job.phone)qs+="&exclude="+encodeURIComponent(job.phone);
+      api("/api/blast/candidates?"+qs).then(function(d){
+        if(!d||!d.ok||!d.candidates.length){
+          r.innerHTML='<div class="jd-empty" style="margin-top:12px"><b>Nobody there yet</b>Add addresses in Garage and past customers will start showing up here.</div>';return;
+        }
+        jdBlastPick(s,d.candidates,v,job);
+      }).catch(function(){r.innerHTML='<div class="jd-empty" style="margin-top:12px">Network error.</div>'});
+    };
+    s.querySelector("#blFind").onclick=find;
+    if(city)find();
+  }
+  function jdBlastPick(s,list,place,job){
+    var when=job?jdNiceDate(JD.date):"this week";
+    var msg="Hey {first_name}, it's Mikey — I'll be detailing in "+place+" "+when.toLowerCase()+
+      ". Since I'm already coming out there I can knock $25 off if you want yours done the same day. Want a spot? - Mikey";
+    var picked={};
+    list.forEach(function(c){picked[c.phone]=true});
+    var rows=list.map(function(c){
+      var meta=[c.jobs?(c.jobs+" job"+(c.jobs===1?"":"s")):"",c.daysSince!=null?(c.daysSince+" days ago"):"",c.total?fmtMoney(c.total):""].filter(Boolean).join(" · ");
+      return '<label class="jd-item" style="cursor:pointer"><input type="checkbox" checked data-blph="'+esc(c.phone)+'" style="width:20px;height:20px;flex:none;accent-color:var(--accent)">'+
+        '<div class="mid"><div class="nm">'+esc(c.name||prettyPhone(c.phone))+'</div><div class="sb">'+esc(meta||"Past customer")+'</div></div></label>';
+    }).join("");
+    var r=s.querySelector("#blResult");
+    r.innerHTML='<div class="jd-sec">'+ic("users",14)+' '+list.length+' near '+esc(place)+'</div>'+rows+
+      '<div class="jd-sec">'+ic("message-square",14)+' The message</div>'+
+      '<div class="jd-field"><textarea id="blBody" style="min-height:118px">'+esc(msg)+'</textarea>'+
+      '<div class="jd-note">{first_name} fills in per person. Opted-out numbers are skipped automatically, and it\'s capped at 25 per send.</div></div>'+
+      '<button class="jd-btn pri" id="blSend">'+ic("megaphone",17)+' Send to <span id="blN">'+list.length+'</span></button>'+
+      '<button class="jd-btn ghost" id="blCancel" style="margin-top:8px">Cancel</button>';
+    hydrateIcons(r);
+    var count=function(){
+      var n=0;Array.prototype.forEach.call(r.querySelectorAll("[data-blph]"),function(c){if(c.checked)n++});
+      r.querySelector("#blN").textContent=n;return n;
+    };
+    Array.prototype.forEach.call(r.querySelectorAll("[data-blph]"),function(c){c.onchange=count});
+    r.querySelector("#blCancel").onclick=jdSheetClose;
+    r.querySelector("#blSend").onclick=function(){
+      var phones=[];
+      Array.prototype.forEach.call(r.querySelectorAll("[data-blph]"),function(c){if(c.checked)phones.push(c.getAttribute("data-blph"))});
+      if(!phones.length)return toast("Pick at least one person",{bad:true});
+      if(!confirm("Text "+phones.length+" past customer"+(phones.length===1?"":"s")+" now?"))return;
+      var btn=r.querySelector("#blSend");btn.disabled=true;btn.innerHTML='<span class="spin"></span> Sending…';
+      post("/api/blast/send",{phones:phones,body:r.querySelector("#blBody").value,city:place}).then(function(d){
+        if(!d||!d.ok){btn.disabled=false;btn.innerHTML=ic("megaphone",17)+" Send";return toast("Blast failed",{bad:true})}
+        jdSheetClose();vibrate(14);refreshThreads();
+        toast("Sent to "+d.sent+" customer"+(d.sent===1?"":"s")+" ✓");
+      }).catch(function(){btn.disabled=false;btn.innerHTML=ic("megaphone",17)+" Send";toast("Network error",{bad:true})});
+    };
+  }
+
+  // ============================================================
+  // 10 · DAILY BRIEF
+  // ============================================================
+  var BRIEF={data:null,at:0,loading:false};
+  function loadBrief(force,then){
+    if(BRIEF.loading)return;
+    if(BRIEF.data&&!force&&Date.now()-BRIEF.at<600000){if(then)then();return}
+    BRIEF.loading=true;
+    api("/api/brief").then(function(d){
+      BRIEF.loading=false;
+      if(d&&d.ok){BRIEF.data=d.brief;BRIEF.text=d.text;BRIEF.at=Date.now()}
+      if(state.tab==="home")renderHome();
+      if(then)then();
+    }).catch(function(){BRIEF.loading=false});
+  }
+  function jdBriefSheet(){
+    var h='<div class="jd-sh-title">Your day brief</div><div class="jd-sh-sub">Everything before you pick up a towel.</div>';
+    if(!BRIEF.data){h+='<div class="jd-empty"><span class="spin"></span> Building it…</div>';jdSheetOpen(h);loadBrief(true,jdBriefSheet);return}
+    var b=BRIEF.data;
+    h+='<div class="br-pri"><span class="l">First thing</span>'+esc(b.priority)+'</div>';
+    h+='<div class="br-tiles">'+
+      '<div class="br-tile"><div class="v">'+b.jobs.length+'</div><div class="l">Jobs</div></div>'+
+      '<div class="br-tile"><div class="v">$'+b.summary.booked+'</div><div class="l">Booked</div></div>'+
+      '<div class="br-tile"><div class="v">'+b.counts.waiting+'</div><div class="l">Waiting</div></div>'+
+      '<div class="br-tile"><div class="v">'+b.counts.followups+'</div><div class="l">Nudges</div></div></div>';
+    if(b.weather)h+='<div class="br-wx">'+ic("cloud-sun",15)+esc(b.weather.line)+'</div>';
+    if(b.risky&&b.risky.length){
+      h+='<div class="jd-sec">'+ic("cloud-rain",14)+' Rain risk today</div>';
+      b.risky.forEach(function(r){
+        h+='<div class="jd-item"><div class="av" style="background:var(--blue)">'+ic("cloud-rain",17)+'</div>'+
+          '<div class="mid"><div class="nm">'+esc(r.name||"Job")+'</div><div class="sb">'+jd12(r.slot)[0]+' '+jd12(r.slot)[1]+' — '+r.risk+'% chance of rain</div></div></div>';
+      });
+      h+='<div class="jd-note">Worth a heads-up text so nobody\'s surprised. Interior-only work is usually still fine.</div>';
+    }
+    h+='<div class="jd-sec">'+ic("dollar",14)+' Money</div>'+
+      '<div class="br-tiles"><div class="br-tile"><div class="v">$'+b.money.yesterday+'</div><div class="l">Yesterday</div></div>'+
+      '<div class="br-tile"><div class="v">$'+b.money.monthNet+'</div><div class="l">Net MTD</div></div>'+
+      '<div class="br-tile"><div class="v">'+b.money.monthJobs+'</div><div class="l">Jobs MTD</div></div>'+
+      '<div class="br-tile"><div class="v">$'+b.money.owed+'</div><div class="l">Owed</div></div></div>';
+    h+='<button class="jd-btn ghost" id="brCopy" style="margin-top:14px">'+ic("copy",16)+' Copy the brief</button>'+
+      '<button class="jd-btn ghost" id="brClose" style="margin-top:8px">Close</button>';
+    var s=jdSheetOpen(h);
+    s.querySelector("#brClose").onclick=jdSheetClose;
+    s.querySelector("#brCopy").onclick=function(){jdCopy(BRIEF.text||"","Brief copied")};
+  }
+
+  // Home widget — the brief, inline, where he already looks first.
+  function homeBriefWidget(){
+    // No refresh chip here — the floating mic sits in that corner, and the brief
+    // reloads itself. Tapping the card's title row refreshes it instead.
+    var head='<div class="br-h" id="brRefresh"><span class="i">'+ic("sun",18)+'</span><span class="t">Today at a glance</span></div>';
+    if(!BRIEF.data){loadBrief();return '<div class="br-card">'+head+'<div class="jd-empty" style="border:none;padding:12px 0"><span class="spin"></span> Reading your day…</div></div>'}
+    var b=BRIEF.data;
+    var h='<div class="br-card">'+head+
+      '<div class="br-pri"><span class="l">First thing</span>'+esc(b.priority)+'</div>'+
+      '<div class="br-tiles">'+
+      '<div class="br-tile"><div class="v">'+b.jobs.length+'</div><div class="l">Jobs</div></div>'+
+      '<div class="br-tile"><div class="v">$'+b.summary.booked+'</div><div class="l">Booked</div></div>'+
+      '<div class="br-tile"><div class="v">'+b.counts.waiting+'</div><div class="l">Waiting</div></div>'+
+      '<div class="br-tile"><div class="v">$'+b.money.owed+'</div><div class="l">Owed</div></div></div>';
+    if(b.jobs.length){
+      h+='<div class="br-jobs">';
+      b.jobs.slice(0,4).forEach(function(j){
+        var t=jd12(j.slot);
+        h+='<div class="br-job"><span class="tm">'+t[0]+' '+t[1]+'</span><span class="nm">'+esc(j.name||"Job")+(j.city?' · '+esc(j.city):'')+'</span>'+
+          (j.rainRisk>=45?'<span class="rn">'+j.rainRisk+'% rain</span>':(j.price?'<span class="rn" style="color:var(--muted2)">$'+j.price+'</span>':''))+'</div>';
+      });
+      h+='</div>';
+    }
+    if(b.weather)h+='<div class="br-wx">'+ic("cloud-sun",15)+esc(b.weather.line)+'</div>';
+    h+='<button class="jd-btn pri" id="brOpenRun" style="margin-top:13px">'+ic("route",17)+' Run my day</button>';
+    return h+'</div>';
+  }
+
+  // ============================================================
+  // 3 · WEB PUSH
+  // ============================================================
+  var PUSH={key:"",devices:0,state:"unknown"};
+  function pushSupported(){return "serviceWorker" in navigator && "PushManager" in window && "Notification" in window}
+  function pushDismissed(){try{return localStorage.getItem("mkd-push-skip")==="1"}catch(e){return false}}
+  function pushRefresh(then){
+    if(!pushSupported()){PUSH.state="unsupported";if(then)then();return}
+    api("/api/push/key").then(function(d){
+      if(d&&d.ok){PUSH.key=d.key;PUSH.devices=d.devices||0}
+      navigator.serviceWorker.ready.then(function(reg){
+        return reg.pushManager.getSubscription();
+      }).then(function(sub){
+        PUSH.state=sub?"on":(Notification.permission==="denied"?"blocked":"off");
+        PUSH.sub=sub||null;
+        updatePushBadge();
+        if(then)then();
+        if(state.tab==="home")renderHome();
+      }).catch(function(){PUSH.state="off";if(then)then()});
+    }).catch(function(){PUSH.state="off";if(then)then()});
+  }
+  function urlB64ToU8(b64){
+    var pad="=".repeat((4-b64.length%4)%4);
+    var raw=atob((b64+pad).replace(/-/g,"+").replace(/_/g,"/"));
+    var out=new Uint8Array(raw.length);
+    for(var i=0;i<raw.length;i++)out[i]=raw.charCodeAt(i);
+    return out;
+  }
+  function pushEnable(){
+    if(!pushSupported())return toast("This browser can't do push notifications",{bad:true});
+    toast("Asking for permission…");
+    Notification.requestPermission().then(function(perm){
+      if(perm!=="granted"){PUSH.state=perm==="denied"?"blocked":"off";
+        return toast(perm==="denied"?"Notifications are blocked — turn them on in your phone's settings for this app":"Not enabled",{bad:true})}
+      return navigator.serviceWorker.ready.then(function(reg){
+        return reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:urlB64ToU8(PUSH.key)});
+      }).then(function(sub){
+        var j=sub.toJSON();
+        return post("/api/push/subscribe",{endpoint:j.endpoint,label:(navigator.platform||"Phone")}).then(function(d){
+          if(!d||!d.ok)return toast("Couldn't register this device",{bad:true});
+          PUSH.state="on";PUSH.devices=d.devices;vibrate(12);
+          toast("Notifications on — this phone will ring for new texts ✓");
+          if(state.tab==="home")renderHome();
+        });
+      });
+    }).catch(function(){toast("Couldn't turn on notifications",{bad:true})});
+  }
+  function pushDisable(){
+    navigator.serviceWorker.ready.then(function(reg){return reg.pushManager.getSubscription()})
+      .then(function(sub){
+        var ep=sub?sub.toJSON().endpoint:"";
+        if(sub)sub.unsubscribe();
+        return post("/api/push/unsubscribe",{endpoint:ep});
+      }).then(function(){PUSH.state="off";toast("Notifications off");if(state.tab==="home")renderHome()})
+      .catch(function(){toast("Couldn't turn those off",{bad:true})});
+  }
+  function pushTest(){
+    toast("Sending a test push…");
+    post("/api/push/test",{}).then(function(d){
+      toast((d&&d.ok)?"Test sent — check your notifications ✓":"No devices registered yet",{bad:!(d&&d.ok)});
+    }).catch(function(){toast("Test failed",{bad:true})});
+  }
+  // Notification settings — push devices plus the morning brief switch.
+  function jdPushSheet(){
+    var on=PUSH.state==="on";
+    var brief=!(state.config&&state.config.briefEnabled===false);
+    var hour=(state.config&&state.config.briefHour)||6;
+    var h='<div class="jd-sh-title">Phone notifications</div>'+
+      '<div class="jd-sh-sub">Push rings this phone the moment a text, missed call or voicemail lands — no polling, no delay.</div>';
+    if(!pushSupported()){
+      h+='<div class="jd-empty"><b>Not available here</b>Open the dashboard in Safari or Chrome — and on iPhone, add it to your home screen first. Then this works.</div>';
+    }else if(PUSH.state==="blocked"){
+      h+='<div class="jd-empty"><b>Blocked by your phone</b>Notifications are switched off for this app in your device settings. Turn them back on there, then tap below.</div>'+
+        '<button class="jd-btn pri" id="pshOn" style="margin-top:10px">'+ic("bell",17)+' Try again</button>';
+    }else{
+      h+='<div class="jd-item"><div class="av" style="background:'+(on?"var(--green)":"var(--gray)")+'">'+ic(on?"check":"bell",17)+'</div>'+
+        '<div class="mid"><div class="nm">'+(on?"On for this device":"Off")+'</div>'+
+        '<div class="sb">'+(PUSH.devices||0)+' device'+(PUSH.devices===1?"":"s")+' registered</div></div></div>'+
+        (on?'<button class="jd-btn" id="pshTest" style="margin-top:10px">'+ic("send",16)+' Send a test</button>'+
+            '<button class="jd-btn ghost" id="pshOff" style="margin-top:8px">Turn off on this device</button>'
+           :'<button class="jd-btn pri" id="pshOn" style="margin-top:10px">'+ic("bell",17)+' Turn on notifications</button>');
+    }
+    h+='<div class="jd-sec">'+ic("sun",14)+' Morning brief</div>'+
+      '<label class="jd-field" style="display:flex;align-items:center;gap:10px;cursor:pointer;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px 13px">'+
+      '<input type="checkbox" id="pshBrief"'+(brief?" checked":"")+' style="width:20px;height:20px;flex:none;accent-color:var(--accent)">'+
+      '<span style="flex:1"><b style="font-size:14px;font-weight:700">Send me the day brief</b><br>'+
+      '<span style="font-size:12px;color:var(--muted2)">Today\'s jobs, rain risk, who\'s waiting and yesterday\'s money</span></span></label>'+
+      '<div class="jd-field"><label>What time</label><select id="pshHour">'+
+      [5,6,7,8,9].map(function(x){return '<option value="'+x+'"'+(x===hour?" selected":"")+'>'+(x>12?x-12:x)+':00 '+(x>=12?"PM":"AM")+'</option>'}).join("")+
+      '</select></div>'+
+      '<button class="jd-btn" id="pshBriefNow" style="margin-top:2px">'+ic("sun",16)+' Show me today\'s brief</button>'+
+      '<button class="jd-btn ghost" id="pshClose" style="margin-top:8px">Done</button>';
+    var s=jdSheetOpen(h);
+    var q=function(id){return s.querySelector("#"+id)};
+    if(q("pshOn"))q("pshOn").onclick=function(){jdSheetClose();pushEnable()};
+    if(q("pshOff"))q("pshOff").onclick=function(){jdSheetClose();pushDisable()};
+    if(q("pshTest"))q("pshTest").onclick=pushTest;
+    q("pshClose").onclick=jdSheetClose;
+    q("pshBriefNow").onclick=function(){if(!el("jdApp").classList.contains("show"))openJobs("run");jdBriefSheet()};
+    var save=function(){
+      post("/api/config",{briefEnabled:q("pshBrief").checked,briefHour:+q("pshHour").value}).then(function(d){
+        if(d&&d.ok){state.config=d.config;toast("Saved ✓");updatePushBadge()}
+      });
+    };
+    q("pshBrief").onchange=save;q("pshHour").onchange=save;
+  }
+  function updatePushBadge(){
+    var n=el("pushState");if(!n)return;
+    n.textContent=PUSH.state==="on"?"on":PUSH.state==="blocked"?"blocked":"off";
+    n.style.color=PUSH.state==="on"?"var(--green)":"";
+  }
+
+  // Home nudge — shown once until enabled or dismissed.
+  function homePushWidget(){
+    if(!pushSupported()||PUSH.state==="on"||PUSH.state==="unsupported"||pushDismissed())return "";
+    if(PUSH.state==="unknown"){pushRefresh();return ""}
+    return '<div class="pn-card"><div class="t">'+ic("bell",18)+' Get texts the second they land</div>'+
+      '<div class="s">'+(PUSH.state==="blocked"
+        ? 'Notifications are blocked for this app. Turn them on in your phone settings, then tap below.'
+        : 'Turn on push notifications and your phone rings for every new text, missed call and morning brief — no more checking.')+'</div>'+
+      '<button id="pnGo">'+(PUSH.state==="blocked"?"Try again":"Turn on notifications")+'</button>'+
+      '<button class="later" id="pnLater">Not now</button></div>';
+  }
+
+  // ============================================================
+  // 9 · HANDS-FREE VOICE CONTROL
+  // ============================================================
+  // Wet hands, gloves, half under a dashboard — talk to it instead. Speech goes
+  // to the same AI agent the command bar uses, and anything that would change
+  // data still needs a deliberate tap to approve.
+  var VX={rec:null,listening:false,busy:false,plan:null,speakOn:true};
+  function vxSupported(){return !!(window.SpeechRecognition||window.webkitSpeechRecognition)}
+  function vxOpen(){
+    if(!vxSupported())return toast("Voice isn't supported in this browser — try Safari or Chrome",{bad:true});
+    el("vxApp").classList.add("show");
+    el("vxHeard").textContent="";el("vxAnswer").textContent="";
+    vxStatus("Tap the orb to talk");
+    vxChips();
+    vibrate(8);
+  }
+  function vxClose(){
+    vxStop();
+    try{if(window.speechSynthesis)speechSynthesis.cancel()}catch(e){}
+    el("vxApp").classList.remove("show");
+    el("vxApp").className="vx-app";
+  }
+  function vxStatus(t){el("vxStatus").textContent=t}
+  function vxChips(){
+    var chips=["What's on today?","Who's waiting on me?","How much did I make this week?","Any follow-ups ready?"];
+    el("vxChips").innerHTML=chips.map(function(c){return '<button data-vxc="'+esc(c)+'">'+esc(c)+'</button>'}).join("");
+    Array.prototype.forEach.call(el("vxChips").querySelectorAll("[data-vxc]"),function(b){
+      b.onclick=function(){el("vxHeard").textContent=b.getAttribute("data-vxc");vxAsk(b.getAttribute("data-vxc"))};
+    });
+  }
+  function vxToggle(){
+    if(VX.busy)return;
+    if(VX.listening)return vxStop();
+    var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+    if(!SR)return;
+    try{if(window.speechSynthesis)speechSynthesis.cancel()}catch(e){}
+    var r=new SR();
+    r.lang="en-US";r.interimResults=true;r.continuous=false;r.maxAlternatives=1;
+    var finalText="";
+    r.onstart=function(){VX.listening=true;el("vxApp").classList.add("listening");vxStatus("Listening…");el("vxAnswer").textContent="";vibrate(8)};
+    r.onresult=function(e){
+      var interim="";
+      for(var i=e.resultIndex;i<e.results.length;i++){
+        if(e.results[i].isFinal)finalText+=e.results[i][0].transcript;
+        else interim+=e.results[i][0].transcript;
+      }
+      el("vxHeard").textContent=(finalText+interim).trim();
+    };
+    r.onerror=function(e){
+      VX.listening=false;el("vxApp").classList.remove("listening");
+      vxStatus(e&&e.error==="not-allowed"?"Microphone blocked":"Didn't catch that — tap to retry");
+    };
+    r.onend=function(){
+      VX.listening=false;el("vxApp").classList.remove("listening");
+      var t=(finalText||el("vxHeard").textContent||"").trim();
+      if(t)vxAsk(t);else vxStatus("Tap the orb to talk");
+    };
+    VX.rec=r;
+    try{r.start()}catch(e){vxStatus("Tap the orb to talk")}
+  }
+  function vxStop(){try{if(VX.rec)VX.rec.stop()}catch(e){}VX.listening=false;el("vxApp").classList.remove("listening")}
+  function vxAsk(text){
+    VX.busy=true;VX.plan=null;
+    el("vxApp").classList.add("thinking");
+    vxStatus("Thinking…");
+    el("vxChips").innerHTML="";
+    post("/api/ai/agent",{text:text}).then(function(d){
+      VX.busy=false;el("vxApp").classList.remove("thinking");
+      if(!d||!d.ok){var m=(d&&d.error)==="ai_not_configured"?"AI isn't set up yet.":"That didn't work — try again.";
+        vxStatus("Tap to try again");el("vxAnswer").textContent=m;vxSpeak(m);vxChips();return}
+      var answer=(d.answer||"All clear.").replace(/\s+/g," ").trim();
+      el("vxAnswer").textContent=answer;
+      vxStatus("Tap to talk again");
+      vxSpeak(answer);
+      var acts=Array.isArray(d.actions)?d.actions:[];
+      if(acts.length){
+        VX.plan=d;
+        el("vxChips").innerHTML='<button id="vxDo" style="background:var(--accent);border-color:var(--accent);color:#fff;font-weight:800">'+
+          "Do it ("+acts.length+" action"+(acts.length>1?"s":"")+")</button><button id=\"vxSkip\">Never mind</button>";
+        el("vxChips").querySelector("#vxSkip").onclick=function(){VX.plan=null;vxChips()};
+        el("vxChips").querySelector("#vxDo").onclick=vxConfirm;
+      }else vxChips();
+    }).catch(function(){
+      VX.busy=false;el("vxApp").classList.remove("thinking");
+      vxStatus("Tap to try again");el("vxAnswer").textContent="Network error.";vxChips();
+    });
+  }
+  function vxConfirm(){
+    var d=VX.plan;if(!d||!d.actions||!d.actions.length)return;
+    el("vxChips").innerHTML='<button><span class="spin"></span> Working…</button>';
+    post("/api/ai/agent",{confirm:true,actions:d.actions}).then(function(r){
+      var msg=(r&&r.ok)?(r.reply||"Done."):"That didn't go through.";
+      VX.plan=null;
+      el("vxAnswer").textContent=msg;vxSpeak(msg);vxChips();
+      refreshThreads();if(JD.day)jdLoadDay(true);
+      if(typeof loadMoney==="function")loadMoney();
+    }).catch(function(){el("vxAnswer").textContent="That didn't go through.";VX.plan=null;vxChips()});
+  }
+  function vxSpeak(text){
+    if(!VX.speakOn||!window.speechSynthesis)return;
+    try{
+      speechSynthesis.cancel();
+      var u=new SpeechSynthesisUtterance(String(text).slice(0,420));
+      u.rate=1.03;u.pitch=1;u.lang="en-US";
+      speechSynthesis.speak(u);
+    }catch(e){}
+  }
+
+  // ---- badges + boot wiring for the whole suite ----
+  function updateJobsBadge(){
+    var n=0;
+    if(JD.day&&JD.day.date===jdToday())n=JD.day.summary.remaining;
+    var b=el("navJobs");if(!b)return;
+    b.textContent=n>9?"9+":String(n);
+    b.classList.toggle("show",n>0);
+  }
+  function jdPrefetchToday(){
+    JD.date=JD.date||jdToday();
+    api("/api/day?date="+encodeURIComponent(JD.date)).then(function(d){
+      if(d&&d.ok){JD.day=d;updateJobsBadge();if(el("jdApp").classList.contains("show"))jdRender()}
+    }).catch(function(){});
+  }
+
   // ---- boot ----
   hydrateIcons();
   el("myAvatar").innerHTML=brandGlyph();el("drawerLogo").innerHTML=brandGlyph();el("loginLogo").innerHTML=brandGlyph();
   applyTheme(themePref());loadAccent();applyUI();buildAccents();buildThemeSeg();buildTplMenu();loadTemplates();buildQuickset();
   renderFilters();refreshThreads();startPoll();checkHealth();loadConfig();showBuild();fetchInsights();loadMoney();
+  // Job Day suite: warm the day board (drives the Jobs badge) and the brief, and
+  // find out whether this device already has push turned on.
+  jdPrefetchToday();loadBrief();pushRefresh();
+  if(!vxSupported()){var vf=el("vxFab");if(vf)vf.style.display="none";}
   maybeDeepLink();
 })();
 </script>

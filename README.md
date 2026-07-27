@@ -38,6 +38,57 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
 - **Editable quick-reply templates**, contact rename, pin, and archive.
 - **Free-tier friendly:** adaptive polling that backs off and pauses when idle/hidden.
 
+## The Job Day suite (Jobs tab)
+Ten features that turn the dashboard from "where the texting happens" into the
+app the day actually runs on. All of it lives under the new **Jobs** tab
+(Run · Quotes · Pay · Garage) plus a floating mic and a Home brief card.
+
+1. **Today's Run** — the day board. Online bookings, texted appointments and
+   hand-added cash jobs merge into one ordered run sheet with a hero showing
+   stops left, dollars booked and hours on the clock. Each stop moves
+   *queued → on my way → working → done*, with a live job timer, one-tap
+   navigate (Apple Maps on iOS, Google Maps elsewhere) and one-tap text.
+   Finishing a job logs the money, flags a balance owed and can fire the
+   "all finished" + review-ask text in a single sheet.
+2. **Live ETA tracking** — tapping *On my way* texts the customer a link to a
+   DoorDash-style page that counts down, updates itself and offers call/text.
+   Mikey's phone feeds it GPS while he drives. Links expire on their own (12 h)
+   and never expose anything but the trip.
+3. **Web push notifications** — real phone alerts for every inbound text,
+   missed call, voicemail and the morning brief, instead of polling. **No setup
+   at all:** the VAPID keypair is generated inside the Worker on first use.
+   Pushes carry no payload — the service worker asks the backend for the
+   headline — so message content never crosses the push service.
+4. **Quote builder** — service × vehicle size × condition × add-ons, priced
+   live off the *same* menu the public booking page uses, so a texted quote and
+   the website can never disagree. Shows the exact message before it sends, and
+   tracks sent → accepted/declined with a win rate. Accepting flips the lead to
+   Won.
+5. **Get paid** — payment requests and deposits by text, linking to a branded
+   pay page with tap-to-pay buttons for Venmo / Cash App / PayPal / Zelle and an
+   optional Stripe or Square link. No processor account required. Tracks what's
+   outstanding and can auto-nudge an unpaid invoice once after N days.
+6. **Customer garage** — vehicles (year/make/model/color/plate), address, gate
+   code, where to park, whether there's water and power, preferences and
+   "careful with" notes — joined against the money ledger for lifetime value,
+   job count and last visit. Never ask the same question twice.
+7. **Neighborhood blasts** — pick a booked job, find past customers in that town
+   or ZIP, and offer them the same-day slot at a discount. Opt-out aware,
+   `{first_name}` merged, capped at 25 per send, confirmation required.
+8. **Before / after photos** — snap both from the job sheet; they compress in
+   the browser (~120 KB) and render as a draggable before/after slider.
+9. **Hands-free voice control** — the floating mic opens a push-to-talk screen
+   that routes speech to the same AI agent the command bar uses and speaks the
+   answer back. Anything that would change data still needs a deliberate tap.
+10. **Daily brief** — a 6am rundown (push + email): today's stops, per-job rain
+    risk from the hourly forecast, who's waiting, yesterday's money and the one
+    thing to do first. Also inline on Home and on demand any time.
+
+Cost discipline: none of this writes to KV on a read. The only clock-driven
+writes are the brief (1/day) and the invoice sweep (only when something is
+actually overdue); live-ETA pings are throttled server-side to ~1 write/45 s and
+only while a trip is running.
+
 ## How it's built
 ```
 public/index.html      the dashboard UI (static, served via Workers static assets)
@@ -127,6 +178,7 @@ drives everything.
 
 ## Endpoints (reference)
 Public: `/submit` `/sms` `/call` `/call-screen` `/voicemail` `/voicemail-done`
+`/t/<token>` (live ETA page) `/p/<token>` (pay page) `/api/track/state`
 Auth: `/api/login` `/api/logout`
 Dashboard API: `/api/health` `/api/threads` `/api/thread` `/api/send` `/api/meta`
 `/api/schedule` `/api/unschedule` `/api/call` `/api/read` `/api/insights`
@@ -134,4 +186,11 @@ Dashboard API: `/api/health` `/api/threads` `/api/thread` `/api/send` `/api/meta
 `/api/followups` `/api/followup` `/api/config` `/api/block`
 Website analytics: `/api/analytics` (pixel) `/api/webstats` `/api/webstats/status`
 `/api/webstats/connect` `/api/webstats/disconnect` `/api/webstats/ai`
-AI (Gemini): `/api/ai/summary` `/api/ai/draft` `/api/ai/triage`
+AI (Gemini): `/api/ai/summary` `/api/ai/draft` `/api/ai/triage` `/api/ai/agent`
+Job Day suite: `/api/day` `/api/day/state` `/api/day/job` `/api/day/remove`
+`/api/day/order` · `/api/track/start` `/api/track/ping` `/api/track/stop` ·
+`/api/push/key` `/api/push/subscribe` `/api/push/unsubscribe` `/api/push/test`
+`/api/push/peek` · `/api/quote/config` `/api/quote` `/api/quote/action` ·
+`/api/pay` `/api/pay/config` `/api/pay/request` `/api/pay/action` ·
+`/api/garage` · `/api/blast/candidates` `/api/blast/send` ·
+`/api/photos` `/api/photos/img` `/api/photos/delete` · `/api/brief`
