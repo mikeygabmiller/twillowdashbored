@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-21·booking+redesign';
+const BUILD = '2026-07-27·analytics-map-grid';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -212,6 +212,14 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/webstats/connect')    return apiWebstatsConnect(request);
   if (request.method === 'POST' && pathname === '/api/webstats/disconnect') return apiWebstatsDisconnect(request);
   if (request.method === 'POST' && pathname === '/api/webstats/ai')         return apiWebstatsAi(request);
+
+  // Map rank grid — Google Maps rank at a grid of points (Local Falcon style).
+  if (request.method === 'GET'  && pathname === '/api/geogrid')            return apiGeogrid();
+  if (request.method === 'POST' && pathname === '/api/geogrid/scan')       return apiGeogridScan(request);
+  if (request.method === 'POST' && pathname === '/api/geogrid/save')       return apiGeogridSave(request);
+  if (request.method === 'POST' && pathname === '/api/geogrid/connect')    return apiGeogridConnect(request);
+  if (request.method === 'POST' && pathname === '/api/geogrid/disconnect') return apiGeogridDisconnect(request);
+  if (request.method === 'POST' && pathname === '/api/geogrid/delete')     return apiGeogridDelete(request);
 
   // Money tracker (its own dashboard section — see the Money module below)
   if (request.method === 'GET'  && pathname === '/api/money')          return apiMoney(url);
@@ -1444,6 +1452,241 @@ async function apiWebstatsAi(request) {
   } catch (e) {
     return json({ ok: false, error: 'ai_error', detail: String(e.message || e).slice(0, 200) }, 502);
   }
+}
+
+// ===========================================================================
+// Map rank grid — "where do I actually show up on Google Maps?"
+// ---------------------------------------------------------------------------
+// The Local Falcon idea, built in-house: lay an N x N grid of points over the
+// service area, ask Google "detailing near me" AS IF standing at each point,
+// and record what position Mikey's business came back at. Colour the grid by
+// that rank and you can see, block by block, where the Maps listing is strong
+// and where it falls off.
+//
+// The rank comes from the Google Places API (New) "Text Search" endpoint with a
+// locationBias circle at each grid point. Two honest caveats, surfaced in the UI
+// too:
+//   - Places API results are a very close PROXY for the Maps local pack, not a
+//     byte-identical copy of it. (Local Falcon has the same caveat.)
+//   - Every grid point is one billable Places call. A 13x13 grid is 169 calls.
+//     Google gives a monthly free allowance per SKU; past that it is priced per
+//     1,000 calls. Check current pricing before running big grids often.
+//
+// Cloudflare's free plan caps a single request at 50 subrequests, so a scan is
+// CHUNKED: the dashboard posts one batch of grid points at a time (<= 25) and
+// stitches the results together client-side, showing a progress bar. That keeps
+// any single Worker invocation well under the cap no matter how big the grid.
+//
+// The API key is pasted once in the dashboard (Analytics -> Map -> setup) and
+// stored in KV, or supplied as a PLACES_API_KEY Worker secret, which wins. It is
+// never echoed back by any endpoint.
+// ===========================================================================
+const GEO_SCAN_MAX_POINTS = 25;   // per request — keeps us under the 50-subrequest cap
+const GEO_SCAN_KEEP = 24;         // how many past scans to retain
+const GEO_NOT_FOUND_RANK = 21;    // "20+" — outside the 20 results Places returns
+
+async function geogridSecrets() {
+  const saved = (await kv().get('geogrid:secrets', { type: 'json' })) || {};
+  return {
+    key: String(ENV.PLACES_API_KEY || saved.key || ''),
+    via: ENV.PLACES_API_KEY ? 'secret' : (saved.key ? 'saved' : ''),
+    placeId: String(saved.placeId || ''),
+    bizName: String(saved.bizName || ''),
+    keyword: String(saved.keyword || 'mobile detailing'),
+    centerLat: Number(saved.centerLat) || 47.9129,   // Snohomish, WA
+    centerLng: Number(saved.centerLng) || -122.0982,
+  };
+}
+
+// Normalised name compare — Places display names carry punctuation/suffixes that
+// never match a hand-typed business name exactly.
+function geoNameKey(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+function geoNameMatches(displayName, want) {
+  const a = geoNameKey(displayName), b = geoNameKey(want);
+  if (!a || !b) return false;
+  return a === b || a.includes(b) || b.includes(a);
+}
+
+// One grid point -> the business's rank in the Places result list (1-based),
+// or GEO_NOT_FOUND_RANK when it does not appear at all.
+async function geoRankAt(sec, keyword, lat, lng, radiusM) {
+  const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': sec.key,
+      'X-Goog-FieldMask': 'places.id,places.displayName',
+    },
+    body: JSON.stringify({
+      textQuery: keyword,
+      maxResultCount: 20,
+      locationBias: { circle: { center: { latitude: lat, longitude: lng }, radius: Math.max(500, Math.min(50000, radiusM)) } },
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    const err = new Error('places_' + res.status + (body ? ': ' + body.slice(0, 160) : ''));
+    err.status = res.status;
+    throw err;
+  }
+  const data = await res.json().catch(() => ({}));
+  const places = Array.isArray(data.places) ? data.places : [];
+  for (let i = 0; i < places.length; i++) {
+    const p = places[i] || {};
+    const nm = (p.displayName && p.displayName.text) || '';
+    if (sec.placeId && p.id === sec.placeId) return { rank: i + 1, total: places.length };
+    if (!sec.placeId && geoNameMatches(nm, sec.bizName)) return { rank: i + 1, total: places.length };
+  }
+  return { rank: GEO_NOT_FOUND_RANK, total: places.length };
+}
+
+// GET /api/geogrid — connection status + saved scans (newest first).
+async function apiGeogrid() {
+  const sec = await geogridSecrets();
+  const scans = (await kv().get('geogrid:scans', { type: 'json' })) || [];
+  return json({
+    ok: true,
+    connected: !!sec.key,
+    via: sec.via,
+    config: {
+      placeId: sec.placeId, bizName: sec.bizName, keyword: sec.keyword,
+      centerLat: sec.centerLat, centerLng: sec.centerLng,
+    },
+    maxBatch: GEO_SCAN_MAX_POINTS,
+    scans,
+  });
+}
+
+// POST /api/geogrid/scan — rank one BATCH of grid points. The dashboard calls
+// this repeatedly until the grid is covered. Nothing is written to KV here, so
+// a scan costs zero KV writes until it is saved.
+async function apiGeogridScan(request) {
+  const sec = await geogridSecrets();
+  if (!sec.key) return json({ ok: false, error: 'not_connected', hint: 'Add a Google Places API key first (Analytics → Map → setup).' }, 400);
+  if (!sec.placeId && !sec.bizName) return json({ ok: false, error: 'no_business', hint: 'Set the business name or Place ID to look for.' }, 400);
+
+  const data = await readJson(request);
+  const keyword = String(data.keyword || sec.keyword || '').trim().slice(0, 120);
+  if (!keyword) return json({ ok: false, error: 'no_keyword' }, 422);
+  const pts = Array.isArray(data.points) ? data.points.slice(0, GEO_SCAN_MAX_POINTS) : [];
+  if (!pts.length) return json({ ok: false, error: 'no_points' }, 422);
+  const radiusM = Math.max(500, Math.min(50000, Number(data.radiusM) || 3000));
+
+  const out = [];
+  for (const p of pts) {
+    const lat = Number(p.lat), lng = Number(p.lng);
+    if (!isFinite(lat) || !isFinite(lng)) { out.push({ lat: 0, lng: 0, rank: GEO_NOT_FOUND_RANK, err: 'bad_point' }); continue; }
+    try {
+      const r = await geoRankAt(sec, keyword, lat, lng, radiusM);
+      out.push({ lat, lng, rank: r.rank, total: r.total });
+    } catch (e) {
+      // A 4xx from Google is fatal for the whole scan (bad key / API not enabled)
+      // — bail out loudly instead of silently returning a grid of "20+".
+      if (e.status && e.status >= 400 && e.status < 500) {
+        return json({ ok: false, error: 'places_error', detail: String(e.message || e).slice(0, 220),
+          hint: 'Check the key is valid, the Places API (New) is enabled on the project, and billing is on.' }, 502);
+      }
+      out.push({ lat, lng, rank: GEO_NOT_FOUND_RANK, err: 'fetch_failed' });
+    }
+  }
+  return json({ ok: true, results: out });
+}
+
+// The three headline numbers, computed the way the local-SEO tools define them.
+function geoStats(results) {
+  const rs = results.map((r) => Number(r.rank) || GEO_NOT_FOUND_RANK);
+  const n = rs.length || 1;
+  const found = rs.filter((r) => r < GEO_NOT_FOUND_RANK);
+  return {
+    points: rs.length,
+    // ARP — average rank across the points where the listing actually ranked.
+    arp: found.length ? +(found.reduce((a, b) => a + b, 0) / found.length).toFixed(2) : null,
+    // ATRP — average across EVERY point, counting a miss as 20+.
+    atrp: +(rs.reduce((a, b) => a + b, 0) / n).toFixed(2),
+    // SoLV — share of local voice: % of points landing in the top 3.
+    solv: +((rs.filter((r) => r <= 3).length / n) * 100).toFixed(2),
+    top3: rs.filter((r) => r <= 3).length,
+    top10: rs.filter((r) => r <= 10).length,
+    missing: rs.filter((r) => r >= GEO_NOT_FOUND_RANK).length,
+  };
+}
+
+// POST /api/geogrid/save — persist a finished scan (one KV write).
+async function apiGeogridSave(request) {
+  const data = await readJson(request);
+  const results = Array.isArray(data.results) ? data.results : [];
+  if (!results.length) return json({ ok: false, error: 'no_results' }, 422);
+  const rec = {
+    id: genId(),
+    ts: Date.now(),
+    keyword: String(data.keyword || '').slice(0, 120),
+    size: Math.max(3, Math.min(15, Number(data.size) || 7)),
+    radiusMi: +(Number(data.radiusMi) || 5).toFixed(2),
+    centerLat: Number(data.centerLat) || 0,
+    centerLng: Number(data.centerLng) || 0,
+    results: results.map((r) => ({
+      lat: +Number(r.lat).toFixed(5), lng: +Number(r.lng).toFixed(5),
+      rank: Math.max(1, Math.min(GEO_NOT_FOUND_RANK, Number(r.rank) || GEO_NOT_FOUND_RANK)),
+    })),
+  };
+  rec.stats = geoStats(rec.results);
+  const scans = (await kv().get('geogrid:scans', { type: 'json' })) || [];
+  scans.unshift(rec);
+  await kv().put('geogrid:scans', JSON.stringify(scans.slice(0, GEO_SCAN_KEEP)));
+  return json({ ok: true, scan: rec });
+}
+
+// POST /api/geogrid/delete — drop one saved scan.
+async function apiGeogridDelete(request) {
+  const data = await readJson(request);
+  const id = String(data.id || '');
+  const scans = (await kv().get('geogrid:scans', { type: 'json' })) || [];
+  const next = scans.filter((s) => s.id !== id);
+  if (next.length !== scans.length) await kv().put('geogrid:scans', JSON.stringify(next));
+  return json({ ok: true });
+}
+
+// POST /api/geogrid/connect — save the key + what business to look for. The key
+// is verified with one real Places call so a typo surfaces immediately.
+async function apiGeogridConnect(request) {
+  const data = await readJson(request);
+  const saved = (await kv().get('geogrid:secrets', { type: 'json' })) || {};
+
+  if (typeof data.key === 'string' && data.key.trim()) {
+    const key = data.key.trim();
+    const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'places.id' },
+      body: JSON.stringify({ textQuery: 'car detailing', maxResultCount: 1,
+        locationBias: { circle: { center: { latitude: 47.9129, longitude: -122.0982 }, radius: 5000 } } }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      return json({ ok: false, error: 'key_verify_failed',
+        hint: 'Google said ' + res.status + '. Enable "Places API (New)" on the project, turn on billing, and make sure the key has no HTTP-referrer restriction (this call comes from a server).',
+        detail: body.slice(0, 220) }, 422);
+    }
+    saved.key = key;
+  }
+
+  if (typeof data.bizName === 'string') saved.bizName = data.bizName.trim().slice(0, 80);
+  if (typeof data.placeId === 'string') saved.placeId = data.placeId.trim().slice(0, 120);
+  if (typeof data.keyword === 'string' && data.keyword.trim()) saved.keyword = data.keyword.trim().slice(0, 120);
+  if (data.centerLat != null && isFinite(+data.centerLat)) saved.centerLat = +data.centerLat;
+  if (data.centerLng != null && isFinite(+data.centerLng)) saved.centerLng = +data.centerLng;
+
+  await kv().put('geogrid:secrets', JSON.stringify(saved));
+  return json({ ok: true });
+}
+
+// POST /api/geogrid/disconnect — forget the key (keeps saved scans).
+async function apiGeogridDisconnect() {
+  const saved = (await kv().get('geogrid:secrets', { type: 'json' })) || {};
+  delete saved.key;
+  await kv().put('geogrid:secrets', JSON.stringify(saved));
+  return json({ ok: true });
 }
 
 // AI content generator (Grow hub → SEO / Content Studio). One flexible endpoint
