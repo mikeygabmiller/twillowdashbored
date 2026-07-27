@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-27·placeid-finder';
+const BUILD = '2026-07-27·places-diagnostics';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -1538,7 +1538,7 @@ async function geoRankAt(sec, keyword, lat, lng, radiusM) {
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    const err = new Error('places_' + res.status + (body ? ': ' + body.slice(0, 160) : ''));
+    const err = new Error('places_' + res.status + (body ? ': ' + body.slice(0, 600) : ''));
     err.status = res.status;
     throw err;
   }
@@ -1602,7 +1602,7 @@ async function apiGeogridScan(request) {
       // A 4xx from Google is fatal for the whole scan (bad key / API not enabled)
       // — bail out loudly instead of silently returning a grid of "20+".
       if (e.status && e.status >= 400 && e.status < 500) {
-        return json({ ok: false, error: 'places_error', detail: String(e.message || e).slice(0, 220),
+        return json({ ok: false, error: 'places_error', detail: String(e.message || e).slice(0, 700),
           hint: 'Check the key is valid, the Places API (New) is enabled on the project, and billing is on.' }, 502);
       }
       out.push({ lat, lng, rank: GEO_NOT_FOUND_RANK, err: 'fetch_failed' });
@@ -1683,7 +1683,7 @@ async function apiGeogridConnect(request) {
       const body = await res.text().catch(() => '');
       return json({ ok: false, error: 'key_verify_failed',
         hint: 'Google said ' + res.status + '. Enable "Places API (New)" on the project, turn on billing, and make sure the key has no HTTP-referrer restriction (this call comes from a server).',
-        detail: body.slice(0, 220) }, 422);
+        detail: body.slice(0, 600) }, 422);
     }
     saved.key = key;
   }
@@ -1732,7 +1732,7 @@ async function apiGeogridFind(request) {
   });
   if (!res.ok) {
     const body = await res.text().catch(() => '');
-    return json({ ok: false, error: 'places_error', detail: body.slice(0, 200),
+    return json({ ok: false, error: 'places_error', detail: body.slice(0, 600),
       hint: 'Google said ' + res.status + '. Check the key and that Places API (New) is enabled.' }, 502);
   }
   const d = await res.json().catch(() => ({}));
