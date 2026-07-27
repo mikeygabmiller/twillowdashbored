@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-27·deep-analytics';
+const BUILD = '2026-07-27·placeid-finder';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -220,6 +220,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/geogrid/scan')       return apiGeogridScan(request);
   if (request.method === 'POST' && pathname === '/api/geogrid/save')       return apiGeogridSave(request);
   if (request.method === 'POST' && pathname === '/api/geogrid/connect')    return apiGeogridConnect(request);
+  if (request.method === 'POST' && pathname === '/api/geogrid/find')       return apiGeogridFind(request);
   if (request.method === 'POST' && pathname === '/api/geogrid/disconnect') return apiGeogridDisconnect(request);
   if (request.method === 'POST' && pathname === '/api/geogrid/delete')     return apiGeogridDelete(request);
 
@@ -1546,8 +1547,14 @@ async function geoRankAt(sec, keyword, lat, lng, radiusM) {
   for (let i = 0; i < places.length; i++) {
     const p = places[i] || {};
     const nm = (p.displayName && p.displayName.text) || '';
-    if (sec.placeId && p.id === sec.placeId) return { rank: i + 1, total: places.length };
-    if (!sec.placeId && geoNameMatches(nm, sec.bizName)) return { rank: i + 1, total: places.length };
+    // Place ID is the exact match and wins, but we ALWAYS fall back to the name.
+    // Matching on the ID alone would mean a wrong or mistyped Place ID silently
+    // produces a grid of "20+" at every point — a scan that costs real money and
+    // reports that the business ranks nowhere, which is indistinguishable from a
+    // genuine ranking collapse. Falling through to the name makes a bad ID a
+    // degraded match instead of a confident lie.
+    if (sec.placeId && p.id === sec.placeId) return { rank: i + 1, total: places.length, by: 'id' };
+    if (geoNameMatches(nm, sec.bizName)) return { rank: i + 1, total: places.length, by: 'name' };
   }
   return { rank: GEO_NOT_FOUND_RANK, total: places.length };
 }
@@ -1682,13 +1689,56 @@ async function apiGeogridConnect(request) {
   }
 
   if (typeof data.bizName === 'string') saved.bizName = data.bizName.trim().slice(0, 80);
-  if (typeof data.placeId === 'string') saved.placeId = data.placeId.trim().slice(0, 120);
+  if (typeof data.placeId === 'string') {
+    const pid = data.placeId.trim().slice(0, 120);
+    // The commonest setup mistake by far: pasting the Maps CID (the long number
+    // from a maps.google.com/?cid=... link) into the Place ID box. A real Place
+    // ID is an opaque token like "ChIJ...". Reject the number outright rather
+    // than storing something that can never match.
+    if (pid && /^\d{6,}$/.test(pid)) {
+      return json({ ok: false, error: 'cid_not_place_id',
+        hint: 'That long number is a Maps CID, not a Place ID. A Place ID looks like "ChIJN1t_tDeuEmsRUsoyG83frY4". Use the "Find my Place ID" button below, or leave the field blank and match on the business name.' }, 422);
+    }
+    saved.placeId = pid;
+  }
   if (typeof data.keyword === 'string' && data.keyword.trim()) saved.keyword = data.keyword.trim().slice(0, 120);
   if (data.centerLat != null && isFinite(+data.centerLat)) saved.centerLat = +data.centerLat;
   if (data.centerLng != null && isFinite(+data.centerLng)) saved.centerLng = +data.centerLng;
 
   await kv().put('geogrid:secrets', JSON.stringify(saved));
   return json({ ok: true });
+}
+
+// POST /api/geogrid/find — look up candidate Place IDs for a business name so
+// the owner never has to go hunting through Google's Place ID Finder. Costs
+// exactly ONE Places call, and is the only place the dashboard shows a Place ID.
+async function apiGeogridFind(request) {
+  const sec = await geogridSecrets();
+  if (!sec.key) return json({ ok: false, error: 'not_connected', hint: 'Save the API key first.' }, 400);
+  const data = await readJson(request);
+  const q = String(data.q || sec.bizName || '').trim().slice(0, 120);
+  if (!q) return json({ ok: false, error: 'no_query', hint: 'Enter your business name first.' }, 422);
+  const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': sec.key,
+      'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress',
+    },
+    body: JSON.stringify({
+      textQuery: q, maxResultCount: 8,
+      locationBias: { circle: { center: { latitude: sec.centerLat, longitude: sec.centerLng }, radius: 50000 } },
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    return json({ ok: false, error: 'places_error', detail: body.slice(0, 200),
+      hint: 'Google said ' + res.status + '. Check the key and that Places API (New) is enabled.' }, 502);
+  }
+  const d = await res.json().catch(() => ({}));
+  return json({ ok: true, results: ((d.places) || []).map((p) => ({
+    id: p.id, name: (p.displayName && p.displayName.text) || '', address: p.formattedAddress || '',
+  })) });
 }
 
 // POST /api/geogrid/disconnect — forget the key (keeps saved scans).
