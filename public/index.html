@@ -1396,6 +1396,120 @@
   .wa-no{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;border-radius:999px;padding:3px 9px;background:var(--panel2);color:var(--muted2)}
   .wa-hint{color:var(--muted2);font-size:12px;line-height:1.5;margin:4px 0 8px}
   .wa-ai{white-space:pre-wrap;font-size:13.5px;line-height:1.65}
+  /* ---- Deep analytics (Analytics → Customers / Profit / Pulse) ---- */
+  .iv-hero{background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:15px 16px;margin-bottom:12px}
+  .iv-hero .h-k{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted2)}
+  .iv-hero .h-v{font-size:34px;font-weight:900;letter-spacing:-.025em;margin:2px 0 1px}
+  .iv-hero .h-s{font-size:12.5px;color:var(--muted);line-height:1.5}
+  .iv-delta{display:inline-flex;align-items:center;gap:3px;font-size:12px;font-weight:900;border-radius:999px;padding:2px 8px;margin-left:7px;vertical-align:2px}
+  .iv-delta.up{background:rgba(52,211,153,.15);color:#34d399}
+  .iv-delta.dn{background:rgba(251,113,133,.15);color:#fb7185}
+  .iv-delta.flat{background:var(--panel2);color:var(--muted2)}
+  .iv-bar{height:10px;border-radius:5px;background:var(--panel2);overflow:hidden;margin:10px 0 5px;position:relative}
+  .iv-bar span{display:block;height:100%;border-radius:5px;background:var(--accent)}
+  .iv-bar i{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--muted2);border-radius:1px}
+  .iv-tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin-bottom:12px}
+  .iv-tile{background:var(--panel);border:1px solid var(--line2);border-radius:14px;padding:11px 10px;text-align:center}
+  .iv-tile .v{font-size:19px;font-weight:900;letter-spacing:-.02em}
+  .iv-tile .k{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;color:var(--muted2);margin-top:3px;line-height:1.3}
+  .iv-tile.warn .v{color:var(--gold)} .iv-tile.bad .v{color:#fb7185} .iv-tile.good .v{color:#34d399}
+  /* table-ish rows shared by services / sources / customers */
+  .iv-row{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line2);
+    border-radius:13px;padding:10px 12px;margin-bottom:7px;font-size:13px}
+  .iv-row .n{flex:none;width:24px;height:24px;border-radius:8px;background:var(--panel2);color:var(--muted);
+    display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:900}
+  .iv-row .b{flex:1;min-width:0}
+  .iv-row .b .t{display:block;font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .iv-row .b .s{display:block;font-size:11px;color:var(--muted2);font-weight:600;margin-top:2px;line-height:1.4}
+  .iv-row .r{flex:none;text-align:right}
+  .iv-row .r .t{display:block;font-weight:900;white-space:nowrap}
+  .iv-row .r .s{display:block;font-size:11px;color:var(--muted2);font-weight:700;margin-top:2px;white-space:nowrap}
+  .iv-row.neg{border-color:rgba(251,113,133,.4);background:rgba(251,113,133,.06)}
+  .iv-row.tap{cursor:pointer}
+  .iv-mini{height:5px;border-radius:3px;background:var(--panel2);overflow:hidden;margin-top:6px}
+  .iv-mini span{display:block;height:100%;border-radius:3px}
+  /* cohort retention grid */
+  .iv-coh{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;margin-bottom:4px}
+  .iv-coh::-webkit-scrollbar{display:none}
+  .iv-coh table{border-collapse:separate;border-spacing:3px;font-size:11px}
+  .iv-coh th{font-size:9.5px;font-weight:800;color:var(--muted2);text-transform:uppercase;letter-spacing:.04em;padding:2px 4px;white-space:nowrap}
+  .iv-coh td{width:34px;height:28px;text-align:center;border-radius:7px;font-weight:800;color:#fff;white-space:nowrap}
+  .iv-coh td.lbl{background:none;color:var(--text);font-weight:800;text-align:left;width:auto;padding-right:6px;white-space:nowrap}
+  .iv-coh td.sz{background:var(--panel2);color:var(--muted)}
+  .iv-coh td.nil{background:var(--panel2);opacity:.35}
+  /* anomaly cards */
+  .iv-an{display:flex;gap:11px;align-items:flex-start;border-radius:13px;padding:12px 13px;margin-bottom:8px;
+    border:1px solid var(--line2);background:var(--panel)}
+  .iv-an.good{border-color:rgba(52,211,153,.35)} .iv-an.bad{border-color:rgba(251,113,133,.35)}
+  .iv-an .ic{flex:none;width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center}
+  .iv-an.good .ic{background:rgba(52,211,153,.14);color:#34d399}
+  .iv-an.bad .ic{background:rgba(251,113,133,.14);color:#fb7185}
+  .iv-an .t{font-weight:800;font-size:13.5px}
+  .iv-an .s{font-size:12px;color:var(--muted2);line-height:1.5;margin-top:2px}
+  .iv-chart{width:100%;display:block;overflow:visible}
+  .iv-xlab{display:flex;justify-content:space-between;font-size:10px;color:var(--muted2);font-weight:700;margin-top:3px}
+  .iv-dow{display:flex;gap:5px;align-items:stretch;height:78px;margin:4px 0 2px}
+  .iv-dow .col{flex:1;display:flex;flex-direction:column;gap:4px;min-width:0}
+  /* The bar sizes against its own slot, not the slot+label, so a 100% bar is
+     actually full height instead of being squeezed by the weekday letter. */
+  .iv-dow .slot{flex:1;display:flex;align-items:flex-end;min-height:0}
+  .iv-dow .bar{width:100%;border-radius:5px 5px 2px 2px;background:var(--accent);min-height:3px}
+  .iv-dow .lb{flex:none;font-size:9.5px;font-weight:800;color:var(--muted2);text-align:center}
+  .iv-note{color:var(--muted2);font-size:11.5px;line-height:1.55;margin:8px 0 2px}
+  /* ---- Geo grid (Analytics → Map): service-area heat grid + Maps rank grid ----
+     The map is built from raw OSM tiles as <img> elements — no Leaflet, no CDN,
+     keeping this app's zero-external-dependency rule. If tiles can't load (offline
+     / blocked), the backdrop stays flat and every pin still renders and reads. */
+  .gg-map{position:relative;width:100%;border-radius:16px;overflow:hidden;background:var(--panel2);
+    border:1px solid var(--line2);touch-action:pan-y}
+  .gg-tiles{position:absolute;inset:0;overflow:hidden}
+  .gg-tiles img{position:absolute;width:256px;height:256px;display:block;border:0;
+    /* Warm the stock OSM raster down so it sits inside the dark UI instead of glaring. */
+    filter:grayscale(.45) brightness(.68) contrast(1.06) saturate(.85)}
+  html[data-theme="light"] .gg-tiles img{filter:grayscale(.2) brightness(1.02) contrast(.98)}
+  .gg-pins{position:absolute;inset:0}
+  .gg-pin{position:absolute;transform:translate(-50%,-50%);border-radius:50%;display:flex;
+    align-items:center;justify-content:center;font-weight:900;color:#fff;
+    box-shadow:0 1px 3px rgba(0,0,0,.55);border:1.5px solid rgba(255,255,255,.5);
+    line-height:1;white-space:nowrap}
+  .gg-pin.dim{opacity:.9}
+  .gg-attr{position:absolute;right:0;bottom:0;background:rgba(0,0,0,.55);color:#fff;
+    font-size:9px;font-weight:600;padding:2px 6px;border-top-left-radius:6px;z-index:3}
+  .gg-attr a{color:#fff;text-decoration:underline}
+  .gg-legend{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin:9px 0 2px;
+    font-size:10.5px;font-weight:700;color:var(--muted2)}
+  .gg-legend .gg-sw{width:13px;height:13px;border-radius:4px;flex:none;border:none}
+  .gg-legend i{display:inline-flex;align-items:center;gap:4px;font-style:normal}
+  .gg-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:9px;margin:12px 0}
+  .gg-stat{background:var(--panel);border:1px solid var(--line2);border-radius:14px;padding:11px 12px;text-align:center}
+  .gg-stat .v{font-size:22px;font-weight:900;letter-spacing:-.02em}
+  .gg-stat .k{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--muted2);margin-top:3px}
+  .gg-stat .h{font-size:10px;color:var(--muted2);font-weight:600;margin-top:2px}
+  .gg-meta{text-align:center;font-size:12px;color:var(--muted2);line-height:1.6;margin:2px 0 10px}
+  .gg-meta b{color:var(--text);font-weight:800}
+  .gg-rows{display:flex;flex-direction:column;gap:7px}
+  .gg-row{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line2);
+    border-radius:12px;padding:9px 12px;font-size:13px}
+  .gg-row .r-n{flex:none;width:22px;height:22px;border-radius:7px;display:flex;align-items:center;
+    justify-content:center;font-size:11px;font-weight:900;color:#fff}
+  .gg-row .r-k{flex:1;font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .gg-row .r-v{flex:none;font-weight:900}
+  .gg-row .r-s{flex:none;color:var(--muted2);font-size:11px;font-weight:700;width:62px;text-align:right}
+  .gg-prog{height:8px;border-radius:4px;background:var(--panel2);overflow:hidden;margin:9px 0 4px}
+  .gg-prog span{display:block;height:100%;border-radius:4px;background:var(--accent);transition:width .25s}
+  .gg-scans{display:flex;gap:7px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px;margin-bottom:10px}
+  .gg-scans::-webkit-scrollbar{display:none}
+  .gg-scans button{flex:none;background:var(--panel2);border:1px solid var(--line);border-radius:11px;
+    padding:7px 11px;font-size:11px;font-weight:700;color:var(--muted);cursor:pointer;text-align:left;line-height:1.35}
+  .gg-scans button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text)}
+  .gg-scans button b{display:block;font-weight:900;font-size:12px}
+  .gg-cost{background:rgba(234,179,8,.09);border:1px solid rgba(234,179,8,.3);border-radius:12px;
+    padding:10px 12px;font-size:12px;line-height:1.55;color:var(--muted);margin:10px 0}
+  .gg-cost b{color:var(--text)}
+  .gg-field{margin-bottom:10px}
+  .gg-field label{display:block;font-size:11px;font-weight:800;text-transform:uppercase;
+    letter-spacing:.05em;color:var(--muted2);margin-bottom:5px}
+  .gg-two{display:grid;grid-template-columns:1fr 1fr;gap:9px}
   /* generic grow input */
   .gr-input{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:12px;color:var(--text);padding:12px 13px;font-size:14.5px;font-family:inherit;outline:none}
   .gr-input:focus{border-color:var(--accent)}
@@ -1885,7 +1999,11 @@
   <div class="gr-body" id="grBody"></div>
   <nav class="gr-nav gr-nav-2" id="grNav">
     <button data-gv="overview" class="active"><span class="e" data-ic="activity" data-ic-size="20"></span>Overview</button>
+    <button data-gv="customers"><span class="e" data-ic="users" data-ic-size="20"></span>Customers</button>
+    <button data-gv="profit"><span class="e" data-ic="trending-up" data-ic-size="20"></span>Profit</button>
+    <button data-gv="pulse"><span class="e" data-ic="activity" data-ic-size="20"></span>Pulse</button>
     <button data-gv="analytics"><span class="e" data-ic="bar-chart" data-ic-size="20"></span>Website</button>
+    <button data-gv="map"><span class="e" data-ic="pin" data-ic-size="20"></span>Map</button>
   </nav>
 </div>
 
@@ -1927,7 +2045,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-21·booking+redesign";
+  var APP_BUILD="2026-07-27·deep-analytics";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4531,8 +4649,16 @@
   // Reuses the former Grow shell (#growApp / grBody / grNav).
   // ============================================================
   var GROW={view:"overview",wired:false,
-    web:{range:"7d",data:null,loading:false,err:"",settings:false,status:null,ai:"",aiRange:"",aiLoading:false,savingGa:false,savingCl:false}};
-  var GROW_VIEWS={overview:["Analytics","Business overview · Mikey's Mobile Detailing"],analytics:["Analytics","Your website, decoded — live"]};
+    web:{range:"7d",data:null,loading:false,err:"",settings:false,status:null,ai:"",aiRange:"",aiLoading:false,savingGa:false,savingCl:false},
+    map:{mode:"area",area:{size:9,radius:12,metric:"rev",months:12},
+         rank:{data:null,loading:false,err:"",setup:false,saving:false,
+               size:7,radius:5,keyword:"",scanning:false,done:0,total:0,live:null,viewId:""}}};
+  var GROW_VIEWS={overview:["Analytics","Business overview · Mikey's Mobile Detailing"],
+    customers:["Analytics","Who your customers are — and who's slipping away"],
+    profit:["Analytics","What each job is really worth"],
+    pulse:["Analytics","Where the month lands, and what just changed"],
+    analytics:["Analytics","Your website, decoded — live"],
+    map:["Analytics","Your map — where the work and the rankings are"]};
   function openAnalytics(){
     el("growApp").classList.add("show");
     if(!GROW.wired){growWire();GROW.wired=true;}
@@ -4545,7 +4671,7 @@
   function growWire(){
     el("grBack").onclick=closeAnalytics;
     Array.prototype.forEach.call(el("grNav").querySelectorAll("[data-gv]"),function(b){b.onclick=function(){vibrate(6);growSet(b.getAttribute("data-gv"))}});
-    el("grRefresh").onclick=function(){vibrate(6);if(GROW.view==="analytics"){growLoadWeb(true)}else{refreshThreads();fetchInsights();api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.entries=d.entries||[];MO.today=d.today;MO.week=d.week;MO.allTime=d.allTime}growRender()});}toast("Refreshed")};
+    el("grRefresh").onclick=function(){vibrate(6);if(GROW.view==="analytics"){growLoadWeb(true)}else if(GROW.view==="map"){if(GROW.map.mode==="rank")ggLoadRank(true);else growRender();}else if(IV[GROW.view]){ivLoad(GROW.view,true)}else{refreshThreads();fetchInsights();api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.entries=d.entries||[];MO.today=d.today;MO.week=d.week;MO.allTime=d.allTime}growRender()});}toast("Refreshed")};
   }
   function growRender(){
     var meta=GROW_VIEWS[GROW.view]||GROW_VIEWS.overview;
@@ -4553,6 +4679,10 @@
     el("grRefresh").style.visibility="visible";
     var b=el("grBody");
     if(GROW.view==="analytics")return growAnalytics(b);
+    if(GROW.view==="map")return growMap(b);
+    if(GROW.view==="customers")return ivRender(b,"customers");
+    if(GROW.view==="profit")return ivRender(b,"profit");
+    if(GROW.view==="pulse")return ivRender(b,"pulse");
     return growOverview(b);
   }
   // ---- Website analytics — the all-in-one command center ----
@@ -4883,6 +5013,888 @@
     growFallbackCopy(text,okMsg);
   }
   function growFallbackCopy(text,okMsg){try{var ta=document.createElement("textarea");ta.value=text;ta.style.position="fixed";ta.style.opacity="0";document.body.appendChild(ta);ta.select();document.execCommand("copy");document.body.removeChild(ta);toast(okMsg||"Copied")}catch(e){toast("Copy failed",{bad:true})}}
+
+  // ============================================================
+  // 🧠 Deep analytics — Customers, Profit, Pulse.
+  //
+  //   Customers  retention & lifetime value, the win-back radar (who is overdue
+  //              for a detail, ranked by what they're worth), a cohort retention
+  //              grid, and first-touch attribution by channel.
+  //   Profit     what each service and vehicle is really worth per hour, and
+  //              what it's worth AFTER overhead — the number that decides which
+  //              jobs are worth taking.
+  //   Pulse      month-end projection, booked pipeline, capacity, a 90-day trend
+  //              and automatic anomaly detection on the metrics that moved.
+  //
+  // Each view is one GET against its /api/intel/* endpoint, all computed live on
+  // the Worker from the ledger + conversation index + bookings.
+  // ============================================================
+  var IV={customers:{data:null,loading:false,err:"",tab:"value"},
+          profit:{data:null,loading:false,err:"",tab:"service"},
+          pulse:{data:null,loading:false,err:""}};
+  var IV_EP={customers:"/api/intel/customers",profit:"/api/intel/services",pulse:"/api/intel/pulse"};
+
+  function ivLoad(view,force){
+    var S=IV[view];if(!S||S.loading||(S.data&&!force))return;
+    S.loading=true;S.err="";
+    var jobs=[api(IV_EP[view])];
+    // Pulse pairs the recorded KPI history with the live forecast — one view,
+    // two endpoints, so the projection and the trend can't disagree.
+    if(view==="pulse")jobs.push(api("/api/intel/forecast"));
+    Promise.all(jobs).then(function(r){
+      S.loading=false;
+      var d=r[0];
+      if(d&&d.ok){S.data=d;if(view==="pulse")S.fc=(r[1]&&r[1].ok)?r[1]:null}
+      else S.err=(d&&d.error)||"Could not load";
+      if(GROW.view===view)growRender();
+    }).catch(function(){S.loading=false;S.err="Network error";if(GROW.view===view)growRender()});
+  }
+  function ivRender(box,view){
+    box=box||el("grBody");
+    var S=IV[view];
+    ivLoad(view);
+    if(S.loading&&!S.data){box.innerHTML='<div class="wa-hint" style="text-align:center;padding:30px 0"><span class="spin"></span> Crunching the numbers…</div>';return}
+    if(S.err&&!S.data){box.innerHTML='<div class="wa-ins bad"><span class="i-ic">'+ic("alert",15)+'</span><div>'+esc(S.err)+'</div></div>';return}
+    if(!S.data){box.innerHTML="";return}
+    if(view==="customers")return ivCustomers(box,S.data);
+    if(view==="profit")return ivProfit(box,S.data);
+    return ivPulse(box,S.data,S.fc);
+  }
+  // ---- shared bits ----
+  function ivMoney(n){var v=Math.round(+n||0);return "$"+v.toLocaleString()}
+  function ivMoneyK(n){var v=+n||0;return v>=10000?"$"+Math.round(v/1000)+"k":ivMoney(v)}
+  function ivDelta(p,higherIsBetter){
+    if(p==null||!isFinite(p))return"";
+    var up=p>0, good=higherIsBetter===false?!up:up;
+    var cls=Math.abs(p)<0.5?"flat":(good?"up":"dn");
+    return '<span class="iv-delta '+cls+'">'+(p>0?"+":"")+(Math.abs(p)>=10?Math.round(p):p.toFixed(1))+'%</span>';
+  }
+  function ivHeat(t){ // 0..1 → red→amber→green, for the cohort grid
+    if(t<=0)return"var(--panel2)";
+    if(t<.2)return"#7f1d1d"; if(t<.35)return"#b45309"; if(t<.5)return"#a16207";
+    if(t<.7)return"#4d7c0f"; return"#15803d";
+  }
+  function ivEmpty(msg){return '<div class="wa-ins info"><span class="i-ic">'+ic("info",15)+'</span><div>'+msg+'</div></div>'}
+  // Tiny inline bar chart (no library, matches the existing .wa-chart style).
+  function ivBars(vals,h,fmt){
+    var W=320,H=h||58,n=vals.length||1,max=Math.max.apply(null,vals.concat([1]));
+    var bw=W/n, s='<svg class="iv-chart" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" height="'+H+'">';
+    vals.forEach(function(v,i){
+      var bh=Math.max(v>0?1.5:0,(v/max)*(H-2));
+      s+='<rect x="'+(i*bw+bw*0.14).toFixed(2)+'" y="'+(H-bh).toFixed(2)+'" width="'+(bw*0.72).toFixed(2)+'" height="'+bh.toFixed(2)+'" rx="1" fill="var(--accent)" opacity="'+(v>0?.85:.25)+'"></rect>';
+    });
+    return s+'</svg>';
+  }
+
+  // ============================================================
+  // Customers — retention, lifetime value, win-back, attribution.
+  // ============================================================
+  function ivCustomers(box,d){
+    var t=d.totals||{}, S=IV.customers;
+    var h='';
+    if(!t.customers)return void(box.innerHTML=ivEmpty("No jobs with a phone number logged yet. Once you log jobs against a customer, this becomes your retention and lifetime-value report."));
+
+    h+='<div class="iv-hero"><div class="h-k">'+ic("users",13)+' Lifetime value per customer</div>'+
+      '<div class="h-v">'+ivMoney(t.ltv)+'</div>'+
+      '<div class="h-s">Across <b>'+t.customers+'</b> customers and '+ivMoney(t.revenue)+' of logged work. '+
+      'A repeat customer is worth <b>'+ivMoney(t.repeatLtv)+'</b> — '+
+      (t.oneTimeLtv>0?Math.round(t.repeatLtv/t.oneTimeLtv*10)/10+'× a one-timer':'far more than a one-timer')+'.</div></div>';
+
+    h+='<div class="iv-tiles">'+
+      '<div class="iv-tile'+(t.repeatRate>=40?" good":(t.repeatRate<20?" warn":""))+'"><div class="v">'+Math.round(t.repeatRate)+'%</div><div class="k">Come back</div></div>'+
+      '<div class="iv-tile"><div class="v">'+ivMoney(t.avgTicket)+'</div><div class="k">Avg ticket</div></div>'+
+      '<div class="iv-tile"><div class="v">'+(t.typicalGap||"—")+'<small style="font-size:12px">'+(t.typicalGap?"d":"")+'</small></div><div class="k">Typical gap</div></div>'+
+      '</div>';
+
+    if(t.top20Share>=50)
+      h+='<div class="wa-ins warn"><span class="i-ic">'+ic("alert",15)+'</span><div>Your top 20% of customers bring in <b>'+Math.round(t.top20Share)+'%</b> of revenue. That\'s a concentration risk — losing a couple of them would hurt. The win-back list below is where to spend your attention.</div></div>';
+
+    // ---- Win-back radar — the money feature on this screen ----
+    var wb=d.winback||[];
+    h+='<div class="an-lbl">'+ic("target",15)+'Win-back radar<span class="an-n">'+wb.length+'</span></div>';
+    if(!wb.length){
+      h+=ivEmpty("Nobody is overdue right now — everyone's within their normal gap between details.");
+    }else{
+      h+='<div class="iv-note">Customers past their own usual gap between details, ranked by what they\'re worth against how long they\'ve been quiet. Tap one to open the conversation.</div>';
+      wb.slice(0,12).forEach(function(w){
+        h+='<div class="iv-row tap'+(w.lapsed?" neg":"")+'" data-iv-phone="'+esc(w.phone)+'">'+
+          '<span class="n" style="background:'+(w.lapsed?"rgba(251,113,133,.18)":"var(--panel2)")+';color:'+(w.lapsed?"#fb7185":"var(--muted)")+'">'+ic(w.lapsed?"alert":"clock",13)+'</span>'+
+          '<span class="b"><span class="t">'+esc(w.name||w.phone)+'</span>'+
+          '<span class="s">'+w.daysSince+' days since last detail · usually every '+w.due+' · '+w.n+' visit'+(w.n===1?"":"s")+'</span></span>'+
+          '<span class="r"><span class="t">'+ivMoney(w.rev)+'</span><span class="s">'+(w.lapsed?"lapsed":"+"+w.over+"d over")+'</span></span></div>';
+      });
+    }
+
+    // ---- Attribution ----
+    var A=d.attribution||{}, srcs=A.sources||[];
+    var SRC_LABEL={quote:"Website quote form",booking:"Online booking",call:"Phone call",text:"Direct text",unknown:"Unknown / older"};
+    if(srcs.length){
+      h+='<div class="an-lbl">'+ic("megaphone",15)+'Where customers come from</div>';
+      var maxRev=Math.max.apply(null,srcs.map(function(s){return s.rev}).concat([1]));
+      srcs.forEach(function(s){
+        h+='<div class="iv-row"><span class="b"><span class="t">'+esc(SRC_LABEL[s.src]||s.src)+'</span>'+
+          '<span class="s">'+s.leads+' lead'+(s.leads===1?"":"s")+' · '+Math.round(s.winRate)+'% won · '+ivMoney(s.revPerLead)+'/lead</span>'+
+          '<span class="iv-mini"><span style="width:'+Math.round(s.rev/maxRev*100)+'%;background:'+(s.src==="unknown"?"var(--muted2)":"var(--accent)")+'"></span></span></span>'+
+          '<span class="r"><span class="t">'+ivMoneyK(s.rev)+'</span><span class="s">'+s.jobs+' job'+(s.jobs===1?"":"s")+'</span></span></div>';
+      });
+      if(A.marketingSpend>0)
+        h+='<div class="wa-panel" style="margin-top:4px"><div class="p-t">'+ic("dollar",14)+' Cost to win a customer</div>'+
+          '<div style="display:flex;align-items:baseline;gap:9px"><div style="font-size:27px;font-weight:900">'+ivMoney(A.cpa)+'</div>'+
+          '<div style="font-size:12px;color:var(--muted2);line-height:1.45">'+ivMoney(A.marketingSpend)+' of marketing over 12 months ÷ '+A.newCustomers12mo+' new customers</div></div>'+
+          '<div class="iv-note">Blended on purpose. Marketing is logged as one expense category, not per channel, so splitting this across the rows above would be a number the app invented.</div></div>';
+      if(srcs.some(function(s){return s.src==="unknown"}))
+        h+='<div class="iv-note">“Unknown” is conversations that started before the app began recording a first-touch source. New ones are tagged automatically from now on.</div>';
+    }
+
+    // ---- Cohort retention grid ----
+    var co=d.cohorts||[];
+    if(co.length){
+      var maxK=0;co.forEach(function(r){r.cells.forEach(function(c){if(c.k>maxK)maxK=c.k})});
+      maxK=Math.min(maxK,10);
+      h+='<div class="an-lbl">'+ic("calendar-days",15)+'Do they come back?</div>'+
+        '<div class="iv-note">Each row is everyone whose <b>first</b> job was that month. Reading right shows how many came back 1, 2, 3… months later.</div>'+
+        '<div class="iv-coh"><table><tr><th>First job</th><th>Cust</th>';
+      for(var k=0;k<=maxK;k++)h+='<th>'+(k===0?"M0":"+"+k)+'</th>';
+      h+='</tr>';
+      co.forEach(function(r){
+        h+='<tr><td class="lbl">'+esc(r.m)+'</td><td class="sz">'+r.size+'</td>';
+        for(var k=0;k<=maxK;k++){
+          var c=r.cells.filter(function(x){return x.k===k})[0];
+          if(!c)h+='<td class="nil"></td>';
+          else h+='<td style="background:'+ivHeat(c.pct/100)+'" title="'+c.n+' of '+r.size+' · '+ivMoney(c.rev)+'">'+Math.round(c.pct)+'</td>';
+        }
+        h+='</tr>';
+      });
+      h+='</table></div>';
+    }
+
+    // ---- Top customers ----
+    var top=d.top||[];
+    if(top.length){
+      h+='<div class="an-lbl">'+ic("trophy",15)+'Most valuable customers</div>';
+      top.slice(0,10).forEach(function(c,i){
+        h+='<div class="iv-row tap" data-iv-phone="'+esc(c.phone)+'"><span class="n">'+(i+1)+'</span>'+
+          '<span class="b"><span class="t">'+esc(c.name||c.phone)+'</span>'+
+          '<span class="s">'+c.n+' visit'+(c.n===1?"":"s")+' · '+ivMoney(c.avgTicket)+' avg · last '+c.daysSince+'d ago</span></span>'+
+          '<span class="r"><span class="t">'+ivMoney(c.rev)+'</span></span></div>';
+      });
+    }
+    if(t.anonJobs)h+='<div class="iv-note">'+t.anonJobs+' job'+(t.anonJobs===1?"":"s")+' had no phone number attached, so '+(t.anonJobs===1?"it isn't":"they aren't")+' counted in any of the per-customer numbers above.</div>';
+
+    box.innerHTML=h;
+    Array.prototype.forEach.call(box.querySelectorAll("[data-iv-phone]"),function(r){
+      r.onclick=function(){vibrate(6);closeAnalytics();openThread(r.getAttribute("data-iv-phone"))};
+    });
+  }
+
+  // ============================================================
+  // Profit — what a job is really worth, before and after overhead.
+  // ============================================================
+  function ivProfit(box,d){
+    var t=d.totals||{},S=IV.profit;
+    if(!t.jobs)return void(box.innerHTML=ivEmpty("No jobs logged yet. Log a few with the service, hours and material cost and this becomes your per-service profitability report."));
+    var h='';
+
+    h+='<div class="iv-hero"><div class="h-k">'+ic("trending-up",13)+' Net margin after everything</div>'+
+      '<div class="h-v">'+(t.netMargin==null?"—":Math.round(t.netMargin)+"%")+'</div>'+
+      '<div class="h-s">'+ivMoney(t.revenue)+' in, minus '+ivMoney(t.directCost)+' of materials &amp; helper pay and '+
+      ivMoney(t.overhead)+' of overheads, leaves <b>'+ivMoney(t.netProfit)+'</b>.</div></div>';
+
+    h+='<div class="iv-tiles">'+
+      '<div class="iv-tile"><div class="v">'+(t.blendedPerHour==null?"—":ivMoney(t.blendedPerHour))+'</div><div class="k">Per hour</div></div>'+
+      '<div class="iv-tile"><div class="v">'+ivMoney(t.overheadPerJob)+'</div><div class="k">Overhead / job</div></div>'+
+      '<div class="iv-tile"><div class="v">'+t.jobs+'</div><div class="k">Jobs</div></div>'+
+      '</div>';
+
+    h+='<div class="wa-ins info"><span class="i-ic">'+ic("info",15)+'</span><div>Every job carries about <b>'+ivMoney(t.overheadPerJob)+'</b> of overhead — fuel, supplies, insurance, phone, marketing — spread evenly across '+t.jobs+' jobs. A job has to clear that before it makes you anything.</div></div>';
+
+    var seg=[["service","By service"],["vehicle","By vehicle"]];
+    h+='<div class="wa-seg" style="margin:12px 0 10px">'+seg.map(function(x){
+      return '<button data-iv-t="'+x[0]+'" class="'+(S.tab===x[0]?"on":"")+'">'+x[1]+'</button>'}).join("")+'</div>';
+
+    var rows=(S.tab==="vehicle"?d.vehicles:d.services)||[];
+    if(!rows.length){
+      h+=ivEmpty(S.tab==="vehicle"?"No vehicle types recorded on jobs yet.":"No services recorded on jobs yet.");
+    }else{
+      var showTrue=S.tab==="service";
+      rows.forEach(function(r){
+        var tp=showTrue?r.trueProfitPerJob:null, bad=showTrue&&tp!=null&&tp<0;
+        h+='<div class="iv-row'+(bad?" neg":"")+'">'+
+          '<span class="b"><span class="t">'+esc(r.k)+(bad?' <span class="iv-delta dn" style="margin-left:4px">loses money</span>':'')+'</span>'+
+          '<span class="s">'+r.n+' job'+(r.n===1?"":"s")+' · '+ivMoney(r.avg)+' avg'+
+            (r.perHour!=null?' · '+ivMoney(r.perHour)+'/hr':' · hours not logged')+'</span></span>'+
+          '<span class="r"><span class="t">'+ivMoneyK(r.rev)+'</span>'+
+          (showTrue&&tp!=null?'<span class="s" style="color:'+(bad?"#fb7185":"var(--muted2)")+'">'+(tp<0?"-":"")+ivMoney(Math.abs(tp))+'/job net</span>':'<span class="s">'+(r.margin==null?"":Math.round(r.margin)+"% gross")+'</span>')+
+          '</span></div>';
+      });
+      if(showTrue){
+        var losers=rows.filter(function(r){return r.trueProfitPerJob!=null&&r.trueProfitPerJob<0});
+        if(losers.length)
+          h+='<div class="wa-ins bad"><span class="i-ic">'+ic("alert",15)+'</span><div><b>'+losers.map(function(r){return esc(r.k)}).join(", ")+'</b> '+(losers.length===1?"doesn't":"don't")+' cover '+(losers.length===1?"its":"their")+' share of overhead. '+(losers.length===1?"It":"They")+' can still be worth doing to fill a gap or win a customer who books bigger work later — but at today\'s price '+(losers.length===1?"it isn't":"they aren't")+' making you money on '+(losers.length===1?"its":"their")+' own.</div></div>';
+        var best=rows.filter(function(r){return r.perHour!=null}).sort(function(a,b){return b.perHour-a.perHour})[0];
+        if(best)h+='<div class="iv-note">Best hourly rate: <b>'+esc(best.k)+'</b> at '+ivMoney(best.perHour)+'/hr. Note that the best <i>hourly</i> job and the best <i>per-job</i> job are often not the same one — short cheap jobs can look great per hour and still lose to overhead.</div>';
+      }
+    }
+
+    // ---- quoted vs paid ----
+    var R=d.realization;
+    if(R){
+      h+='<div class="an-lbl">'+ic("receipt",15)+'Quoted vs actually paid</div>';
+      h+='<div class="wa-panel"><div style="display:flex;gap:14px;align-items:baseline;flex-wrap:wrap">'+
+        '<div><div style="font-size:24px;font-weight:900">'+(R.avgDelta>=0?"+":"")+ivMoney(R.avgDelta)+'</div>'+
+        '<div style="font-size:11px;color:var(--muted2);font-weight:700">avg per job vs quote</div></div>'+
+        '<div style="flex:1;min-width:130px;font-size:12px;color:var(--muted);line-height:1.6">'+
+        R.n+' booking'+(R.n===1?"":"s")+' matched to a logged job.<br>'+
+        '<b>'+R.over+'</b> came in above quote · <b>'+R.exact+'</b> on the nose · <b>'+R.under+'</b> below.</div></div>';
+      if(R.under>R.over)
+        h+='<div class="iv-note" style="color:var(--gold)">You finish below your quote more often than above it. Either the quotes run high, or work is getting discounted at the door.</div>';
+      if(R.worst&&R.worst.length&&R.worst[0].delta<-1){
+        h+='<div class="iv-note">Biggest gaps between quote and payment:</div>';
+        R.worst.filter(function(p){return p.delta<-1}).slice(0,4).forEach(function(p){
+          h+='<div class="iv-row" style="margin-bottom:5px"><span class="b"><span class="t">'+esc(p.name||"—")+'</span>'+
+            '<span class="s">'+esc(p.service||"")+' · '+esc(p.date||"")+'</span></span>'+
+            '<span class="r"><span class="t" style="color:#fb7185">'+ivMoney(p.delta)+'</span>'+
+            '<span class="s">'+ivMoney(p.quoted)+' → '+ivMoney(p.paid)+'</span></span></div>';
+        });
+      }
+      h+='</div>';
+    }
+    if(t.untagged)h+='<div class="iv-note">'+t.untagged+' job'+(t.untagged===1?"":"s")+' had no service recorded, so '+(t.untagged===1?"it's":"they're")+' missing from the service breakdown (but still in the totals).</div>';
+
+    box.innerHTML=h;
+    Array.prototype.forEach.call(box.querySelectorAll("[data-iv-t]"),function(b){
+      b.onclick=function(){vibrate(6);IV.profit.tab=b.getAttribute("data-iv-t");growRender()};
+    });
+  }
+
+  // ============================================================
+  // Pulse — where the month lands + what just moved.
+  // ============================================================
+  function ivPulse(box,d,fc){
+    var h='';
+    // ---- forecast ----
+    if(fc){
+      var p=fc.projection||{},m=fc.mtd||{};
+      var pctThrough=fc.daysInMonth?Math.round(fc.dayOfMonth/fc.daysInMonth*100):0;
+      var pctEarned=p.revenue?Math.round(m.revenue/p.revenue*100):0;
+      h+='<div class="iv-hero"><div class="h-k">'+ic("target",13)+' Projected for '+esc(fc.month)+'</div>'+
+        '<div class="h-v">'+ivMoney(p.revenue)+ivDelta(p.vsLastMonth,true)+'</div>'+
+        '<div class="h-s"><b>'+ivMoney(m.revenue)+'</b> banked with <b>'+fc.daysLeft+'</b> day'+(fc.daysLeft===1?"":"s")+' to go.</div>'+
+        '<div class="iv-bar"><span style="width:'+Math.min(100,pctEarned)+'%"></span><i style="left:'+Math.min(99,pctThrough)+'%"></i></div>'+
+        '<div class="h-s" style="font-size:11px">The marker is how far through the month you are — bar ahead of it means you\'re running hot.</div></div>';
+
+      h+='<div class="iv-tiles">'+
+        '<div class="iv-tile'+(fc.pace.delta>0?" good":(fc.pace.delta<0?" warn":""))+'"><div class="v">'+(fc.pace.delta==null?"—":(fc.pace.delta>0?"+":"")+Math.round(fc.pace.delta)+"%")+'</div><div class="k">vs last month<br>same day</div></div>'+
+        '<div class="iv-tile"><div class="v">'+ivMoneyK(fc.pipeline.total)+'</div><div class="k">Booked ahead<br>'+fc.pipeline.count+' appts</div></div>'+
+        '<div class="iv-tile'+(m.utilization>=70?" good":(m.utilization<35?" warn":""))+'"><div class="v">'+Math.round(m.utilization)+'%</div><div class="k">Capacity used</div></div>'+
+        '</div>';
+      h+='<div class="iv-note">Capacity assumes an 8-hour working day on the days you actually worked ('+m.workedDays+' so far, '+ivMoney(m.perWorkedDay)+' per day). It only counts jobs where you logged hours.</div>';
+    }
+
+    // ---- anomalies ----
+    var an=d.anomalies||[];
+    h+='<div class="an-lbl">'+ic("zap",15)+'What just changed<span class="an-n">'+an.length+'</span></div>';
+    if(!an.length){
+      h+=ivEmpty("Nothing has moved enough in the last 7 days to be worth flagging. This only fires when a metric shifts more than 20% <i>and</i> the move is big relative to its normal week-to-week noise, so it stays quiet unless something real happened.");
+    }else{
+      an.forEach(function(a){
+        h+='<div class="iv-an '+(a.good?"good":"bad")+'"><span class="ic">'+ic(a.good?"trending-up":"trending-down",16)+'</span>'+
+          '<div><div class="t">'+esc(a.label)+' '+(a.change>0?"up":"down")+' '+Math.abs(Math.round(a.change))+'%</div>'+
+          '<div class="s">'+esc(a.hint)+' Last 7 days averaged <b>'+(a.metric==="revenue"?ivMoney(a.recent):Math.round(a.recent*10)/10)+'</b> a day against <b>'+(a.metric==="revenue"?ivMoney(a.base):Math.round(a.base*10)/10)+'</b> before.</div></div></div>';
+      });
+    }
+
+    // ---- 90-day trend ----
+    var s=d.series||[];
+    if(s.length){
+      var revs=s.map(function(x){return x.rev});
+      var wk=d.week||{};
+      h+='<div class="an-lbl">'+ic("bar-chart",15)+'Last 90 days</div>'+
+        '<div class="wa-panel"><div class="p-t">Daily revenue<small>'+ivMoney(wk.revenue)+' this week '+ivDelta(wk.prevRevenue?((wk.revenue-wk.prevRevenue)/wk.prevRevenue*100):null,true)+'</small></div>'+
+        ivBars(revs,62)+
+        '<div class="iv-xlab"><span>'+esc(s[0].d.slice(5))+'</span><span>'+esc(s[Math.floor(s.length/2)].d.slice(5))+'</span><span>'+esc(s[s.length-1].d.slice(5))+'</span></div></div>';
+    }
+
+    // ---- weekday profile ----
+    if(fc&&fc.dow){
+      var DOW=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+      var mx=Math.max.apply(null,fc.dow.map(function(x){return x.avg}).concat([1]));
+      var bestD=fc.dow.slice().sort(function(a,b){return b.avg-a.avg})[0];
+      h+='<div class="wa-panel"><div class="p-t">'+ic("calendar-days",14)+' Which days earn<small>90-day average</small></div>'+
+        '<div class="iv-dow">'+fc.dow.map(function(x){
+          return '<div class="col"><div class="slot"><div class="bar" style="height:'+Math.max(3,Math.round(x.avg/mx*100))+'%;opacity:'+(x.avg>0?1:.25)+'"></div></div><div class="lb">'+DOW[x.d][0]+'</div></div>'}).join("")+
+        '</div><div class="iv-note"><b>'+DOW[bestD.d]+'</b> is your strongest day at '+ivMoney(bestD.avg)+' on average. The month-end projection above weights the days you have left by this profile rather than using a flat daily average.</div></div>';
+    }
+
+    // ---- month history ----
+    if(fc&&fc.priorMonths&&fc.priorMonths.length){
+      var pm=fc.priorMonths.slice().reverse();
+      h+='<div class="wa-panel"><div class="p-t">'+ic("activity",14)+' Month by month<small>avg '+ivMoney(fc.avgPrior)+'</small></div>'+
+        ivBars(pm.map(function(x){return x.rev}),56)+
+        '<div class="iv-xlab"><span>'+esc(pm[0].m)+'</span><span>'+esc(pm[pm.length-1].m)+'</span></div></div>';
+    }
+
+    if(d.recorded<14)
+      h+='<div class="iv-note">Revenue history is rebuilt from your ledger so it\'s complete from day one. The lead-flow metrics ('+esc("open leads, waiting on you")+') are recorded once a day going forward — '+d.recorded+' day'+(d.recorded===1?"":"s")+' captured so far, so those trends fill in over the next couple of weeks.</div>';
+
+    box.innerHTML=h;
+  }
+
+  // ============================================================
+  // 📍 Analytics → Map — two geo grids over the service area.
+  //
+  //   Service area  the money map. Every job you've logged gets placed by its
+  //                 city, then a grid of catchment cells is scored by revenue
+  //                 (or job count) so you can see where the work actually is
+  //                 and where the white space is. Free — your own data, no API.
+  //
+  //   Map rank      the Local Falcon idea. A grid of points, each asking Google
+  //                 "who does detailing near here?", coloured by where the GBP
+  //                 listing landed. Needs a Google Places API key (setup panel);
+  //                 stays dark until one is added. See the module comment in
+  //                 src/index.js for the cost + accuracy caveats.
+  //
+  // The map itself is raw OSM tiles as <img> elements — no Leaflet, no CDN, in
+  // line with this app having zero external script dependencies.
+  // ============================================================
+
+  // ---- Web Mercator ↔ pixels. Standard slippy-map math, 256px tiles. ----
+  function ggLon2x(lon,z){return (lon+180)/360*Math.pow(2,z)}
+  function ggLat2y(lat,z){var r=lat*Math.PI/180;return (1-Math.log(Math.tan(r)+1/Math.cos(r))/Math.PI)/2*Math.pow(2,z)}
+  var GG_MI_LAT=69.055; // statute miles per degree of latitude
+  function ggMiPerLng(lat){return GG_MI_LAT*Math.cos(lat*Math.PI/180)}
+  function ggDist(aLat,aLng,bLat,bLng){ // miles, equirectangular — plenty at county scale
+    var dy=(aLat-bLat)*GG_MI_LAT, dx=(aLng-bLng)*ggMiPerLng((aLat+bLat)/2);
+    return Math.sqrt(dy*dy+dx*dx);
+  }
+  // Grid of size×size points centred on (lat,lng), spanning 2×radius miles.
+  function ggGrid(lat,lng,size,radiusMi){
+    var pts=[],n=size,half=(n-1)/2,step=n>1?(radiusMi*2)/(n-1):0,mpl=ggMiPerLng(lat);
+    for(var r=0;r<n;r++)for(var c=0;c<n;c++){
+      pts.push({row:r,col:c,
+        lat:lat+((r-half)*step)/GG_MI_LAT*-1,   // row 0 = north
+        lng:lng+((c-half)*step)/(mpl||1)});
+    }
+    return pts;
+  }
+  // Pick the zoom that fits a span of `miles` into `px` pixels.
+  function ggFitZoom(lat,miles,px){
+    for(var z=15;z>=6;z--){
+      var mpp=(156543.03392*Math.cos(lat*Math.PI/180)/Math.pow(2,z))/1609.344; // miles/pixel
+      if(miles/mpp<=px)return z;
+    }
+    return 6;
+  }
+
+  // Render the map: OSM tile layer + absolutely-positioned pins.
+  // `pins` = [{lat,lng,label,color,size}]. Everything is inline-styled so a
+  // single innerHTML swap redraws the whole thing.
+  function ggMapHTML(centerLat,centerLng,spanMi,pins,heightPx){
+    var W=Math.max(240,Math.min(560,(el("grBody")||{}).clientWidth-32||330)),H=heightPx||W;
+    var z=ggFitZoom(centerLat,spanMi*1.14,Math.min(W,H));
+    var cx=ggLon2x(centerLng,z)*256, cy=ggLat2y(centerLat,z)*256;
+    var left=cx-W/2, top=cy-H/2;
+    var t0x=Math.floor(left/256), t1x=Math.floor((left+W)/256);
+    var t0y=Math.floor(top/256),  t1y=Math.floor((top+H)/256);
+    var max=Math.pow(2,z), h='<div class="gg-map" style="height:'+H+'px"><div class="gg-tiles">';
+    for(var tx=t0x;tx<=t1x;tx++)for(var ty=t0y;ty<=t1y;ty++){
+      if(ty<0||ty>=max)continue;
+      var wx=((tx%max)+max)%max; // wrap east/west so the layer never tears
+      h+='<img loading="lazy" alt="" src="https://tile.openstreetmap.org/'+z+'/'+wx+'/'+ty+'.png"'+
+         ' style="left:'+(tx*256-left)+'px;top:'+(ty*256-top)+'px" onerror="this.style.display=\'none\'">';
+    }
+    h+='</div><div class="gg-pins">';
+    pins.forEach(function(p){
+      var px=ggLon2x(p.lng,z)*256-left, py=ggLat2y(p.lat,z)*256-top;
+      if(px<-30||py<-30||px>W+30||py>H+30)return;
+      var d=p.size||26;
+      h+='<div class="gg-pin'+(p.dim?" dim":"")+'" style="left:'+px.toFixed(1)+'px;top:'+py.toFixed(1)+'px;'+
+         'width:'+d+'px;height:'+d+'px;background:'+p.color+';font-size:'+Math.max(8,Math.round(d*0.42))+'px"'+
+         (p.title?' title="'+esc(p.title)+'"':'')+'>'+esc(p.label==null?"":String(p.label))+'</div>';
+    });
+    h+='</div><div class="gg-attr">© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a></div></div>';
+    return h;
+  }
+
+  // ---- Where cities are. No geocoding API: a hand-built gazetteer of the towns
+  // Mikey actually works in (Snohomish County + the north-King edges), plus the
+  // ZIPs that show up in addresses. Anything unmatched is reported as "unmapped"
+  // rather than silently dropped, so the map never quietly lies about coverage.
+  var GG_PLACES={
+    snohomish:[47.9129,-122.0982], everett:[47.9790,-122.2021], monroe:[47.8554,-121.9707],
+    "lake stevens":[48.0151,-122.0637], marysville:[48.0518,-122.1771], "mill creek":[47.8601,-122.2043],
+    bothell:[47.7601,-122.2054], lynnwood:[47.8279,-122.3054], edmonds:[47.8107,-122.3774],
+    mukilteo:[47.9445,-122.3046], arlington:[48.1987,-122.1251], "granite falls":[48.0834,-121.9682],
+    stanwood:[48.2415,-122.3421], sultan:[47.8626,-121.8162], "gold bar":[47.8562,-121.6968],
+    startup:[47.8676,-121.7454], index:[47.8201,-121.5551], darrington:[48.2554,-121.6021],
+    duvall:[47.7423,-121.9857], carnation:[47.6473,-121.9143], woodinville:[47.7543,-122.1635],
+    redmond:[47.6740,-122.1215], kirkland:[47.6815,-122.2087], bellevue:[47.6101,-122.2015],
+    seattle:[47.6062,-122.3321], shoreline:[47.7557,-122.3415], "mountlake terrace":[47.7887,-122.3087],
+    brier:[47.7876,-122.2743], kenmore:[47.7573,-122.2440], "lake forest park":[47.7570,-122.2807],
+    "maltby":[47.8032,-122.1043], "clearview":[47.8459,-122.1099], "machias":[47.9704,-122.0454],
+    "silver firs":[47.8637,-122.1401], "cathcart":[47.8687,-122.1218], "tulalip":[48.0651,-122.2915],
+    "smokey point":[48.1526,-122.1832], "north bend":[47.4954,-121.7867], "snoqualmie":[47.5287,-121.8254],
+    "bellingham":[48.7519,-122.4787], "mount vernon":[48.4212,-122.3341], "burlington":[48.4757,-122.3254],
+    "sedro-woolley":[48.5040,-122.2362], "camano island":[48.1868,-122.5115], "langley":[48.0398,-122.4054],
+    "freeland":[48.0104,-122.5265], "oak harbor":[48.2932,-122.6432], "coupeville":[48.2201,-122.6857],
+    "bremerton":[47.5673,-122.6329], "kingston":[47.7973,-122.4979], "poulsbo":[47.7362,-122.6465],
+    "issaquah":[47.5301,-122.0326], "sammamish":[47.6163,-122.0356], "renton":[47.4829,-122.2171],
+    "kent":[47.3809,-122.2348], "auburn":[47.3073,-122.2285], "federal way":[47.3223,-122.3126],
+    "tacoma":[47.2529,-122.4443], "puyallup":[47.1854,-122.2929], "lynden":[48.9465,-122.4521],
+    "anacortes":[48.5126,-122.6127], "la conner":[48.3924,-122.4949], "conway":[48.3418,-122.3468],
+    "silvana":[48.2001,-122.2568], "warm beach":[48.1712,-122.3623], "lake goodwin":[48.1479,-122.2879],
+    "getchell":[48.0754,-122.0793], "hat island":[47.9868,-122.3229], "everett mall":[47.9137,-122.2179],
+    "seattle hill":[47.8735,-122.1560], "eastmont":[47.8896,-122.1970], "bunk foss":[47.9457,-122.0110]
+  };
+  var GG_ZIPS={
+    "98290":"snohomish","98296":"snohomish","98291":"snohomish",
+    "98201":"everett","98203":"everett","98204":"everett","98205":"everett","98206":"everett","98207":"everett","98208":"everett","98213":"everett",
+    "98272":"monroe","98258":"lake stevens","98270":"marysville","98271":"marysville",
+    "98012":"mill creek","98082":"mill creek","98011":"bothell","98021":"bothell","98041":"bothell",
+    "98036":"lynnwood","98037":"lynnwood","98046":"lynnwood","98020":"edmonds","98026":"edmonds",
+    "98275":"mukilteo","98223":"arlington","98252":"granite falls","98292":"stanwood",
+    "98294":"sultan","98251":"gold bar","98293":"startup","98256":"index","98241":"darrington",
+    "98019":"duvall","98014":"carnation","98072":"woodinville","98077":"woodinville",
+    "98052":"redmond","98053":"redmond","98033":"kirkland","98034":"kirkland","98083":"kirkland",
+    "98004":"bellevue","98005":"bellevue","98006":"bellevue","98007":"bellevue","98008":"bellevue",
+    "98043":"mountlake terrace","98028":"kenmore","98155":"shoreline","98177":"shoreline","98133":"shoreline",
+    "98296x":"maltby","98087":"lynnwood","98259":"lake stevens","98260":"langley","98249":"freeland",
+    "98277":"oak harbor","98239":"coupeville","98282":"camano island","98274":"mount vernon","98273":"mount vernon",
+    "98233":"burlington","98284":"sedro-woolley","98221":"anacortes","98257":"la conner","98238":"conway",
+    "98287":"silvana","98029":"issaquah","98027":"issaquah","98074":"sammamish","98075":"sammamish"
+  };
+  // Best-effort "city" / "address" string → [lat,lng]. Tries an exact city hit,
+  // then any ZIP in the string, then a loose contains-match.
+  function ggLocate(raw){
+    var s=String(raw||"").toLowerCase().trim();
+    if(!s)return null;
+    s=s.replace(/\bwa\b|\bwashington\b/g,"").replace(/[.,]/g," ").replace(/\s+/g," ").trim();
+    if(GG_PLACES[s])return GG_PLACES[s];
+    var zip=s.match(/\b98\d{3}\b/);
+    if(zip&&GG_ZIPS[zip[0]]&&GG_PLACES[GG_ZIPS[zip[0]]])return GG_PLACES[GG_ZIPS[zip[0]]];
+    var noZip=s.replace(/\b\d{5}(-\d{4})?\b/g,"").trim();
+    if(GG_PLACES[noZip])return GG_PLACES[noZip];
+    var keys=Object.keys(GG_PLACES);
+    for(var i=0;i<keys.length;i++){if(noZip&&noZip.indexOf(keys[i])>=0)return GG_PLACES[keys[i]]}
+    return null;
+  }
+  function ggPlaceName(raw){
+    var s=String(raw||"").toLowerCase().replace(/\bwa\b|\bwashington\b/g,"").replace(/[.,]/g," ").replace(/\s+/g," ").trim();
+    var zip=s.match(/\b98\d{3}\b/);
+    if(GG_PLACES[s])return s;
+    if(zip&&GG_ZIPS[zip[0]])return GG_ZIPS[zip[0]];
+    var noZip=s.replace(/\b\d{5}(-\d{4})?\b/g,"").trim();
+    if(GG_PLACES[noZip])return noZip;
+    var keys=Object.keys(GG_PLACES);
+    for(var i=0;i<keys.length;i++){if(noZip&&noZip.indexOf(keys[i])>=0)return keys[i]}
+    return "";
+  }
+  function ggTitle(s){return String(s||"").replace(/\b[a-z]/g,function(c){return c.toUpperCase()})}
+
+  // ---- colour ramps ----
+  // Rank ramp: green top-3 → red 20+, matching how every local-SEO tool reads.
+  function ggRankColor(r){
+    if(r<=3)return"#15803d"; if(r<=5)return"#4d9e2a"; if(r<=7)return"#84a814";
+    if(r<=10)return"#d4a017"; if(r<=13)return"#e07b12"; if(r<=16)return"#dd5c1c";
+    if(r<20)return"#cf3f30"; return"#b91c1c";
+  }
+  function ggRankLabel(r){return r>=21?"20+":String(r)}
+  // Heat ramp for the service-area grid: dim = no work here (an opportunity, not
+  // a failure), then amber → green as revenue density climbs.
+  function ggHeatColor(t){
+    if(t<=0)return"rgba(120,124,135,.45)";
+    if(t<.2)return"#8a6d1f"; if(t<.4)return"#c08a12"; if(t<.6)return"#b0a017";
+    if(t<.8)return"#6f9c22"; return"#15803d";
+  }
+
+  function growMap(box){
+    box=box||el("grBody");
+    var M=GROW.map;
+    var h='<div class="wa-top"><div class="wa-seg">'+
+      '<button data-gm="area" class="'+(M.mode==="area"?"on":"")+'">Service area</button>'+
+      '<button data-gm="rank" class="'+(M.mode==="rank"?"on":"")+'">Map rank</button>'+
+      '</div>'+(M.mode==="rank"?'<button class="wa-gear" id="ggGear" aria-label="Map rank setup">'+ic("settings",17)+'</button>':'')+'</div>';
+    box.innerHTML=h+'<div id="ggBody"></div>';
+    Array.prototype.forEach.call(box.querySelectorAll("[data-gm]"),function(b){
+      b.onclick=function(){vibrate(6);M.mode=b.getAttribute("data-gm");growRender()};
+    });
+    var g=el("ggGear");if(g)g.onclick=function(){vibrate(6);M.rank.setup=!M.rank.setup;ggRenderRank()};
+    if(M.mode==="rank"){ggLoadRank();ggRenderRank();}else{ggRenderArea();}
+  }
+
+  // ============================================================
+  // Service-area heat grid — your own jobs, mapped. No API, no cost.
+  // ============================================================
+  // Pull every logged job (and, optionally, booking) that we can place on the
+  // map. Money entries carry a free-text `city`; bookings carry city + address.
+  function ggJobPoints(){
+    var months=GROW.map.area.months, cutoff=0;
+    if(months>0){var d=new Date();d.setMonth(d.getMonth()-months);cutoff=d.getTime();}
+    var pts=[],unmapped=0,total=0;
+    (MO.entries||[]).forEach(function(e){
+      if(e.type!=="job")return;
+      var ts=e.ts||(e.date?Date.parse(e.date+"T12:00:00"):0);
+      if(cutoff&&ts&&ts<cutoff)return;
+      total++;
+      var ll=ggLocate(e.city);
+      if(!ll){unmapped++;return}
+      pts.push({lat:ll[0],lng:ll[1],amount:+e.amount||0,place:ggPlaceName(e.city)||String(e.city||"").toLowerCase(),ts:ts});
+    });
+    return {pts:pts,unmapped:unmapped,total:total};
+  }
+  function ggRenderArea(){
+    var box=el("ggBody");if(!box)return;
+    var A=GROW.map.area, J=ggJobPoints();
+    var h='<div class="wa-seg" style="margin-bottom:10px">'+
+      '<button data-ga-m="rev" class="'+(A.metric==="rev"?"on":"")+'">Revenue</button>'+
+      '<button data-ga-m="jobs" class="'+(A.metric==="jobs"?"on":"")+'">Jobs</button>'+
+      '<button data-ga-t="12" class="'+(A.months===12?"on":"")+'">12 mo</button>'+
+      '<button data-ga-t="3" class="'+(A.months===3?"on":"")+'">3 mo</button>'+
+      '<button data-ga-t="0" class="'+(A.months===0?"on":"")+'">All time</button>'+
+      '</div>';
+
+    if(!J.pts.length){
+      h+='<div class="wa-ins info"><span class="i-ic">'+ic("pin",15)+'</span><div>'+
+        (J.total?('Found <b>'+J.total+'</b> job'+(J.total===1?"":"s")+' in this window, but none had a city we could place on the map. Add a city (or ZIP) when you log a job and they\'ll show up here.')
+                :'No jobs logged in this window yet. Log a job with a city and the map fills in.')+
+        '</div></div>';
+      box.innerHTML=h; ggWireArea(box); return;
+    }
+
+    // Centre on the revenue-weighted centroid so the grid follows the work.
+    var sw=0,clat=0,clng=0;
+    J.pts.forEach(function(p){var w=(A.metric==="rev"?p.amount:1)||1;sw+=w;clat+=p.lat*w;clng+=p.lng*w});
+    clat/=sw||1; clng/=sw||1;
+
+    // Auto-size the grid span to cover the work. Deliberately the 90th percentile
+    // distance, NOT the max — one job 30 miles out would otherwise zoom the whole
+    // map out until the real cluster is an unreadable blob in the middle. Jobs
+    // beyond the view are still counted everywhere else, and called out below.
+    var dists=J.pts.map(function(p){return ggDist(clat,clng,p.lat,p.lng)}).sort(function(a,b){return a-b});
+    var p90=dists[Math.min(dists.length-1,Math.floor(dists.length*0.9))]||0;
+    var radius=Math.max(4,Math.min(40,Math.ceil(p90*1.15)));
+    var outside=dists.filter(function(d){return d>radius*Math.SQRT2}).length;
+    A.radius=radius;
+
+    var size=A.size, grid=ggGrid(clat,clng,size,radius);
+    var step=size>1?(radius*2)/(size-1):radius;
+    var band=Math.max(1.6,step*0.85);          // catchment radius per cell
+    var sigma=band, twoS2=2*sigma*sigma;
+    var maxV=0;
+    grid.forEach(function(c){
+      var v=0,n=0;
+      J.pts.forEach(function(p){
+        var d=ggDist(c.lat,c.lng,p.lat,p.lng);
+        if(d>band*2)return;
+        var w=Math.exp(-(d*d)/twoS2);           // gaussian falloff
+        v+=(A.metric==="rev"?p.amount:1)*w;
+        if(d<=band)n++;
+      });
+      c.val=v; c.n=n; if(v>maxV)maxV=v;
+    });
+
+    // A cell counts as "live" once it carries at least 2% of the peak density.
+    // Colour, size, label and the Reach stat all key off that one predicate, so
+    // the map can't show a hot colour with no number on it.
+    grid.forEach(function(c){c.t=maxV>0?c.val/maxV:0;c.live=c.t>=0.02});
+    var pins=grid.map(function(c){
+      return {lat:c.lat,lng:c.lng,color:ggHeatColor(c.live?c.t:0),
+        label:c.live?(A.metric==="rev"?(c.val>=1000?Math.round(c.val/1000)+"k":Math.round(c.val)):Math.max(1,Math.round(c.val))):"",
+        size:c.live?26:16, dim:!c.live,
+        title:(c.n||0)+" job"+(c.n===1?"":"s")+" within "+band.toFixed(1)+" mi"};
+    });
+    h+=ggMapHTML(clat,clng,radius*2,pins);
+    h+='<div class="gg-legend"><span>'+(A.metric==="rev"?"Revenue density":"Job density")+':</span>'+
+      '<i><span class="gg-sw" style="background:rgba(120,124,135,.45)"></span>none</i>'+
+      '<i><span class="gg-sw" style="background:#c08a12"></span>low</i>'+
+      '<i><span class="gg-sw" style="background:#6f9c22"></span>good</i>'+
+      '<i><span class="gg-sw" style="background:#15803d"></span>hottest</i></div>';
+
+    // Headline numbers — the service-area answer to ARP / ATRP / SoLV.
+    var rev=0;J.pts.forEach(function(p){rev+=p.amount});
+    var covered=grid.filter(function(c){return c.live}).length;
+    var reach=Math.round(covered/grid.length*100);
+    // Core radius: how far out you have to go to capture 80% of the revenue.
+    var byDist=J.pts.slice().sort(function(a,b){return ggDist(clat,clng,a.lat,a.lng)-ggDist(clat,clng,b.lat,b.lng)});
+    var acc=0,core=0,target=rev*0.8;
+    for(var i=0;i<byDist.length;i++){acc+=byDist[i].amount;if(acc>=target){core=ggDist(clat,clng,byDist[i].lat,byDist[i].lng);break}}
+    h+='<div class="gg-stats">'+
+      '<div class="gg-stat"><div class="v">$'+Math.round(rev).toLocaleString()+'</div><div class="k">Mapped</div><div class="h">'+J.pts.length+' job'+(J.pts.length===1?"":"s")+'</div></div>'+
+      '<div class="gg-stat"><div class="v">'+reach+'%</div><div class="k">Reach</div><div class="h">'+covered+'/'+grid.length+' cells</div></div>'+
+      '<div class="gg-stat"><div class="v">'+core.toFixed(1)+'<small style="font-size:13px"> mi</small></div><div class="k">Core</div><div class="h">80% of revenue</div></div>'+
+      '</div>';
+    h+='<div class="gg-meta">'+size+'×'+size+' grid · <b>'+(radius*2)+' mi</b> across · centred on your revenue centre of gravity'+
+      (outside?'<br>'+outside+' job'+(outside===1?"":"s")+' sit'+(outside===1?"s":"")+' outside this view — still counted in the totals below.':'')+
+      (J.unmapped?'<br><span style="color:var(--gold)">'+J.unmapped+' job'+(J.unmapped===1?"":"s")+' had no recognisable city and '+(J.unmapped===1?"is":"are")+' not on this map.</span>':'')+'</div>';
+
+    // Town leaderboard.
+    var byPlace={};
+    J.pts.forEach(function(p){var k=p.place||"unknown";(byPlace[k]=byPlace[k]||{n:0,rev:0}).n++;byPlace[k].rev+=p.amount});
+    var rows=Object.keys(byPlace).map(function(k){return {k:k,n:byPlace[k].n,rev:byPlace[k].rev}})
+      .sort(function(a,b){return A.metric==="rev"?b.rev-a.rev:b.n-a.n});
+    var top=rows[0]?(A.metric==="rev"?rows[0].rev:rows[0].n):1;
+    h+='<div class="an-lbl">'+ic("trophy",15)+'Where the work is<span class="an-n">'+rows.length+'</span></div><div class="gg-rows">';
+    rows.slice(0,12).forEach(function(r,i){
+      var v=A.metric==="rev"?r.rev:r.n, t=top>0?v/top:0;
+      h+='<div class="gg-row"><span class="r-n" style="background:'+ggHeatColor(t)+'">'+(i+1)+'</span>'+
+        '<span class="r-k">'+esc(ggTitle(r.k))+'</span>'+
+        '<span class="r-v">'+(A.metric==="rev"?"$"+Math.round(r.rev).toLocaleString():r.n+" job"+(r.n===1?"":"s"))+'</span>'+
+        '<span class="r-s">'+(A.metric==="rev"?r.n+" job"+(r.n===1?"":"s"):"$"+Math.round(r.rev).toLocaleString())+'</span></div>';
+    });
+    h+='</div>';
+    h+='<div class="wa-hint" style="margin-top:10px">Cells are scored by how much revenue sits within about '+band.toFixed(1)+' mi of them, so the colour is a smooth heat surface rather than one dot per town. Grey cells are where you have no jobs — that\'s the white space to go after.</div>';
+    box.innerHTML=h;
+    ggWireArea(box);
+  }
+  function ggWireArea(box){
+    Array.prototype.forEach.call(box.querySelectorAll("[data-ga-m]"),function(b){
+      b.onclick=function(){vibrate(6);GROW.map.area.metric=b.getAttribute("data-ga-m");ggRenderArea()};
+    });
+    Array.prototype.forEach.call(box.querySelectorAll("[data-ga-t]"),function(b){
+      b.onclick=function(){vibrate(6);GROW.map.area.months=+b.getAttribute("data-ga-t");ggRenderArea()};
+    });
+  }
+
+  // ============================================================
+  // Map rank grid — Google Maps position, point by point.
+  // ============================================================
+  function ggLoadRank(force){
+    var R=GROW.map.rank;
+    if(R.loading||(R.data&&!force))return;
+    R.loading=true;R.err="";
+    api("/api/geogrid").then(function(d){
+      R.loading=false;
+      if(d&&d.ok){R.data=d;if(!R.keyword)R.keyword=(d.config&&d.config.keyword)||"mobile detailing";}
+      else R.err=(d&&d.error)||"Could not load";
+      if(GROW.view==="map"&&GROW.map.mode==="rank")ggRenderRank();
+    }).catch(function(){R.loading=false;R.err="Network error";if(GROW.view==="map"&&GROW.map.mode==="rank")ggRenderRank()});
+  }
+  function ggRenderRank(){
+    var box=el("ggBody");if(!box)return;
+    var R=GROW.map.rank, d=R.data;
+    if(R.loading&&!d){box.innerHTML='<div class="wa-hint" style="text-align:center;padding:26px 0"><span class="spin"></span> Loading…</div>';return}
+    if(R.err&&!d){box.innerHTML='<div class="wa-ins bad"><span class="i-ic">'+ic("alert",15)+'</span><div>'+esc(R.err)+'</div></div>';return}
+    if(!d){box.innerHTML="";return}
+
+    var h="";
+    if(!d.connected||R.setup){h+=ggSetupHTML(d);box.innerHTML=h;ggWireSetup(box);if(!d.connected)return;}
+
+    // Live scan in progress.
+    if(R.scanning){
+      var pct=R.total?Math.round(R.done/R.total*100):0;
+      h+='<div class="wa-panel"><div class="p-t">'+ic("search",15)+' Scanning “'+esc(R.keyword)+'”<small>'+R.done+' / '+R.total+' points</small></div>'+
+        '<div class="gg-prog"><span style="width:'+pct+'%"></span></div>'+
+        '<div class="wa-hint" style="margin:6px 0 0">Asking Google what ranks at each point. Keep this screen open — leaving cancels the scan.</div>'+
+        '<button class="btn" id="ggCancel" style="width:100%;margin-top:9px">Cancel scan</button></div>';
+      box.innerHTML=(R.setup?ggSetupHTML(d):"")+h;
+      if(R.setup)ggWireSetup(box);
+      var cx=el("ggCancel");if(cx)cx.onclick=function(){R.cancel=true;toast("Cancelling…")};
+      return;
+    }
+
+    // Scan controls.
+    var pts=R.size*R.size;
+    h+='<div class="wa-panel"><div class="p-t">'+ic("target",15)+' Run a scan</div>'+
+      '<div class="gg-field"><label>Search term</label>'+
+      '<input class="gr-input" id="ggKw" value="'+esc(R.keyword)+'" placeholder="mobile detailing" autocapitalize="none"></div>'+
+      '<div class="gg-two">'+
+        '<div class="gg-field"><label>Grid</label><select class="gr-input" id="ggSize">'+
+          [5,7,9,11,13].map(function(n){return '<option value="'+n+'"'+(R.size===n?" selected":"")+'>'+n+' × '+n+' ('+(n*n)+' pts)</option>'}).join("")+
+        '</select></div>'+
+        '<div class="gg-field"><label>Radius</label><select class="gr-input" id="ggRad">'+
+          [2,3,5,8,12,20].map(function(n){return '<option value="'+n+'"'+(R.radius===n?" selected":"")+'>'+n+' mi</option>'}).join("")+
+        '</select></div>'+
+      '</div>'+
+      '<div class="gg-cost">'+ic("info",13)+' This scan makes <b>'+pts+'</b> Google Places calls — one per grid point. Google gives a free monthly allowance per API, then charges per 1,000 calls, so check your current Google Cloud pricing and budget before running big grids often. Start at 5×5 to see how it reads.</div>'+
+      '<button class="btn accent" id="ggRun" style="width:100%">Scan '+pts+' points</button></div>';
+
+    // Saved scans + the current view.
+    var scans=(d.scans||[]).slice();
+    var live=R.live;
+    if(scans.length||live){
+      h+='<div class="gg-scans">';
+      if(live)h+='<button class="on" data-gs="__live"><b>Just now</b>'+esc(live.keyword)+'</button>';
+      scans.forEach(function(s){
+        var on=!live&&(R.viewId?R.viewId===s.id:scans[0].id===s.id);
+        h+='<button class="'+(on?"on":"")+'" data-gs="'+esc(s.id)+'"><b>'+esc(ggWhen(s.ts))+'</b>'+esc(s.keyword||"—")+' · '+s.size+'×'+s.size+'</button>';
+      });
+      h+='</div>';
+      var show=live||(R.viewId?scans.filter(function(s){return s.id===R.viewId})[0]:null)||scans[0];
+      if(show)h+=ggScanHTML(show);
+    }else{
+      h+='<div class="wa-ins info"><span class="i-ic">'+ic("pin",15)+'</span><div>No scans yet. Pick a search term and run one — each grid point shows where your listing ranks if someone searched from right there.</div></div>';
+    }
+    box.innerHTML=(R.setup?ggSetupHTML(d):"")+h;
+    if(R.setup)ggWireSetup(box);
+    ggWireRank(box);
+  }
+  function ggWhen(ts){
+    var d=new Date(ts),now=new Date();
+    if(d.toDateString()===now.toDateString())return d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
+    return d.toLocaleDateString([],{month:"short",day:"numeric"});
+  }
+  // One scan rendered: map + ARP / ATRP / SoLV + the spread.
+  function ggScanHTML(s){
+    var res=s.results||[],st=s.stats||{};
+    var pins=res.map(function(r){
+      return {lat:r.lat,lng:r.lng,color:ggRankColor(r.rank),label:ggRankLabel(r.rank),
+        size:s.size>=11?21:(s.size>=9?24:27),title:"Rank "+ggRankLabel(r.rank)+" here"};
+    });
+    var h=ggMapHTML(s.centerLat,s.centerLng,s.radiusMi*2,pins);
+    h+='<div class="gg-legend"><span>Rank:</span>'+
+      '<i><span class="gg-sw" style="background:#15803d"></span>1–3</i>'+
+      '<i><span class="gg-sw" style="background:#84a814"></span>4–7</i>'+
+      '<i><span class="gg-sw" style="background:#d4a017"></span>8–10</i>'+
+      '<i><span class="gg-sw" style="background:#dd5c1c"></span>11–16</i>'+
+      '<i><span class="gg-sw" style="background:#b91c1c"></span>17–20+</i></div>';
+    h+='<div class="gg-stats">'+
+      '<div class="gg-stat"><div class="v">'+(st.arp==null?"—":st.arp.toFixed(2))+'</div><div class="k">ARP</div><div class="h">avg rank where you showed</div></div>'+
+      '<div class="gg-stat"><div class="v">'+(st.atrp==null?"—":st.atrp.toFixed(2))+'</div><div class="k">ATRP</div><div class="h">avg across all points</div></div>'+
+      '<div class="gg-stat"><div class="v">'+(st.solv==null?"—":st.solv.toFixed(0)+"%")+'</div><div class="k">SoLV</div><div class="h">points in the top 3</div></div>'+
+      '</div>';
+    h+='<div class="gg-meta">'+s.size+'×'+s.size+' grid · <b>'+(s.radiusMi*2)+' mi</b> across · “'+esc(s.keyword||"")+'”<br>'+
+      esc(new Date(s.ts).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}))+'</div>';
+    var tot=st.points||res.length||1;
+    h+='<div class="an-lbl">'+ic("bar-chart",15)+'The spread</div><div class="gg-rows">'+
+      ggSpreadRow("Top 3",st.top3||0,tot,"#15803d")+
+      ggSpreadRow("Top 10",st.top10||0,tot,"#84a814")+
+      ggSpreadRow("Not in top 20",st.missing||0,tot,"#b91c1c")+
+      '</div>';
+    h+='<div class="wa-hint" style="margin-top:10px">Ranks come from the Google Places API with the search biased to each grid point — the same method the paid grid trackers use. It\'s a very close proxy for the Maps local pack, not a byte-for-byte copy, so read the pattern (where you fade out) more than any single number.</div>';
+    h+='<button class="btn" id="ggDel" data-id="'+esc(s.id||"")+'" style="width:100%;margin-top:10px">Delete this scan</button>';
+    return h;
+  }
+  function ggSpreadRow(label,n,tot,color){
+    var pct=tot?Math.round(n/tot*100):0;
+    return '<div class="gg-row"><span class="r-n" style="background:'+color+'">'+n+'</span>'+
+      '<span class="r-k">'+esc(label)+'</span><span class="r-v">'+pct+'%</span>'+
+      '<span class="r-s">of '+tot+'</span></div>';
+  }
+  function ggSetupHTML(d){
+    var c=d.config||{};
+    return '<div class="wa-conn"><div class="c-h">'+ic("pin",15)+' Google Places key '+
+      (d.connected?'<span class="wa-ok">'+ic("check",11)+' connected'+(d.via==="secret"?" (secret)":"")+'</span>':'<span class="wa-no">not connected</span>')+'</div>'+
+      '<p class="wa-hint">Rank data needs a Google Cloud API key with <b>Places API (New)</b> enabled and billing on. Create one at console.cloud.google.com → APIs &amp; Services → Credentials. Leave it unrestricted by HTTP referrer — the call comes from this server, not your browser.</p>'+
+      (d.connected?"":'<div class="gg-field"><label>API key</label><input class="gr-input" id="ggKey" placeholder="AIza…" autocapitalize="none" autocomplete="off"></div>')+
+      '<div class="gg-field"><label>Your business name on Google</label><input class="gr-input" id="ggBiz" value="'+esc(c.bizName||"")+'" placeholder="Mikey\'s Mobile Detailing"></div>'+
+      '<div class="gg-field"><label>Place ID <span style="text-transform:none;font-weight:600">(optional — exact match, beats the name)</span></label><input class="gr-input" id="ggPid" value="'+esc(c.placeId||"")+'" placeholder="ChIJ…" autocapitalize="none"></div>'+
+      '<div class="gg-two">'+
+        '<div class="gg-field"><label>Centre lat</label><input class="gr-input" id="ggLat" value="'+esc(c.centerLat)+'" inputmode="decimal"></div>'+
+        '<div class="gg-field"><label>Centre lng</label><input class="gr-input" id="ggLng" value="'+esc(c.centerLng)+'" inputmode="decimal"></div>'+
+      '</div>'+
+      '<button class="btn accent" id="ggSave" style="width:100%">'+(GROW.map.rank.saving?'<span class="spin"></span> Checking with Google…':(d.connected?"Save settings":"Connect"))+'</button>'+
+      (d.connected&&d.via!=="secret"?'<button class="btn" id="ggOff" style="width:100%;margin-top:8px">Disconnect key</button>':"")+
+      '</div>';
+  }
+  function ggWireSetup(box){
+    var R=GROW.map.rank;
+    var sv=el("ggSave");
+    if(sv)sv.onclick=function(){
+      if(R.saving)return;
+      var key=(el("ggKey")||{}).value||"", biz=(el("ggBiz")||{}).value||"", pid=(el("ggPid")||{}).value||"";
+      var la=parseFloat((el("ggLat")||{}).value), ln=parseFloat((el("ggLng")||{}).value);
+      if(!R.data.connected&&!key.trim())return toast("Paste an API key first",{bad:true});
+      if(!biz.trim()&&!pid.trim())return toast("Add your business name or Place ID",{bad:true});
+      R.saving=true;ggRenderRank();
+      post("/api/geogrid/connect",{key:key.trim(),bizName:biz.trim(),placeId:pid.trim(),
+        centerLat:isFinite(la)?la:undefined,centerLng:isFinite(ln)?ln:undefined}).then(function(r){
+        R.saving=false;
+        if(r&&r.ok){toast("Saved ✓");R.setup=false;R.data=null;ggLoadRank(true)}
+        else{toast((r&&r.hint)||"Google rejected that key",{bad:true});ggRenderRank()}
+      }).catch(function(){R.saving=false;toast("Network error",{bad:true});ggRenderRank()});
+    };
+    var off=el("ggOff");
+    if(off)off.onclick=function(){
+      if(!confirm("Disconnect the Places API key? Saved scans stay."))return;
+      post("/api/geogrid/disconnect",{}).then(function(){R.data=null;R.setup=false;ggLoadRank(true)});
+    };
+  }
+  function ggWireRank(box){
+    var R=GROW.map.rank;
+    var kw=el("ggKw");if(kw)kw.oninput=function(){R.keyword=kw.value};
+    var sz=el("ggSize");if(sz)sz.onchange=function(){R.size=+sz.value;ggRenderRank()};
+    var rd=el("ggRad");if(rd)rd.onchange=function(){R.radius=+rd.value;ggRenderRank()};
+    var run=el("ggRun");if(run)run.onclick=function(){vibrate(8);ggRunScan()};
+    Array.prototype.forEach.call(box.querySelectorAll("[data-gs]"),function(b){
+      b.onclick=function(){vibrate(6);var id=b.getAttribute("data-gs");
+        if(id==="__live")return;R.live=null;R.viewId=id;ggRenderRank()};
+    });
+    var del=el("ggDel");
+    if(del)del.onclick=function(){
+      var id=del.getAttribute("data-id");
+      if(!id)return toast("Save the scan first");
+      if(!confirm("Delete this scan?"))return;
+      post("/api/geogrid/delete",{id:id}).then(function(){R.live=null;R.viewId="";R.data=null;ggLoadRank(true);toast("Deleted")});
+    };
+  }
+  // Run a scan in client-driven batches so no single Worker request ever gets
+  // close to Cloudflare's 50-subrequest cap on the free plan.
+  function ggRunScan(){
+    var R=GROW.map.rank, d=R.data, c=(d&&d.config)||{};
+    if(!R.keyword.trim())return toast("Enter a search term",{bad:true});
+    if(!c.bizName&&!c.placeId){R.setup=true;ggRenderRank();return toast("Set your business name first",{bad:true})}
+    var lat=+c.centerLat, lng=+c.centerLng;
+    if(!isFinite(lat)||!isFinite(lng))return toast("Set a centre point in setup",{bad:true});
+
+    var grid=ggGrid(lat,lng,R.size,R.radius);
+    // Bias radius ≈ the spacing between points, so each call "stands" in its cell.
+    var stepMi=R.size>1?(R.radius*2)/(R.size-1):R.radius;
+    var radiusM=Math.max(500,Math.round(stepMi*1609.34));
+    var batch=Math.max(1,Math.min(25,(d&&d.maxBatch)||25));
+
+    R.scanning=true;R.cancel=false;R.done=0;R.total=grid.length;R.live=null;
+    ggRenderRank();
+
+    var acc=[],i=0;
+    function next(){
+      if(R.cancel){R.scanning=false;ggRenderRank();toast("Scan cancelled");return}
+      if(i>=grid.length){finish();return}
+      var slice=grid.slice(i,i+batch);
+      post("/api/geogrid/scan",{keyword:R.keyword.trim(),radiusM:radiusM,
+        points:slice.map(function(p){return {lat:p.lat,lng:p.lng}})}).then(function(r){
+        if(!r||!r.ok){
+          R.scanning=false;ggRenderRank();
+          toast((r&&(r.hint||r.detail))||"Scan failed",{bad:true});
+          return;
+        }
+        acc=acc.concat(r.results||[]);
+        i+=slice.length;R.done=Math.min(i,grid.length);
+        ggRenderRank();
+        next();
+      }).catch(function(){R.scanning=false;ggRenderRank();toast("Network error during scan",{bad:true})});
+    }
+    function finish(){
+      post("/api/geogrid/save",{keyword:R.keyword.trim(),size:R.size,radiusMi:R.radius,
+        centerLat:lat,centerLng:lng,results:acc}).then(function(r){
+        R.scanning=false;
+        if(r&&r.ok&&r.scan){R.live=null;R.viewId=r.scan.id;R.data=null;ggLoadRank(true);toast("Scan complete ✓")}
+        else{ // Saving failed — still show what we measured rather than losing it.
+          R.live={id:"",ts:Date.now(),keyword:R.keyword.trim(),size:R.size,radiusMi:R.radius,
+            centerLat:lat,centerLng:lng,results:acc,stats:ggStats(acc)};
+          ggRenderRank();toast("Scan done, but couldn't save it",{bad:true});
+        }
+      }).catch(function(){
+        R.scanning=false;
+        R.live={id:"",ts:Date.now(),keyword:R.keyword.trim(),size:R.size,radiusMi:R.radius,
+          centerLat:lat,centerLng:lng,results:acc,stats:ggStats(acc)};
+        ggRenderRank();toast("Scan done, but couldn't save it",{bad:true});
+      });
+    }
+    next();
+  }
+  // Client mirror of geoStats() in the Worker — only used when a save fails and
+  // we still want to render the scan we just paid for.
+  function ggStats(results){
+    var rs=results.map(function(r){return +r.rank||21}),n=rs.length||1;
+    var found=rs.filter(function(r){return r<21});
+    return {points:rs.length,
+      arp:found.length?+(found.reduce(function(a,b){return a+b},0)/found.length).toFixed(2):null,
+      atrp:+(rs.reduce(function(a,b){return a+b},0)/n).toFixed(2),
+      solv:+((rs.filter(function(r){return r<=3}).length/n)*100).toFixed(2),
+      top3:rs.filter(function(r){return r<=3}).length,
+      top10:rs.filter(function(r){return r<=10}).length,
+      missing:rs.filter(function(r){return r>=21}).length};
+  }
 
   // ============================================================
   // 💵 Money tracker — its own full-screen section.

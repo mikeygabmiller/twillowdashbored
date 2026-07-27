@@ -20,6 +20,13 @@ directory = "./public"
 [vars]
 PUBLIC_BASE_URL = "https://texting.mikeysdetailingsnohomish.workers.dev"
 
+# Owner alerts (new leads, missed calls, voicemails, follow-up nudges) go out as
+# EMAIL instead of a Twilio SMS whenever RESEND_API_KEY (secret, below) AND
+# ALERT_EMAIL are both set — see notifyMikey() in src/index.js. Keeps self-alerts
+# off the Twilio bill. The default sender (onboarding@resend.dev) delivers to your
+# own Resend account email right away; verify a domain later for a custom From.
+ALERT_EMAIL = "mikeysdetailing4u@gmail.com"
+
 # Conversation storage. Reuses the MESSAGES namespace already on the account.
 [[kv_namespaces]]
 binding = "MESSAGES"
@@ -50,3 +57,4 @@ crons = ["* * * * *"]
 #   npx wrangler secret put TWILIO_FROM
 #   npx wrangler secret put MIKEY_PHONE
 #   npx wrangler secret put GEMINI_API_KEY   # optional, for the AI features
+#   npx wrangler secret put RESEND_API_KEY   # optional — sends owner alerts as email (with ALERT_EMAIL above) instead of texting yourself
