@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-21·booking+redesign';
+const BUILD = '2026-07-27·jobday';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -101,6 +101,10 @@ async function runCron() {
   await dispatchDueReminders();
   await evaluateFollowups();
   await moneyCron().catch(() => {}); // money reminders must never break the SMS cron
+  // Job Day suite. Both are write-frugal by design: the brief stamps one key a
+  // day, the invoice sweep only writes when something is actually overdue.
+  await maybeDailyBrief().catch(() => {});
+  await maybePayReminders().catch(() => {});
 }
 
 // Private "remind me to follow up on <date>" reminders — a nudge to Mikey, not a
@@ -152,6 +156,13 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/book-config')  return apiBookConfig();
   if (request.method === 'GET'  && pathname === '/api/availability') return apiAvailability(url);
   if (request.method === 'POST' && pathname === '/api/book')         return apiBook(request);
+
+  // ---- Public customer pages (MUST stay above the /api auth gate) ----
+  // /t/<token> — the live "Mikey's on his way" ETA tracker the customer opens.
+  // /p/<token> — the pay page a payment-request text links to.
+  if (request.method === 'GET'  && pathname.startsWith('/t/'))      return trackPage(pathname.slice(3).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40));
+  if (request.method === 'GET'  && pathname.startsWith('/p/'))      return payPage(pathname.slice(3).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40));
+  if (request.method === 'GET'  && pathname === '/api/track/state') return apiTrackState(url);
 
   if (request.method === 'GET'  && pathname === '/api/version')    return json({ ok: true, build: BUILD });
   if (request.method === 'POST' && pathname === '/api/login')      return apiLogin(request);
@@ -224,6 +235,45 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/money/config')   return apiMoneyGetConfig();
   if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/money/receipt') return apiMoneyReceipt(request, url);
   if (request.method === 'POST' && pathname === '/api/money/config')   return apiMoneySaveConfig(request);
+
+  // ---- Job Day suite (see the JOB DAY SUITE block near the bottom of this file) ----
+  // Today's Run
+  if (request.method === 'GET'  && pathname === '/api/day')            return apiDay(url);
+  if (request.method === 'POST' && pathname === '/api/day/state')      return apiDayState(request);
+  if (request.method === 'POST' && pathname === '/api/day/job')        return apiDayJob(request);
+  if (request.method === 'POST' && pathname === '/api/day/remove')     return apiDayRemove(request);
+  if (request.method === 'POST' && pathname === '/api/day/order')      return apiDayOrder(request);
+  // Live ETA tracking (the customer-facing page + /api/track/state are public, above)
+  if (request.method === 'POST' && pathname === '/api/track/start')    return apiTrackStart(request);
+  if (request.method === 'POST' && pathname === '/api/track/ping')     return apiTrackPing(request);
+  if (request.method === 'POST' && pathname === '/api/track/stop')     return apiTrackStop(request);
+  // Web push
+  if (request.method === 'GET'  && pathname === '/api/push/key')       return apiPushKey();
+  if (request.method === 'POST' && pathname === '/api/push/subscribe') return apiPushSubscribe(request);
+  if (request.method === 'POST' && pathname === '/api/push/unsubscribe') return apiPushUnsubscribe(request);
+  if (request.method === 'POST' && pathname === '/api/push/test')      return apiPushTest();
+  if (request.method === 'GET'  && pathname === '/api/push/peek')      return apiPushPeek();
+  // Quote builder
+  if (request.method === 'GET'  && pathname === '/api/quote/config')   return apiQuoteConfig();
+  if (request.method === 'POST' && pathname === '/api/quote')          return apiQuoteCreate(request);
+  if (request.method === 'POST' && pathname === '/api/quote/action')   return apiQuoteAction(request);
+  // Get paid
+  if (request.method === 'GET'  && pathname === '/api/pay')            return apiPay();
+  if (request.method === 'POST' && pathname === '/api/pay/config')     return apiPaySaveConfig(request);
+  if (request.method === 'POST' && pathname === '/api/pay/request')    return apiPayRequest(request);
+  if (request.method === 'POST' && pathname === '/api/pay/action')     return apiPayAction(request);
+  // Customer garage
+  if (request.method === 'GET'  && pathname === '/api/garage')         return apiGarage(url);
+  // Neighborhood blast
+  if (request.method === 'GET'  && pathname === '/api/blast/candidates') return apiBlastCandidates(url);
+  if (request.method === 'POST' && pathname === '/api/blast/send')     return apiBlastSend(request);
+  // Before / after photos
+  if (request.method === 'GET'  && pathname === '/api/photos')         return apiPhotosList(url);
+  if (request.method === 'POST' && pathname === '/api/photos')         return apiPhotoUpload(request);
+  if (request.method === 'GET'  && pathname === '/api/photos/img')     return apiPhotoImg(url);
+  if (request.method === 'POST' && pathname === '/api/photos/delete')  return apiPhotoDelete(request);
+  // Daily brief
+  if (request.method === 'GET'  && pathname === '/api/brief')          return apiBrief(url);
 
   // Static assets (the dashboard at "/") are served by Cloudflare's asset
   // layer before the Worker, so anything reaching here is an unknown route.
@@ -819,6 +869,8 @@ async function apiMeta(request) {
   if (typeof data.pinned === 'boolean') thread.pinned = data.pinned;
   if (typeof data.archived === 'boolean') thread.archived = data.archived;
   if (typeof data.assignedTo === 'string') thread.assignedTo = data.assignedTo.slice(0, 24);
+  // Customer garage (vehicles + access notes). Sent whole; sanitized on the way in.
+  if ('garage' in data) thread.garage = data.garage ? sanitizeGarage(data.garage) : null;
   if ('appointmentAt' in data) {
     const a = Number(data.appointmentAt);
     thread.appointmentAt = (data.appointmentAt == null || !a) ? null : a;
@@ -2953,6 +3005,8 @@ async function apiSaveConfig(request) {
   if (typeof data.missedCallTextback === 'boolean') next.missedCallTextback = data.missedCallTextback;
   if (typeof data.missedCallText === 'string') next.missedCallText = data.missedCallText.slice(0, 320);
   if (typeof data.teamMode === 'boolean') next.teamMode = data.teamMode;
+  if (typeof data.briefEnabled === 'boolean') next.briefEnabled = data.briefEnabled;
+  if (data.briefHour != null && !isNaN(+data.briefHour)) next.briefHour = Math.max(4, Math.min(11, Math.round(+data.briefHour)));
   if (Array.isArray(data.team)) next.team = sanitizeTeam(data.team);
   if (data.playbook && typeof data.playbook === 'object') next.playbook = sanitizePlaybook(data.playbook, next.playbook);
   await kv().put('config', JSON.stringify(next));
@@ -3671,6 +3725,9 @@ function blankThread(phone) {
     reminderNotified: false,
     assignedTo: '',    // team member id this conversation is assigned to (team mode)
     linked: [],
+    garage: null,      // customer garage: { vehicles[], address, city, zip, gate,
+                       // parking, water, power, prefs, avoid } — see sanitizeGarage
+    quote: null,       // most recent quote sent: { id, total, service, at }
     messages: [],      // { id, dir:'in'|'out', body, ts, kind, error? }
     suggested: null,   // proactive pre-drafted reply awaiting Mikey: { text, ts, forTs }
     dateRequest: null, // texter asked Mikey for an available date: { at, by }
@@ -3715,6 +3772,8 @@ function defaultConfig() {
     teamMode: false,         // when on: conversations can be assigned, and each reply is
                              // attributed to the sender. Turn off to go back to solo.
     team: [],                // [{ id, name, role }] — the people who help answer texts
+    briefEnabled: true,      // the 6am daily brief (push + email). Off = never sent.
+    briefHour: 6,            // local hour the brief fires (4–11)
     playbook: defaultPlaybook(), // the business "brain" that trains every AI output
   };
 }
@@ -3894,6 +3953,12 @@ function buildIndexSummary(thread, cfg) {
     assignedTo: thread.assignedTo || '',
     unread: thread.unread || 0,
     optedOut: isOptedOut(cfg, thread.phone),
+    // Booked time (the day board finds the day's jobs from here without loading
+    // every thread) plus the garage headline for the customer roster.
+    appointmentAt: thread.appointmentAt || null,
+    hasGarage: !!(thread.garage && ((thread.garage.vehicles || []).length || thread.garage.address)),
+    vehicleLabel: garageVehicleLabel(thread.garage),
+    city: (thread.garage && thread.garage.city) || '',
     reminderAt: thread.reminderAt || null,
     reminderNote: (thread.reminderNote || '').slice(0, 120),
     reminderDue: !!(thread.reminderAt && thread.reminderAt <= Date.now()),
@@ -4088,6 +4153,9 @@ async function geminiGenerate(prompt, opts = {}) {
 // SMS is the automatic fallback when email isn't set up or the send fails, so
 // an alert always lands somewhere. Returns true if any channel succeeded.
 async function notifyMikey(subject, body) {
+  // Ring the phone too. Web push is free, instant, and doesn't wait on email or
+  // Twilio — but it's a bonus channel, never the only one, so failures are silent.
+  pushNotify().catch(() => {});
   if (ENV.RESEND_API_KEY && ENV.ALERT_EMAIL) {
     try { await sendEmail(subject, body); return true; }
     catch { /* fall through to SMS so the alert still reaches Mikey */ }
@@ -4792,4 +4860,1268 @@ function bkSanitizeConfig(input) {
     calendar: { enabled: !!(c.calendar && c.calendar.enabled) && !!ical, icalUrl: ical },
     blockedDates: Array.isArray(c.blockedDates) ? [...new Set(c.blockedDates.map((x) => String(x).trim()).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)))].slice(0, 200) : [],
   };
+}
+
+// ###########################################################################
+// #  JOB DAY SUITE — the ten features that turn the dashboard into the app  #
+// #  Mikey actually runs the day on. Everything below is additive: no        #
+// #  existing route, storage key or cron step changes shape.                 #
+// #                                                                          #
+// #   1  Today's Run     — the day board (bookings + manual jobs + state)    #
+// #   2  Live ETA        — a DoorDash-style tracking link for the customer   #
+// #   3  Web Push        — real phone notifications, VAPID auto-generated    #
+// #   4  Quote Builder   — priced quote in 3 taps, texted + tracked          #
+// #   5  Get Paid        — payment requests, deposits, a public pay page     #
+// #   6  Customer Garage — vehicles, gate codes, water/power, lifetime value #
+// #   7  Neighborhood    — "I'll be in your area" blasts to nearby past jobs #
+// #   8  Before / After  — job photos, stored + shown side by side           #
+// #   9  (voice control is client-side; it rides on /api/ai/command)         #
+// #  10  Daily Brief     — a 6am rundown pushed/emailed once a day           #
+// #                                                                          #
+// #  KV WRITE BUDGET: none of this writes on a plain GET. The only clock-    #
+// #  driven writes are the daily brief (1/day) and the pay reminder sweep    #
+// #  (only when an invoice is actually due). Live-ETA pings are throttled    #
+// #  server-side to ~1 write/45s and only while a trip is running.           #
+// ###########################################################################
+
+const DAY_TTL_DAYS = 400;
+
+// --- shared tiny helpers ----------------------------------------------------
+function jdToday(cfg) { return localDateStr(Date.now(), cfg && cfg.tz); }
+function jdIsDate(s) { return /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')); }
+function jdMoney(n) { return Math.round((Number(n) || 0) * 100) / 100; }
+function jdStr(v, max) { return String(v == null ? '' : v).trim().slice(0, max || 200); }
+// URL-safe random token for the public tracker / pay pages. 22 chars ≈ 128 bits.
+function jdToken() {
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  return b64url(b).replace(/=+$/, '');
+}
+function b64url(bytes) {
+  let s = '';
+  const a = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  for (let i = 0; i < a.length; i++) s += String.fromCharCode(a[i]);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function b64urlStr(str) { return b64url(new TextEncoder().encode(str)); }
+function jdEsc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function jdFirst(name) { return String(name || '').trim().split(/\s+/)[0] || ''; }
+// Straight-line miles between two coordinates — good enough for an ETA sanity
+// check and for "who lives near this job" without paying for a maps API.
+function jdMiles(a, b) {
+  if (!a || !b || a.lat == null || b.lat == null) return null;
+  const R = 3958.8, rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad, dLng = (b.lng - a.lng) * rad;
+  const la1 = a.lat * rad, la2 = b.lat * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+// ===========================================================================
+// 1 · TODAY'S RUN — the day board
+// ===========================================================================
+// Bookings stay the source of truth for *what* is scheduled; the day doc only
+// stores what happened while running it (state, timestamps, notes) plus any
+// job Mikey adds by hand. That keeps a GET free of writes and means the board
+// can never drift from the booking record.
+//
+// day:<YYYY-MM-DD> = { date, manual:[job], state:{ jobId: run }, order:[jobId], updatedAt }
+function dayKey(date) { return 'day:' + date; }
+async function loadDay(date) {
+  const raw = (await kv().get(dayKey(date), { type: 'json' })) || {};
+  return { date, manual: raw.manual || [], state: raw.state || {}, order: raw.order || [], updatedAt: raw.updatedAt || 0 };
+}
+// ⚠ KV WRITE — only from an explicit tap on the day board (never on a read).
+async function saveDay(doc) {
+  doc.updatedAt = Date.now();
+  await kv().put(dayKey(doc.date), JSON.stringify(doc), { expirationTtl: DAY_TTL_DAYS * 86400 });
+}
+
+const JOB_STATES = ['queued', 'enroute', 'onsite', 'done', 'skipped'];
+
+// Merge bookings + appointments + manual jobs into one ordered run sheet.
+async function buildDay(date) {
+  const cfg = await loadConfig();
+  const bcfg = await loadBookingConfig().catch(() => null);
+  const doc = await loadDay(date);
+  const jobs = [];
+
+  for (const b of await loadBookings()) {
+    if (b.date !== date) continue;
+    if (b.status === 'declined' || b.status === 'cancelled') continue;
+    jobs.push({
+      id: 'b:' + b.id, source: 'booking', bookingId: b.id,
+      name: b.name || '', phone: b.phone || '',
+      address: b.address || '', city: b.city || '',
+      service: b.serviceName || '', size: b.sizeLabel || '', vehicle: b.vehicle || '',
+      slot: b.slot || '', at: b.apptAt || 0, durationMin: b.durationMin || 180,
+      price: b.estimate || b.base || 0, notes: b.notes || '',
+      pending: b.status === 'pending',
+    });
+  }
+
+  // Threads with a saved appointment on this day that aren't already a booking
+  // (a job Mikey locked in over text rather than through the booking page).
+  const index = await loadIndex();
+  for (const t of index) {
+    if (!t.appointmentAt || t.archived) continue;
+    if (localDateStr(t.appointmentAt, cfg.tz) !== date) continue;
+    if (jobs.some((j) => j.phone === t.phone)) continue;
+    const d = new Date(t.appointmentAt);
+    jobs.push({
+      id: 't:' + t.phone, source: 'thread', phone: t.phone, name: t.name || '',
+      address: '', city: '', service: '', size: '', vehicle: '',
+      slot: localTimeHm(t.appointmentAt, cfg.tz), at: t.appointmentAt, durationMin: 150,
+      price: 0, notes: '', pending: false,
+    });
+  }
+
+  for (const m of doc.manual) {
+    jobs.push(Object.assign({ source: 'manual', pending: false, durationMin: 120, price: 0 }, m,
+      { id: m.id, at: m.slot ? bkLaEpoch(date, m.slot) : 0 }));
+  }
+
+  // Attach the run state, then order: Mikey's manual order wins, else by time.
+  for (const j of jobs) {
+    const r = doc.state[j.id] || {};
+    j.state = JOB_STATES.includes(r.state) ? r.state : 'queued';
+    j.enrouteAt = r.enrouteAt || 0; j.startedAt = r.startedAt || 0; j.doneAt = r.doneAt || 0;
+    j.runNote = r.note || ''; j.trackToken = r.trackToken || '';
+    j.paidAmount = r.paid || 0; j.photos = r.photos || 0;
+    j.mapQuery = [j.address, j.city, j.city ? 'WA' : ''].filter(Boolean).join(', ');
+  }
+  const pos = (id) => { const i = doc.order.indexOf(id); return i < 0 ? 9999 : i; };
+  jobs.sort((a, b) => (pos(a.id) - pos(b.id)) || (a.at - b.at) || String(a.slot).localeCompare(String(b.slot)));
+
+  const done = jobs.filter((j) => j.state === 'done');
+  const money = jobs.reduce((s, j) => s + (j.state === 'done' ? (j.price || 0) : 0), 0);
+  const drive = jobs.filter((j) => j.state !== 'skipped').length;
+  return {
+    date, jobs,
+    summary: {
+      total: jobs.length, done: done.length, remaining: jobs.filter((j) => j.state !== 'done' && j.state !== 'skipped').length,
+      booked: jobs.reduce((s, j) => s + (j.state === 'skipped' ? 0 : (j.price || 0)), 0),
+      earned: jdMoney(money), hours: Math.round(jobs.reduce((s, j) => s + (j.durationMin || 0), 0) / 6) / 10,
+      stops: drive,
+    },
+    tz: cfg.tz,
+    services: bcfg ? (bcfg.services || []).map((s) => ({ id: s.id, name: s.name })) : [],
+  };
+}
+function localTimeHm(ts, tz) {
+  try {
+    const s = new Date(ts).toLocaleTimeString('en-GB', { timeZone: tz || 'America/Los_Angeles', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+    return s.slice(0, 5);
+  } catch { return '09:00'; }
+}
+
+async function apiDay(url) {
+  const cfg = await loadConfig();
+  const date = jdIsDate(url.searchParams.get('date')) ? url.searchParams.get('date') : jdToday(cfg);
+  return json(Object.assign({ ok: true }, await buildDay(date)));
+}
+
+// Advance a job through the run: queued → enroute → onsite → done. Side effects
+// are opt-in from the client (`text:true` sends the customer the matching
+// message) so a mis-tap never texts anyone by surprise.
+async function apiDayState(request) {
+  const d = await readJson(request);
+  const cfg = await loadConfig();
+  const date = jdIsDate(d.date) ? d.date : jdToday(cfg);
+  const jobId = jdStr(d.jobId, 64);
+  const state = JOB_STATES.includes(d.state) ? d.state : null;
+  if (!jobId || !state) return json({ ok: false, error: 'bad_request' }, 422);
+
+  const day = await buildDay(date);
+  const job = day.jobs.find((j) => j.id === jobId);
+  if (!job) return json({ ok: false, error: 'not_found' }, 404);
+
+  const doc = await loadDay(date);
+  const run = doc.state[jobId] || {};
+  run.state = state;
+  const now = Date.now();
+  if (state === 'enroute' && !run.enrouteAt) run.enrouteAt = now;
+  if (state === 'onsite' && !run.startedAt) run.startedAt = now;
+  if (state === 'done' && !run.doneAt) run.doneAt = now;
+  if (state === 'queued') { run.enrouteAt = 0; run.startedAt = 0; run.doneAt = 0; }
+  if (typeof d.note === 'string') run.note = d.note.slice(0, 400);
+
+  let track = null, texted = false;
+  if (state === 'enroute' && d.track && job.phone) {
+    track = await trackStart({ phone: job.phone, name: job.name, etaMin: Math.max(1, Math.min(180, Number(d.etaMin) || 20)),
+      address: job.address, city: job.city, jobId, date });
+    run.trackToken = track.token;
+  }
+  if (d.text && job.phone) {
+    const body = dayJobText(state, job, d, track, cfg);
+    if (body) {
+      try {
+        await sendSms(job.phone, body);
+        await appendMessage(job.phone, { dir: 'out', body, kind: 'run', status: 'sent' }, { name: job.name });
+        texted = true;
+      } catch (e) { /* the state change still stands; the UI reports the text failed */ }
+    }
+  }
+  doc.state[jobId] = run;
+  await saveDay(doc);
+  return json({ ok: true, day: await buildDay(date), texted, track });
+}
+
+function dayJobText(state, job, d, track, cfg) {
+  const custom = jdStr(d.body, 600);
+  if (custom) return custom;
+  const first = jdFirst(job.name);
+  const hi = first ? `Hey ${first}` : 'Hey';
+  if (state === 'enroute') {
+    const eta = Math.max(1, Math.min(180, Number(d.etaMin) || 20));
+    return `${hi}, Mikey here — on my way now, about ${eta} minutes out.` +
+      (track ? ` Track me live: ${track.url}` : '') +
+      ` If you can, please have the car accessible with water & power nearby. See you soon!`;
+  }
+  if (state === 'onsite') return `${hi} — I'm here and getting started on your vehicle. I'll let you know the moment it's done. - Mikey`;
+  if (state === 'done') {
+    const rev = cfg && cfg.reviewUrl ? ` If you've got 2 minutes, a Google review means the world: ${cfg.reviewUrl}` : '';
+    return `${hi}, all finished — your vehicle is done and looking great! Thanks for having me out.${rev} - Mikey`;
+  }
+  return '';
+}
+
+// Add / edit a hand-entered job (a cash job, a friend's truck, a re-do).
+async function apiDayJob(request) {
+  const d = await readJson(request);
+  const cfg = await loadConfig();
+  const date = jdIsDate(d.date) ? d.date : jdToday(cfg);
+  const doc = await loadDay(date);
+  const id = d.id && String(d.id).startsWith('m:') ? String(d.id) : 'm:' + genId();
+  const job = {
+    id,
+    name: jdStr(d.name, 60), phone: normalizePhone(d.phone) || '',
+    address: jdStr(d.address, 140), city: jdStr(d.city, 60),
+    service: jdStr(d.service, 60), size: jdStr(d.size, 30), vehicle: jdStr(d.vehicle, 60),
+    slot: /^\d{2}:\d{2}$/.test(String(d.slot || '')) ? d.slot : '09:00',
+    durationMin: Math.max(15, Math.min(720, Number(d.durationMin) || 120)),
+    price: jdMoney(d.price), notes: jdStr(d.notes, 400),
+  };
+  if (!job.name && !job.phone && !job.address) return json({ ok: false, error: 'need_name' }, 422);
+  const i = doc.manual.findIndex((m) => m.id === id);
+  if (i >= 0) doc.manual[i] = job; else doc.manual.push(job);
+  if (doc.manual.length > 40) return json({ ok: false, error: 'day_full' }, 422);
+  await saveDay(doc);
+  return json({ ok: true, day: await buildDay(date) });
+}
+
+async function apiDayRemove(request) {
+  const d = await readJson(request);
+  const cfg = await loadConfig();
+  const date = jdIsDate(d.date) ? d.date : jdToday(cfg);
+  const id = jdStr(d.jobId, 64);
+  const doc = await loadDay(date);
+  doc.manual = doc.manual.filter((m) => m.id !== id);
+  delete doc.state[id];
+  doc.order = doc.order.filter((x) => x !== id);
+  await saveDay(doc);
+  return json({ ok: true, day: await buildDay(date) });
+}
+
+async function apiDayOrder(request) {
+  const d = await readJson(request);
+  const cfg = await loadConfig();
+  const date = jdIsDate(d.date) ? d.date : jdToday(cfg);
+  const doc = await loadDay(date);
+  doc.order = (Array.isArray(d.order) ? d.order : []).map((x) => jdStr(x, 64)).filter(Boolean).slice(0, 60);
+  await saveDay(doc);
+  return json({ ok: true, day: await buildDay(date) });
+}
+
+// ===========================================================================
+// 2 · LIVE ETA TRACKING — the customer-facing "he's on his way" page
+// ===========================================================================
+// trk:<token> holds one trip. It expires on its own (12h TTL) so nothing has to
+// clean up, and the customer link dies with it. Position pings are throttled to
+// one write per ~45s so a long drive costs ~20 writes, not 200.
+const TRACK_TTL = 12 * 3600;
+const TRACK_MIN_WRITE_MS = 40000;
+
+async function trackStart({ phone, name, etaMin, address, city, jobId, date }) {
+  const token = jdToken();
+  const now = Date.now();
+  const trip = {
+    token, phone: normalizePhone(phone) || '', name: jdStr(name, 60),
+    dest: [jdStr(address, 140), jdStr(city, 60)].filter(Boolean).join(', '),
+    jobId: jdStr(jobId, 64), date: jdStr(date, 12),
+    startedAt: now, etaAt: now + etaMin * 60000, etaMin,
+    lat: null, lng: null, status: 'enroute', updatedAt: now,
+  };
+  await kv().put('trk:' + token, JSON.stringify(trip), { expirationTtl: TRACK_TTL });
+  return { token, url: `${publicBase()}/t/${token}`, etaAt: trip.etaAt };
+}
+
+async function apiTrackStart(request) {
+  const d = await readJson(request);
+  const phone = normalizePhone(d.phone);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  const etaMin = Math.max(1, Math.min(180, Number(d.etaMin) || 20));
+  const t = await trackStart({ phone, name: d.name, etaMin, address: d.address, city: d.city, jobId: d.jobId, date: d.date });
+  if (d.text !== false) {
+    const first = jdFirst(d.name);
+    const body = jdStr(d.body, 600) ||
+      `${first ? 'Hey ' + first : 'Hey'}, Mikey's on the way — about ${etaMin} minutes out. Watch me live here: ${t.url}`;
+    try { await sendSms(phone, body); await appendMessage(phone, { dir: 'out', body, kind: 'run', status: 'sent' }, { name: d.name }); }
+    catch (e) { return json({ ok: true, track: t, texted: false, error: String(e.message || e) }); }
+  }
+  return json({ ok: true, track: t, texted: d.text !== false });
+}
+
+// Position ping from Mikey's phone while driving. Cheap by design: we only
+// persist when the clock or the distance says it's worth a write.
+async function apiTrackPing(request) {
+  const d = await readJson(request);
+  const token = jdStr(d.token, 40);
+  const raw = await kv().get('trk:' + token, { type: 'json' });
+  if (!raw) return json({ ok: false, error: 'not_found' }, 404);
+  if (raw.status === 'ended') return json({ ok: true, stale: true });
+  const lat = Number(d.lat), lng = Number(d.lng);
+  const now = Date.now();
+  const moved = (raw.lat != null && Number.isFinite(lat))
+    ? (jdMiles({ lat: raw.lat, lng: raw.lng }, { lat, lng }) || 0) : 99;
+  const etaMin = d.etaMin != null ? Math.max(0, Math.min(240, Number(d.etaMin) || 0)) : null;
+  const etaShift = etaMin != null && Math.abs((raw.etaAt - now) / 60000 - etaMin) > 3;
+  if (!etaShift && moved < 0.12 && (now - raw.updatedAt) < TRACK_MIN_WRITE_MS) return json({ ok: true, skipped: true });
+  if (Number.isFinite(lat) && Number.isFinite(lng)) { raw.lat = Math.round(lat * 1e5) / 1e5; raw.lng = Math.round(lng * 1e5) / 1e5; }
+  if (etaMin != null) { raw.etaMin = etaMin; raw.etaAt = now + etaMin * 60000; }
+  raw.updatedAt = now;
+  const ttl = Math.max(120, TRACK_TTL - Math.round((now - raw.startedAt) / 1000));
+  await kv().put('trk:' + token, JSON.stringify(raw), { expirationTtl: ttl });
+  return json({ ok: true });
+}
+
+async function apiTrackStop(request) {
+  const d = await readJson(request);
+  const token = jdStr(d.token, 40);
+  const raw = await kv().get('trk:' + token, { type: 'json' });
+  if (!raw) return json({ ok: true });
+  raw.status = d.status === 'arrived' ? 'arrived' : 'ended';
+  raw.updatedAt = Date.now();
+  await kv().put('trk:' + token, JSON.stringify(raw), { expirationTtl: 3600 });
+  return json({ ok: true });
+}
+
+// PUBLIC — the customer's page polls this. Only ever exposes trip facts, never
+// the phone number or anything else about the business's data.
+async function apiTrackState(url) {
+  const token = jdStr(url.searchParams.get('t'), 40);
+  const raw = token ? await kv().get('trk:' + token, { type: 'json' }) : null;
+  if (!raw) return cors(json({ ok: false, error: 'expired' }, 404));
+  const cfg = await loadConfig();
+  const minsOut = Math.max(0, Math.round((raw.etaAt - Date.now()) / 60000));
+  return cors(json({
+    ok: true, status: raw.status, name: jdFirst(raw.name), dest: raw.dest,
+    etaAt: raw.etaAt, minsOut, startedAt: raw.startedAt,
+    lat: raw.lat, lng: raw.lng, updatedAt: raw.updatedAt,
+    business: 'Mikey\'s Mobile Detailing', phone: cfg.publicPhone || ENV.TWILIO_FROM || '',
+  }));
+}
+
+// PUBLIC — the tracking page itself. Self-contained (no external assets), so it
+// loads instantly on a customer's phone even on a bad connection.
+function trackPage(token) {
+  const t = jdEsc(token);
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0c"><title>Mikey's on the way</title>
+<link rel="icon" href="/favicon.svg"><style>
+*{box-sizing:border-box}html,body{margin:0;min-height:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+background:radial-gradient(1200px 600px at 50% -10%,#1d1f27,#0a0a0c 60%);color:#f2f4f8;
+display:flex;align-items:center;justify-content:center;padding:22px}
+.card{width:100%;max-width:460px;background:#121216;border:1px solid #26293244;border-radius:24px;
+padding:26px 22px 22px;box-shadow:0 30px 80px -40px #000;text-align:center}
+.brand{display:flex;align-items:center;justify-content:center;gap:9px;font-weight:800;letter-spacing:-.01em;font-size:15px;color:#ff8a93}
+.brand svg{width:22px;height:22px}
+.pulse{margin:20px auto 6px;width:104px;height:104px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+background:radial-gradient(circle,rgba(255,46,67,.22),transparent 70%);position:relative}
+.pulse:before{content:"";position:absolute;inset:0;border-radius:50%;border:2px solid #ff2e43;opacity:.55;animation:p 2.2s ease-out infinite}
+.pulse:after{content:"";position:absolute;inset:0;border-radius:50%;border:2px solid #ff2e43;opacity:.35;animation:p 2.2s ease-out .9s infinite}
+@keyframes p{0%{transform:scale(.72);opacity:.7}100%{transform:scale(1.35);opacity:0}}
+.pulse svg{width:44px;height:44px;color:#fff;position:relative}
+h1{font-size:26px;margin:12px 0 4px;letter-spacing:-.02em}
+.eta{font-size:56px;font-weight:800;letter-spacing:-.04em;line-height:1;margin:14px 0 2px;
+background:linear-gradient(180deg,#fff,#ff8a93);-webkit-background-clip:text;background-clip:text;color:transparent}
+.etal{font-size:13px;color:#9aa3b2;letter-spacing:.06em;text-transform:uppercase;font-weight:700}
+.arrive{margin-top:14px;font-size:14px;color:#c9cfda}
+.bar{height:8px;border-radius:99px;background:#23252d;margin:22px 0 6px;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#ff2e43,#ff8a93);transition:width .8s ease}
+.steps{display:flex;justify-content:space-between;font-size:11px;color:#6b7280;font-weight:600}
+.steps b{color:#ff8a93}
+.dest{margin-top:18px;padding:12px 14px;background:#1a1b21;border:1px solid #2a2d36;border-radius:14px;font-size:13.5px;color:#c9cfda;text-align:left;display:flex;gap:10px;align-items:flex-start}
+.dest svg{width:17px;height:17px;color:#ff8a93;flex:none;margin-top:1px}
+.acts{display:flex;gap:10px;margin-top:16px}
+.acts a{flex:1;text-decoration:none;padding:13px 0;border-radius:14px;font-weight:700;font-size:14.5px;
+background:#23252d;color:#f2f4f8;border:1px solid #2a2d36;display:flex;align-items:center;justify-content:center;gap:7px}
+.acts a.p{background:linear-gradient(180deg,#ff2e43,#c81e30);border-color:#ff2e43;color:#fff}
+.acts svg{width:17px;height:17px}
+.tip{margin-top:16px;font-size:12px;color:#6b7280;line-height:1.5}
+.done .pulse:before,.done .pulse:after{animation:none;opacity:0}
+.steps span.on{color:#ff8a93;font-weight:800}
+@media (prefers-color-scheme:light){
+body{background:radial-gradient(1200px 600px at 50% -10%,#fff,#eef0f3 60%);color:#161820}
+.card{background:#fff;border-color:#d7dbe2;box-shadow:0 30px 70px -45px rgba(20,22,30,.45)}
+.brand{color:#c81e30}.eta{background:linear-gradient(180deg,#161820,#c81e30);-webkit-background-clip:text;background-clip:text}
+.etal,.steps{color:#5a626f}.arrive{color:#404755}.bar{background:#e7eaef}
+.dest{background:#f4f6f8;border-color:#d7dbe2;color:#404755}.dest svg{color:#c81e30}
+.acts a{background:#f4f6f8;color:#161820;border-color:#d7dbe2}.acts a.p{color:#fff}.tip{color:#8a93a1}
+/* white-on-white would vanish: the arrow takes the brand color on light. */
+.pulse svg{color:#c81e30}}
+</style></head><body>
+<div class="card" id="card">
+  <div class="brand">${carSvg()}Mikey's Mobile Detailing</div>
+  <div class="pulse">${navSvg()}</div>
+  <h1 id="ttl">On the way</h1>
+  <div class="eta" id="eta">—</div>
+  <div class="etal" id="etal">minutes away</div>
+  <div class="arrive" id="arrive"></div>
+  <div class="bar"><i id="bar" style="width:8%"></i></div>
+  <div class="steps"><span class="on" id="s1">Heading out</span><span id="s2">Close by</span><span id="s3">Arrived</span></div>
+  <div class="dest" id="destBox" style="display:none">${pinSvg()}<span id="dest"></span></div>
+  <div class="acts" id="acts"></div>
+  <div class="tip">Have the vehicle accessible with water &amp; power within about 20&nbsp;ft, and I'll take it from there.</div>
+</div>
+<script>
+var TOK=${JSON.stringify(token)},ICO_CALL=${JSON.stringify(phoneSvgLite())},ICO_MSG=${JSON.stringify(msgSvgLite())};
+var start=0,etaAt=0,phone="",finished=false;
+function E(id){return document.getElementById(id)}
+function pad(n){return n<10?"0"+n:""+n}
+function paint(d){
+  if(!d||!d.ok){finished=true;E("ttl").textContent="This link has expired";
+    E("eta").textContent="";E("etal").textContent="Text Mikey for an update";return}
+  start=d.startedAt;etaAt=d.etaAt;phone=d.phone||"";
+  if(d.dest){E("destBox").style.display="";E("dest").textContent=d.dest}
+  if(phone&&!E("acts").innerHTML){
+    E("acts").innerHTML='<a class="p" href="tel:'+phone+'">'+ICO_CALL+'Call</a><a href="sms:'+phone+'">'+ICO_MSG+'Text</a>';
+  }
+  if(d.status==="arrived"||d.status==="ended"){
+    finished=true;
+    E("card").className="card done";
+    E("ttl").textContent=d.status==="arrived"?"Mikey has arrived":"Trip complete";
+    E("eta").textContent=d.status==="arrived"?"Here":"\\u2713";
+    E("etal").textContent=d.status==="arrived"?"at your vehicle":"thanks for having me out";
+    E("bar").style.width="100%";E("arrive").textContent="";
+    E("s1").className="on";E("s2").className="on";E("s3").className="on";
+    return}
+  tick();
+}
+function tick(){
+  if(finished||!etaAt)return;
+  var mins=Math.max(0,Math.round((etaAt-Date.now())/60000));
+  E("eta").textContent=mins<1?"Any minute":mins;
+  E("etal").textContent=mins<1?"pulling up now":(mins===1?"minute away":"minutes away");
+  var a=new Date(etaAt),h=a.getHours(),ap=h>=12?"PM":"AM";h=h%12||12;
+  E("arrive").textContent="Arriving around "+h+":"+pad(a.getMinutes())+" "+ap;
+  var total=Math.max(1,etaAt-start),pc=Math.max(6,Math.min(97,Math.round((Date.now()-start)/total*100)));
+  E("bar").style.width=pc+"%";
+  E("s2").className=pc>55?"on":"";
+}
+function poll(){fetch("/api/track/state?t="+encodeURIComponent(TOK)).then(function(r){return r.json()}).then(paint).catch(function(){})}
+poll();setInterval(poll,20000);setInterval(tick,1000);
+document.addEventListener("visibilitychange",function(){if(!document.hidden)poll()});
+</script></body></html>`;
+  return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+}
+function carSvg() { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg>'; }
+function navSvg() { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>'; }
+function pinSvg() { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>'; }
+function phoneSvgLite() { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:17px;height:17px"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z"/></svg>'; }
+function msgSvgLite() { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:17px;height:17px"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'; }
+
+// ===========================================================================
+// 3 · WEB PUSH — instant phone notifications, zero setup
+// ===========================================================================
+// The VAPID keypair is generated inside the Worker on first use and stored in
+// KV, so there is nothing for the owner to create, paste or configure. Pushes
+// are sent WITHOUT a payload (no aes128gcm encryption needed): the service
+// worker wakes and calls /api/push/peek for the headline, which keeps this
+// small, dependency-free and impossible to leak message content through.
+async function vapidKeys() {
+  const cached = await kv().get('push:vapid', { type: 'json' });
+  if (cached && cached.pub && cached.jwk) return cached;
+  const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  const raw = new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey));
+  const jwk = await crypto.subtle.exportKey('jwk', kp.privateKey);
+  const doc = { pub: b64url(raw), jwk, createdAt: Date.now() };
+  await kv().put('push:vapid', JSON.stringify(doc));   // ⚠ one KV write, once ever
+  return doc;
+}
+
+async function vapidJwt(audience, keys) {
+  const header = b64urlStr(JSON.stringify({ typ: 'JWT', alg: 'ES256' }));
+  const sub = ENV.ALERT_EMAIL ? 'mailto:' + ENV.ALERT_EMAIL : (publicBase() || 'https://example.com');
+  const payload = b64urlStr(JSON.stringify({ aud: audience, exp: Math.floor(Date.now() / 1000) + 43200, sub }));
+  const key = await crypto.subtle.importKey('jwk', keys.jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+  const sig = new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' },
+    key, new TextEncoder().encode(header + '.' + payload)));
+  return `${header}.${payload}.${b64url(sig)}`;   // WebCrypto already returns raw r||s — exactly what ES256 wants
+}
+
+async function loadPushSubs() { return (await kv().get('push:subs', { type: 'json' })) || []; }
+async function savePushSubs(list) { await kv().put('push:subs', JSON.stringify(list.slice(0, 6))); }
+
+// Fire a push at every registered device. Dead subscriptions (404/410) are
+// pruned so a reinstalled phone doesn't leave a zombie behind.
+async function pushNotify() {
+  const subs = await loadPushSubs();
+  if (!subs.length) return 0;
+  let keys; try { keys = await vapidKeys(); } catch { return 0; }
+  let sent = 0; const dead = [];
+  for (const s of subs) {
+    try {
+      const jwt = await vapidJwt(new URL(s.endpoint).origin, keys);
+      const res = await fetch(s.endpoint, {
+        method: 'POST',
+        headers: { TTL: '600', Urgency: 'high', Authorization: `vapid t=${jwt},k=${keys.pub}` },
+      });
+      if (res.status === 404 || res.status === 410) dead.push(s.endpoint);
+      else if (res.ok || res.status === 201 || res.status === 202) sent++;
+    } catch { /* one bad endpoint must never break the others */ }
+  }
+  if (dead.length) await savePushSubs(subs.filter((s) => !dead.includes(s.endpoint)));
+  return sent;
+}
+
+async function apiPushKey() {
+  const keys = await vapidKeys();
+  const subs = await loadPushSubs();
+  return json({ ok: true, key: keys.pub, devices: subs.length });
+}
+
+async function apiPushSubscribe(request) {
+  const d = await readJson(request);
+  const endpoint = jdStr(d.endpoint, 500);
+  if (!/^https:\/\//.test(endpoint)) return json({ ok: false, error: 'bad_subscription' }, 422);
+  const subs = await loadPushSubs();
+  const rec = { endpoint, label: jdStr(d.label, 40) || 'This device', at: Date.now() };
+  const i = subs.findIndex((s) => s.endpoint === endpoint);
+  if (i >= 0) { subs[i] = Object.assign(subs[i], rec); }
+  else subs.unshift(rec);
+  await savePushSubs(subs);
+  return json({ ok: true, devices: subs.length });
+}
+
+async function apiPushUnsubscribe(request) {
+  const d = await readJson(request);
+  const endpoint = jdStr(d.endpoint, 500);
+  const subs = await loadPushSubs();
+  const left = endpoint ? subs.filter((s) => s.endpoint !== endpoint) : [];
+  await savePushSubs(left);
+  return json({ ok: true, devices: left.length });
+}
+
+async function apiPushTest() {
+  const n = await pushNotify();
+  return json({ ok: n > 0, sent: n, error: n ? '' : 'no_devices_or_send_failed' });
+}
+
+// What the service worker shows after a payload-less push. Read-only: it builds
+// the headline from the thread index that's already in memory-cheap KV.
+async function apiPushPeek() {
+  const index = await loadIndex();
+  const active = index.filter((t) => !t.archived);
+  const unread = active.filter((t) => t.unread > 0).sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+  const owed = active.filter((t) => t.lastDir === 'in');
+  if (unread.length) {
+    const t = unread[0];
+    const who = t.name || t.phone;
+    const more = unread.length > 1 ? ` (+${unread.length - 1} more waiting)` : '';
+    return json({ ok: true, title: `New text from ${who}`, body: (t.lastBody || 'Tap to read.') + more, url: '/' });
+  }
+  const due = active.filter((t) => t.followupDue).length;
+  if (due) return json({ ok: true, title: 'Follow-ups ready', body: `${due} customer${due > 1 ? 's are' : ' is'} due for a nudge.`, url: '/' });
+  if (owed.length) return json({ ok: true, title: 'Someone is waiting', body: `${owed.length} conversation${owed.length > 1 ? 's need' : ' needs'} your reply.`, url: '/' });
+  return json({ ok: true, title: "Mikey's Dashboard", body: 'New activity — tap to open.', url: '/' });
+}
+
+// ===========================================================================
+// 4 · QUOTE BUILDER — a priced, branded quote in three taps
+// ===========================================================================
+// Prices come from the same booking service menu the public site uses, so a
+// texted quote and the booking page can never disagree. Quotes are tracked so
+// the follow-up engine has something concrete to chase.
+const QUOTE_KEY = 'quotes';
+const QUOTE_CONDITIONS = [
+  { id: 'clean', label: 'Well kept', mult: 1, note: '' },
+  { id: 'normal', label: 'Normal use', mult: 1.1, note: 'normal wear' },
+  { id: 'rough', label: 'Rough', mult: 1.3, note: 'heavy soil' },
+  { id: 'pets', label: 'Pet hair / stains', mult: 1.45, note: 'pet hair + stain treatment' },
+];
+async function loadQuotes() { return (await kv().get(QUOTE_KEY, { type: 'json' })) || []; }
+async function saveQuotes(list) { await kv().put(QUOTE_KEY, JSON.stringify(list.slice(0, 200))); }
+
+async function apiQuoteConfig() {
+  const cfg = await loadBookingConfig();
+  return json({
+    ok: true,
+    sizes: cfg.sizes || [], addons: cfg.addons || [],
+    services: (cfg.services || []).filter((s) => s.enabled !== false)
+      .map((s) => ({ id: s.id, name: s.name, price: s.price, duration: s.duration, blurb: s.blurb || '' })),
+    conditions: QUOTE_CONDITIONS,
+    quotes: (await loadQuotes()).slice(0, 60),
+  });
+}
+
+function quoteTotal(cfg, q) {
+  const svc = (cfg.services || []).find((s) => s.id === q.service);
+  const base = svc && svc.price ? (svc.price[q.size] || svc.price.suv || 0) : 0;
+  const cond = QUOTE_CONDITIONS.find((c) => c.id === q.condition) || QUOTE_CONDITIONS[0];
+  const addons = (q.addons || []).map((id) => (cfg.addons || []).find((a) => a.id === id) || null).filter(Boolean);
+  const addTotal = addons.reduce((s, a) => s + (Number(a.price) || 0), 0);
+  const travel = Math.max(0, Number(q.travel) || 0);
+  const discount = Math.max(0, Number(q.discount) || 0);
+  const sub = Math.round(base * cond.mult) + addTotal + travel;
+  return {
+    base, condMult: cond.mult, condLabel: cond.label, addons: addons.map((a) => ({ id: a.id, name: a.name, price: a.price })),
+    addTotal, travel, discount, subtotal: sub, total: Math.max(0, sub - discount),
+    serviceName: svc ? svc.name : '', durationMin: svc && svc.duration ? (svc.duration[q.size] || 180) : 180,
+  };
+}
+
+function quoteMessage(q, calc, cfg) {
+  const first = jdFirst(q.name);
+  const lines = [];
+  lines.push(`${first ? 'Hey ' + first + '!' : 'Hey!'} Here's your quote from Mikey's Mobile Detailing:`);
+  lines.push('');
+  lines.push(`${calc.serviceName}${q.sizeLabel ? ' · ' + q.sizeLabel : ''}${q.vehicle ? ' · ' + q.vehicle : ''}`);
+  for (const a of calc.addons) lines.push(`+ ${a.name}${a.price ? ' ($' + a.price + ')' : ''}`);
+  if (calc.travel) lines.push(`+ Travel: $${calc.travel}`);
+  if (calc.discount) lines.push(`- Discount: $${calc.discount}`);
+  lines.push('');
+  lines.push(`TOTAL: $${calc.total}  ·  about ${Math.round(calc.durationMin / 30) / 2} hrs`);
+  lines.push('I come to you — I just need water & power within ~20 ft.');
+  if (q.note) { lines.push(''); lines.push(q.note); }
+  lines.push('');
+  lines.push(`Want me to lock in a day? Just reply with what works.${q.expiresDays ? ` (Good for ${q.expiresDays} days.)` : ''}`);
+  lines.push('- Mikey');
+  return lines.join('\n');
+}
+
+async function apiQuoteCreate(request) {
+  const d = await readJson(request);
+  const bcfg = await loadBookingConfig();
+  const phone = normalizePhone(d.phone);
+  const q = {
+    id: d.id && jdStr(d.id, 24) ? jdStr(d.id, 24) : genId(),
+    createdAt: Date.now(), status: 'draft',
+    phone: phone || '', name: jdStr(d.name, 60), vehicle: jdStr(d.vehicle, 60),
+    service: jdStr(d.service, 40), size: jdStr(d.size, 30), sizeLabel: jdStr(d.sizeLabel, 40),
+    addons: Array.isArray(d.addons) ? d.addons.map((x) => jdStr(x, 40)).slice(0, 12) : [],
+    condition: jdStr(d.condition, 20) || 'clean',
+    travel: jdMoney(d.travel), discount: jdMoney(d.discount),
+    note: jdStr(d.note, 300), expiresDays: Math.max(0, Math.min(60, Number(d.expiresDays) || 14)),
+  };
+  const calc = quoteTotal(bcfg, q);
+  if (!calc.serviceName) return json({ ok: false, error: 'bad_service' }, 422);
+  q.total = calc.total; q.serviceName = calc.serviceName;
+  const body = jdStr(d.body, 1200) || quoteMessage(q, calc, bcfg);
+  if (d.preview) return json({ ok: true, calc, body, quote: q });
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+
+  let texted = false, err = '';
+  if (d.send !== false) {
+    try {
+      await sendSms(phone, body);
+      await appendMessage(phone, { dir: 'out', body, kind: 'quote', status: 'sent' }, { name: q.name });
+      texted = true; q.status = 'sent'; q.sentAt = Date.now();
+    } catch (e) { err = String(e.message || e); }
+  }
+  q.body = body;
+
+  // Mirror onto the conversation so the quote is visible where the work happens.
+  const thread = await loadThread(phone);
+  if (!thread.name && q.name) thread.name = q.name;
+  if (!thread.status || thread.status === 'new') { thread.status = 'active'; thread.statusAt = Date.now(); }
+  if (!thread.tags.includes('quoted')) thread.tags.push('quoted');
+  thread.quote = { id: q.id, total: q.total, service: q.serviceName, at: Date.now() };
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+
+  const list = await loadQuotes();
+  const i = list.findIndex((x) => x.id === q.id);
+  if (i >= 0) list[i] = q; else list.unshift(q);
+  await saveQuotes(list);
+  return json({ ok: true, quote: q, calc, texted, error: err });
+}
+
+// Accept / decline / delete a quote. Accepting flips the lead to Won and, when
+// asked, drops the job straight into the money ledger — no double entry.
+async function apiQuoteAction(request) {
+  const d = await readJson(request);
+  const id = jdStr(d.id, 24), action = jdStr(d.action, 20);
+  const list = await loadQuotes();
+  const q = list.find((x) => x.id === id);
+  if (!q) return json({ ok: false, error: 'not_found' }, 404);
+
+  if (action === 'delete') {
+    await saveQuotes(list.filter((x) => x.id !== id));
+    return json({ ok: true, deleted: true });
+  }
+  if (action === 'accept') {
+    q.status = 'accepted'; q.acceptedAt = Date.now();
+    if (q.phone) {
+      const t = await loadThread(q.phone);
+      if (t.status !== 'won') { t.status = 'won'; t.statusAt = Date.now(); }
+      await saveThread(t); await updateIndexEntry(t);
+    }
+  } else if (action === 'decline') {
+    q.status = 'declined'; q.declinedAt = Date.now();
+  } else if (action === 'resend' && q.phone && q.body) {
+    try { await sendSms(q.phone, q.body); await appendMessage(q.phone, { dir: 'out', body: q.body, kind: 'quote', status: 'sent' }, { name: q.name }); q.status = 'sent'; q.sentAt = Date.now(); }
+    catch (e) { return json({ ok: false, error: String(e.message || e) }, 502); }
+  } else {
+    return json({ ok: false, error: 'bad_action' }, 422);
+  }
+  await saveQuotes(list);
+  return json({ ok: true, quote: q });
+}
+
+// ===========================================================================
+// 5 · GET PAID — payment requests, deposits and a public pay page
+// ===========================================================================
+// No processor account required: the pay page deep-links to whatever the owner
+// already uses (Venmo / Cash App / PayPal / Zelle) and can carry a Stripe or
+// Square payment link when he has one. Every request is tracked so "who still
+// owes me" is a list, not a memory.
+const PAY_KEY = 'pay:index';
+const PAY_CFG_KEY = 'pay:config';
+function payDefaults() {
+  return { venmo: '', cashapp: '', paypal: '', zelle: '', link: '', linkLabel: 'Card / Apple Pay',
+    cash: true, depositPct: 25, remindDays: 3, terms: 'Thanks for choosing Mikey\'s Mobile Detailing!' };
+}
+async function loadPayConfig() { return Object.assign(payDefaults(), (await kv().get(PAY_CFG_KEY, { type: 'json' })) || {}); }
+async function loadInvoices() { return (await kv().get(PAY_KEY, { type: 'json' })) || []; }
+async function saveInvoices(list) { await kv().put(PAY_KEY, JSON.stringify(list.slice(0, 300))); }
+
+async function apiPay() {
+  const list = await loadInvoices();
+  const open = list.filter((i) => i.status === 'open');
+  return json({
+    ok: true, config: await loadPayConfig(), invoices: list.slice(0, 80),
+    outstanding: jdMoney(open.reduce((s, i) => s + i.amount, 0)), openCount: open.length,
+  });
+}
+
+async function apiPaySaveConfig(request) {
+  const d = await readJson(request);
+  const cur = await loadPayConfig();
+  const next = Object.assign(cur, {
+    venmo: jdStr(d.venmo, 40).replace(/^@/, ''), cashapp: jdStr(d.cashapp, 40).replace(/^\$/, ''),
+    paypal: jdStr(d.paypal, 60), zelle: jdStr(d.zelle, 60),
+    link: /^https?:\/\//.test(String(d.link || '')) ? jdStr(d.link, 300) : '',
+    linkLabel: jdStr(d.linkLabel, 40) || 'Card / Apple Pay',
+    cash: d.cash !== false,
+    depositPct: Math.max(0, Math.min(100, Number(d.depositPct) || 0)),
+    remindDays: Math.max(0, Math.min(30, Number(d.remindDays) || 0)),
+    terms: jdStr(d.terms, 300),
+  });
+  await kv().put(PAY_CFG_KEY, JSON.stringify(next));
+  return json({ ok: true, config: next });
+}
+
+async function apiPayRequest(request) {
+  const d = await readJson(request);
+  const phone = normalizePhone(d.phone);
+  const amount = jdMoney(d.amount);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  if (!(amount > 0)) return json({ ok: false, error: 'bad_amount' }, 422);
+  const pcfg = await loadPayConfig();
+  const inv = {
+    id: genId(), token: jdToken(), createdAt: Date.now(), status: 'open',
+    phone, name: jdStr(d.name, 60), amount, memo: jdStr(d.memo, 120) || 'Mobile detailing',
+    kind: d.deposit ? 'deposit' : 'invoice', jobId: jdStr(d.jobId, 64), date: jdStr(d.date, 12),
+    remindedAt: 0,
+  };
+  const url = `${publicBase()}/p/${inv.token}`;
+  const first = jdFirst(inv.name);
+  const body = jdStr(d.body, 600) || (inv.kind === 'deposit'
+    ? `${first ? 'Hey ' + first : 'Hey'} — to lock in your spot I just need a $${inv.amount} deposit (it comes off the final price). Pay here, takes 10 seconds: ${url} - Mikey`
+    : `${first ? 'Thanks ' + first + '!' : 'Thanks!'} Your total for ${inv.memo} is $${inv.amount}. Easiest way to pay: ${url} — or cash works too. - Mikey`);
+
+  let texted = false, err = '';
+  if (d.send !== false) {
+    try { await sendSms(phone, body); await appendMessage(phone, { dir: 'out', body, kind: 'pay', status: 'sent' }, { name: inv.name }); texted = true; }
+    catch (e) { err = String(e.message || e); }
+  }
+  inv.body = body; inv.url = url;
+  const list = await loadInvoices(); list.unshift(inv); await saveInvoices(list);
+  return json({ ok: true, invoice: inv, texted, error: err, config: pcfg });
+}
+
+async function apiPayAction(request) {
+  const d = await readJson(request);
+  const id = jdStr(d.id, 24), action = jdStr(d.action, 20);
+  const list = await loadInvoices();
+  const inv = list.find((x) => x.id === id);
+  if (!inv) return json({ ok: false, error: 'not_found' }, 404);
+  if (action === 'paid') {
+    inv.status = 'paid'; inv.paidAt = Date.now(); inv.method = jdStr(d.method, 20) || 'unknown';
+  } else if (action === 'void') {
+    inv.status = 'void';
+  } else if (action === 'remind') {
+    const first = jdFirst(inv.name);
+    const body = `${first ? 'Hey ' + first : 'Hey'} — quick nudge on the $${inv.amount} for ${inv.memo}. You can knock it out here: ${inv.url} Thanks! - Mikey`;
+    try { await sendSms(inv.phone, body); await appendMessage(inv.phone, { dir: 'out', body, kind: 'pay', status: 'sent' }, { name: inv.name }); inv.remindedAt = Date.now(); }
+    catch (e) { return json({ ok: false, error: String(e.message || e) }, 502); }
+  } else if (action === 'delete') {
+    await saveInvoices(list.filter((x) => x.id !== id));
+    return json({ ok: true, deleted: true });
+  } else {
+    return json({ ok: false, error: 'bad_action' }, 422);
+  }
+  await saveInvoices(list);
+  return json({ ok: true, invoice: inv });
+}
+
+// PUBLIC — the customer taps the texted link and lands here.
+async function payPage(token) {
+  const list = await loadInvoices();
+  const inv = list.find((x) => x.token === token);
+  const pcfg = await loadPayConfig();
+  if (!inv || inv.status === 'void') {
+    return new Response(payShell('<h1>This link is no longer active</h1><p class="sub">Text Mikey and he\'ll send a fresh one.</p>'),
+      { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+  }
+  const amt = inv.amount.toFixed(2).replace(/\.00$/, '');
+  const note = encodeURIComponent(inv.memo || 'Mobile detailing');
+  const opts = [];
+  if (pcfg.link) opts.push(['card', pcfg.linkLabel || 'Card / Apple Pay', pcfg.link, '#635bff']);
+  if (pcfg.venmo) opts.push(['venmo', 'Venmo', `https://venmo.com/${encodeURIComponent(pcfg.venmo)}?txn=pay&amount=${amt}&note=${note}`, '#008CFF']);
+  if (pcfg.cashapp) opts.push(['cashapp', 'Cash App', `https://cash.app/$${encodeURIComponent(pcfg.cashapp)}/${amt}`, '#00D54B']);
+  if (pcfg.paypal) opts.push(['paypal', 'PayPal', `https://paypal.me/${encodeURIComponent(pcfg.paypal)}/${amt}`, '#0070E0']);
+  if (pcfg.zelle) opts.push(['zelle', 'Zelle', '', '#6D1ED4']);
+  const paid = inv.status === 'paid';
+
+  const body = paid
+    ? `<div class="badge ok">Paid ✓</div><h1>You're all set</h1><p class="sub">$${jdEsc(amt)} received — thank you!</p>`
+    : `<div class="badge">${inv.kind === 'deposit' ? 'Deposit' : 'Amount due'}</div>
+       <div class="amt">$${jdEsc(amt)}</div>
+       <p class="sub">${jdEsc(inv.memo)}${inv.name ? ' · ' + jdEsc(jdFirst(inv.name)) : ''}</p>
+       <div class="opts">${opts.map(([id, label, href, color]) => href
+        ? `<a class="opt" href="${jdEsc(href)}" target="_blank" rel="noopener"><span class="dot" style="background:${color}"></span>${jdEsc(label)}<span class="go">Pay →</span></a>`
+        : `<div class="opt static"><span class="dot" style="background:${color}"></span>${jdEsc(label)}<span class="go">${jdEsc(pcfg.zelle)}</span></div>`).join('')}
+       ${pcfg.cash ? '<div class="opt static"><span class="dot" style="background:#22c55e"></span>Cash in person<span class="go">On the day</span></div>' : ''}</div>
+       ${opts.length || pcfg.cash ? '' : '<p class="sub">Text Mikey for payment details.</p>'}
+       <p class="fine">${jdEsc(pcfg.terms || '')}</p>`;
+  return new Response(payShell(body), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+}
+function payShell(inner) {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0c"><title>Pay Mikey's Mobile Detailing</title>
+<link rel="icon" href="/favicon.svg"><style>
+*{box-sizing:border-box}html,body{margin:0;min-height:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+background:radial-gradient(1200px 600px at 50% -10%,#1d1f27,#0a0a0c 60%);color:#f2f4f8;
+display:flex;align-items:center;justify-content:center;padding:22px}
+.card{width:100%;max-width:430px;background:#121216;border:1px solid #26293244;border-radius:24px;padding:28px 22px;text-align:center;box-shadow:0 30px 80px -40px #000}
+.brand{font-weight:800;font-size:14px;color:#ff8a93;letter-spacing:-.01em;margin-bottom:18px}
+.badge{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#9aa3b2;background:#1a1b21;border:1px solid #2a2d36;border-radius:99px;padding:5px 12px}
+.badge.ok{color:#22c55e;border-color:#22c55e55;background:#22c55e14}
+.amt{font-size:62px;font-weight:800;letter-spacing:-.045em;margin:14px 0 2px;background:linear-gradient(180deg,#fff,#ff8a93);-webkit-background-clip:text;background-clip:text;color:transparent}
+h1{font-size:24px;margin:12px 0 4px;letter-spacing:-.02em}
+.sub{color:#9aa3b2;font-size:14px;margin:2px 0 0}
+.opts{display:flex;flex-direction:column;gap:10px;margin:22px 0 4px}
+.opt{display:flex;align-items:center;gap:11px;text-decoration:none;color:#f2f4f8;background:#1a1b21;border:1px solid #2a2d36;border-radius:15px;padding:15px 16px;font-weight:700;font-size:15px}
+.opt .dot{width:11px;height:11px;border-radius:50%;flex:none}
+.opt .go{margin-left:auto;font-size:13px;color:#9aa3b2;font-weight:600}
+.opt.static{opacity:.85}
+.fine{margin-top:18px;font-size:12px;color:#6b7280;line-height:1.5}
+@media (prefers-color-scheme:light){
+body{background:radial-gradient(1200px 600px at 50% -10%,#fff,#eef0f3 60%);color:#161820}
+.card{background:#fff;border-color:#d7dbe2;box-shadow:0 30px 70px -45px rgba(20,22,30,.45)}
+.brand{color:#c81e30}.badge{background:#f4f6f8;border-color:#d7dbe2;color:#5a626f}
+.amt{background:linear-gradient(180deg,#161820,#c81e30);-webkit-background-clip:text;background-clip:text}
+.sub{color:#5a626f}.opt{background:#f4f6f8;border-color:#d7dbe2;color:#161820}.opt .go{color:#5a626f}.fine{color:#8a93a1}}
+</style></head><body><div class="card"><div class="brand">Mikey's Mobile Detailing</div>${inner}</div></body></html>`;
+}
+
+// ===========================================================================
+// 6 · CUSTOMER GARAGE — vehicles, access notes and lifetime value
+// ===========================================================================
+// Lives on the thread (thread.garage) so it travels with the conversation and
+// costs no extra reads. The roster view joins it against the money ledger so
+// "who is worth chasing" is a fact, not a hunch.
+// One-line "2019 Silver Tacoma" style label for list rows and the index.
+function garageVehicleLabel(g) {
+  const v = (g && g.vehicles && g.vehicles[0]) || null;
+  if (!v) return '';
+  return [v.year, v.color, v.make, v.model].filter(Boolean).join(' ').slice(0, 48);
+}
+
+function sanitizeGarage(g) {
+  if (!g || typeof g !== 'object') return null;
+  const veh = (Array.isArray(g.vehicles) ? g.vehicles : []).slice(0, 8).map((v) => ({
+    id: jdStr(v.id, 24) || genId(),
+    year: jdStr(v.year, 4), make: jdStr(v.make, 24), model: jdStr(v.model, 30),
+    color: jdStr(v.color, 20), size: jdStr(v.size, 20), plate: jdStr(v.plate, 12),
+    notes: jdStr(v.notes, 200),
+  })).filter((v) => v.make || v.model || v.year);
+  return {
+    vehicles: veh,
+    address: jdStr(g.address, 140), city: jdStr(g.city, 60), zip: jdStr(g.zip, 10),
+    gate: jdStr(g.gate, 60), parking: jdStr(g.parking, 160),
+    water: g.water === null || g.water === undefined ? null : !!g.water,
+    power: g.power === null || g.power === undefined ? null : !!g.power,
+    prefs: jdStr(g.prefs, 300), avoid: jdStr(g.avoid, 200),
+    lat: Number.isFinite(Number(g.lat)) ? Number(g.lat) : null,
+    lng: Number.isFinite(Number(g.lng)) ? Number(g.lng) : null,
+  };
+}
+
+async function apiGarage(url) {
+  const phone = normalizePhone(url.searchParams.get('phone'));
+  const cfg = await loadConfig();
+  if (phone) {
+    const t = await loadThread(phone);
+    const spend = await moneySpendFor(phone, cfg);
+    return json({ ok: true, phone, garage: t.garage || null, name: t.name || '', spend });
+  }
+  // Roster: everyone with a garage entry or a logged job, richest first.
+  const index = await loadIndex();
+  const spendMap = await moneySpendMap(cfg);
+  const rows = [];
+  for (const t of index) {
+    if (t.archived) continue;
+    const sp = spendMap[t.phone];
+    if (!sp && !t.hasGarage) continue;
+    rows.push({
+      phone: t.phone, name: t.name || '', status: t.status || '', tags: t.tags || [],
+      lastTs: t.lastTs || 0, vehicles: t.vehicleLabel || '', city: t.city || '',
+      jobs: sp ? sp.jobs : 0, total: sp ? sp.total : 0, lastJob: sp ? sp.lastDate : '',
+    });
+  }
+  rows.sort((a, b) => b.total - a.total || b.lastTs - a.lastTs);
+  return json({ ok: true, customers: rows.slice(0, 200) });
+}
+
+// Lifetime spend per phone, from the money ledger (last 18 months of docs).
+async function moneySpendMap(cfg) {
+  let m = localDateStr(Date.now(), cfg.tz).slice(0, 7);
+  const map = {};
+  for (let i = 0; i < 18; i++) {
+    const doc = await loadMonth(m);
+    for (const e of (doc.entries || [])) {
+      if (e.type !== 'job' || !e.phone) continue;
+      const r = map[e.phone] = map[e.phone] || { jobs: 0, total: 0, lastDate: '' };
+      r.jobs++; r.total = jdMoney(r.total + e.amount);
+      if (e.date > r.lastDate) r.lastDate = e.date;
+    }
+    m = prevMonthKey(m);
+  }
+  return map;
+}
+async function moneySpendFor(phone, cfg) {
+  const map = await moneySpendMap(cfg);
+  return map[phone] || { jobs: 0, total: 0, lastDate: '' };
+}
+
+// ===========================================================================
+// 7 · NEIGHBORHOOD BLAST — "I'll be in your area" batching
+// ===========================================================================
+// A mobile business makes money by not driving. When a job is booked in a town,
+// this finds past customers in the same place and offers them the same-day
+// slot at a discount. Opt-out aware, capped, and throttled.
+function jdArea(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z ]/g, '').replace(/\s+/g, ' ').trim();
+}
+function jdZip(s) { const m = String(s || '').match(/\b(\d{5})\b/); return m ? m[1] : ''; }
+
+// Where does this customer live? Checked in order of trustworthiness:
+// the garage record, then their bookings, then the quote-form notes.
+function customerPlace(thread, bookings) {
+  const g = thread.garage || {};
+  if (g.city || g.zip) return { city: jdArea(g.city), zip: g.zip || jdZip(g.address), address: g.address || '', src: 'garage' };
+  const b = bookings.find((x) => x.phone === thread.phone && x.city);
+  if (b) return { city: jdArea(b.city), zip: jdZip(b.address), address: b.address || '', src: 'booking' };
+  const m = String(thread.notes || '').match(/(?:Where|Address)\s*:\s*([^\n]+)/i);
+  if (m) { const line = m[1]; const parts = line.split(','); return { city: jdArea(parts[parts.length - 1] || parts[0]), zip: jdZip(line), address: line.trim(), src: 'notes' }; }
+  return { city: '', zip: '', address: '', src: '' };
+}
+
+async function apiBlastCandidates(url) {
+  const city = jdArea(url.searchParams.get('city'));
+  const zip = jdZip(url.searchParams.get('zip'));
+  const exclude = normalizePhone(url.searchParams.get('exclude')) || '';
+  const cfg = await loadConfig();
+  const bookings = await loadBookings();
+  const index = await loadIndex();
+  const spend = await moneySpendMap(cfg);
+  const out = [];
+  const seen = new Set();
+  for (const t of index) {
+    if (t.optedOut || t.phone === exclude || seen.has(t.phone)) continue;
+    seen.add(t.phone);
+    const thread = (t.status === 'won' || spend[t.phone]) ? await loadThread(t.phone) : null;
+    if (!thread) continue;                                   // only past/won customers get a blast
+    const place = customerPlace(thread, bookings);
+    if (!place.city && !place.zip) continue;
+    const match = (city && place.city === city) || (zip && place.zip === zip);
+    if (!match) continue;
+    const sp = spend[t.phone] || { jobs: 0, total: 0, lastDate: '' };
+    out.push({
+      phone: t.phone, name: t.name || '', city: place.city, zip: place.zip, address: place.address,
+      jobs: sp.jobs, total: sp.total, lastJob: sp.lastDate, lastTs: t.lastTs || 0,
+      daysSince: sp.lastDate ? Math.round((Date.now() - Date.parse(sp.lastDate + 'T12:00:00Z')) / 86400000) : null,
+    });
+  }
+  out.sort((a, b) => (b.daysSince || 0) - (a.daysSince || 0) || b.total - a.total);
+  return json({ ok: true, city, zip, candidates: out.slice(0, 60) });
+}
+
+// Send the blast. Hard-capped at 25 recipients per run and never texts an
+// opted-out number (sendSms enforces that too — this is the friendly check).
+async function apiBlastSend(request) {
+  const d = await readJson(request);
+  const template = jdStr(d.body, 600);
+  if (!template) return json({ ok: false, error: 'empty_message' }, 422);
+  const phones = [...new Set((Array.isArray(d.phones) ? d.phones : []).map((p) => normalizePhone(p)).filter(Boolean))].slice(0, 25);
+  if (!phones.length) return json({ ok: false, error: 'no_recipients' }, 422);
+  const cfg = await loadConfig();
+  const results = [];
+  for (const phone of phones) {
+    if (isOptedOut(cfg, phone)) { results.push({ phone, ok: false, error: 'opted_out' }); continue; }
+    const t = await loadThread(phone);
+    const body = template.replace(/\{first_name\}/g, jdFirst(t.name) || 'there').replace(/\{name\}/g, t.name || 'there');
+    try {
+      await sendSms(phone, body);
+      t.messages.push({ id: genId(), dir: 'out', body, ts: Date.now(), kind: 'blast', status: 'sent' });
+      if (!t.tags.includes('neighborhood')) t.tags.push('neighborhood');
+      await saveThread(t); await updateIndexEntry(t);
+      results.push({ phone, ok: true });
+    } catch (e) { results.push({ phone, ok: false, error: String(e.message || e) }); }
+  }
+  const sent = results.filter((r) => r.ok).length;
+  const log = (await kv().get('blast:log', { type: 'json' })) || [];
+  log.unshift({ id: genId(), at: Date.now(), city: jdStr(d.city, 60), sent, total: phones.length, body: template.slice(0, 300) });
+  await kv().put('blast:log', JSON.stringify(log.slice(0, 40)));
+  return json({ ok: true, sent, results });
+}
+
+// ===========================================================================
+// 8 · BEFORE / AFTER PHOTOS
+// ===========================================================================
+// Same proven shape as money receipts: one compressed JPEG per KV value, a tiny
+// index per job. The client compresses before upload, so a full before/after
+// pair costs two small writes and shows instantly.
+function photoIdxKey(job) { return 'ph:idx:' + job; }
+async function apiPhotosList(url) {
+  const job = jdStr(url.searchParams.get('job'), 64);
+  if (!job) return json({ ok: false, error: 'bad_request' }, 422);
+  const idx = (await kv().get(photoIdxKey(job), { type: 'json' })) || [];
+  return json({ ok: true, job, photos: idx });
+}
+async function apiPhotoUpload(request) {
+  const d = await readJson(request);
+  const job = jdStr(d.job, 64);
+  const phase = d.phase === 'after' ? 'after' : 'before';
+  const img = String(d.img || '');
+  if (!job) return json({ ok: false, error: 'bad_request' }, 422);
+  if (!/^data:image\/(jpeg|png|webp);base64,/.test(img) || img.length > 900000) return json({ ok: false, error: 'bad_image' }, 422);
+  const id = genId();
+  await kv().put('ph:img:' + id, img, { expirationTtl: DAY_TTL_DAYS * 86400 });
+  const idx = (await kv().get(photoIdxKey(job), { type: 'json' })) || [];
+  idx.push({ id, phase, ts: Date.now(), caption: jdStr(d.caption, 80) });
+  await kv().put(photoIdxKey(job), JSON.stringify(idx.slice(-24)), { expirationTtl: DAY_TTL_DAYS * 86400 });
+  // Keep the day board's photo counter honest so the run sheet shows the badge.
+  if (d.date && jdIsDate(d.date)) {
+    const doc = await loadDay(d.date);
+    const run = doc.state[job] || {};
+    run.photos = idx.length;
+    doc.state[job] = run;
+    await saveDay(doc);
+  }
+  return json({ ok: true, id, photos: idx });
+}
+async function apiPhotoImg(url) {
+  const id = jdStr(url.searchParams.get('id'), 24);
+  const data = id ? await kv().get('ph:img:' + id) : null;
+  if (!data) return json({ ok: false, error: 'not_found' }, 404);
+  const m = String(data).match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/s);
+  if (!m) return json({ ok: false, error: 'bad_data' }, 500);
+  const bin = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
+  return new Response(bin, { headers: { 'Content-Type': m[1], 'Cache-Control': 'private, max-age=86400' } });
+}
+async function apiPhotoDelete(request) {
+  const d = await readJson(request);
+  const job = jdStr(d.job, 64), id = jdStr(d.id, 24);
+  if (!job || !id) return json({ ok: false, error: 'bad_request' }, 422);
+  const idx = ((await kv().get(photoIdxKey(job), { type: 'json' })) || []).filter((p) => p.id !== id);
+  await kv().put(photoIdxKey(job), JSON.stringify(idx), { expirationTtl: DAY_TTL_DAYS * 86400 });
+  try { await kv().delete('ph:img:' + id); } catch { /* best effort */ }
+  return json({ ok: true, photos: idx });
+}
+
+// ===========================================================================
+// 10 · DAILY BRIEF — the 6am rundown
+// ===========================================================================
+// Everything the owner needs before he picks up a towel: today's run, the
+// weather risk on it, who is waiting, what came in yesterday, and the single
+// thing worth doing first. Weather is Open-Meteo (free, keyless).
+async function fetchWeather(days = 3) {
+  const url = 'https://api.open-meteo.com/v1/forecast?latitude=47.913&longitude=-122.098' +
+    '&current=temperature_2m,weather_code,precipitation_probability,wind_speed_10m' +
+    '&hourly=precipitation_probability,temperature_2m' +
+    '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max' +
+    `&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America%2FLos_Angeles&forecast_days=${days}`;
+  const res = await fetch(url, { cf: { cacheTtl: 1800, cacheEverything: true } });
+  if (!res.ok) throw new Error('weather ' + res.status);
+  return res.json();
+}
+const WX_TEXT = { 0: 'clear', 1: 'mostly clear', 2: 'partly cloudy', 3: 'overcast', 45: 'fog', 48: 'freezing fog', 51: 'light drizzle', 53: 'drizzle', 55: 'heavy drizzle', 61: 'light rain', 63: 'rain', 65: 'heavy rain', 71: 'light snow', 73: 'snow', 75: 'heavy snow', 80: 'rain showers', 81: 'rain showers', 82: 'heavy showers', 95: 'thunderstorms', 96: 'storms', 99: 'storms' };
+
+// Rain risk over the window a job actually occupies — a 40% chance at 3pm does
+// not matter for a 9am job, and the generic daily forecast can't tell you that.
+function jobRainRisk(wx, date, slot, durationMin) {
+  try {
+    const hours = (wx.hourly && wx.hourly.time) || [];
+    const pops = (wx.hourly && wx.hourly.precipitation_probability) || [];
+    const startH = parseInt(String(slot || '09:00').slice(0, 2), 10);
+    const endH = startH + Math.ceil((durationMin || 150) / 60);
+    let worst = 0;
+    for (let i = 0; i < hours.length; i++) {
+      const t = hours[i];
+      if (!String(t).startsWith(date)) continue;
+      const h = parseInt(String(t).slice(11, 13), 10);
+      if (h < startH || h > endH) continue;
+      worst = Math.max(worst, pops[i] || 0);
+    }
+    return worst;
+  } catch { return 0; }
+}
+
+async function buildBrief(kind = 'day') {
+  const cfg = await loadConfig();
+  const today = jdToday(cfg);
+  const day = await buildDay(today);
+  const index = await loadIndex();
+  const active = index.filter((t) => !t.archived);
+  const waiting = active.filter((t) => t.lastDir === 'in');
+  const followups = active.filter((t) => t.followupDue);
+  const reminders = active.filter((t) => t.reminderDue);
+  const unread = active.reduce((s, t) => s + (t.unread || 0), 0);
+
+  let wx = null, wxLine = '', risky = [];
+  try {
+    wx = await fetchWeather(kind === 'week' ? 7 : 3);
+    const c = wx.current || {};
+    wxLine = `${Math.round(c.temperature_2m)}°F, ${WX_TEXT[c.weather_code] || '—'}, ${c.precipitation_probability || 0}% rain, ${Math.round(c.wind_speed_10m || 0)} mph wind`;
+    for (const j of day.jobs) {
+      const risk = jobRainRisk(wx, today, j.slot, j.durationMin);
+      if (risk >= 45) risky.push({ id: j.id, name: j.name, slot: j.slot, risk });
+      j.rainRisk = risk;
+    }
+  } catch { /* the brief is still useful without weather */ }
+
+  // Yesterday's money + this month so far.
+  const yest = localDateStr(Date.now() - 86400000, cfg.tz);
+  const mdoc = await loadMonth(today.slice(0, 7));
+  const ydoc = yest.slice(0, 7) === today.slice(0, 7) ? mdoc : await loadMonth(yest.slice(0, 7));
+  const yEntries = (ydoc.entries || []).filter((e) => e.date === yest);
+  const yGross = jdMoney(yEntries.filter((e) => e.type === 'job').reduce((s, e) => s + e.amount, 0));
+  const month = summarizeMonth(mdoc.entries || []);
+  const invoices = (await loadInvoices()).filter((i) => i.status === 'open');
+  const owedTotal = jdMoney(invoices.reduce((s, i) => s + i.amount, 0));
+
+  const first = day.jobs.find((j) => j.state !== 'done' && j.state !== 'skipped');
+  const priority = waiting.length
+    ? `Reply to ${waiting[0].name || waiting[0].phone} — they've been waiting${waiting[0].lastTs ? ' since ' + new Date(waiting[0].lastTs).toLocaleString('en-US', { timeZone: cfg.tz, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}.`
+    : first ? `First stop: ${first.name || 'your ' + (first.slot || 'morning') + ' job'}${first.slot ? ' at ' + bkFmt12(first.slot) : ''}${first.city ? ' in ' + first.city : ''}.`
+      : followups.length ? `${followups.length} follow-up${followups.length > 1 ? 's are' : ' is'} ready to send.`
+        : invoices.length ? `Chase $${owedTotal} still owed across ${invoices.length} invoice${invoices.length > 1 ? 's' : ''}.`
+          : 'Nothing on the board — good day to chase rebooks.';
+
+  return {
+    date: today, tz: cfg.tz,
+    jobs: day.jobs.map((j) => ({ id: j.id, name: j.name, slot: j.slot, city: j.city, service: j.service, price: j.price, state: j.state, rainRisk: j.rainRisk || 0 })),
+    summary: day.summary,
+    weather: wx ? { line: wxLine, current: wx.current, daily: wx.daily } : null,
+    risky,
+    waiting: waiting.slice(0, 6).map((t) => ({ phone: t.phone, name: t.name || '', lastBody: t.lastBody, lastTs: t.lastTs })),
+    counts: { unread, waiting: waiting.length, followups: followups.length, reminders: reminders.length },
+    money: { yesterday: yGross, monthNet: month.net, monthGross: month.gross, monthJobs: month.jobs, owed: owedTotal, openInvoices: invoices.length },
+    priority,
+  };
+}
+
+function briefText(b) {
+  const L = [];
+  L.push(`☀️ Good morning Mikey — ${new Date(b.date + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' })}`);
+  L.push('');
+  L.push(`FIRST THING: ${b.priority}`);
+  L.push('');
+  if (b.jobs.length) {
+    L.push(`TODAY — ${b.jobs.length} job${b.jobs.length > 1 ? 's' : ''}, $${b.summary.booked} booked`);
+    for (const j of b.jobs) {
+      L.push(`  ${j.slot ? bkFmt12(j.slot) : '—'}  ${j.name || 'Job'}${j.city ? ' · ' + j.city : ''}${j.price ? ' · $' + j.price : ''}${j.rainRisk >= 45 ? `  ⚠ ${j.rainRisk}% rain` : ''}`);
+    }
+  } else {
+    L.push('TODAY — nothing booked.');
+  }
+  L.push('');
+  if (b.weather) L.push(`WEATHER: ${b.weather.line}`);
+  if (b.risky.length) L.push(`⚠ Rain risk on ${b.risky.length} job${b.risky.length > 1 ? 's' : ''} — consider a heads-up text.`);
+  L.push('');
+  L.push(`INBOX: ${b.counts.waiting} waiting on you · ${b.counts.followups} follow-ups ready · ${b.counts.unread} unread`);
+  for (const w of b.waiting.slice(0, 3)) L.push(`  • ${w.name || w.phone}: ${String(w.lastBody || '').slice(0, 70)}`);
+  L.push('');
+  L.push(`MONEY: $${b.money.yesterday} yesterday · $${b.money.monthNet} net this month (${b.money.monthJobs} jobs)` +
+    (b.money.openInvoices ? ` · $${b.money.owed} still owed` : ''));
+  L.push('');
+  L.push('Open your dashboard to run the day.');
+  return L.join('\n');
+}
+
+async function apiBrief(url) {
+  const kind = url.searchParams.get('kind') === 'week' ? 'week' : 'day';
+  const b = await buildBrief(kind);
+  return json({ ok: true, brief: b, text: briefText(b) });
+}
+
+// Cron hook. Exactly one KV write a day (the "already sent" stamp), and only
+// inside the 6–9am local window so a cold start at 3am never fires it early.
+async function maybeDailyBrief() {
+  const cfg = await loadConfig();
+  if (cfg.briefEnabled === false) return;
+  const now = Date.now();
+  const today = localDateStr(now, cfg.tz);
+  const hour = Number(new Date(now).toLocaleString('en-US', { timeZone: cfg.tz, hour: 'numeric', hour12: false }));
+  const target = Math.max(4, Math.min(11, Number(cfg.briefHour) || 6));
+  if (hour < target || hour > target + 3) return;
+  const stamp = await kv().get('brief:last');
+  if (stamp === today) return;
+  await kv().put('brief:last', today, { expirationTtl: 3 * 86400 });   // ⚠ 1 write/day
+  try {
+    const b = await buildBrief('day');
+    await notifyMikey(`☀️ Your day — ${b.jobs.length} job${b.jobs.length === 1 ? '' : 's'}, ${b.counts.waiting} waiting`, briefText(b));
+  } catch { /* never let the brief break the cron */ }
+  await pushNotify().catch(() => {});
+}
+
+// Nudge open invoices once, after the configured grace period. Only writes when
+// something is actually due, so quiet days cost nothing.
+async function maybePayReminders() {
+  const pcfg = await loadPayConfig();
+  if (!pcfg.remindDays) return;
+  const list = await loadInvoices();
+  const now = Date.now(), cut = pcfg.remindDays * 86400000;
+  const due = list.filter((i) => i.status === 'open' && !i.remindedAt && (now - i.createdAt) > cut);
+  if (!due.length) return;
+  for (const inv of due.slice(0, 5)) {
+    const first = jdFirst(inv.name);
+    const body = `${first ? 'Hey ' + first : 'Hey'} — just circling back on the $${inv.amount} for ${inv.memo}. Quick link: ${inv.url} Thanks! - Mikey`;
+    try {
+      await sendSms(inv.phone, body);
+      await appendMessage(inv.phone, { dir: 'out', body, kind: 'pay', status: 'sent' }, { name: inv.name });
+      inv.remindedAt = now;
+    } catch { inv.remindedAt = now; /* don't retry a number that refuses */ }
+  }
+  await saveInvoices(list);
 }

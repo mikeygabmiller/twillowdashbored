@@ -6,7 +6,7 @@
 > section, read **§2 Deploy model**: getting that wrong makes changes look shipped
 > when they aren't.
 
-Last updated at build `2026-07-04·m`.
+Last updated at build `2026-07-27·jobday`.
 
 ---
 
@@ -246,7 +246,60 @@ campaigns/reporting/referral.)
 
 **Current goal:** push it "over the top" with premium UI/UX + a signature differentiator.
 Next obvious no-setup wins: finish the pro-UI pass on the **conversation/chat screen**
-(Home is done, chat isn't), and/or build one of the starred creative ideas.
+(Home is done, chat isn't).
+
+---
+
+## 8b. The JOB DAY SUITE (build `·jobday`) — read this before touching Jobs
+
+Ten features shipped as one coherent system. Code lives in a single marked block
+at the **bottom of `src/index.js`** (`# JOB DAY SUITE #`) and a single block in
+`public/index.html` (`// JOB DAY SUITE — Today's Run · Quotes · Get Paid · Garage`).
+Nothing existing changed shape; every addition is additive.
+
+**UI shape.** One new bottom-nav tab, **Jobs** (`#jdApp`, z-index 82), with four
+segments: **Run · Quotes · Pay · Garage**. Everything else opens in one shared
+bottom sheet (`#jdSheet` / `#jdScrim`, z-index 90–91, `jdSheetOpen(html)` /
+`jdSheetClose()`). Plus a floating mic (`#vxFab` → `#vxApp`) and two Home pieces
+(the brief card, the one-time push nudge).
+
+**Storage (all new keys).**
+- `day:<YYYY-MM-DD>` — run state only: `{ manual[], state{jobId:{state,…}}, order[] }`.
+  Bookings stay the source of truth for *what* is scheduled; `buildDay()` merges
+  bookings + `appointmentAt` threads + manual jobs **in memory**, so a GET never writes.
+  Job ids: `b:<bookingId>` · `t:<phone>` · `m:<genId>`. 400-day TTL.
+- `trk:<token>` — one live trip, 12 h TTL, self-expiring.
+- `push:vapid` (keypair, written once ever) · `push:subs` (≤6 devices).
+- `quotes` (≤200) · `pay:index` (≤300) · `pay:config` · `blast:log` (≤40).
+- `ph:idx:<jobId>` + `ph:img:<id>` — before/after photos (same shape as `money:rc:`).
+- `brief:last` — the "already sent today" stamp (1 write/day).
+- `thread.garage` — vehicles + access notes, patched through `/api/meta`.
+
+**Index summary gained** `appointmentAt`, `hasGarage`, `vehicleLabel`, `city`.
+(Adding fields means every row differs once → one `saveIndex()` after the deploy.)
+
+**⚠ KV budget** — the reason this is safe: no write on any read path. Clock-driven
+writes are the brief (1/day) and `maybePayReminders()` (only when an invoice is
+actually overdue). Live-ETA pings are throttled *server-side* to ~1 write/45 s and
+only while a trip runs (~20 writes per drive). Keep it that way.
+
+**Web push has no setup.** `vapidKeys()` generates a P-256 keypair with WebCrypto
+on first call and stores it in KV. Pushes are sent **without a payload** (so no
+aes128gcm implementation is needed and no message content crosses the push
+service); `sw.js` wakes and fetches `/api/push/peek` for the headline. `notifyMikey()`
+fires `pushNotify()` alongside email/SMS. `sw.js` cache is now `mkd-shell-v5`.
+
+**Public routes** (registered ABOVE the `/api/` auth gate — keep them there):
+`GET /t/<token>` (ETA page), `GET /p/<token>` (pay page), `GET /api/track/state`.
+Both pages are self-contained HTML strings in the Worker with their own light/dark CSS.
+
+**Testing.** Two harnesses were used and are worth recreating if you change this:
+a Node smoke test that runs `worker.fetch` against an in-memory KV (74 assertions),
+and a Playwright run that drives the real UI against the real Worker (52 assertions,
+including the customer-facing pages). Both were green at `·jobday`.
+
+**Fixed along the way:** `.toast` had `opacity:0` but no `pointer-events:none`, so the
+invisible toast silently swallowed taps on anything at the bottom of the screen.
 
 ---
 
