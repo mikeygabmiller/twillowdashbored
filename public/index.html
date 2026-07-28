@@ -2333,7 +2333,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-27·nav-fit-6";
+  var APP_BUILD="2026-07-28·enter-newline";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4877,7 +4877,23 @@
   el("dtArchive").onclick=function(){var t=state.thread;doArchiveToggle(t);closeDetails();if(!t.archived){document.body.classList.remove("viewing");state.phone=null}};
 
   el("msgInput").addEventListener("input",function(){updateCount();autoGrow()});
-  el("msgInput").addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}});
+  // Enter key in the compose box. On a phone/tablet the on-screen return key ( ↵ )
+  // must make a LINE BREAK — there's no Shift to hold, and the send button is right
+  // there next to the box. On a real keyboard Enter still sends, Shift+Enter breaks.
+  // Re-checked live (matchMedia) so a tablet with a keyboard case behaves right.
+  var mqTouch=window.matchMedia?window.matchMedia("(hover: none) and (pointer: coarse)"):null;
+  function enterIsNewline(){return !!(mqTouch&&mqTouch.matches)}
+  function syncEnterHint(){el("msgInput").setAttribute("enterkeyhint",enterIsNewline()?"enter":"send")}
+  syncEnterHint();
+  if(mqTouch&&mqTouch.addEventListener)mqTouch.addEventListener("change",syncEnterHint);
+  el("msgInput").addEventListener("keydown",function(e){
+    if(e.key!=="Enter")return;
+    // Mid-autocorrect / swipe-typing on Android fires Enter while the word is still
+    // being composed — never treat that as a send, it fires off half-typed texts.
+    if(e.isComposing||e.keyCode===229)return;
+    if(e.shiftKey||enterIsNewline())return; // let the newline through
+    e.preventDefault();sendMessage();
+  });
   el("dtNotes").addEventListener("blur",function(){if(state.thread&&el("dtNotes").value!==(state.thread.notes||""))saveMeta({notes:el("dtNotes").value})});
   function closePops(except){["tplMenu","schedPop","remPop","writePop","toolsSheet"].forEach(function(id){if(id!==except)el(id).style.display="none"})}
   el("tplBtn").onclick=function(){var m=el("tplMenu");closePops("tplMenu");m.style.display=m.style.display==="none"?"block":"none"};
