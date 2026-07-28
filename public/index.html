@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<!-- interactive-widget=resizes-content: when the on-screen keyboard opens, shrink the
+     layout instead of letting the keyboard slide over it. Without this, Android
+     Chrome leaves the page full-height and the compose box ends up hidden behind
+     the keys. A visualViewport fallback below covers browsers that ignore it. -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
 <meta name="robots" content="noindex, nofollow" />
 <meta name="theme-color" content="#0a0a0c" />
 <script>/* set saved theme before first paint to avoid a flash */(function(){try{var m=localStorage.getItem("mkd-theme");if(m==="light"||m==="dark"){document.documentElement.setAttribute("data-theme",m);var tc=document.querySelector('meta[name="theme-color"]');if(tc)tc.setAttribute("content",m==="light"?"#eef0f3":"#0a0a0c")}}catch(e){}})();</script>
@@ -76,7 +80,10 @@
   .theme-seg button{flex:1;font-size:12px;font-weight:600;color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:7px 0;cursor:pointer;transition:all .14s}
   .theme-seg button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text)}
 
-  .app{display:grid;grid-template-columns:360px 1fr;height:100%}
+  /* --kb is however much of the screen the on-screen keyboard is covering (set
+     from visualViewport below). Shrinking the app by it keeps the compose box and
+     the send button above the keys instead of behind them. */
+  .app{display:grid;grid-template-columns:360px 1fr;height:calc(100% - var(--kb,0px))}
   .btn{background:var(--panel3);color:var(--text);border:1px solid var(--line);border-radius:11px;padding:9px 13px;transition:background .15s,transform .08s}
   .btn:hover{background:#2c2f39}
   .btn:active{transform:scale(.97)}
@@ -780,7 +787,9 @@
   @media(max-width:780px){
     .app{grid-template-columns:minmax(0,1fr)}
     .sidebar{min-width:0;overflow:hidden}
-    .chat{display:none;position:fixed;inset:0;z-index:40}
+    /* The chat pane is pinned to the viewport on a phone, so it has to lift off
+       the bottom by the keyboard height itself — shrinking .app doesn't reach it. */
+    .chat{display:none;position:fixed;top:0;left:0;right:0;bottom:var(--kb,0px);z-index:40}
     body.viewing .sidebar{display:none}
     body.viewing .chat{display:flex}
     .backbtn{display:inline-flex}
@@ -2333,7 +2342,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-28·enter-newline";
+  var APP_BUILD="2026-07-28·compose-safety";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -2583,7 +2592,7 @@
     opts=opts||{};var t=el("toast");
     t.innerHTML='<span>'+esc(msg)+'</span>'+(opts.undo?'<button class="undo">Undo</button>':'');
     t.className="toast show"+(opts.bad?" bad":"");
-    clearTimeout(t._h);t._h=setTimeout(function(){t.className="toast"+(opts.bad?" bad":"")},opts.undo?5000:2800);
+    clearTimeout(t._h);t._h=setTimeout(function(){t.className="toast"+(opts.bad?" bad":"")},opts.ms||(opts.undo?5000:2800));
     if(opts.undo){t.querySelector(".undo").onclick=function(){clearTimeout(t._h);t.className="toast"+(opts.bad?" bad":"");opts.undo()}}
   }
 
@@ -4064,7 +4073,12 @@
   function refreshThreads(){return api("/api/threads").then(function(d){if(d&&d.ok){state.threads=d.threads||[];state.loadedOnce=true;renderMain()}})}
 
   function openThread(phone){
+    // Hand the current draft back to the conversation it was written for before
+    // switching, and bring up whatever was left half-typed for this one.
+    var prev=state.phone,switching=prev!==phone;
+    if(switching&&prev)stashDraft(prev);
     state.phone=phone;document.body.classList.add("viewing");
+    if(switching)loadDraft(phone);
     // reset any in-thread find when moving to a different conversation
     state.threadFind="";state.findIdx=0;var fb=el("findBar");if(fb)fb.style.display="none";var fi=el("findInput");if(fi)fi.value="";
     state.lastAiText=null;
@@ -4593,9 +4607,56 @@
   }
 
   // ---- actions ----
+  // ---- undo send ----------------------------------------------------------
+  // A text is the one thing in this app you genuinely cannot take back, so the
+  // send is parked for a few seconds behind the optimistic bubble that was
+  // already being drawn. Tap Undo and the words go straight back in the box.
+  // Nothing is queued server-side: if the window passes, it sends exactly the
+  // way it always did.
+  var UNDO_MS=10000;
+  var pendingSends={};   // tempId -> { payload, forPhone, body, timer }
+
+  function dispatchSend(tempId){
+    var p=pendingSends[tempId];if(!p)return;
+    delete pendingSends[tempId];clearTimeout(p.timer);
+    var forPhone=p.forPhone;
+    var fail=function(errMsg){
+      var mm=state.thread&&state.thread.phone===forPhone&&(state.thread.messages||[]).find(function(x){return x.id===tempId});
+      if(mm){mm.status="failed";mm.error=errMsg;renderThread()}
+      noteSendFailure(forPhone,errMsg);
+    };
+    post("/api/send",p.payload).then(function(d){
+      if(d&&d.ok){if(state.phone===forPhone){state.thread=d.thread;renderThread()}refreshThreads();vibrate(8)}
+      else if(d&&d.error==="recipient_opted_out"){fail("Opted out (STOP)");toast("They've opted out (texted STOP) — can't text this number",{bad:true})}
+      else{fail("Not sent — tap Resend");toast("Couldn't send: "+((d&&d.error)||"error"),{bad:true})}
+    }).catch(function(){fail("Network error — tap Resend");toast("Network error",{bad:true})});
+  }
+
+  function cancelSend(tempId){
+    var p=pendingSends[tempId];if(!p)return;
+    delete pendingSends[tempId];clearTimeout(p.timer);
+    // Pull the optimistic bubble back out of the thread.
+    if(state.thread&&state.thread.phone===p.forPhone){
+      state.thread.messages=(state.thread.messages||[]).filter(function(m){return m.id!==tempId});
+      if(state.phone===p.forPhone)renderThread();
+    }
+    // Put the words back where they came from — the box if you're still looking
+    // at that conversation, otherwise its draft so they're waiting when you return.
+    if(state.phone===p.forPhone){var inp=el("msgInput");inp.value=p.body;autoGrow();updateCount();inp.focus()}
+    else{drafts[p.forPhone]=p.body;saveDrafts()}
+    if(p.payload.aiOriginal)state.lastAiText=p.payload.aiOriginal; // keep the AI-edit lesson
+    toast("Held — put back in your box");
+  }
+
+  // A queued text must never die because the app got closed or backgrounded.
+  // Anything still waiting goes out the moment the page is hidden or unloaded.
+  function flushPendingSends(){Object.keys(pendingSends).forEach(dispatchSend)}
+  document.addEventListener("visibilitychange",function(){if(document.hidden)flushPendingSends()});
+  window.addEventListener("pagehide",flushPendingSends);
+
   function sendMessage(){
     var inp=el("msgInput");var body=inp.value.trim();if(!body||!state.phone)return;
-    el("sendBtn").disabled=true;
+    if(!sendGuardsPass(body))return;
     var payload={phone:state.phone,body:body};
     if(teamOn()&&meName())payload.by=meName(); // sign the reply with who's texting
     // If this send started from an AI draft/suggestion, pass the original so the
@@ -4608,17 +4669,11 @@
       state.thread.messages.push({id:tempId,dir:"out",body:body,ts:Date.now(),kind:"manual",status:"sending",by:payload.by});
       renderThread();
     }
-    inp.value="";autoGrow();updateCount();hideAiReview();
-    var fail=function(errMsg){
-      var mm=state.thread&&state.thread.phone===forPhone&&(state.thread.messages||[]).find(function(x){return x.id===tempId});
-      if(mm){mm.status="failed";mm.error=errMsg;renderThread()}
-    };
-    post("/api/send",payload).then(function(d){
-      el("sendBtn").disabled=false;
-      if(d&&d.ok){if(state.phone===forPhone){state.thread=d.thread;renderThread()}refreshThreads();vibrate(8)}
-      else if(d&&d.error==="recipient_opted_out"){fail("Opted out (STOP)");toast("They've opted out (texted STOP) — can't text this number",{bad:true})}
-      else{fail("Not sent — tap Resend");toast("Couldn't send: "+((d&&d.error)||"error"),{bad:true})}
-    }).catch(function(){el("sendBtn").disabled=false;fail("Network error — tap Resend");toast("Network error",{bad:true})});
+    inp.value="";clearDraft(forPhone);autoGrow();updateCount();hideAiReview();
+    noteSent(forPhone,body);
+    pendingSends[tempId]={payload:payload,forPhone:forPhone,body:body,
+      timer:setTimeout(function(){dispatchSend(tempId)},UNDO_MS)};
+    toast("Sending…",{undo:function(){cancelSend(tempId)},ms:UNDO_MS});
   }
   function placeCall(){
     if(!state.phone)return;
@@ -4728,12 +4783,100 @@
     var v=el("schedTime").value;if(!v){toast("Pick a date & time",{bad:true});return}
     var sendAt=new Date(v).getTime();if(sendAt<Date.now()){toast("Pick a future time",{bad:true});return}
     post("/api/schedule",{phone:state.phone,body:body,sendAt:sendAt}).then(function(d){
-      if(d&&d.ok){el("msgInput").value="";el("schedNL").value="";el("schedNLecho").textContent="";autoGrow();updateCount();el("schedPop").style.display="none";state.thread=d.thread;renderThread();refreshThreads();toast("Scheduled for "+fmtFull(sendAt))}
+      if(d&&d.ok){el("msgInput").value="";clearDraft(state.phone);el("schedNL").value="";el("schedNLecho").textContent="";autoGrow();updateCount();el("schedPop").style.display="none";state.thread=d.thread;renderThread();refreshThreads();toast("Scheduled for "+fmtFull(sendAt))}
       else toast("Couldn't schedule: "+((d&&d.error)||"error"),{bad:true});
     });
   }
-  function updateCount(){var v=el("msgInput").value;var n=v.length;el("charCount").textContent=n?n+" · "+Math.ceil(n/160)+" SMS":""}
+  // ---- what this text actually costs --------------------------------------
+  // Carriers don't bill by character, they bill by segment, and the segment size
+  // depends on the alphabet. Plain text is GSM-7: 160 per segment (153 once it
+  // splits). ONE character outside that set — an emoji, or the curly apostrophe
+  // your keyboard inserts on its own — flips the whole message to UCS-2, where a
+  // segment is 70 (67 split). The old counter divided by 160 no matter what, so
+  // a 150-character text with a 👍 in it read "1 SMS" and billed 3.
+  var GSM_BASIC="@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà";
+  var GSM_EXT="^{}\\[~]|€"; // these cost two septets each
+  function smsInfo(text){
+    var septets=0,offender="";
+    for(var i=0;i<text.length;i++){
+      var c=text.charAt(i);
+      if(GSM_BASIC.indexOf(c)>=0){septets++;continue}
+      if(GSM_EXT.indexOf(c)>=0){septets+=2;continue}
+      offender=text.slice(i,i+2).match(/^[\uD800-\uDBFF][\uDC00-\uDFFF]/)?text.slice(i,i+2):c;
+      break;
+    }
+    var visible=Array.from(text).length; // an emoji is one character to a human
+    if(!offender){
+      var per=septets<=160?160:153;
+      return {chars:visible,segments:Math.max(1,Math.ceil(septets/per)),unicode:false,offender:""};
+    }
+    var units=text.length;               // UCS-2 bills per UTF-16 unit (emoji = 2)
+    var per2=units<=70?70:67;
+    return {chars:visible,segments:Math.max(1,Math.ceil(units/per2)),unicode:true,offender:offender};
+  }
+  function updateCount(){
+    var v=el("msgInput").value,cc=el("charCount");
+    if(!v){cc.textContent="";cc.title="";cc.style.color="var(--muted2)";return}
+    var s=smsInfo(v);
+    cc.textContent=s.chars+" · "+s.segments+" SMS"+(s.unicode?" · unicode":"");
+    cc.style.color=s.unicode?"var(--accent-text)":(s.segments>1?"var(--muted)":"var(--muted2)");
+    cc.title=s.unicode
+      ? '"'+s.offender+'" turns this into a unicode text — 70 characters per SMS instead of 160, so it bills as '+s.segments+'.'
+      : s.segments+" segment"+(s.segments===1?"":"s")+" at 160 characters each.";
+  }
   function autoGrow(){var ta=el("msgInput");ta.style.height="46px";ta.style.height=Math.min(ta.scrollHeight,140)+"px"}
+
+  // ---- per-conversation drafts --------------------------------------------
+  // The compose box used to hold whatever you last typed regardless of which
+  // conversation you opened, so a reply meant for one customer sat there loaded
+  // and aimed at the next person you tapped. Drafts now belong to a phone number
+  // and are restored when you come back. Kept in localStorage so closing the app
+  // doesn't throw away a half-written reply.
+  var DRAFTS_KEY="mkd-drafts",draftTimer=null;
+  var drafts=(function(){try{return JSON.parse(localStorage.getItem(DRAFTS_KEY))||{}}catch(e){return{}}})();
+  function saveDrafts(){clearTimeout(draftTimer);draftTimer=setTimeout(function(){try{localStorage.setItem(DRAFTS_KEY,JSON.stringify(drafts))}catch(e){}},400)}
+  function stashDraft(phone){
+    if(!phone)return;
+    var v=el("msgInput").value;
+    if(v.trim())drafts[phone]=v;else delete drafts[phone];
+    saveDrafts();
+  }
+  function loadDraft(phone){var inp=el("msgInput");inp.value=(phone&&drafts[phone])||"";autoGrow();updateCount()}
+  function clearDraft(phone){if(phone&&drafts[phone]!=null){delete drafts[phone];saveDrafts()}}
+
+  // ---- guards on the way out ----------------------------------------------
+  // Two things worth a second of friction: the same text going twice because of
+  // a shaky-signal double tap, and a manual text at an hour your own autopilot
+  // refuses to send at.
+  var lastSentAt={};  // phone -> { body, ts }
+  function noteSent(phone,body){lastSentAt[phone]={body:body,ts:Date.now()}}
+  function sendGuardsPass(body){
+    var prev=lastSentAt[state.phone];
+    if(prev&&prev.body===body&&Date.now()-prev.ts<5*60000){
+      if(!confirm("You just sent this exact text to "+displayName(state.thread)+".\n\nSend it again?"))return false;
+    }
+    var c=state.config||{},qs=c.quietStart==null?20:c.quietStart,qe=c.quietEnd==null?8:c.quietEnd;
+    var h=new Date().getHours();
+    var quiet=(qs>qe)?(h>=qs||h<qe):(h>=qs&&h<qe);
+    if(quiet&&!quietOk){
+      if(!confirm("It's "+new Date().toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})+" — inside your quiet hours.\n\nYour automatic follow-ups won't send right now. Text anyway?"))return false;
+      quietOk=true; // asked once; don't nag for the rest of this sitting
+      setTimeout(function(){quietOk=false},30*60000);
+    }
+    return true;
+  }
+  var quietOk=false;
+
+  // A send that fails while you're looking at another conversation used to be
+  // invisible. Remember it so the board can show it.
+  function noteSendFailure(phone,msg){
+    if(state.phone!==phone){
+      var t=(state.threads||[]).find(function(x){return x.phone===phone});
+      toast("Didn't send to "+((t&&t.name)||prettyPhone(phone))+" — "+msg,{bad:true});
+    }
+    var e=(state.threads||[]).find(function(x){return x.phone===phone});
+    if(e){e.sendFailed=true;renderMain()}
+  }
 
   // ---- appointment reminders ----
   var remSel={when:0,tpl:0};
@@ -4784,6 +4927,7 @@
 
   // ---- tabs ----
   function setTab(tab){
+    stashDraft(state.phone);
     state.tab=tab;state.phone=null;document.body.classList.remove("viewing");
     el("details").classList.remove("open");el("sheetScrim").classList.remove("show");
     el("emptyState").style.display="flex";el("chatHead").style.display="none";el("composer").style.display="none";el("schedBanner").style.display="none";el("fuBanner").style.display="none";el("remindBanner").style.display="none";
@@ -4860,7 +5004,7 @@
   el("sendBtn").onclick=sendMessage;
   function openDetails(){el("details").classList.add("open");el("sheetScrim").classList.add("show")}
   function closeDetails(){el("details").classList.remove("open");el("sheetScrim").classList.remove("show")}
-  el("backBtn").onclick=function(){closeDetails();document.body.classList.remove("viewing");state.phone=null;renderMain()};
+  el("backBtn").onclick=function(){closeDetails();stashDraft(state.phone);document.body.classList.remove("viewing");state.phone=null;renderMain()};
   el("callBtn").onclick=placeCall;el("dtCall").onclick=placeCall;
   el("whoBtn").onclick=openDetails;
   el("detailsBtn").onclick=function(){el("details").classList.contains("open")?closeDetails():openDetails()};
@@ -4876,7 +5020,26 @@
   el("dtRename").onclick=function(){var v=prompt("Contact name:",state.thread.name||"");if(v!==null)saveMeta({name:v.trim()})};
   el("dtArchive").onclick=function(){var t=state.thread;doArchiveToggle(t);closeDetails();if(!t.archived){document.body.classList.remove("viewing");state.phone=null}};
 
-  el("msgInput").addEventListener("input",function(){updateCount();autoGrow()});
+  el("msgInput").addEventListener("input",function(){updateCount();autoGrow();stashDraft(state.phone)});
+
+  // Fallback for browsers that ignore interactive-widget (see the viewport meta):
+  // measure what the on-screen keyboard is covering and shrink the app by it, so
+  // the compose box and send button never end up behind the keys. Where the meta
+  // IS honored the window has already shrunk, this measures ~0, and nothing moves.
+  (function(){
+    var vv=window.visualViewport;if(!vv)return;
+    var last=0;
+    function apply(){
+      var covered=Math.max(0,window.innerHeight-vv.height-vv.offsetTop);
+      var kb=covered>120?Math.round(covered):0; // ignore URL-bar shifts, only a real keyboard
+      if(kb===last)return;
+      last=kb;
+      document.documentElement.style.setProperty("--kb",kb+"px");
+      // Keyboard just opened over a conversation — keep the newest message in view.
+      if(kb&&state.phone){var b=el("messages");if(b)setTimeout(function(){b.scrollTop=b.scrollHeight},60)}
+    }
+    vv.addEventListener("resize",apply);vv.addEventListener("scroll",apply);apply();
+  })();
   // Enter key in the compose box. On a phone/tablet the on-screen return key ( ↵ )
   // must make a LINE BREAK — there's no Shift to hold, and the send button is right
   // there next to the box. On a real keyboard Enter still sends, Shift+Enter breaks.
