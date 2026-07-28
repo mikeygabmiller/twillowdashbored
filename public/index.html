@@ -454,6 +454,14 @@
   .msg-link{color:inherit;text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1px;
     text-decoration-color:rgba(255,255,255,.45)}
   .bubble.out .msg-link{text-decoration-color:rgba(255,255,255,.6)}
+  /* Won the job, never logged the money. */
+  .logjob-banner{margin:8px 14px 0;padding:10px 13px;background:#132218;border:1px solid #244d33;border-radius:13px;
+    display:flex;align-items:center;gap:10px;color:#c8e6d3;font-size:13px}
+  .logjob-banner .lj-ic{color:#4ade80;flex:none;display:flex}
+  .logjob-banner .lj-txt{flex:1;min-width:0;line-height:1.35}
+  .logjob-banner .lj-txt b{color:#e4f7ea;font-weight:650}
+  .logjob-banner .lj-go{background:#1c6b3a;border:1px solid #2b8f50;color:#eafff1;border-radius:8px;
+    padding:6px 11px;font-size:11.5px;font-weight:700;flex:none}
   /* They texted STOP. Say so up front instead of letting the send bounce. */
   .optout-banner{margin:8px 14px 0;padding:10px 13px;background:#241417;border:1px solid #4d2229;border-radius:13px;
     display:flex;align-items:center;gap:10px;color:#f0c9ce;font-size:13px}
@@ -2018,6 +2026,7 @@
     </div>
     <div class="hold-banner" id="holdBanner" style="display:none"></div>
     <div class="optout-banner" id="optOutBanner" style="display:none"></div>
+    <div class="logjob-banner" id="logJobBanner" style="display:none"></div>
     <div class="remind-banner" id="remindBanner" style="display:none"></div>
     <div class="sched-banner" id="schedBanner" style="display:none"></div>
     <div class="followup-banner" id="fuBanner" style="display:none"></div>
@@ -2346,6 +2355,9 @@
   var STATUS={new:{label:"New",cls:"st-new",dot:"dot-new"},active:{label:"Active",cls:"st-active",dot:"dot-active"},won:{label:"Won",cls:"st-won",dot:"dot-won"},lost:{label:"Lost",cls:"st-lost",dot:"dot-lost"}};
   // "waiting" is the highest-value list in the app and the engine already works
   // it out (it calls the same thing "owed" internally) — it just never had a chip.
+  // Twilio's per-segment price for US SMS. Only used to show what a blast will
+  // cost before it goes — nothing bills off this number.
+  var BLAST_RATE=0.0079;
   var FILTERS=[["all","All"],["waiting","Waiting on me"],["unread","Unread"],["new","New"],["active","Active"],["won","Won"],["lost","Lost"]];
   var LEAD_COLS=[["new","New leads","#3b82f6"],["active","Active","#22c55e"],["won","Won","#a855f7"],["lost","Lost","#8a93a3"]];
   var TEMPLATES=[
@@ -2375,7 +2387,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-28·inbox-speed";
+  var APP_BUILD="2026-07-28·money-guard";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4324,6 +4336,30 @@
     var sa=el("signAs"),who=teamOn()?meName():"";
     if(who){sa.style.display="inline-flex";sa.innerHTML='Signing as <b>'+esc(who)+'</b>'}
     else{sa.style.display="none"}
+
+    // Your own operating rules say a won job with nothing in the money tracker is
+    // lost profit visibility. Make it a button here rather than a scolding in the
+    // AI summary later.
+    var lj=el("logJobBanner");
+    if(t.status==="won"){
+      var mc=dtMoneyCache[t.phone];
+      if(mc===undefined){
+        dtMoneyCache[t.phone]=null; // in flight — don't ask twice
+        api("/api/money/by-phone?phone="+encodeURIComponent(t.phone)).then(function(d){
+          dtMoneyCache[t.phone]=(d&&d.ok)?d:{jobs:0,total:0,entries:[]};
+          if(state.thread&&state.thread.phone===t.phone)renderThread();
+        }).catch(function(){dtMoneyCache[t.phone]={jobs:0,total:0,entries:[]}});
+      }
+      if(mc&&!mc.jobs){
+        lj.style.display="flex";
+        lj.innerHTML='<span class="lj-ic">'+ic("dollar",15)+'</span><div class="lj-txt"><b>Won — but nothing logged</b>'
+          +'<span class="hb-when">This job isn\'t in your money tracker yet.</span></div>'
+          +'<button class="lj-go">Log it</button>';
+        lj.querySelector(".lj-go").onclick=function(){
+          openMoney();setTimeout(function(){openMoSheet("job",{phone:t.phone,name:displayName(t)},null)},120);
+        };
+      } else lj.style.display="none";
+    } else lj.style.display="none";
 
     var rb=el("remindBanner");
     if(t.reminderAt){
@@ -8888,20 +8924,38 @@
       '<div class="jd-sec">'+ic("message-square",14)+' The message</div>'+
       '<div class="jd-field"><textarea id="blBody" style="min-height:118px">'+esc(msg)+'</textarea>'+
       '<div class="jd-note">{first_name} fills in per person. Opted-out numbers are skipped automatically, and it\'s capped at 25 per send.</div></div>'+
+      '<div class="jd-note" id="blCost" style="margin-top:2px"></div>'+
       '<button class="jd-btn pri" id="blSend">'+ic("megaphone",17)+' Send to <span id="blN">'+list.length+'</span></button>'+
       '<button class="jd-btn ghost" id="blCancel" style="margin-top:8px">Cancel</button>';
     hydrateIcons(r);
     var count=function(){
       var n=0;Array.prototype.forEach.call(r.querySelectorAll("[data-blph]"),function(c){if(c.checked)n++});
-      r.querySelector("#blN").textContent=n;return n;
+      r.querySelector("#blN").textContent=n;
+      // What this actually costs, before it goes out. One emoji in the message
+      // turns every segment from 160 characters into 70, so this can triple
+      // without a word being added.
+      var body=(r.querySelector("#blBody").value||"");
+      var info=smsInfo(body.replace(/\{first_name\}/g,"Jonathan")); // longest plausible name
+      var segs=info.segments*n;
+      var cost=segs*BLAST_RATE;
+      r.querySelector("#blCost").textContent=n
+        ? (info.segments+" SMS each × "+n+" = "+segs+" message"+(segs===1?"":"s")+" · about "+fmtMoney(cost)
+           +(info.unicode?" — the \u201c"+info.offender+"\u201d makes it unicode, 70 characters a segment instead of 160":""))
+        : "";
+      return n;
     };
     Array.prototype.forEach.call(r.querySelectorAll("[data-blph]"),function(c){c.onchange=count});
+    r.querySelector("#blBody").addEventListener("input",count);
+    count();
     r.querySelector("#blCancel").onclick=jdSheetClose;
     r.querySelector("#blSend").onclick=function(){
       var phones=[];
       Array.prototype.forEach.call(r.querySelectorAll("[data-blph]"),function(c){if(c.checked)phones.push(c.getAttribute("data-blph"))});
       if(!phones.length)return toast("Pick at least one person",{bad:true});
-      if(!confirm("Text "+phones.length+" past customer"+(phones.length===1?"":"s")+" now?"))return;
+      var ci=smsInfo((r.querySelector("#blBody").value||"").replace(/\{first_name\}/g,"Jonathan"));
+      var cs=ci.segments*phones.length;
+      if(!confirm("Text "+phones.length+" past customer"+(phones.length===1?"":"s")+" now?\n\n"
+        +cs+" message"+(cs===1?"":"s")+" at "+ci.segments+" SMS each — about "+fmtMoney(cs*BLAST_RATE)+"."))return;
       var btn=r.querySelector("#blSend");btn.disabled=true;btn.innerHTML='<span class="spin"></span> Sending…';
       post("/api/blast/send",{phones:phones,body:r.querySelector("#blBody").value,city:place}).then(function(d){
         if(!d||!d.ok){btn.disabled=false;btn.innerHTML=ic("megaphone",17)+" Send";return toast("Blast failed",{bad:true})}
