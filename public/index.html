@@ -2405,7 +2405,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-28·smart-followups";
+  var APP_BUILD="2026-07-28·rank-match-diag";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -5432,7 +5432,10 @@
     map:{mode:"area",area:{size:9,radius:12,metric:"rev",months:12},
          rank:{data:null,loading:false,err:"",setup:false,saving:false,
                size:7,radius:5,keyword:"",scanning:false,done:0,total:0,live:null,viewId:"",
-               finding:false,found:null,fail:null}}};
+               finding:false,found:null,fail:null,
+               // "why 20+ everywhere?" evidence: what Google returned at a point
+               // we didn't match, plus the on-demand full list.
+               sample:null,matchedName:"",preview:null,previewing:false,previewErr:""}}};
   var GROW_VIEWS={overview:["Analytics","Business overview · Mikey's Mobile Detailing"],
     customers:["Analytics","Who your customers are — and who's slipping away"],
     profit:["Analytics","What each job is really worth"],
@@ -6505,6 +6508,7 @@
       });
       h+='</div>';
       var show=live||(R.viewId?scans.filter(function(s){return s.id===R.viewId})[0]:null)||scans[0];
+      R.shown=show||null;   // the scan the diagnostics + preview refer to
       if(show)h+=ggScanHTML(show);
     }else{
       h+='<div class="wa-ins info"><span class="i-ic">'+ic("pin",15)+'</span><div>No scans yet. Pick a search term and run one — each grid point shows where your listing ranks if someone searched from right there.</div></div>';
@@ -6540,13 +6544,63 @@
     h+='<div class="gg-meta">'+s.size+'×'+s.size+' grid · <b>'+(s.radiusMi*2)+' mi</b> across · “'+esc(s.keyword||"")+'”<br>'+
       esc(new Date(s.ts).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}))+'</div>';
     var tot=st.points||res.length||1;
+    h+=ggDiagHTML(s,st,tot);
     h+='<div class="an-lbl">'+ic("bar-chart",15)+'The spread</div><div class="gg-rows">'+
       ggSpreadRow("Top 3",st.top3||0,tot,"#15803d")+
       ggSpreadRow("Top 10",st.top10||0,tot,"#84a814")+
       ggSpreadRow("Not in top 20",st.missing||0,tot,"#b91c1c")+
       '</div>';
+    if(s.matchedName)h+='<div class="wa-hint" style="margin-top:8px">Ranks are for the listing Google calls <b>'+esc(s.matchedName)+'</b>.</div>';
     h+='<div class="wa-hint" style="margin-top:10px">Ranks come from the Google Places API with the search biased to each grid point — the same method the paid grid trackers use. It\'s a very close proxy for the Maps local pack, not a byte-for-byte copy, so read the pattern (where you fade out) more than any single number.</div>';
     h+='<button class="btn" id="ggDel" data-id="'+esc(s.id||"")+'" style="width:100%;margin-top:10px">Delete this scan</button>';
+    return h;
+  }
+  // A grid that is 20+ at EVERY point almost never means "you rank nowhere" —
+  // far more often the listing came back in Google's results and we failed to
+  // recognise it as yours (name typed differently, wrong/blank Place ID). Those
+  // two situations look identical on the map, so when nothing matched anywhere
+  // we stop presenting it as a ranking result and show the evidence instead.
+  function ggDiagHTML(s,st,tot){
+    var R=GROW.map.rank;
+    if(!tot||(st.missing||0)<tot)return"";
+    var allEmpty=(st.empty||0)>=tot;
+    var h='<div class="wa-ins bad" style="margin:10px 0 2px"><span class="i-ic">'+ic("alert",15)+'</span><div>'+
+      '<b>Not matched at any of the '+tot+' points — read this before believing the map.</b>';
+    if(allEmpty){
+      h+='<div style="margin-top:7px;font-size:12.5px;line-height:1.55">Google returned <b>no businesses at all</b> for “'+esc(s.keyword||"")+'” at these points. That points at the search term or the API key, not your ranking. Try a plainer term like “mobile detailing” or “car detailing”.</div>';
+    }else{
+      h+='<div style="margin-top:7px;font-size:12.5px;line-height:1.55">Google <b>did</b> return businesses at every point — your listing just wasn\'t recognised among them. Nine times out of ten that\'s the name being matched on, not your actual ranking. Right now we\'re looking for '+
+        (R.data&&R.data.config&&R.data.config.placeId?'Place ID <b>'+esc(R.data.config.placeId)+'</b> or ':'')+
+        'the name <b>'+esc((R.data&&R.data.config&&R.data.config.bizName)||"—")+'</b>, which has to line up with the name on your Google Business Profile.</div>';
+      if(R.sample&&R.sample.top&&R.sample.top.length){
+        h+='<div style="margin-top:8px;font-size:12px;color:var(--muted2);line-height:1.6"><b>What came back at one point:</b><br>'+
+          R.sample.top.map(function(t,i){return (i+1)+'. '+esc(t.name||"—")}).join('<br>')+'</div>';
+      }
+    }
+    h+='<button class="btn" id="ggProbe" style="width:100%;margin-top:10px">'+
+      (R.previewing?'<span class="spin"></span> Asking Google…':ic("search",15)+' Show the full list Google returns (1 call)')+'</button>';
+    if(R.previewErr)h+='<div style="margin-top:8px;font-size:12px;color:var(--red,#ef4444)">'+esc(R.previewErr)+'</div>';
+    h+='</div></div>';
+    if(R.preview)h+=ggPreviewHTML();
+    return h;
+  }
+  // The full result list for one point, with your listing flagged. Tapping a row
+  // pins that exact Place ID, which makes every future scan unambiguous.
+  function ggPreviewHTML(){
+    var p=GROW.map.rank.preview,rows=p.results||[];
+    var hit=rows.filter(function(r){return r.match})[0];
+    var h='<div class="wa-panel" style="margin-top:8px"><div class="p-t">'+ic("pin",15)+' “'+esc(p.keyword||"")+'” at the centre<small>'+rows.length+' result'+(rows.length===1?"":"s")+'</small></div>';
+    h+='<div class="wa-hint" style="margin:0 0 8px">'+(hit
+      ? 'Matched <b>'+esc(hit.name)+'</b> at #'+hit.rank+' here — if that\'s you, re-run the scan and the grid will fill in.'
+      : 'None of these matched what we\'re looking for. <b>See yourself in the list? Tap it</b> — that pins your exact listing and the next scan will track it properly.')+'</div>';
+    if(!rows.length)h+='<div class="wa-hint">Google returned nothing here for this term.</div>';
+    rows.forEach(function(r){
+      h+='<div class="iv-row tap" data-gg-use="'+esc(r.id)+'" data-gg-nm="'+esc(r.name)+'" style="margin-bottom:6px'+(r.match?';border-color:var(--accent)':'')+'">'+
+        '<span class="b"><span class="t">'+r.rank+'. '+esc(r.name||"—")+(r.match?' ✓':'')+'</span>'+
+        '<span class="s">'+esc(r.address||"")+'</span></span>'+
+        '<span class="r"><span class="s">'+(r.match?"matched":"this is me")+'</span></span></div>';
+    });
+    h+='</div>';
     return h;
   }
   function ggSpreadRow(label,n,tot,color){
@@ -6642,7 +6696,37 @@
     var run=el("ggRun");if(run)run.onclick=function(){vibrate(8);ggRunScan()};
     Array.prototype.forEach.call(box.querySelectorAll("[data-gs]"),function(b){
       b.onclick=function(){vibrate(6);var id=b.getAttribute("data-gs");
-        if(id==="__live")return;R.live=null;R.viewId=id;ggRenderRank()};
+        if(id==="__live")return;R.live=null;R.viewId=id;R.preview=null;R.previewErr="";ggRenderRank()};
+    });
+    // "Show the full list Google returns" — one Places call at the scan's centre,
+    // run exactly the way a grid point runs it.
+    var pr=el("ggProbe");
+    if(pr)pr.onclick=function(){
+      if(R.previewing)return;
+      var s=R.shown;if(!s)return;
+      var stepMi=s.size>1?(s.radiusMi*2)/(s.size-1):s.radiusMi;
+      R.previewing=true;R.previewErr="";ggRenderRank();
+      post("/api/geogrid/preview",{keyword:s.keyword,lat:s.centerLat,lng:s.centerLng,
+        radiusM:Math.max(500,Math.round(stepMi*1609.34))}).then(function(r){
+        R.previewing=false;
+        if(r&&r.ok)R.preview=r; else R.previewErr=(r&&(r.hint||r.detail))||"Couldn't reach Google";
+        ggRenderRank();
+      }).catch(function(){R.previewing=false;R.previewErr="Network error";ggRenderRank()});
+    };
+    // Tapping a row in that list pins the exact Place ID, so the next scan can't
+    // miss the listing no matter how the name is written.
+    Array.prototype.forEach.call(box.querySelectorAll("[data-gg-use]"),function(b){
+      b.onclick=function(){
+        var id=b.getAttribute("data-gg-use"),nm=b.getAttribute("data-gg-nm")||"";
+        if(!id)return;
+        var c=(R.data&&R.data.config)||{};
+        vibrate(8);
+        post("/api/geogrid/connect",{key:"",bizName:nm||c.bizName||"",placeId:id,
+          centerLat:c.centerLat,centerLng:c.centerLng}).then(function(r){
+          if(r&&r.ok){R.preview=null;R.data=null;ggLoadRank(true);toast("Locked to “"+nm+"” — re-run the scan")}
+          else toast((r&&r.hint)||"Couldn't save that",{bad:true});
+        }).catch(function(){toast("Network error",{bad:true})});
+      };
     });
     var del=el("ggDel");
     if(del)del.onclick=function(){
@@ -6668,6 +6752,7 @@
     var batch=Math.max(1,Math.min(25,(d&&d.maxBatch)||25));
 
     R.scanning=true;R.cancel=false;R.done=0;R.total=grid.length;R.live=null;
+    R.sample=null;R.matchedName="";R.preview=null;R.previewErr="";
     ggRenderRank();
 
     var acc=[],i=0;
@@ -6683,6 +6768,9 @@
           return;
         }
         acc=acc.concat(r.results||[]);
+        // Keep the first evidence of a miss (and of a hit) for the diagnostics.
+        if(!R.matchedName&&r.matchedName)R.matchedName=r.matchedName;
+        if(!R.sample&&r.sample)R.sample=r.sample;
         i+=slice.length;R.done=Math.min(i,grid.length);
         ggRenderRank();
         next();
@@ -6690,18 +6778,18 @@
     }
     function finish(){
       post("/api/geogrid/save",{keyword:R.keyword.trim(),size:R.size,radiusMi:R.radius,
-        centerLat:lat,centerLng:lng,results:acc}).then(function(r){
+        centerLat:lat,centerLng:lng,results:acc,matchedName:R.matchedName}).then(function(r){
         R.scanning=false;
         if(r&&r.ok&&r.scan){R.live=null;R.viewId=r.scan.id;R.data=null;ggLoadRank(true);toast("Scan complete ✓")}
         else{ // Saving failed — still show what we measured rather than losing it.
           R.live={id:"",ts:Date.now(),keyword:R.keyword.trim(),size:R.size,radiusMi:R.radius,
-            centerLat:lat,centerLng:lng,results:acc,stats:ggStats(acc)};
+            centerLat:lat,centerLng:lng,results:acc,matchedName:R.matchedName,stats:ggStats(acc)};
           ggRenderRank();toast("Scan done, but couldn't save it",{bad:true});
         }
       }).catch(function(){
         R.scanning=false;
         R.live={id:"",ts:Date.now(),keyword:R.keyword.trim(),size:R.size,radiusMi:R.radius,
-          centerLat:lat,centerLng:lng,results:acc,stats:ggStats(acc)};
+          centerLat:lat,centerLng:lng,results:acc,matchedName:R.matchedName,stats:ggStats(acc)};
         ggRenderRank();toast("Scan done, but couldn't save it",{bad:true});
       });
     }
@@ -6718,7 +6806,8 @@
       solv:+((rs.filter(function(r){return r<=3}).length/n)*100).toFixed(2),
       top3:rs.filter(function(r){return r<=3}).length,
       top10:rs.filter(function(r){return r<=10}).length,
-      missing:rs.filter(function(r){return r>=21}).length};
+      missing:rs.filter(function(r){return r>=21}).length,
+      empty:results.filter(function(r){return +r.total===0}).length};
   }
 
   // ============================================================

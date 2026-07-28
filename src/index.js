@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-28·smart-followups';
+const BUILD = '2026-07-28·rank-match-diag';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -235,6 +235,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/geogrid/save')       return apiGeogridSave(request);
   if (request.method === 'POST' && pathname === '/api/geogrid/connect')    return apiGeogridConnect(request);
   if (request.method === 'POST' && pathname === '/api/geogrid/find')       return apiGeogridFind(request);
+  if (request.method === 'POST' && pathname === '/api/geogrid/preview')    return apiGeogridPreview(request);
   if (request.method === 'POST' && pathname === '/api/geogrid/disconnect') return apiGeogridDisconnect(request);
   if (request.method === 'POST' && pathname === '/api/geogrid/delete')     return apiGeogridDelete(request);
 
@@ -1569,10 +1570,42 @@ async function geogridSecrets() {
 function geoNameKey(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
+// Words that say nothing about WHICH business this is. They're stripped before
+// comparing so "Mikey's Detailing Snohomish" still matches the listing Google
+// actually shows ("Mikey's Mobile Detailing") — the old plain-substring compare
+// failed on exactly that, and a failed compare looks identical to ranking
+// nowhere: a full grid of 20+.
+const GEO_GENERIC_WORDS = ['mobile', 'detailing', 'detail', 'details', 'auto', 'autos', 'car', 'cars',
+  'wash', 'washing', 'ceramic', 'coating', 'llc', 'inc', 'co', 'company', 'the', 'and', 'of',
+  'service', 'services', 'shop', 'pro', 'pros'];
+function geoTokens(s) {
+  return String(s || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+}
+function geoDistinctTokens(s) {
+  return geoTokens(s).filter((t) => t.length > 2 && GEO_GENERIC_WORDS.indexOf(t) < 0);
+}
 function geoNameMatches(displayName, want) {
   const a = geoNameKey(displayName), b = geoNameKey(want);
   if (!a || !b) return false;
-  return a === b || a.includes(b) || b.includes(a);
+  if (a === b || a.includes(b) || b.includes(a)) return true;
+  // Neither contains the other — fall back to the distinctive words. Every
+  // distinctive word of the SHORTER side has to appear on the other side, so a
+  // one-word overlap only counts when that side has just the one distinctive
+  // word ("Mikey's Mobile Detailing" -> mikeys). That keeps "Mikey's Pizza" out
+  // while still catching the ordinary suffix/city drift.
+  const da = geoDistinctTokens(displayName), db = geoDistinctTokens(want);
+  if (!da.length || !db.length) return false;
+  const shorter = da.length <= db.length ? da : db;
+  const longer = da.length <= db.length ? db : da;
+  return shorter.every((t) => longer.indexOf(t) >= 0);
+}
+
+// The top few names Google returned at a point, kept tiny — it's what turns
+// "20+ everywhere" from a mystery into something the owner can act on.
+function geoTopNames(places, n) {
+  return places.slice(0, n).map((p) => ({
+    id: p.id || '', name: (p.displayName && p.displayName.text) || '',
+  }));
 }
 
 // One grid point -> the business's rank in the Places result list (1-based),
@@ -1608,10 +1641,11 @@ async function geoRankAt(sec, keyword, lat, lng, radiusM) {
     // reports that the business ranks nowhere, which is indistinguishable from a
     // genuine ranking collapse. Falling through to the name makes a bad ID a
     // degraded match instead of a confident lie.
-    if (sec.placeId && p.id === sec.placeId) return { rank: i + 1, total: places.length, by: 'id' };
-    if (geoNameMatches(nm, sec.bizName)) return { rank: i + 1, total: places.length, by: 'name' };
+    if (sec.placeId && p.id === sec.placeId) return { rank: i + 1, total: places.length, by: 'id', name: nm };
+    if (geoNameMatches(nm, sec.bizName)) return { rank: i + 1, total: places.length, by: 'name', name: nm };
   }
-  return { rank: GEO_NOT_FOUND_RANK, total: places.length };
+  // Not found: hand back what Google DID return so the caller can show it.
+  return { rank: GEO_NOT_FOUND_RANK, total: places.length, top: geoTopNames(places, 5) };
 }
 
 // GET /api/geogrid — connection status + saved scans (newest first).
@@ -1647,12 +1681,16 @@ async function apiGeogridScan(request) {
   const radiusM = Math.max(500, Math.min(50000, Number(data.radiusM) || 3000));
 
   const out = [];
+  let matchedName = '';   // what we matched as, the first time we matched
+  let sample = null;      // what Google returned at a point where we did NOT match
   for (const p of pts) {
     const lat = Number(p.lat), lng = Number(p.lng);
     if (!isFinite(lat) || !isFinite(lng)) { out.push({ lat: 0, lng: 0, rank: GEO_NOT_FOUND_RANK, err: 'bad_point' }); continue; }
     try {
       const r = await geoRankAt(sec, keyword, lat, lng, radiusM);
       out.push({ lat, lng, rank: r.rank, total: r.total });
+      if (r.rank < GEO_NOT_FOUND_RANK && !matchedName) matchedName = r.name || '';
+      if (r.rank >= GEO_NOT_FOUND_RANK && !sample && r.top) sample = { lat, lng, top: r.top };
     } catch (e) {
       // A 4xx from Google is fatal for the whole scan (bad key / API not enabled)
       // — bail out loudly instead of silently returning a grid of "20+".
@@ -1663,7 +1701,7 @@ async function apiGeogridScan(request) {
       out.push({ lat, lng, rank: GEO_NOT_FOUND_RANK, err: 'fetch_failed' });
     }
   }
-  return json({ ok: true, results: out });
+  return json({ ok: true, results: out, matchedName, sample, lookingFor: sec.bizName, placeId: sec.placeId });
 }
 
 // The three headline numbers, computed the way the local-SEO tools define them.
@@ -1682,6 +1720,11 @@ function geoStats(results) {
     top3: rs.filter((r) => r <= 3).length,
     top10: rs.filter((r) => r <= 10).length,
     missing: rs.filter((r) => r >= GEO_NOT_FOUND_RANK).length,
+    // Points where Google returned NOTHING at all. A grid of 20+ means something
+    // completely different depending on this number: results came back and the
+    // listing wasn't among them (a ranking/matching story) vs no results at all
+    // (a keyword or API story). Worth one integer to tell them apart.
+    empty: results.filter((r) => Number(r.total) === 0).length,
   };
 }
 
@@ -1701,7 +1744,10 @@ async function apiGeogridSave(request) {
     results: results.map((r) => ({
       lat: +Number(r.lat).toFixed(5), lng: +Number(r.lng).toFixed(5),
       rank: Math.max(1, Math.min(GEO_NOT_FOUND_RANK, Number(r.rank) || GEO_NOT_FOUND_RANK)),
+      total: Math.max(0, Math.min(20, Number(r.total) || 0)),
     })),
+    // Which listing the ranks actually refer to — blank when nothing matched.
+    matchedName: String(data.matchedName || '').slice(0, 120),
   };
   rec.stats = geoStats(rec.results);
   const scans = (await kv().get('geogrid:scans', { type: 'json' })) || [];
@@ -1794,6 +1840,55 @@ async function apiGeogridFind(request) {
   return json({ ok: true, results: ((d.places) || []).map((p) => ({
     id: p.id, name: (p.displayName && p.displayName.text) || '', address: p.formattedAddress || '',
   })) });
+}
+
+// POST /api/geogrid/preview — the "why am I 20+ everywhere?" answer. Runs the
+// EXACT same Places call one grid point makes, and returns the full result list
+// with each row flagged as a match or not. If the listing is in that list but
+// unflagged, the name we're matching on is wrong (a settings fix, one tap). If
+// it isn't in the list at all, the ranking really is that bad for that keyword.
+// Costs exactly ONE Places call.
+async function apiGeogridPreview(request) {
+  const sec = await geogridSecrets();
+  if (!sec.key) return json({ ok: false, error: 'not_connected', hint: 'Add a Google Places API key first.' }, 400);
+  const data = await readJson(request);
+  const keyword = String(data.keyword || sec.keyword || '').trim().slice(0, 120);
+  if (!keyword) return json({ ok: false, error: 'no_keyword' }, 422);
+  const lat = isFinite(Number(data.lat)) ? Number(data.lat) : sec.centerLat;
+  const lng = isFinite(Number(data.lng)) ? Number(data.lng) : sec.centerLng;
+  const radiusM = Math.max(500, Math.min(50000, Number(data.radiusM) || 3000));
+
+  const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': sec.key,
+      'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress',
+    },
+    body: JSON.stringify({
+      textQuery: keyword,
+      maxResultCount: 20,
+      locationBias: { circle: { center: { latitude: lat, longitude: lng }, radius: radiusM } },
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    return json({ ok: false, error: 'places_error', detail: body.slice(0, 700),
+      hint: 'Google said ' + res.status + '. Check the key, Places API (New), and billing.' }, 502);
+  }
+  const d = await res.json().catch(() => ({}));
+  const places = Array.isArray(d.places) ? d.places : [];
+  return json({
+    ok: true, keyword, lat, lng,
+    lookingFor: sec.bizName, placeId: sec.placeId,
+    results: places.map((p, i) => {
+      const name = (p.displayName && p.displayName.text) || '';
+      return {
+        rank: i + 1, id: p.id || '', name, address: p.formattedAddress || '',
+        match: (!!sec.placeId && p.id === sec.placeId) || geoNameMatches(name, sec.bizName),
+      };
+    }),
+  });
 }
 
 // POST /api/geogrid/disconnect — forget the key (keeps saved scans).
