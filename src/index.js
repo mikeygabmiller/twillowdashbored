@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-21·booking+redesign';
+const BUILD = '2026-07-28·todays-run';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -101,6 +101,7 @@ async function runCron() {
   await dispatchDueReminders();
   await evaluateFollowups();
   await moneyCron().catch(() => {}); // money reminders must never break the SMS cron
+  await dayOfCron().catch(() => {}); // morning brief / leave-now / night recap
 }
 
 // Private "remind me to follow up on <date>" reminders — a nudge to Mikey, not a
@@ -178,6 +179,9 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/media-backfill') return apiMediaBackfill(request);
   if (request.method === 'POST' && pathname === '/api/voicemail-backfill') return apiVoicemailBackfill(request);
   if (request.method === 'POST' && pathname === '/api/alert-test') return apiAlertTest();
+  // ---- Day-of-service: auto-detected jobs + Today's Run ----
+  if (request.method === 'GET'  && pathname === '/api/run')        return apiRun(url);
+  if (request.method === 'POST' && pathname === '/api/job')        return apiJobAction(request);
   if (request.method === 'GET'  && pathname === '/api/followups')  return apiFollowups();
   if (request.method === 'POST' && pathname === '/api/followup')   return apiFollowupAction(request);
   if (request.method === 'GET'  && pathname === '/api/config')     return apiGetConfig();
@@ -425,6 +429,8 @@ async function handleInboundSms(request) {
   // Pre-draft a reply in Mikey's voice so it's already waiting when he opens the
   // thread. Best-effort — never blocks or fails the inbound webhook.
   await maybeSuggestReply(fromNorm);
+  // Watch for "so Saturday at 10 then?" and raise a one-tap job card if so.
+  await maybeDetectJob(fromNorm);
   // No auto-reply to the customer — Mikey replies personally from the dashboard.
   return twiml('');
 }
@@ -773,6 +779,8 @@ async function apiSend(request) {
   // owner then tweaked, remember the before→after so future drafts sound more like him.
   const aiOriginal = (data.aiOriginal || '').trim();
   if (aiOriginal) { try { await recordEdit(aiOriginal, body); } catch { /* non-fatal */ } }
+  // Mikey's own "see you Saturday at 10" counts as setting a date too.
+  await maybeDetectJob(phone);
   return json({ ok: true, thread });
 }
 
@@ -2955,6 +2963,7 @@ async function apiSaveConfig(request) {
   if (typeof data.teamMode === 'boolean') next.teamMode = data.teamMode;
   if (Array.isArray(data.team)) next.team = sanitizeTeam(data.team);
   if (data.playbook && typeof data.playbook === 'object') next.playbook = sanitizePlaybook(data.playbook, next.playbook);
+  if (data.dayOf && typeof data.dayOf === 'object') next.dayOf = sanitizeDayOf(data.dayOf, next.dayOf);
   await kv().put('config', JSON.stringify(next));
   CFG_CACHE = next;
   return json({ ok: true, config: next });
@@ -3716,6 +3725,7 @@ function defaultConfig() {
                              // attributed to the sender. Turn off to go back to solo.
     team: [],                // [{ id, name, role }] — the people who help answer texts
     playbook: defaultPlaybook(), // the business "brain" that trains every AI output
+    dayOf: defaultDayOf(),   // appointment auto-detection, Today's Run, morning brief
   };
 }
 
@@ -4453,8 +4463,19 @@ async function bkAvailability(date, service, size) {
   if (bkLaEpoch(date, cfg.dayStart) - now > cfg.windowDays * 86400000) return [];
   if (bkLaEpoch(date, cfg.lastStart) < now) return [];         // day already past
   const day = (await loadBookings()).filter((b) => b.date === date && (b.status === 'pending' || b.status === 'confirmed'));
-  if (day.length >= cfg.maxJobsPerDay) return [];
+  // Jobs set over text hold their slot too — including ones still awaiting Mikey's
+  // tap (a "soft hold"), so the website can't book someone into a time he already
+  // promised in a conversation. Dismissing the card releases the hold instantly.
+  const held = (await loadJobs()).filter((j) => JOB_ACTIVE.includes(j.status) && j.at && bkLocalParts(j.at).date === date);
+  if (day.length + held.length >= cfg.maxJobsPerDay) return [];
   const occ = day.map((b) => ({ s: bkHm2min(b.slot), e: bkHm2min(b.slot) + (b.durationMin || dur) }));
+  for (const j of held) {
+    const s = bkLocalParts(j.at).min;
+    // A job whose exact hour isn't pinned down yet blocks the whole day — Mikey
+    // can't promise a stranger a slot inside a window he already gave away.
+    if (j.tentative) return [];
+    occ.push({ s, e: s + (j.durationMin || dur) });
+  }
   // Google Calendar busy times so Mikey is never offered a slot he's already booked.
   for (const iv of await bkCalBusy(cfg, date)) {
     if (iv.s <= 0 && iv.e >= 1440) return [];                  // all-day event → whole day off
@@ -4792,4 +4813,746 @@ function bkSanitizeConfig(input) {
     calendar: { enabled: !!(c.calendar && c.calendar.enabled) && !!ical, icalUrl: ical },
     blockedDates: Array.isArray(c.blockedDates) ? [...new Set(c.blockedDates.map((x) => String(x).trim()).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)))].slice(0, 200) : [],
   };
+}
+
+// ===========================================================================
+// Day-of-service engine — auto-detected jobs, Today's Run, morning brief
+// ---------------------------------------------------------------------------
+// The problem: Mikey agrees to a day and time inside a normal text conversation
+// and never writes it down. This module reads each new message as it happens,
+// notices when a date got set, and proposes the job as a ONE-TAP CARD. Nothing
+// lands on his day until he taps Yes — the AI never books, cancels, or texts a
+// price on its own (his explicit guardrails).
+//
+// Then, on the day: a 7am brief (what's on today, in drive order, with money,
+// weather and the un-confirmed ones flagged), a "leave now" alert per job, and
+// a night-before recap.
+//
+// STORAGE / KV BUDGET: one KV value (jobs:index) holds every job record, plus a
+// tiny jobs:meta doc for cron bookkeeping. A detection is 1 write. A cron tick
+// that finds nothing to do is 0 writes — every write below is gated behind a
+// real state change. See the budget note at the top of this file.
+// ===========================================================================
+const JOBS_KEY = 'jobs:index';
+const JOBS_META_KEY = 'jobs:meta';
+const JOB_ACTIVE = ['proposed', 'scheduled'];
+
+async function loadJobs() { return (await kv().get(JOBS_KEY, { type: 'json' })) || []; }
+// ⚠ KV WRITE — rewrites every job. Call once per request/tick, never in a loop.
+async function saveJobs(jobs) { await kv().put(JOBS_KEY, JSON.stringify(jobs)); }
+async function loadJobsMeta() { return (await kv().get(JOBS_META_KEY, { type: 'json' })) || {}; }
+async function saveJobsMeta(m) { await kv().put(JOBS_META_KEY, JSON.stringify(m)); }
+
+// Day-of settings, merged over the main config doc (so they save through the
+// existing /api/config endpoint and ride the same cache).
+function defaultDayOf() {
+  return {
+    enabled: true,          // master switch for detection + briefs ("pause all")
+    detect: true,           // watch conversations for appointments
+    briefHour: 7,           // 7:00am local — the morning brief
+    recap: true,            // night-before recap
+    recapHour: 20,          // 8pm local
+    leaveAlerts: true,      // "time to leave" per job
+    setupMin: 10,           // padding before a job starts (park, unload, set up)
+    idleDayPing: true,      // ping on days with no jobs
+    weatherWarn: true,      // flag rain in the brief (warn only — never auto-texts)
+    rainPct: 50,            // % chance that counts as "too wet"
+    avgMph: 30,             // used for drive estimates (no paid routing API)
+    homeLat: 47.9129,       // Snohomish, WA — the day starts and ends here
+    homeLon: -122.0982,
+    defaultDurationMin: 180,
+  };
+}
+function dayOfCfg(cfg) { return Object.assign(defaultDayOf(), (cfg && cfg.dayOf) || {}); }
+
+// Clamp anything the settings screen sends, so a bad value can't wedge the cron
+// (e.g. a briefHour of 99 would mean the brief never fires).
+function sanitizeDayOf(input, current) {
+  const d = Object.assign(defaultDayOf(), current || {});
+  const i = input || {};
+  const bool = (k) => { if (typeof i[k] === 'boolean') d[k] = i[k]; };
+  const num = (k, lo, hi) => { if (i[k] != null && !isNaN(+i[k])) d[k] = Math.max(lo, Math.min(hi, Math.round(+i[k]))); };
+  ['enabled', 'detect', 'recap', 'leaveAlerts', 'idleDayPing', 'weatherWarn'].forEach(bool);
+  num('briefHour', 0, 23); num('recapHour', 0, 23); num('setupMin', 0, 120);
+  num('rainPct', 0, 100); num('avgMph', 15, 70); num('defaultDurationMin', 15, 600);
+  if (i.homeLat != null && !isNaN(+i.homeLat)) d.homeLat = Math.max(-90, Math.min(90, +i.homeLat));
+  if (i.homeLon != null && !isNaN(+i.homeLon)) d.homeLon = Math.max(-180, Math.min(180, +i.homeLon));
+  return d;
+}
+
+function blankJob() {
+  return {
+    id: genId(), phone: '', name: '',
+    at: null,               // epoch ms of the appointment start
+    durationMin: 0,
+    status: 'proposed',     // proposed → scheduled → done | cancelled | dismissed
+    customerConfirmed: false, // did they actually say yes?
+    tentative: false,       // vague time ("Saturday morning") — needs pinning down
+    service: '', vehicle: '', address: '', city: '', price: 0, notes: '',
+    source: 'sms',          // sms | booking | manual
+    confidence: 0, evidence: '',
+    lat: null, lon: null,
+    createdAt: Date.now(), decidedAt: 0, doneAt: 0,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Detection
+// ---------------------------------------------------------------------------
+// Two-stage on purpose. Stage 1 is a free regex that asks "does this message
+// even mention a day or a time?" — it kills ~95% of traffic ("how much for an
+// SUV?", "sounds good", "thanks!") before we ever pay for an AI call. Only the
+// survivors go to Gemini. Mikey chose the EAGER setting, so the prefilter fires
+// on a bare day name with no time at all ("saturday works") — the AI sorts out
+// whether it's real, and a wrong guess costs him one tap on a card.
+const JOB_DAY_RE = /\b(mon|tue|tues|wed|weds|wednes|thu|thur|thurs|fri|sat|satur|sun)(day)?\b|\b(today|tonight|tomorrow|tmrw|tmw)\b|\bnext\s+(week|mon|tue|wed|thu|fri|sat|sun)/i;
+const JOB_MONTH_RE = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s*\d{1,2}\b|\b\d{1,2}\s*\/\s*\d{1,2}\b/i;
+// Note the \w* on the stem group: "reschedule"/"cancelled" have no word boundary
+// straight after the stem, so a trailing \b there would never match them.
+const JOB_TIME_RE = /\b\d{1,2}\s*(:\s*\d{2})?\s*(am|pm|a\.m\.|p\.m\.)\b|\b\d{1,2}:\d{2}\b|\b(noon|midnight|morning|afternoon|evening)\b|\bat\s+\d{1,2}\b/i;
+const JOB_CANCEL_RE = /\b(cancel|reschedul|resched|postpon)\w*|\bpush (it )?back\b|\bmove it\b|\brain ?check\b|\bcan'?t make it\b|\bcant make it\b|\bsomething came up\b|\b(another|different) day\b/i;
+
+function jobLooksSchedulish(text) {
+  const t = String(text || '');
+  if (!t) return false;
+  return JOB_DAY_RE.test(t) || JOB_MONTH_RE.test(t) || JOB_CANCEL_RE.test(t) ||
+    (JOB_TIME_RE.test(t) && /\b(see you|works|good|ok|okay|book|schedule|come|be there|available|free|set|lock)\b/i.test(t));
+}
+
+// Called right after a message lands (inbound webhook or an outbound send), so
+// it runs exactly once per message — no rescanning, no cursor to persist.
+// Best-effort throughout: detection must never break a text.
+async function maybeDetectJob(phone) {
+  try {
+    const cfg = await loadConfig();
+    const d = dayOfCfg(cfg);
+    if (!d.enabled || !d.detect) return;
+    if (envFlag('DAYOF_DISABLED')) return;          // no-KV-write kill switch
+    if (!ENV.GEMINI_API_KEY) return;
+    const thread = await loadThread(phone);
+    const msgs = (thread.messages || []).filter((m) => m.body);
+    const last = msgs[msgs.length - 1];
+    if (!last || !jobLooksSchedulish(last.body)) return;
+    const found = await aiDetectAppointment(thread, msgs.slice(-14), cfg);
+    if (!found) return;
+    await applyDetection(thread, found, d);
+  } catch { /* never let detection break a message */ }
+}
+
+// Ask Gemini to read the tail of the conversation and say whether a specific job
+// got agreed on. Returns null unless it's confident enough to be worth a card.
+async function aiDetectAppointment(thread, msgs, cfg) {
+  const now = Date.now();
+  const p = bkLocalParts(now);
+  const dow = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][p.dow];
+  const convo = msgs.map((m) => {
+    const t = bkLocalParts(m.ts);
+    return `[${t.date} ${bkFmt12(bkMin2hm(t.min))}] ${m.dir === 'in' ? 'CUSTOMER' : 'MIKEY'}: ${String(m.body).slice(0, 400)}`;
+  }).join('\n');
+
+  const known = [];
+  if (thread.name) known.push(`Name on file: ${thread.name}`);
+  if (thread.notes) known.push(`Notes on file: ${String(thread.notes).slice(0, 400)}`);
+
+  const prompt =
+    `You read text conversations for a mobile car-detailing business and pull out scheduled jobs.\n` +
+    `RIGHT NOW it is ${dow}, ${p.date}, ${bkFmt12(bkMin2hm(p.min))} Pacific time.\n` +
+    `Resolve every relative date ("tomorrow", "this Saturday", "next week") against that.\n\n` +
+    (known.length ? known.join('\n') + '\n\n' : '') +
+    `CONVERSATION (most recent last):\n${convo}\n\n` +
+    `Decide what just happened. Reply with ONLY this JSON:\n` +
+    `{"intent":"set|reschedule|cancel|none",\n` +
+    ` "date":"YYYY-MM-DD or empty",\n` +
+    ` "time":"HH:MM 24-hour, or empty if no specific time was given",\n` +
+    ` "tentative":true if the day is agreed but the exact hour is NOT pinned down (e.g. "Saturday morning"),\n` +
+    ` "customerConfirmed":true only if the CUSTOMER clearly agreed to this specific day/time,\n` +
+    ` "service":"what they're getting, or empty",\n` +
+    ` "vehicle":"year make model, or empty",\n` +
+    ` "address":"street address if stated anywhere in the conversation, or empty",\n` +
+    ` "city":"city if stated, or empty",\n` +
+    ` "price":number quoted for this job or 0,\n` +
+    ` "name":"customer first name if you can tell, or empty",\n` +
+    ` "notes":"gate code, parking, apartment number, pets, water/power access — or empty",\n` +
+    ` "confidence":0.0-1.0,\n` +
+    ` "evidence":"the exact short quote that shows the date was agreed"}\n\n` +
+    `RULES:\n` +
+    `- intent "set" ONLY when a real appointment day is agreed for THIS customer. A question ` +
+    `("what days are you open?"), a quote with no date, or small talk is "none".\n` +
+    `- intent "reschedule" when an EXISTING job is being moved; put the NEW date/time in date/time.\n` +
+    `- intent "cancel" when they're calling it off with no replacement date.\n` +
+    `- Never invent a date that nobody said. If no day was actually named, intent is "none".\n` +
+    `- A date in the past means you resolved it wrong — roll it forward to the next occurrence.\n` +
+    `- confidence below 0.45 means you're guessing; say "none" instead.`;
+
+  let raw;
+  try { raw = await geminiGenerate(prompt, { json: true, temperature: 0.1, maxTokens: 700 }); }
+  catch { return null; }
+  let o;
+  try { o = JSON.parse(raw); } catch { return null; }
+  if (!o || !o.intent || o.intent === 'none') return null;
+  if (Number(o.confidence || 0) < 0.45) return null;
+
+  if (o.intent === 'cancel') return { intent: 'cancel', evidence: String(o.evidence || '').slice(0, 200), confidence: Number(o.confidence) };
+
+  const date = String(o.date || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return null;
+  const tentative = !!o.tentative || !/^\d{1,2}:\d{2}$/.test(String(o.time || '').trim());
+  const time = tentative ? '09:00' : String(o.time).trim().padStart(5, '0');
+  const at = bkLaEpoch(date, time);
+  if (!at || isNaN(at)) return null;
+  // A resolved date in the past is a model mistake, not a job. Drop it rather
+  // than putting a card in front of Mikey for a day that already happened.
+  if (at < now - 12 * 3600000) return null;
+  if (at > now + 400 * 86400000) return null;
+
+  return {
+    intent: o.intent === 'reschedule' ? 'reschedule' : 'set',
+    at, tentative,
+    customerConfirmed: !!o.customerConfirmed,
+    service: String(o.service || '').trim().slice(0, 80),
+    vehicle: String(o.vehicle || '').trim().slice(0, 80),
+    address: String(o.address || '').trim().slice(0, 160),
+    city: String(o.city || '').trim().slice(0, 60),
+    price: Math.max(0, Math.round(Number(o.price) || 0)),
+    name: String(o.name || '').trim().slice(0, 60),
+    notes: String(o.notes || '').trim().slice(0, 300),
+    confidence: Number(o.confidence) || 0,
+    evidence: String(o.evidence || '').trim().slice(0, 200),
+  };
+}
+
+// Turn a detection into a card. One open proposal per customer at a time — a
+// later message about the same job updates it in place instead of stacking up.
+async function applyDetection(thread, f, d) {
+  const jobs = await loadJobs();
+  const phone = thread.phone;
+  const mine = jobs.filter((j) => j.phone === phone && JOB_ACTIVE.includes(j.status));
+  const openProposal = mine.find((j) => j.status === 'proposed');
+
+  if (f.intent === 'cancel') {
+    const live = mine.filter((j) => j.status === 'scheduled' && j.at > Date.now() - 3600000)
+      .sort((a, b) => a.at - b.at)[0];
+    if (!live) return;
+    // Cancelling is on Mikey's "never without a tap" list, so this only raises a card.
+    live.pendingChange = { kind: 'cancel', evidence: f.evidence, at: Date.now() };
+    await saveJobs(jobs);
+    await notifyMikey(`🚫 ${thread.name || phone} may be cancelling`,
+      `Sounds like ${thread.name || phone} is calling off the ${fmtJobWhen(live.at)} job.\n\n` +
+      `"${f.evidence}"\n\nOpen Today's Run to cancel it or keep it.`);
+    return;
+  }
+
+  // Moving an existing job → propose the change, don't apply it.
+  if (f.intent === 'reschedule') {
+    const live = mine.filter((j) => j.status === 'scheduled').sort((a, b) => a.at - b.at)[0];
+    if (live) {
+      if (live.pendingChange && live.pendingChange.kind === 'move' && live.pendingChange.at === f.at) return;
+      live.pendingChange = { kind: 'move', at: f.at, tentative: f.tentative, evidence: f.evidence };
+      await saveJobs(jobs);
+      await notifyMikey(`🔄 ${thread.name || phone} wants to move to ${fmtJobWhen(f.at)}`,
+        `"${f.evidence}"\n\nOpen Today's Run to accept or decline the new time.`);
+      return;
+    }
+  }
+
+  // Already have this exact job on the books? Nothing to propose.
+  if (mine.some((j) => j.status === 'scheduled' && Math.abs(j.at - f.at) < 30 * 60000)) return;
+
+  const job = openProposal || blankJob();
+  const isNew = !openProposal;
+  job.phone = phone;
+  job.name = thread.name || f.name || '';
+  job.at = f.at;
+  job.tentative = f.tentative;
+  job.customerConfirmed = f.customerConfirmed;
+  job.status = 'proposed';
+  job.source = 'sms';
+  job.confidence = f.confidence;
+  job.evidence = f.evidence;
+  // Only fill blanks — never clobber something Mikey typed himself.
+  if (f.service && !job.service) job.service = f.service;
+  if (f.vehicle && !job.vehicle) job.vehicle = f.vehicle;
+  if (f.address && !job.address) job.address = f.address;
+  if (f.city && !job.city) job.city = f.city;
+  if (f.price && !job.price) job.price = f.price;
+  if (f.notes) job.notes = f.notes;
+  if (!job.durationMin) job.durationMin = d.defaultDurationMin;
+  if (isNew) jobs.push(job);
+  await saveJobs(jobs);
+
+  const who = job.name || phone;
+  await notifyMikey(`📅 Looks like you booked ${who} — ${fmtJobWhen(job.at)}`,
+    [
+      `${who} · ${fmtJobWhen(job.at)}${job.tentative ? ' (time not pinned down yet)' : ''}`,
+      job.service ? `Service: ${job.service}` : null,
+      job.vehicle ? `Vehicle: ${job.vehicle}` : null,
+      job.address ? `Where: ${job.address}${job.city ? ', ' + job.city : ''}` : null,
+      job.price ? `Quoted: $${job.price}` : null,
+      '',
+      `From: "${job.evidence}"`,
+      '',
+      `Nothing is on your calendar yet — open the dashboard and tap Yes to add it.`,
+    ].filter((x) => x !== null).join('\n'));
+}
+
+function fmtJobWhen(at) {
+  const p = bkLocalParts(at);
+  return `${bkNiceDate(p.date)} at ${bkFmt12(bkMin2hm(p.min))}`;
+}
+
+// ---------------------------------------------------------------------------
+// Geocoding + drive estimates ($0 — no paid routing API)
+// ---------------------------------------------------------------------------
+// Nominatim (OpenStreetMap) is free and has no key. Its usage policy asks for a
+// real User-Agent and low volume — at ~2 jobs/day, with every result cached in
+// KV forever, this is a handful of calls a week.
+async function geocodeAddress(address, city) {
+  const q = [address, city, 'WA'].filter(Boolean).join(', ');
+  if (!address) return null;
+  const key = 'geo:' + q.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 100);
+  const hit = await kv().get(key, { type: 'json' });
+  if (hit) return hit.lat == null ? null : hit;
+  try {
+    const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q=${encodeURIComponent(q)}`,
+      { headers: { 'User-Agent': "MikeysDetailing-Dashboard/1.0 (mikeysdetailing4u@gmail.com)" } });
+    if (!res.ok) return null;
+    const arr = await res.json();
+    const first = (arr || [])[0];
+    const out = first ? { lat: Number(first.lat), lon: Number(first.lon) } : { lat: null };
+    await kv().put(key, JSON.stringify(out));   // cache misses too, so we don't re-ask
+    return out.lat == null ? null : out;
+  } catch { return null; }
+}
+
+function haversineMi(a, b) {
+  if (!a || !b || a.lat == null || b.lat == null) return null;
+  const R = 3958.8, toRad = (x) => x * Math.PI / 180;
+  const dLat = toRad(b.lat - a.lat), dLon = toRad(b.lon - a.lon);
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(s));
+}
+
+// Straight-line miles × a road-winding factor ÷ average speed, plus a fixed
+// minute for getting out of and into a driveway. Good enough to say "leave at
+// 8:40" — and it costs nothing. A real routing API can drop in here later.
+function driveMinutes(from, to, mph) {
+  const mi = haversineMi(from, to);
+  if (mi == null) return null;
+  return Math.max(3, Math.round((mi * 1.3) / Math.max(15, mph || 30) * 60) + 3);
+}
+
+// ---------------------------------------------------------------------------
+// Today's Run
+// ---------------------------------------------------------------------------
+function jobsOnDate(jobs, dateStr) {
+  return jobs
+    .filter((j) => j.status === 'scheduled' && j.at && bkLocalParts(j.at).date === dateStr)
+    .sort((a, b) => a.at - b.at);
+}
+
+// Build the whole day: jobs in time order, drive legs, the leave-by time for
+// each, money on the table, and a suggested re-order when the booked order
+// makes him crisscross the county. Mikey chose SUGGEST — never auto-reorder.
+async function buildRun(dateStr, cfg) {
+  const d = dayOfCfg(cfg);
+  const all = await loadJobs();
+  const list = jobsOnDate(all, dateStr);
+  const home = { lat: d.homeLat, lon: d.homeLon };
+
+  for (const j of list) {
+    if (j.lat == null && j.address) {
+      const g = await geocodeAddress(j.address, j.city);
+      if (g) { j.lat = g.lat; j.lon = g.lon; j._geocoded = true; }
+    }
+  }
+
+  let prev = home;
+  for (const j of list) {
+    const pt = (j.lat != null) ? { lat: j.lat, lon: j.lon } : null;
+    j.driveMin = driveMinutes(prev, pt, d.avgMph);
+    j.leaveAt = (j.driveMin != null && j.at) ? j.at - (j.driveMin + (d.setupMin || 0)) * 60000 : null;
+    if (pt) prev = pt;
+  }
+
+  const total = list.reduce((s, j) => s + (Number(j.price) || 0), 0);
+  const unconfirmed = list.filter((j) => !j.customerConfirmed).length;
+  const tentative = list.filter((j) => j.tentative).length;
+
+  // Would a different order save real driving? Compare the booked order against
+  // a nearest-neighbour sweep. Only worth mentioning if it saves 10+ minutes AND
+  // no job has a hard time the customer is expecting.
+  let suggestion = null;
+  const geo = list.filter((j) => j.lat != null);
+  if (geo.length >= 2) {
+    const legMin = (a, b) => driveMinutes(a, b, d.avgMph) || 0;
+    const asBooked = geo.reduce((sum, j, i) => sum + legMin(i === 0 ? home : geo[i - 1], j), 0);
+    const pool = geo.slice(); const order = []; let cur = home;
+    while (pool.length) {
+      let bi = 0, bd = Infinity;
+      pool.forEach((j, i) => { const m = legMin(cur, j); if (m < bd) { bd = m; bi = i; } });
+      cur = pool[bi]; order.push(pool[bi]); pool.splice(bi, 1);
+    }
+    const best = order.reduce((sum, j, i) => sum + legMin(i === 0 ? home : order[i - 1], j), 0);
+    if (asBooked - best >= 10 && order.map((j) => j.id).join() !== geo.map((j) => j.id).join()) {
+      suggestion = { savesMin: asBooked - best, order: order.map((j) => ({ id: j.id, name: j.name, city: j.city })) };
+    }
+  }
+
+  return { date: dateStr, jobs: list, total, unconfirmed, tentative, routeSuggestion: suggestion };
+}
+
+// Forecast for the run, straight from Open-Meteo (free, no key — the dashboard
+// already uses it). Warn only: Mikey explicitly does NOT want weather to text
+// a customer on its own.
+async function runWeather(dateStr, d) {
+  try {
+    const u = `https://api.open-meteo.com/v1/forecast?latitude=${d.homeLat}&longitude=${d.homeLon}` +
+      `&daily=precipitation_probability_max,temperature_2m_max,temperature_2m_min,weather_code` +
+      `&timezone=America%2FLos_Angeles&forecast_days=3&temperature_unit=fahrenheit`;
+    const res = await fetch(u, { cf: { cacheTtl: 1800 } });
+    if (!res.ok) return null;
+    const j = await res.json();
+    const i = (j.daily && j.daily.time || []).indexOf(dateStr);
+    if (i < 0) return null;
+    const pop = j.daily.precipitation_probability_max[i] || 0;
+    return { pop, hi: Math.round(j.daily.temperature_2m_max[i]), lo: Math.round(j.daily.temperature_2m_min[i]), wet: pop >= (d.rainPct || 50) };
+  } catch { return null; }
+}
+
+// ---------------------------------------------------------------------------
+// Cron: morning brief, leave-now alerts, night-before recap
+// ---------------------------------------------------------------------------
+// Runs on the existing minute cron. Every branch is guarded by a once-per-day
+// stamp in jobs:meta, so a normal tick does ZERO KV writes.
+async function dayOfCron(now = Date.now()) {
+  const cfg = await loadConfig();
+  const d = dayOfCfg(cfg);
+  if (!d.enabled || envFlag('DAYOF_DISABLED')) return;
+
+  const p = bkLocalParts(now);
+  const meta = await loadJobsMeta();
+  let dirty = false;
+
+  // --- 7am brief -----------------------------------------------------------
+  if (p.min >= d.briefHour * 60 && p.min < d.briefHour * 60 + 15 && meta.briefDate !== p.date) {
+    meta.briefDate = p.date; dirty = true;
+    try { await sendMorningBrief(p.date, cfg, d); } catch { /* a failed brief must not wedge the cron */ }
+  }
+
+  // --- night-before recap --------------------------------------------------
+  if (d.recap && p.min >= d.recapHour * 60 && p.min < d.recapHour * 60 + 15 && meta.recapDate !== p.date) {
+    meta.recapDate = p.date; dirty = true;
+    try { await sendNightRecap(p.date, cfg, d); } catch { /* non-fatal */ }
+  }
+
+  // --- "time to leave" -----------------------------------------------------
+  // Only look at today, and only once we're inside the window where a leave-time
+  // could plausibly have arrived — so most ticks read nothing and write nothing.
+  if (d.leaveAlerts) {
+    const all = await loadJobs();
+    const today = jobsOnDate(all, p.date).filter((j) => j.at > now - 3600000);
+    if (today.length) {
+      const run = await buildRun(p.date, cfg);
+      const sent = meta.leaveSent || {};
+      for (const j of run.jobs) {
+        if (!j.leaveAt || sent[j.id]) continue;
+        if (now < j.leaveAt || now > j.leaveAt + 20 * 60000) continue;
+        sent[j.id] = 1; meta.leaveSent = sent; dirty = true;
+        await notifyMikey(`🚗 Leave now — ${j.name || j.phone} at ${bkFmt12(bkMin2hm(bkLocalParts(j.at).min))}`,
+          [
+            `Time to head out for ${j.name || j.phone}.`,
+            j.address ? `${j.address}${j.city ? ', ' + j.city : ''}` : null,
+            j.driveMin ? `About ${j.driveMin} min of driving, plus ${d.setupMin} to set up.` : null,
+            j.service ? `Service: ${j.service}` : null,
+            j.notes ? `Heads up: ${j.notes}` : null,
+          ].filter(Boolean).join('\n')).catch(() => {});
+      }
+    }
+  }
+
+  // Prune yesterday's leave stamps so jobs:meta can't grow forever.
+  if (meta.leaveSent && meta.leavePruned !== p.date) {
+    const all = await loadJobs();
+    const live = new Set(jobsOnDate(all, p.date).map((j) => j.id));
+    const next = {};
+    for (const k of Object.keys(meta.leaveSent)) if (live.has(k)) next[k] = 1;
+    meta.leaveSent = next; meta.leavePruned = p.date; dirty = true;
+  }
+
+  if (dirty) await saveJobsMeta(meta);
+}
+
+async function sendMorningBrief(dateStr, cfg, d) {
+  const run = await buildRun(dateStr, cfg);
+  const wx = d.weatherWarn ? await runWeather(dateStr, d) : null;
+  const base = publicBase();
+
+  if (!run.jobs.length) {
+    if (!d.idleDayPing) return;
+    // An empty day is a selling day. Point him at who's worth chasing rather
+    // than sending a cheerful "nothing on!" and leaving it there.
+    const idx = await loadIndex();
+    const warm = idx
+      .filter((t) => !t.archived && ['new', 'active'].includes(t.status))
+      .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0))
+      .slice(0, 5);
+    const due = idx.filter((t) => t.followupDue).length;
+    await notifyMikey(`☀️ No jobs today — ${bkNiceDate(dateStr)}`,
+      [
+        `Nothing on the calendar today.`,
+        wx ? `Weather: ${wx.hi}°/${wx.lo}° · ${wx.pop}% rain` : null,
+        '',
+        due ? `${due} follow-up${due > 1 ? 's' : ''} are ready to send in the dashboard.` : null,
+        warm.length ? 'Warmest leads to chase:' : null,
+        ...warm.map((t) => `  • ${t.name || t.phone}${t.lastBody ? ` — "${String(t.lastBody).slice(0, 60)}"` : ''}`),
+        '',
+        base ? `${base}/` : null,
+      ].filter((x) => x !== null).join('\n'));
+    return;
+  }
+
+  const lines = [];
+  lines.push(`${run.jobs.length} job${run.jobs.length > 1 ? 's' : ''} today · $${run.total} on the table`);
+  if (wx) lines.push(`Weather: ${wx.hi}°/${wx.lo}° · ${wx.pop}% rain${wx.wet ? '  ⚠ WET — you may want to move these' : ''}`);
+  lines.push('');
+
+  run.jobs.forEach((j, i) => {
+    const t = bkLocalParts(j.at);
+    lines.push(`${i + 1}. ${bkFmt12(bkMin2hm(t.min))} — ${j.name || j.phone}${j.customerConfirmed ? '' : '   ⚠ NOT CONFIRMED'}`);
+    if (j.tentative) lines.push(`      time still loose — pin it down`);
+    if (j.service) lines.push(`      ${j.service}${j.price ? ` · $${j.price}` : ''}`);
+    if (j.vehicle) lines.push(`      ${j.vehicle}`);
+    if (j.address) lines.push(`      ${j.address}${j.city ? ', ' + j.city : ''}`);
+    if (j.notes) lines.push(`      ⚑ ${j.notes}`);
+    if (j.leaveAt) lines.push(`      leave by ${bkFmt12(bkMin2hm(bkLocalParts(j.leaveAt).min))} (${j.driveMin} min drive)`);
+    lines.push('');
+  });
+
+  if (run.routeSuggestion) {
+    lines.push(`💡 Running them ${run.routeSuggestion.order.map((o) => o.name || o.city).join(' → ')} would save about ${run.routeSuggestion.savesMin} min of driving.`);
+    lines.push('');
+  }
+  if (run.unconfirmed) lines.push(`⚠ ${run.unconfirmed} job${run.unconfirmed > 1 ? 's' : ''} never confirmed — the dashboard has a one-tap text ready.`);
+  if (base) lines.push('', `${base}/`);
+
+  await notifyMikey(`🌅 Today's run — ${run.jobs.length} job${run.jobs.length > 1 ? 's' : ''}, $${run.total}`, lines.join('\n'));
+}
+
+async function sendNightRecap(dateStr, cfg, d) {
+  const tomorrow = bkAddDays(dateStr, 1);
+  const run = await buildRun(tomorrow, cfg);
+  if (!run.jobs.length) return;               // nothing tomorrow, stay quiet
+  const wx = d.weatherWarn ? await runWeather(tomorrow, d) : null;
+  const first = run.jobs[0];
+  const t = bkLocalParts(first.at);
+  const lines = [
+    `Tomorrow: ${run.jobs.length} job${run.jobs.length > 1 ? 's' : ''}, first at ${bkFmt12(bkMin2hm(t.min))}${first.city ? ' in ' + first.city : ''}.`,
+    `$${run.total} on the table.`,
+  ];
+  if (wx && wx.wet) lines.push(`⚠ ${wx.pop}% chance of rain — you may want to move these.`);
+  if (run.unconfirmed) lines.push('', `${run.unconfirmed} of them never confirmed. Open the dashboard to send the "still good for tomorrow?" text.`);
+  if (first.leaveAt) lines.push('', `Leave by ${bkFmt12(bkMin2hm(bkLocalParts(first.leaveAt).min))} to make the first one.`);
+  await notifyMikey(`🌙 Tomorrow — ${run.jobs.length} job${run.jobs.length > 1 ? 's' : ''}`, lines.join('\n'));
+}
+
+// ---------------------------------------------------------------------------
+// API
+// ---------------------------------------------------------------------------
+// GET /api/run?date=YYYY-MM-DD — Today's Run + the open proposal cards.
+async function apiRun(url) {
+  const cfg = await loadConfig();
+  const d = dayOfCfg(cfg);
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get('date') || '')
+    ? url.searchParams.get('date') : bkLocalParts(Date.now()).date;
+  const all = await loadJobs();
+  const run = await buildRun(date, cfg);
+  const wx = await runWeather(date, d);
+  const proposals = all.filter((j) => j.status === 'proposed').sort((a, b) => a.at - b.at);
+  const changes = all.filter((j) => j.status === 'scheduled' && j.pendingChange).sort((a, b) => a.at - b.at);
+  const upcoming = all.filter((j) => j.status === 'scheduled' && j.at > Date.now() && bkLocalParts(j.at).date !== date)
+    .sort((a, b) => a.at - b.at).slice(0, 20);
+  return json({ ok: true, run, weather: wx, proposals, changes, upcoming, config: d });
+}
+
+// POST /api/job — every state change a card can make. Nothing here texts a
+// customer on its own: `confirm` returns a DRAFT for Mikey to send.
+async function apiJobAction(request) {
+  const data = await readJson(request);
+  const action = String(data.action || '');
+  const cfg = await loadConfig();
+  const d = dayOfCfg(cfg);
+  const jobs = await loadJobs();
+
+  if (action === 'create') {
+    const at = Number(data.at);
+    if (!at || isNaN(at)) return json({ ok: false, error: 'bad_time' }, 422);
+    const job = blankJob();
+    job.phone = normalizePhone(data.phone) || '';
+    job.name = String(data.name || '').slice(0, 60);
+    job.at = at;
+    job.status = 'scheduled';
+    job.source = 'manual';
+    job.decidedAt = Date.now();
+    job.customerConfirmed = !!data.customerConfirmed;
+    applyJobEdits(job, data, d);
+    jobs.push(job);
+    await saveJobs(jobs);
+    await syncThreadAppointment(job);
+    return json({ ok: true, job });
+  }
+
+  const job = jobs.find((j) => j.id === String(data.id || ''));
+  if (!job) return json({ ok: false, error: 'not_found' }, 404);
+
+  if (action === 'confirm') {
+    job.status = 'scheduled';
+    job.decidedAt = Date.now();
+    applyJobEdits(job, data, d);
+    if (!job.durationMin) job.durationMin = d.defaultDurationMin;
+    job.pendingChange = null;
+    await saveJobs(jobs);
+    await syncThreadAppointment(job);
+    return json({ ok: true, job, draft: await confirmDraft(job, cfg), gcal: gcalLink(job) });
+  }
+  if (action === 'edit') {
+    if (data.at != null && !isNaN(Number(data.at))) job.at = Number(data.at);
+    applyJobEdits(job, data, d);
+    await saveJobs(jobs);
+    if (job.status === 'scheduled') await syncThreadAppointment(job);
+    return json({ ok: true, job });
+  }
+  if (action === 'dismiss') {
+    // Drop the card entirely — it was a false positive, not a real job.
+    const i = jobs.indexOf(job);
+    jobs.splice(i, 1);
+    await saveJobs(jobs);
+    return json({ ok: true });
+  }
+  if (action === 'cancel') {
+    job.status = 'cancelled';
+    job.pendingChange = null;
+    job.decidedAt = Date.now();
+    await saveJobs(jobs);
+    return json({ ok: true, job });
+  }
+  if (action === 'accept-change') {
+    const pc = job.pendingChange;
+    if (!pc) return json({ ok: false, error: 'no_change' }, 409);
+    if (pc.kind === 'cancel') job.status = 'cancelled';
+    else if (pc.at) { job.at = pc.at; job.tentative = !!pc.tentative; job.customerConfirmed = true; }
+    job.pendingChange = null;
+    await saveJobs(jobs);
+    if (job.status === 'scheduled') await syncThreadAppointment(job);
+    return json({ ok: true, job, draft: job.status === 'scheduled' ? await confirmDraft(job, cfg) : '' });
+  }
+  if (action === 'reject-change') {
+    job.pendingChange = null;
+    await saveJobs(jobs);
+    return json({ ok: true, job });
+  }
+  if (action === 'confirmed-by-customer') {
+    job.customerConfirmed = true;
+    await saveJobs(jobs);
+    return json({ ok: true, job });
+  }
+  if (action === 'done') {
+    job.status = 'done';
+    job.doneAt = Date.now();
+    await saveJobs(jobs);
+    return json({ ok: true, job });
+  }
+  if (action === 'draft') {
+    // Re-generate a text for this job without changing anything.
+    const kind = String(data.kind || 'confirm');
+    return json({ ok: true, draft: await confirmDraft(job, cfg, kind) });
+  }
+  return json({ ok: false, error: 'bad_action' }, 422);
+}
+
+function applyJobEdits(job, data, d) {
+  if (typeof data.service === 'string') job.service = data.service.slice(0, 80);
+  if (typeof data.vehicle === 'string') job.vehicle = data.vehicle.slice(0, 80);
+  if (typeof data.address === 'string' && data.address !== job.address) {
+    job.address = data.address.slice(0, 160); job.lat = null; job.lon = null;
+  }
+  if (typeof data.city === 'string' && data.city !== job.city) {
+    job.city = data.city.slice(0, 60); job.lat = null; job.lon = null;
+  }
+  if (typeof data.notes === 'string') job.notes = data.notes.slice(0, 300);
+  if (typeof data.name === 'string') job.name = data.name.slice(0, 60);
+  if (data.price != null && !isNaN(Number(data.price))) job.price = Math.max(0, Math.round(Number(data.price)));
+  if (data.durationMin != null && !isNaN(Number(data.durationMin))) job.durationMin = Math.max(15, Math.round(Number(data.durationMin)));
+  if (typeof data.tentative === 'boolean') job.tentative = data.tentative;
+  if (!job.durationMin) job.durationMin = d.defaultDurationMin;
+}
+
+// Keep the conversation's appointmentAt in step with the job so the existing
+// reminder UI, follow-up cadences and Bookings view all stay honest.
+async function syncThreadAppointment(job) {
+  if (!job.phone) return;
+  try {
+    const thread = await loadThread(job.phone);
+    if (thread.appointmentAt === job.at && !thread.dateRequest) return;   // no write needed
+    thread.appointmentAt = job.at;
+    thread.dateRequest = null;
+    if (!thread.name && job.name) thread.name = job.name;
+    await saveThread(thread);
+    await updateIndexEntry(thread);
+  } catch { /* non-fatal */ }
+}
+
+// The text Mikey taps to send. Written by the AI in his voice when Gemini is
+// available, with a solid template fallback — and NEVER sent automatically.
+async function confirmDraft(job, cfg, kind = 'confirm') {
+  const first = (job.name || '').split(/\s+/)[0] || 'there';
+  const when = fmtJobWhen(job.at);
+  const time = bkFmt12(bkMin2hm(bkLocalParts(job.at).min));
+  const tpl = {
+    confirm: `Hey ${first}, you're all set for ${when}${job.service ? ` — ${job.service}` : ''}. ` +
+      `${job.address ? `I'll come to you at ${job.address}. ` : ''}Just have the car accessible with water & power within about 20 ft. ` +
+      `I'll text you when I'm on my way. - Mikey`,
+    pin: `Hey ${first}! Looking forward to ${bkNiceDate(bkLocalParts(job.at).date)}. What time works best for you — morning or afternoon? I'll lock it in. - Mikey`,
+    night: `Hey ${first}, just confirming we're still good for tomorrow at ${time}? Text me a yes and I'll see you then! - Mikey`,
+    morning: `Morning ${first}! I'm detailing your ${job.vehicle || 'car'} today at ${time}. I'll text when I'm headed your way. - Mikey`,
+  }[kind] || '';
+
+  if (!ENV.GEMINI_API_KEY) return tpl;
+  const pb = (cfg.playbook || {});
+  try {
+    const goal = {
+      confirm: `confirm the appointment is locked in`,
+      pin: `ask what exact time works that day so it can be pinned down`,
+      night: `check they're still good for tomorrow and ask them to reply yes`,
+      morning: `let them know you're detailing their car today and will text when heading over`,
+    }[kind];
+    const out = await geminiGenerate(
+      `You are Mikey, owner of Mikey's Mobile Detailing. Write ONE short, warm, professional text message to a customer.\n` +
+      `Goal: ${goal}.\n` +
+      `Customer: ${first}. When: ${when}.` +
+      `${job.service ? ` Service: ${job.service}.` : ''}${job.vehicle ? ` Vehicle: ${job.vehicle}.` : ''}` +
+      `${job.address ? ` Address: ${job.address}.` : ''}\n` +
+      (pb.rules ? `Rules you follow:\n${String(pb.rules).slice(0, 600)}\n` : '') +
+      `Never invent a price. Sign off "- Mikey". 2 sentences max. Return only the message text.`,
+      { temperature: 0.5, maxTokens: 220 });
+    // Only trust it if it actually looks like a sentence. A stray JSON blob or a
+    // one-word answer falls back to the template rather than reaching a customer.
+    const clean = (out || '').trim();
+    if (clean.length < 15 || !/[a-z]{3}/i.test(clean) || /^[[{]/.test(clean)) return tpl;
+    return clean;
+  } catch { return tpl; }
+}
+
+// One-tap "put it on my phone's calendar". No OAuth, no service account, works
+// today — true two-way Google sync is the next phase.
+function gcalLink(job) {
+  if (!job.at) return '';
+  const end = job.at + (job.durationMin || 180) * 60000;
+  const z = (ms) => new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const text = `Detail — ${job.name || job.phone}`;
+  const details = [job.service, job.vehicle, job.price ? `$${job.price}` : '', job.notes, job.phone].filter(Boolean).join(' · ');
+  return `https://calendar.google.com/calendar/render?action=TEMPLATE` +
+    `&text=${encodeURIComponent(text)}` +
+    `&dates=${z(job.at)}/${z(end)}` +
+    `&details=${encodeURIComponent(details)}` +
+    `&location=${encodeURIComponent([job.address, job.city].filter(Boolean).join(', '))}`;
 }

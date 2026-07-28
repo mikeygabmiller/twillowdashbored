@@ -790,6 +790,81 @@
     .bubble{max-width:82%}
   }
   @media(min-width:781px){.sheet-scrim{display:none}}
+
+  /* ---- Today's Run ---- */
+  .run-head{display:flex;align-items:center;gap:10px;padding:2px 2px 12px}
+  .run-nav{background:var(--card);border:1px solid var(--line);color:var(--muted);border-radius:10px;
+    width:34px;height:34px;display:flex;align-items:center;justify-content:center;cursor:pointer;flex:0 0 auto}
+  .run-nav:active{transform:translateY(1px)}
+  .run-title{flex:1;text-align:center;line-height:1.25}
+  .run-title b{display:block;font-size:16px}
+  .run-title span{display:block;font-size:12px;color:var(--muted)}
+  .run-sec{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);
+    margin:18px 2px 9px;text-transform:uppercase;letter-spacing:.5px}
+  .run-sec .n{background:var(--card2,var(--card));border:1px solid var(--line);border-radius:999px;
+    padding:1px 8px;font-size:11px;letter-spacing:0}
+  .run-sec .tot{margin-left:auto;color:var(--green,#37d67a);font-weight:700;letter-spacing:0;font-size:13px}
+  .run-banner{display:flex;align-items:flex-start;gap:8px;padding:10px 12px;border-radius:12px;
+    font-size:13px;margin:0 0 12px;border:1px solid var(--line);background:var(--card);color:var(--txt)}
+  .run-banner.warn{border-color:rgba(255,176,32,.4);background:rgba(255,176,32,.10)}
+  .run-banner.tip{border-color:rgba(47,155,255,.35);background:rgba(47,155,255,.10)}
+  .run-banner.off{border-color:var(--line2,var(--line));opacity:.85}
+  .rj-card{border:1px solid var(--line);background:var(--card);border-radius:14px;padding:13px 14px;margin-bottom:10px}
+  .rj-card.proposal{border-color:var(--accent);background:linear-gradient(180deg,rgba(255,46,67,.08),var(--card))}
+  .rj-card.change{border-color:rgba(255,176,32,.45);background:rgba(255,176,32,.07)}
+  .rj-card.unconf{border-left:3px solid rgba(255,176,32,.75)}
+  .rj-flag{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:700;color:var(--accent-text,var(--accent));
+    text-transform:uppercase;letter-spacing:.5px;margin-bottom:7px}
+  .rj-flag.warn{color:#ffb020}
+  .rj-top{display:flex;align-items:center;gap:8px;margin-bottom:3px}
+  .rj-n{width:20px;height:20px;border-radius:6px;background:var(--accent);color:#fff;font-size:11px;font-weight:800;
+    display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .rj-when{font-size:14px;font-weight:700}
+  .rj-tent{font-size:11px;color:#ffb020;margin-left:8px;font-weight:600}
+  .rj-ok{margin-left:auto;font-size:11px;color:var(--green,#37d67a);display:inline-flex;align-items:center;gap:4px}
+  .rj-warn{margin-left:auto;font-size:11px;color:#ffb020;display:inline-flex;align-items:center;gap:4px}
+  .rj-who{font-size:16px;font-weight:700;margin:1px 0 2px}
+  .rj-bits{font-size:13px;color:var(--muted);margin-bottom:3px}
+  .rj-ev{font-size:12.5px;color:var(--muted2,var(--muted));font-style:italic;margin:6px 0 2px;
+    border-left:2px solid var(--line2,var(--line));padding-left:9px}
+  .rj-addr{display:inline-flex;align-items:center;gap:5px;font-size:13px;color:var(--accent-text,var(--accent));
+    text-decoration:none;margin:3px 0}
+  .rj-note{display:flex;align-items:flex-start;gap:6px;font-size:12.5px;color:var(--muted);margin:4px 0}
+  .rj-note.warn{color:#ffb020}
+  .rj-leave{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);margin:5px 0 2px}
+  .rj-acts{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
+  .rj-acts .btn{flex:0 0 auto;font-size:13px;padding:8px 12px;border-radius:10px;border:1px solid var(--line);
+    background:var(--card2,var(--card));color:var(--txt);display:inline-flex;align-items:center;gap:6px;
+    cursor:pointer;text-decoration:none;font-family:inherit}
+  .rj-acts .btn.accent{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+  .rj-acts .btn.ghost{color:var(--muted)}
+  .rj-acts .btn:active{transform:translateY(1px)}
+  .rj-edit{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .rj-edit label{display:flex;flex-direction:column;gap:4px;font-size:11.5px;color:var(--muted)}
+  .rj-edit label:first-child,.rj-edit .rj-eacts{grid-column:1/-1}
+  .rj-edit input{background:var(--bg);border:1px solid var(--line);color:var(--txt);border-radius:9px;
+    padding:9px 10px;font-size:14px;font-family:inherit;width:100%}
+  .rj-eacts{display:flex;gap:8px;margin-top:2px}
+  .rj-mini{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);
+    background:var(--card);border-radius:11px;margin-bottom:7px;font-size:13.5px;cursor:pointer}
+  .rj-mini .d{color:var(--muted);min-width:74px}
+  .rj-mini .t{color:var(--muted);min-width:62px}
+  .rj-mini .w{font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  #runDraft{position:fixed;inset:0;z-index:120;background:rgba(0,0,0,.6);display:none;
+    align-items:flex-end;justify-content:center;padding:0}
+  .rd-card{background:var(--card);border-top:1px solid var(--line);border-radius:18px 18px 0 0;
+    padding:18px 16px calc(18px + env(safe-area-inset-bottom));width:100%;max-width:640px}
+  .rd-h{display:flex;align-items:center;gap:7px;font-size:16px;font-weight:700}
+  .rd-sub{font-size:12.5px;color:var(--muted);margin:4px 0 11px}
+  .rd-t{width:100%;min-height:110px;background:var(--bg);border:1px solid var(--line);color:var(--txt);
+    border-radius:12px;padding:12px;font-size:14.5px;font-family:inherit;line-height:1.45;resize:vertical}
+  .rd-acts{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+  .rd-acts .btn{font-size:14px;padding:11px 16px;border-radius:11px;border:1px solid var(--line);
+    background:var(--card2,var(--card));color:var(--txt);display:inline-flex;align-items:center;gap:6px;
+    cursor:pointer;text-decoration:none;font-family:inherit}
+  .rd-acts .btn.accent{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700}
+  @media(max-width:420px){.rj-edit{grid-template-columns:1fr}}
+
   /* compact "Today" summary bar at top of the messages list */
   .sumbar{margin:8px 10px 10px;background:linear-gradient(180deg,var(--panel3),var(--panel2));border:1px solid var(--line);border-radius:14px;overflow:hidden}
   .sum-head{display:flex;align-items:center;gap:8px;padding:9px 12px;cursor:pointer;user-select:none}
@@ -1579,8 +1654,10 @@
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
     </button>
 
+    <div id="runDraft"></div>
     <nav class="bottomnav" id="bottomnav">
       <button class="navitem active" data-tab="home"><span class="ic" data-ic="home"></span><span class="ndot" id="navHome"></span>Home</button>
+      <button class="navitem" data-tab="run"><span class="ic" data-ic="car"></span><span class="ndot" id="navRun"></span>Today</button>
       <button class="navitem" data-tab="messages"><span class="ic" data-ic="message-square"></span><span class="ndot" id="navUnread"></span>Chats</button>
       <button class="navitem" data-tab="leads"><span class="ic" data-ic="clipboard-list"></span><span class="ndot" id="navLeads"></span>Leads</button>
       <button class="navitem" data-tab="money"><span class="ic" data-ic="dollar"></span><span class="ndot" id="navMoney"></span>Money</button>
@@ -1757,12 +1834,16 @@
     <div class="ditem" id="bookingsItem" onclick="location.href='/bookings.html'"><span class="ic" data-ic="calendar-days"></span>Bookings<span class="n" style="color:var(--accent-text)">new</span></div>
     <div class="ditem" data-tab="messages"><span class="ic" data-ic="message-square"></span>All messages<span class="n" id="mnAll"></span></div>
     <div class="ditem" data-filter="unread"><span class="ic" data-ic="bell"></span>Unread<span class="n" id="mnUnread"></span></div>
+    <div class="ditem" data-tab="run"><span class="ic" data-ic="car"></span>Today's run</div>
     <div class="ditem" data-tab="leads"><span class="ic" data-ic="clipboard-list"></span>Leads pipeline</div>
     <div class="ditem" data-tab="followups"><span class="ic" data-ic="list-checks"></span>Follow-ups<span class="n" id="mnFollow"></span></div>
     <div class="ditem" data-tab="scheduled"><span class="ic" data-ic="calendar-days"></span>Scheduled<span class="n" id="mnSched"></span></div>
     <div class="ditem" data-tab="archived"><span class="ic" data-ic="archive"></span>Archived<span class="n" id="mnArch"></span></div>
     <div class="ditem" id="moneyItem"><span class="ic" data-ic="dollar"></span>Money tracker</div>
     <div class="ditem" id="analyticsItem"><span class="ic" data-ic="bar-chart"></span>Analytics — website &amp; business</div>
+
+    <div class="sec-lbl">Today's run &amp; auto-detect</div>
+    <div class="fu-settings" id="dayOfSettings"></div>
 
     <div class="sec-lbl">Auto follow-up settings</div>
     <div class="fu-settings" id="fuSettings"></div>
@@ -1927,7 +2008,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-21·booking+redesign";
+  var APP_BUILD="2026-07-28·todays-run";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -2219,7 +2300,7 @@
   // to any saved business data — this is pure presentation + arrangement.
   // ==========================================================================
   var UI_KEY="mkd-ui";
-  var UI_TABLIST=[["home","Home","home"],["messages","Chats","message-square"],["leads","Leads","clipboard-list"],["money","Money","dollar"],["analytics","Analytics","bar-chart"]];
+  var UI_TABLIST=[["home","Home","home"],["run","Today","car"],["messages","Chats","message-square"],["leads","Leads","clipboard-list"],["money","Money","dollar"],["analytics","Analytics","bar-chart"]];
   var UI_PRESETS=[ // id, name, accent, accentDark
     ["crimson","Crimson","#ff2e43","#c81e30"],["ocean","Ocean","#2f9bff","#1d5fd8"],
     ["mint","Mint","#22c55e","#15803d"],["grape","Grape","#a855f7","#7e22ce"],
@@ -2537,6 +2618,9 @@
     var nh=el("navHome");if(nh){nh.textContent=c.needs;nh.className="ndot"+(c.needs?" show":"")}
     var nn=el("navNeeds");if(nn){nn.textContent=c.needs;nn.className="ndot"+(c.needs?" show":"")}
     var nf=el("navFollow");if(nf){nf.textContent=c.follow;nf.className="ndot"+(c.follow?" show":"")}
+    var nr=el("navRun");
+    if(nr){var rc=RUN.data?((RUN.data.proposals||[]).length+(RUN.data.changes||[]).length):0;
+      nr.textContent=rc;nr.className="ndot"+(rc?" show":"")}
     el("mnAll").textContent=c.all||"";el("mnUnread").textContent=c.unread||"";
     el("mnSched").textContent=c.sched||"";el("mnArch").textContent=c.arch||"";
     if(el("mnFollow"))el("mnFollow").textContent=c.follow||"";
@@ -2631,6 +2715,7 @@
   function renderMain(){
     renderFilters();refreshBadges();
     if(state.tab==="home"&&!state.search)return renderHome();
+    if(state.tab==="run")return renderRun();
     if(state.tab==="leads")return renderLeads();
     if(state.tab==="followups")return renderFollowups();
     if(state.tab==="scheduled")return renderList("scheduled");
@@ -3327,6 +3412,258 @@
   }
   function threadByPhone(phone){return state.threads.filter(function(x){return x.phone===phone})[0]}
 
+  // ---- Today's Run (auto-detected jobs + the day-of brief) ----
+  // Nothing in here books, cancels or texts anything on its own. Detected jobs
+  // arrive as cards; a confirm hands back a DRAFT text that Mikey taps to send.
+  var RUN={data:null,loading:false,editing:null,date:null};
+
+  function runDateStr(d){var x=d||new Date();return x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0")+"-"+String(x.getDate()).padStart(2,"0")}
+  function runShiftDate(str,n){var p=str.split("-");var d=new Date(+p[0],+p[1]-1,+p[2]);d.setDate(d.getDate()+n);return runDateStr(d)}
+  function runTime(ms){return new Date(ms).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}
+  function runDayLabel(str){
+    var t=runDateStr();
+    if(str===t)return "Today";
+    if(str===runShiftDate(t,1))return "Tomorrow";
+    if(str===runShiftDate(t,-1))return "Yesterday";
+    var p=str.split("-");
+    return new Date(+p[0],+p[1]-1,+p[2]).toLocaleDateString([],{weekday:"short",month:"short",day:"numeric"});
+  }
+  function runLocalInput(ms){
+    var d=new Date(ms);
+    return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")+
+      "T"+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0");
+  }
+  function runMapUrl(j){return "https://maps.google.com/?q="+encodeURIComponent([j.address,j.city].filter(Boolean).join(", "))}
+
+  function fetchRun(quiet){
+    if(!quiet){RUN.loading=true;if(state.tab==="run")renderRun()}
+    return api("/api/run?date="+encodeURIComponent(RUN.date||runDateStr())).then(function(d){
+      RUN.loading=false;
+      if(d&&d.ok){RUN.data=d;refreshBadges()}
+      if(state.tab==="run")renderRun();
+      return d;
+    }).catch(function(){RUN.loading=false;if(state.tab==="run")renderRun()});
+  }
+
+  function runAct(body){
+    return post("/api/job",body).then(function(d){
+      if(!d||!d.ok){toast((d&&d.error)||"Couldn't do that",{bad:true});return null}
+      return fetchRun(true).then(function(){return d});
+    }).catch(function(){toast("Network error",{bad:true});return null});
+  }
+
+  // After a confirm we hand Mikey the drafted text — he decides whether it goes.
+  function runOfferDraft(job,draft,gcal){
+    if(!draft)return;
+    var pop=el("runDraft");
+    pop.innerHTML='<div class="rd-card">'+
+      '<div class="rd-h">'+ic("send",16)+' Text '+esc(job.name||job.phone)+'?</div>'+
+      '<div class="rd-sub">Nothing has been sent. Edit it or skip it — your call.</div>'+
+      '<textarea class="rd-t" id="runDraftText">'+esc(draft)+'</textarea>'+
+      '<div class="rd-acts">'+
+        '<button class="btn accent" data-rd="send">'+ic("send",14)+' Send it</button>'+
+        (gcal?'<a class="btn" href="'+esc(gcal)+'" target="_blank" rel="noopener">'+ic("calendar-days",14)+' Add to calendar</a>':"")+
+        '<button class="btn" data-rd="skip">Skip</button>'+
+      '</div></div>';
+    pop.style.display="flex";
+    pop.querySelector('[data-rd="skip"]').onclick=function(){pop.style.display="none"};
+    pop.querySelector('[data-rd="send"]').onclick=function(){
+      var txt=el("runDraftText").value.trim();
+      if(!txt){pop.style.display="none";return}
+      post("/api/send",{phone:job.phone,body:txt}).then(function(d){
+        if(d&&d.ok){toast("Sent to "+(job.name||job.phone));runAct({action:"confirmed-by-customer",id:job.id})}
+        else toast((d&&d.error)||"Couldn't send",{bad:true});
+        pop.style.display="none";refreshThreads();
+      }).catch(function(){toast("Network error",{bad:true})});
+    };
+  }
+
+  function runEditForm(j){
+    return '<div class="rj-edit">'+
+      '<label>When<input type="datetime-local" id="rjAt" value="'+esc(runLocalInput(j.at))+'"></label>'+
+      '<label>Customer<input type="text" id="rjName" value="'+esc(j.name||"")+'" placeholder="Name"></label>'+
+      '<label>Service<input type="text" id="rjService" value="'+esc(j.service||"")+'" placeholder="Full detail"></label>'+
+      '<label>Vehicle<input type="text" id="rjVehicle" value="'+esc(j.vehicle||"")+'" placeholder="2019 Tahoe"></label>'+
+      '<label>Address<input type="text" id="rjAddress" value="'+esc(j.address||"")+'" placeholder="Street address"></label>'+
+      '<label>City<input type="text" id="rjCity" value="'+esc(j.city||"")+'" placeholder="Everett"></label>'+
+      '<label>Price<input type="number" id="rjPrice" value="'+(j.price||"")+'" placeholder="339"></label>'+
+      '<label>Notes<input type="text" id="rjNotes" value="'+esc(j.notes||"")+'" placeholder="Gate code, parking…"></label>'+
+      '<div class="rj-eacts"><button class="btn accent" data-act="save">'+ic("check",14)+' Save</button>'+
+      '<button class="btn" data-act="canceledit">Cancel</button></div></div>';
+  }
+  function runReadEdits(){
+    var at=new Date(el("rjAt").value).getTime();
+    return {at:isNaN(at)?null:at,name:el("rjName").value,service:el("rjService").value,
+      vehicle:el("rjVehicle").value,address:el("rjAddress").value,city:el("rjCity").value,
+      price:el("rjPrice").value||0,notes:el("rjNotes").value};
+  }
+
+  function runProposalCard(j){
+    if(RUN.editing===j.id)return '<div class="rj-card proposal" data-job="'+esc(j.id)+'">'+runEditForm(j)+'</div>';
+    var bits=[j.service,j.vehicle,j.price?"$"+j.price:"",[j.address,j.city].filter(Boolean).join(", ")].filter(Boolean);
+    return '<div class="rj-card proposal" data-job="'+esc(j.id)+'">'+
+      '<div class="rj-flag">'+ic("sparkles",13)+' Looks like you booked this</div>'+
+      '<div class="rj-when">'+esc(runDayLabel(runDateStr(new Date(j.at))))+' at '+esc(runTime(j.at))+
+        (j.tentative?'<span class="rj-tent">time not pinned down</span>':"")+'</div>'+
+      '<div class="rj-who">'+esc(j.name||j.phone)+'</div>'+
+      (bits.length?'<div class="rj-bits">'+esc(bits.join(" · "))+'</div>':"")+
+      (j.evidence?'<div class="rj-ev">“'+esc(j.evidence)+'”</div>':"")+
+      '<div class="rj-acts">'+
+        '<button class="btn accent" data-act="confirm">'+ic("check",14)+' Yes, add it</button>'+
+        '<button class="btn" data-act="edit">'+ic("pencil",14)+' Edit</button>'+
+        '<button class="btn ghost" data-act="dismiss">Not a job</button>'+
+      '</div></div>';
+  }
+
+  function runChangeCard(j){
+    var pc=j.pendingChange||{};
+    var isCancel=pc.kind==="cancel";
+    return '<div class="rj-card change" data-job="'+esc(j.id)+'">'+
+      '<div class="rj-flag warn">'+ic("alert",13)+' '+(isCancel?"Might be cancelling":"Wants to move this")+'</div>'+
+      '<div class="rj-who">'+esc(j.name||j.phone)+'</div>'+
+      '<div class="rj-bits">'+(isCancel
+        ? 'Currently '+esc(runDayLabel(runDateStr(new Date(j.at))))+' at '+esc(runTime(j.at))
+        : esc(runTime(j.at))+' → <b>'+esc(runDayLabel(runDateStr(new Date(pc.at))))+' at '+esc(runTime(pc.at))+'</b>')+'</div>'+
+      (pc.evidence?'<div class="rj-ev">“'+esc(pc.evidence)+'”</div>':"")+
+      '<div class="rj-acts">'+
+        '<button class="btn accent" data-act="accept-change">'+ic("check",14)+' '+(isCancel?"Cancel it":"Move it")+'</button>'+
+        '<button class="btn" data-act="reject-change">Leave it alone</button>'+
+      '</div></div>';
+  }
+
+  function runJobCard(j,i){
+    if(RUN.editing===j.id)return '<div class="rj-card" data-job="'+esc(j.id)+'">'+runEditForm(j)+'</div>';
+    var bits=[j.service,j.vehicle,j.price?"$"+j.price:""].filter(Boolean);
+    return '<div class="rj-card'+(j.customerConfirmed?"":" unconf")+'" data-job="'+esc(j.id)+'">'+
+      '<div class="rj-top"><span class="rj-n">'+(i+1)+'</span>'+
+        '<span class="rj-when">'+esc(runTime(j.at))+'</span>'+
+        (j.customerConfirmed?'<span class="rj-ok">'+ic("check-circle",12)+' confirmed</span>'
+                            :'<span class="rj-warn">'+ic("alert",12)+' not confirmed</span>')+'</div>'+
+      '<div class="rj-who">'+esc(j.name||j.phone)+'</div>'+
+      (bits.length?'<div class="rj-bits">'+esc(bits.join(" · "))+'</div>':"")+
+      (j.address?'<a class="rj-addr" href="'+esc(runMapUrl(j))+'" target="_blank" rel="noopener">'+ic("target",12)+' '+esc([j.address,j.city].filter(Boolean).join(", "))+'</a>':"")+
+      (j.notes?'<div class="rj-note">'+ic("info",12)+' '+esc(j.notes)+'</div>':"")+
+      (j.leaveAt?'<div class="rj-leave">'+ic("clock",12)+' Leave by <b>'+esc(runTime(j.leaveAt))+'</b>'+(j.driveMin?' · '+j.driveMin+' min drive':"")+'</div>':"")+
+      (j.tentative?'<div class="rj-note warn">'+ic("alert",12)+' Time still loose — pin it down</div>':"")+
+      '<div class="rj-acts">'+
+        (j.phone?'<button class="btn" data-act="text">'+ic("message-square",14)+' Text</button>':"")+
+        (j.phone?'<a class="btn" href="tel:'+esc(j.phone)+'">'+ic("phone",14)+' Call</a>':"")+
+        '<button class="btn" data-act="edit">'+ic("pencil",14)+' Edit</button>'+
+        '<button class="btn" data-act="done">'+ic("check-circle",14)+' Done</button>'+
+        '<button class="btn ghost" data-act="cancel">Cancel</button>'+
+      '</div></div>';
+  }
+
+  function renderRun(){
+    var box=el("scroll");
+    var d=RUN.data;
+    var date=RUN.date||runDateStr();
+    var head='<div class="run-head">'+
+      '<button class="run-nav" data-run="prev">'+ic("chevron-left",16)+'</button>'+
+      '<div class="run-title"><b>'+esc(runDayLabel(date))+'</b><span id="runSummary"></span></div>'+
+      '<button class="run-nav" data-run="next">'+ic("chevron-right",16)+'</button></div>';
+
+    if(!d&&RUN.loading){box.innerHTML=head+'<div class="emptyview"><div class="big">'+ic("car",46)+'</div><div>Loading your day…</div></div>';runWire(box);return}
+    if(!d){box.innerHTML=head+'<div class="emptyview"><div class="big">'+ic("car",46)+'</div><div>Couldn\'t load today\'s run</div><div class="sub">Pull down or switch tabs to retry.</div></div>';runWire(box);return}
+
+    var run=d.run||{},jobs=run.jobs||[],props=d.proposals||[],changes=d.changes||[],up=d.upcoming||[];
+    var html=head;
+
+    if(d.config&&d.config.enabled===false)
+      html+='<div class="run-banner off">'+ic("ban",14)+' Auto-detection and briefs are paused. Turn them back on in the menu.</div>';
+
+    if(props.length||changes.length){
+      html+='<div class="run-sec">'+ic("sparkles",14)+' Needs your tap<span class="n">'+(props.length+changes.length)+'</span></div>';
+      changes.forEach(function(j){html+=runChangeCard(j)});
+      props.forEach(function(j){html+=runProposalCard(j)});
+    }
+
+    var wx=d.weather;
+    if(wx&&wx.wet)html+='<div class="run-banner warn">'+ic("alert",14)+' '+wx.pop+'% chance of rain — you may want to move these.</div>';
+
+    if(run.routeSuggestion)
+      html+='<div class="run-banner tip">'+ic("zap",14)+' Running them '+
+        esc(run.routeSuggestion.order.map(function(o){return o.name||o.city||"next"}).join(" → "))+
+        ' would save about '+run.routeSuggestion.savesMin+' min of driving.</div>';
+
+    if(jobs.length){
+      html+='<div class="run-sec">'+ic("car",14)+' '+esc(runDayLabel(date))+'<span class="n">'+jobs.length+'</span>'+
+        (run.total?'<span class="tot">$'+run.total+'</span>':"")+'</div>';
+      jobs.forEach(function(j,i){html+=runJobCard(j,i)});
+    } else {
+      html+='<div class="emptyview" style="padding:34px 20px"><div class="big">'+ic("check-circle",42)+'</div>'+
+        '<div>Nothing booked '+esc(runDayLabel(date).toLowerCase())+'</div>'+
+        '<div class="sub">When you and a customer land on a day in a text, it shows up here to confirm.</div></div>';
+    }
+
+    if(up.length){
+      html+='<div class="run-sec">'+ic("calendar-days",14)+' Coming up<span class="n">'+up.length+'</span></div>';
+      up.forEach(function(j){
+        html+='<div class="rj-mini" data-job="'+esc(j.id)+'"><span class="d">'+esc(runDayLabel(runDateStr(new Date(j.at))))+'</span>'+
+          '<span class="t">'+esc(runTime(j.at))+'</span><span class="w">'+esc(j.name||j.phone)+'</span>'+
+          (j.customerConfirmed?"":'<span class="rj-warn">'+ic("alert",11)+'</span>')+'</div>';
+      });
+    }
+
+    box.innerHTML=html;
+    var sum=el("runSummary");
+    if(sum)sum.textContent=jobs.length?(jobs.length+" job"+(jobs.length>1?"s":"")+(run.total?" · $"+run.total:"")):"no jobs";
+    runWire(box);
+  }
+
+  function runWire(box){
+    Array.prototype.forEach.call(box.querySelectorAll("[data-run]"),function(b){
+      b.onclick=function(){
+        RUN.date=runShiftDate(RUN.date||runDateStr(),b.getAttribute("data-run")==="next"?1:-1);
+        RUN.editing=null;fetchRun();
+      };
+    });
+    Array.prototype.forEach.call(box.querySelectorAll(".rj-card"),function(card){
+      var id=card.getAttribute("data-job");
+      Array.prototype.forEach.call(card.querySelectorAll("[data-act]"),function(b){
+        b.onclick=function(ev){
+          ev.stopPropagation();
+          var act=b.getAttribute("data-act");
+          var job=runFindJob(id);
+          if(act==="edit"){RUN.editing=id;renderRun();return}
+          if(act==="canceledit"){RUN.editing=null;renderRun();return}
+          if(act==="save"){
+            var edits=runReadEdits();edits.action="edit";edits.id=id;
+            if(!edits.at){toast("Pick a date & time",{bad:true});return}
+            RUN.editing=null;
+            runAct(edits).then(function(){toast("Saved")});
+            return;
+          }
+          if(act==="text"){if(job&&job.phone)openThread(job.phone);return}
+          if(act==="dismiss"){runAct({action:"dismiss",id:id}).then(function(){toast("Dismissed")});return}
+          if(act==="done"){runAct({action:"done",id:id}).then(function(){toast("Nice — job done")});return}
+          if(act==="cancel"){
+            if(!confirm("Cancel this job? The customer is NOT texted."))return;
+            runAct({action:"cancel",id:id});return;
+          }
+          if(act==="confirm"||act==="accept-change"){
+            runAct({action:act,id:id}).then(function(d){
+              if(!d)return;
+              toast(act==="confirm"?"Added to your day":"Updated");
+              if(d.draft&&d.job)runOfferDraft(d.job,d.draft,d.gcal);
+            });
+            return;
+          }
+          if(act==="reject-change"){runAct({action:"reject-change",id:id});return}
+        };
+      });
+    });
+    Array.prototype.forEach.call(box.querySelectorAll(".rj-mini"),function(m){
+      m.onclick=function(){var j=runFindJob(m.getAttribute("data-job"));if(j)  {RUN.date=runDateStr(new Date(j.at));fetchRun()}};
+    });
+  }
+  function runFindJob(id){
+    var d=RUN.data;if(!d)return null;
+    var all=(d.run&&d.run.jobs||[]).concat(d.proposals||[],d.changes||[],d.upcoming||[]);
+    for(var i=0;i<all.length;i++)if(all[i].id===id)return all[i];
+    return null;
+  }
+
   function renderFollowups(){
     var box=el("scroll");
     var ur={high:3,normal:2,low:1};
@@ -3461,7 +3798,7 @@
   // textareas (that would fight the cursor while typing) — they save on blur and
   // keep their own DOM state.
   function afterConfig(){
-    renderFuSettings();renderTeam();applyTeamUI();renderMain();
+    renderFuSettings();renderDayOfSettings();renderTeam();applyTeamUI();renderMain();
     if(state.phone&&state.thread)renderDetails();
   }
   function saveConfig(patch){
@@ -3559,6 +3896,37 @@
       });
     });
   }
+  // ---- Today's run / auto-detect settings ----
+  function renderDayOfSettings(){
+    var wrap=el("dayOfSettings");if(!wrap)return;
+    var c=(state.config&&state.config.dayOf)||{};
+    var on=c.enabled!==false;
+    wrap.innerHTML=
+      '<div class="fu-row"><span class="lbl2">Everything day-of <span style="color:var(--muted2);font-weight:400">· master switch</span></span><span class="sw'+(on?" on":"")+'" id="doEnabled"></span></div>'+
+      '<div class="hint">One switch. Off means no appointment detection, no morning brief, no leave-now alerts — nothing automatic at all.</div>'+
+      '<div class="fu-row"><span class="lbl2">Watch texts for appointments</span><span class="sw'+(c.detect!==false?" on":"")+'" id="doDetect"></span></div>'+
+      '<div class="hint">When you and a customer land on a day and time, it shows up on the Today tab as a card. Nothing goes on your calendar and nothing is texted until you tap.</div>'+
+      '<div class="fu-row"><span class="lbl2">Morning brief at</span><span style="display:flex;align-items:center;gap:6px"><input type="number" id="doBrief" min="0" max="23" value="'+(c.briefHour==null?7:c.briefHour)+'"><span style="color:var(--muted2)">:00</span></span></div>'+
+      '<div class="fu-row"><span class="lbl2">Night-before recap</span><span class="sw'+(c.recap!==false?" on":"")+'" id="doRecap"></span></div>'+
+      '<div class="fu-row"><span class="lbl2">"Leave now" alerts</span><span class="sw'+(c.leaveAlerts!==false?" on":"")+'" id="doLeave"></span></div>'+
+      '<div class="fu-row"><span class="lbl2">Setup padding</span><span style="display:flex;align-items:center;gap:6px"><input type="number" id="doSetup" min="0" max="120" value="'+(c.setupMin==null?10:c.setupMin)+'"><span style="color:var(--muted2)">min</span></span></div>'+
+      '<div class="hint">Time to park, unload and set up before the clock starts. Your leave-by time is drive time plus this.</div>'+
+      '<div class="fu-row"><span class="lbl2">Ping me on empty days</span><span class="sw'+(c.idleDayPing!==false?" on":"")+'" id="doIdle"></span></div>'+
+      '<div class="fu-row"><span class="lbl2">Rain warning</span><span class="sw'+(c.weatherWarn!==false?" on":"")+'" id="doWx"></span></div>'+
+      '<div class="fu-row"><span class="lbl2">Counts as too wet at</span><span style="display:flex;align-items:center;gap:6px"><input type="number" id="doRain" min="0" max="100" value="'+(c.rainPct==null?50:c.rainPct)+'"><span style="color:var(--muted2)">% rain</span></span></div>'+
+      '<div class="hint">Warning only — a wet forecast never texts a customer on its own.</div>';
+    function put(patch){var next={};for(var k in c)next[k]=c[k];for(var k2 in patch)next[k2]=patch[k2];saveConfig({dayOf:next})}
+    el("doEnabled").onclick=function(){put({enabled:!on})};
+    el("doDetect").onclick=function(){put({detect:!(c.detect!==false)})};
+    el("doRecap").onclick=function(){put({recap:!(c.recap!==false)})};
+    el("doLeave").onclick=function(){put({leaveAlerts:!(c.leaveAlerts!==false)})};
+    el("doIdle").onclick=function(){put({idleDayPing:!(c.idleDayPing!==false)})};
+    el("doWx").onclick=function(){put({weatherWarn:!(c.weatherWarn!==false)})};
+    el("doBrief").onchange=function(){put({briefHour:+el("doBrief").value})};
+    el("doSetup").onchange=function(){put({setupMin:+el("doSetup").value})};
+    el("doRain").onchange=function(){put({rainPct:+el("doRain").value})};
+  }
+
   function renderFuSettings(){
     var wrap=el("fuSettings");if(!wrap)return;var c=state.config||{};
     wrap.innerHTML=
@@ -3601,7 +3969,7 @@
   }
   function blockNumber(phone,action){
     return post("/api/block",{phone:phone,action:action}).then(function(d){
-      if(d&&d.ok){state.config=d.config;renderFuSettings()}
+      if(d&&d.ok){state.config=d.config;renderFuSettings();renderDayOfSettings()}
       else toast&&toast((d&&d.error)||"Couldn't update block list");
       return d;
     });
@@ -4368,6 +4736,7 @@
     el("scroll").scrollTop=0;
     renderMain();
     if(tab==="home")fetchInsights();
+    if(tab==="run"){RUN.editing=null;fetchRun(!!RUN.data)}
     if(tab==="followups")refreshThreads();
   }
 

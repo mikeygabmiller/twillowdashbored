@@ -28,6 +28,21 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   **Autopilot** to have the safe nudges send themselves (quiet-hours aware; replies you
   owe a customer always wait for your approval). All tunable per-contact and globally
   in the menu.
+- **Auto-detected jobs + Today's Run (`Today` tab):** you never have to write an
+  appointment down. Every message is read as it arrives; when you and a customer
+  land on a day and time, the job shows up as a **one-tap card** ("Looks like you
+  booked Jenna — Sat at 10"), quoting the line it came from. Tap **Yes** and it
+  lands on your day; tap **Not a job** and it's gone. It also pulls the address,
+  vehicle, service, quoted price and gate/parking notes out of the conversation,
+  and catches **reschedules and cancellations** the same way — as cards, never as
+  silent changes. Vague ones ("Saturday morning") become a tentative hold that
+  blocks the day until you pin the hour down. Confirming hands you a **drafted
+  confirmation text you tap to send** (nothing is ever texted automatically) plus
+  a one-tap *Add to Google Calendar* link. On the day: a **7am brief** (jobs in
+  drive order, money on the table, unconfirmed ones flagged, rain warning, and
+  what time to leave), a **"leave now"** alert per job computed from real drive
+  time, and a **night-before recap**. Empty days ping you with the warmest leads
+  to chase instead. Everything is behind one **master pause switch** in the menu.
 - **Click-to-call:** rings your cell, then bridges the call to the customer through
   your Twilio number (keeps your personal number private).
 - **Instant email alerts (optional, Resend):** get emailed the moment a text,
@@ -132,6 +147,8 @@ Dashboard API: `/api/health` `/api/threads` `/api/thread` `/api/send` `/api/meta
 `/api/schedule` `/api/unschedule` `/api/call` `/api/read` `/api/insights`
 `/api/alert-test` `/api/templates` `/api/migrate`
 `/api/followups` `/api/followup` `/api/config` `/api/block`
+Day-of-service: `/api/run` (Today's Run + detected job cards) `/api/job` (confirm /
+edit / dismiss / cancel / done / accept-change)
 Website analytics: `/api/analytics` (pixel) `/api/webstats` `/api/webstats/status`
 `/api/webstats/connect` `/api/webstats/disconnect` `/api/webstats/ai`
 AI (Gemini): `/api/ai/summary` `/api/ai/draft` `/api/ai/triage`
