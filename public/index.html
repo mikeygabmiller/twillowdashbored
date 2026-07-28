@@ -1843,6 +1843,23 @@
   .jc-track button{margin-left:auto;background:none;border:none;color:var(--gold);font-size:11.5px;font-weight:800;text-decoration:underline;padding:0}
 
   /* ---- generic pieces reused across the suite ---- */
+  /* ---- appointments spotted in a conversation (proposals, not jobs yet) ---- */
+  .jd-sec .n{background:var(--panel2);border:1px solid var(--line);border-radius:99px;padding:1px 8px;font-size:10.5px;letter-spacing:0}
+  .jd-det{background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 9%,transparent),var(--panel));
+    border:1px solid var(--accent);border-radius:18px;padding:14px 15px;margin-bottom:11px}
+  .jd-det.warn{border-color:#ffb02066;background:linear-gradient(180deg,rgba(255,176,32,.09),var(--panel))}
+  .dt-flag{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:800;text-transform:uppercase;
+    letter-spacing:.06em;color:var(--accent-text,var(--accent));margin-bottom:6px}
+  .jd-det.warn .dt-flag{color:#ffb020}
+  .dt-flag svg{width:12px;height:12px}
+  .dt-who{font-size:16.5px;font-weight:750;margin-bottom:2px}
+  .dt-bits{font-size:13px;color:var(--muted2);line-height:1.5}
+  .dt-bits b{color:var(--text)}
+  .dt-tent{color:#ffb020;font-size:11.5px;font-weight:700;margin-left:6px}
+  .dt-ev{font-size:12.5px;color:var(--muted2);font-style:italic;margin:7px 0 2px;
+    border-left:2px solid var(--line);padding-left:9px}
+  .dt-acts{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
+  .jd-btn.sm{width:auto;flex:0 0 auto;font-size:13px;padding:9px 13px;border-radius:11px}
   .jd-sec{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.07em;color:var(--muted2);margin:20px 0 9px;display:flex;align-items:center;gap:7px}
   .jd-sec svg{width:14px;height:14px}
   .jd-empty{background:var(--panel);border:1px dashed var(--line);border-radius:16px;padding:22px 18px;text-align:center;color:var(--muted2);font-size:13.5px;line-height:1.55}
@@ -2420,7 +2437,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-28·rank-spend-guard";
+  var APP_BUILD="2026-07-28·appt-autodetect";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -8169,7 +8186,7 @@
   // flow that touches a customer shows exactly what will be texted before it
   // sends — nothing here messages anyone without a deliberate tap.
   // ============================================================
-  var JD={view:"run",date:"",day:null,loading:false,wired:false,err:"",
+  var JD={view:"run",date:"",day:null,detections:[],loading:false,wired:false,err:"",
     quotes:null,qcfg:null,qdraft:null,pay:null,garage:null,garageOne:null,
     track:{token:"",jobId:"",watch:null,timer:null,eta:0,startedAt:0},
     photos:{},sheetOpen:false};
@@ -8198,6 +8215,7 @@
     if(view)JD.view=view;
     jdSyncNav();
     jdRender();
+    if(JD.view==="run")jdLoadDetections();
     if(JD.view==="run"&&!JD.day)jdLoadDay();
     if(JD.view==="quotes"&&!JD.qcfg)jdLoadQuotes();
     if(JD.view==="pay"&&!JD.pay)jdLoadPay();
@@ -8263,6 +8281,126 @@
       if(!d||!d.ok){JD.err=(d&&d.error)||"load_failed";jdRender();return}
       JD.day=d;jdRender();updateJobsBadge();
     }).catch(function(){JD.loading=false;JD.err="network";jdRender()});
+    jdLoadDetections();
+  }
+
+  // ---- appointments the app spotted in a conversation -----------------------
+  // These are proposals, not jobs: nothing is on the day and nothing has been
+  // texted until one of these buttons is tapped.
+  function jdLoadDetections(){
+    api("/api/detections").then(function(d){
+      if(d&&d.ok){JD.detections=d.detections||[];if(JD.view==="run")jdRender();updateJobsBadge()}
+    }).catch(function(){});
+  }
+  function jdDetectCards(){
+    var list=JD.detections||[];
+    if(!list.length)return "";
+    var h='<div class="jd-sec">'+ic("sparkles",14)+' Needs your tap<span class="n">'+list.length+'</span></div>';
+    list.forEach(function(r){
+      var move=r.kind==="reschedule",cancel=r.kind==="cancel";
+      var when=r.date?(jdNiceDate(r.date)+" at "+jd12(r.slot)[0]+" "+jd12(r.slot)[1]):"";
+      h+='<div class="jd-det'+(cancel||move?" warn":"")+'" data-det="'+esc(r.id)+'">'+
+        '<div class="dt-flag">'+ic(cancel||move?"alert":"sparkles",12)+' '+
+          (cancel?"Might be cancelling":move?"Wants to move this":"Looks like you booked this")+'</div>'+
+        '<div class="dt-who">'+esc(r.name||r.phone)+'</div>'+
+        (cancel
+          ? '<div class="dt-bits">Currently '+esc(jdWhenShort(r.currentAt))+'</div>'
+          : move
+            ? '<div class="dt-bits">'+esc(jdWhenShort(r.currentAt))+' → <b>'+esc(when)+'</b></div>'
+            : '<div class="dt-bits">'+esc(when)+(r.tentative?' <span class="dt-tent">time not pinned down</span>':"")+'</div>')+
+        (!cancel&&!move&&(r.service||r.vehicle||r.price||r.address)
+          ? '<div class="dt-bits">'+esc([r.service,r.vehicle,r.price?"$"+r.price:"",[r.address,r.city].filter(Boolean).join(", ")].filter(Boolean).join(" · "))+'</div>' : "")+
+        (r.evidence?'<div class="dt-ev">“'+esc(r.evidence)+'”</div>':"")+
+        '<div class="dt-acts">'+
+          (cancel||move
+            ? '<button class="jd-btn pri sm" data-da="accept">'+ic("check",14)+' '+(cancel?"Cancel it":"Move it")+'</button>'+
+              '<button class="jd-btn ghost sm" data-da="dismiss">Leave it alone</button>'
+            : '<button class="jd-btn pri sm" data-da="confirm">'+ic("check",14)+' Yes, add it</button>'+
+              '<button class="jd-btn ghost sm" data-da="edit">'+ic("pencil",14)+' Edit</button>'+
+              '<button class="jd-btn ghost sm" data-da="dismiss">Not a job</button>')+
+        '</div></div>';
+    });
+    return h;
+  }
+  function jdWhenShort(ms){
+    if(!ms)return "";
+    var d=new Date(ms);
+    return d.toLocaleDateString([],{weekday:"short",month:"short",day:"numeric"})+" at "+
+      d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
+  }
+  function jdDetFind(id){return (JD.detections||[]).filter(function(x){return x.id===id})[0]}
+
+  function jdWireDetections(box){
+    Array.prototype.forEach.call(box.querySelectorAll("[data-det]"),function(card){
+      var id=card.getAttribute("data-det");
+      Array.prototype.forEach.call(card.querySelectorAll("[data-da]"),function(b){
+        b.onclick=function(ev){
+          ev.stopPropagation();
+          var a=b.getAttribute("data-da"),rec=jdDetFind(id);
+          if(a==="edit")return jdDetEdit(rec);
+          if(a==="dismiss")
+            return post("/api/detection",{action:"dismiss",id:id}).then(function(){jdLoadDetections();toast("Dismissed")});
+          if(a==="accept")
+            return post("/api/detection",{action:"accept",id:id}).then(function(d){
+              if(d&&d.ok){jdLoadDetections();jdLoadDay(true);refreshThreads();toast("Updated")}
+              else toast((d&&d.error)||"Couldn't do that",{bad:true});
+            });
+          if(a==="confirm")
+            return post("/api/detection",{action:"confirm",id:id}).then(function(d){
+              if(!d||!d.ok){toast((d&&d.error)==="day_full"?"That day is full":"Couldn't add it",{bad:true});return}
+              JD.date=d.date||JD.date;JD.day=d.day||JD.day;
+              jdLoadDetections();jdLoadDay(true);refreshThreads();
+              toast("Added to your day");
+              if(d.draft&&rec)jdDetDraft(rec,d.draft);
+            });
+        };
+      });
+    });
+  }
+
+  // Confirming hands back a drafted text. It is not sent until this is tapped.
+  function jdDetDraft(rec,draft){
+    var s=jdSheetOpen('<div class="jd-sh-title">Text '+esc(rec.name||rec.phone)+'?</div>'+
+      '<div class="jd-sh-sub">Nothing has been sent yet. Edit it, send it, or skip it.</div>'+
+      '<div class="jd-field"><textarea id="jdDetText" rows="4">'+esc(draft)+'</textarea></div>'+
+      '<button class="jd-btn pri" id="jdDetSend">'+ic("send",17)+' Send it</button>'+
+      '<button class="jd-btn ghost" id="jdDetSkip" style="margin-top:8px">Skip</button>');
+    s.querySelector("#jdDetSkip").onclick=jdSheetClose;
+    s.querySelector("#jdDetSend").onclick=function(){
+      var t=(s.querySelector("#jdDetText").value||"").trim();
+      if(!t)return jdSheetClose();
+      post("/api/send",{phone:rec.phone,body:t}).then(function(d){
+        toast(d&&d.ok?"Sent to "+(rec.name||rec.phone):((d&&d.error)||"Couldn't send"),{bad:!(d&&d.ok)});
+        jdSheetClose();refreshThreads();
+      }).catch(function(){toast("Network error",{bad:true})});
+    };
+  }
+
+  function jdDetEdit(rec){
+    if(!rec)return;
+    var s=jdSheetOpen('<div class="jd-sh-title">Fix the details</div>'+
+      '<div class="jd-sh-sub">Whatever it got wrong, correct it here before you add it.</div>'+
+      '<div class="jd-row"><div class="jd-field"><label>Date</label><input type="date" id="dEdDate" value="'+esc(rec.date||"")+'"></div>'+
+      '<div class="jd-field"><label>Time</label><input type="time" id="dEdSlot" value="'+esc(rec.slot||"09:00")+'"></div></div>'+
+      '<div class="jd-field"><label>Customer</label><input type="text" id="dEdName" value="'+esc(rec.name||"")+'"></div>'+
+      '<div class="jd-field"><label>Service</label><input type="text" id="dEdService" value="'+esc(rec.service||"")+'"></div>'+
+      '<div class="jd-field"><label>Vehicle</label><input type="text" id="dEdVehicle" value="'+esc(rec.vehicle||"")+'"></div>'+
+      '<div class="jd-field"><label>Address</label><input type="text" id="dEdAddress" value="'+esc(rec.address||"")+'"></div>'+
+      '<div class="jd-row"><div class="jd-field"><label>City</label><input type="text" id="dEdCity" value="'+esc(rec.city||"")+'"></div>'+
+      '<div class="jd-field"><label>Price</label><input type="number" id="dEdPrice" value="'+(rec.price||"")+'"></div></div>'+
+      '<div class="jd-field"><label>Notes</label><input type="text" id="dEdNotes" value="'+esc(rec.notes||"")+'"></div>'+
+      '<button class="jd-btn pri" id="dEdSave">'+ic("check",17)+' Save</button>'+
+      '<button class="jd-btn ghost" id="dEdCancel" style="margin-top:8px">Cancel</button>');
+    s.querySelector("#dEdCancel").onclick=jdSheetClose;
+    s.querySelector("#dEdSave").onclick=function(){
+      post("/api/detection",{action:"edit",id:rec.id,date:s.querySelector("#dEdDate").value,slot:s.querySelector("#dEdSlot").value,
+        name:s.querySelector("#dEdName").value,service:s.querySelector("#dEdService").value,vehicle:s.querySelector("#dEdVehicle").value,
+        address:s.querySelector("#dEdAddress").value,city:s.querySelector("#dEdCity").value,price:s.querySelector("#dEdPrice").value,
+        notes:s.querySelector("#dEdNotes").value}).then(function(d){
+        if(d&&d.ok){jdSheetClose();jdLoadDetections();toast("Saved")}
+        else toast("Couldn't save",{bad:true});
+      });
+    };
   }
 
   function jdDayStrip(){
@@ -8308,6 +8446,7 @@
       '<div class="hst"><div class="l">Done</div><div class="v">'+s.done+'/'+s.total+'</div></div>'+
       '<div class="hst"><div class="l">Wheels</div><div class="v">'+s.hours+'h</div></div>'+
       '</div></div>';
+    h+=jdDetectCards();
 
     if(JD.track.token){
       var mins=Math.max(0,Math.round((JD.track.eta-Date.now())/60000));
@@ -8328,6 +8467,7 @@
     hydrateIcons(box);
     jdWireDays(box);
     jdWireRun(box);
+    jdWireDetections(box);
   }
 
   function jdJobCard(j,isNext){
@@ -9594,14 +9734,15 @@
 
   // ---- badges + boot wiring for the whole suite ----
   function updateJobsBadge(){
-    var n=0;
-    if(JD.day&&JD.day.date===jdToday())n=JD.day.summary.remaining;
+    var n=(JD.detections||[]).length;
+    if(JD.day&&JD.day.date===jdToday())n+=JD.day.summary.remaining;
     var b=el("navJobs");if(!b)return;
     b.textContent=n>9?"9+":String(n);
     b.classList.toggle("show",n>0);
   }
   function jdPrefetchToday(){
     JD.date=JD.date||jdToday();
+    jdLoadDetections();
     api("/api/day?date="+encodeURIComponent(JD.date)).then(function(d){
       if(d&&d.ok){JD.day=d;updateJobsBadge();if(el("jdApp").classList.contains("show"))jdRender()}
     }).catch(function(){});

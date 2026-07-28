@@ -36,6 +36,21 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   verdict is cached per message (one small AI call, at most, per customer text), and
   when in doubt it errs toward reminding you. The reason shows on the conversation's
   follow-up panel ("No reply needed — …").
+- **Appointment auto-detect:** you never have to write a job down. Every message
+  is read as it arrives; when you and a customer land on a day and time in a
+  normal conversation, it shows up on the **Jobs** board as a **one-tap card**
+  ("Looks like you booked Jenna — Sat at 10"), quoting the line it came from and
+  carrying the address, vehicle, service, quoted price and gate/parking notes it
+  pulled out of the thread. Tap **Yes** and it becomes a real job on your day (and
+  sets the conversation's appointment, so reminders and follow-ups know about it);
+  tap **Not a job** and it's gone. **Reschedules and cancellations raise cards
+  too — the AI is never allowed to move or kill a job on its own.** Vague ones
+  ("Saturday morning") become a tentative hold, and an un-confirmed card still
+  blocks that slot on the public booking page so the website can't sell a time you
+  already promised over text. Confirming hands you a **drafted confirmation text
+  you tap to send** — nothing is ever texted automatically. Costs almost nothing to
+  run: a free regex kills every message with no date in it before any AI call.
+  Kill switches: the **detect** settings in the menu, or `DETECT_DISABLED=1`.
 - **Click-to-call:** rings your cell, then bridges the call to the customer through
   your Twilio number (keeps your personal number private).
 - **Instant email alerts (optional, Resend):** get emailed the moment a text,
