@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-28·thumb-speed';
+const BUILD = '2026-07-28·quote-aging';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -3054,6 +3054,12 @@ function boardSnapshot(index, cfg, now) {
   S.push(`STALE — active but silent 10+ days (${stale.length}): ${stale.slice(0, 14).map((e) => e.name || e.phone).join(', ') || '(none)'}`);
   S.push(`LOST leads still in the open inbox (${lost.length}): ${lost.slice(0, 14).map((e) => e.name || e.phone).join(', ') || '(none)'}`);
   S.push(`WON leads (${won.length}): ${won.slice(0, 14).map((e) => e.name || e.phone).join(', ') || '(none)'}`);
+  const aging = open.filter((e) => e.quoteAt && (now - e.quoteAt) > 2 * 86400000)
+    .sort((a, b) => a.quoteAt - b.quoteAt);
+  S.push(`QUOTES SENT, STILL NO ANSWER (${aging.length}) — the most winnable money here:`);
+  S.push(aging.slice(0, 12).map((e) =>
+    `  - ${e.name || e.phone}: $${e.quoteTotal || '?'} quoted ${humanAgo(now - e.quoteAt)} ago, not accepted or declined`
+  ).join('\n') || '  (none)');
   S.push('');
   S.push(`ON HOLD — Mikey told you to leave these alone (${held.length}). They are DELIBERATELY excluded from every list above:`);
   S.push(held.slice(0, 20).map((e) =>
@@ -4989,6 +4995,11 @@ function buildIndexSummary(thread, cfg) {
     // someone is quiet without loading every thread.
     heldUntil: (fu.snoozeUntil && fu.snoozeUntil > Date.now()) ? fu.snoozeUntil : null,
     holdReason: (fu.snoozeUntil && fu.snoozeUntil > Date.now()) ? (fu.holdReason || '') : '',
+    // An open quote and how long it has been sitting. Mirrored so "you quoted
+    // them six days ago and never heard back" can be surfaced without loading
+    // every thread — it's the most winnable money on the board.
+    quoteAt: (thread.quote && thread.status !== 'won' && thread.status !== 'lost') ? (thread.quote.at || 0) : 0,
+    quoteTotal: (thread.quote && thread.status !== 'won' && thread.status !== 'lost') ? (thread.quote.total || 0) : 0,
     reminderAt: thread.reminderAt || null,
     reminderNote: (thread.reminderNote || '').slice(0, 120),
     reminderDue: !!(thread.reminderAt && thread.reminderAt <= Date.now()),

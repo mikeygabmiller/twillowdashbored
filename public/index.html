@@ -462,6 +462,14 @@
   .msg-link{color:inherit;text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1px;
     text-decoration-color:rgba(255,255,255,.45)}
   .bubble.out .msg-link{text-decoration-color:rgba(255,255,255,.6)}
+  /* A quote that's been sitting with no answer. */
+  .quote-banner{margin:8px 14px 0;padding:10px 13px;background:#22200f;border:1px solid #4d451c;border-radius:13px;
+    display:flex;align-items:center;gap:10px;color:#eadfb8;font-size:13px}
+  .quote-banner .qb-ic{color:#f5b842;flex:none;display:flex}
+  .quote-banner .qb-txt{flex:1;min-width:0;line-height:1.35}
+  .quote-banner .qb-txt b{color:#f8eed0;font-weight:650}
+  .quote-banner .qb-go{background:#4a3a12;border:1px solid #6b551d;color:#fdf6e3;border-radius:8px;
+    padding:6px 11px;font-size:11.5px;font-weight:700;flex:none}
   /* Won the job, never logged the money. */
   .logjob-banner{margin:8px 14px 0;padding:10px 13px;background:#132218;border:1px solid #244d33;border-radius:13px;
     display:flex;align-items:center;gap:10px;color:#c8e6d3;font-size:13px}
@@ -2035,6 +2043,7 @@
     <div class="hold-banner" id="holdBanner" style="display:none"></div>
     <div class="optout-banner" id="optOutBanner" style="display:none"></div>
     <div class="logjob-banner" id="logJobBanner" style="display:none"></div>
+    <div class="quote-banner" id="quoteBanner" style="display:none"></div>
     <div class="remind-banner" id="remindBanner" style="display:none"></div>
     <div class="sched-banner" id="schedBanner" style="display:none"></div>
     <div class="followup-banner" id="fuBanner" style="display:none"></div>
@@ -2396,7 +2405,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-28·thumb-speed";
+  var APP_BUILD="2026-07-28·quote-aging";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4349,6 +4358,22 @@
     el("sendBtn").disabled=blocked;
     el("msgInput").disabled=blocked;
     el("msgInput").placeholder=blocked?"Can't text — they opted out":"Text message";
+
+    // A quote sitting unanswered is the most winnable money on the board — but
+    // nothing ever said how long it had been sitting. Only once it's actually
+    // gone quiet (2 days), and never after the lead is settled either way.
+    var qb=el("quoteBanner"),qq=t.quote,qAge=qq&&qq.at?(Date.now()-qq.at):0;
+    if(qq&&qAge>2*86400000&&t.status!=="won"&&t.status!=="lost"){
+      qb.style.display="flex";
+      qb.innerHTML='<span class="qb-ic">'+ic("clock",15)+'</span><div class="qb-txt"><b>Quote sent '+ago(qq.at)+' — no answer</b>'
+        +'<span class="hb-when">'+esc(fmtMoney(qq.total||0))+(qq.service?" · "+esc(qq.service):"")+'</span></div>'
+        +'<button class="qb-go">Nudge them</button>';
+      qb.querySelector(".qb-go").onclick=function(){
+        var inp=el("msgInput");
+        inp.value="Hey "+firstNameOf(t)+", just circling back on that "+(qq.service||"quote")+" — still want me to get you on the schedule?";
+        autoGrow();updateCount();stashDraft(t.phone);inp.focus();
+      };
+    }else{qb.style.display="none"}
 
     renderQuickReplies(t);
 

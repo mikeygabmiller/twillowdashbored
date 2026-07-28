@@ -17,6 +17,12 @@ const T=[
  {phone:'+15551110000',name:'Won NoMoney',unread:0,ts:now,status:'won',lastDir:'out',lastTs:now,messages:[{id:'a',dir:'out',body:'all done',ts:now}]},
  {phone:'+15552220000',name:'Won Paid',unread:0,ts:now,status:'won',lastDir:'out',lastTs:now,messages:[{id:'b',dir:'out',body:'thanks',ts:now}]},
  {phone:'+15553330000',name:'Just Active',unread:0,ts:now,status:'active',lastDir:'out',lastTs:now,messages:[{id:'c',dir:'out',body:'hi',ts:now}]},
+ {phone:'+15554440000',name:'Quote Cold',unread:0,ts:now,status:'active',lastDir:'out',lastTs:now,
+  quote:{id:'q1',total:240,service:'Full detail',at:now-6*86400000},messages:[{id:'e',dir:'out',body:'quote sent',ts:now}]},
+ {phone:'+15555550000',name:'Quote Fresh',unread:0,ts:now,status:'active',lastDir:'out',lastTs:now,
+  quote:{id:'q2',total:180,service:'Interior',at:now-3600000},messages:[{id:'f',dir:'out',body:'quote sent',ts:now}]},
+ {phone:'+15556660000',name:'Quote Won',unread:0,ts:now,status:'won',lastDir:'out',lastTs:now,
+  quote:{id:'q3',total:300,service:'Full detail',at:now-9*86400000},messages:[{id:'g',dir:'out',body:'booked',ts:now}]},
 ];
 let PASS=0,FAIL=0;const check=(n,g,w)=>{const ok=JSON.stringify(g)===JSON.stringify(w);ok?PASS++:FAIL++;console.log(`${ok?'  PASS':'  FAIL'}  ${n}${ok?'':`\n     got ${JSON.stringify(g)} want ${JSON.stringify(w)}`}`)};
 (async()=>{
@@ -46,6 +52,18 @@ await open('Won Paid');
 check('hidden once money is logged', await page.locator('#logJobBanner').isVisible(), false);
 await open('Just Active');
 check('hidden when not won', await page.locator('#logJobBanner').isVisible(), false);
+
+console.log('\n=== a quote nobody answered (#13) ===');
+await open('Quote Cold');
+check('banner shown once it goes quiet', await page.locator('#quoteBanner').isVisible(), true);
+check('says how long and how much', /no answer/i.test(await page.locator('#quoteBanner').textContent()||'') && /240/.test(await page.locator('#quoteBanner').textContent()||''), true);
+await page.locator('#quoteBanner .qb-go').click();
+await page.waitForTimeout(250);
+check('nudge drafts a follow-up', /circling back/i.test(await page.inputValue('#msgInput')), true);
+await open('Quote Fresh');
+check('quiet for a day is not "cold"', await page.locator('#quoteBanner').isVisible(), false);
+await open('Quote Won');
+check('hidden once the lead is won', await page.locator('#quoteBanner').isVisible(), false);
 
 console.log('\n=== what a blast costs (#11) ===');
 // The segment maths itself is covered by the counter tests in compose.test.js;
