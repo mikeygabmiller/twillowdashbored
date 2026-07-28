@@ -28,6 +28,14 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   **Autopilot** to have the safe nudges send themselves (quiet-hours aware; replies you
   owe a customer always wait for your approval). All tunable per-contact and globally
   in the menu.
+- **Knows when a conversation is finished:** before flagging that you owe someone a
+  reply, the AI reads the **whole thread** and decides whether anything is actually
+  outstanding. A chat that ended on "Thanks!", a 👍 or a "Liked …" reaction stops
+  showing up in *Needs your attention* and stops generating nudges — while a question,
+  a photo, a voicemail, or a promise you haven't kept always keeps its reminder. The
+  verdict is cached per message (one small AI call, at most, per customer text), and
+  when in doubt it errs toward reminding you. The reason shows on the conversation's
+  follow-up panel ("No reply needed — …").
 - **Click-to-call:** rings your cell, then bridges the call to the customer through
   your Twilio number (keeps your personal number private).
 - **Instant email alerts (optional, Resend):** get emailed the moment a text,
