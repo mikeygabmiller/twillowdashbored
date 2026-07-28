@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-28·compose-safety';
+const BUILD = '2026-07-28·standing-orders';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -2722,7 +2722,7 @@ async function apiAiTriage() {
 // There is deliberately no hard-delete: "delete / remove / clear out" a
 // conversation maps to ARCHIVE, so every action is reversible.
 // ===========================================================================
-const CMD_ACTIONS = ['mark_read', 'mark_unread', 'archive', 'unarchive', 'set_status', 'pin', 'unpin', 'block', 'unblock', 'emails_mark_read', 'none'];
+const CMD_ACTIONS = ['mark_read', 'mark_unread', 'archive', 'unarchive', 'set_status', 'pin', 'unpin', 'block', 'unblock', 'emails_mark_read', 'hold', 'release', 'none'];
 const CMD_STATUSES = ['new', 'active', 'won', 'lost'];
 
 // Resolve a plan's filter into the list of index rows it applies to. Pure (no
@@ -2760,8 +2760,49 @@ function describeCount(action, n, status) {
     case 'block':       return 'Blocked ' + n + ' number' + (n > 1 ? 's' : '') + '.';
     case 'unblock':     return 'Unblocked ' + n + ' number' + (n > 1 ? 's' : '') + '.';
     case 'set_status':  return 'Moved ' + c + ' to "' + (status || '') + '".';
+    case 'hold':        return 'Holding ' + c + ' — I won\'t chase them until then.';
+    case 'release':     return 'Back on your list: ' + c + '.';
     default:            return 'Done — ' + c + ' updated.';
   }
+}
+
+// ---------------------------------------------------------------------------
+// Standing instructions ("Sabine's handled, I'm doing her car in August")
+// ---------------------------------------------------------------------------
+// A hold is a snooze that remembers WHY. The follow-up engine already refuses to
+// plan anything while followup.snoozeUntil is in the future, so the mechanism
+// exists; what's new is that the reason travels with it, shows on the board, and
+// goes into the AI advisor's snapshot — so the AI stops recommending someone
+// because it knows the reason, not because they were hidden from it.
+//
+// Two things end a hold on their own: the date passing, and the customer texting
+// in. A person reaching out always beats a note you left yourself.
+const HOLD_MAX_MS = 400 * 86400000; // a year and a bit — anything longer is a parse mistake
+
+// Turn whatever the model returned into a timestamp. Accepts an ISO date
+// ("2026-08-01"), a full timestamp, or a plain number of days.
+function parseHoldUntil(until, days, now = Date.now()) {
+  if (days != null && !isNaN(+days) && +days > 0) return now + Math.min(+days * 86400000, HOLD_MAX_MS);
+  if (typeof until === 'number' && until > now) return Math.min(until, now + HOLD_MAX_MS);
+  const s = String(until || '').trim();
+  if (!s) return 0;
+  // A bare date means "the start of that day", local to the business.
+  const bare = /^\d{4}-\d{2}-\d{2}$/.test(s) ? s + 'T09:00:00' : s;
+  const t = Date.parse(bare);
+  if (isNaN(t)) return 0;
+  if (t <= now) return 0;
+  return Math.min(t, now + HOLD_MAX_MS);
+}
+
+function holdIsActive(fu, now = Date.now()) {
+  return !!(fu && fu.snoozeUntil && fu.snoozeUntil > now);
+}
+
+// One-line description used in the preview, the board snapshot and the UI.
+function describeHold(fu, cfg) {
+  if (!holdIsActive(fu)) return '';
+  const when = new Date(fu.snoozeUntil).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: (cfg && cfg.tz) || 'America/Los_Angeles' });
+  return 'on hold until ' + when + (fu.holdReason ? ' — ' + fu.holdReason : '');
 }
 
 // Gemini: plain English -> ONE structured bulk action. Strict JSON, enum-locked.
@@ -2772,8 +2813,14 @@ async function interpretCommand(text) {
     `{"action": one of ${JSON.stringify(CMD_ACTIONS)}, ` +
     `"status": one of ${JSON.stringify(CMD_STATUSES)} (ONLY when action is "set_status", else null), ` +
     `"filter": {"match": "all"|"unread"|"read"|"archived"|"active", "status": null or one of ${JSON.stringify(CMD_STATUSES)}, "olderThanDays": null or number, "newerThanDays": null or number, "nameOrPhone": null or string}, ` +
+    `"until": null or "YYYY-MM-DD" (ONLY for action "hold"), ` +
+    `"holdDays": null or number (ONLY for action "hold", when they say a duration rather than a date), ` +
+    `"reason": null or a SHORT phrase in the owner's own words explaining why (ONLY for action "hold"), ` +
     `"reply": "one short friendly sentence stating exactly what you will do"}\n\n` +
+    `Today is ${new Date().toISOString().slice(0, 10)}.\n\n` +
     `Rules:\n` +
+    `- HOLD is the important one. When the owner says a customer is handled, taken care of, doesn't need a reply, or shouldn't be chased until some point — "Sabine doesn't need responded to, I'm doing her car in August", "leave Rick alone till spring", "don't bug the Hendersons for a couple weeks" — use action "hold", put the person in filter.nameOrPhone, set "until" to the date it should end (pick a sensible date: a bare month means the 1st of that month; "spring" means Mar 1; if they only give a duration use holdDays instead), and put their reason in "reason" as a short phrase ("doing her car in August"). Set filter.match to "all" so it works even if the thread is archived.\n` +
+    `- "start chasing X again / un-hold / never mind about X / put X back" -> release.\n` +
     `- "mark as read / mark read / clear unread" -> mark_read. "mark unread" -> mark_unread.\n` +
     `- "delete / remove / clear out / get rid of / hide / clean up" a conversation -> archive. This dashboard has NO hard delete; archiving is how threads are removed. "unarchive / restore / bring back" -> unarchive.\n` +
     `- "mark won / mark lost / mark new / mark active / move to X" -> set_status with that status.\n` +
@@ -2790,6 +2837,13 @@ async function interpretCommand(text) {
   if (!CMD_ACTIONS.includes(p.action)) p.action = 'none';
   if (p.action !== 'set_status') p.status = null;
   p.filter = (p.filter && typeof p.filter === 'object') ? p.filter : {};
+  if (p.action === 'hold') {
+    p.holdUntil = parseHoldUntil(p.until, p.holdDays);
+    p.reason = String(p.reason || '').trim().slice(0, 140);
+    // A hold with no usable date is worse than none — it would silence someone
+    // forever. Fall back to asking rather than guessing.
+    if (!p.holdUntil) { p.action = 'none'; p.reply = 'Until when should I leave them alone? Give me a date or "for two weeks".'; }
+  } else { p.holdUntil = 0; p.reason = ''; }
   return p;
 }
 
@@ -2802,7 +2856,12 @@ async function previewCommandPlan(plan) {
   }
   const index = await loadIndex();
   const list = selectThreads(index, plan.filter);
-  return { count: list.length, unit: 'conversation', samples: list.slice(0, 6).map((t) => t.name || t.phone) };
+  const preview = { count: list.length, unit: 'conversation', samples: list.slice(0, 6).map((t) => t.name || t.phone) };
+  if (plan.action === 'hold' && plan.holdUntil) {
+    preview.until = plan.holdUntil;
+    preview.reason = plan.reason || '';
+  }
+  return preview;
 }
 
 // Execute a previewed plan. Batched: the thread ops mutate the index in memory
@@ -2849,6 +2908,26 @@ async function executeCommandPlan(plan) {
         if (CMD_STATUSES.includes(s) && thread.status !== s) { thread.status = s; thread.statusAt = Date.now(); ch = true; }
         break;
       }
+      case 'hold': {
+        const until = Number(plan.holdUntil) || 0;
+        if (until > Date.now()) {
+          const fu = thread.followup || (thread.followup = defaultFollowup());
+          fu.snoozeUntil = until;
+          fu.holdReason = String(plan.reason || '').slice(0, 140);
+          fu.heldAt = Date.now();
+          fu.suggestion = null;           // drop any nudge already waiting
+          ch = true;
+        }
+        break;
+      }
+      case 'release': {
+        const fu = thread.followup;
+        if (fu && (fu.snoozeUntil || fu.holdReason)) {
+          fu.snoozeUntil = null; fu.holdReason = ''; fu.heldAt = 0;
+          ch = true;
+        }
+        break;
+      }
       default: break;
     }
     if (ch) { await saveThread(thread); if (applyIndexSummary(index, buildIndexSummary(thread, cfg))) indexChanged = true; n++; }
@@ -2881,11 +2960,14 @@ async function apiAiCommand(request) {
   const preview = await previewCommandPlan(plan);
   return json({
     ok: true,
-    plan: { action: plan.action, status: plan.status || null, filter: plan.filter || {} },
+    plan: { action: plan.action, status: plan.status || null, filter: plan.filter || {},
+            holdUntil: plan.holdUntil || 0, reason: plan.reason || '' },
     reply: plan.reply || describeCount(plan.action, preview.count, plan.status),
     count: preview.count,
     unit: preview.unit,
     samples: preview.samples,
+    until: preview.until || 0,
+    reason: preview.reason || '',
   });
 }
 
@@ -2917,12 +2999,20 @@ function opsPlaybook() {
     '5. Won leads that were never logged in the money tracker are lost profit visibility — worth a nudge.',
     '6. Be concrete and efficient: say exactly what to do, tie it to a specific customer or bucket, and keep the "why" to one line. Prefer a few high-impact moves over a long list.',
     '7. When you recommend a bulk cleanup that the command bar can do, put the exact plain-English command in the item\'s "command" field so Mikey can run it in one tap.',
+    '8. RESPECT HOLDS. Anyone in the ON HOLD list has been parked by Mikey himself, with his reason. Do not tell him to reply to them, chase them, archive them or change their status — he has already decided. Never list a held customer under attention. The single exception: if something genuinely new has happened that his reason plainly does not cover, you may mention it in one line that repeats his own reason back to him first.',
   ].join('\n');
 }
 
 // Compact, token-cheap snapshot of the whole board for the advisor to reason on.
 function boardSnapshot(index, cfg, now) {
-  const open = index.filter((e) => !e.archived);
+  // Conversations Mikey has explicitly parked are pulled out of every priority
+  // list below and reported separately WITH his reason. The advisor then stops
+  // recommending them because it knows why they're quiet — not because they were
+  // hidden from it. That distinction is the whole point: it can still mention one
+  // if something genuinely changed.
+  const held = index.filter((e) => !e.archived && e.heldUntil && e.heldUntil > now);
+  const heldPhones = new Set(held.map((e) => e.phone));
+  const open = index.filter((e) => !e.archived && !heldPhones.has(e.phone));
   const line = (e) => {
     const ago = humanAgo(now - (e.lastTs || now));
     const who = e.lastDir === 'in' ? `waiting ${ago}` : `you replied ${ago} ago`;
@@ -2957,6 +3047,13 @@ function boardSnapshot(index, cfg, now) {
   S.push(`STALE — active but silent 10+ days (${stale.length}): ${stale.slice(0, 14).map((e) => e.name || e.phone).join(', ') || '(none)'}`);
   S.push(`LOST leads still in the open inbox (${lost.length}): ${lost.slice(0, 14).map((e) => e.name || e.phone).join(', ') || '(none)'}`);
   S.push(`WON leads (${won.length}): ${won.slice(0, 14).map((e) => e.name || e.phone).join(', ') || '(none)'}`);
+  S.push('');
+  S.push(`ON HOLD — Mikey told you to leave these alone (${held.length}). They are DELIBERATELY excluded from every list above:`);
+  S.push(held.slice(0, 20).map((e) =>
+    `  - ${e.name || e.phone}: until ${new Date(e.heldUntil).toISOString().slice(0, 10)}` +
+    (e.holdReason ? ` because "${e.holdReason}"` : '') +
+    (e.lastDir === 'in' ? ' (note: they texted last)' : '')
+  ).join('\n') || '  (none)');
   return S.join('\n');
 }
 
@@ -3078,7 +3175,12 @@ async function buildAgentContext({ index, cfg, now, money }) {
     if (r.unread) flags.push('unread');
     if (r.pinned) flags.push('pinned');
     if (r.dateRequested) flags.push('ready-to-book');
-    L.push(`- ${r.name || r.phone} | phone=${r.phone} | status=${r.status || 'NONE'} | tags=[${(r.tags || []).join(', ')}] | ${wait}${flags.length ? (' | ' + flags.join(', ')) : ''}`);
+    // Mikey's own standing instruction travels with the conversation, so the AI
+    // reasons about a parked customer instead of re-suggesting them every time.
+    const heldNote = (r.heldUntil && r.heldUntil > now)
+      ? ` | ON HOLD until ${new Date(r.heldUntil).toISOString().slice(0, 10)}${r.holdReason ? ` because "${r.holdReason}"` : ''} — Mikey decided this; do not propose chasing, replying to, archiving or re-statusing them`
+      : '';
+    L.push(`- ${r.name || r.phone} | phone=${r.phone} | status=${r.status || 'NONE'} | tags=[${(r.tags || []).join(', ')}] | ${wait}${flags.length ? (' | ' + flags.join(', ')) : ''}${heldNote}`);
     if (t) {
       (t.messages || []).slice(-4).forEach((msg) => {
         const who = msg.dir === 'in' ? 'CUST' : msg.dir === 'out' ? 'YOU' : 'SYS';
@@ -3110,6 +3212,10 @@ function convActionLabel(op, name, act) {
     case 'set_status':   return 'Set ' + name + ' → ' + act.status;
     case 'add_tags':     return 'Label ' + name + ': ' + (act.tags || []).join(', ');
     case 'remove_tags':  return 'Unlabel ' + name + ': ' + (act.tags || []).join(', ');
+    case 'hold':         return 'Leave ' + name + ' alone until ' +
+                                new Date(act.holdUntil).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+                                (act.reason ? ' — ' + act.reason : '');
+    case 'release':      return 'Put ' + name + ' back on the list';
     default:             return op + ' ' + name;
   }
 }
@@ -3120,7 +3226,7 @@ function moneyActionLabel(entry) {
 
 // Validate + clean the model's proposed actions into a safe, executable list,
 // attaching a human label for the approval UI. Unknown ops / bad shapes drop out.
-const AGENT_CONV_OPS = ['archive', 'unarchive', 'mark_read', 'mark_unread', 'pin', 'unpin', 'set_status', 'add_tags', 'remove_tags'];
+const AGENT_CONV_OPS = ['archive', 'unarchive', 'mark_read', 'mark_unread', 'pin', 'unpin', 'set_status', 'add_tags', 'remove_tags', 'hold', 'release'];
 function normalizeAgentActions(list, index) {
   const byPhone = index ? new Map(index.map((e) => [e.phone, e])) : null;
   const out = [];
@@ -3145,6 +3251,13 @@ function normalizeAgentActions(list, index) {
       if (!phone) continue;
       const act = { op, phone, reason: String(a.reason || '').slice(0, 160) };
       if (op === 'set_status') { if (!CMD_STATUSES.includes(a.status)) continue; act.status = a.status; }
+      if (op === 'hold') {
+        // No usable date means we'd silence someone forever — drop the action
+        // rather than guess.
+        act.holdUntil = parseHoldUntil(a.until, a.holdDays);
+        if (!act.holdUntil) continue;
+        act.reason = String(a.reason || '').trim().slice(0, 140);
+      }
       if (op === 'add_tags' || op === 'remove_tags') {
         const tags = (Array.isArray(a.tags) ? a.tags : []).map((t) => String(t).trim().slice(0, 24)).filter(Boolean).slice(0, 10);
         if (!tags.length) continue;
@@ -3193,6 +3306,19 @@ async function executeAgentActions(actions, cfg) {
           const rm = new Set((a.tags || []).map((t) => String(t).trim().toLowerCase()));
           const arr = (thread.tags || []).filter((t) => !rm.has(String(t).trim().toLowerCase()));
           if (arr.length !== (thread.tags || []).length) { thread.tags = arr; ch = true; }
+          break;
+        }
+        case 'hold': {
+          if (a.holdUntil > now) {
+            const fu = thread.followup || (thread.followup = defaultFollowup());
+            fu.snoozeUntil = a.holdUntil; fu.holdReason = a.reason || ''; fu.heldAt = now; fu.suggestion = null;
+            ch = true;
+          }
+          break;
+        }
+        case 'release': {
+          const fu = thread.followup;
+          if (fu && (fu.snoozeUntil || fu.holdReason)) { fu.snoozeUntil = null; fu.holdReason = ''; fu.heldAt = 0; ch = true; }
           break;
         }
         default: break;
@@ -3252,7 +3378,13 @@ async function apiAiAgent(request) {
     'YOU ARE THE COMMAND-CENTER AI for this dashboard. Two jobs: ANSWER questions from the data above, and PROPOSE actions Mikey can approve. You NEVER perform actions yourself — everything you list is shown to Mikey and only runs if he approves it.\n' +
     'Respond with ONLY JSON (no prose, no code fences):\n' +
     '{"answer":"your reply to Mikey — ALWAYS fill this in: answer the question fully, or clearly summarize what you\'re about to do and why","actions":[{"op":"...","phone":"exact phone from a conversation","status":"new|active|won|lost","tags":["..."],"entry":{"type":"job|exp|jp|personal","amount":0,"cat":"","service":"","note":"","name":""},"reason":"short why"}]}\n' +
-    'Conversation ops (need phone=): archive, unarchive, mark_read, mark_unread, pin, unpin, set_status (+status), add_tags (+tags), remove_tags (+tags). Money op: log_money (+entry).\n' +
+    'Conversation ops (need phone=): archive, unarchive, mark_read, mark_unread, pin, unpin, set_status (+status), add_tags (+tags), remove_tags (+tags), hold (+until +reason), release. Money op: log_money (+entry).\n' +
+    `Today is ${new Date().toISOString().slice(0, 10)}.\n` +
+    'STANDING INSTRUCTIONS — this is how Mikey tells you to remember something:\n' +
+    '- When he says a customer is handled, taken care of, doesn\'t need a reply, or shouldn\'t be chased until later — "Sabine doesn\'t need responded to, I\'m doing her car in August", "leave Rick alone till spring", "don\'t bug the Hendersons for a couple weeks" — propose op "hold" for that phone, with "until" as a YYYY-MM-DD date and "reason" as a SHORT phrase in HIS words ("doing her car in August"). A bare month means the 1st; "spring" means Mar 1; "a couple weeks" means 14 days from today (use "holdDays":14 instead of a date).\n' +
+    '- Say plainly in "answer" what you understood, including the date and the reason, so he can correct you before approving.\n' +
+    '- "start chasing X again / never mind about X / put X back on the list" -> op "release".\n' +
+    '- Anyone in ON HOLD has already been decided by Mikey. Never propose replying to, chasing, archiving or re-statusing them, and never list them as needing attention. If something genuinely new happened that his reason plainly doesn\'t cover, say so in "answer" and repeat his own reason back first — do not turn it into an action.\n' +
     'Rules:\n' +
     '- Pure question or ranking ("how much did I make this month", "rank my leads highest to lowest priority") → put the full answer in "answer" and leave "actions" empty.\n' +
     '- Reference conversations ONLY by an exact phone= shown above. Never invent people, phone numbers, or money figures.\n' +
@@ -3746,6 +3878,24 @@ async function apiFollowupAction(request) {
     const hours = Number(data.hours) || 24;
     fu.snoozeUntil = now + hours * 3600000; fu.suggestion = null;
     pushLog(fu, { at: now, stepKey: (plan && plan.stepKey) || '', action: 'snoozed' });
+    await saveThread(thread); await updateIndexEntry(thread);
+    return json({ ok: true, thread });
+  }
+  // A hold is a snooze that carries Mikey's reason with it. Set from the thread
+  // UI as well as from a plain-English command.
+  if (action === 'hold') {
+    const until = parseHoldUntil(data.until, data.days, now);
+    if (!until) return json({ ok: false, error: 'bad_until' }, 422);
+    fu.snoozeUntil = until;
+    fu.holdReason = String(data.reason || '').trim().slice(0, 140);
+    fu.heldAt = now; fu.suggestion = null;
+    pushLog(fu, { at: now, stepKey: (plan && plan.stepKey) || '', action: 'held' });
+    await saveThread(thread); await updateIndexEntry(thread);
+    return json({ ok: true, thread });
+  }
+  if (action === 'release') {
+    fu.snoozeUntil = null; fu.holdReason = ''; fu.heldAt = 0;
+    pushLog(fu, { at: now, stepKey: '', action: 'released' });
     await saveThread(thread); await updateIndexEntry(thread);
     return json({ ok: true, thread });
   }
@@ -4545,6 +4695,8 @@ function defaultFollowup() {
     enabled: true,
     auto: null,
     snoozeUntil: null,
+    holdReason: '',    // Mikey's own words for WHY this one is parked ("doing her car in August")
+    heldAt: 0,
     lastStepKey: '',   // the cadence step we last sent/skipped, so we don't repeat it
     lastActionAt: 0,
     suggestion: null,  // the live nudge awaiting Mikey: { id, stage, step, stepKey, reason, draft, urgency, dueAt, createdAt }
@@ -4786,6 +4938,11 @@ function buildIndexSummary(thread, cfg) {
     hasGarage: !!(thread.garage && ((thread.garage.vehicles || []).length || thread.garage.address)),
     vehicleLabel: garageVehicleLabel(thread.garage),
     city: (thread.garage && thread.garage.city) || '',
+    // A standing instruction Mikey gave in his own words ("doing her car in
+    // August"). Mirrored here so the board and the AI advisor can both see WHY
+    // someone is quiet without loading every thread.
+    heldUntil: (fu.snoozeUntil && fu.snoozeUntil > Date.now()) ? fu.snoozeUntil : null,
+    holdReason: (fu.snoozeUntil && fu.snoozeUntil > Date.now()) ? (fu.holdReason || '') : '',
     reminderAt: thread.reminderAt || null,
     reminderNote: (thread.reminderNote || '').slice(0, 120),
     reminderDue: !!(thread.reminderAt && thread.reminderAt <= Date.now()),
@@ -4835,6 +4992,14 @@ async function appendMessage(phone, message, opts = {}) {
   message.ts = message.ts || Date.now();
   thread.messages.push(message);
   if (message.dir === 'in') thread.unread = (thread.unread || 0) + 1;
+  // A customer reaching out beats any note Mikey left himself: an inbound text
+  // ends a hold immediately, so "leave Sabine alone till August" never swallows
+  // her when she actually writes in.
+  if (message.dir === 'in' && thread.followup && (thread.followup.snoozeUntil || thread.followup.holdReason)) {
+    thread.followup.snoozeUntil = null;
+    thread.followup.holdReason = '';
+    thread.followup.heldAt = 0;
+  }
   // Once Mikey replies, any pre-drafted suggestion is answered — clear it.
   if (message.dir === 'out') thread.suggested = null;
   await saveThread(thread);

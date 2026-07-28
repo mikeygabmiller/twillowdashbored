@@ -1,6 +1,20 @@
-const { chromium, devices } = require('playwright');
-const http = require('http'), fs = require('fs'), path = require('path');
-const ROOT = '/home/user/twillowdashbored/public';
+// Drives the real dashboard in a headless phone-sized browser: SMS segment
+// counting, per-conversation drafts, the send guards, undo send, and the
+// keyboard not covering the compose box.
+//
+//   npm install && node test/compose.test.js
+//
+// CHROME_PATH overrides the browser binary.
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+let chromium, devices;
+try { ({ chromium, devices } = await import('playwright-core')); }
+catch { console.error('playwright-core is missing — run `npm install` first.'); process.exit(2); }
+const ROOT = path.join(__dirname, '..', 'public');
 const server = http.createServer((req, res) => {
   let p = req.url.split('?')[0]; if (p === '/') p = '/index.html';
   const f = path.join(ROOT, p);
@@ -23,7 +37,7 @@ const check = (name, got, want) => {
 
 (async () => {
   await new Promise(r => server.listen(8790, '127.0.0.1', r));
-  const b = await chromium.launch({ executablePath: '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+  const b = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
   const ctx = await b.newContext({ ...devices['Galaxy S9+'], viewport: { width: 360, height: 780 } });
   const page = await ctx.newPage();
   const sends = [];

@@ -446,6 +446,16 @@
   .aicmd-result.ar-done .ar-ic{color:var(--green)}
   .aicmd-result.ar-bad .ar-ic{color:var(--red,#ef4444)}
   /* in-thread follow-up reminder banner */
+  /* "You told me to leave this one alone" — shown at the top of a held thread. */
+  .hold-banner{margin:8px 14px 0;padding:10px 13px;background:#191a22;border:1px solid #34364a;border-radius:13px;
+    display:flex;align-items:center;gap:10px;color:#c9cbe0;font-size:13px}
+  .hold-banner .hb-ic{color:#9aa3b2;flex:none;display:flex}
+  .hold-banner .hb-txt{flex:1;min-width:0;line-height:1.35}
+  .hold-banner .hb-txt b{color:var(--text);font-weight:650}
+  .hold-banner .hb-when{display:block;font-size:11px;opacity:.75;margin-top:1px}
+  .hold-banner .hb-x{background:none;border:1px solid #3d4053;color:inherit;border-radius:8px;
+    padding:5px 10px;font-size:11.5px;font-weight:600;flex:none}
+  .conv .held,.home-row .held{color:var(--muted2);font-size:11px}
   .remind-banner{margin:8px 14px 0;padding:10px 13px;background:#15212e;border:1px solid #1f3a52;border-radius:13px;align-items:center;gap:10px;color:#cfe6f5;font-size:13px}
   .remind-banner.due{background:linear-gradient(135deg,#1c1708,#171310);border-color:#4a3a12;color:#f3ead6}
   .remind-banner .rb-ic{color:#7dd3fc;flex:none;display:flex}.remind-banner.due .rb-ic{color:#f5b842}
@@ -1988,6 +1998,7 @@
       <button id="findNext" data-ic="chevron-down" aria-label="Next match"></button>
       <button id="findClose" data-ic="x" aria-label="Close find"></button>
     </div>
+    <div class="hold-banner" id="holdBanner" style="display:none"></div>
     <div class="remind-banner" id="remindBanner" style="display:none"></div>
     <div class="sched-banner" id="schedBanner" style="display:none"></div>
     <div class="followup-banner" id="fuBanner" style="display:none"></div>
@@ -2342,7 +2353,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-28·compose-safety";
+  var APP_BUILD="2026-07-28·standing-orders";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -2583,6 +2594,7 @@
   function digitsToE164(raw){var d=String(raw).replace(/\D/g,"");if(/^\+1\d{10}$/.test(raw))return raw;if(d.length===10)return"+1"+d;if(d.length===11&&d[0]==="1")return"+"+d;return null}
   function prettyPhone(p){var m=/^\+1(\d{3})(\d{3})(\d{4})$/.exec(p||"");return m?"("+m[1]+") "+m[2]+"-"+m[3]:(p||"")}
   function displayName(t){return t.name&&t.name.trim()?t.name:prettyPhone(t.phone)}
+  function firstNameOf(t){var n=(t.name||"").trim().split(/\s+/)[0];return n||prettyPhone(t.phone)}
   function initials(t){var n=displayName(t).trim();var p=n.replace(/[^a-zA-Z ]/g,"").split(/\s+/).filter(Boolean);if(!p.length)return"#";return(p[0][0]+(p[1]?p[1][0]:"")).toUpperCase()}
   function colorFor(phone){var h=0;for(var i=0;i<phone.length;i++)h=phone.charCodeAt(i)+((h<<5)-h);var hue=Math.abs(h)%360;return"hsl("+hue+",42%,44%)"}
   function fmtTime(ts){if(!ts)return"";var d=new Date(ts),n=new Date();if(d.toDateString()===n.toDateString())return d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});var diff=(n-d)/86400000;if(diff<7)return d.toLocaleDateString([],{weekday:"short"});return d.toLocaleDateString([],{month:"short",day:"numeric"})}
@@ -4206,6 +4218,22 @@
     el("hNum").textContent=prettyPhone(t.phone);
     el("hPin").innerHTML=ic("pin",14);el("hPin").style.display=t.pinned?"inline-block":"none";
     var dnt=isDnt(t.phone);el("hDnt").innerHTML=dnt?ic("ban",10)+'Do not text':'';el("hDnt").style.display=dnt?"inline-flex":"none";
+
+    // "You told me to leave this one alone." Shows the reason back in Mikey's own
+    // words so a quiet conversation never looks like the app forgot about it.
+    var hb=el("holdBanner"),hfu=t.followup||{},heldTill=(hfu.snoozeUntil&&hfu.snoozeUntil>Date.now())?hfu.snoozeUntil:0;
+    if(heldTill){
+      hb.style.display="flex";
+      hb.innerHTML='<span class="hb-ic">'+ic("clock",15)+'</span><div class="hb-txt"><b>On hold — I won\'t chase '+esc(firstNameOf(t))+'</b>'
+        +(hfu.holdReason?'<span class="hb-when">You said: '+esc(hfu.holdReason)+'</span>':'')
+        +'<span class="hb-when">Back on your list '+new Date(heldTill).toLocaleDateString([],{weekday:"short",month:"short",day:"numeric"})+'</span></div>'
+        +'<button class="hb-x">Un-hold</button>';
+      hb.querySelector(".hb-x").onclick=function(){
+        post("/api/followup",{phone:t.phone,action:"release"}).then(function(d){
+          if(d&&d.ok){state.thread=d.thread;renderThread();refreshThreads();toast("Back on your list")}
+        });
+      };
+    }else{hb.style.display="none"}
 
     var rb=el("remindBanner");
     if(t.reminderAt){

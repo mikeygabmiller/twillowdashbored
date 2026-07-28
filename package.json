@@ -3,11 +3,13 @@
   "version": "2.0.0",
   "private": true,
   "type": "module",
-  "description": "SMS dashboard for Mikey's Mobile Detailing — Cloudflare Worker + KV + Twilio.",
+  "description": "SMS dashboard for Mikey's Mobile Detailing \u2014 Cloudflare Worker + KV + Twilio.",
   "scripts": {
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
-    "tail": "wrangler tail"
+    "tail": "wrangler tail",
+    "test": "node test/hold.test.js && node test/compose.test.js",
+    "test:unit": "node test/hold.test.js"
   },
   "devDependencies": {
     "playwright-core": "^1.61.1",
