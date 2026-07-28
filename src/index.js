@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-28·smart-followups';
+const BUILD = '2026-07-28·rank-spend-guard';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -235,6 +235,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/geogrid/save')       return apiGeogridSave(request);
   if (request.method === 'POST' && pathname === '/api/geogrid/connect')    return apiGeogridConnect(request);
   if (request.method === 'POST' && pathname === '/api/geogrid/find')       return apiGeogridFind(request);
+  if (request.method === 'POST' && pathname === '/api/geogrid/preview')    return apiGeogridPreview(request);
   if (request.method === 'POST' && pathname === '/api/geogrid/disconnect') return apiGeogridDisconnect(request);
   if (request.method === 'POST' && pathname === '/api/geogrid/delete')     return apiGeogridDelete(request);
 
@@ -1551,6 +1552,28 @@ const GEO_SCAN_MAX_POINTS = 25;   // per request — keeps us under the 50-subre
 const GEO_SCAN_KEEP = 24;         // how many past scans to retain
 const GEO_NOT_FOUND_RANK = 21;    // "20+" — outside the 20 results Places returns
 
+// ---------------------------------------------------------------------------
+// What a Places call costs, and how we stay at $0.
+//
+// Google prices Text Search by the MOST EXPENSIVE field you ask for, so the
+// field mask — not the endpoint — picks the SKU and the bill:
+//
+//   places.id (+ name/attributions) .... "Text Search Essentials (IDs only)"
+//                                        the free tier; no names come back
+//   + places.displayName / address ..... "Text Search Pro" — $32 per 1,000
+//                                        calls past the monthly free allowance
+//
+// So a scan is FREE when the Place ID is pinned: we only need to spot which
+// result is his, and the ID alone answers that. Matching on the NAME is what
+// forces the paid SKU, because names are a paid field.
+//
+// Defaults below are the published rates at the time of writing; both are
+// editable in the dashboard so a Google price change doesn't need a deploy.
+// Prices last checked: 2026-07-28.
+const GEO_PRO_PER_1000 = 32;      // USD per 1,000 Text Search Pro calls
+const GEO_PRO_FREE = 5000;        // free Pro calls per month (Pro-tier SKU)
+const GEO_IDS_FREE = 10000;       // free Essentials/IDs-only calls per month
+
 async function geogridSecrets() {
   const saved = (await kv().get('geogrid:secrets', { type: 'json' })) || {};
   return {
@@ -1561,7 +1584,65 @@ async function geogridSecrets() {
     keyword: String(saved.keyword || 'mobile detailing'),
     centerLat: Number(saved.centerLat) || 47.9129,   // Snohomish, WA
     centerLng: Number(saved.centerLng) || -122.0982,
+    // Spend guard. freeOnly ON is the default and the safe state: the Worker
+    // refuses any call that would land past the free allowance, so the answer
+    // to "am I being charged?" is no, by construction.
+    freeOnly: saved.freeOnly !== false,
+    idOnly: saved.idOnly !== false,
+    pricePro: Number(saved.pricePro) >= 0 ? Number(saved.pricePro) : GEO_PRO_PER_1000,
+    freePro: Number(saved.freePro) >= 0 ? Number(saved.freePro) : GEO_PRO_FREE,
+    freeIds: Number(saved.freeIds) >= 0 ? Number(saved.freeIds) : GEO_IDS_FREE,
   };
+}
+
+// Which SKU a call bills at. ID-only is possible only with a pinned Place ID —
+// without one we need names to recognise the listing, and names cost money.
+function geoSku(sec) { return sec.idOnly && sec.placeId ? 'ids' : 'pro'; }
+function geoFieldMask(sku) {
+  return sku === 'ids' ? 'places.id' : 'places.id,places.displayName';
+}
+// Google's quotas reset at midnight Pacific, so the meter counts Pacific months
+// — that way "used this month" lines up with the allowance it's measured against.
+function geoMonthKey() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' }).slice(0, 7);
+}
+async function geoMeter() {
+  const m = (await kv().get('geogrid:meter', { type: 'json' })) || {};
+  const month = geoMonthKey();
+  return m.month === month ? { month, pro: m.pro || 0, ids: m.ids || 0 }
+    : { month, pro: 0, ids: 0 };
+}
+async function geoMeterAdd(sku, n) {
+  if (!n) return geoMeter();
+  const m = await geoMeter();
+  m[sku] = (m[sku] || 0) + n;
+  await kv().put('geogrid:meter', JSON.stringify(m));
+  return m;
+}
+// What N more calls on this SKU would do: how many land past the free
+// allowance, what they'd cost, and whether the guard should stop them.
+async function geoBudget(sec, sku, n) {
+  const m = await geoMeter();
+  const used = m[sku] || 0;
+  const free = sku === 'ids' ? sec.freeIds : sec.freePro;
+  const per1000 = sku === 'ids' ? 0 : sec.pricePro;
+  const paidCalls = Math.max(0, used + n - free);
+  const cost = +(paidCalls * per1000 / 1000).toFixed(2);
+  return {
+    month: m.month, sku, used, free, per1000, willUse: n,
+    left: Math.max(0, free - used), paidCalls, cost,
+    blocked: sec.freeOnly && paidCalls > 0,
+  };
+}
+function geoBudgetError(b) {
+  return json({
+    ok: false, error: 'budget', budget: b,
+    hint: 'Stopped before Google could charge you. This would put ' + b.paidCalls +
+      ' call' + (b.paidCalls === 1 ? '' : 's') + ' past your ' + b.free.toLocaleString() +
+      ' free ' + (b.sku === 'ids' ? 'ID-only' : 'Pro') + ' calls this month (' + b.used.toLocaleString() +
+      ' used) — about $' + b.cost.toFixed(2) + '. Wait for the 1st, run a smaller grid, or turn off ' +
+      '"Never spend real money" in setup if you want to pay for it.',
+  }, 402);
 }
 
 // Normalised name compare — Places display names carry punctuation/suffixes that
@@ -1569,21 +1650,53 @@ async function geogridSecrets() {
 function geoNameKey(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
 }
+// Words that say nothing about WHICH business this is. They're stripped before
+// comparing so "Mikey's Detailing Snohomish" still matches the listing Google
+// actually shows ("Mikey's Mobile Detailing") — the old plain-substring compare
+// failed on exactly that, and a failed compare looks identical to ranking
+// nowhere: a full grid of 20+.
+const GEO_GENERIC_WORDS = ['mobile', 'detailing', 'detail', 'details', 'auto', 'autos', 'car', 'cars',
+  'wash', 'washing', 'ceramic', 'coating', 'llc', 'inc', 'co', 'company', 'the', 'and', 'of',
+  'service', 'services', 'shop', 'pro', 'pros'];
+function geoTokens(s) {
+  return String(s || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+}
+function geoDistinctTokens(s) {
+  return geoTokens(s).filter((t) => t.length > 2 && GEO_GENERIC_WORDS.indexOf(t) < 0);
+}
 function geoNameMatches(displayName, want) {
   const a = geoNameKey(displayName), b = geoNameKey(want);
   if (!a || !b) return false;
-  return a === b || a.includes(b) || b.includes(a);
+  if (a === b || a.includes(b) || b.includes(a)) return true;
+  // Neither contains the other — fall back to the distinctive words. Every
+  // distinctive word of the SHORTER side has to appear on the other side, so a
+  // one-word overlap only counts when that side has just the one distinctive
+  // word ("Mikey's Mobile Detailing" -> mikeys). That keeps "Mikey's Pizza" out
+  // while still catching the ordinary suffix/city drift.
+  const da = geoDistinctTokens(displayName), db = geoDistinctTokens(want);
+  if (!da.length || !db.length) return false;
+  const shorter = da.length <= db.length ? da : db;
+  const longer = da.length <= db.length ? db : da;
+  return shorter.every((t) => longer.indexOf(t) >= 0);
+}
+
+// The top few names Google returned at a point, kept tiny — it's what turns
+// "20+ everywhere" from a mystery into something the owner can act on.
+function geoTopNames(places, n) {
+  return places.slice(0, n).map((p) => ({
+    id: p.id || '', name: (p.displayName && p.displayName.text) || '',
+  }));
 }
 
 // One grid point -> the business's rank in the Places result list (1-based),
 // or GEO_NOT_FOUND_RANK when it does not appear at all.
-async function geoRankAt(sec, keyword, lat, lng, radiusM) {
+async function geoRankAt(sec, keyword, lat, lng, radiusM, sku) {
   const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'X-Goog-Api-Key': sec.key,
-      'X-Goog-FieldMask': 'places.id,places.displayName',
+      'X-Goog-FieldMask': geoFieldMask(sku || geoSku(sec)),
     },
     body: JSON.stringify({
       textQuery: keyword,
@@ -1602,16 +1715,18 @@ async function geoRankAt(sec, keyword, lat, lng, radiusM) {
   for (let i = 0; i < places.length; i++) {
     const p = places[i] || {};
     const nm = (p.displayName && p.displayName.text) || '';
-    // Place ID is the exact match and wins, but we ALWAYS fall back to the name.
-    // Matching on the ID alone would mean a wrong or mistyped Place ID silently
-    // produces a grid of "20+" at every point — a scan that costs real money and
-    // reports that the business ranks nowhere, which is indistinguishable from a
-    // genuine ranking collapse. Falling through to the name makes a bad ID a
-    // degraded match instead of a confident lie.
-    if (sec.placeId && p.id === sec.placeId) return { rank: i + 1, total: places.length, by: 'id' };
-    if (geoNameMatches(nm, sec.bizName)) return { rank: i + 1, total: places.length, by: 'name' };
+    // Place ID is the exact match and wins; the name is the fallback whenever we
+    // paid for names. Matching on a bad ID alone silently produces a grid of
+    // "20+" at every point — indistinguishable from a genuine ranking collapse —
+    // so the name keeps a mistyped ID a degraded match instead of a confident
+    // lie. On the free ID-only SKU there are no names to fall back to, which is
+    // the trade for $0: the diagnostic panel says so, and the preview call
+    // (one Pro call) is the way out.
+    if (sec.placeId && p.id === sec.placeId) return { rank: i + 1, total: places.length, by: 'id', name: nm };
+    if (geoNameMatches(nm, sec.bizName)) return { rank: i + 1, total: places.length, by: 'name', name: nm };
   }
-  return { rank: GEO_NOT_FOUND_RANK, total: places.length };
+  // Not found: hand back what Google DID return so the caller can show it.
+  return { rank: GEO_NOT_FOUND_RANK, total: places.length, top: geoTopNames(places, 5) };
 }
 
 // GET /api/geogrid — connection status + saved scans (newest first).
@@ -1625,8 +1740,14 @@ async function apiGeogrid() {
     config: {
       placeId: sec.placeId, bizName: sec.bizName, keyword: sec.keyword,
       centerLat: sec.centerLat, centerLng: sec.centerLng,
+      freeOnly: sec.freeOnly, idOnly: sec.idOnly,
+      pricePro: sec.pricePro, freePro: sec.freePro, freeIds: sec.freeIds,
     },
     maxBatch: GEO_SCAN_MAX_POINTS,
+    // Everything the dashboard needs to answer "what will this cost me?" before
+    // a single call is made.
+    meter: await geoMeter(),
+    sku: geoSku(sec),
     scans,
   });
 }
@@ -1646,24 +1767,39 @@ async function apiGeogridScan(request) {
   if (!pts.length) return json({ ok: false, error: 'no_points' }, 422);
   const radiusM = Math.max(500, Math.min(50000, Number(data.radiusM) || 3000));
 
+  // Check the budget BEFORE spending anything. Every point is one billable call,
+  // so a batch that would cross the free line is refused whole.
+  const sku = geoSku(sec);
+  const budget = await geoBudget(sec, sku, pts.length);
+  if (budget.blocked) return geoBudgetError(budget);
+
   const out = [];
+  let calls = 0;          // what we actually spent, metered even if we bail early
+  let matchedName = '';   // what we matched as, the first time we matched
+  let sample = null;      // what Google returned at a point where we did NOT match
   for (const p of pts) {
     const lat = Number(p.lat), lng = Number(p.lng);
     if (!isFinite(lat) || !isFinite(lng)) { out.push({ lat: 0, lng: 0, rank: GEO_NOT_FOUND_RANK, err: 'bad_point' }); continue; }
     try {
-      const r = await geoRankAt(sec, keyword, lat, lng, radiusM);
+      calls++;
+      const r = await geoRankAt(sec, keyword, lat, lng, radiusM, sku);
       out.push({ lat, lng, rank: r.rank, total: r.total });
+      if (r.rank < GEO_NOT_FOUND_RANK && !matchedName) matchedName = r.name || '';
+      if (r.rank >= GEO_NOT_FOUND_RANK && !sample && r.top) sample = { lat, lng, top: r.top };
     } catch (e) {
       // A 4xx from Google is fatal for the whole scan (bad key / API not enabled)
       // — bail out loudly instead of silently returning a grid of "20+".
       if (e.status && e.status >= 400 && e.status < 500) {
+        await geoMeterAdd(sku, calls);
         return json({ ok: false, error: 'places_error', detail: String(e.message || e).slice(0, 700),
           hint: 'Check the key is valid, the Places API (New) is enabled on the project, and billing is on.' }, 502);
       }
       out.push({ lat, lng, rank: GEO_NOT_FOUND_RANK, err: 'fetch_failed' });
     }
   }
-  return json({ ok: true, results: out });
+  const meter = await geoMeterAdd(sku, calls);
+  return json({ ok: true, results: out, matchedName, sample, lookingFor: sec.bizName, placeId: sec.placeId,
+    sku, meter, spent: sku === 'ids' ? 0 : budget.cost });
 }
 
 // The three headline numbers, computed the way the local-SEO tools define them.
@@ -1682,6 +1818,11 @@ function geoStats(results) {
     top3: rs.filter((r) => r <= 3).length,
     top10: rs.filter((r) => r <= 10).length,
     missing: rs.filter((r) => r >= GEO_NOT_FOUND_RANK).length,
+    // Points where Google returned NOTHING at all. A grid of 20+ means something
+    // completely different depending on this number: results came back and the
+    // listing wasn't among them (a ranking/matching story) vs no results at all
+    // (a keyword or API story). Worth one integer to tell them apart.
+    empty: results.filter((r) => Number(r.total) === 0).length,
   };
 }
 
@@ -1701,7 +1842,10 @@ async function apiGeogridSave(request) {
     results: results.map((r) => ({
       lat: +Number(r.lat).toFixed(5), lng: +Number(r.lng).toFixed(5),
       rank: Math.max(1, Math.min(GEO_NOT_FOUND_RANK, Number(r.rank) || GEO_NOT_FOUND_RANK)),
+      total: Math.max(0, Math.min(20, Number(r.total) || 0)),
     })),
+    // Which listing the ranks actually refer to — blank when nothing matched.
+    matchedName: String(data.matchedName || '').slice(0, 120),
   };
   rec.stats = geoStats(rec.results);
   const scans = (await kv().get('geogrid:scans', { type: 'json' })) || [];
@@ -1741,6 +1885,7 @@ async function apiGeogridConnect(request) {
         detail: body.slice(0, 600) }, 422);
     }
     saved.key = key;
+    await geoMeterAdd('ids', 1);   // the verify call is IDs-only: free, but counted
   }
 
   if (typeof data.bizName === 'string') saved.bizName = data.bizName.trim().slice(0, 80);
@@ -1757,6 +1902,14 @@ async function apiGeogridConnect(request) {
     saved.placeId = pid;
   }
   if (typeof data.keyword === 'string' && data.keyword.trim()) saved.keyword = data.keyword.trim().slice(0, 120);
+  // Spend guard. freeOnly is what actually stops a charge; idOnly is what keeps
+  // scans on the free SKU in the first place. Prices are editable so a Google
+  // change can be corrected from the phone rather than a deploy.
+  if (typeof data.freeOnly === 'boolean') saved.freeOnly = data.freeOnly;
+  if (typeof data.idOnly === 'boolean') saved.idOnly = data.idOnly;
+  if (data.pricePro != null && isFinite(+data.pricePro) && +data.pricePro >= 0) saved.pricePro = +data.pricePro;
+  if (data.freePro != null && isFinite(+data.freePro) && +data.freePro >= 0) saved.freePro = Math.round(+data.freePro);
+  if (data.freeIds != null && isFinite(+data.freeIds) && +data.freeIds >= 0) saved.freeIds = Math.round(+data.freeIds);
   if (data.centerLat != null && isFinite(+data.centerLat)) saved.centerLat = +data.centerLat;
   if (data.centerLng != null && isFinite(+data.centerLng)) saved.centerLng = +data.centerLng;
 
@@ -1773,6 +1926,8 @@ async function apiGeogridFind(request) {
   const data = await readJson(request);
   const q = String(data.q || sec.bizName || '').trim().slice(0, 120);
   if (!q) return json({ ok: false, error: 'no_query', hint: 'Enter your business name first.' }, 422);
+  const budget = await geoBudget(sec, 'pro', 1);
+  if (budget.blocked) return geoBudgetError(budget);
   const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
     method: 'POST',
     headers: {
@@ -1785,6 +1940,7 @@ async function apiGeogridFind(request) {
       locationBias: { circle: { center: { latitude: sec.centerLat, longitude: sec.centerLng }, radius: 50000 } },
     }),
   });
+  await geoMeterAdd('pro', 1);
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     return json({ ok: false, error: 'places_error', detail: body.slice(0, 600),
@@ -1794,6 +1950,60 @@ async function apiGeogridFind(request) {
   return json({ ok: true, results: ((d.places) || []).map((p) => ({
     id: p.id, name: (p.displayName && p.displayName.text) || '', address: p.formattedAddress || '',
   })) });
+}
+
+// POST /api/geogrid/preview — the "why am I 20+ everywhere?" answer. Runs the
+// EXACT same Places call one grid point makes, and returns the full result list
+// with each row flagged as a match or not. If the listing is in that list but
+// unflagged, the name we're matching on is wrong (a settings fix, one tap). If
+// it isn't in the list at all, the ranking really is that bad for that keyword.
+// Costs exactly ONE Places call.
+async function apiGeogridPreview(request) {
+  const sec = await geogridSecrets();
+  if (!sec.key) return json({ ok: false, error: 'not_connected', hint: 'Add a Google Places API key first.' }, 400);
+  const data = await readJson(request);
+  const keyword = String(data.keyword || sec.keyword || '').trim().slice(0, 120);
+  if (!keyword) return json({ ok: false, error: 'no_keyword' }, 422);
+  const lat = isFinite(Number(data.lat)) ? Number(data.lat) : sec.centerLat;
+  const lng = isFinite(Number(data.lng)) ? Number(data.lng) : sec.centerLng;
+  const radiusM = Math.max(500, Math.min(50000, Number(data.radiusM) || 3000));
+
+  // This one always bills at Pro — names and addresses are the whole point of it.
+  const budget = await geoBudget(sec, 'pro', 1);
+  if (budget.blocked) return geoBudgetError(budget);
+
+  const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': sec.key,
+      'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress',
+    },
+    body: JSON.stringify({
+      textQuery: keyword,
+      maxResultCount: 20,
+      locationBias: { circle: { center: { latitude: lat, longitude: lng }, radius: radiusM } },
+    }),
+  });
+  const meter = await geoMeterAdd('pro', 1);
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    return json({ ok: false, error: 'places_error', detail: body.slice(0, 700),
+      hint: 'Google said ' + res.status + '. Check the key, Places API (New), and billing.' }, 502);
+  }
+  const d = await res.json().catch(() => ({}));
+  const places = Array.isArray(d.places) ? d.places : [];
+  return json({
+    ok: true, keyword, lat, lng, meter,
+    lookingFor: sec.bizName, placeId: sec.placeId,
+    results: places.map((p, i) => {
+      const name = (p.displayName && p.displayName.text) || '';
+      return {
+        rank: i + 1, id: p.id || '', name, address: p.formattedAddress || '',
+        match: (!!sec.placeId && p.id === sec.placeId) || geoNameMatches(name, sec.bizName),
+      };
+    }),
+  });
 }
 
 // POST /api/geogrid/disconnect — forget the key (keeps saved scans).
