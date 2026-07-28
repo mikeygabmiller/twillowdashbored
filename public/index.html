@@ -322,6 +322,14 @@
   .composer{border-top:1px solid var(--line);background:var(--panel);padding:9px 12px calc(9px + var(--safe-bottom))}
   .ctools{display:flex;gap:4px;align-items:center;margin-bottom:7px;position:relative}
   .ctools .spacer{flex:1}
+  /* Three replies that fit THIS conversation, one tap away, right above the
+     keyboard — the full quick-reply list stays behind the Tools button. */
+  .qreply{display:flex;gap:6px;overflow-x:auto;padding:0 0 8px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .qreply::-webkit-scrollbar{display:none}
+  .qreply button{flex:none;background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+    border-radius:16px;padding:6px 12px;font-size:12.5px;white-space:nowrap;max-width:62vw;
+    overflow:hidden;text-overflow:ellipsis}
+  .qreply button:active{background:var(--panel3)}
   .crow{display:flex;gap:9px;align-items:flex-end}
   .crow textarea{flex:1;resize:none;height:46px;max-height:140px;background:var(--panel2);border:1px solid var(--line);
     color:var(--text);border-radius:23px;padding:12px 16px;outline:none;font-size:14.5px;line-height:1.35;transition:border-color .15s}
@@ -2077,6 +2085,7 @@
           <button class="btn accent ic-btn" id="writeGo" data-ic="pencil" data-ic-label="Write it for me" style="width:100%"></button>
         </div>
       </div>
+      <div class="qreply" id="qReply" style="display:none"></div>
       <div class="crow">
         <textarea id="msgInput" placeholder="Text message" rows="1"></textarea>
         <button class="sendcircle" id="sendBtn" title="Send" aria-label="Send">
@@ -2387,7 +2396,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-28·money-guard";
+  var APP_BUILD="2026-07-28·thumb-speed";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4116,18 +4125,27 @@
 
   // ---- swipe to archive ----
   function attachSwipe(node,t,wrap){
-    var x0=null,dx=0,active=false;
-    node.addEventListener("touchstart",function(e){if(e.touches.length!==1)return;x0=e.touches[0].clientX;active=true;node.style.transition="none"},{passive:true});
+    var x0=null,y0=0,dx=0,active=false,engaged=false;
+    node.addEventListener("touchstart",function(e){if(e.touches.length!==1)return;x0=e.touches[0].clientX;y0=e.touches[0].clientY;active=true;engaged=false;node.style.transition="none"},{passive:true});
     node.addEventListener("touchmove",function(e){
-      if(!active||x0==null)return;dx=e.touches[0].clientX-x0;
+      if(!active||x0==null)return;
+      dx=e.touches[0].clientX-x0;
+      var dy=e.touches[0].clientY-y0;
+      // Don't hijack a vertical scroll: the row only starts moving once the
+      // gesture is clearly sideways. Scrolling a list with a thumb always drifts
+      // a few pixels horizontally, and that used to drag rows around.
+      if(!engaged){
+        if(Math.abs(dy)>10&&Math.abs(dy)>Math.abs(dx)){active=false;node.style.transform="";return}
+        if(dx>12&&dx>Math.abs(dy))engaged=true;else return;
+      }
       if(dx<0)dx=0; // only swipe right→archive
       node.style.transform="translateX("+dx+"px)";
     },{passive:true});
     node.addEventListener("touchend",function(){
       if(!active)return;active=false;node.style.transition="transform .2s";
-      if(dx>120){node.style.transform="translateX(100%)";vibrate(12);setTimeout(function(){doArchiveToggle(t)},150)}
+      if(engaged&&dx>120){node.style.transform="translateX(100%)";vibrate(12);setTimeout(function(){doArchiveToggle(t)},150)}
       else node.style.transform="";
-      x0=null;dx=0;
+      x0=null;dx=0;engaged=false;
     });
   }
   function doArchiveToggle(t){
@@ -4331,6 +4349,8 @@
     el("sendBtn").disabled=blocked;
     el("msgInput").disabled=blocked;
     el("msgInput").placeholder=blocked?"Can't text — they opted out":"Text message";
+
+    renderQuickReplies(t);
 
     // With team mode on, outgoing texts get signed. Show whose name goes on it.
     var sa=el("signAs"),who=teamOn()?meName():"";
@@ -4873,7 +4893,42 @@
       .replace(/\{appt(?:_time)?\}/gi,appt)
       .replace(/\{review\}/gi,(c.reviewUrl||""));
   }
-  function fillTemplate(text){el("msgInput").value=expandVars(text);el("msgInput").focus();autoGrow();updateCount()}
+  function fillTemplate(text){el("msgInput").value=expandVars(text);el("msgInput").focus();autoGrow();updateCount();stashDraft(state.phone)}
+  // The three quick replies most likely to fit what the customer just said.
+  // Scored against his OWN saved templates, so it stays in his words — no new
+  // canned messages invented here.
+  var QR_CUES=[
+    [/\b(how much|price|cost|quote|rate|charge)\b/i,      /price|quote|cost|\$/i],
+    [/\b(when|what time|available|availability|book|schedule|slot|appointment)\b/i, /when|time|book|schedule|availab/i],
+    [/\b(where|address|location|come to|my place)\b/i,     /address|where|location|come/i],
+    [/\b(thanks|thank you|appreciate|great|awesome)\b/i,   /thank|appreciate|welcome/i],
+    [/\b(cancel|reschedule|move|postpone|rain)\b/i,        /reschedul|cancel|move|rain/i]
+  ];
+  function renderQuickReplies(t){
+    var box=el("qReply");if(!box)return;
+    var msgs=(t.messages||[]);
+    var lastIn=null;
+    for(var i=msgs.length-1;i>=0;i--){if(msgs[i].dir==="in"){lastIn=msgs[i];break}}
+    // Only offer these when the ball is actually in Mikey's court.
+    if(!lastIn||(msgs[msgs.length-1]||{}).dir!=="in"||isDnt(t.phone)){box.style.display="none";box.innerHTML="";return}
+    var body=String(lastIn.body||"");
+    var tpls=state.templates||[];
+    var scored=tpls.map(function(tp,idx){
+      var score=0;
+      QR_CUES.forEach(function(c){if(c[0].test(body)&&(c[1].test(tp[0])||c[1].test(tp[1])))score+=2});
+      return {tp:tp,score:score,idx:idx};
+    }).sort(function(a,b){return b.score-a.score||a.idx-b.idx});
+    var pick=scored.filter(function(x){return x.score>0}).slice(0,3);
+    if(!pick.length)pick=scored.slice(0,3);           // nothing matched — offer his first few
+    if(!pick.length){box.style.display="none";return}
+    box.style.display="flex";box.innerHTML="";
+    pick.forEach(function(x){
+      var b=document.createElement("button");
+      b.type="button";b.textContent=x.tp[0];b.title=x.tp[1];
+      b.onclick=function(){vibrate(6);fillTemplate(x.tp[1])};
+      box.appendChild(b);
+    });
+  }
   function buildTplMenu(){
     var m=el("tplMenu");m.innerHTML='<div class="mh">Quick replies</div>';
     state.templates.forEach(function(tp,i){
