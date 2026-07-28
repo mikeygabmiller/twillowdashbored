@@ -2405,7 +2405,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-28·quote-aging";
+  var APP_BUILD="2026-07-28·send-failed-flag";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -3528,6 +3528,7 @@
           (showStatus?'<span class="badge" style="background:color-mix(in srgb,'+sm.color+' 18%,transparent);color:'+sm.color+'">'+esc(sm.label)+'</span>':'')+
           (t.optedOut?'<span class="dnt">'+ic("ban",10)+'Do not text</span>':'')+
           ((teamOn()&&t.assignedTo)?assignBadge(t.assignedTo):'')+
+          (t.sendFailed?'<span class="dnt">'+ic("alert",10)+'not sent</span>':'')+
           (t.replyReady?'<span class="reply-flag">'+ic("sparkles",11)+'reply ready</span>':'')+
           (t.dateRequested?'<span class="reply-flag" style="color:#eab308;background:rgba(234,179,8,.14)">'+ic("calendar-days",11)+'date needed</span>':'')+
           (t.followupDue?'<span class="fu-flag'+(t.fu&&t.fu.urgency==="high"?" high":"")+'">'+ic("list-checks",11)+'follow-up</span>':'')+
@@ -4178,6 +4179,9 @@
     if(switching&&prev)stashDraft(prev);
     state.phone=phone;document.body.classList.add("viewing");
     if(switching)loadDraft(phone);
+    // A failure marker on the list is a "look at this" — opening it is looking.
+    var fe=(state.threads||[]).find(function(x){return x.phone===phone});
+    if(fe&&fe.sendFailed)fe.sendFailed=false;
     // reset any in-thread find when moving to a different conversation
     state.threadFind="";state.findIdx=0;var fb=el("findBar");if(fb)fb.style.display="none";var fi=el("findInput");if(fi)fi.value="";
     state.lastAiText=null;
