@@ -1668,7 +1668,19 @@
 
   /* Website-analytics hero + the 2-segment Analytics sub-nav. */
   .gr-hero-web{background:linear-gradient(135deg,#7c3aed,#4f46e5);box-shadow:0 12px 28px rgba(124,58,237,.2)}
-  .gr-nav-2 button{flex:1;position:relative}
+  /* Six segments have to share a phone's width. The base .gr-nav rule sets
+     min-width:72px (sized for 2-3 items), which at six items forces 432px of
+     content onto a <=430px screen and pushes the LAST segment off the edge —
+     invisible, because the scrollbar is hidden. min-width:0 lets flex:1 actually
+     divide the bar evenly, and the type/icons step down so the labels still fit. */
+  .gr-nav-2 button{flex:1;position:relative;min-width:0;font-size:9.5px;padding-left:2px;padding-right:2px;
+    letter-spacing:-.01em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .gr-nav-2 button .e svg{width:18px;height:18px}
+  /* Safety net: if a future segment ever overflows again, fade the right edge so
+     it's visibly scrollable instead of silently truncated. */
+  .gr-nav-2{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 14px),transparent);
+    mask-image:linear-gradient(to right,#000 calc(100% - 14px),transparent)}
+  .gr-nav-2:not(.ovf){-webkit-mask-image:none;mask-image:none}
   .gr-nav-2 button.active::before{content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);width:34px;height:3px;border-radius:0 0 3px 3px;background:var(--accent)}
 
   /* Customize: locked-panel heading with inline icon. */
@@ -2321,7 +2333,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-27·jobday+places-diag";
+  var APP_BUILD="2026-07-27·nav-fit-6";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4984,6 +4996,11 @@
   function growSet(v){GROW.view=v;Array.prototype.forEach.call(el("grNav").querySelectorAll("[data-gv]"),function(b){b.classList.toggle("active",b.getAttribute("data-gv")===v)});growRender();el("grBody").scrollTop=0;}
   function growWire(){
     el("grBack").onclick=closeAnalytics;
+    // Flag real overflow so the edge fade (and the scroll hint it gives) only
+    // appears when a segment is actually cut off.
+    var nv=el("grNav");
+    if(nv){var mark=function(){nv.classList.toggle("ovf",nv.scrollWidth>nv.clientWidth+1)};
+      mark();setTimeout(mark,60);window.addEventListener("resize",mark);}
     Array.prototype.forEach.call(el("grNav").querySelectorAll("[data-gv]"),function(b){b.onclick=function(){vibrate(6);growSet(b.getAttribute("data-gv"))}});
     el("grRefresh").onclick=function(){vibrate(6);if(GROW.view==="analytics"){growLoadWeb(true)}else if(GROW.view==="map"){if(GROW.map.mode==="rank")ggLoadRank(true);else growRender();}else if(IV[GROW.view]){ivLoad(GROW.view,true)}else{refreshThreads();fetchInsights();api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.entries=d.entries||[];MO.today=d.today;MO.week=d.week;MO.allTime=d.allTime}growRender()});}toast("Refreshed")};
   }
