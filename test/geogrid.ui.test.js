@@ -37,8 +37,10 @@ const SCAN = {
 };
 const GEOGRID = {
   ok: true, connected: true, via: 'saved', maxBatch: 25, scans: [SCAN],
+  sku: 'pro', meter: { month: '2026-07', pro: 0, ids: 0 },
   config: { bizName: "Mikey's Detailing Snohomish", placeId: '', keyword: 'mobile detailing',
-    centerLat: CENTER.lat, centerLng: CENTER.lng },
+    centerLat: CENTER.lat, centerLng: CENTER.lng,
+    freeOnly: true, idOnly: true, pricePro: 32, freePro: 5000, freeIds: 10000 },
 };
 const PREVIEW = {
   ok: true, keyword: 'mobile detailing', lat: CENTER.lat, lng: CENTER.lng,
@@ -127,6 +129,43 @@ const check = (n, got, want) => {
   const body3 = await txt();
   check('no diagnostic when points matched', /Not matched at any/i.test(body3), false);
   check('says which listing the ranks belong to', body3.includes("Ranks are for the listing Google calls"), true);
+
+  console.log('\n=== what a scan costs, before it costs it ===');
+  // Matching by name = the paid SKU, but still inside the free allowance.
+  GEOGRID.scans = [SCAN];
+  GEOGRID.sku = 'pro'; GEOGRID.meter = { month: '2026-07', pro: 0, ids: 0 };
+  await openRank();
+  let body = await txt();
+  check('a scan inside the free tier is priced at $0.00', /\$0\.00/.test(body), true);
+  check('shows the month against the allowance', /0 of 5,000 free Pro calls used/.test(body), true);
+  check('says why it is on the paid tier', /Matching by name/i.test(body), true);
+  check('scan button is live', await page.locator('#ggRun').isEnabled(), true);
+
+  // Pinned Place ID -> the free ID-only SKU.
+  GEOGRID.sku = 'ids';
+  GEOGRID.config = { ...GEOGRID.config, placeId: 'ChIJ_mikey' };
+  GEOGRID.meter = { month: '2026-07', pro: 40, ids: 300 };
+  await openRank();
+  body = await txt();
+  check('free tier is named as such', /Running on the free tier/i.test(body), true);
+  check('counts the ID-only calls', /300 of 10,000 free ID-only calls used/.test(body), true);
+
+  console.log('\n=== the guard stops a billable scan ===');
+  GEOGRID.sku = 'pro';
+  GEOGRID.config = { ...GEOGRID.config, placeId: '' };
+  GEOGRID.meter = { month: '2026-07', pro: 4990, ids: 0 };
+  let scanned = false;
+  await page.route('**/api/geogrid/scan', (route) => { scanned = true; route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true,"results":[]}' }); });
+  await openRank();
+  await page.selectOption('#ggSize', '5');   // 25 points, so the arithmetic is checkable
+  await page.waitForTimeout(300);
+  body = await txt();
+  check('prices the overage — 15 calls past the free 5,000', /\$0\.48/.test(body), true);
+  check('says it is blocked', /Blocked/i.test(body), true);
+  await page.locator('#ggRun').click();
+  await page.waitForTimeout(400);
+  check('and no call was made', scanned, false);
+  check('explains the way out', /turn off/i.test(await txt()), true);
 
   check('no page errors', errs, []);
   await b.close(); server.close();

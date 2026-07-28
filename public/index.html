@@ -1571,6 +1571,21 @@
   .gg-cost{background:rgba(234,179,8,.09);border:1px solid rgba(234,179,8,.3);border-radius:12px;
     padding:10px 12px;font-size:12px;line-height:1.55;color:var(--muted);margin:10px 0}
   .gg-cost b{color:var(--text)}
+  /* Cost meter — the running answer to "is this costing me money?" */
+  .gg-cost.free{background:rgba(34,197,94,.09);border-color:rgba(34,197,94,.32)}
+  .gg-cost.over{background:rgba(255,46,67,.10);border-color:rgba(255,46,67,.36)}
+  .gg-cost .cst-h{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:6px}
+  .gg-cost .cst-h .t{font-size:12.5px;font-weight:800;color:var(--text)}
+  .gg-cost .cst-h .p{font-size:15px;font-weight:900;font-variant-numeric:tabular-nums}
+  .gg-cost .cst-h .p.free{color:var(--green)}
+  .gg-cost .cst-h .p.paid{color:var(--accent-text)}
+  .gg-bar{height:6px;border-radius:99px;background:var(--line2);overflow:hidden;margin:7px 0 5px}
+  .gg-bar span{display:block;height:100%;border-radius:99px;background:var(--green);transition:width .2s}
+  .gg-bar span.warn{background:var(--gold)} .gg-bar span.over{background:var(--accent)}
+  .gg-sw-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line2)}
+  .gg-sw-row .b{flex:1;min-width:0}
+  .gg-sw-row .b .t{display:block;font-size:13px;font-weight:800;color:var(--text)}
+  .gg-sw-row .b .s{display:block;font-size:11.5px;color:var(--muted2);line-height:1.5;margin-top:2px}
   .gg-field{margin-bottom:10px}
   .gg-field label{display:block;font-size:11px;font-weight:800;text-transform:uppercase;
     letter-spacing:.05em;color:var(--muted2);margin-bottom:5px}
@@ -2405,7 +2420,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-28·rank-match-diag";
+  var APP_BUILD="2026-07-28·rank-spend-guard";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -5435,7 +5450,9 @@
                finding:false,found:null,fail:null,
                // "why 20+ everywhere?" evidence: what Google returned at a point
                // we didn't match, plus the on-demand full list.
-               sample:null,matchedName:"",preview:null,previewing:false,previewErr:""}}};
+               sample:null,matchedName:"",preview:null,previewing:false,previewErr:"",
+               // spend guard: pending switch positions + the last refusal
+               guardFree:null,guardIds:null,budgetErr:""}}};
   var GROW_VIEWS={overview:["Analytics","Business overview · Mikey's Mobile Detailing"],
     customers:["Analytics","Who your customers are — and who's slipping away"],
     profit:["Analytics","What each job is really worth"],
@@ -6493,8 +6510,9 @@
           [2,3,5,8,12,20].map(function(n){return '<option value="'+n+'"'+(R.radius===n?" selected":"")+'>'+n+' mi</option>'}).join("")+
         '</select></div>'+
       '</div>'+
-      '<div class="gg-cost">'+ic("info",13)+' This scan makes <b>'+pts+'</b> Google Places calls — one per grid point. Google gives a free monthly allowance per API, then charges per 1,000 calls, so check your current Google Cloud pricing and budget before running big grids often. Start at 5×5 to see how it reads.</div>'+
-      '<button class="btn accent" id="ggRun" style="width:100%">Scan '+pts+' points</button></div>';
+      ggCostHTML(pts)+
+      (R.budgetErr?'<div class="wa-ins bad" style="margin:0 0 10px"><span class="i-ic">'+ic("alert",15)+'</span><div>'+esc(R.budgetErr)+'</div></div>':'')+
+      '<button class="btn accent" id="ggRun" style="width:100%'+(ggCost(pts).blocked?';opacity:.45':'')+'">Scan '+pts+' points</button></div>';
 
     // Saved scans + the current view.
     var scans=(d.scans||[]).slice();
@@ -6516,6 +6534,50 @@
     box.innerHTML=(R.setup?ggSetupHTML(d):"")+h;
     if(R.setup)ggWireSetup(box);
     ggWireRank(box);
+  }
+  // ---- What this costs, before it costs it -------------------------------
+  // Google bills Text Search by the priciest field in the request, so asking for
+  // names is what makes a scan cost money. With the Place ID pinned we ask for
+  // IDs only, which is the free SKU — that's why "free mode" exists at all.
+  // Mirrors geoBudget() in the Worker; the Worker is the one that enforces.
+  function ggCost(n){
+    var d=GROW.map.rank.data||{}, c=d.config||{}, m=d.meter||{}, sku=d.sku||"pro";
+    var free=sku==="ids"?(+c.freeIds||0):(+c.freePro||0);
+    var used=sku==="ids"?(+m.ids||0):(+m.pro||0);
+    var per=sku==="ids"?0:(+c.pricePro||0);
+    var paid=Math.max(0,used+n-free);
+    return {sku:sku,used:used,free:free,left:Math.max(0,free-used),per:per,
+      paid:paid,cost:Math.round(paid*per/1000*100)/100,
+      blocked:c.freeOnly!==false&&paid>0,freeOnly:c.freeOnly!==false};
+  }
+  function ggMoney(v){return "$"+(Math.round(v*100)/100).toFixed(2)}
+  // The name/address calls (preview, Place ID finder) always bill at Pro, even
+  // when scans themselves are running free on IDs.
+  function ggProCost(n){
+    var d=GROW.map.rank.data||{}, c=d.config||{}, m=d.meter||{};
+    var free=+c.freePro||0, used=+m.pro||0, per=+c.pricePro||0;
+    var paid=Math.max(0,used+n-free);
+    return {used:used,free:free,left:Math.max(0,free-used),paid:paid,
+      cost:Math.round(paid*per/1000*100)/100,blocked:c.freeOnly!==false&&paid>0};
+  }
+  function ggCostHTML(n){
+    var b=ggCost(n), pctUsed=b.free?Math.min(100,Math.round(b.used/b.free*100)):100;
+    var cls=b.cost>0?"over":"free";
+    var h='<div class="gg-cost '+cls+'">'+
+      '<div class="cst-h"><span class="t">This scan · '+n+' call'+(n===1?"":"s")+'</span>'+
+        '<span class="p '+(b.cost>0?"paid":"free")+'">'+(b.cost>0?ggMoney(b.cost):"$0.00")+'</span></div>'+
+      '<div class="gg-bar"><span class="'+(pctUsed>=100?"over":(pctUsed>=80?"warn":""))+'" style="width:'+pctUsed+'%"></span></div>'+
+      '<div>'+b.used.toLocaleString()+' of '+b.free.toLocaleString()+' free '+
+        (b.sku==="ids"?"ID-only":"Pro")+' calls used this month · <b>'+b.left.toLocaleString()+' left</b></div>';
+    if(b.sku==="ids"){
+      h+='<div style="margin-top:5px">Running on the <b>free tier</b> — your Place ID is pinned, so scans ask Google for IDs only and cost nothing.</div>';
+    }else{
+      h+='<div style="margin-top:5px">Matching by <b>name</b>, which needs a paid field — '+ggMoney(b.per)+' per 1,000 calls past the free '+b.free.toLocaleString()+'. Pin your Place ID in setup to move scans to the free tier.</div>';
+    }
+    if(b.blocked)h+='<div style="margin-top:6px;font-weight:800;color:var(--accent-text)">Blocked: this would put '+b.paid+' call'+(b.paid===1?"":"s")+' past the free allowance ('+ggMoney(b.cost)+'). Shrink the grid, wait for the 1st, or switch off “Never spend real money”.</div>';
+    else if(b.cost>0)h+='<div style="margin-top:6px;font-weight:800;color:var(--accent-text)">This one is billable — '+b.paid+' call'+(b.paid===1?"":"s")+' past the free allowance.</div>';
+    h+='</div>';
+    return h;
   }
   function ggWhen(ts){
     var d=new Date(ts),now=new Date();
@@ -6569,16 +6631,23 @@
     if(allEmpty){
       h+='<div style="margin-top:7px;font-size:12.5px;line-height:1.55">Google returned <b>no businesses at all</b> for “'+esc(s.keyword||"")+'” at these points. That points at the search term or the API key, not your ranking. Try a plainer term like “mobile detailing” or “car detailing”.</div>';
     }else{
-      h+='<div style="margin-top:7px;font-size:12.5px;line-height:1.55">Google <b>did</b> return businesses at every point — your listing just wasn\'t recognised among them. Nine times out of ten that\'s the name being matched on, not your actual ranking. Right now we\'re looking for '+
-        (R.data&&R.data.config&&R.data.config.placeId?'Place ID <b>'+esc(R.data.config.placeId)+'</b> or ':'')+
-        'the name <b>'+esc((R.data&&R.data.config&&R.data.config.bizName)||"—")+'</b>, which has to line up with the name on your Google Business Profile.</div>';
+      var idMode=(R.data&&R.data.sku)==="ids";
+      h+='<div style="margin-top:7px;font-size:12.5px;line-height:1.55">Google <b>did</b> return businesses at every point — your listing just wasn\'t recognised among them. Nine times out of ten that\'s what we\'re matching on, not your actual ranking. '+
+        (idMode
+          ? 'Free mode matches on your pinned Place ID only (<b>'+esc((R.data&&R.data.config&&R.data.config.placeId)||"")+'</b>) — no names come back on the free tier, so if that ID is wrong every point misses.'
+          : 'Right now we\'re looking for '+
+            (R.data&&R.data.config&&R.data.config.placeId?'Place ID <b>'+esc(R.data.config.placeId)+'</b> or ':'')+
+            'the name <b>'+esc((R.data&&R.data.config&&R.data.config.bizName)||"—")+'</b>, which has to line up with the name on your Google Business Profile.')+'</div>';
       if(R.sample&&R.sample.top&&R.sample.top.length){
         h+='<div style="margin-top:8px;font-size:12px;color:var(--muted2);line-height:1.6"><b>What came back at one point:</b><br>'+
           R.sample.top.map(function(t,i){return (i+1)+'. '+esc(t.name||"—")}).join('<br>')+'</div>';
       }
     }
+    var pb=ggProCost(1);
     h+='<button class="btn" id="ggProbe" style="width:100%;margin-top:10px">'+
-      (R.previewing?'<span class="spin"></span> Asking Google…':ic("search",15)+' Show the full list Google returns (1 call)')+'</button>';
+      (R.previewing?'<span class="spin"></span> Asking Google…'
+        :ic("search",15)+' Show the full list Google returns (1 call · '+(pb.cost>0?ggMoney(pb.cost):"free")+')')+'</button>';
+    if(pb.blocked)h+='<div style="margin-top:6px;font-size:12px;color:var(--accent-text);font-weight:700">Your free Pro calls for this month are used up, so this check is blocked by the spend guard.</div>';
     if(R.previewErr)h+='<div style="margin-top:8px;font-size:12px;color:var(--red,#ef4444)">'+esc(R.previewErr)+'</div>';
     h+='</div></div>';
     if(R.preview)h+=ggPreviewHTML();
@@ -6609,6 +6678,36 @@
       '<span class="r-k">'+esc(label)+'</span><span class="r-v">'+pct+'%</span>'+
       '<span class="r-s">of '+tot+'</span></div>';
   }
+  // ---- Spend guard -------------------------------------------------------
+  // The switch that makes "am I being charged?" answerable without logging into
+  // Google Cloud. With it on, the Worker refuses any call that would land past
+  // the free monthly allowance — nothing to remember, nothing to watch.
+  function ggGuardHTML(d){
+    var c=d.config||{}, m=d.meter||{}, ids=d.sku==="ids";
+    var freeOnly=c.freeOnly!==false, idOnly=c.idOnly!==false;
+    var proLeft=Math.max(0,(+c.freePro||0)-(+m.pro||0));
+    var idsLeft=Math.max(0,(+c.freeIds||0)-(+m.ids||0));
+    return '<div style="border-top:1px solid var(--line);margin:14px 0 4px;padding-top:12px">'+
+      '<div class="c-h" style="margin-bottom:4px">'+ic("credit-card",15)+' Spending</div>'+
+      '<p class="wa-hint">This month you\'ve used <b>'+(+m.pro||0).toLocaleString()+'</b> paid-tier (Pro) calls and <b>'+(+m.ids||0).toLocaleString()+'</b> free-tier (ID-only) calls. '+
+        'Free left: <b>'+proLeft.toLocaleString()+'</b> Pro, <b>'+idsLeft.toLocaleString()+'</b> ID-only. Counters reset on the 1st, Pacific time.</p>'+
+      '<div class="gg-sw-row"><span class="b"><span class="t">Never spend real money</span>'+
+        '<span class="s">Refuses any call that would go past the free allowance. Leave this on and a scan can never appear on a Google bill.</span></span>'+
+        '<span class="sw'+(freeOnly?" on":"")+'" id="ggSwFree"></span></div>'+
+      '<div class="gg-sw-row"><span class="b"><span class="t">Free mode (match by Place ID)</span>'+
+        '<span class="s">'+(idOnly&&!c.placeId
+          ? 'On, but no Place ID is pinned yet — until you pin one, scans have to ask for names and bill at the paid tier.'
+          : (ids?'On. Scans ask Google for IDs only, which is the free SKU — '+ggMoney(0)+' no matter how many you run.'
+                :'Off. Scans ask for business names so they can match you by name, which is a paid field ('+ggMoney(+c.pricePro||0)+' per 1,000 past the free '+(+c.freePro||0).toLocaleString()+').'))+'</span></span>'+
+        '<span class="sw'+(idOnly?" on":"")+'" id="ggSwIds"></span></div>'+
+      '<div class="gg-two" style="margin-top:10px">'+
+        '<div class="gg-field"><label>Pro $ / 1,000</label><input class="gr-input" id="ggPrice" value="'+esc(c.pricePro==null?32:c.pricePro)+'" inputmode="decimal"></div>'+
+        '<div class="gg-field"><label>Free Pro calls / mo</label><input class="gr-input" id="ggFreePro" value="'+esc(c.freePro==null?5000:c.freePro)+'" inputmode="numeric"></div>'+
+      '</div>'+
+      '<div class="wa-hint">Those two are Google\'s published rate, kept editable so a price change can be corrected here instead of in code. '+
+        'This guard only governs calls made by this dashboard — for a hard stop that covers everything, also set a daily cap on the API itself in Google Cloud Console → APIs &amp; Services → Places API (New) → Quotas.</div>'+
+      '</div>';
+  }
   function ggSetupHTML(d){
     var c=d.config||{};
     return '<div class="wa-conn"><div class="c-h">'+ic("pin",15)+' Google Places key '+
@@ -6616,9 +6715,9 @@
       '<p class="wa-hint">Rank data needs a Google Cloud API key with <b>Places API (New)</b> enabled and billing on. Create one at console.cloud.google.com → APIs &amp; Services → Credentials. Leave it unrestricted by HTTP referrer — the call comes from this server, not your browser.</p>'+
       (d.connected?"":'<div class="gg-field"><label>API key</label><input class="gr-input" id="ggKey" placeholder="AIza…" autocapitalize="none" autocomplete="off"></div>')+
       '<div class="gg-field"><label>Your business name on Google</label><input class="gr-input" id="ggBiz" value="'+esc(c.bizName||"")+'" placeholder="Mikey\'s Mobile Detailing"></div>'+
-      '<div class="gg-field"><label>Place ID <span style="text-transform:none;font-weight:600">(optional — exact match, on top of the name)</span></label>'+
+      '<div class="gg-field"><label>Place ID <span style="text-transform:none;font-weight:600">(pin this — it is what keeps scans free)</span></label>'+
         '<input class="gr-input" id="ggPid" value="'+esc(c.placeId||"")+'" placeholder="ChIJ… (leave blank to match on name)" autocapitalize="none">'+
-        (d.connected?'<button class="btn" id="ggFind" style="width:100%;margin-top:7px">'+(GROW.map.rank.finding?'<span class="spin"></span> Searching…':ic("search",15)+' Find my Place ID')+'</button>':'')+
+        (d.connected?'<button class="btn" id="ggFind" style="width:100%;margin-top:7px">'+(GROW.map.rank.finding?'<span class="spin"></span> Searching…':ic("search",15)+' Find my Place ID (1 call · '+(ggProCost(1).cost>0?ggMoney(ggProCost(1).cost):"free")+')')+'</button>':'')+
         '<div class="wa-hint" style="margin:6px 0 0">Not the long number from a Maps link — that\'s a CID and won\'t match. Tap the button and pick yourself from the list.</div>'+
         (GROW.map.rank.found?'<div style="margin-top:8px">'+GROW.map.rank.found.map(function(r){
           return '<div class="iv-row tap" data-gg-pick="'+esc(r.id)+'" style="margin-bottom:6px"><span class="b"><span class="t">'+esc(r.name)+'</span><span class="s">'+esc(r.address)+'</span></span><span class="r"><span class="s">use</span></span></div>'}).join("")+'</div>':'')+
@@ -6627,6 +6726,7 @@
         '<div class="gg-field"><label>Centre lat</label><input class="gr-input" id="ggLat" value="'+esc(c.centerLat)+'" inputmode="decimal"></div>'+
         '<div class="gg-field"><label>Centre lng</label><input class="gr-input" id="ggLng" value="'+esc(c.centerLng)+'" inputmode="decimal"></div>'+
       '</div>'+
+      ggGuardHTML(d)+
       ggFailHTML()+
       '<button class="btn accent" id="ggSave" style="width:100%">'+(GROW.map.rank.saving?'<span class="spin"></span> Checking with Google…':(d.connected?"Save settings":"Connect"))+'</button>'+
       (d.connected&&d.via!=="secret"?'<button class="btn" id="ggOff" style="width:100%;margin-top:8px">Disconnect key</button>':"")+
@@ -6657,14 +6757,33 @@
       var la=parseFloat((el("ggLat")||{}).value), ln=parseFloat((el("ggLng")||{}).value);
       if(!R.data.connected&&!key.trim())return toast("Paste an API key first",{bad:true});
       if(!biz.trim()&&!pid.trim())return toast("Add your business name or Place ID",{bad:true});
+      var pr=parseFloat((el("ggPrice")||{}).value), fp=parseFloat((el("ggFreePro")||{}).value);
       R.saving=true;ggRenderRank();
       post("/api/geogrid/connect",{key:key.trim(),bizName:biz.trim(),placeId:pid.trim(),
-        centerLat:isFinite(la)?la:undefined,centerLng:isFinite(ln)?ln:undefined}).then(function(r){
+        centerLat:isFinite(la)?la:undefined,centerLng:isFinite(ln)?ln:undefined,
+        freeOnly:R.guardFree!=null?R.guardFree:undefined,
+        idOnly:R.guardIds!=null?R.guardIds:undefined,
+        pricePro:isFinite(pr)?pr:undefined,freePro:isFinite(fp)?fp:undefined}).then(function(r){
         R.saving=false;
         if(r&&r.ok){R.fail=null;toast("Saved ✓");R.setup=false;R.data=null;ggLoadRank(true)}
         else{R.fail={hint:(r&&r.hint)||"Google rejected that key",detail:(r&&r.detail)||""};toast("Google rejected that key",{bad:true});ggRenderRank()}
       }).catch(function(){R.saving=false;R.fail={hint:"Couldn't reach the server.",detail:""};toast("Network error",{bad:true});ggRenderRank()});
     };
+    var swF=el("ggSwFree"), swI=el("ggSwIds");
+    function guardSet(field,on){
+      var body={};body[field]=on;
+      post("/api/geogrid/connect",body).then(function(r){
+        if(r&&r.ok){R.data=null;ggLoadRank(true);
+          toast(field==="freeOnly"
+            ? (on?"Guard on — nothing billable will run":"Guard off — scans can be billed")
+            : (on?"Free mode on":"Free mode off — scans match by name and can be billed"),
+            {bad:!on});
+        }else toast((r&&r.hint)||"Couldn't save that",{bad:true});
+      }).catch(function(){toast("Network error",{bad:true})});
+    }
+    if(swF)swF.onclick=function(){vibrate(6);var on=!swF.classList.contains("on");swF.classList.toggle("on",on);R.guardFree=on;guardSet("freeOnly",on)};
+    if(swI)swI.onclick=function(){vibrate(6);var on=!swI.classList.contains("on");swI.classList.toggle("on",on);R.guardIds=on;guardSet("idOnly",on)};
+
     var fb=el("ggFind");
     if(fb)fb.onclick=function(){
       if(R.finding)return;
@@ -6693,7 +6812,19 @@
     var kw=el("ggKw");if(kw)kw.oninput=function(){R.keyword=kw.value};
     var sz=el("ggSize");if(sz)sz.onchange=function(){R.size=+sz.value;ggRenderRank()};
     var rd=el("ggRad");if(rd)rd.onchange=function(){R.radius=+rd.value;ggRenderRank()};
-    var run=el("ggRun");if(run)run.onclick=function(){vibrate(8);ggRunScan()};
+    // Refuse locally too, so a blocked scan never even starts a round trip. The
+    // Worker enforces the same rule — this is just the faster "no".
+    var run=el("ggRun");if(run)run.onclick=function(){
+      var b=ggCost(R.size*R.size);
+      if(b.blocked){
+        vibrate(14);
+        R.budgetErr="That scan needs "+b.paid+" call"+(b.paid===1?"":"s")+" past your "+b.free.toLocaleString()+
+          " free "+(b.sku==="ids"?"ID-only":"Pro")+" calls this month — about "+ggMoney(b.cost)+
+          ". Shrink the grid, wait for the 1st, or turn off “Never spend real money” in setup.";
+        ggRenderRank();return toast("Blocked — that would cost "+ggMoney(b.cost),{bad:true});
+      }
+      vibrate(8);ggRunScan();
+    };
     Array.prototype.forEach.call(box.querySelectorAll("[data-gs]"),function(b){
       b.onclick=function(){vibrate(6);var id=b.getAttribute("data-gs");
         if(id==="__live")return;R.live=null;R.viewId=id;R.preview=null;R.previewErr="";ggRenderRank()};
@@ -6709,7 +6840,8 @@
       post("/api/geogrid/preview",{keyword:s.keyword,lat:s.centerLat,lng:s.centerLng,
         radiusM:Math.max(500,Math.round(stepMi*1609.34))}).then(function(r){
         R.previewing=false;
-        if(r&&r.ok)R.preview=r; else R.previewErr=(r&&(r.hint||r.detail))||"Couldn't reach Google";
+        if(r&&r.ok){R.preview=r;if(r.meter&&R.data)R.data.meter=r.meter}
+        else R.previewErr=(r&&(r.hint||r.detail))||"Couldn't reach Google";
         ggRenderRank();
       }).catch(function(){R.previewing=false;R.previewErr="Network error";ggRenderRank()});
     };
@@ -6752,7 +6884,7 @@
     var batch=Math.max(1,Math.min(25,(d&&d.maxBatch)||25));
 
     R.scanning=true;R.cancel=false;R.done=0;R.total=grid.length;R.live=null;
-    R.sample=null;R.matchedName="";R.preview=null;R.previewErr="";
+    R.sample=null;R.matchedName="";R.preview=null;R.previewErr="";R.budgetErr="";
     ggRenderRank();
 
     var acc=[],i=0;
@@ -6763,10 +6895,13 @@
       post("/api/geogrid/scan",{keyword:R.keyword.trim(),radiusM:radiusM,
         points:slice.map(function(p){return {lat:p.lat,lng:p.lng}})}).then(function(r){
         if(!r||!r.ok){
-          R.scanning=false;ggRenderRank();
+          R.scanning=false;
+          if(r&&r.error==="budget"){R.budgetErr=r.hint||"";if(r.budget&&R.data)R.data.meter={month:r.budget.month,pro:r.budget.sku==="pro"?r.budget.used:(R.data.meter||{}).pro||0,ids:r.budget.sku==="ids"?r.budget.used:(R.data.meter||{}).ids||0}}
+          ggRenderRank();
           toast((r&&(r.hint||r.detail))||"Scan failed",{bad:true});
           return;
         }
+        if(r.meter&&R.data)R.data.meter=r.meter;   // spend counter, live
         acc=acc.concat(r.results||[]);
         // Keep the first evidence of a miss (and of a hit) for the diagnostics.
         if(!R.matchedName&&r.matchedName)R.matchedName=r.matchedName;

@@ -21,8 +21,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SRC = fs.readFileSync(path.join(__dirname, '..', 'src', 'index.js'), 'utf8');
 
 function lift(name) {
-  const start = SRC.indexOf(`function ${name}(`);
+  let start = SRC.indexOf(`function ${name}(`);
   if (start < 0) throw new Error(`function ${name} not found in src/index.js`);
+  // Keep the `async` prefix — lifting it off would strip the await inside.
+  if (SRC.slice(start - 6, start) === 'async ') start -= 6;
   let p = SRC.indexOf('(', start), pd = 0, bodyStart = -1;
   for (let j = p; j < SRC.length; j++) {
     if (SRC[j] === '(') pd++;
@@ -50,7 +52,10 @@ function liftConst(name) {
 }
 
 const scope = {};
-new Function('S', `
+// geoBudget() reads the KV-backed meter; the stub stands in for it so the money
+// arithmetic can be tested without a Worker runtime.
+let METER = { month: '2026-07', pro: 0, ids: 0 };
+new Function('S', 'meterStub', `
   ${liftConst('GEO_GENERIC_WORDS')}
   ${liftConst('GEO_NOT_FOUND_RANK')}
   ${lift('geoNameKey')}
@@ -58,9 +63,20 @@ new Function('S', `
   ${lift('geoDistinctTokens')}
   ${lift('geoNameMatches')}
   ${lift('geoStats')}
+  ${lift('geoSku')}
+  ${lift('geoFieldMask')}
+  const geoMeter = meterStub;
+  ${lift('geoBudget')}
   S.geoNameMatches = geoNameMatches; S.geoStats = geoStats;
-`)(scope);
-const { geoNameMatches, geoStats } = scope;
+  S.geoSku = geoSku; S.geoFieldMask = geoFieldMask; S.geoBudget = geoBudget;
+`)(scope, async () => METER);
+const { geoNameMatches, geoStats, geoSku, geoFieldMask, geoBudget } = scope;
+
+// A settings object shaped like geogridSecrets() returns.
+const SEC = (over) => ({
+  placeId: '', bizName: "Mikey's Mobile Detailing", freeOnly: true, idOnly: true,
+  pricePro: 32, freePro: 5000, freeIds: 10000, ...over,
+});
 
 let PASS = 0, FAIL = 0;
 const check = (n, got, want) => {
@@ -109,5 +125,44 @@ check('ATRP counts a miss as 20+', s2.atrp, 7);
 check('SoLV is share of top 3', s2.solv, 50);
 check('top10 counts ranks 1-10', s2.top10, 3);
 
-console.log(`\n${FAIL ? 'FAILED' : 'OK'} — ${PASS} passed, ${FAIL} failed\n`);
-process.exit(FAIL ? 1 : 0);
+// The money. Google bills Text Search by the priciest field asked for, so the
+// field mask IS the price — these pin down that a pinned Place ID keeps scans
+// on the free SKU, and that the guard stops the first billable call.
+const run = async () => {
+  console.log('\n=== map rank: which SKU a call bills at ===');
+  check('pinned Place ID -> free IDs-only SKU', geoSku(SEC({ placeId: 'ChIJ1' })), 'ids');
+  check('and the mask asks for nothing paid', geoFieldMask('ids'), 'places.id');
+  check('no Place ID -> paid Pro SKU (names cost money)', geoSku(SEC()), 'pro');
+  check('free mode off -> paid Pro SKU even with an ID',
+    geoSku(SEC({ placeId: 'ChIJ1', idOnly: false })), 'pro');
+  check('Pro mask is what asks for names', geoFieldMask('pro'), 'places.id,places.displayName');
+
+  console.log('\n=== map rank: the spend guard ===');
+  METER = { month: '2026-07', pro: 0, ids: 0 };
+  let b = await geoBudget(SEC(), 'pro', 25);
+  check('a 5x5 inside the free tier costs nothing', [b.cost, b.paidCalls, b.blocked], [0, 0, false]);
+
+  METER = { month: '2026-07', pro: 4990, ids: 0 };
+  b = await geoBudget(SEC(), 'pro', 25);
+  check('crossing the free line is priced per call past it', b.paidCalls, 15);
+  check('15 calls at $32/1,000', b.cost, 0.48);
+  check('and the guard blocks it', b.blocked, true);
+
+  b = await geoBudget(SEC({ freeOnly: false }), 'pro', 25);
+  check('guard off -> allowed, still priced', [b.blocked, b.cost], [false, 0.48]);
+
+  METER = { month: '2026-07', pro: 5000, ids: 9999 };
+  b = await geoBudget(SEC({ placeId: 'ChIJ1' }), 'ids', 25);
+  check('ID-only calls are never billed', b.cost, 0);
+  check('but a used-up free tier still reports what is left', b.left, 1);
+
+  METER = { month: '2026-07', pro: 0, ids: 0 };
+  b = await geoBudget(SEC(), 'pro', 169);
+  check('a 13x13 inside the free tier is still $0', b.cost, 0);
+  b = await geoBudget(SEC({ freePro: 0, freeOnly: false }), 'pro', 169);
+  check('a 13x13 with no allowance left is $5.41', b.cost, 5.41);
+
+  console.log(`\n${FAIL ? 'FAILED' : 'OK'} — ${PASS} passed, ${FAIL} failed\n`);
+  process.exit(FAIL ? 1 : 0);
+};
+run();

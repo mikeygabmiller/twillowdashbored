@@ -162,6 +162,38 @@ GA realtime is fetched live. Clarity's export API allows only **10 calls per
 project per day**, so responses cache 6 h and a budget counter stops at 8
 calls/day (stale data is served after that — the UI labels it).
 
+## Map rank grid (Analytics → Map → Map rank) — and what it costs
+
+A Local-Falcon-style grid: each point asks Google what ranks there for a search
+term, and the pin shows where the listing came back (1–3 green … 20+ red).
+
+**One grid point = one Google Places "Text Search" call.** 5×5 = 25 calls,
+13×13 = 169.
+
+**What Google charges.** Text Search is billed by the *most expensive field in
+the request*, so the field mask picks the SKU — not the endpoint:
+
+| What we ask for | SKU | Price | Free per month |
+|---|---|---|---|
+| `places.id` only | Text Search Essentials (IDs only) | free | 10,000 |
+| `places.id,places.displayName` | Text Search Pro | **$32 / 1,000** | 5,000 |
+
+So the app runs scans on the **free** SKU whenever a Place ID is pinned: the ID
+alone is enough to spot the listing in the results. Matching by *name* is what
+forces the paid SKU, because names are a paid field. Rates last checked
+2026-07-28 and are editable in the app (Places setup → Spending) so a Google
+price change doesn't need a deploy.
+
+**The guard.** `freeOnly` is on by default. The Worker prices every batch
+*before* calling Google (`geoBudget`) and returns HTTP 402 rather than make a
+call that would land past the free allowance — the dashboard shows the cost of
+the next scan, the month-to-date count, and refuses the button. Usage is
+metered in KV (`geogrid:meter`, Pacific months, matching Google's quota reset).
+
+The guard only covers calls made by this dashboard. For a hard stop that covers
+everything using the key, also set a daily cap in **Google Cloud Console → APIs
+& Services → Places API (New) → Quotas**.
+
 ## Twilio webhooks (your business number)
 - **Messaging** → "A message comes in" → **POST** `https://texting.mikeysdetailingsnohomish.workers.dev/sms`
 - **Voice** → "A call comes in" → **POST** `https://texting.mikeysdetailingsnohomish.workers.dev/call`
