@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-28·send-failed-flag';
+const BUILD = '2026-07-28·smart-followups';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -2218,7 +2218,7 @@ async function recordPulse(now = Date.now()) {
     jobs: todayJobs.length,
     openLeads: active.filter((t) => t.status === 'new' || t.status === 'active').length,
     won: active.filter((t) => t.status === 'won').length,
-    waiting: active.filter((t) => t.lastDir === 'in').length,
+    waiting: active.filter(rowAwaitingReply).length,
     newConvos: index.filter((t) => t.firstTs && localDateStr(t.firstTs, cfg.tz) === day).length,
   });
   doc.days = doc.days.slice(-PULSE_KEEP_DAYS);
@@ -2697,14 +2697,18 @@ async function apiAiTriage() {
   const now = Date.now();
   const lines = open.map((e) => {
     const ago = humanAgo(now - (e.lastTs || now));
-    const who = e.lastDir === 'in' ? `WAITING ${ago} for reply` : `you replied ${ago} ago`;
+    const who = e.lastDir !== 'in' ? `you replied ${ago} ago`
+      : e.awaitingReply === false ? `they wrote ${ago} ago but nothing is owed — ${e.closedReason || 'conversation wrapped up'}`
+      : `WAITING ${ago} for reply`;
     return `- ${e.name || e.phone} [${e.status || 'no status'}] ${who}: "${e.lastBody || ''}"`;
   }).join('\n');
   const prompt =
     businessContext(cfg) +
     `You are the operations assistant for Mikey's Mobile Detailing. Below are the open SMS threads. ` +
     `Give a short, prioritized action list (max 6 bullets) of who to reply to first and the suggested next step. ` +
-    `Customers who are WAITING for a reply are top priority; longest waits first. Be concise and practical. ` +
+    `Customers who are WAITING for a reply are top priority; longest waits first. ` +
+    `Threads marked "nothing is owed" have already wrapped up (a thank-you, an acknowledgement) — leave them alone, never suggest replying to or chasing them. ` +
+    `Be concise and practical. ` +
     `Keep each bullet to one complete sentence and finish your final bullet.\n\n${lines}`;
   try {
     const briefing = await geminiGenerate(prompt, { maxTokens: 2000 });
@@ -3003,6 +3007,7 @@ function opsPlaybook() {
     '2. The lead pipeline must stay accurate: every open thread should have a status (New / Active / Won / Lost). A thread with no status is invisible to planning — call it out.',
     '3. Keep the inbox clean. Dead threads (Lost, or clearly finished Won jobs, or long-silent with no path forward) should be archived so what remains is what needs work. Archiving is reversible — treat it as "filing away", not deleting.',
     '4. Never drop a warm lead. Date-requested, due follow-ups, and reminders coming due are money on the table — surface them.',
+    '4b. But never invent work either: a conversation that ended on a thank-you, a 👍 or an acknowledgement is FINISHED. Do not tell Mikey to reply to it or chase it — the CLOSED OUT list below is there so you skip them.',
     '5. Won leads that were never logged in the money tracker are lost profit visibility — worth a nudge.',
     '6. Be concrete and efficient: say exactly what to do, tie it to a specific customer or bucket, and keep the "why" to one line. Prefer a few high-impact moves over a long list.',
     '7. When you recommend a bulk cleanup that the command bar can do, put the exact plain-English command in the item\'s "command" field so Mikey can run it in one tap.',
@@ -3025,7 +3030,10 @@ function boardSnapshot(index, cfg, now) {
     const who = e.lastDir === 'in' ? `waiting ${ago}` : `you replied ${ago} ago`;
     return `  - ${e.name || e.phone} [${e.status || 'NO STATUS'}] ${who}: "${(e.lastBody || '').slice(0, 70)}"`;
   };
-  const waiting = open.filter((e) => e.lastDir === 'in').sort((a, b) => (a.lastTs || 0) - (b.lastTs || 0));
+  // "Waiting" means the customer spoke last AND something is genuinely open —
+  // threads that ended on a thank-you are filed under CLOSED OUT below instead.
+  const waiting = open.filter(rowAwaitingReply).sort((a, b) => (a.lastTs || 0) - (b.lastTs || 0));
+  const closedOut = open.filter((e) => e.lastDir === 'in' && e.awaitingReply === false);
   const unread = open.filter((e) => (e.unread || 0) > 0);
   const noStatus = open.filter((e) => !e.status);
   const dueFollow = open.filter((e) => e.followupDue);
@@ -3040,6 +3048,9 @@ function boardSnapshot(index, cfg, now) {
   S.push('');
   S.push(`WAITING ON A REPLY (${waiting.length}) — top priority, longest first:`);
   S.push(waiting.slice(0, 18).map(line).join('\n') || '  (none)');
+  S.push('');
+  S.push(`CLOSED OUT — customer spoke last but nothing is owed, do NOT chase these (${closedOut.length}):`);
+  S.push(closedOut.slice(0, 12).map((e) => `  - ${e.name || e.phone}: "${(e.lastBody || '').slice(0, 50)}" (${e.closedReason || 'wrapped up'})`).join('\n') || '  (none)');
   S.push('');
   S.push(`DUE FOLLOW-UPS (${dueFollow.length}):`);
   S.push(dueFollow.slice(0, 12).map(line).join('\n') || '  (none)');
@@ -3181,7 +3192,9 @@ async function buildAgentContext({ index, cfg, now, money }) {
   top.forEach((r) => {
     const t = tById.get(r.phone);
     const ago = humanAgo(now - (r.lastTs || now));
-    const wait = r.lastDir === 'in' ? `WAITING ${ago} for your reply` : `you replied ${ago} ago`;
+    const wait = r.lastDir !== 'in' ? `you replied ${ago} ago`
+      : r.awaitingReply === false ? `they wrote ${ago} ago, nothing owed (${r.closedReason || 'wrapped up'})`
+      : `WAITING ${ago} for your reply`;
     const flags = [];
     const hasVm = r.hasVoicemail || (t && (t.messages || []).some((x) => x.kind === 'voicemail'));
     const hasPh = r.hasMedia || (t && (t.messages || []).some((x) => Array.isArray(x.media) && x.media.length));
@@ -3592,6 +3605,161 @@ function humanAgo(ms) {
 }
 
 // ===========================================================================
+// "Does this actually need a reply?" — conversation-closure check
+// ---------------------------------------------------------------------------
+// The follow-up engine used to treat ANY conversation whose last message came
+// from the customer as a reply Mikey owes. So a thread that ended with
+// "Thanks! 🙂", a 👍, or a "Liked ..." tapback sat in "Needs your attention"
+// forever and kept generating nudges nobody should send.
+//
+// Before an `owed` step is surfaced we now read the WHOLE conversation and ask:
+// is anything actually outstanding on Mikey's side? The verdict is cached on the
+// thread against the exact inbound message it was made for, so it costs at most
+// one small AI call per customer message — and none at all for the obvious
+// cases (a question mark, a photo, a voicemail: always needs a reply).
+//
+// Bias: when it's genuinely unclear we answer "yes, reply". Nagging Mikey about
+// a wrapped-up thread is annoying; missing a real customer costs a booking.
+// ===========================================================================
+
+// iMessage/Android tapbacks arrive as literal text ('Liked "see you then"').
+const REACTION_RE = /^(liked|loved|laughed at|emphasi[sz]ed|disliked|questioned)\s+["“”']/i;
+
+// Lowercase, drop emoji and punctuation (keeping "?"), collapse whitespace.
+function normText(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}\uFE0F\u200D]/gu, ' ')
+    .replace(/[^a-z0-9?'\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Fast "this obviously needs an answer" test. Only ever used to SKIP the AI call
+// and keep the nudge — so a false positive costs nothing but an extra reminder.
+function looksLikeQuestion(body) {
+  const t = normText(body);
+  if (!t) return false;
+  if (t.includes('?')) return true;
+  return /\b(how much|how many|how long|what time|what day|what about|when can|when are|when will|where|can you|could you|would you|will you|do you|did you|does that|are you|is it|is that|price|quote|cost|estimate|available|availability|schedule|book|booking|appointment|reschedule|call me|text me|let me know|send me|i need|we need|i want|id like|i'd like|im looking|i'm looking|looking for|interested)\b/.test(t);
+}
+
+// Words that carry no ask on their own. A message made up entirely of these is a
+// sign-off, not a question. Deliberately conservative: bare agreements ("yes",
+// "sure", "that works") are NOT here, because after "does Saturday work?" they
+// still need Mikey to confirm. Only used as the offline fallback when the AI
+// can't be reached — the AI itself reads the whole conversation.
+const CLOSER_WORDS = new Set([
+  'thanks', 'thank', 'thankyou', 'thx', 'ty', 'tysm', 'appreciate', 'appreciated', 'thankful',
+  'you', 'u', 'so', 'much', 'very', 'again', 'a', 'lot', 'the', 'my', 'me', 'im', 'i', 'it', 'that', 'thats', 'this',
+  'ok', 'okay', 'k', 'kk', 'cool', 'alright', 'got', 'sounds', 'sound', 'good', 'well',
+  'great', 'perfect', 'awesome', 'nice', 'sweet', 'excellent', 'wonderful', 'amazing', 'beautiful', 'love', 'loved', 'lovely',
+  'no', 'nope', 'problem', 'worries', 'np', 'nvm', 'mind',
+  'see', 'ya', 'then', 'later', 'soon', 'there', 'sir', 'maam', 'man', 'bro', 'dude', 'buddy',
+  'have', 'day', 'night', 'weekend', 'one', 'take', 'care', 'too', 'and', 'best', 'cheers',
+  'welcome', 'youre', 'yw', 'copy', 'understood', 'roger', 'will', 'do', 'talk', 'bye', 'goodbye',
+]);
+function isClosingRemark(body) {
+  const raw = String(body || '').trim();
+  if (REACTION_RE.test(raw)) return true;      // tapback reaction
+  const t = normText(raw);
+  if (!t) return true;                          // emoji-only / sticker / blank
+  if (t.includes('?')) return false;
+  const words = t.split(' ').map((w) => w.replace(/'/g, '')).filter(Boolean);
+  if (words.length > 10) return false;          // a real paragraph is never a sign-off
+  return words.every((w) => CLOSER_WORDS.has(w));
+}
+
+// Ask Gemini to read the whole conversation and rule on whether Mikey still owes
+// the customer something. Returns { needed, reason }. Throws if the AI is
+// unavailable so the caller can fall back to the heuristic above.
+async function judgeReplyNeeded(thread, cfg) {
+  const prompt =
+    businessContext(cfg) +
+    `You are triaging text conversations for Mikey's Mobile Detailing so Mikey only gets reminded about the ones that still need him.\n\n` +
+    `Read the ENTIRE conversation below, then decide ONE thing: after the customer's most recent message, is there still something for Mikey to answer or do?\n\n` +
+    `Answer "needsReply": false when the conversation has reached a natural resting point — for example:\n` +
+    `- the customer's last message is just thanks, praise, or an acknowledgement ("thanks!", "ok", "sounds good", "perfect", "👍")\n` +
+    `- it is a reaction/tapback (a message that starts with Liked/Loved/Laughed at)\n` +
+    `- it simply closes out a question Mikey already answered, and nothing new was raised\n` +
+    `- it is friendly small talk that asks for nothing, and Mikey owes nothing\n\n` +
+    `Answer "needsReply": true when anything is still open — for example:\n` +
+    `- they asked a question, or asked about price, availability, timing, or booking\n` +
+    `- they raised a problem, complaint, or concern\n` +
+    `- they sent photos or a voicemail for a quote\n` +
+    `- they agreed to something that still needs Mikey to confirm a specific date, time, address, or price\n` +
+    `- Mikey's last message promised something (a quote, a time, a call back) that he has not delivered yet\n\n` +
+    `If you are genuinely unsure, answer true — missing a real customer is worse than an extra reminder.\n\n` +
+    `Return ONLY JSON: {"needsReply": true|false, "reason": "<plain English, max 10 words, why>"}\n\n` +
+    `Conversation (oldest to newest):\n${transcript(thread)}\n`;
+  const raw = await geminiGenerate(prompt, { json: true, maxTokens: 300, temperature: 0.1 });
+  const p = JSON.parse(raw);
+  return {
+    needed: p.needsReply !== false,
+    reason: String(p.reason || '').trim().slice(0, 90) || (p.needsReply === false ? 'Conversation wrapped up' : 'Something is still open'),
+  };
+}
+
+// The cached verdict for the CURRENT last inbound message, or null.
+function replyCheckFor(thread) {
+  const msgs = thread.messages || [];
+  const last = msgs[msgs.length - 1];
+  if (!last || last.dir !== 'in') return null;
+  const rc = thread.replyCheck;
+  return (rc && rc.forTs === last.ts) ? rc : null;
+}
+
+// Sync read used by the (sync) follow-up planner and the index builder.
+// Un-judged threads default to "yes" — identical to the old behavior.
+function replyOwed(thread) {
+  const rc = replyCheckFor(thread);
+  return rc ? rc.needed !== false : true;
+}
+
+// Same question against a cheap INDEX ROW (which carries the cached verdict as
+// `awaitingReply`). Use this everywhere "is someone waiting on me?" is counted —
+// the Home rundown, the daily brief, push notifications, the AI advisor — so
+// they all agree. Rows written before this shipped have no flag: treated as
+// waiting, exactly like before.
+function rowAwaitingReply(e) {
+  return !!e && e.lastDir === 'in' && e.awaitingReply !== false;
+}
+
+// Make sure the current last inbound message has a verdict. Returns whether the
+// thread was mutated (so callers can batch the KV write). At most one AI call
+// per inbound message, ever — the verdict is keyed to that message's timestamp.
+async function ensureReplyCheck(thread, cfg) {
+  const msgs = thread.messages || [];
+  const last = msgs[msgs.length - 1];
+  if (!last || last.dir !== 'in') return false;   // Mikey spoke last — nothing to judge
+  if (replyCheckFor(thread)) return false;        // already judged this message
+
+  let verdict;
+  if (last.kind === 'opt-out' || last.kind === 'opt-in') {
+    verdict = { needed: false, reason: 'STOP/START keyword — no reply', via: 'rule' };
+  } else if (last.kind === 'voicemail' || (Array.isArray(last.media) && last.media.length)) {
+    verdict = { needed: true, reason: 'Voicemail or photo to respond to', via: 'rule' };
+  } else if (looksLikeQuestion(last.body)) {
+    verdict = { needed: true, reason: 'They asked you something', via: 'rule' };
+  } else if (!ENV.GEMINI_API_KEY) {
+    verdict = isClosingRemark(last.body)
+      ? { needed: false, reason: 'Wrapped up — nothing asked', via: 'rule' }
+      : { needed: true, reason: 'Waiting on you', via: 'rule' };
+  } else {
+    try {
+      verdict = Object.assign({ via: 'ai' }, await judgeReplyNeeded(thread, cfg));
+    } catch {
+      // AI unreachable — fall back to the heuristic rather than nagging blindly.
+      verdict = isClosingRemark(last.body)
+        ? { needed: false, reason: 'Wrapped up — nothing asked', via: 'rule' }
+        : { needed: true, reason: 'Waiting on you', via: 'rule' };
+    }
+  }
+  thread.replyCheck = { forTs: last.ts, at: Date.now(), needed: verdict.needed, reason: verdict.reason, via: verdict.via };
+  return true;
+}
+
+// ===========================================================================
 // Auto follow-up engine
 // ---------------------------------------------------------------------------
 // A per-conversation state machine that decides WHEN a follow-up is due and
@@ -3634,8 +3802,14 @@ function computeFollowupPlan(thread, now, cfg) {
   const done = (p) => (p && p.stepKey === fu.lastStepKey) ? null : p;
 
   // 1) Mikey owes a reply — the customer texted last. Highest priority, never auto-sent.
+  //    ...but only when a reply is genuinely outstanding. A thread that ended on
+  //    "Thanks!" or a 👍 is at rest: fall through so the Won/Lost lifecycle can
+  //    still run (a review ask is legitimate) while never starting a nudge chase
+  //    — the chase below requires Mikey to have spoken last anyway.
   if (last.dir === 'in') {
-    return done({ stage: 'owed', step: 0, stepKey: 'owed:' + last.ts, dueAt: last.ts + FOLLOWUP.OWED_DELAY_MS, urgency: 'high', auto: false });
+    if (replyOwed(thread)) {
+      return done({ stage: 'owed', step: 0, stepKey: 'owed:' + last.ts, dueAt: last.ts + FOLLOWUP.OWED_DELAY_MS, urgency: 'high', auto: false });
+    }
   }
 
   // 2) Won lifecycle: review ask, then a rebook nudge months later.
@@ -3787,9 +3961,11 @@ function urgencyRank(u) { return u === 'high' ? 3 : u === 'normal' ? 2 : 1; }
 // nudge instantly (rather than waiting for the next cron tick). Returns whether
 // the thread was mutated and needs saving.
 async function ensureLiveSuggestion(thread, cfg, now) {
+  // Read the conversation first — a thread that ended on "Thanks!" should show no
+  // nudge at all, even the instant it's opened.
+  let changed = await ensureReplyCheck(thread, cfg);
   const plan = computeFollowupPlan(thread, now, cfg);
   const fu = thread.followup || (thread.followup = defaultFollowup());
-  let changed = false;
   if (fu.suggestion && (!plan || fu.suggestion.stepKey !== plan.stepKey)) { fu.suggestion = null; changed = true; }
   if (!plan || plan.dueAt > now) return changed;
   if (autopilotAllowed(plan, fu, cfg)) return changed;   // autopilot handles it; don't nag with a suggestion
@@ -3817,6 +3993,10 @@ async function evaluateFollowups(now = Date.now()) {
   const index = await loadIndex();
   let acted = 0;
   let indexDirty = false; // batch: write the whole index at most ONCE per tick
+  // Reading a conversation to decide whether it still needs a reply costs one AI
+  // call. Cap it per tick so a big backlog (e.g. the first tick after this
+  // shipped) spreads over a few minutes instead of stalling one cron run.
+  let judgeBudget = 8;
   for (const e of index) {
     if (e.archived) continue;
     // Nothing to do this tick — skip WITHOUT touching KV. This is THE guard that
@@ -3826,16 +4006,32 @@ async function evaluateFollowups(now = Date.now()) {
     // have followupNextAt=null because no follow-up applies — fall through here and
     // are never re-saved. (Stale suggestions still get cleared promptly: that
     // happens on the customer's inbound reply and whenever the thread is opened.)
-    if (!e.followupDue && (!e.followupNextAt || e.followupNextAt > now)) continue;
+    // ...with one addition: a conversation whose last message is the customer's
+    // and that has never been read for "is anything still open?" is loaded once
+    // so it can be judged (legacy threads, and anything whose nudge was already
+    // skipped). Once judged the flag sticks in the index and it's skipped again.
+    const dueNow = e.followupDue || !!(e.followupNextAt && e.followupNextAt <= now);
+    const needsJudging = e.lastDir === 'in' && !e.replyChecked;
+    if (!dueNow && !(needsJudging && judgeBudget > 0)) continue;
 
     const thread = await loadThread(e.phone);
     const fu = thread.followup || (thread.followup = defaultFollowup());
     // Legacy threads that had a status before this feature shipped have no
     // statusAt — anchor them to now so won/lost cadences start fresh, not in the past.
     if (thread.status && !thread.statusAt) thread.statusAt = now;
+
+    // Before deciding anything, make sure we know whether this conversation is
+    // actually still open. Skipped once the per-tick AI budget is spent — the
+    // thread just gets judged on a later tick (nothing is sent meanwhile,
+    // because an un-judged inbound-last thread only ever produces a suggestion).
+    let changed = false; // only persist this thread if we actually mutate it
+    const lastMsg = (thread.messages || [])[(thread.messages || []).length - 1];
+    if (lastMsg && lastMsg.dir === 'in' && !replyCheckFor(thread) && judgeBudget > 0) {
+      judgeBudget--;
+      if (await ensureReplyCheck(thread, cfg)) changed = true;
+    }
     const plan = computeFollowupPlan(thread, now, cfg);
 
-    let changed = false; // only persist this thread if we actually mutate it
     if (fu.suggestion && (!plan || fu.suggestion.stepKey !== plan.stepKey)) { fu.suggestion = null; changed = true; } // stale
 
     if (plan && plan.dueAt <= now && autopilotAllowed(plan, fu, cfg) && !inQuietHours(now, cfg)) {
@@ -4964,6 +5160,10 @@ function buildIndexSummary(thread, cfg) {
   const last = thread.messages[thread.messages.length - 1];
   const plan = computeFollowupPlan(thread, Date.now(), cfg);
   const fu = thread.followup || {};
+  // Whether the customer is genuinely waiting on Mikey. Only meaningful when they
+  // spoke last; un-judged threads read as `true` so nothing goes missing.
+  const rc = replyCheckFor(thread);
+  const awaiting = !!(last && last.dir === 'in') && replyOwed(thread);
   // Only mirror a suggestion the current plan still agrees with — if the customer
   // just replied, the old nudge is stale and the badge should clear immediately.
   const sug = (fu.suggestion && plan && fu.suggestion.stepKey === plan.stepKey) ? fu.suggestion : null;
@@ -5014,6 +5214,13 @@ function buildIndexSummary(thread, cfg) {
     lastBody: last ? preview(last.body) : '',
     lastDir: last ? last.dir : '',
     lastTs: last ? last.ts : (thread.updatedAt || Date.now()),
+    awaitingReply: awaiting,
+    // Has the current inbound message been read for "is anything still open?"
+    // yet? Lets the cron find the few threads that still need judging without
+    // loading every conversation on every tick.
+    replyChecked: !!rc,
+    // Why we're NOT counting them as waiting ("Thanks — conversation wrapped up").
+    closedReason: (!awaiting && rc && rc.needed === false) ? (rc.reason || 'Conversation wrapped up') : '',
     followupNextAt: plan ? plan.dueAt : null,
     followupDue: !!sug,
     fu: sug ? { reason: sug.reason, urgency: sug.urgency, stage: sug.stage, dueAt: sug.dueAt, draft: (sug.draft || '').slice(0, 320) } : null,
@@ -5208,7 +5415,6 @@ async function editsContext() {
 // never blocks or fails the inbound webhook, and only runs when the ball is in
 // Mikey's court (last message is inbound, not opted out, not archived).
 async function maybeSuggestReply(phone) {
-  if (!ENV.GEMINI_API_KEY) return;
   try {
     const cfg = await loadConfig();
     if (isOptedOut(cfg, phone)) return;
@@ -5216,11 +5422,19 @@ async function maybeSuggestReply(phone) {
     if (thread.archived) return;
     const last = thread.messages[thread.messages.length - 1];
     if (!last || last.dir !== 'in') return;
-    const text = await generateReply(thread, cfg, '');
-    if (!text) return;
-    thread.suggested = { text, ts: Date.now(), forTs: last.ts };
-    await saveThread(thread);
-    await updateIndexEntry(thread);
+    // Decide first whether this message actually leaves anything open. Doing it
+    // here (rather than waiting for the follow-up engine) means a "Thanks!" never
+    // even appears in "Needs your attention".
+    let changed = await ensureReplyCheck(thread, cfg);
+    if (replyOwed(thread)) {
+      if (ENV.GEMINI_API_KEY) {
+        const text = await generateReply(thread, cfg, '');
+        if (text) { thread.suggested = { text, ts: Date.now(), forTs: last.ts }; changed = true; }
+      }
+    } else if (thread.suggested) {
+      thread.suggested = null; changed = true;   // nothing owed — drop any stale draft
+    }
+    if (changed) { await saveThread(thread); await updateIndexEntry(thread); }
   } catch { /* suggestions are a bonus — swallow errors so inbound never breaks */ }
 }
 
@@ -6573,7 +6787,7 @@ async function apiPushPeek() {
   const index = await loadIndex();
   const active = index.filter((t) => !t.archived);
   const unread = active.filter((t) => t.unread > 0).sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
-  const owed = active.filter((t) => t.lastDir === 'in');
+  const owed = active.filter(rowAwaitingReply);
   if (unread.length) {
     const t = unread[0];
     const who = t.name || t.phone;
@@ -7148,7 +7362,7 @@ async function buildBrief(kind = 'day') {
   const day = await buildDay(today);
   const index = await loadIndex();
   const active = index.filter((t) => !t.archived);
-  const waiting = active.filter((t) => t.lastDir === 'in');
+  const waiting = active.filter(rowAwaitingReply);
   const followups = active.filter((t) => t.followupDue);
   const reminders = active.filter((t) => t.reminderDue);
   const unread = active.reduce((s, t) => s + (t.unread || 0), 0);

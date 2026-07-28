@@ -2405,7 +2405,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-28·send-failed-flag";
+  var APP_BUILD="2026-07-28·smart-followups";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -3007,6 +3007,12 @@
     }).catch(function(){toast("Network error",{bad:true});if(btn){btn.disabled=false;btn.textContent=btn.dataset.t}});
   }
 
+  // Is this customer actually waiting on Mikey? They have to have spoken last —
+  // AND the server's conversation read has to agree something is still open.
+  // `awaitingReply` is undefined on index rows written before that check shipped,
+  // so anything but an explicit false counts as waiting (old behavior).
+  function awaitingReply(t){return t.lastDir==="in"&&t.awaitingReply!==false}
+
   // ---- counts ----
   function counts(){
     var active=state.threads.filter(function(t){return !t.archived});
@@ -3014,7 +3020,7 @@
       all:active.length,
       unread:active.reduce(function(a,t){return a+(t.unread>0?1:0)},0),
       sched:active.reduce(function(a,t){return a+(t.scheduledCount>0?1:0)},0),
-      needs:active.filter(function(t){return t.lastDir==="in"}).length,
+      needs:active.filter(awaitingReply).length,
       follow:active.filter(function(t){return t.followupDue}).length,
       arch:state.threads.filter(function(t){return t.archived}).length
     };
@@ -3087,9 +3093,10 @@
     var f=state.filter;
     if(f==="all")return true;
     if(f==="unread")return t.unread>0;
-    // Someone is waiting on Mikey when they spoke last — unless he has parked
-    // them on purpose, in which case they are not his problem right now.
-    if(f==="waiting")return t.lastDir==="in"&&!(t.heldUntil&&t.heldUntil>Date.now());
+    // Someone is waiting on Mikey when they spoke last AND something is actually
+    // open (a thread that ended on "Thanks!" isn't) — unless he has parked them
+    // on purpose, in which case they are not his problem right now.
+    if(f==="waiting")return awaitingReply(t)&&!(t.heldUntil&&t.heldUntil>Date.now());
     return t.status===f;
   }
   // Search operators: status:won  tag:ceramic  is:unread  is:dnt  is:scheduled  +free text.
@@ -3176,7 +3183,7 @@
     var box=el("scroll");
     if(!state.loadedOnce&&!state.threads.length){box.innerHTML='<div class="home">'+skeletonList(5)+'</div>';return}
     var active=state.threads.filter(function(t){return !t.archived});
-    var waiting=active.filter(function(t){return t.lastDir==="in"}).sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
+    var waiting=active.filter(awaitingReply).sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
     var fu=active.filter(function(t){return t.followupDue}).sort(function(a,b){return fuUrg(b)-fuUrg(a)||((a.fu&&a.fu.dueAt)||0)-((b.fu&&b.fu.dueAt)||0)});
     var reminders=active.filter(function(t){return t.reminderDue}).sort(function(a,b){return (a.reminderAt||0)-(b.reminderAt||0)});
     var ins=state.insights||{};
@@ -3660,7 +3667,7 @@
   // ---- compact "Today" summary (top of messages list, mobile-friendly) ----
   function summaryBar(){
     var active=state.threads.filter(function(t){return !t.archived});
-    var needs=active.filter(function(t){return t.lastDir==="in"}).sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
+    var needs=active.filter(awaitingReply).sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
     var unread=active.reduce(function(a,t){return a+(t.unread>0?1:0)},0);
     var sched=active.reduce(function(a,t){return a+(t.scheduledCount>0?1:0)},0);
     var collapsed=localStorage.getItem("mkd-sum")==="0";
@@ -3744,7 +3751,7 @@
   function growOverview(box){
     box=box||el("grBody");
     var active=state.threads.filter(function(t){return !t.archived});
-    var needs=active.filter(function(t){return t.lastDir==="in"}).sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
+    var needs=active.filter(awaitingReply).sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
     var ins=state.insights||{};
     var avg=ins.avgReplyMs!=null?fmtDur(ins.avgReplyMs):"—";
     var won=active.filter(function(t){return t.status==="won"}).length;
@@ -3947,6 +3954,12 @@
     var globalAuto=state.config&&state.config.autopilot;
     var eff=autoState===true?true:(autoState===false?false:!!globalAuto);
     var html='<div class="fu-row"><span class="lbl2">Follow up this contact</span><span class="sw'+(enabled?" on":"")+'" id="fuEnSw"></span></div>';
+    // Why this thread is quiet: the AI read the whole conversation and decided
+    // nothing is owed (e.g. it ended on "Thanks!"), so no nudge is being surfaced.
+    var rc=t.replyCheck;var msgs=t.messages||[];var lastM=msgs[msgs.length-1];
+    if(enabled&&rc&&lastM&&lastM.dir==="in"&&rc.forTs===lastM.ts&&rc.needed===false){
+      html+='<div class="fu-next" style="color:var(--green)">'+ic("check-circle",13)+' No reply needed — '+esc(rc.reason||"conversation wrapped up")+'</div>';
+    }
     if(enabled){
       html+='<div class="fu-row"><span class="lbl2">Send automatically'+(autoState===null?' <span style="color:var(--muted2)">· default</span>':'')+'</span><span class="sw'+(eff?" on":"")+'" id="fuAutoSw"></span></div>';
       if(fu.snoozeUntil&&fu.snoozeUntil>Date.now())html+='<div class="fu-next">Snoozed until '+esc(fmtFull(fu.snoozeUntil))+' · <button class="tagadd" id="fuUnsnooze" style="padding:2px 8px">Resume</button></div>';
