@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-28·thread-polish';
+const BUILD = '2026-07-28·ai-memory';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -193,6 +193,8 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/alert-test') return apiAlertTest();
   if (request.method === 'GET'  && pathname === '/api/followups')  return apiFollowups();
   if (request.method === 'POST' && pathname === '/api/followup')   return apiFollowupAction(request);
+  if (request.method === 'GET'  && pathname === '/api/ai/rules')   return apiRulesGet();
+  if (request.method === 'POST' && pathname === '/api/ai/rules')   return apiRulesPost(request);
   if (request.method === 'GET'  && pathname === '/api/config')     return apiGetConfig();
   if (request.method === 'POST' && pathname === '/api/config')     return apiSaveConfig(request);
   // ---- Booking management (authed — the Bookings dashboard view) ----
@@ -2631,8 +2633,11 @@ async function apiAiSummary(request) {
 // Mikey's voice AND in how he's been editing recent drafts, so it keeps getting
 // sharper the more he uses it ("learns from your edits").
 async function generateReply(thread, cfg, hint) {
+  const spend = await customerSpend(thread.phone, cfg);
   const prompt =
     businessContext(cfg) +
+    (await rulesContext()) +
+    customerContext(thread, spend) +
     (await editsContext()) +
     `You are replying to a customer by text for Mikey's Mobile Detailing. ` +
     `Write ONE friendly, professional reply (1-3 short complete sentences, no greeting line, no signature, ready to send). ` +
@@ -2664,6 +2669,7 @@ async function apiAiDraft(request) {
       const voice = (cfg.playbook && cfg.playbook.tone) ? `Write in this texting voice:\n${cfg.playbook.tone}\n\n` : '';
       const prompt =
         voice +
+        (await rulesContext()) +
         `You are polishing a short text message the user is about to send a customer. ` +
         `Rewrite it so it reads clearly and sounds great: fix spelling, grammar and punctuation, and reword any awkward, clunky or confusing phrasing so every sentence makes sense and flows naturally. ` +
         `KEEP the user's exact meaning and intent. Keep it casual and friendly like a real text — never stiff, formal or corporate — and keep it about the same length (it's a text, so stay concise). ` +
@@ -3069,6 +3075,7 @@ async function apiAiAnalyze(request) {
   }
   const prompt =
     businessContext(cfg) +
+    (await rulesContext()) +
     opsPlaybook() + '\n\n' +
     boardSnapshot(index, cfg, now) + '\n\n' +
     (focus ? `MIKEY'S FOCUS FOR THIS REVIEW: "${focus}"\n\n` : '') +
@@ -3144,6 +3151,7 @@ async function agentMoney(cfg, now) {
 async function buildAgentContext({ index, cfg, now, money }) {
   const L = [];
   const bc = businessContext(cfg); if (bc) L.push(bc);
+  const rc = await rulesContext(); if (rc) L.push(rc);
   L.push(opsPlaybook());
   L.push('');
   const m = money;
@@ -3233,6 +3241,13 @@ function normalizeAgentActions(list, index) {
   for (const a of (Array.isArray(list) ? list : [])) {
     if (!a || typeof a !== 'object') continue;
     const op = String(a.op || '');
+    if (op === 'remember_rule' || op === 'forget_rule') {
+      const text = String(a.text || '').trim().slice(0, 200);
+      if (!text) continue;
+      out.push({ op, text, reason: String(a.reason || '').slice(0, 160),
+                 label: (op === 'remember_rule' ? 'Remember: ' : 'Forget the rule: ') + text });
+      continue;
+    }
     if (op === 'log_money') {
       const e = a.entry || {};
       const amount = money2(e.amount);
@@ -3277,8 +3292,14 @@ function normalizeAgentActions(list, index) {
 // their month doc. Returns a friendly summary of what changed.
 async function executeAgentActions(actions, cfg) {
   const now = Date.now();
-  const convActs = actions.filter((a) => a.op !== 'log_money');
+  const ruleActs = actions.filter((a) => a.op === 'remember_rule' || a.op === 'forget_rule');
+  const convActs = actions.filter((a) => a.op !== 'log_money' && a.op !== 'remember_rule' && a.op !== 'forget_rule');
   const moneyActs = actions.filter((a) => a.op === 'log_money');
+  let nRules = 0;
+  for (const a of ruleActs) {
+    const r = a.op === 'remember_rule' ? await addRule(a.text) : await removeRule(a.text);
+    if (r) nRules++;
+  }
   const index = await loadIndex();
   let convChanged = false, nConv = 0, nMoney = 0;
   const errors = [];
@@ -3345,9 +3366,10 @@ async function executeAgentActions(actions, cfg) {
   const parts = [];
   if (nConv) parts.push(nConv + ' conversation' + (nConv > 1 ? 's' : '') + ' updated');
   if (nMoney) parts.push(nMoney + ' money entr' + (nMoney > 1 ? 'ies' : 'y') + ' logged');
+  if (nRules) parts.push(nRules + ' rule' + (nRules > 1 ? 's' : '') + ' saved — I\'ll follow that from now on');
   let reply = parts.length ? ('Done — ' + parts.join(' and ') + '.') : 'Nothing needed changing.';
   if (errors.length) reply += ' (' + errors.join('; ') + ')';
-  return { reply, nConv, nMoney };
+  return { reply, nConv, nMoney, nRules };
 }
 
 async function apiAiAgent(request) {
@@ -3378,7 +3400,8 @@ async function apiAiAgent(request) {
     'YOU ARE THE COMMAND-CENTER AI for this dashboard. Two jobs: ANSWER questions from the data above, and PROPOSE actions Mikey can approve. You NEVER perform actions yourself — everything you list is shown to Mikey and only runs if he approves it.\n' +
     'Respond with ONLY JSON (no prose, no code fences):\n' +
     '{"answer":"your reply to Mikey — ALWAYS fill this in: answer the question fully, or clearly summarize what you\'re about to do and why","actions":[{"op":"...","phone":"exact phone from a conversation","status":"new|active|won|lost","tags":["..."],"entry":{"type":"job|exp|jp|personal","amount":0,"cat":"","service":"","note":"","name":""},"reason":"short why"}]}\n' +
-    'Conversation ops (need phone=): archive, unarchive, mark_read, mark_unread, pin, unpin, set_status (+status), add_tags (+tags), remove_tags (+tags), hold (+until +reason), release. Money op: log_money (+entry).\n' +
+    'Conversation ops (need phone=): archive, unarchive, mark_read, mark_unread, pin, unpin, set_status (+status), add_tags (+tags), remove_tags (+tags), hold (+until +reason), release. Money op: log_money (+entry). Rule ops (no phone): remember_rule (+text), forget_rule (+text).\n' +
+    'RULES HE TELLS YOU OUTRIGHT: when Mikey states a preference about how you write or price — "stop using exclamation points", "never quote a full detail under $150", "always mention I bring my own water", "don\'t send payment links to Tanya" — propose remember_rule with "text" set to the rule in one short imperative sentence. When he takes one back ("you can use exclamation points again", "forget that pricing rule"), propose forget_rule with the text of the rule to drop. State in "answer" exactly what you are about to remember, word for word, so he can correct it before approving.\n' +
     `Today is ${new Date().toISOString().slice(0, 10)}.\n` +
     'STANDING INSTRUCTIONS — this is how Mikey tells you to remember something:\n' +
     '- When he says a customer is handled, taken care of, doesn\'t need a reply, or shouldn\'t be chased until later — "Sabine doesn\'t need responded to, I\'m doing her car in August", "leave Rick alone till spring", "don\'t bug the Hendersons for a couple weeks" — propose op "hold" for that phone, with "until" as a YYYY-MM-DD date and "reason" as a SHORT phrase in HIS words ("doing her car in August"). A bare month means the 1st; "spring" means Mar 1; "a couple weeks" means 14 days from today (use "holdDays":14 instead of a date).\n' +
@@ -3437,7 +3460,10 @@ async function apiAiPhotoQuote(request) {
   try { pic = await fetchTwilioImageB64(img.url); }
   catch { return json({ ok: false, error: 'media_fetch_failed' }, 502); }
   const cfg = await loadConfig();
+  const spend = await customerSpend(phone, cfg);
   const prompt = businessContext(cfg) +
+    (await rulesContext()) +
+    customerContext(thread, spend) +
     `You are Mikey from Mikey's Mobile Detailing, looking at a photo a customer just texted of their vehicle. ` +
     `Return ONLY JSON: {"assessment":"2-3 sentences on the vehicle type and its VISIBLE condition (dirt, swirls, stains, oxidation, etc.)", ` +
     `"services":["recommended services drawn from the playbook that fit what you see"], ` +
@@ -3464,8 +3490,11 @@ async function apiAiCoach(request) {
   const thread = await loadThread(phone);
   if (!thread.messages.length) return json({ ok: false, error: 'no_messages' }, 422);
   const cfg = await loadConfig();
+  const spend = await customerSpend(phone, cfg);
   const prompt =
     businessContext(cfg) +
+    (await rulesContext()) +
+    customerContext(thread, spend) +
     `You are coaching a NEW team member at Mikey's Mobile Detailing on how to answer this customer text. ` +
     `Use the business playbook above as the single source of truth. ` +
     `Return ONLY JSON with this shape:\n` +
@@ -3844,6 +3873,22 @@ async function apiFollowups() {
     .map((e) => ({ phone: e.phone, name: e.name || '', status: e.status || '', lastBody: e.lastBody || '', ...e.fu }))
     .sort((a, b) => urgencyRank(b.urgency) - urgencyRank(a.urgency) || (a.dueAt || 0) - (b.dueAt || 0));
   return json({ ok: true, items, config: cfg });
+}
+
+// The standing rules Mikey has told the AI, so he can see and drop them without
+// having to remember what he said three weeks ago.
+async function apiRulesGet() {
+  return json({ ok: true, rules: await loadRules() });
+}
+async function apiRulesPost(request) {
+  const data = await readJson(request);
+  if (data.remove) {
+    const next = await removeRule(data.remove);
+    return json({ ok: true, rules: next || (await loadRules()) });
+  }
+  const next = await addRule(data.text);
+  if (!next) return json({ ok: false, error: 'empty' }, 422);
+  return json({ ok: true, rules: next });
 }
 
 async function apiFollowupAction(request) {
@@ -5033,6 +5078,97 @@ function transcript(thread, max = 40) {
 // into every reply prompt. The AI drifts toward how he actually words things —
 // so it literally gets better the more he uses it. One KV write only when he
 // actually edits, so it's easy on the write budget.
+// ---------------------------------------------------------------------------
+// Standing rules Mikey states in words ("stop using exclamation points",
+// "never quote a full detail under $150").
+// ---------------------------------------------------------------------------
+// The AI already learns his VOICE by watching how he edits its drafts (see
+// editsContext below). What it couldn't do was be told something outright. These
+// are hard instructions, kept small and injected into every place that writes on
+// his behalf, so a correction sticks instead of having to be re-made every time.
+const RULES_KEY = 'ai:rules';
+const RULES_MAX = 25;
+async function loadRules() {
+  const list = (await kv().get(RULES_KEY, { type: 'json' })) || [];
+  return Array.isArray(list) ? list.filter((r) => r && r.text) : [];
+}
+async function addRule(text) {
+  const t = String(text || '').trim().slice(0, 200);
+  if (!t) return null;
+  const list = await loadRules();
+  // Same rule twice is a no-op rather than a duplicate line in every prompt.
+  if (list.some((r) => r.text.toLowerCase() === t.toLowerCase())) return list;
+  list.unshift({ id: genId(), text: t, at: Date.now() });
+  const next = list.slice(0, RULES_MAX);
+  await kv().put(RULES_KEY, JSON.stringify(next));
+  return next;
+}
+async function removeRule(idOrText) {
+  const key = String(idOrText || '').trim().toLowerCase();
+  if (!key) return null;
+  const list = await loadRules();
+  const next = list.filter((r) => r.id !== idOrText && r.text.toLowerCase() !== key);
+  if (next.length === list.length) return null;
+  await kv().put(RULES_KEY, JSON.stringify(next));
+  return next;
+}
+// Injected wherever the AI writes for Mikey. Phrased as non-negotiable, because
+// that is what he means when he says one of these out loud.
+async function rulesContext() {
+  const list = await loadRules();
+  if (!list.length) return '';
+  return 'MIKEY\'S STANDING RULES — he told you these directly. They override anything else, including the playbook and your own instincts. Follow every one:\n'
+    + list.map((r) => `- ${r.text}`).join('\n') + '\n\n';
+}
+
+// ---------------------------------------------------------------------------
+// What the AI knows about the person it's writing to.
+// ---------------------------------------------------------------------------
+// Drafts used to be written from the message thread alone, which is why they
+// read generically. Everything below is already stored on the conversation — the
+// vehicle, where they are, Mikey's own notes, what they've paid — it just never
+// reached the prompt.
+function customerContext(thread, spend) {
+  const L = [];
+  const g = thread.garage || {};
+  const vehicles = (g.vehicles || []).map((v) => [v.year, v.color, v.make, v.model].filter(Boolean).join(' ')).filter(Boolean);
+  if (vehicles.length) L.push(`Vehicle${vehicles.length > 1 ? 's' : ''}: ${vehicles.join('; ')}`);
+  if (g.city || g.address) L.push(`Where: ${[g.address, g.city].filter(Boolean).join(', ')}`);
+  if (thread.status) L.push(`Lead status: ${thread.status}`);
+  if (thread.appointmentAt) L.push(`Booked: ${new Date(thread.appointmentAt).toISOString().slice(0, 16).replace('T', ' ')}`);
+  if (thread.notes) L.push(`Mikey's private notes (never quote these back): ${String(thread.notes).slice(0, 300)}`);
+  if (spend && spend.jobs > 0) {
+    L.push(`History: ${spend.jobs} job${spend.jobs > 1 ? 's' : ''} paid, $${spend.total} lifetime` +
+      (spend.lastService ? `, last was ${spend.lastService}` : '') +
+      (spend.lastDate ? ` on ${spend.lastDate}` : ''));
+  }
+  if (thread.followup && thread.followup.snoozeUntil && thread.followup.snoozeUntil > Date.now() && thread.followup.holdReason) {
+    L.push(`Note: Mikey has this one on hold — "${thread.followup.holdReason}"`);
+  }
+  if (!L.length) return '';
+  return 'WHO YOU ARE WRITING TO (use it to sound like you know them — never recite it back at them):\n' + L.map((x) => '- ' + x).join('\n') + '\n\n';
+}
+
+// Lifetime spend for one customer. Walks the last 12 monthly docs, same as the
+// money-by-phone endpoint, and stays best-effort: the AI is nicer with it and
+// still correct without it.
+async function customerSpend(phone, cfg) {
+  try {
+    let m = localDateStr(Date.now(), cfg && cfg.tz).slice(0, 7);
+    let total = 0, jobs = 0, lastService = '', lastDate = '';
+    for (let i = 0; i < 12; i++) {
+      const doc = await loadMonth(m);
+      for (const e of (doc.entries || [])) {
+        if (e.phone !== phone || e.type !== 'job') continue;
+        total += Number(e.amount) || 0; jobs++;
+        if (!lastDate || e.date > lastDate) { lastDate = e.date; lastService = e.service || ''; }
+      }
+      m = prevMonthKey(m);
+    }
+    return { total: Math.round(total * 100) / 100, jobs, lastService, lastDate };
+  } catch { return null; }
+}
+
 const EDITS_KEY = 'ai:edits';
 async function loadEdits() {
   return (await kv().get(EDITS_KEY, { type: 'json' })) || [];

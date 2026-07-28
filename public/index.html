@@ -2369,7 +2369,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-28·thread-polish";
+  var APP_BUILD="2026-07-28·ai-memory";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4040,7 +4040,10 @@
       '<div class="fu-col"><span class="lbl2">Voicemails</span><button id="cfgVmRecover" class="btn" style="white-space:nowrap;align-self:flex-start">'+ic("mic",14)+' Recover past voicemails</button></div>'+
       '<div class="hint">Pulls your recent voicemails from Twilio into the right conversations so you can play them right here. Safe to run anytime.</div>'+
       '<div class="fu-col"><span class="lbl2">Block a number</span><span style="display:flex;gap:6px"><input type="text" id="cfgBlockNum" placeholder="+1425…" style="flex:1"><button id="cfgBlockBtn" class="btn" style="white-space:nowrap">Block</button></span></div>'+
-      blockedListHtml(c.blockedNumbers);
+      blockedListHtml(c.blockedNumbers)+
+      '<div class="fu-col"><span class="lbl2">Rules you\'ve told the AI</span><span style="display:flex;gap:6px"><input type="text" id="cfgRuleNew" placeholder="e.g. never quote a full detail under $150" style="flex:1"><button id="cfgRuleAdd" class="btn" style="white-space:nowrap">Add</button></span></div>'+
+      '<div class="hint">Hard instructions the AI follows every time it writes for you. You can also just say one in the command centre — "stop using exclamation points" — and approve it there.</div>'+
+      '<div id="cfgRules"></div>';
     el("cfgEnabled").onclick=function(){saveConfig({followupsEnabled:!(c.followupsEnabled!==false)})};
     el("cfgAuto").onclick=function(){saveConfig({autopilot:!c.autopilot})};
     el("cfgReview").onchange=function(){saveConfig({reviewUrl:el("cfgReview").value.trim()})};
@@ -4052,8 +4055,25 @@
     el("cfgMctText").onchange=function(){saveConfig({missedCallText:el("cfgMctText").value})};
     el("cfgVmRecover").onclick=function(){recoverVoicemails(el("cfgVmRecover"))};
     el("cfgBlockBtn").onclick=function(){var v=el("cfgBlockNum").value.trim();if(v)blockNumber(v,"block")};
+    el("cfgRuleAdd").onclick=function(){
+      var v=el("cfgRuleNew").value.trim();if(!v)return;
+      post("/api/ai/rules",{text:v}).then(function(d){if(d&&d.ok){el("cfgRuleNew").value="";renderRules(d.rules)}});
+    };
+    api("/api/ai/rules").then(function(d){if(d&&d.ok)renderRules(d.rules)});
     Array.prototype.forEach.call(document.querySelectorAll("[data-unblock]"),function(b){
       b.onclick=function(){blockNumber(b.getAttribute("data-unblock"),"unblock")};
+    });
+  }
+  // The standing rules the AI is holding, each with a way to take it back.
+  function renderRules(list){
+    var box=el("cfgRules");if(!box)return;
+    if(!list||!list.length){box.innerHTML='<div class="hint">No rules yet — the AI is going on your playbook and how you edit its drafts.</div>';return}
+    box.innerHTML='<div class="fu-col">'+list.map(function(r){
+      return '<div class="fu-row" style="padding:5px 0;gap:10px"><span style="flex:1;min-width:0">'+esc(r.text)+'</span>'+
+             '<button class="btn" data-rule="'+esc(r.id)+'" style="flex:none">Forget</button></div>';
+    }).join("")+'</div>';
+    Array.prototype.forEach.call(box.querySelectorAll("[data-rule]"),function(b){
+      b.onclick=function(){post("/api/ai/rules",{remove:b.getAttribute("data-rule")}).then(function(d){if(d&&d.ok)renderRules(d.rules)})};
     });
   }
   function blockedListHtml(list){
