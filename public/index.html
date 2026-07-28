@@ -446,6 +446,20 @@
   .aicmd-result.ar-done .ar-ic{color:var(--green)}
   .aicmd-result.ar-bad .ar-ic{color:var(--red,#ef4444)}
   /* in-thread follow-up reminder banner */
+  /* Links, phone numbers and addresses inside a message bubble. */
+  .msg-link{color:inherit;text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1px;
+    text-decoration-color:rgba(255,255,255,.45)}
+  .bubble.out .msg-link{text-decoration-color:rgba(255,255,255,.6)}
+  /* They texted STOP. Say so up front instead of letting the send bounce. */
+  .optout-banner{margin:8px 14px 0;padding:10px 13px;background:#241417;border:1px solid #4d2229;border-radius:13px;
+    display:flex;align-items:center;gap:10px;color:#f0c9ce;font-size:13px}
+  .optout-banner .ob-ic{color:#ff6b7a;flex:none;display:flex}
+  .optout-banner .ob-txt{flex:1;min-width:0;line-height:1.35}
+  .optout-banner .ob-txt b{color:#ffd9de;font-weight:650}
+  .optout-banner .ob-sub{display:block;font-size:11px;opacity:.8;margin-top:1px}
+  /* Which name the customer will see this signed with, when team mode is on. */
+  .sign-as{color:var(--muted2);font-size:11px;display:inline-flex;align-items:center;gap:4px;margin-right:8px}
+  .sign-as b{color:var(--muted);font-weight:600}
   /* "You told me to leave this one alone" — shown at the top of a held thread. */
   .hold-banner{margin:8px 14px 0;padding:10px 13px;background:#191a22;border:1px solid #34364a;border-radius:13px;
     display:flex;align-items:center;gap:10px;color:#c9cbe0;font-size:13px}
@@ -1999,6 +2013,7 @@
       <button id="findClose" data-ic="x" aria-label="Close find"></button>
     </div>
     <div class="hold-banner" id="holdBanner" style="display:none"></div>
+    <div class="optout-banner" id="optOutBanner" style="display:none"></div>
     <div class="remind-banner" id="remindBanner" style="display:none"></div>
     <div class="sched-banner" id="schedBanner" style="display:none"></div>
     <div class="followup-banner" id="fuBanner" style="display:none"></div>
@@ -2021,6 +2036,7 @@
         <button class="btn icon" id="polishBtn" data-ic="wand" title="AI polish my text" aria-label="AI polish my text" style="display:none"></button>
         <button class="btn icon" id="micBtn" data-ic="mic" title="Dictate (voice to text)" aria-label="Dictate" style="display:none"></button>
         <div class="spacer"></div>
+        <span id="signAs" class="sign-as" style="display:none"></span>
         <span id="charCount" style="color:var(--muted2);font-size:11px"></span>
         <div class="tools-sheet" id="toolsSheet" style="display:none"></div>
         <div class="menu" id="tplMenu" style="display:none"></div>
@@ -2353,7 +2369,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-28·standing-orders";
+  var APP_BUILD="2026-07-28·thread-polish";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4126,9 +4142,34 @@
   // Opted-out lookup — the flag lives on the lightweight index row, not the thread.
   function isDnt(phone){var e=(state.threads||[]).find(function(x){return x.phone===phone});return !!(e&&e.optedOut)}
   // ---- in-thread find (UX-03) ----
+  // Make the useful things in a text tappable: links, phone numbers, and street
+  // addresses (which go to Maps, so an address a customer sends doesn't have to
+  // be retyped). One combined pattern in a single pass, so a match can never
+  // land inside a link that an earlier pass already created.
+  var LINK_RE=new RegExp(
+    "((?:https?:\\/\\/|www\\.)[^\\s<]+[^\\s<.,!?;:)\\]}\"'])"+                                   // 1: url
+    "|(\\d{1,6}\\s+(?:[A-Za-z0-9.'-]+\\s+){0,4}(?:St|Street|Ave|Avenue|Rd|Road|Dr|Drive|Ln|Lane|Blvd|Boulevard|Way|Ct|Court|Pl|Place|Hwy|Highway|Ter|Terrace|Cir|Circle)\\b\\.?)"+ // 2: address
+    "|((?:\\+?1[-.\\s]?)?\\(?\\d{3}\\)?[-.\\s]?\\d{3}[-.\\s]?\\d{4})",                            // 3: phone
+    "gi");
+  function linkifyEscaped(e){
+    return e.replace(LINK_RE,function(m,url,addr,tel){
+      if(url){
+        var href=/^www\./i.test(url)?("https://"+url):url;
+        return '<a class="msg-link" href="'+href+'" target="_blank" rel="noopener noreferrer">'+url+'</a>';
+      }
+      if(addr){
+        return '<a class="msg-link" href="https://maps.google.com/?q='+encodeURIComponent(addr.replace(/&amp;/g,"&"))+'" target="_blank" rel="noopener noreferrer">'+addr+'</a>';
+      }
+      var digits=(tel||"").replace(/\D/g,"");
+      if(digits.length!==10&&!(digits.length===11&&digits[0]==="1"))return m;
+      return '<a class="msg-link" href="tel:+'+(digits.length===10?"1":"")+digits+'">'+tel+'</a>';
+    });
+  }
   function hlBody(body){
     var term=(state.threadFind||"").trim();var e=esc(body);
-    if(!term)return e;
+    // While searching, skip linkifying — the highlight and the anchors would
+    // fight over the same characters.
+    if(!term)return linkifyEscaped(e);
     var et=esc(term).replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
     try{return e.replace(new RegExp(et,"gi"),function(m){return '<mark>'+m+'</mark>'})}catch(_){return e}
   }
@@ -4234,6 +4275,23 @@
         });
       };
     }else{hb.style.display="none"}
+
+    // They texted STOP. You used to find that out only when a finished reply
+    // bounced — say it before a word gets typed, and take the send away.
+    var ob=el("optOutBanner"),blocked=isDnt(t.phone);
+    if(blocked){
+      ob.style.display="flex";
+      ob.innerHTML='<span class="ob-ic">'+ic("ban",15)+'</span><div class="ob-txt"><b>'+esc(firstNameOf(t))+' texted STOP</b>'
+        +'<span class="ob-sub">Texts to this number won\'t deliver. They have to text START to opt back in — you can still call.</span></div>';
+    }else{ob.style.display="none"}
+    el("sendBtn").disabled=blocked;
+    el("msgInput").disabled=blocked;
+    el("msgInput").placeholder=blocked?"Can't text — they opted out":"Text message";
+
+    // With team mode on, outgoing texts get signed. Show whose name goes on it.
+    var sa=el("signAs"),who=teamOn()?meName():"";
+    if(who){sa.style.display="inline-flex";sa.innerHTML='Signing as <b>'+esc(who)+'</b>'}
+    else{sa.style.display="none"}
 
     var rb=el("remindBanner");
     if(t.reminderAt){
