@@ -7,7 +7,10 @@
   "scripts": {
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
-    "tail": "wrangler tail"
+    "tail": "wrangler tail",
+    "test": "node tests/dayof.engine.mjs && node tests/tracking.engine.mjs",
+    "test:ui": "node tests/browser/run-tab.mjs && node tests/browser/settings.mjs && node tests/browser/track-page.mjs && node tests/browser/stages.mjs",
+    "test:all": "npm test && npm run test:ui"
   },
   "devDependencies": {
     "playwright-core": "^1.61.1",

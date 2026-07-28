@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-28·todays-run';
+const BUILD = '2026-07-28·tracking+receipt';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -154,6 +154,13 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/availability') return apiAvailability(url);
   if (request.method === 'POST' && pathname === '/api/book')         return apiBook(request);
 
+  // ---- Public tracking (customer-facing — MUST stay above the /api auth gate) ----
+  // Pretty SMS link: /t/<token> → the page, which then reads the token itself.
+  if (request.method === 'GET' && /^\/t\/[a-f0-9]{8,64}$/.test(pathname))
+    return Response.redirect(new URL('/track.html?t=' + pathname.slice(3), request.url).toString(), 302);
+  if (request.method === 'GET'  && pathname === '/api/track')      return apiTrack(url);
+  if (request.method === 'GET'  && pathname.startsWith('/p/'))     return servePhoto(pathname.slice(3));
+
   if (request.method === 'GET'  && pathname === '/api/version')    return json({ ok: true, build: BUILD });
   if (request.method === 'POST' && pathname === '/api/login')      return apiLogin(request);
   if (request.method === 'POST' && pathname === '/api/logout')     return apiLogout();
@@ -182,6 +189,7 @@ async function handle(request) {
   // ---- Day-of-service: auto-detected jobs + Today's Run ----
   if (request.method === 'GET'  && pathname === '/api/run')        return apiRun(url);
   if (request.method === 'POST' && pathname === '/api/job')        return apiJobAction(request);
+  if (request.method === 'POST' && pathname === '/api/job-photo')  return apiJobPhoto(request);
   if (request.method === 'GET'  && pathname === '/api/followups')  return apiFollowups();
   if (request.method === 'POST' && pathname === '/api/followup')   return apiFollowupAction(request);
   if (request.method === 'GET'  && pathname === '/api/config')     return apiGetConfig();
@@ -2964,6 +2972,7 @@ async function apiSaveConfig(request) {
   if (Array.isArray(data.team)) next.team = sanitizeTeam(data.team);
   if (data.playbook && typeof data.playbook === 'object') next.playbook = sanitizePlaybook(data.playbook, next.playbook);
   if (data.dayOf && typeof data.dayOf === 'object') next.dayOf = sanitizeDayOf(data.dayOf, next.dayOf);
+  if (data.tracking && typeof data.tracking === 'object') next.tracking = sanitizeTracking(data.tracking, next.tracking);
   await kv().put('config', JSON.stringify(next));
   CFG_CACHE = next;
   return json({ ok: true, config: next });
@@ -3726,6 +3735,7 @@ function defaultConfig() {
     team: [],                // [{ id, name, role }] — the people who help answer texts
     playbook: defaultPlaybook(), // the business "brain" that trains every AI output
     dayOf: defaultDayOf(),   // appointment auto-detection, Today's Run, morning brief
+    tracking: defaultTracking(), // customer tracking link, stages, and the receipt
   };
 }
 
@@ -5237,6 +5247,7 @@ async function dayOfCron(now = Date.now()) {
   if (p.min >= d.briefHour * 60 && p.min < d.briefHour * 60 + 15 && meta.briefDate !== p.date) {
     meta.briefDate = p.date; dirty = true;
     try { await sendMorningBrief(p.date, cfg, d); } catch { /* a failed brief must not wedge the cron */ }
+    try { await trackMorningReminders(p.date, cfg, now); } catch { /* non-fatal */ }
   }
 
   // --- night-before recap --------------------------------------------------
@@ -5406,6 +5417,8 @@ async function apiJobAction(request) {
 
   if (action === 'confirm') {
     job.status = 'scheduled';
+    job.stage = 'scheduled';
+    if (!job.token) job.token = trackToken();
     job.decidedAt = Date.now();
     applyJobEdits(job, data, d);
     if (!job.durationMin) job.durationMin = d.defaultDurationMin;
@@ -5460,6 +5473,12 @@ async function apiJobAction(request) {
     job.doneAt = Date.now();
     await saveJobs(jobs);
     return json({ ok: true, job });
+  }
+  // Day-of stage machine (on my way → arrived → working → done + receipt).
+  if (['onmyway', 'ping', 'arrived', 'working', 'complete', 'late', 'resend'].includes(action)) {
+    const r = await jobStageAction(job, jobs, action, data, cfg);
+    if (!r) return json({ ok: false, error: 'bad_action' }, 422);
+    return json(r, r.ok === false ? 422 : 200);
   }
   if (action === 'draft') {
     // Re-generate a text for this job without changing anything.
@@ -5555,4 +5574,359 @@ function gcalLink(job) {
     `&dates=${z(job.at)}/${z(end)}` +
     `&details=${encodeURIComponent(details)}` +
     `&location=${encodeURIComponent([job.address, job.city].filter(Boolean).join(', '))}`;
+}
+
+// ===========================================================================
+// Live tracking + the receipt  (customer page: /track.html · one link per job)
+// ---------------------------------------------------------------------------
+// ONE link per job that tells the whole story: on my way → arrived → working →
+// done. The final stage turns into the receipt: what was done, what it cost, and
+// tap-to-pay links. That's why the page outlives the drive — the live LOCATION
+// stops the moment Mikey arrives (his rule), but the page itself has to stay up
+// or the customer can't pay from it.
+//
+// Location is deliberately COARSE. Mikey wanted the Uber-style moving map but
+// said "only show a rough area, not my exact dot", so every position is snapped
+// to a ~0.3 mile grid before it leaves the Worker. Good enough to watch him
+// approach, not enough to pin him to an address.
+//
+// The ETA is honest without needing his phone awake: it's locked in when he taps
+// "On my way" and counts down on the page, and it re-sharpens every time his
+// phone posts a position (which the dashboard does whenever it's open). That's
+// the "smart ETA that upgrades to a live dot" he picked.
+// ===========================================================================
+const TRACK_STAGES = ['scheduled', 'enroute', 'arrived', 'working', 'done'];
+
+// Public token — must be unguessable, so this uses the CSPRNG rather than genId()
+// (which is time-prefixed and only has ~36 bits of randomness).
+function trackToken() {
+  const b = new Uint8Array(16);
+  crypto.getRandomValues(b);
+  return Array.from(b).map((x) => x.toString(16).padStart(2, '0')).join('');
+}
+
+// ~0.005° ≈ 0.35 mi. Enough to see him getting closer; not enough to place him.
+function coarse(v) { return v == null ? null : Math.round(v / 0.005) * 0.005; }
+
+function defaultTracking() {
+  return {
+    enabled: true,
+    ownerName: 'Mikey',
+    ownerPhoto: '',        // URL or data: URI shown on the customer page
+    businessName: "Mikey's Mobile Detailing",
+    rating: '5.0',
+    reviews: 39,
+    prep: 'Please have the car accessible, and water & power within about 20 ft.',
+    venmo: '', cashapp: '', zelle: '',
+    tipPrompt: false,      // off unless he turns it on — he never asked for tips
+    lateAfterMin: 10,      // ETA slipping past this offers the "running behind" text
+    morningReminder: true, // auto "see you at 10 today" on the morning of a job
+  };
+}
+function trackCfg(cfg) { return Object.assign(defaultTracking(), (cfg && cfg.tracking) || {}); }
+
+function sanitizeTracking(input, current) {
+  const t = Object.assign(defaultTracking(), current || {});
+  const i = input || {};
+  const str = (k, n) => { if (typeof i[k] === 'string') t[k] = i[k].trim().slice(0, n); };
+  str('ownerName', 40); str('businessName', 80); str('rating', 8);
+  str('prep', 300); str('venmo', 80); str('cashapp', 80); str('zelle', 120);
+  if (typeof i.ownerPhoto === 'string') t.ownerPhoto = i.ownerPhoto.slice(0, 400000);
+  if (typeof i.enabled === 'boolean') t.enabled = i.enabled;
+  if (typeof i.tipPrompt === 'boolean') t.tipPrompt = i.tipPrompt;
+  if (typeof i.morningReminder === 'boolean') t.morningReminder = i.morningReminder;
+  if (i.reviews != null && !isNaN(+i.reviews)) t.reviews = Math.max(0, Math.round(+i.reviews));
+  if (i.lateAfterMin != null && !isNaN(+i.lateAfterMin)) t.lateAfterMin = Math.max(5, Math.min(60, Math.round(+i.lateAfterMin)));
+  return t;
+}
+
+function trackUrl(job) { return job && job.token ? `${publicBase()}/t/${job.token}` : ''; }
+
+// Tap-to-pay. Venmo and Cash App both take a deep link with the amount baked in;
+// Zelle has no universal link, so the page shows the handle to send to instead.
+function payLinks(tc, amount, note) {
+  const amt = Math.max(0, Math.round(Number(amount) || 0));
+  const out = [];
+  if (tc.venmo) {
+    const h = String(tc.venmo).replace(/^@/, '');
+    out.push({ kind: 'venmo', label: 'Venmo', handle: '@' + h,
+      url: `https://venmo.com/${encodeURIComponent(h)}?txn=pay${amt ? `&amount=${amt}` : ''}&note=${encodeURIComponent(note || 'Detailing')}` });
+  }
+  if (tc.cashapp) {
+    const h = String(tc.cashapp).replace(/^\$/, '');
+    out.push({ kind: 'cashapp', label: 'Cash App', handle: '$' + h,
+      url: `https://cash.app/$${encodeURIComponent(h)}${amt ? '/' + amt : ''}` });
+  }
+  if (tc.zelle) out.push({ kind: 'zelle', label: 'Zelle', handle: String(tc.zelle), url: '' });
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Photos — small enough to live in KV
+// ---------------------------------------------------------------------------
+// The dashboard compresses to ~1000px JPEG before upload, so each one is tens of
+// KB. Capped hard here anyway: a runaway upload would burn the KV write budget
+// and could blow the 25 MB per-value ceiling.
+const PHOTO_MAX_BYTES = 400 * 1024;
+const PHOTO_MAX_PER_JOB = 6;
+
+async function apiJobPhoto(request) {
+  const d = await readJson(request);
+  const jobs = await loadJobs();
+  const job = jobs.find((j) => j.id === String(d.id || ''));
+  if (!job) return json({ ok: false, error: 'not_found' }, 404);
+  const data = String(d.data || '');
+  const m = data.match(/^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/);
+  if (!m) return json({ ok: false, error: 'bad_image' }, 422);
+  if (m[2].length * 0.75 > PHOTO_MAX_BYTES) return json({ ok: false, error: 'too_big' }, 413);
+  job.photos = Array.isArray(job.photos) ? job.photos : [];
+  if (job.photos.length >= PHOTO_MAX_PER_JOB) return json({ ok: false, error: 'too_many' }, 409);
+  const id = genId();
+  await kv().put('photo:' + id, JSON.stringify({ type: m[1], b64: m[2] }));
+  job.photos.push({ id, kind: d.kind === 'before' ? 'before' : 'after', at: Date.now() });
+  await saveJobs(jobs);
+  return json({ ok: true, photo: { id, kind: d.kind === 'before' ? 'before' : 'after' } });
+}
+
+// Public — the customer's page loads these by id. Ids are random, and a photo is
+// only ever referenced from a page you already need the token to reach.
+async function servePhoto(id) {
+  const rec = await kv().get('photo:' + String(id || '').slice(0, 40), { type: 'json' });
+  if (!rec) return new Response('Not found', { status: 404 });
+  const bin = Uint8Array.from(atob(rec.b64), (c) => c.charCodeAt(0));
+  return new Response(bin, { headers: { 'Content-Type': rec.type, 'Cache-Control': 'public, max-age=31536000, immutable' } });
+}
+
+// ---------------------------------------------------------------------------
+// The stage machine
+// ---------------------------------------------------------------------------
+// Every transition is driven by Mikey tapping something. Nothing here moves on
+// its own, and the only automatic text is the one the stage is FOR.
+async function jobStageAction(job, jobs, action, data, cfg) {
+  const tc = trackCfg(cfg);
+  const d = dayOfCfg(cfg);
+  if (!job.token) job.token = trackToken();
+
+  if (action === 'onmyway') {
+    const from = { lat: Number(data.lat), lon: Number(data.lon) };
+    const have = !isNaN(from.lat) && !isNaN(from.lon);
+    if (job.lat == null && job.address) {
+      const g = await geocodeAddress(job.address, job.city);
+      if (g) { job.lat = g.lat; job.lon = g.lon; }
+    }
+    const dest = job.lat != null ? { lat: job.lat, lon: job.lon } : null;
+    // Real drive time when we know where he's starting from; otherwise fall back
+    // to the planned leave-by gap so the customer still gets an honest number.
+    let mins = have && dest ? driveMinutes(from, dest, d.avgMph) : null;
+    if (mins == null) mins = Math.max(5, Math.round((job.at - Date.now()) / 60000)) || 15;
+    job.stage = 'enroute';
+    job.trip = {
+      startedAt: Date.now(),
+      etaAt: Date.now() + mins * 60000,
+      etaMin: mins,
+      lastPing: have ? { lat: coarse(from.lat), lon: coarse(from.lon), at: Date.now() } : null,
+      promisedEtaAt: Date.now() + mins * 60000,
+    };
+    await saveJobs(jobs);
+    const text = data.text != null ? String(data.text).trim() : onMyWayText(job, tc, mins);
+    const sent = await trySendCustomer(job, text);
+    return { ok: true, job, url: trackUrl(job), etaMin: mins, sent };
+  }
+
+  if (action === 'ping') {
+    // Position refresh from Mikey's phone while the dashboard is open. This is
+    // the ONLY thing that sharpens the ETA, and it stops at arrival.
+    if (job.stage !== 'enroute' || !job.trip) return { ok: true, job, skipped: 'not_enroute' };
+    const lat = Number(data.lat), lon = Number(data.lon);
+    if (isNaN(lat) || isNaN(lon)) return { ok: false, error: 'bad_position' };
+    const dest = job.lat != null ? { lat: job.lat, lon: job.lon } : null;
+    const mins = dest ? driveMinutes({ lat, lon }, dest, d.avgMph) : null;
+    job.trip.lastPing = { lat: coarse(lat), lon: coarse(lon), at: Date.now() };
+    if (mins != null) { job.trip.etaMin = mins; job.trip.etaAt = Date.now() + mins * 60000; }
+    await saveJobs(jobs);
+    // Running late? Offer the text — never send it unprompted.
+    const late = lateBy(job, tc);
+    return { ok: true, job, etaMin: job.trip.etaMin, lateBy: late };
+  }
+
+  if (action === 'arrived') {
+    job.stage = 'arrived';
+    job.arrivedAt = Date.now();
+    if (job.trip) { job.trip.endedAt = Date.now(); job.trip.lastPing = null; } // location sharing ends here
+    await saveJobs(jobs);
+    const sent = data.notify === false ? false : await trySendCustomer(job, arrivedText(job, tc));
+    return { ok: true, job, sent };
+  }
+
+  if (action === 'working') {
+    job.stage = 'working';
+    job.workingAt = Date.now();
+    if (data.finishMin != null && !isNaN(+data.finishMin)) job.finishAt = Date.now() + Math.max(5, Math.round(+data.finishMin)) * 60000;
+    else if (job.durationMin) job.finishAt = Date.now() + job.durationMin * 60000;
+    await saveJobs(jobs);
+    return { ok: true, job };
+  }
+
+  if (action === 'complete') {
+    job.stage = 'done';
+    job.status = 'done';
+    job.doneAt = Date.now();
+    if (job.trip) job.trip.lastPing = null;
+    const items = Array.isArray(data.services) ? data.services.slice(0, 20).map((s) => ({
+      name: String(s.name || '').slice(0, 80),
+      price: Math.max(0, Math.round(Number(s.price) || 0)),
+    })).filter((s) => s.name) : [];
+    const total = data.total != null && !isNaN(+data.total)
+      ? Math.max(0, Math.round(+data.total))
+      : items.reduce((s, i) => s + i.price, 0) || (job.price || 0);
+    job.receipt = { services: items, total, note: String(data.note || '').slice(0, 400), at: Date.now() };
+    await saveJobs(jobs);
+    const text = data.text != null ? String(data.text).trim() : doneText(job, tc, cfg);
+    const sent = data.notify === false ? false : await trySendCustomer(job, text);
+    return { ok: true, job, url: trackUrl(job), sent };
+  }
+
+  if (action === 'late') {
+    const mins = Math.max(5, Math.round(Number(data.minutes) || lateBy(job, tc) || 15));
+    job.lateNotifiedAt = Date.now();
+    await saveJobs(jobs);
+    const text = data.text != null ? String(data.text).trim() : lateText(job, tc, mins);
+    const sent = await trySendCustomer(job, text);
+    return { ok: true, job, sent };
+  }
+
+  if (action === 'resend') {
+    if (!job.token) { job.token = trackToken(); await saveJobs(jobs); }
+    const sent = await trySendCustomer(job, String(data.text || '').trim() || onMyWayText(job, tc, (job.trip && job.trip.etaMin) || 15));
+    return { ok: true, job, url: trackUrl(job), sent };
+  }
+
+  return null;
+}
+
+// How many minutes past the originally promised arrival we're now projecting.
+function lateBy(job, tc) {
+  if (!job.trip || !job.trip.promisedEtaAt) return 0;
+  const slip = Math.round((job.trip.etaAt - job.trip.promisedEtaAt) / 60000);
+  return slip >= (tc.lateAfterMin || 10) ? slip : 0;
+}
+
+function jobFirst(job) { return (job.name || '').split(/\s+/)[0] || 'there'; }
+
+function onMyWayText(job, tc, mins) {
+  return `Hey ${jobFirst(job)}, ${tc.ownerName} here — on my way now, about ${mins} min out. ` +
+    `Track me here: ${trackUrl(job)}`;
+}
+function arrivedText(job, tc) {
+  return `I'm here! ${tc.ownerName} — pulling up to ${job.address ? job.address : 'your place'} now.`;
+}
+function lateText(job, tc, mins) {
+  return `Hey ${jobFirst(job)}, running about ${mins} min behind — sorry about that! ` +
+    `Updated ETA is on your tracking link: ${trackUrl(job)}`;
+}
+function doneText(job, tc, cfg) {
+  return `All done, ${jobFirst(job)}! Your receipt, photos and payment options are here: ${trackUrl(job)}` +
+    (cfg && cfg.reviewUrl ? `\n\nIf I earned it, a quick review means the world: ${cfg.reviewUrl}` : '');
+}
+
+// Customer-facing sends respect opt-out and quiet hours exactly like everything
+// else. A failure here is reported, never swallowed — Mikey needs to know if the
+// "on my way" text didn't land.
+async function trySendCustomer(job, body) {
+  if (!job.phone || !body) return false;
+  try {
+    await sendSms(job.phone, body);
+    const thread = await loadThread(job.phone);
+    thread.messages.push({ id: genId(), dir: 'out', body, ts: Date.now(), kind: 'tracking', status: 'sent' });
+    await saveThread(thread);
+    await updateIndexEntry(thread);
+    return true;
+  } catch (e) { return String((e && e.message) || e); }
+}
+
+// ---------------------------------------------------------------------------
+// Public tracking API — no auth, the token IS the credential
+// ---------------------------------------------------------------------------
+async function apiTrack(url) {
+  const token = String(url.searchParams.get('t') || '').slice(0, 64);
+  if (!token) return cors(json({ ok: false, error: 'no_token' }, 400));
+  const jobs = await loadJobs();
+  const job = jobs.find((j) => j.token === token);
+  if (!job) return cors(json({ ok: false, error: 'not_found' }, 404));
+  const cfg = await loadConfig();
+  const tc = trackCfg(cfg);
+  if (!tc.enabled) return cors(json({ ok: false, error: 'disabled' }, 403));
+
+  const stage = job.stage || 'scheduled';
+  const enroute = stage === 'enroute' && job.trip;
+  // Recompute the countdown from the clock so the page is right even if his
+  // phone hasn't pinged in a while.
+  const etaMin = enroute ? Math.max(0, Math.round((job.trip.etaAt - Date.now()) / 60000)) : null;
+
+  const out = {
+    ok: true,
+    stage,
+    business: { name: tc.businessName, owner: tc.ownerName, photo: tc.ownerPhoto, rating: tc.rating, reviews: tc.reviews },
+    customer: { name: jobFirst(job) },
+    job: {
+      at: job.at, service: job.service || '', vehicle: job.vehicle || '',
+      address: [job.address, job.city].filter(Boolean).join(', '),
+      lat: job.lat, lon: job.lon,
+    },
+    prep: tc.prep,
+    contact: ENV.TWILIO_FROM || '',
+    eta: enroute ? { min: etaMin, at: job.trip.etaAt } : null,
+    // Coarse position only, and only while he's actually driving.
+    position: enroute && job.trip.lastPing ? { lat: job.trip.lastPing.lat, lon: job.trip.lastPing.lon, at: job.trip.lastPing.at } : null,
+    finishAt: stage === 'working' ? (job.finishAt || null) : null,
+    photos: (job.photos || []).map((p) => ({ id: p.id, kind: p.kind })),
+  };
+
+  if (stage === 'done' && job.receipt) {
+    out.receipt = {
+      services: job.receipt.services || [],
+      total: job.receipt.total || 0,
+      note: job.receipt.note || '',
+      at: job.receipt.at,
+      pay: payLinks(tc, job.receipt.total, `${tc.businessName} — ${bkNiceDate(bkLocalParts(job.at).date)}`),
+      tipPrompt: !!tc.tipPrompt,
+      reviewUrl: cfg.reviewUrl || '',
+    };
+  }
+  return cors(json(out));
+}
+
+// ---------------------------------------------------------------------------
+// Day-of nudges that belong to tracking
+// ---------------------------------------------------------------------------
+// Called from dayOfCron. Schedules the morning-of "see you at 10" text through
+// the EXISTING scheduled-send cron rather than inventing a second delivery path.
+async function trackMorningReminders(dateStr, cfg, now) {
+  const tc = trackCfg(cfg);
+  if (!tc.morningReminder) return;
+  const jobs = await loadJobs();
+  const today = jobsOnDate(jobs, dateStr);
+  if (!today.length) return;
+  const byPhone = {};
+  for (const j of today) {
+    if (!j.phone || j.morningSent || j.at <= now) continue;
+    byPhone[j.phone] = byPhone[j.phone] || [];
+    byPhone[j.phone].push(j);
+  }
+  let dirty = false;
+  for (const phone of Object.keys(byPhone)) {
+    const j = byPhone[phone].sort((a, b) => a.at - b.at)[0];
+    const when = bkFmt12(bkMin2hm(bkLocalParts(j.at).min));
+    const body = `Morning ${jobFirst(j)}! ${tc.ownerName} here — I'm detailing your ${j.vehicle || 'car'} today at ${when}. ` +
+      `I'll text you a tracking link when I'm on my way.`;
+    try {
+      const thread = await loadThread(phone);
+      thread.scheduled.push({ id: genId(), body, sendAt: now + 60000 });
+      thread.scheduled.sort((a, b) => a.sendAt - b.sendAt);
+      await saveThread(thread);
+      await updateIndexEntry(thread);
+      j.morningSent = true; dirty = true;
+    } catch { /* non-fatal */ }
+  }
+  if (dirty) await saveJobs(jobs);
 }

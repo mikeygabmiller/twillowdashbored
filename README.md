@@ -43,6 +43,18 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   what time to leave), a **"leave now"** alert per job computed from real drive
   time, and a **night-before recap**. Empty days ping you with the warmest leads
   to chase instead. Everything is behind one **master pause switch** in the menu.
+- **Live tracking link + receipt (customer page: `/t/<token>`):** one link per job
+  that tells the whole story. Tap **On my way** and the customer gets a text with
+  a link showing *"Mikey is 12 minutes away"* on a live map — your position is
+  **snapped to a ~0.3 mile grid** (a rough area, never an exact pin) and stops
+  being shared the instant you tap **I've arrived**. The ETA is locked in when you
+  leave and counts down honestly on its own, then re-sharpens every time your
+  phone posts a position, so it stays accurate whether or not the app is open.
+  The same link then walks through **arrived → working → all done**, and finishes
+  as a **receipt**: line items, total, before/after photos, a review button, and
+  tap-to-pay **Venmo / Cash App / Zelle** buttons with the total already filled
+  in. If your ETA slips past 10 minutes you get offered a one-tap *"running about
+  20 min behind"* text. Nothing sends itself except the stage text you tapped for.
 - **Click-to-call:** rings your cell, then bridges the call to the customer through
   your Twilio number (keeps your personal number private).
 - **Instant email alerts (optional, Resend):** get emailed the moment a text,
@@ -53,9 +65,23 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
 - **Editable quick-reply templates**, contact rename, pin, and archive.
 - **Free-tier friendly:** adaptive polling that backs off and pauses when idle/hidden.
 
+## Tests
+```
+npm test          # engine suites — no browser, no network (145 assertions)
+npm run test:ui   # drives the real dashboard + customer page in Chromium (113)
+npm run test:all  # both
+```
+The engine suites load `src/index.js`, stub KV/Twilio/Resend/Gemini/geocoding, and
+assert on behaviour — detection and its guardrails, the day-of cron (including
+that idle ticks cost **zero KV writes**), coarse location, the stage machine,
+payment-link building, and settings clamping. The browser suites run the actual
+`public/index.html` and `public/track.html` against a mocked API.
+
 ## How it's built
 ```
 public/index.html      the dashboard UI (static, served via Workers static assets)
+public/track.html      the customer tracking + receipt page (public, token in the URL)
+tests/                 engine + browser test suites (npm test)
 public/sw.js           service worker (installable PWA / offline shell)
 public/manifest.webmanifest, icon-*.png, favicon.svg   PWA icons + manifest
 src/index.js           the Worker: API + Twilio webhooks + scheduled() cron handler
@@ -148,7 +174,10 @@ Dashboard API: `/api/health` `/api/threads` `/api/thread` `/api/send` `/api/meta
 `/api/alert-test` `/api/templates` `/api/migrate`
 `/api/followups` `/api/followup` `/api/config` `/api/block`
 Day-of-service: `/api/run` (Today's Run + detected job cards) `/api/job` (confirm /
-edit / dismiss / cancel / done / accept-change)
+edit / dismiss / cancel / done / accept-change, plus the day-of stages: onmyway /
+ping / arrived / working / complete / late / resend) `/api/job-photo`
+Public tracking (no auth — the token is the credential): `/t/<token>` `/api/track?t=`
+`/p/<photo-id>`
 Website analytics: `/api/analytics` (pixel) `/api/webstats` `/api/webstats/status`
 `/api/webstats/connect` `/api/webstats/disconnect` `/api/webstats/ai`
 AI (Gemini): `/api/ai/summary` `/api/ai/draft` `/api/ai/triage`

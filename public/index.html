@@ -791,6 +791,48 @@
   }
   @media(min-width:781px){.sheet-scrim{display:none}}
 
+
+  /* ---- day-of stage machine + receipt composer ---- */
+  .rj-trip{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);
+    background:rgba(55,214,122,.09);border:1px solid rgba(55,214,122,.25);border-radius:9px;
+    padding:7px 10px;margin:7px 0 2px}
+  .rj-trip b{color:var(--green,#37d67a)}
+  #runReceipt{position:fixed;inset:0;z-index:130;background:rgba(0,0,0,.65);display:none;
+    align-items:flex-end;justify-content:center}
+  .rc-card{background:var(--card);border-top:1px solid var(--line);border-radius:18px 18px 0 0;
+    padding:18px 16px calc(18px + env(safe-area-inset-bottom));width:100%;max-width:640px;
+    max-height:92vh;overflow-y:auto}
+  .rc-h{display:flex;align-items:center;gap:8px;font-size:17px;font-weight:800}
+  .rc-sub{font-size:12.5px;color:var(--muted);margin:5px 0 13px}
+  .rc-line{display:flex;gap:7px;margin-bottom:7px}
+  .rc-line .rc-n{flex:1;min-width:0}
+  .rc-line .rc-p{width:82px;flex:0 0 auto}
+  .rc-line input{background:var(--bg);border:1px solid var(--line);color:var(--txt);border-radius:10px;
+    padding:11px 12px;font-size:14.5px;font-family:inherit}
+  .rc-x{background:none;border:1px solid var(--line);color:var(--muted);border-radius:10px;
+    width:38px;flex:0 0 auto;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .rc-add{background:none;border:1px dashed var(--line2,var(--line));color:var(--muted);border-radius:10px;
+    padding:9px;width:100%;font-family:inherit;font-size:13px;cursor:pointer;display:flex;
+    align-items:center;justify-content:center;gap:6px;margin-bottom:12px}
+  .rc-tot{display:flex;justify-content:space-between;align-items:center;font-size:15px;color:var(--muted);
+    border-top:1px solid var(--line);padding-top:12px;margin-bottom:12px}
+  .rc-tot b{font-size:24px;color:var(--green,#37d67a);font-weight:800}
+  .rc-note{width:100%;min-height:64px;background:var(--bg);border:1px solid var(--line);color:var(--txt);
+    border-radius:11px;padding:11px;font-size:14px;font-family:inherit;resize:vertical;margin-bottom:12px}
+  .rc-photos{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px}
+  .rc-shot{position:relative;width:76px;height:76px;border-radius:11px;overflow:hidden;border:1px solid var(--line)}
+  .rc-shot img{width:100%;height:100%;object-fit:cover;display:block}
+  .rc-shot span{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.62);color:#fff;
+    font-size:9.5px;text-transform:uppercase;letter-spacing:.5px;text-align:center;padding:2px}
+  .rc-shot .rc-x{position:absolute;top:3px;right:3px;width:22px;height:22px;background:rgba(0,0,0,.6);border:none;color:#fff}
+  .rc-up{width:76px;height:76px;border-radius:11px;border:1px dashed var(--line2,var(--line));color:var(--muted);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;cursor:pointer;font-size:10.5px}
+  .rc-acts{display:flex;flex-wrap:wrap;gap:8px}
+  .rc-acts .btn{font-size:14.5px;padding:12px 17px;border-radius:11px;border:1px solid var(--line);
+    background:var(--card2,var(--card));color:var(--txt);display:inline-flex;align-items:center;gap:6px;
+    cursor:pointer;font-family:inherit}
+  .rc-acts .btn.accent{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:700;flex:1}
+
   /* ---- Today's Run ---- */
   .run-head{display:flex;align-items:center;gap:10px;padding:2px 2px 12px}
   .run-nav{background:var(--card);border:1px solid var(--line);color:var(--muted);border-radius:10px;
@@ -1655,6 +1697,7 @@
     </button>
 
     <div id="runDraft"></div>
+    <div id="runReceipt"></div>
     <nav class="bottomnav" id="bottomnav">
       <button class="navitem active" data-tab="home"><span class="ic" data-ic="home"></span><span class="ndot" id="navHome"></span>Home</button>
       <button class="navitem" data-tab="run"><span class="ic" data-ic="car"></span><span class="ndot" id="navRun"></span>Today</button>
@@ -1845,6 +1888,9 @@
     <div class="sec-lbl">Today's run &amp; auto-detect</div>
     <div class="fu-settings" id="dayOfSettings"></div>
 
+    <div class="sec-lbl">Tracking link &amp; receipt</div>
+    <div class="fu-settings" id="trackSettings"></div>
+
     <div class="sec-lbl">Auto follow-up settings</div>
     <div class="fu-settings" id="fuSettings"></div>
 
@@ -2008,7 +2054,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-28·todays-run";
+  var APP_BUILD="2026-07-28·tracking+receipt";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -3412,6 +3458,195 @@
   }
   function threadByPhone(phone){return state.threads.filter(function(x){return x.phone===phone})[0]}
 
+  // ---- Day-of stage machine: on my way → arrived → working → done + receipt ----
+  // Every transition is a tap. The only automatic thing here is the position
+  // ping, which only runs while a job is actually en route and the app is open.
+  var TRIP={pinging:false,timer:null};
+
+  function runStage(j){return j.stage||"scheduled"}
+
+  function runGeo(){
+    return new Promise(function(res){
+      if(!navigator.geolocation)return res(null);
+      navigator.geolocation.getCurrentPosition(
+        function(p){res({lat:p.coords.latitude,lon:p.coords.longitude})},
+        function(){res(null)},
+        {enableHighAccuracy:true,timeout:8000,maximumAge:30000});
+    });
+  }
+
+  // While he's driving, refresh his position so the customer's ETA sharpens.
+  // Stops the moment nothing is en route, or the app goes to the background.
+  function tripLoop(){
+    clearTimeout(TRIP.timer);
+    var live=(RUN.data&&RUN.data.run&&RUN.data.run.jobs||[]).filter(function(j){return runStage(j)==="enroute"});
+    if(!live.length||document.hidden){TRIP.pinging=false;return}
+    TRIP.pinging=true;
+    runGeo().then(function(pos){
+      if(!pos)return;
+      return post("/api/job",{action:"ping",id:live[0].id,lat:pos.lat,lon:pos.lon}).then(function(d){
+        if(d&&d.ok&&d.lateBy)runLateNudge(live[0],d.lateBy);
+        if(d&&d.ok)fetchRun(true);
+      });
+    }).catch(function(){}).then(function(){
+      TRIP.timer=setTimeout(tripLoop,45000);
+    });
+  }
+  function runLateNudge(job,mins){
+    if(RUN._lateShown===job.id)return;
+    RUN._lateShown=job.id;
+    toast("Running ~"+mins+" min behind — tap “Running behind” to tell them");
+  }
+
+  function runStageActions(j){
+    var s=runStage(j),h="";
+    if(s==="scheduled")
+      h+='<button class="btn accent" data-act="onmyway">'+ic("car",14)+' On my way</button>';
+    if(s==="enroute"){
+      h+='<button class="btn accent" data-act="arrived">'+ic("target",14)+' I\'ve arrived</button>'+
+         '<button class="btn" data-act="late">'+ic("clock",14)+' Running behind</button>';
+    }
+    if(s==="arrived")
+      h+='<button class="btn accent" data-act="working">'+ic("spray-can",14)+' Start working</button>';
+    if(s==="working"||s==="arrived")
+      h+='<button class="btn accent" data-act="receipt">'+ic("receipt",14)+' Finish &amp; send receipt</button>';
+    if(s==="done"&&j.token)
+      h+='<a class="btn" href="/t/'+esc(j.token)+'" target="_blank" rel="noopener">'+ic("receipt",14)+' View receipt</a>';
+    if(j.token&&s!=="done")
+      h+='<button class="btn" data-act="copylink">'+ic("link",14)+' Copy link</button>';
+    return h;
+  }
+
+  function runTripLine(j){
+    if(runStage(j)!=="enroute"||!j.trip)return "";
+    var m=Math.max(0,Math.round((j.trip.etaAt-Date.now())/60000));
+    return '<div class="rj-trip">'+ic("car",12)+' Customer sees: <b>'+(m<1?"arriving now":m+" min away")+'</b>'+
+      (j.trip.lastPing?"":' · <span style="color:var(--muted2)">no position yet</span>')+'</div>';
+  }
+
+  function runCopy(txt){
+    if(navigator.clipboard&&navigator.clipboard.writeText)
+      navigator.clipboard.writeText(txt).then(function(){toast("Link copied")},function(){prompt("Copy this link:",txt)});
+    else prompt("Copy this link:",txt);
+  }
+
+  // ---- "On my way" ----------------------------------------------------------
+  function runOnMyWay(job){
+    toast("Getting your location…");
+    runGeo().then(function(pos){
+      var body={action:"onmyway",id:job.id};
+      if(pos){body.lat=pos.lat;body.lon=pos.lon}
+      return post("/api/job",body);
+    }).then(function(d){
+      if(!d||!d.ok){toast((d&&d.error)||"Couldn't start the trip",{bad:true});return}
+      if(d.sent===true)toast("Sent — they can watch you roll up");
+      else if(typeof d.sent==="string")toast("Trip started, but the text failed: "+d.sent,{bad:true});
+      else toast("Trip started");
+      fetchRun(true).then(tripLoop);
+    }).catch(function(){toast("Network error",{bad:true})});
+  }
+
+  // ---- Receipt composer -----------------------------------------------------
+  var RCP={job:null,lines:[],photos:[],note:""};
+
+  function runOpenReceipt(job){
+    RCP.job=job;RCP.note="";RCP.photos=(job.photos||[]).slice();
+    RCP.lines=job.service?[{name:job.service,price:job.price||0}]:[{name:"Detail",price:job.price||0}];
+    renderReceipt();
+    el("runReceipt").style.display="flex";
+  }
+  function rcpTotal(){return RCP.lines.reduce(function(s,l){return s+(Number(l.price)||0)},0)}
+
+  function renderReceipt(){
+    var pop=el("runReceipt");
+    var lines=RCP.lines.map(function(l,i){
+      return '<div class="rc-line"><input class="rc-n" data-i="'+i+'" value="'+esc(l.name)+'" placeholder="What you did">'+
+        '<input class="rc-p" data-i="'+i+'" type="number" inputmode="numeric" value="'+(l.price||"")+'" placeholder="0">'+
+        '<button class="rc-x" data-del="'+i+'">'+ic("x",14)+'</button></div>';
+    }).join("");
+    var shots=RCP.photos.map(function(p,i){
+      return '<div class="rc-shot"><img src="/p/'+esc(p.id)+'" alt=""><span>'+esc(p.kind)+'</span>'+
+        '<button class="rc-x" data-delphoto="'+i+'">'+ic("x",12)+'</button></div>';
+    }).join("");
+    pop.innerHTML='<div class="rc-card">'+
+      '<div class="rc-h">'+ic("receipt",17)+' Finish &amp; send receipt</div>'+
+      '<div class="rc-sub">'+esc((RCP.job&&(RCP.job.name||RCP.job.phone))||"")+' — this becomes their receipt page with your payment links.</div>'+
+      '<div class="rc-lines">'+lines+'</div>'+
+      '<button class="rc-add" data-add="1">'+ic("plus",13)+' Add a line</button>'+
+      '<div class="rc-tot">Total<b id="rcTot">$'+rcpTotal()+'</b></div>'+
+      '<textarea class="rc-note" id="rcNote" placeholder="Anything they should know (optional)">'+esc(RCP.note)+'</textarea>'+
+      '<div class="rc-photos">'+shots+
+        '<label class="rc-up">'+ic("image",15)+'<span>Before</span><input type="file" accept="image/*" data-kind="before" hidden></label>'+
+        '<label class="rc-up">'+ic("image",15)+'<span>After</span><input type="file" accept="image/*" data-kind="after" hidden></label>'+
+      '</div>'+
+      '<div class="rc-acts">'+
+        '<button class="btn accent" data-rc="send">'+ic("send",14)+' Send receipt</button>'+
+        '<button class="btn" data-rc="close">Cancel</button>'+
+      '</div></div>';
+    wireReceipt();
+  }
+
+  function wireReceipt(){
+    var pop=el("runReceipt");
+    Array.prototype.forEach.call(pop.querySelectorAll(".rc-n"),function(i){
+      i.oninput=function(){RCP.lines[+i.getAttribute("data-i")].name=i.value};
+    });
+    Array.prototype.forEach.call(pop.querySelectorAll(".rc-p"),function(i){
+      i.oninput=function(){RCP.lines[+i.getAttribute("data-i")].price=+i.value||0;el("rcTot").textContent="$"+rcpTotal()};
+    });
+    Array.prototype.forEach.call(pop.querySelectorAll("[data-del]"),function(b){
+      b.onclick=function(){RCP.lines.splice(+b.getAttribute("data-del"),1);if(!RCP.lines.length)RCP.lines=[{name:"",price:0}];renderReceipt()};
+    });
+    Array.prototype.forEach.call(pop.querySelectorAll("[data-delphoto]"),function(b){
+      b.onclick=function(){RCP.photos.splice(+b.getAttribute("data-delphoto"),1);renderReceipt()};
+    });
+    pop.querySelector("[data-add]").onclick=function(){RCP.lines.push({name:"",price:0});renderReceipt()};
+    el("rcNote").oninput=function(){RCP.note=el("rcNote").value};
+    Array.prototype.forEach.call(pop.querySelectorAll('input[type="file"]'),function(inp){
+      inp.onchange=function(){
+        var f=inp.files&&inp.files[0];if(!f)return;
+        toast("Adding photo…");
+        shrinkImage(f).then(function(dataUrl){
+          return post("/api/job-photo",{id:RCP.job.id,kind:inp.getAttribute("data-kind"),data:dataUrl});
+        }).then(function(d){
+          if(d&&d.ok){RCP.photos.push(d.photo);renderReceipt();toast("Photo added")}
+          else toast((d&&d.error==="too_big")?"That photo is too large":"Couldn't add the photo",{bad:true});
+        }).catch(function(){toast("Couldn't add the photo",{bad:true})});
+      };
+    });
+    pop.querySelector('[data-rc="close"]').onclick=function(){pop.style.display="none"};
+    pop.querySelector('[data-rc="send"]').onclick=function(){
+      var lines=RCP.lines.filter(function(l){return (l.name||"").trim()});
+      post("/api/job",{action:"complete",id:RCP.job.id,services:lines,total:rcpTotal(),note:RCP.note}).then(function(d){
+        if(!d||!d.ok){toast((d&&d.error)||"Couldn't finish the job",{bad:true});return}
+        if(typeof d.sent==="string")toast("Job done, but the text failed: "+d.sent,{bad:true});
+        else toast("Receipt sent 🎉");
+        pop.style.display="none";fetchRun(true);refreshThreads();
+      }).catch(function(){toast("Network error",{bad:true})});
+    };
+  }
+
+  // Photos go into KV, so they get squeezed down here first — a phone camera
+  // JPEG is ~4 MB and the server caps an upload at 400 KB.
+  function shrinkImage(file){
+    return new Promise(function(res,rej){
+      var img=new Image(),url=URL.createObjectURL(file);
+      img.onload=function(){
+        var max=1000,w=img.width,h=img.height;
+        if(w>h&&w>max){h=Math.round(h*max/w);w=max}
+        else if(h>max){w=Math.round(w*max/h);h=max}
+        var c=document.createElement("canvas");c.width=w;c.height=h;
+        c.getContext("2d").drawImage(img,0,0,w,h);
+        URL.revokeObjectURL(url);
+        var q=0.8,out=c.toDataURL("image/jpeg",q);
+        while(out.length*0.75>380*1024&&q>0.35){q-=0.12;out=c.toDataURL("image/jpeg",q)}
+        res(out);
+      };
+      img.onerror=function(){URL.revokeObjectURL(url);rej(new Error("bad image"))};
+      img.src=url;
+    });
+  }
+
   // ---- Today's Run (auto-detected jobs + the day-of brief) ----
   // Nothing in here books, cancels or texts anything on its own. Detected jobs
   // arrive as cards; a confirm hands back a DRAFT text that Mikey taps to send.
@@ -3439,7 +3674,7 @@
     if(!quiet){RUN.loading=true;if(state.tab==="run")renderRun()}
     return api("/api/run?date="+encodeURIComponent(RUN.date||runDateStr())).then(function(d){
       RUN.loading=false;
-      if(d&&d.ok){RUN.data=d;refreshBadges()}
+      if(d&&d.ok){RUN.data=d;refreshBadges();if(!TRIP.pinging)tripLoop()}
       if(state.tab==="run")renderRun();
       return d;
     }).catch(function(){RUN.loading=false;if(state.tab==="run")renderRun()});
@@ -3545,11 +3780,12 @@
       (j.notes?'<div class="rj-note">'+ic("info",12)+' '+esc(j.notes)+'</div>':"")+
       (j.leaveAt?'<div class="rj-leave">'+ic("clock",12)+' Leave by <b>'+esc(runTime(j.leaveAt))+'</b>'+(j.driveMin?' · '+j.driveMin+' min drive':"")+'</div>':"")+
       (j.tentative?'<div class="rj-note warn">'+ic("alert",12)+' Time still loose — pin it down</div>':"")+
+      runTripLine(j)+
       '<div class="rj-acts">'+
+        runStageActions(j)+
         (j.phone?'<button class="btn" data-act="text">'+ic("message-square",14)+' Text</button>':"")+
         (j.phone?'<a class="btn" href="tel:'+esc(j.phone)+'">'+ic("phone",14)+' Call</a>':"")+
         '<button class="btn" data-act="edit">'+ic("pencil",14)+' Edit</button>'+
-        '<button class="btn" data-act="done">'+ic("check-circle",14)+' Done</button>'+
         '<button class="btn ghost" data-act="cancel">Cancel</button>'+
       '</div></div>';
   }
@@ -3635,6 +3871,17 @@
             return;
           }
           if(act==="text"){if(job&&job.phone)openThread(job.phone);return}
+          if(act==="onmyway"){if(job)runOnMyWay(job);return}
+          if(act==="arrived"){runAct({action:"arrived",id:id}).then(function(){toast("Told them you're here")});return}
+          if(act==="working"){runAct({action:"working",id:id}).then(function(){toast("Clock started")});return}
+          if(act==="receipt"){if(job)runOpenReceipt(job);return}
+          if(act==="copylink"){if(job&&job.token)runCopy(location.origin+"/t/"+job.token);return}
+          if(act==="late"){
+            runAct({action:"late",id:id}).then(function(d){
+              if(d)toast(typeof d.sent==="string"?("Text failed: "+d.sent):"Told them you're running behind");
+            });
+            return;
+          }
           if(act==="dismiss"){runAct({action:"dismiss",id:id}).then(function(){toast("Dismissed")});return}
           if(act==="done"){runAct({action:"done",id:id}).then(function(){toast("Nice — job done")});return}
           if(act==="cancel"){
@@ -3798,7 +4045,7 @@
   // textareas (that would fight the cursor while typing) — they save on blur and
   // keep their own DOM state.
   function afterConfig(){
-    renderFuSettings();renderDayOfSettings();renderTeam();applyTeamUI();renderMain();
+    renderFuSettings();renderDayOfSettings();renderTrackSettings();renderTeam();applyTeamUI();renderMain();
     if(state.phone&&state.thread)renderDetails();
   }
   function saveConfig(patch){
@@ -3927,6 +4174,51 @@
     el("doRain").onchange=function(){put({rainPct:+el("doRain").value})};
   }
 
+  // ---- Tracking link / receipt settings ----
+  function renderTrackSettings(){
+    var wrap=el("trackSettings");if(!wrap)return;
+    var c=(state.config&&state.config.tracking)||{};
+    wrap.innerHTML=
+      '<div class="fu-row"><span class="lbl2">Tracking link</span><span class="sw'+(c.enabled!==false?" on":"")+'" id="tkEnabled"></span></div>'+
+      '<div class="hint">One link per job. It shows your ETA on the way, then turns into their receipt when you finish. Your location is shown as a rough area, never an exact pin, and it stops the moment you tap "I\'ve arrived".</div>'+
+      '<div class="fu-col"><span class="lbl2">Your name (as customers see it)</span><input type="text" id="tkOwner" value="'+esc(c.ownerName||"")+'" placeholder="Mikey"></div>'+
+      '<div class="fu-col"><span class="lbl2">Business name</span><input type="text" id="tkBiz" value="'+esc(c.businessName||"")+'" placeholder="Mikey\'s Mobile Detailing"></div>'+
+      '<div class="fu-row"><span class="lbl2">Star rating</span><span style="display:flex;align-items:center;gap:6px"><input type="text" id="tkRating" value="'+esc(c.rating||"")+'" style="width:56px"><span style="color:var(--muted2)">from</span><input type="number" id="tkReviews" value="'+(c.reviews||0)+'" style="width:66px"><span style="color:var(--muted2)">reviews</span></span></div>'+
+      '<div class="fu-col"><span class="lbl2">What they should have ready</span><input type="text" id="tkPrep" value="'+esc(c.prep||"")+'" placeholder="Car accessible, water &amp; power within 20 ft"></div>'+
+      '<div class="fu-col"><span class="lbl2">Your photo</span><span style="display:flex;gap:8px;align-items:center">'+
+        (c.ownerPhoto?'<img src="'+esc(c.ownerPhoto)+'" style="width:44px;height:44px;border-radius:50%;object-fit:cover">':"")+
+        '<label class="btn" style="cursor:pointer">'+ic("image",14)+' Choose<input type="file" accept="image/*" id="tkPhoto" hidden></label>'+
+        (c.ownerPhoto?'<button class="btn" id="tkPhotoClear">Remove</button>':"")+'</span></div>'+
+      '<div class="hint">Shown at the top of their tracking page so they know who\'s pulling into the driveway.</div>'+
+      '<div class="fu-col"><span class="lbl2">Venmo</span><input type="text" id="tkVenmo" value="'+esc(c.venmo||"")+'" placeholder="@your-handle"></div>'+
+      '<div class="fu-col"><span class="lbl2">Cash App</span><input type="text" id="tkCash" value="'+esc(c.cashapp||"")+'" placeholder="$yourtag"></div>'+
+      '<div class="fu-col"><span class="lbl2">Zelle</span><input type="text" id="tkZelle" value="'+esc(c.zelle||"")+'" placeholder="phone or email"></div>'+
+      '<div class="hint">These become tap-to-pay buttons on the receipt, with the total already filled in. Zelle has no tap link, so it shows the handle to send to.</div>'+
+      '<div class="fu-row"><span class="lbl2">Morning-of reminder</span><span class="sw'+(c.morningReminder!==false?" on":"")+'" id="tkMorning"></span></div>'+
+      '<div class="hint">Texts each customer "I\'m detailing your car today at 10" on the morning of the job.</div>'+
+      '<div class="fu-row"><span class="lbl2">Mention tips on the receipt</span><span class="sw'+(c.tipPrompt?" on":"")+'" id="tkTip"></span></div>'+
+      '<div class="fu-row"><span class="lbl2">"Running behind" kicks in at</span><span style="display:flex;align-items:center;gap:6px"><input type="number" id="tkLate" min="5" max="60" value="'+(c.lateAfterMin==null?10:c.lateAfterMin)+'"><span style="color:var(--muted2)">min</span></span></div>';
+    function put(patch){var next={};for(var k in c)next[k]=c[k];for(var k2 in patch)next[k2]=patch[k2];saveConfig({tracking:next})}
+    el("tkEnabled").onclick=function(){put({enabled:!(c.enabled!==false)})};
+    el("tkMorning").onclick=function(){put({morningReminder:!(c.morningReminder!==false)})};
+    el("tkTip").onclick=function(){put({tipPrompt:!c.tipPrompt})};
+    el("tkOwner").onchange=function(){put({ownerName:el("tkOwner").value})};
+    el("tkBiz").onchange=function(){put({businessName:el("tkBiz").value})};
+    el("tkRating").onchange=function(){put({rating:el("tkRating").value})};
+    el("tkReviews").onchange=function(){put({reviews:+el("tkReviews").value})};
+    el("tkPrep").onchange=function(){put({prep:el("tkPrep").value})};
+    el("tkVenmo").onchange=function(){put({venmo:el("tkVenmo").value})};
+    el("tkCash").onchange=function(){put({cashapp:el("tkCash").value})};
+    el("tkZelle").onchange=function(){put({zelle:el("tkZelle").value})};
+    el("tkLate").onchange=function(){put({lateAfterMin:+el("tkLate").value})};
+    if(el("tkPhotoClear"))el("tkPhotoClear").onclick=function(){put({ownerPhoto:""})};
+    el("tkPhoto").onchange=function(){
+      var f=el("tkPhoto").files&&el("tkPhoto").files[0];if(!f)return;
+      shrinkImage(f).then(function(d){put({ownerPhoto:d});toast("Photo saved")})
+        .catch(function(){toast("Couldn't read that image",{bad:true})});
+    };
+  }
+
   function renderFuSettings(){
     var wrap=el("fuSettings");if(!wrap)return;var c=state.config||{};
     wrap.innerHTML=
@@ -3969,7 +4261,7 @@
   }
   function blockNumber(phone,action){
     return post("/api/block",{phone:phone,action:action}).then(function(d){
-      if(d&&d.ok){state.config=d.config;renderFuSettings();renderDayOfSettings()}
+      if(d&&d.ok){state.config=d.config;renderFuSettings();renderDayOfSettings();renderTrackSettings()}
       else toast&&toast((d&&d.error)||"Couldn't update block list");
       return d;
     });

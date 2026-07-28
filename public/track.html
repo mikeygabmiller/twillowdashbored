@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0c0c0e">
+<meta name="robots" content="noindex, nofollow">
+<title>Your detail — live tracking</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style>
+  :root{
+    --bg:#0c0c0e; --card:#17171b; --card2:#1d1d22; --line:#2a2a31; --line2:#34343d;
+    --txt:#f4f4f6; --muted:#a2a2ac; --faint:#75757f;
+    --red:#ff2e43; --red2:#c81e30; --redsoft:rgba(255,46,67,.13);
+    --good:#37d67a; --gold:#ffb020;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  body{margin:0;background:var(--bg);color:var(--txt);font-family:var(--font);
+    font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased;
+    padding:0 0 calc(28px + env(safe-area-inset-bottom))}
+  .wrap{max-width:560px;margin:0 auto;padding:0 16px}
+
+  header{display:flex;align-items:center;gap:12px;padding:18px 0 14px}
+  .avatar{width:46px;height:46px;border-radius:50%;object-fit:cover;background:var(--card2);
+    border:2px solid var(--red);flex:0 0 auto;display:flex;align-items:center;justify-content:center;
+    font-weight:800;font-size:18px;color:var(--red)}
+  .biz{flex:1;min-width:0}
+  .biz b{display:block;font-size:15px;letter-spacing:-.1px}
+  .biz > span{display:block;font-size:12.5px;color:var(--muted)}
+  .stars{color:var(--gold);letter-spacing:1px}
+
+  .hero{background:linear-gradient(180deg,var(--redsoft),var(--card));border:1px solid var(--line);
+    border-radius:18px;padding:24px 20px;text-align:center;margin-bottom:14px}
+  .hero .eyebrow{font-size:11.5px;font-weight:700;letter-spacing:1.3px;text-transform:uppercase;color:var(--red)}
+  .hero h1{margin:9px 0 4px;font-size:29px;line-height:1.15;font-weight:800;letter-spacing:-.6px}
+  .hero p{margin:0;color:var(--muted);font-size:14px}
+  .hero .big{font-size:52px;font-weight:800;letter-spacing:-2px;line-height:1;margin:6px 0 2px}
+  .pulse{display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--good);
+    margin-right:7px;vertical-align:middle;animation:pl 1.8s infinite}
+  @keyframes pl{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(55,214,122,.5)}50%{opacity:.75;box-shadow:0 0 0 7px rgba(55,214,122,0)}}
+
+  #map{height:260px;border-radius:16px;border:1px solid var(--line);margin-bottom:14px;background:var(--card);
+    filter:saturate(.75) brightness(.82) contrast(1.05)}
+  .maphint{font-size:11.5px;color:var(--faint);text-align:center;margin:-8px 0 14px}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 18px;margin-bottom:12px}
+  .card h2{margin:0 0 10px;font-size:12px;letter-spacing:1.1px;text-transform:uppercase;color:var(--faint);font-weight:700}
+  .row{display:flex;justify-content:space-between;gap:12px;padding:7px 0;font-size:14.5px;border-bottom:1px solid var(--line)}
+  .row:last-child{border-bottom:none}
+  .row .k{color:var(--muted)}
+  .row.tot{font-size:18px;font-weight:800;padding-top:12px;margin-top:4px;border-top:1px solid var(--line2);border-bottom:none}
+  .row.tot .v{color:var(--good)}
+
+  .btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:15px 18px;
+    border-radius:13px;border:1px solid var(--line2);background:var(--card2);color:var(--txt);
+    font-size:15.5px;font-weight:600;font-family:inherit;text-decoration:none;cursor:pointer;margin-top:9px}
+  .btn.primary{background:var(--red);border-color:var(--red);color:#fff;font-weight:700}
+  .btn.pay{background:#fff;color:#0b0b0c;border-color:#fff;font-weight:800}
+  .btn.pay.venmo{background:#008CFF;color:#fff;border-color:#008CFF}
+  .btn.pay.cashapp{background:#00D54B;color:#04220f;border-color:#00D54B}
+  .btn:active{transform:translateY(1px)}
+  .btn small{font-weight:500;opacity:.8}
+
+  .prep{display:flex;gap:10px;align-items:flex-start;font-size:14px;color:var(--txt);
+    background:rgba(255,176,32,.09);border:1px solid rgba(255,176,32,.28);border-radius:13px;
+    padding:13px 15px;margin-bottom:12px}
+  .prep b{color:var(--gold)}
+
+  .shots{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px}
+  .shots figure{margin:0}
+  .shots img{width:100%;aspect-ratio:4/3;object-fit:cover;border-radius:11px;border:1px solid var(--line);display:block}
+  .shots figcaption{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.6px;margin-top:4px;text-align:center}
+
+  footer{text-align:center;color:var(--faint);font-size:12px;padding:20px 0 6px}
+  .err{text-align:center;padding:60px 20px;color:var(--muted)}
+  .err h1{color:var(--txt);font-size:22px;margin-bottom:8px}
+  .skel{opacity:.45}
+</style>
+</head>
+<body>
+<div class="wrap" id="app">
+  <div class="err skel"><h1>Loading…</h1><p>One moment.</p></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+(function(){
+  var TOKEN=new URLSearchParams(location.search).get("t")||"";
+  var app=document.getElementById("app");
+  var map=null,meMarker=null,destMarker=null,line=null;
+  var data=null,timer=null,tick=null;
+
+  function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
+  function money(n){return "$"+(Math.round(Number(n)||0)).toLocaleString()}
+  function timeStr(ms){return new Date(ms).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})}
+  function initials(n){return String(n||"M").trim().charAt(0).toUpperCase()}
+
+  function load(){
+    if(!TOKEN)return fail("That link looks incomplete","Ask for a fresh link and you'll be all set.");
+    fetch("/api/track?t="+encodeURIComponent(TOKEN))
+      .then(function(r){return r.json()})
+      .then(function(d){
+        if(!d||!d.ok)return fail(d&&d.error==="not_found"?"This link has expired":"Can't load this right now",
+          "Text back on the number you've been messaging and you'll get sorted.");
+        data=d;render();schedule();
+      })
+      .catch(function(){ if(!data) fail("No connection","Check your signal and pull down to refresh.") });
+  }
+  function fail(h,p){app.innerHTML='<div class="err"><h1>'+esc(h)+'</h1><p>'+esc(p)+'</p></div>'}
+
+  // Poll fast while he's driving, slowly the rest of the time — the page can sit
+  // open on someone's phone for hours without hammering the Worker.
+  function schedule(){
+    clearTimeout(timer);
+    var ms=data&&data.stage==="enroute"?20000:(data&&data.stage==="done"?0:60000);
+    if(ms)timer=setTimeout(load,ms);
+  }
+
+  function header(){
+    var b=data.business||{};
+    var stars=b.rating?'<span class="stars">★</span> '+esc(b.rating)+(b.reviews?" · "+b.reviews+" reviews":""):"";
+    var av=b.photo?'<img class="avatar" src="'+esc(b.photo)+'" alt="">':'<div class="avatar">'+esc(initials(b.owner))+'</div>';
+    return '<header>'+av+'<div class="biz"><b>'+esc(b.name||"")+'</b><span>'+stars+'</span></div></header>';
+  }
+
+  function hero(){
+    var s=data.stage,j=data.job||{},b=data.business||{},who=esc(b.owner||"Your detailer");
+    if(s==="enroute"){
+      var m=data.eta?data.eta.min:null;
+      return '<div class="hero"><div class="eyebrow"><span class="pulse"></span>On the way</div>'+
+        '<div class="big" id="etaBig">'+(m==null?"—":(m<1?"Any minute":m))+'</div>'+
+        '<h1 style="font-size:20px;margin-top:0">'+(m==null?who+" is on the way":(m<1?who+" is arriving":"minutes away"))+'</h1>'+
+        '<p>'+who+' is heading to '+esc(j.address||"you")+(data.eta?' · arriving around '+esc(timeStr(data.eta.at)):"")+'</p></div>';
+    }
+    if(s==="arrived")
+      return '<div class="hero"><div class="eyebrow"><span class="pulse"></span>Here now</div>'+
+        '<h1>'+who+' has arrived</h1><p>Pulling up outside now.</p></div>';
+    if(s==="working"){
+      var fin=data.finishAt?"Estimated finish around "+esc(timeStr(data.finishAt)):"Getting to work now.";
+      return '<div class="hero"><div class="eyebrow"><span class="pulse"></span>In progress</div>'+
+        '<h1>Working on your '+esc(j.vehicle||"car")+'</h1><p>'+fin+'</p></div>';
+    }
+    if(s==="done")
+      return '<div class="hero"><div class="eyebrow">Complete</div><h1>All done ✨</h1>'+
+        '<p>Thanks for having '+who+' out'+(data.receipt&&data.receipt.at?' · '+esc(new Date(data.receipt.at).toLocaleDateString([],{month:"short",day:"numeric"})):"")+'.</p></div>';
+    return '<div class="hero"><div class="eyebrow">Booked</div>'+
+      '<h1>You\'re on the schedule</h1><p>'+(j.at?esc(new Date(j.at).toLocaleDateString([],{weekday:"long",month:"short",day:"numeric"}))+" at "+esc(timeStr(j.at)):"")+
+      '</p></div>';
+  }
+
+  function receipt(){
+    var r=data.receipt;if(!r)return "";
+    var h='<div class="card"><h2>Your receipt</h2>';
+    (r.services||[]).forEach(function(s){
+      h+='<div class="row"><span class="k">'+esc(s.name)+'</span><span class="v">'+(s.price?money(s.price):"")+'</span></div>';
+    });
+    if(!(r.services||[]).length&&data.job&&data.job.service)
+      h+='<div class="row"><span class="k">'+esc(data.job.service)+'</span><span class="v"></span></div>';
+    h+='<div class="row tot"><span class="k">Total</span><span class="v">'+money(r.total)+'</span></div>';
+    if(r.note)h+='<p style="font-size:13.5px;color:var(--muted);margin:12px 0 0">'+esc(r.note)+'</p>';
+    h+='</div>';
+
+    if((r.pay||[]).length){
+      h+='<div class="card"><h2>Pay '+esc((data.business||{}).owner||"")+'</h2>';
+      r.pay.forEach(function(p){
+        if(p.url)h+='<a class="btn pay '+esc(p.kind)+'" href="'+esc(p.url)+'" target="_blank" rel="noopener">'+esc(p.label)+' <small>'+esc(p.handle)+'</small></a>';
+        else h+='<div class="btn" style="cursor:default">'+esc(p.label)+' <small>'+esc(p.handle)+'</small></div>';
+      });
+      if(r.tipPrompt)h+='<p style="font-size:12.5px;color:var(--faint);margin:11px 0 0;text-align:center">Tips are never expected — always appreciated.</p>';
+      h+='</div>';
+    }
+    if(r.reviewUrl)
+      h+='<a class="btn primary" href="'+esc(r.reviewUrl)+'" target="_blank" rel="noopener">★ Leave a quick review</a>';
+    return h;
+  }
+
+  function photos(){
+    var ps=data.photos||[];if(!ps.length)return "";
+    var before=ps.filter(function(p){return p.kind==="before"}),after=ps.filter(function(p){return p.kind==="after"});
+    var ordered=before.concat(after);
+    var h='<div class="card"><h2>'+(before.length&&after.length?"Before &amp; after":"Photos")+'</h2><div class="shots">';
+    ordered.forEach(function(p){
+      h+='<figure><img loading="lazy" src="/p/'+esc(p.id)+'" alt=""><figcaption>'+esc(p.kind)+'</figcaption></figure>';
+    });
+    return h+'</div></div>';
+  }
+
+  function render(){
+    var s=data.stage,j=data.job||{};
+    var h=header()+hero();
+    if(s==="enroute")h+='<div id="map"></div><div class="maphint">Location is approximate and stops when he arrives.</div>';
+    if((s==="scheduled"||s==="enroute")&&data.prep)
+      h+='<div class="prep"><span>⚑</span><span><b>Before he gets there:</b> '+esc(data.prep)+'</span></div>';
+    if(s==="done"){h+=receipt();h+=photos()}
+    else if((data.photos||[]).length)h+=photos();
+
+    if(s!=="done"&&(j.service||j.vehicle||j.at)){
+      h+='<div class="card"><h2>Your appointment</h2>';
+      if(j.at)h+='<div class="row"><span class="k">When</span><span class="v">'+esc(new Date(j.at).toLocaleDateString([],{weekday:"short",month:"short",day:"numeric"}))+' · '+esc(timeStr(j.at))+'</span></div>';
+      if(j.service)h+='<div class="row"><span class="k">Service</span><span class="v">'+esc(j.service)+'</span></div>';
+      if(j.vehicle)h+='<div class="row"><span class="k">Vehicle</span><span class="v">'+esc(j.vehicle)+'</span></div>';
+      if(j.address)h+='<div class="row"><span class="k">Where</span><span class="v">'+esc(j.address)+'</span></div>';
+      h+='</div>';
+    }
+
+    if(data.contact)
+      h+='<a class="btn" href="sms:'+esc(data.contact)+'">💬 Text '+esc((data.business||{}).owner||"us")+'</a>';
+
+    h+='<footer>'+esc((data.business||{}).name||"")+'</footer>';
+    app.innerHTML=h;
+    if(s==="enroute")drawMap();
+    startTick();
+  }
+
+  // Smooth countdown between polls so the number never looks frozen.
+  function startTick(){
+    clearInterval(tick);
+    if(!data||data.stage!=="enroute"||!data.eta)return;
+    tick=setInterval(function(){
+      var el=document.getElementById("etaBig");if(!el)return clearInterval(tick);
+      var m=Math.max(0,Math.round((data.eta.at-Date.now())/60000));
+      el.textContent=m<1?"Any minute":m;
+    },15000);
+  }
+
+  function drawMap(){
+    // The map is an enhancement, never a dependency: if the library or the tiles
+    // can't load, collapse the box rather than leaving a dead grey rectangle.
+    if(typeof L==="undefined"){
+      var box=document.getElementById("map");
+      if(box){box.style.display="none";var hint=box.nextElementSibling;
+        if(hint&&hint.className==="maphint")hint.style.display="none"}
+      return;
+    }
+    var me=data.position,dest=(data.job&&data.job.lat!=null)?[data.job.lat,data.job.lon]:null;
+    if(!me&&!dest)return;
+    var el=document.getElementById("map");if(!el)return;
+    if(!map){
+      map=L.map(el,{zoomControl:false,attributionControl:true,dragging:true});
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        {maxZoom:18,attribution:"© OpenStreetMap"}).addTo(map);
+    }
+    var pts=[];
+    if(dest){
+      if(!destMarker)destMarker=L.circleMarker(dest,{radius:8,color:"#fff",weight:2,fillColor:"#37d67a",fillOpacity:1}).addTo(map);
+      else destMarker.setLatLng(dest);
+      pts.push(dest);
+    }
+    if(me){
+      var ll=[me.lat,me.lon];
+      if(!meMarker)meMarker=L.circleMarker(ll,{radius:11,color:"#fff",weight:3,fillColor:"#ff2e43",fillOpacity:1}).addTo(map);
+      else meMarker.setLatLng(ll);
+      pts.push(ll);
+      if(dest){
+        if(!line)line=L.polyline([ll,dest],{color:"#ff2e43",weight:3,opacity:.55,dashArray:"7 8"}).addTo(map);
+        else line.setLatLngs([ll,dest]);
+      }
+    }
+    if(pts.length>1)map.fitBounds(pts,{padding:[46,46]});
+    else if(pts.length)map.setView(pts[0],13);
+    setTimeout(function(){map.invalidateSize()},60);
+  }
+
+  document.addEventListener("visibilitychange",function(){if(!document.hidden)load()});
+  load();
+})();
+</script>
+</body>
+</html>
