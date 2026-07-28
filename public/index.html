@@ -2,7 +2,11 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<!-- interactive-widget=resizes-content: when the on-screen keyboard opens, shrink the
+     layout instead of letting the keyboard slide over it. Without this, Android
+     Chrome leaves the page full-height and the compose box ends up hidden behind
+     the keys. A visualViewport fallback below covers browsers that ignore it. -->
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
 <meta name="robots" content="noindex, nofollow" />
 <meta name="theme-color" content="#0a0a0c" />
 <script>/* set saved theme before first paint to avoid a flash */(function(){try{var m=localStorage.getItem("mkd-theme");if(m==="light"||m==="dark"){document.documentElement.setAttribute("data-theme",m);var tc=document.querySelector('meta[name="theme-color"]');if(tc)tc.setAttribute("content",m==="light"?"#eef0f3":"#0a0a0c")}}catch(e){}})();</script>
@@ -76,7 +80,10 @@
   .theme-seg button{flex:1;font-size:12px;font-weight:600;color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:7px 0;cursor:pointer;transition:all .14s}
   .theme-seg button.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text)}
 
-  .app{display:grid;grid-template-columns:360px 1fr;height:100%}
+  /* --kb is however much of the screen the on-screen keyboard is covering (set
+     from visualViewport below). Shrinking the app by it keeps the compose box and
+     the send button above the keys instead of behind them. */
+  .app{display:grid;grid-template-columns:360px 1fr;height:calc(100% - var(--kb,0px))}
   .btn{background:var(--panel3);color:var(--text);border:1px solid var(--line);border-radius:11px;padding:9px 13px;transition:background .15s,transform .08s}
   .btn:hover{background:#2c2f39}
   .btn:active{transform:scale(.97)}
@@ -204,6 +211,10 @@
 
   .messages{flex:1;overflow-y:auto;padding:16px 16px 8px;display:flex;flex-direction:column;gap:3px;min-height:0;-webkit-overflow-scrolling:touch}
   .day{align-self:center;color:var(--muted2);font-size:11px;margin:14px 0 8px;background:var(--panel2);padding:4px 13px;border-radius:20px}
+  /* "you were away, this is where you left off" divider */
+  .newmark{display:flex;align-items:center;gap:9px;margin:12px 4px 4px;color:var(--accent-text);font-size:11px;font-weight:700;
+    letter-spacing:.05em;text-transform:uppercase}
+  .newmark::before,.newmark::after{content:"";height:1px;background:var(--accent-soft);flex:1}
   .bubble{max-width:78%;padding:9px 13px;border-radius:18px;font-size:14.5px;line-height:1.42;white-space:pre-wrap;word-wrap:break-word;position:relative;animation:pop .18s ease}
   @keyframes pop{from{opacity:0;transform:translateY(5px) scale(.98)}to{opacity:1;transform:none}}
   .bubble .t{display:block;font-size:10px;opacity:.65;margin-top:4px}
@@ -311,6 +322,14 @@
   .composer{border-top:1px solid var(--line);background:var(--panel);padding:9px 12px calc(9px + var(--safe-bottom))}
   .ctools{display:flex;gap:4px;align-items:center;margin-bottom:7px;position:relative}
   .ctools .spacer{flex:1}
+  /* Three replies that fit THIS conversation, one tap away, right above the
+     keyboard — the full quick-reply list stays behind the Tools button. */
+  .qreply{display:flex;gap:6px;overflow-x:auto;padding:0 0 8px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .qreply::-webkit-scrollbar{display:none}
+  .qreply button{flex:none;background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+    border-radius:16px;padding:6px 12px;font-size:12.5px;white-space:nowrap;max-width:62vw;
+    overflow:hidden;text-overflow:ellipsis}
+  .qreply button:active{background:var(--panel3)}
   .crow{display:flex;gap:9px;align-items:flex-end}
   .crow textarea{flex:1;resize:none;height:46px;max-height:140px;background:var(--panel2);border:1px solid var(--line);
     color:var(--text);border-radius:23px;padding:12px 16px;outline:none;font-size:14.5px;line-height:1.35;transition:border-color .15s}
@@ -439,6 +458,46 @@
   .aicmd-result.ar-done .ar-ic{color:var(--green)}
   .aicmd-result.ar-bad .ar-ic{color:var(--red,#ef4444)}
   /* in-thread follow-up reminder banner */
+  /* Links, phone numbers and addresses inside a message bubble. */
+  .msg-link{color:inherit;text-decoration:underline;text-underline-offset:2px;text-decoration-thickness:1px;
+    text-decoration-color:rgba(255,255,255,.45)}
+  .bubble.out .msg-link{text-decoration-color:rgba(255,255,255,.6)}
+  /* A quote that's been sitting with no answer. */
+  .quote-banner{margin:8px 14px 0;padding:10px 13px;background:#22200f;border:1px solid #4d451c;border-radius:13px;
+    display:flex;align-items:center;gap:10px;color:#eadfb8;font-size:13px}
+  .quote-banner .qb-ic{color:#f5b842;flex:none;display:flex}
+  .quote-banner .qb-txt{flex:1;min-width:0;line-height:1.35}
+  .quote-banner .qb-txt b{color:#f8eed0;font-weight:650}
+  .quote-banner .qb-go{background:#4a3a12;border:1px solid #6b551d;color:#fdf6e3;border-radius:8px;
+    padding:6px 11px;font-size:11.5px;font-weight:700;flex:none}
+  /* Won the job, never logged the money. */
+  .logjob-banner{margin:8px 14px 0;padding:10px 13px;background:#132218;border:1px solid #244d33;border-radius:13px;
+    display:flex;align-items:center;gap:10px;color:#c8e6d3;font-size:13px}
+  .logjob-banner .lj-ic{color:#4ade80;flex:none;display:flex}
+  .logjob-banner .lj-txt{flex:1;min-width:0;line-height:1.35}
+  .logjob-banner .lj-txt b{color:#e4f7ea;font-weight:650}
+  .logjob-banner .lj-go{background:#1c6b3a;border:1px solid #2b8f50;color:#eafff1;border-radius:8px;
+    padding:6px 11px;font-size:11.5px;font-weight:700;flex:none}
+  /* They texted STOP. Say so up front instead of letting the send bounce. */
+  .optout-banner{margin:8px 14px 0;padding:10px 13px;background:#241417;border:1px solid #4d2229;border-radius:13px;
+    display:flex;align-items:center;gap:10px;color:#f0c9ce;font-size:13px}
+  .optout-banner .ob-ic{color:#ff6b7a;flex:none;display:flex}
+  .optout-banner .ob-txt{flex:1;min-width:0;line-height:1.35}
+  .optout-banner .ob-txt b{color:#ffd9de;font-weight:650}
+  .optout-banner .ob-sub{display:block;font-size:11px;opacity:.8;margin-top:1px}
+  /* Which name the customer will see this signed with, when team mode is on. */
+  .sign-as{color:var(--muted2);font-size:11px;display:inline-flex;align-items:center;gap:4px;margin-right:8px}
+  .sign-as b{color:var(--muted);font-weight:600}
+  /* "You told me to leave this one alone" — shown at the top of a held thread. */
+  .hold-banner{margin:8px 14px 0;padding:10px 13px;background:#191a22;border:1px solid #34364a;border-radius:13px;
+    display:flex;align-items:center;gap:10px;color:#c9cbe0;font-size:13px}
+  .hold-banner .hb-ic{color:#9aa3b2;flex:none;display:flex}
+  .hold-banner .hb-txt{flex:1;min-width:0;line-height:1.35}
+  .hold-banner .hb-txt b{color:var(--text);font-weight:650}
+  .hold-banner .hb-when{display:block;font-size:11px;opacity:.75;margin-top:1px}
+  .hold-banner .hb-x{background:none;border:1px solid #3d4053;color:inherit;border-radius:8px;
+    padding:5px 10px;font-size:11.5px;font-weight:600;flex:none}
+  .conv .held,.home-row .held{color:var(--muted2);font-size:11px}
   .remind-banner{margin:8px 14px 0;padding:10px 13px;background:#15212e;border:1px solid #1f3a52;border-radius:13px;align-items:center;gap:10px;color:#cfe6f5;font-size:13px}
   .remind-banner.due{background:linear-gradient(135deg,#1c1708,#171310);border-color:#4a3a12;color:#f3ead6}
   .remind-banner .rb-ic{color:#7dd3fc;flex:none;display:flex}.remind-banner.due .rb-ic{color:#f5b842}
@@ -780,7 +839,9 @@
   @media(max-width:780px){
     .app{grid-template-columns:minmax(0,1fr)}
     .sidebar{min-width:0;overflow:hidden}
-    .chat{display:none;position:fixed;inset:0;z-index:40}
+    /* The chat pane is pinned to the viewport on a phone, so it has to lift off
+       the bottom by the keyboard height itself — shrinking .app doesn't reach it. */
+    .chat{display:none;position:fixed;top:0;left:0;right:0;bottom:var(--kb,0px);z-index:40}
     body.viewing .sidebar{display:none}
     body.viewing .chat{display:flex}
     .backbtn{display:inline-flex}
@@ -1979,6 +2040,10 @@
       <button id="findNext" data-ic="chevron-down" aria-label="Next match"></button>
       <button id="findClose" data-ic="x" aria-label="Close find"></button>
     </div>
+    <div class="hold-banner" id="holdBanner" style="display:none"></div>
+    <div class="optout-banner" id="optOutBanner" style="display:none"></div>
+    <div class="logjob-banner" id="logJobBanner" style="display:none"></div>
+    <div class="quote-banner" id="quoteBanner" style="display:none"></div>
     <div class="remind-banner" id="remindBanner" style="display:none"></div>
     <div class="sched-banner" id="schedBanner" style="display:none"></div>
     <div class="followup-banner" id="fuBanner" style="display:none"></div>
@@ -2001,6 +2066,7 @@
         <button class="btn icon" id="polishBtn" data-ic="wand" title="AI polish my text" aria-label="AI polish my text" style="display:none"></button>
         <button class="btn icon" id="micBtn" data-ic="mic" title="Dictate (voice to text)" aria-label="Dictate" style="display:none"></button>
         <div class="spacer"></div>
+        <span id="signAs" class="sign-as" style="display:none"></span>
         <span id="charCount" style="color:var(--muted2);font-size:11px"></span>
         <div class="tools-sheet" id="toolsSheet" style="display:none"></div>
         <div class="menu" id="tplMenu" style="display:none"></div>
@@ -2028,6 +2094,7 @@
           <button class="btn accent ic-btn" id="writeGo" data-ic="pencil" data-ic-label="Write it for me" style="width:100%"></button>
         </div>
       </div>
+      <div class="qreply" id="qReply" style="display:none"></div>
       <div class="crow">
         <textarea id="msgInput" placeholder="Text message" rows="1"></textarea>
         <button class="sendcircle" id="sendBtn" title="Send" aria-label="Send">
@@ -2304,7 +2371,12 @@
   // start fast, back off when nothing changes, pause entirely when idle/hidden.
   var POLL_MIN=30000, POLL_MAX=300000, IDLE_MS=20*60*1000;
   var STATUS={new:{label:"New",cls:"st-new",dot:"dot-new"},active:{label:"Active",cls:"st-active",dot:"dot-active"},won:{label:"Won",cls:"st-won",dot:"dot-won"},lost:{label:"Lost",cls:"st-lost",dot:"dot-lost"}};
-  var FILTERS=[["all","All"],["unread","Unread"],["new","New"],["active","Active"],["won","Won"],["lost","Lost"]];
+  // "waiting" is the highest-value list in the app and the engine already works
+  // it out (it calls the same thing "owed" internally) — it just never had a chip.
+  // Twilio's per-segment price for US SMS. Only used to show what a blast will
+  // cost before it goes — nothing bills off this number.
+  var BLAST_RATE=0.0079;
+  var FILTERS=[["all","All"],["waiting","Waiting on me"],["unread","Unread"],["new","New"],["active","Active"],["won","Won"],["lost","Lost"]];
   var LEAD_COLS=[["new","New leads","#3b82f6"],["active","Active","#22c55e"],["won","Won","#a855f7"],["lost","Lost","#8a93a3"]];
   var TEMPLATES=[
     ["Intro","Hey {name}! It's Mikey from Mikey's Mobile Detailing — got your request. When works best for a detail this week?"],
@@ -2333,7 +2405,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-28·enter-newline";
+  var APP_BUILD="2026-07-28·send-failed-flag";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -2573,7 +2645,9 @@
   // ---- utils ----
   function digitsToE164(raw){var d=String(raw).replace(/\D/g,"");if(/^\+1\d{10}$/.test(raw))return raw;if(d.length===10)return"+1"+d;if(d.length===11&&d[0]==="1")return"+"+d;return null}
   function prettyPhone(p){var m=/^\+1(\d{3})(\d{3})(\d{4})$/.exec(p||"");return m?"("+m[1]+") "+m[2]+"-"+m[3]:(p||"")}
+  function cssEsc(v){return String(v).replace(/["\\]/g,"\\$&")}
   function displayName(t){return t.name&&t.name.trim()?t.name:prettyPhone(t.phone)}
+  function firstNameOf(t){var n=(t.name||"").trim().split(/\s+/)[0];return n||prettyPhone(t.phone)}
   function initials(t){var n=displayName(t).trim();var p=n.replace(/[^a-zA-Z ]/g,"").split(/\s+/).filter(Boolean);if(!p.length)return"#";return(p[0][0]+(p[1]?p[1][0]:"")).toUpperCase()}
   function colorFor(phone){var h=0;for(var i=0;i<phone.length;i++)h=phone.charCodeAt(i)+((h<<5)-h);var hue=Math.abs(h)%360;return"hsl("+hue+",42%,44%)"}
   function fmtTime(ts){if(!ts)return"";var d=new Date(ts),n=new Date();if(d.toDateString()===n.toDateString())return d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});var diff=(n-d)/86400000;if(diff<7)return d.toLocaleDateString([],{weekday:"short"});return d.toLocaleDateString([],{month:"short",day:"numeric"})}
@@ -2583,7 +2657,7 @@
     opts=opts||{};var t=el("toast");
     t.innerHTML='<span>'+esc(msg)+'</span>'+(opts.undo?'<button class="undo">Undo</button>':'');
     t.className="toast show"+(opts.bad?" bad":"");
-    clearTimeout(t._h);t._h=setTimeout(function(){t.className="toast"+(opts.bad?" bad":"")},opts.undo?5000:2800);
+    clearTimeout(t._h);t._h=setTimeout(function(){t.className="toast"+(opts.bad?" bad":"")},opts.ms||(opts.undo?5000:2800));
     if(opts.undo){t.querySelector(".undo").onclick=function(){clearTimeout(t._h);t.className="toast"+(opts.bad?" bad":"");opts.undo()}}
   }
 
@@ -2998,7 +3072,7 @@
     }
     FILTERS.forEach(function(p){
       var chip=document.createElement("div");chip.className="chip"+(state.filter===p[0]?" active":"");
-      var n=p[0]==="unread"?c.unread:(p[0]==="all"?0:state.threads.filter(function(t){return !t.archived&&t.status===p[0]}).length);
+      var n=p[0]==="unread"?c.unread:p[0]==="waiting"?c.needs:(p[0]==="all"?0:state.threads.filter(function(t){return !t.archived&&t.status===p[0]}).length);
       chip.innerHTML=esc(p[1])+((p[0]!=="all"&&n)?'<span class="cnt">'+n+'</span>':'');
       chip.onclick=function(){state.filter=p[0];renderFilters();renderMain()};f.appendChild(chip);
     });
@@ -3013,6 +3087,9 @@
     var f=state.filter;
     if(f==="all")return true;
     if(f==="unread")return t.unread>0;
+    // Someone is waiting on Mikey when they spoke last — unless he has parked
+    // them on purpose, in which case they are not his problem right now.
+    if(f==="waiting")return t.lastDir==="in"&&!(t.heldUntil&&t.heldUntil>Date.now());
     return t.status===f;
   }
   // Search operators: status:won  tag:ceramic  is:unread  is:dnt  is:scheduled  +free text.
@@ -3451,6 +3528,7 @@
           (showStatus?'<span class="badge" style="background:color-mix(in srgb,'+sm.color+' 18%,transparent);color:'+sm.color+'">'+esc(sm.label)+'</span>':'')+
           (t.optedOut?'<span class="dnt">'+ic("ban",10)+'Do not text</span>':'')+
           ((teamOn()&&t.assignedTo)?assignBadge(t.assignedTo):'')+
+          (t.sendFailed?'<span class="dnt">'+ic("alert",10)+'not sent</span>':'')+
           (t.replyReady?'<span class="reply-flag">'+ic("sparkles",11)+'reply ready</span>':'')+
           (t.dateRequested?'<span class="reply-flag" style="color:#eab308;background:rgba(234,179,8,.14)">'+ic("calendar-days",11)+'date needed</span>':'')+
           (t.followupDue?'<span class="fu-flag'+(t.fu&&t.fu.urgency==="high"?" high":"")+'">'+ic("list-checks",11)+'follow-up</span>':'')+
@@ -3562,6 +3640,8 @@
     else if(mode==="scheduled")items=state.threads.filter(function(t){return !t.archived&&t.scheduledCount>0});
     else items=state.threads.filter(passFilter);
     items=items.filter(passSearch);
+    // Longest wait first — the operating rule is that every hour cold costs a booking.
+    if(state.filter==="waiting"&&mode==="messages")items=items.slice().sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
 
     var head=(mode==="messages"&&!state.search)?summaryBar():"";
     if(!items.length){
@@ -4003,7 +4083,10 @@
       '<div class="fu-col"><span class="lbl2">Voicemails</span><button id="cfgVmRecover" class="btn" style="white-space:nowrap;align-self:flex-start">'+ic("mic",14)+' Recover past voicemails</button></div>'+
       '<div class="hint">Pulls your recent voicemails from Twilio into the right conversations so you can play them right here. Safe to run anytime.</div>'+
       '<div class="fu-col"><span class="lbl2">Block a number</span><span style="display:flex;gap:6px"><input type="text" id="cfgBlockNum" placeholder="+1425…" style="flex:1"><button id="cfgBlockBtn" class="btn" style="white-space:nowrap">Block</button></span></div>'+
-      blockedListHtml(c.blockedNumbers);
+      blockedListHtml(c.blockedNumbers)+
+      '<div class="fu-col"><span class="lbl2">Rules you\'ve told the AI</span><span style="display:flex;gap:6px"><input type="text" id="cfgRuleNew" placeholder="e.g. never quote a full detail under $150" style="flex:1"><button id="cfgRuleAdd" class="btn" style="white-space:nowrap">Add</button></span></div>'+
+      '<div class="hint">Hard instructions the AI follows every time it writes for you. You can also just say one in the command centre — "stop using exclamation points" — and approve it there.</div>'+
+      '<div id="cfgRules"></div>';
     el("cfgEnabled").onclick=function(){saveConfig({followupsEnabled:!(c.followupsEnabled!==false)})};
     el("cfgAuto").onclick=function(){saveConfig({autopilot:!c.autopilot})};
     el("cfgReview").onchange=function(){saveConfig({reviewUrl:el("cfgReview").value.trim()})};
@@ -4015,8 +4098,25 @@
     el("cfgMctText").onchange=function(){saveConfig({missedCallText:el("cfgMctText").value})};
     el("cfgVmRecover").onclick=function(){recoverVoicemails(el("cfgVmRecover"))};
     el("cfgBlockBtn").onclick=function(){var v=el("cfgBlockNum").value.trim();if(v)blockNumber(v,"block")};
+    el("cfgRuleAdd").onclick=function(){
+      var v=el("cfgRuleNew").value.trim();if(!v)return;
+      post("/api/ai/rules",{text:v}).then(function(d){if(d&&d.ok){el("cfgRuleNew").value="";renderRules(d.rules)}});
+    };
+    api("/api/ai/rules").then(function(d){if(d&&d.ok)renderRules(d.rules)});
     Array.prototype.forEach.call(document.querySelectorAll("[data-unblock]"),function(b){
       b.onclick=function(){blockNumber(b.getAttribute("data-unblock"),"unblock")};
+    });
+  }
+  // The standing rules the AI is holding, each with a way to take it back.
+  function renderRules(list){
+    var box=el("cfgRules");if(!box)return;
+    if(!list||!list.length){box.innerHTML='<div class="hint">No rules yet — the AI is going on your playbook and how you edit its drafts.</div>';return}
+    box.innerHTML='<div class="fu-col">'+list.map(function(r){
+      return '<div class="fu-row" style="padding:5px 0;gap:10px"><span style="flex:1;min-width:0">'+esc(r.text)+'</span>'+
+             '<button class="btn" data-rule="'+esc(r.id)+'" style="flex:none">Forget</button></div>';
+    }).join("")+'</div>';
+    Array.prototype.forEach.call(box.querySelectorAll("[data-rule]"),function(b){
+      b.onclick=function(){post("/api/ai/rules",{remove:b.getAttribute("data-rule")}).then(function(d){if(d&&d.ok)renderRules(d.rules)})};
     });
   }
   function blockedListHtml(list){
@@ -4035,18 +4135,27 @@
 
   // ---- swipe to archive ----
   function attachSwipe(node,t,wrap){
-    var x0=null,dx=0,active=false;
-    node.addEventListener("touchstart",function(e){if(e.touches.length!==1)return;x0=e.touches[0].clientX;active=true;node.style.transition="none"},{passive:true});
+    var x0=null,y0=0,dx=0,active=false,engaged=false;
+    node.addEventListener("touchstart",function(e){if(e.touches.length!==1)return;x0=e.touches[0].clientX;y0=e.touches[0].clientY;active=true;engaged=false;node.style.transition="none"},{passive:true});
     node.addEventListener("touchmove",function(e){
-      if(!active||x0==null)return;dx=e.touches[0].clientX-x0;
+      if(!active||x0==null)return;
+      dx=e.touches[0].clientX-x0;
+      var dy=e.touches[0].clientY-y0;
+      // Don't hijack a vertical scroll: the row only starts moving once the
+      // gesture is clearly sideways. Scrolling a list with a thumb always drifts
+      // a few pixels horizontally, and that used to drag rows around.
+      if(!engaged){
+        if(Math.abs(dy)>10&&Math.abs(dy)>Math.abs(dx)){active=false;node.style.transform="";return}
+        if(dx>12&&dx>Math.abs(dy))engaged=true;else return;
+      }
       if(dx<0)dx=0; // only swipe right→archive
       node.style.transform="translateX("+dx+"px)";
     },{passive:true});
     node.addEventListener("touchend",function(){
       if(!active)return;active=false;node.style.transition="transform .2s";
-      if(dx>120){node.style.transform="translateX(100%)";vibrate(12);setTimeout(function(){doArchiveToggle(t)},150)}
+      if(engaged&&dx>120){node.style.transform="translateX(100%)";vibrate(12);setTimeout(function(){doArchiveToggle(t)},150)}
       else node.style.transform="";
-      x0=null;dx=0;
+      x0=null;dx=0;engaged=false;
     });
   }
   function doArchiveToggle(t){
@@ -4064,7 +4173,15 @@
   function refreshThreads(){return api("/api/threads").then(function(d){if(d&&d.ok){state.threads=d.threads||[];state.loadedOnce=true;renderMain()}})}
 
   function openThread(phone){
+    // Hand the current draft back to the conversation it was written for before
+    // switching, and bring up whatever was left half-typed for this one.
+    var prev=state.phone,switching=prev!==phone;
+    if(switching&&prev)stashDraft(prev);
     state.phone=phone;document.body.classList.add("viewing");
+    if(switching)loadDraft(phone);
+    // A failure marker on the list is a "look at this" — opening it is looking.
+    var fe=(state.threads||[]).find(function(x){return x.phone===phone});
+    if(fe&&fe.sendFailed)fe.sendFailed=false;
     // reset any in-thread find when moving to a different conversation
     state.threadFind="";state.findIdx=0;var fb=el("findBar");if(fb)fb.style.display="none";var fi=el("findInput");if(fi)fi.value="";
     state.lastAiText=null;
@@ -4100,9 +4217,34 @@
   // Opted-out lookup — the flag lives on the lightweight index row, not the thread.
   function isDnt(phone){var e=(state.threads||[]).find(function(x){return x.phone===phone});return !!(e&&e.optedOut)}
   // ---- in-thread find (UX-03) ----
+  // Make the useful things in a text tappable: links, phone numbers, and street
+  // addresses (which go to Maps, so an address a customer sends doesn't have to
+  // be retyped). One combined pattern in a single pass, so a match can never
+  // land inside a link that an earlier pass already created.
+  var LINK_RE=new RegExp(
+    "((?:https?:\\/\\/|www\\.)[^\\s<]+[^\\s<.,!?;:)\\]}\"'])"+                                   // 1: url
+    "|(\\d{1,6}\\s+(?:[A-Za-z0-9.'-]+\\s+){0,4}(?:St|Street|Ave|Avenue|Rd|Road|Dr|Drive|Ln|Lane|Blvd|Boulevard|Way|Ct|Court|Pl|Place|Hwy|Highway|Ter|Terrace|Cir|Circle)\\b\\.?)"+ // 2: address
+    "|((?:\\+?1[-.\\s]?)?\\(?\\d{3}\\)?[-.\\s]?\\d{3}[-.\\s]?\\d{4})",                            // 3: phone
+    "gi");
+  function linkifyEscaped(e){
+    return e.replace(LINK_RE,function(m,url,addr,tel){
+      if(url){
+        var href=/^www\./i.test(url)?("https://"+url):url;
+        return '<a class="msg-link" href="'+href+'" target="_blank" rel="noopener noreferrer">'+url+'</a>';
+      }
+      if(addr){
+        return '<a class="msg-link" href="https://maps.google.com/?q='+encodeURIComponent(addr.replace(/&amp;/g,"&"))+'" target="_blank" rel="noopener noreferrer">'+addr+'</a>';
+      }
+      var digits=(tel||"").replace(/\D/g,"");
+      if(digits.length!==10&&!(digits.length===11&&digits[0]==="1"))return m;
+      return '<a class="msg-link" href="tel:+'+(digits.length===10?"1":"")+digits+'">'+tel+'</a>';
+    });
+  }
   function hlBody(body){
     var term=(state.threadFind||"").trim();var e=esc(body);
-    if(!term)return e;
+    // While searching, skip linkifying — the highlight and the anchors would
+    // fight over the same characters.
+    if(!term)return linkifyEscaped(e);
     var et=esc(term).replace(/[.*+?^${}()|[\]\\]/g,"\\$&");
     try{return e.replace(new RegExp(et,"gi"),function(m){return '<mark>'+m+'</mark>'})}catch(_){return e}
   }
@@ -4193,6 +4335,81 @@
     el("hPin").innerHTML=ic("pin",14);el("hPin").style.display=t.pinned?"inline-block":"none";
     var dnt=isDnt(t.phone);el("hDnt").innerHTML=dnt?ic("ban",10)+'Do not text':'';el("hDnt").style.display=dnt?"inline-flex":"none";
 
+    // "You told me to leave this one alone." Shows the reason back in Mikey's own
+    // words so a quiet conversation never looks like the app forgot about it.
+    var hb=el("holdBanner"),hfu=t.followup||{},heldTill=(hfu.snoozeUntil&&hfu.snoozeUntil>Date.now())?hfu.snoozeUntil:0;
+    if(heldTill){
+      hb.style.display="flex";
+      hb.innerHTML='<span class="hb-ic">'+ic("clock",15)+'</span><div class="hb-txt"><b>On hold — I won\'t chase '+esc(firstNameOf(t))+'</b>'
+        +(hfu.holdReason?'<span class="hb-when">You said: '+esc(hfu.holdReason)+'</span>':'')
+        +'<span class="hb-when">Back on your list '+new Date(heldTill).toLocaleDateString([],{weekday:"short",month:"short",day:"numeric"})+'</span></div>'
+        +'<button class="hb-x">Un-hold</button>';
+      hb.querySelector(".hb-x").onclick=function(){
+        post("/api/followup",{phone:t.phone,action:"release"}).then(function(d){
+          if(d&&d.ok){state.thread=d.thread;renderThread();refreshThreads();toast("Back on your list")}
+        });
+      };
+    }else{hb.style.display="none"}
+
+    // They texted STOP. You used to find that out only when a finished reply
+    // bounced — say it before a word gets typed, and take the send away.
+    var ob=el("optOutBanner"),blocked=isDnt(t.phone);
+    if(blocked){
+      ob.style.display="flex";
+      ob.innerHTML='<span class="ob-ic">'+ic("ban",15)+'</span><div class="ob-txt"><b>'+esc(firstNameOf(t))+' texted STOP</b>'
+        +'<span class="ob-sub">Texts to this number won\'t deliver. They have to text START to opt back in — you can still call.</span></div>';
+    }else{ob.style.display="none"}
+    el("sendBtn").disabled=blocked;
+    el("msgInput").disabled=blocked;
+    el("msgInput").placeholder=blocked?"Can't text — they opted out":"Text message";
+
+    // A quote sitting unanswered is the most winnable money on the board — but
+    // nothing ever said how long it had been sitting. Only once it's actually
+    // gone quiet (2 days), and never after the lead is settled either way.
+    var qb=el("quoteBanner"),qq=t.quote,qAge=qq&&qq.at?(Date.now()-qq.at):0;
+    if(qq&&qAge>2*86400000&&t.status!=="won"&&t.status!=="lost"){
+      qb.style.display="flex";
+      qb.innerHTML='<span class="qb-ic">'+ic("clock",15)+'</span><div class="qb-txt"><b>Quote sent '+ago(qq.at)+' — no answer</b>'
+        +'<span class="hb-when">'+esc(fmtMoney(qq.total||0))+(qq.service?" · "+esc(qq.service):"")+'</span></div>'
+        +'<button class="qb-go">Nudge them</button>';
+      qb.querySelector(".qb-go").onclick=function(){
+        var inp=el("msgInput");
+        inp.value="Hey "+firstNameOf(t)+", just circling back on that "+(qq.service||"quote")+" — still want me to get you on the schedule?";
+        autoGrow();updateCount();stashDraft(t.phone);inp.focus();
+      };
+    }else{qb.style.display="none"}
+
+    renderQuickReplies(t);
+
+    // With team mode on, outgoing texts get signed. Show whose name goes on it.
+    var sa=el("signAs"),who=teamOn()?meName():"";
+    if(who){sa.style.display="inline-flex";sa.innerHTML='Signing as <b>'+esc(who)+'</b>'}
+    else{sa.style.display="none"}
+
+    // Your own operating rules say a won job with nothing in the money tracker is
+    // lost profit visibility. Make it a button here rather than a scolding in the
+    // AI summary later.
+    var lj=el("logJobBanner");
+    if(t.status==="won"){
+      var mc=dtMoneyCache[t.phone];
+      if(mc===undefined){
+        dtMoneyCache[t.phone]=null; // in flight — don't ask twice
+        api("/api/money/by-phone?phone="+encodeURIComponent(t.phone)).then(function(d){
+          dtMoneyCache[t.phone]=(d&&d.ok)?d:{jobs:0,total:0,entries:[]};
+          if(state.thread&&state.thread.phone===t.phone)renderThread();
+        }).catch(function(){dtMoneyCache[t.phone]={jobs:0,total:0,entries:[]}});
+      }
+      if(mc&&!mc.jobs){
+        lj.style.display="flex";
+        lj.innerHTML='<span class="lj-ic">'+ic("dollar",15)+'</span><div class="lj-txt"><b>Won — but nothing logged</b>'
+          +'<span class="hb-when">This job isn\'t in your money tracker yet.</span></div>'
+          +'<button class="lj-go">Log it</button>';
+        lj.querySelector(".lj-go").onclick=function(){
+          openMoney();setTimeout(function(){openMoSheet("job",{phone:t.phone,name:displayName(t)},null)},120);
+        };
+      } else lj.style.display="none";
+    } else lj.style.display="none";
+
     var rb=el("remindBanner");
     if(t.reminderAt){
       var rdue=t.reminderAt<=Date.now();
@@ -4216,12 +4433,23 @@
     renderTeamBits();
 
     var box=el("messages");box.innerHTML="";var lastDay="";var lastDir="";
+    // Which message to land on: the oldest one that came in while Mikey was away.
+    var firstUnreadId="";
+    if((t.unread||0)>0){
+      var inbound=(t.messages||[]).filter(function(m){return m.dir==="in"});
+      var fresh=inbound.slice(Math.max(0,inbound.length-t.unread));
+      if(fresh.length>1)firstUnreadId=fresh[0].id||"";   // one new text needs no marker
+    }
     if(!t.messages.length){box.innerHTML='<div class="empty" style="height:100%"><div class="big">'+ic("message-circle",48)+'</div><div>No messages yet</div><div class="sub">Say hello — your first text starts the conversation.</div></div>'}
     t.messages.forEach(function(m,idx){
       var day=new Date(m.ts).toDateString();
       if(day!==lastDay){lastDay=day;lastDir="";var dv=document.createElement("div");dv.className="day";dv.textContent=new Date(m.ts).toLocaleDateString([],{weekday:"long",month:"short",day:"numeric"});box.appendChild(dv)}
       var b=document.createElement("div");
       b.className="bubble "+(m.dir==="out"?"out":"in")+(m.dir===lastDir?" same":"")+(m.kind==="auto"?" auto":"")+(m.kind==="scheduled"?" scheduled":"");
+      if(m.id)b.setAttribute("data-mid",m.id);
+      if(m.id&&m.id===firstUnreadId){
+        var nu=document.createElement("div");nu.className="newmark";nu.innerHTML='<span>'+t.unread+' new</span>';box.appendChild(nu);
+      }
       var hasMedia=m.media&&m.media.length;
       var legacyAtt=m.dir==="in"&&!hasMedia&&/\[\d+ attachment\(s\)\]/.test(m.body||"");
       var shownBody=legacyAtt?(m.body||"").replace(/\n?\[\d+ attachment\(s\)\]/,"").trim():(m.body||"");
@@ -4245,7 +4473,16 @@
     Array.prototype.forEach.call(box.querySelectorAll("[data-loadmedia]"),function(btn){btn.onclick=function(){backfillMedia(btn)}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-photoquote]"),function(btn){btn.onclick=function(){aiPhotoQuote(btn)}});
     Array.prototype.forEach.call(box.querySelectorAll(".msg-img"),function(im){im.onclick=function(){openLightbox(im.src)}});
-    if((state.threadFind||"").trim()){focusFind(state.findIdx||0,true)} else {box.scrollTop=box.scrollHeight}
+    if((state.threadFind||"").trim()){focusFind(state.findIdx||0,true)}
+    else if(firstUnreadId&&box.querySelector('[data-mid="'+cssEsc(firstUnreadId)+'"]')){
+      // Came back to a thread with several new texts — start where you left off,
+      // not at the bottom with the newest one and no idea what you missed.
+      // Land on the "N new" divider itself, so the first thing on screen is the
+      // line telling you where you left off.
+      var fu=box.querySelector(".newmark")||box.querySelector('[data-mid="'+cssEsc(firstUnreadId)+'"]');
+      box.scrollTop=Math.max(0,fu.offsetTop-24);
+    }
+    else {box.scrollTop=box.scrollHeight}
     renderDetails();
   }
 
@@ -4593,9 +4830,56 @@
   }
 
   // ---- actions ----
+  // ---- undo send ----------------------------------------------------------
+  // A text is the one thing in this app you genuinely cannot take back, so the
+  // send is parked for a few seconds behind the optimistic bubble that was
+  // already being drawn. Tap Undo and the words go straight back in the box.
+  // Nothing is queued server-side: if the window passes, it sends exactly the
+  // way it always did.
+  var UNDO_MS=10000;
+  var pendingSends={};   // tempId -> { payload, forPhone, body, timer }
+
+  function dispatchSend(tempId){
+    var p=pendingSends[tempId];if(!p)return;
+    delete pendingSends[tempId];clearTimeout(p.timer);
+    var forPhone=p.forPhone;
+    var fail=function(errMsg){
+      var mm=state.thread&&state.thread.phone===forPhone&&(state.thread.messages||[]).find(function(x){return x.id===tempId});
+      if(mm){mm.status="failed";mm.error=errMsg;renderThread()}
+      noteSendFailure(forPhone,errMsg);
+    };
+    post("/api/send",p.payload).then(function(d){
+      if(d&&d.ok){if(state.phone===forPhone){state.thread=d.thread;renderThread()}refreshThreads();vibrate(8)}
+      else if(d&&d.error==="recipient_opted_out"){fail("Opted out (STOP)");toast("They've opted out (texted STOP) — can't text this number",{bad:true})}
+      else{fail("Not sent — tap Resend");toast("Couldn't send: "+((d&&d.error)||"error"),{bad:true})}
+    }).catch(function(){fail("Network error — tap Resend");toast("Network error",{bad:true})});
+  }
+
+  function cancelSend(tempId){
+    var p=pendingSends[tempId];if(!p)return;
+    delete pendingSends[tempId];clearTimeout(p.timer);
+    // Pull the optimistic bubble back out of the thread.
+    if(state.thread&&state.thread.phone===p.forPhone){
+      state.thread.messages=(state.thread.messages||[]).filter(function(m){return m.id!==tempId});
+      if(state.phone===p.forPhone)renderThread();
+    }
+    // Put the words back where they came from — the box if you're still looking
+    // at that conversation, otherwise its draft so they're waiting when you return.
+    if(state.phone===p.forPhone){var inp=el("msgInput");inp.value=p.body;autoGrow();updateCount();inp.focus()}
+    else{drafts[p.forPhone]=p.body;saveDrafts()}
+    if(p.payload.aiOriginal)state.lastAiText=p.payload.aiOriginal; // keep the AI-edit lesson
+    toast("Held — put back in your box");
+  }
+
+  // A queued text must never die because the app got closed or backgrounded.
+  // Anything still waiting goes out the moment the page is hidden or unloaded.
+  function flushPendingSends(){Object.keys(pendingSends).forEach(dispatchSend)}
+  document.addEventListener("visibilitychange",function(){if(document.hidden)flushPendingSends()});
+  window.addEventListener("pagehide",flushPendingSends);
+
   function sendMessage(){
     var inp=el("msgInput");var body=inp.value.trim();if(!body||!state.phone)return;
-    el("sendBtn").disabled=true;
+    if(!sendGuardsPass(body))return;
     var payload={phone:state.phone,body:body};
     if(teamOn()&&meName())payload.by=meName(); // sign the reply with who's texting
     // If this send started from an AI draft/suggestion, pass the original so the
@@ -4608,17 +4892,11 @@
       state.thread.messages.push({id:tempId,dir:"out",body:body,ts:Date.now(),kind:"manual",status:"sending",by:payload.by});
       renderThread();
     }
-    inp.value="";autoGrow();updateCount();hideAiReview();
-    var fail=function(errMsg){
-      var mm=state.thread&&state.thread.phone===forPhone&&(state.thread.messages||[]).find(function(x){return x.id===tempId});
-      if(mm){mm.status="failed";mm.error=errMsg;renderThread()}
-    };
-    post("/api/send",payload).then(function(d){
-      el("sendBtn").disabled=false;
-      if(d&&d.ok){if(state.phone===forPhone){state.thread=d.thread;renderThread()}refreshThreads();vibrate(8)}
-      else if(d&&d.error==="recipient_opted_out"){fail("Opted out (STOP)");toast("They've opted out (texted STOP) — can't text this number",{bad:true})}
-      else{fail("Not sent — tap Resend");toast("Couldn't send: "+((d&&d.error)||"error"),{bad:true})}
-    }).catch(function(){el("sendBtn").disabled=false;fail("Network error — tap Resend");toast("Network error",{bad:true})});
+    inp.value="";clearDraft(forPhone);autoGrow();updateCount();hideAiReview();
+    noteSent(forPhone,body);
+    pendingSends[tempId]={payload:payload,forPhone:forPhone,body:body,
+      timer:setTimeout(function(){dispatchSend(tempId)},UNDO_MS)};
+    toast("Sending…",{undo:function(){cancelSend(tempId)},ms:UNDO_MS});
   }
   function placeCall(){
     if(!state.phone)return;
@@ -4644,7 +4922,42 @@
       .replace(/\{appt(?:_time)?\}/gi,appt)
       .replace(/\{review\}/gi,(c.reviewUrl||""));
   }
-  function fillTemplate(text){el("msgInput").value=expandVars(text);el("msgInput").focus();autoGrow();updateCount()}
+  function fillTemplate(text){el("msgInput").value=expandVars(text);el("msgInput").focus();autoGrow();updateCount();stashDraft(state.phone)}
+  // The three quick replies most likely to fit what the customer just said.
+  // Scored against his OWN saved templates, so it stays in his words — no new
+  // canned messages invented here.
+  var QR_CUES=[
+    [/\b(how much|price|cost|quote|rate|charge)\b/i,      /price|quote|cost|\$/i],
+    [/\b(when|what time|available|availability|book|schedule|slot|appointment)\b/i, /when|time|book|schedule|availab/i],
+    [/\b(where|address|location|come to|my place)\b/i,     /address|where|location|come/i],
+    [/\b(thanks|thank you|appreciate|great|awesome)\b/i,   /thank|appreciate|welcome/i],
+    [/\b(cancel|reschedule|move|postpone|rain)\b/i,        /reschedul|cancel|move|rain/i]
+  ];
+  function renderQuickReplies(t){
+    var box=el("qReply");if(!box)return;
+    var msgs=(t.messages||[]);
+    var lastIn=null;
+    for(var i=msgs.length-1;i>=0;i--){if(msgs[i].dir==="in"){lastIn=msgs[i];break}}
+    // Only offer these when the ball is actually in Mikey's court.
+    if(!lastIn||(msgs[msgs.length-1]||{}).dir!=="in"||isDnt(t.phone)){box.style.display="none";box.innerHTML="";return}
+    var body=String(lastIn.body||"");
+    var tpls=state.templates||[];
+    var scored=tpls.map(function(tp,idx){
+      var score=0;
+      QR_CUES.forEach(function(c){if(c[0].test(body)&&(c[1].test(tp[0])||c[1].test(tp[1])))score+=2});
+      return {tp:tp,score:score,idx:idx};
+    }).sort(function(a,b){return b.score-a.score||a.idx-b.idx});
+    var pick=scored.filter(function(x){return x.score>0}).slice(0,3);
+    if(!pick.length)pick=scored.slice(0,3);           // nothing matched — offer his first few
+    if(!pick.length){box.style.display="none";return}
+    box.style.display="flex";box.innerHTML="";
+    pick.forEach(function(x){
+      var b=document.createElement("button");
+      b.type="button";b.textContent=x.tp[0];b.title=x.tp[1];
+      b.onclick=function(){vibrate(6);fillTemplate(x.tp[1])};
+      box.appendChild(b);
+    });
+  }
   function buildTplMenu(){
     var m=el("tplMenu");m.innerHTML='<div class="mh">Quick replies</div>';
     state.templates.forEach(function(tp,i){
@@ -4728,12 +5041,100 @@
     var v=el("schedTime").value;if(!v){toast("Pick a date & time",{bad:true});return}
     var sendAt=new Date(v).getTime();if(sendAt<Date.now()){toast("Pick a future time",{bad:true});return}
     post("/api/schedule",{phone:state.phone,body:body,sendAt:sendAt}).then(function(d){
-      if(d&&d.ok){el("msgInput").value="";el("schedNL").value="";el("schedNLecho").textContent="";autoGrow();updateCount();el("schedPop").style.display="none";state.thread=d.thread;renderThread();refreshThreads();toast("Scheduled for "+fmtFull(sendAt))}
+      if(d&&d.ok){el("msgInput").value="";clearDraft(state.phone);el("schedNL").value="";el("schedNLecho").textContent="";autoGrow();updateCount();el("schedPop").style.display="none";state.thread=d.thread;renderThread();refreshThreads();toast("Scheduled for "+fmtFull(sendAt))}
       else toast("Couldn't schedule: "+((d&&d.error)||"error"),{bad:true});
     });
   }
-  function updateCount(){var v=el("msgInput").value;var n=v.length;el("charCount").textContent=n?n+" · "+Math.ceil(n/160)+" SMS":""}
+  // ---- what this text actually costs --------------------------------------
+  // Carriers don't bill by character, they bill by segment, and the segment size
+  // depends on the alphabet. Plain text is GSM-7: 160 per segment (153 once it
+  // splits). ONE character outside that set — an emoji, or the curly apostrophe
+  // your keyboard inserts on its own — flips the whole message to UCS-2, where a
+  // segment is 70 (67 split). The old counter divided by 160 no matter what, so
+  // a 150-character text with a 👍 in it read "1 SMS" and billed 3.
+  var GSM_BASIC="@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà";
+  var GSM_EXT="^{}\\[~]|€"; // these cost two septets each
+  function smsInfo(text){
+    var septets=0,offender="";
+    for(var i=0;i<text.length;i++){
+      var c=text.charAt(i);
+      if(GSM_BASIC.indexOf(c)>=0){septets++;continue}
+      if(GSM_EXT.indexOf(c)>=0){septets+=2;continue}
+      offender=text.slice(i,i+2).match(/^[\uD800-\uDBFF][\uDC00-\uDFFF]/)?text.slice(i,i+2):c;
+      break;
+    }
+    var visible=Array.from(text).length; // an emoji is one character to a human
+    if(!offender){
+      var per=septets<=160?160:153;
+      return {chars:visible,segments:Math.max(1,Math.ceil(septets/per)),unicode:false,offender:""};
+    }
+    var units=text.length;               // UCS-2 bills per UTF-16 unit (emoji = 2)
+    var per2=units<=70?70:67;
+    return {chars:visible,segments:Math.max(1,Math.ceil(units/per2)),unicode:true,offender:offender};
+  }
+  function updateCount(){
+    var v=el("msgInput").value,cc=el("charCount");
+    if(!v){cc.textContent="";cc.title="";cc.style.color="var(--muted2)";return}
+    var s=smsInfo(v);
+    cc.textContent=s.chars+" · "+s.segments+" SMS"+(s.unicode?" · unicode":"");
+    cc.style.color=s.unicode?"var(--accent-text)":(s.segments>1?"var(--muted)":"var(--muted2)");
+    cc.title=s.unicode
+      ? '"'+s.offender+'" turns this into a unicode text — 70 characters per SMS instead of 160, so it bills as '+s.segments+'.'
+      : s.segments+" segment"+(s.segments===1?"":"s")+" at 160 characters each.";
+  }
   function autoGrow(){var ta=el("msgInput");ta.style.height="46px";ta.style.height=Math.min(ta.scrollHeight,140)+"px"}
+
+  // ---- per-conversation drafts --------------------------------------------
+  // The compose box used to hold whatever you last typed regardless of which
+  // conversation you opened, so a reply meant for one customer sat there loaded
+  // and aimed at the next person you tapped. Drafts now belong to a phone number
+  // and are restored when you come back. Kept in localStorage so closing the app
+  // doesn't throw away a half-written reply.
+  var DRAFTS_KEY="mkd-drafts",draftTimer=null;
+  var drafts=(function(){try{return JSON.parse(localStorage.getItem(DRAFTS_KEY))||{}}catch(e){return{}}})();
+  function saveDrafts(){clearTimeout(draftTimer);draftTimer=setTimeout(function(){try{localStorage.setItem(DRAFTS_KEY,JSON.stringify(drafts))}catch(e){}},400)}
+  function stashDraft(phone){
+    if(!phone)return;
+    var v=el("msgInput").value;
+    if(v.trim())drafts[phone]=v;else delete drafts[phone];
+    saveDrafts();
+  }
+  function loadDraft(phone){var inp=el("msgInput");inp.value=(phone&&drafts[phone])||"";autoGrow();updateCount()}
+  function clearDraft(phone){if(phone&&drafts[phone]!=null){delete drafts[phone];saveDrafts()}}
+
+  // ---- guards on the way out ----------------------------------------------
+  // Two things worth a second of friction: the same text going twice because of
+  // a shaky-signal double tap, and a manual text at an hour your own autopilot
+  // refuses to send at.
+  var lastSentAt={};  // phone -> { body, ts }
+  function noteSent(phone,body){lastSentAt[phone]={body:body,ts:Date.now()}}
+  function sendGuardsPass(body){
+    var prev=lastSentAt[state.phone];
+    if(prev&&prev.body===body&&Date.now()-prev.ts<5*60000){
+      if(!confirm("You just sent this exact text to "+displayName(state.thread)+".\n\nSend it again?"))return false;
+    }
+    var c=state.config||{},qs=c.quietStart==null?20:c.quietStart,qe=c.quietEnd==null?8:c.quietEnd;
+    var h=new Date().getHours();
+    var quiet=(qs>qe)?(h>=qs||h<qe):(h>=qs&&h<qe);
+    if(quiet&&!quietOk){
+      if(!confirm("It's "+new Date().toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})+" — inside your quiet hours.\n\nYour automatic follow-ups won't send right now. Text anyway?"))return false;
+      quietOk=true; // asked once; don't nag for the rest of this sitting
+      setTimeout(function(){quietOk=false},30*60000);
+    }
+    return true;
+  }
+  var quietOk=false;
+
+  // A send that fails while you're looking at another conversation used to be
+  // invisible. Remember it so the board can show it.
+  function noteSendFailure(phone,msg){
+    if(state.phone!==phone){
+      var t=(state.threads||[]).find(function(x){return x.phone===phone});
+      toast("Didn't send to "+((t&&t.name)||prettyPhone(phone))+" — "+msg,{bad:true});
+    }
+    var e=(state.threads||[]).find(function(x){return x.phone===phone});
+    if(e){e.sendFailed=true;renderMain()}
+  }
 
   // ---- appointment reminders ----
   var remSel={when:0,tpl:0};
@@ -4784,6 +5185,7 @@
 
   // ---- tabs ----
   function setTab(tab){
+    stashDraft(state.phone);
     state.tab=tab;state.phone=null;document.body.classList.remove("viewing");
     el("details").classList.remove("open");el("sheetScrim").classList.remove("show");
     el("emptyState").style.display="flex";el("chatHead").style.display="none";el("composer").style.display="none";el("schedBanner").style.display="none";el("fuBanner").style.display="none";el("remindBanner").style.display="none";
@@ -4860,7 +5262,7 @@
   el("sendBtn").onclick=sendMessage;
   function openDetails(){el("details").classList.add("open");el("sheetScrim").classList.add("show")}
   function closeDetails(){el("details").classList.remove("open");el("sheetScrim").classList.remove("show")}
-  el("backBtn").onclick=function(){closeDetails();document.body.classList.remove("viewing");state.phone=null;renderMain()};
+  el("backBtn").onclick=function(){closeDetails();stashDraft(state.phone);document.body.classList.remove("viewing");state.phone=null;renderMain()};
   el("callBtn").onclick=placeCall;el("dtCall").onclick=placeCall;
   el("whoBtn").onclick=openDetails;
   el("detailsBtn").onclick=function(){el("details").classList.contains("open")?closeDetails():openDetails()};
@@ -4876,7 +5278,26 @@
   el("dtRename").onclick=function(){var v=prompt("Contact name:",state.thread.name||"");if(v!==null)saveMeta({name:v.trim()})};
   el("dtArchive").onclick=function(){var t=state.thread;doArchiveToggle(t);closeDetails();if(!t.archived){document.body.classList.remove("viewing");state.phone=null}};
 
-  el("msgInput").addEventListener("input",function(){updateCount();autoGrow()});
+  el("msgInput").addEventListener("input",function(){updateCount();autoGrow();stashDraft(state.phone)});
+
+  // Fallback for browsers that ignore interactive-widget (see the viewport meta):
+  // measure what the on-screen keyboard is covering and shrink the app by it, so
+  // the compose box and send button never end up behind the keys. Where the meta
+  // IS honored the window has already shrunk, this measures ~0, and nothing moves.
+  (function(){
+    var vv=window.visualViewport;if(!vv)return;
+    var last=0;
+    function apply(){
+      var covered=Math.max(0,window.innerHeight-vv.height-vv.offsetTop);
+      var kb=covered>120?Math.round(covered):0; // ignore URL-bar shifts, only a real keyboard
+      if(kb===last)return;
+      last=kb;
+      document.documentElement.style.setProperty("--kb",kb+"px");
+      // Keyboard just opened over a conversation — keep the newest message in view.
+      if(kb&&state.phone){var b=el("messages");if(b)setTimeout(function(){b.scrollTop=b.scrollHeight},60)}
+    }
+    vv.addEventListener("resize",apply);vv.addEventListener("scroll",apply);apply();
+  })();
   // Enter key in the compose box. On a phone/tablet the on-screen return key ( ↵ )
   // must make a LINE BREAK — there's no Shift to hold, and the send button is right
   // there next to the box. On a real keyboard Enter still sends, Shift+Enter breaks.
@@ -4913,6 +5334,10 @@
   el("guideClose").onclick=closeGuide;
   el("guideScrim").onclick=closeGuide;
   el("micBtn").onclick=toggleMic;
+  // Talking is the quickest way to write a text standing next to a car, so the
+  // mic sits in the toolbar rather than a sheet down — but only where the browser
+  // can actually do speech, otherwise it's a button that always fails.
+  if(SR)el("micBtn").style.display="inline-flex";
   // mic now lives inside the labeled Tools sheet (only offered when the browser supports it)
   el("toolsBtn").onclick=function(){var s=el("toolsSheet");closePops("toolsSheet");var opening=s.style.display==="none";if(opening)buildToolsSheet();s.style.display=opening?"block":"none"};
   el("loginBtn").onclick=doLogin;
@@ -8583,20 +9008,38 @@
       '<div class="jd-sec">'+ic("message-square",14)+' The message</div>'+
       '<div class="jd-field"><textarea id="blBody" style="min-height:118px">'+esc(msg)+'</textarea>'+
       '<div class="jd-note">{first_name} fills in per person. Opted-out numbers are skipped automatically, and it\'s capped at 25 per send.</div></div>'+
+      '<div class="jd-note" id="blCost" style="margin-top:2px"></div>'+
       '<button class="jd-btn pri" id="blSend">'+ic("megaphone",17)+' Send to <span id="blN">'+list.length+'</span></button>'+
       '<button class="jd-btn ghost" id="blCancel" style="margin-top:8px">Cancel</button>';
     hydrateIcons(r);
     var count=function(){
       var n=0;Array.prototype.forEach.call(r.querySelectorAll("[data-blph]"),function(c){if(c.checked)n++});
-      r.querySelector("#blN").textContent=n;return n;
+      r.querySelector("#blN").textContent=n;
+      // What this actually costs, before it goes out. One emoji in the message
+      // turns every segment from 160 characters into 70, so this can triple
+      // without a word being added.
+      var body=(r.querySelector("#blBody").value||"");
+      var info=smsInfo(body.replace(/\{first_name\}/g,"Jonathan")); // longest plausible name
+      var segs=info.segments*n;
+      var cost=segs*BLAST_RATE;
+      r.querySelector("#blCost").textContent=n
+        ? (info.segments+" SMS each × "+n+" = "+segs+" message"+(segs===1?"":"s")+" · about "+fmtMoney(cost)
+           +(info.unicode?" — the \u201c"+info.offender+"\u201d makes it unicode, 70 characters a segment instead of 160":""))
+        : "";
+      return n;
     };
     Array.prototype.forEach.call(r.querySelectorAll("[data-blph]"),function(c){c.onchange=count});
+    r.querySelector("#blBody").addEventListener("input",count);
+    count();
     r.querySelector("#blCancel").onclick=jdSheetClose;
     r.querySelector("#blSend").onclick=function(){
       var phones=[];
       Array.prototype.forEach.call(r.querySelectorAll("[data-blph]"),function(c){if(c.checked)phones.push(c.getAttribute("data-blph"))});
       if(!phones.length)return toast("Pick at least one person",{bad:true});
-      if(!confirm("Text "+phones.length+" past customer"+(phones.length===1?"":"s")+" now?"))return;
+      var ci=smsInfo((r.querySelector("#blBody").value||"").replace(/\{first_name\}/g,"Jonathan"));
+      var cs=ci.segments*phones.length;
+      if(!confirm("Text "+phones.length+" past customer"+(phones.length===1?"":"s")+" now?\n\n"
+        +cs+" message"+(cs===1?"":"s")+" at "+ci.segments+" SMS each — about "+fmtMoney(cs*BLAST_RATE)+"."))return;
       var btn=r.querySelector("#blSend");btn.disabled=true;btn.innerHTML='<span class="spin"></span> Sending…';
       post("/api/blast/send",{phones:phones,body:r.querySelector("#blBody").value,city:place}).then(function(d){
         if(!d||!d.ok){btn.disabled=false;btn.innerHTML=ic("megaphone",17)+" Send";return toast("Blast failed",{bad:true})}
