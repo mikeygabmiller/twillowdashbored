@@ -211,6 +211,10 @@
 
   .messages{flex:1;overflow-y:auto;padding:16px 16px 8px;display:flex;flex-direction:column;gap:3px;min-height:0;-webkit-overflow-scrolling:touch}
   .day{align-self:center;color:var(--muted2);font-size:11px;margin:14px 0 8px;background:var(--panel2);padding:4px 13px;border-radius:20px}
+  /* "you were away, this is where you left off" divider */
+  .newmark{display:flex;align-items:center;gap:9px;margin:12px 4px 4px;color:var(--accent-text);font-size:11px;font-weight:700;
+    letter-spacing:.05em;text-transform:uppercase}
+  .newmark::before,.newmark::after{content:"";height:1px;background:var(--accent-soft);flex:1}
   .bubble{max-width:78%;padding:9px 13px;border-radius:18px;font-size:14.5px;line-height:1.42;white-space:pre-wrap;word-wrap:break-word;position:relative;animation:pop .18s ease}
   @keyframes pop{from{opacity:0;transform:translateY(5px) scale(.98)}to{opacity:1;transform:none}}
   .bubble .t{display:block;font-size:10px;opacity:.65;margin-top:4px}
@@ -2340,7 +2344,9 @@
   // start fast, back off when nothing changes, pause entirely when idle/hidden.
   var POLL_MIN=30000, POLL_MAX=300000, IDLE_MS=20*60*1000;
   var STATUS={new:{label:"New",cls:"st-new",dot:"dot-new"},active:{label:"Active",cls:"st-active",dot:"dot-active"},won:{label:"Won",cls:"st-won",dot:"dot-won"},lost:{label:"Lost",cls:"st-lost",dot:"dot-lost"}};
-  var FILTERS=[["all","All"],["unread","Unread"],["new","New"],["active","Active"],["won","Won"],["lost","Lost"]];
+  // "waiting" is the highest-value list in the app and the engine already works
+  // it out (it calls the same thing "owed" internally) — it just never had a chip.
+  var FILTERS=[["all","All"],["waiting","Waiting on me"],["unread","Unread"],["new","New"],["active","Active"],["won","Won"],["lost","Lost"]];
   var LEAD_COLS=[["new","New leads","#3b82f6"],["active","Active","#22c55e"],["won","Won","#a855f7"],["lost","Lost","#8a93a3"]];
   var TEMPLATES=[
     ["Intro","Hey {name}! It's Mikey from Mikey's Mobile Detailing — got your request. When works best for a detail this week?"],
@@ -2369,7 +2375,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-28·ai-memory";
+  var APP_BUILD="2026-07-28·inbox-speed";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -2609,6 +2615,7 @@
   // ---- utils ----
   function digitsToE164(raw){var d=String(raw).replace(/\D/g,"");if(/^\+1\d{10}$/.test(raw))return raw;if(d.length===10)return"+1"+d;if(d.length===11&&d[0]==="1")return"+"+d;return null}
   function prettyPhone(p){var m=/^\+1(\d{3})(\d{3})(\d{4})$/.exec(p||"");return m?"("+m[1]+") "+m[2]+"-"+m[3]:(p||"")}
+  function cssEsc(v){return String(v).replace(/["\\]/g,"\\$&")}
   function displayName(t){return t.name&&t.name.trim()?t.name:prettyPhone(t.phone)}
   function firstNameOf(t){var n=(t.name||"").trim().split(/\s+/)[0];return n||prettyPhone(t.phone)}
   function initials(t){var n=displayName(t).trim();var p=n.replace(/[^a-zA-Z ]/g,"").split(/\s+/).filter(Boolean);if(!p.length)return"#";return(p[0][0]+(p[1]?p[1][0]:"")).toUpperCase()}
@@ -3035,7 +3042,7 @@
     }
     FILTERS.forEach(function(p){
       var chip=document.createElement("div");chip.className="chip"+(state.filter===p[0]?" active":"");
-      var n=p[0]==="unread"?c.unread:(p[0]==="all"?0:state.threads.filter(function(t){return !t.archived&&t.status===p[0]}).length);
+      var n=p[0]==="unread"?c.unread:p[0]==="waiting"?c.needs:(p[0]==="all"?0:state.threads.filter(function(t){return !t.archived&&t.status===p[0]}).length);
       chip.innerHTML=esc(p[1])+((p[0]!=="all"&&n)?'<span class="cnt">'+n+'</span>':'');
       chip.onclick=function(){state.filter=p[0];renderFilters();renderMain()};f.appendChild(chip);
     });
@@ -3050,6 +3057,9 @@
     var f=state.filter;
     if(f==="all")return true;
     if(f==="unread")return t.unread>0;
+    // Someone is waiting on Mikey when they spoke last — unless he has parked
+    // them on purpose, in which case they are not his problem right now.
+    if(f==="waiting")return t.lastDir==="in"&&!(t.heldUntil&&t.heldUntil>Date.now());
     return t.status===f;
   }
   // Search operators: status:won  tag:ceramic  is:unread  is:dnt  is:scheduled  +free text.
@@ -3599,6 +3609,8 @@
     else if(mode==="scheduled")items=state.threads.filter(function(t){return !t.archived&&t.scheduledCount>0});
     else items=state.threads.filter(passFilter);
     items=items.filter(passSearch);
+    // Longest wait first — the operating rule is that every hour cold costs a booking.
+    if(state.filter==="waiting"&&mode==="messages")items=items.slice().sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
 
     var head=(mode==="messages"&&!state.search)?summaryBar():"";
     if(!items.length){
@@ -4336,12 +4348,23 @@
     renderTeamBits();
 
     var box=el("messages");box.innerHTML="";var lastDay="";var lastDir="";
+    // Which message to land on: the oldest one that came in while Mikey was away.
+    var firstUnreadId="";
+    if((t.unread||0)>0){
+      var inbound=(t.messages||[]).filter(function(m){return m.dir==="in"});
+      var fresh=inbound.slice(Math.max(0,inbound.length-t.unread));
+      if(fresh.length>1)firstUnreadId=fresh[0].id||"";   // one new text needs no marker
+    }
     if(!t.messages.length){box.innerHTML='<div class="empty" style="height:100%"><div class="big">'+ic("message-circle",48)+'</div><div>No messages yet</div><div class="sub">Say hello — your first text starts the conversation.</div></div>'}
     t.messages.forEach(function(m,idx){
       var day=new Date(m.ts).toDateString();
       if(day!==lastDay){lastDay=day;lastDir="";var dv=document.createElement("div");dv.className="day";dv.textContent=new Date(m.ts).toLocaleDateString([],{weekday:"long",month:"short",day:"numeric"});box.appendChild(dv)}
       var b=document.createElement("div");
       b.className="bubble "+(m.dir==="out"?"out":"in")+(m.dir===lastDir?" same":"")+(m.kind==="auto"?" auto":"")+(m.kind==="scheduled"?" scheduled":"");
+      if(m.id)b.setAttribute("data-mid",m.id);
+      if(m.id&&m.id===firstUnreadId){
+        var nu=document.createElement("div");nu.className="newmark";nu.innerHTML='<span>'+t.unread+' new</span>';box.appendChild(nu);
+      }
       var hasMedia=m.media&&m.media.length;
       var legacyAtt=m.dir==="in"&&!hasMedia&&/\[\d+ attachment\(s\)\]/.test(m.body||"");
       var shownBody=legacyAtt?(m.body||"").replace(/\n?\[\d+ attachment\(s\)\]/,"").trim():(m.body||"");
@@ -4365,7 +4388,16 @@
     Array.prototype.forEach.call(box.querySelectorAll("[data-loadmedia]"),function(btn){btn.onclick=function(){backfillMedia(btn)}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-photoquote]"),function(btn){btn.onclick=function(){aiPhotoQuote(btn)}});
     Array.prototype.forEach.call(box.querySelectorAll(".msg-img"),function(im){im.onclick=function(){openLightbox(im.src)}});
-    if((state.threadFind||"").trim()){focusFind(state.findIdx||0,true)} else {box.scrollTop=box.scrollHeight}
+    if((state.threadFind||"").trim()){focusFind(state.findIdx||0,true)}
+    else if(firstUnreadId&&box.querySelector('[data-mid="'+cssEsc(firstUnreadId)+'"]')){
+      // Came back to a thread with several new texts — start where you left off,
+      // not at the bottom with the newest one and no idea what you missed.
+      // Land on the "N new" divider itself, so the first thing on screen is the
+      // line telling you where you left off.
+      var fu=box.querySelector(".newmark")||box.querySelector('[data-mid="'+cssEsc(firstUnreadId)+'"]');
+      box.scrollTop=Math.max(0,fu.offsetTop-24);
+    }
+    else {box.scrollTop=box.scrollHeight}
     renderDetails();
   }
 
@@ -5182,6 +5214,10 @@
   el("guideClose").onclick=closeGuide;
   el("guideScrim").onclick=closeGuide;
   el("micBtn").onclick=toggleMic;
+  // Talking is the quickest way to write a text standing next to a car, so the
+  // mic sits in the toolbar rather than a sheet down — but only where the browser
+  // can actually do speech, otherwise it's a button that always fails.
+  if(SR)el("micBtn").style.display="inline-flex";
   // mic now lives inside the labeled Tools sheet (only offered when the browser supports it)
   el("toolsBtn").onclick=function(){var s=el("toolsSheet");closePops("toolsSheet");var opening=s.style.display==="none";if(opening)buildToolsSheet();s.style.display=opening?"block":"none"};
   el("loginBtn").onclick=doLogin;

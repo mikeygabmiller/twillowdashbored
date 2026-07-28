@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-28·ai-memory';
+const BUILD = '2026-07-28·inbox-speed';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -106,6 +106,7 @@ async function runCron() {
   // Job Day suite. Both are write-frugal by design: the brief stamps one key a
   // day, the invoice sweep only writes when something is actually overdue.
   await maybeDailyBrief().catch(() => {});
+  await maybeWeeklyRecap().catch(() => {});
   await maybePayReminders().catch(() => {});
 }
 
@@ -7235,6 +7236,34 @@ async function maybeDailyBrief() {
     const b = await buildBrief('day');
     await notifyMikey(`☀️ Your day — ${b.jobs.length} job${b.jobs.length === 1 ? '' : 's'}, ${b.counts.waiting} waiting`, briefText(b));
   } catch { /* never let the brief break the cron */ }
+  await pushNotify().catch(() => {});
+}
+
+// Sunday-evening recap. The weekly brief already existed (buildBrief('week'))
+// and was only reachable by asking for it — nothing ever sent it. Same shape as
+// the daily one: a 3-hour window so a cold start can't fire it early, and exactly
+// one KV write a week.
+async function maybeWeeklyRecap() {
+  const cfg = await loadConfig();
+  if (cfg.weeklyRecapEnabled === false) return;
+  const now = Date.now();
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: cfg.tz, weekday: 'short', hour: 'numeric', hour12: false })
+    .formatToParts(new Date(now));
+  const dow = (parts.find((p) => p.type === 'weekday') || {}).value;
+  const hour = Number((parts.find((p) => p.type === 'hour') || {}).value);
+  if (dow !== 'Sun') return;
+  const target = Math.max(8, Math.min(21, Number(cfg.weeklyRecapHour) || 18));
+  if (hour < target || hour > target + 2) return;
+  const week = localDateStr(now, cfg.tz);
+  const stamp = await kv().get('recap:last');
+  if (stamp === week) return;
+  await kv().put('recap:last', week, { expirationTtl: 14 * 86400 });   // ⚠ 1 write/week
+  try {
+    const b = await buildBrief('week');
+    await notifyMikey(
+      `🗓️ Week ahead — ${b.counts.waiting} waiting, ${b.counts.followups} follow-up${b.counts.followups === 1 ? '' : 's'} due`,
+      briefText(b));
+  } catch { /* never let the recap break the cron */ }
   await pushNotify().catch(() => {});
 }
 
