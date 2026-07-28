@@ -28,33 +28,14 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   **Autopilot** to have the safe nudges send themselves (quiet-hours aware; replies you
   owe a customer always wait for your approval). All tunable per-contact and globally
   in the menu.
-- **Auto-detected jobs + Today's Run (`Today` tab):** you never have to write an
-  appointment down. Every message is read as it arrives; when you and a customer
-  land on a day and time, the job shows up as a **one-tap card** ("Looks like you
-  booked Jenna — Sat at 10"), quoting the line it came from. Tap **Yes** and it
-  lands on your day; tap **Not a job** and it's gone. It also pulls the address,
-  vehicle, service, quoted price and gate/parking notes out of the conversation,
-  and catches **reschedules and cancellations** the same way — as cards, never as
-  silent changes. Vague ones ("Saturday morning") become a tentative hold that
-  blocks the day until you pin the hour down. Confirming hands you a **drafted
-  confirmation text you tap to send** (nothing is ever texted automatically) plus
-  a one-tap *Add to Google Calendar* link. On the day: a **7am brief** (jobs in
-  drive order, money on the table, unconfirmed ones flagged, rain warning, and
-  what time to leave), a **"leave now"** alert per job computed from real drive
-  time, and a **night-before recap**. Empty days ping you with the warmest leads
-  to chase instead. Everything is behind one **master pause switch** in the menu.
-- **Live tracking link + receipt (customer page: `/t/<token>`):** one link per job
-  that tells the whole story. Tap **On my way** and the customer gets a text with
-  a link showing *"Mikey is 12 minutes away"* on a live map — your position is
-  **snapped to a ~0.3 mile grid** (a rough area, never an exact pin) and stops
-  being shared the instant you tap **I've arrived**. The ETA is locked in when you
-  leave and counts down honestly on its own, then re-sharpens every time your
-  phone posts a position, so it stays accurate whether or not the app is open.
-  The same link then walks through **arrived → working → all done**, and finishes
-  as a **receipt**: line items, total, before/after photos, a review button, and
-  tap-to-pay **Venmo / Cash App / Zelle** buttons with the total already filled
-  in. If your ETA slips past 10 minutes you get offered a one-tap *"running about
-  20 min behind"* text. Nothing sends itself except the stage text you tapped for.
+- **Knows when a conversation is finished:** before flagging that you owe someone a
+  reply, the AI reads the **whole thread** and decides whether anything is actually
+  outstanding. A chat that ended on "Thanks!", a 👍 or a "Liked …" reaction stops
+  showing up in *Needs your attention* and stops generating nudges — while a question,
+  a photo, a voicemail, or a promise you haven't kept always keeps its reminder. The
+  verdict is cached per message (one small AI call, at most, per customer text), and
+  when in doubt it errs toward reminding you. The reason shows on the conversation's
+  follow-up panel ("No reply needed — …").
 - **Click-to-call:** rings your cell, then bridges the call to the customer through
   your Twilio number (keeps your personal number private).
 - **Instant email alerts (optional, Resend):** get emailed the moment a text,
@@ -65,23 +46,60 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
 - **Editable quick-reply templates**, contact rename, pin, and archive.
 - **Free-tier friendly:** adaptive polling that backs off and pauses when idle/hidden.
 
-## Tests
-```
-npm test          # engine suites — no browser, no network (145 assertions)
-npm run test:ui   # drives the real dashboard + customer page in Chromium (113)
-npm run test:all  # both
-```
-The engine suites load `src/index.js`, stub KV/Twilio/Resend/Gemini/geocoding, and
-assert on behaviour — detection and its guardrails, the day-of cron (including
-that idle ticks cost **zero KV writes**), coarse location, the stage machine,
-payment-link building, and settings clamping. The browser suites run the actual
-`public/index.html` and `public/track.html` against a mocked API.
+## The Job Day suite (Jobs tab)
+Ten features that turn the dashboard from "where the texting happens" into the
+app the day actually runs on. All of it lives under the new **Jobs** tab
+(Run · Quotes · Pay · Garage) plus a floating mic and a Home brief card.
+
+1. **Today's Run** — the day board. Online bookings, texted appointments and
+   hand-added cash jobs merge into one ordered run sheet with a hero showing
+   stops left, dollars booked and hours on the clock. Each stop moves
+   *queued → on my way → working → done*, with a live job timer, one-tap
+   navigate (Apple Maps on iOS, Google Maps elsewhere) and one-tap text.
+   Finishing a job logs the money, flags a balance owed and can fire the
+   "all finished" + review-ask text in a single sheet.
+2. **Live ETA tracking** — tapping *On my way* texts the customer a link to a
+   DoorDash-style page that counts down, updates itself and offers call/text.
+   Mikey's phone feeds it GPS while he drives. Links expire on their own (12 h)
+   and never expose anything but the trip.
+3. **Web push notifications** — real phone alerts for every inbound text,
+   missed call, voicemail and the morning brief, instead of polling. **No setup
+   at all:** the VAPID keypair is generated inside the Worker on first use.
+   Pushes carry no payload — the service worker asks the backend for the
+   headline — so message content never crosses the push service.
+4. **Quote builder** — service × vehicle size × condition × add-ons, priced
+   live off the *same* menu the public booking page uses, so a texted quote and
+   the website can never disagree. Shows the exact message before it sends, and
+   tracks sent → accepted/declined with a win rate. Accepting flips the lead to
+   Won.
+5. **Get paid** — payment requests and deposits by text, linking to a branded
+   pay page with tap-to-pay buttons for Venmo / Cash App / PayPal / Zelle and an
+   optional Stripe or Square link. No processor account required. Tracks what's
+   outstanding and can auto-nudge an unpaid invoice once after N days.
+6. **Customer garage** — vehicles (year/make/model/color/plate), address, gate
+   code, where to park, whether there's water and power, preferences and
+   "careful with" notes — joined against the money ledger for lifetime value,
+   job count and last visit. Never ask the same question twice.
+7. **Neighborhood blasts** — pick a booked job, find past customers in that town
+   or ZIP, and offer them the same-day slot at a discount. Opt-out aware,
+   `{first_name}` merged, capped at 25 per send, confirmation required.
+8. **Before / after photos** — snap both from the job sheet; they compress in
+   the browser (~120 KB) and render as a draggable before/after slider.
+9. **Hands-free voice control** — the floating mic opens a push-to-talk screen
+   that routes speech to the same AI agent the command bar uses and speaks the
+   answer back. Anything that would change data still needs a deliberate tap.
+10. **Daily brief** — a 6am rundown (push + email): today's stops, per-job rain
+    risk from the hourly forecast, who's waiting, yesterday's money and the one
+    thing to do first. Also inline on Home and on demand any time.
+
+Cost discipline: none of this writes to KV on a read. The only clock-driven
+writes are the brief (1/day) and the invoice sweep (only when something is
+actually overdue); live-ETA pings are throttled server-side to ~1 write/45 s and
+only while a trip is running.
 
 ## How it's built
 ```
 public/index.html      the dashboard UI (static, served via Workers static assets)
-public/track.html      the customer tracking + receipt page (public, token in the URL)
-tests/                 engine + browser test suites (npm test)
 public/sw.js           service worker (installable PWA / offline shell)
 public/manifest.webmanifest, icon-*.png, favicon.svg   PWA icons + manifest
 src/index.js           the Worker: API + Twilio webhooks + scheduled() cron handler
@@ -144,6 +162,38 @@ GA realtime is fetched live. Clarity's export API allows only **10 calls per
 project per day**, so responses cache 6 h and a budget counter stops at 8
 calls/day (stale data is served after that — the UI labels it).
 
+## Map rank grid (Analytics → Map → Map rank) — and what it costs
+
+A Local-Falcon-style grid: each point asks Google what ranks there for a search
+term, and the pin shows where the listing came back (1–3 green … 20+ red).
+
+**One grid point = one Google Places "Text Search" call.** 5×5 = 25 calls,
+13×13 = 169.
+
+**What Google charges.** Text Search is billed by the *most expensive field in
+the request*, so the field mask picks the SKU — not the endpoint:
+
+| What we ask for | SKU | Price | Free per month |
+|---|---|---|---|
+| `places.id` only | Text Search Essentials (IDs only) | free | 10,000 |
+| `places.id,places.displayName` | Text Search Pro | **$32 / 1,000** | 5,000 |
+
+So the app runs scans on the **free** SKU whenever a Place ID is pinned: the ID
+alone is enough to spot the listing in the results. Matching by *name* is what
+forces the paid SKU, because names are a paid field. Rates last checked
+2026-07-28 and are editable in the app (Places setup → Spending) so a Google
+price change doesn't need a deploy.
+
+**The guard.** `freeOnly` is on by default. The Worker prices every batch
+*before* calling Google (`geoBudget`) and returns HTTP 402 rather than make a
+call that would land past the free allowance — the dashboard shows the cost of
+the next scan, the month-to-date count, and refuses the button. Usage is
+metered in KV (`geogrid:meter`, Pacific months, matching Google's quota reset).
+
+The guard only covers calls made by this dashboard. For a hard stop that covers
+everything using the key, also set a daily cap in **Google Cloud Console → APIs
+& Services → Places API (New) → Quotas**.
+
 ## Twilio webhooks (your business number)
 - **Messaging** → "A message comes in" → **POST** `https://texting.mikeysdetailingsnohomish.workers.dev/sms`
 - **Voice** → "A call comes in" → **POST** `https://texting.mikeysdetailingsnohomish.workers.dev/call`
@@ -168,16 +218,19 @@ drives everything.
 
 ## Endpoints (reference)
 Public: `/submit` `/sms` `/call` `/call-screen` `/voicemail` `/voicemail-done`
+`/t/<token>` (live ETA page) `/p/<token>` (pay page) `/api/track/state`
 Auth: `/api/login` `/api/logout`
 Dashboard API: `/api/health` `/api/threads` `/api/thread` `/api/send` `/api/meta`
 `/api/schedule` `/api/unschedule` `/api/call` `/api/read` `/api/insights`
 `/api/alert-test` `/api/templates` `/api/migrate`
 `/api/followups` `/api/followup` `/api/config` `/api/block`
-Day-of-service: `/api/run` (Today's Run + detected job cards) `/api/job` (confirm /
-edit / dismiss / cancel / done / accept-change, plus the day-of stages: onmyway /
-ping / arrived / working / complete / late / resend) `/api/job-photo`
-Public tracking (no auth — the token is the credential): `/t/<token>` `/api/track?t=`
-`/p/<photo-id>`
 Website analytics: `/api/analytics` (pixel) `/api/webstats` `/api/webstats/status`
 `/api/webstats/connect` `/api/webstats/disconnect` `/api/webstats/ai`
-AI (Gemini): `/api/ai/summary` `/api/ai/draft` `/api/ai/triage`
+AI (Gemini): `/api/ai/summary` `/api/ai/draft` `/api/ai/triage` `/api/ai/agent`
+Job Day suite: `/api/day` `/api/day/state` `/api/day/job` `/api/day/remove`
+`/api/day/order` · `/api/track/start` `/api/track/ping` `/api/track/stop` ·
+`/api/push/key` `/api/push/subscribe` `/api/push/unsubscribe` `/api/push/test`
+`/api/push/peek` · `/api/quote/config` `/api/quote` `/api/quote/action` ·
+`/api/pay` `/api/pay/config` `/api/pay/request` `/api/pay/action` ·
+`/api/garage` · `/api/blast/candidates` `/api/blast/send` ·
+`/api/photos` `/api/photos/img` `/api/photos/delete` · `/api/brief`
