@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-29·assist-by-email';
+const BUILD = '2026-07-29·assist-ask+practice';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -188,6 +188,7 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/emails')     return apiEmails();
   if (request.method === 'POST' && pathname === '/api/email-read') return apiEmailRead(request);
   if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/email-setup') return apiEmailSetup(request);
+  if (request.method === 'POST' && pathname === '/api/assist/practice') return apiAssistPractice(request);
   if (request.method === 'GET'  && pathname === '/api/media')      return apiMediaProxy(url);
   if (request.method === 'POST' && pathname === '/api/media-backfill') return apiMediaBackfill(request);
   if (request.method === 'POST' && pathname === '/api/voicemail-backfill') return apiVoicemailBackfill(request);
@@ -499,9 +500,12 @@ async function handleInboundSms(request) {
   // The alert doubles as the assist prompt: it tells Mikey he can answer straight
   // from his phone by texting the business number the bare facts (handleOwnerSms).
   const alertCfg = await loadConfig();
+  // Work out what he actually needs to decide, so the alert asks him a question
+  // he can answer in four words. Best-effort — a failure just means a plainer email.
+  const ask = await assistAsk(inThread, alertCfg).catch(() => null);
   await notifyMikey(`📱 New ${numMedia > 0 ? 'photo/text' : 'text'} from ${from}`,
     assistAlertBody(alertCfg, fromNorm, inThread.name || from,
-      `New message from ${from}:\n"${text || (numMedia > 0 ? '[photo]' : '')}"\n\nReply in your dashboard.`));
+      `${inThread.name || from} texted:\n"${text || (numMedia > 0 ? '[photo]' : '')}"`, ask));
   // Pre-draft a reply in Mikey's voice so it's already waiting when he opens the
   // thread. Best-effort — never blocks or fails the inbound webhook.
   await maybeSuggestReply(fromNorm);
@@ -687,6 +691,16 @@ async function runAssist({ text, cfg, reply, channel, forcedPhone }) {
     return;
   }
 
+  // Practice mode stops here: he sees exactly what would have gone out, and
+  // nothing is queued. This is the last gate before the message becomes real.
+  if (isPracticePhone(target.phone)) {
+    await reply(
+      `🧪 PRACTICE — nothing was sent.\n\nHere's what ${assistWho(target)} would have received:\n"${out}"\n\n` +
+      `That's the whole loop working. On a real customer this would now be queued with a hold, and you'd get this same message with a countdown and a CANCEL option.`,
+    );
+    return;
+  }
+
   // Queue it rather than send it. Riding the existing scheduled-send cron gives
   // at-most-once delivery and the opt-out guard for free — and the gap between
   // now and sendAt IS the cancel window. Email gets a longer hold by default,
@@ -733,24 +747,96 @@ const ASSIST_CUT = '--- reply above this line ---';
 // at the marker leaves exactly what he typed and nothing else. (Putting it at the
 // bottom looks tidier and does not work: the alert's own text ends up above the
 // cut and gets treated as part of his answer.)
-function assistAlertBody(cfg, phone, who, core) {
+// ---------------------------------------------------------------------------
+// "What do you actually need from me?"
+// ---------------------------------------------------------------------------
+// An alert that just repeats the customer's message leaves Mikey to work out
+// what's being asked and what a usable answer looks like. So each inbound text is
+// turned into ONE plain question plus literal example replies he could type
+// verbatim. The examples matter more than the question: they show the shape of a
+// valid answer, which is the whole skill of using this thing.
+//
+// `kind` also decides whether to offer the quick path at all — a complaint or a
+// damage claim gets "handle this one yourself", never a one-word reply box.
+const ASSIST_KINDS = ['price', 'schedule', 'question', 'confirm', 'chitchat', 'escalate'];
+
+async function assistAsk(thread, cfg) {
+  if (!ENV.GEMINI_API_KEY) return null;
+  const msgs = thread.messages || [];
+  const last = msgs[msgs.length - 1];
+  if (!last || last.dir !== 'in') return null;
+  const prompt =
+    businessContext(cfg) +
+    `You are triaging ONE inbound customer text for the owner of a mobile car detailing business, ` +
+    `so he can answer it in a few words from his phone. Return ONLY JSON:\n` +
+    `{"kind": one of ${JSON.stringify(ASSIST_KINDS)},\n` +
+    ` "ask": "ONE short sentence (max 20 words) telling the owner exactly what he needs to decide or supply. ` +
+    `Write it to him, not to the customer. Be specific to THIS message — name the vehicle/service if known.",\n` +
+    ` "examples": ["2 or 3 SHORT literal replies he could type, 1-6 words each, e.g. \\"375\\" or \\"375, thursday works\\" or \\"yes, 9am\\". ` +
+    `These are shorthand facts, NOT full sentences and NOT a message to the customer. Make them realistic for this conversation."]}\n\n` +
+    `kind guide: "price" = they want a number. "schedule" = they want a day/time. "question" = a factual question about the service. ` +
+    `"confirm" = they're agreeing/confirming and just need acknowledgement. "chitchat" = thanks/emoji, nothing needed. ` +
+    `"escalate" = a complaint, damage, refund, anger, or anything needing a careful personal reply.\n\n` +
+    `Conversation:\n${transcript(thread)}`;
+  try {
+    const raw = await geminiGenerate(prompt, { json: true, maxTokens: 500, temperature: 0.2 });
+    const p = JSON.parse(raw);
+    const examples = Array.isArray(p.examples)
+      ? p.examples.map((x) => String(x).trim()).filter(Boolean).slice(0, 3) : [];
+    return {
+      kind: ASSIST_KINDS.includes(p.kind) ? p.kind : 'question',
+      ask: String(p.ask || '').trim().slice(0, 200),
+      examples,
+    };
+  } catch { return null; }
+}
+
+// Render the ask as the middle of the alert email.
+function assistAskBlock(ask) {
+  if (!ask) return '';
+  if (ask.kind === 'escalate') {
+    return `\n⚠️  HANDLE THIS ONE YOURSELF\n   ${ask.ask || 'This needs a careful, personal reply.'}\n` +
+      `   I'm not offering a quick answer here on purpose — open the dashboard.\n`;
+  }
+  if (ask.kind === 'chitchat') {
+    return `\n✅ NOTHING NEEDED\n   ${ask.ask || 'Just a friendly note — no answer required.'}\n`;
+  }
+  // Nothing useful came back — say nothing rather than print an empty header.
+  if (!ask.ask && !ask.examples.length) return '';
+  const lines = [`\n❓ WHAT I NEED FROM YOU`];
+  if (ask.ask) lines.push(`   ${ask.ask}`);
+  if (ask.examples.length) {
+    lines.push(`\n   Reply with something like:`);
+    for (const e of ask.examples) lines.push(`     ${e}`);
+  }
+  return lines.join('\n') + '\n';
+}
+
+function assistAlertBody(cfg, phone, who, core, ask) {
   const byEmail = cfg.assistEmail !== false;
+  // A complaint should never come with a one-word answer box next to it.
+  const quickOk = !(ask && (ask.kind === 'escalate' || ask.kind === 'chitchat'));
+  const block = assistAskBlock(ask);
   const foot = [];
-  if (byEmail) {
-    foot.push(`💡 Just hit REPLY with the facts — e.g. "375, thursday works" — and I'll write it in your voice and send it to ${who}. Free: no text message used.`);
+  if (quickOk && byEmail) {
+    foot.push(`💡 Hit REPLY with just that and I'll write it out in your voice and send it to ${who}. Free — no text message used.`);
   }
-  if (cfg.assistSms !== false) {
-    foot.push(`📱 ${byEmail ? 'Or text' : 'Text'} ${ENV.TWILIO_FROM || 'your business number'} the facts — e.g. "375, thursday works" — and I'll write it in your voice and send it to ${who}.`);
+  if (quickOk && cfg.assistSms !== false) {
+    foot.push(`📱 ${byEmail && foot.length ? 'Or text' : 'Text'} ${ENV.TWILIO_FROM || 'your business number'} the same thing.`);
   }
-  if (!foot.length) return core;
-  foot.push(`You'll get the exact wording back before it goes out.`);
+  if (quickOk && foot.length) {
+    foot.push(`\nOther things you can say: "send: <your exact words>" to skip the rewriting · "draft: …" to hold it in the dashboard · "who" to see everyone waiting · "cancel" to pull one back.`);
+    foot.push(`You'll always get the finished wording back before it goes out.`);
+  }
+  const body = `${core}\n${block}`.trimEnd();
+  if (!foot.length) return block ? body : core;
   // Only invite a reply when replies are actually processed. With email answering
   // off, the marker and ref are left out entirely — otherwise he'd hit reply and
   // nothing would ever happen. The ref is also what makes a reply routable, and
   // requiring it is what stops ordinary mail being read as a command.
-  if (!byEmail) return `${core}\n\n${foot.join('\n')}`;
+  if (!byEmail) return `${body}\n\n${foot.join('\n')}`;
   foot.push(`[ref:${phone}]`);
-  return `${ASSIST_CUT}\n${core}\n\n${foot.join('\n')}`;
+  return `${ASSIST_CUT}\n${body}\n\n${foot.join('\n')}`;
 }
 
 // Strip the quoted original out of a reply so only what he actually typed is
@@ -811,6 +897,62 @@ async function handleAssistEmail(cfg, email, phone) {
     // to IT routes back here instead of landing in the inbox as ordinary mail.
     reply: (msg) => sendEmail(subject, `${ASSIST_CUT}\n${msg}\n\n[ref:${phone}]`).catch(() => {}),
   });
+}
+
+// ===========================================================================
+// Practice mode — rehearse the whole loop without touching a real customer
+// ===========================================================================
+// Tapping "Send me a practice question" fabricates a realistic inbound text from
+// a fake customer and fires a genuine alert email. Replying to it exercises the
+// ENTIRE chain — the Gmail script, the ref routing, the quote stripping, the AI
+// drafting, the confirmation — and stops one step short of Twilio: the finished
+// message is shown back to him marked TEST and never sent anywhere.
+//
+// The number is in 555-0100..0199, the range reserved for fictional use, so it
+// can't collide with a real customer. sendSms() refuses it outright as a second
+// line of defence, so no future code path can text it by accident either.
+const PRACTICE_PHONE = '+15555550100';
+function isPracticePhone(p) { return normalizePhone(p) === PRACTICE_PHONE; }
+
+const PRACTICE_SCENARIOS = [
+  { id: 'price',    name: 'Practice · Ruth',  vehicle: '2019 4Runner',
+    body: "Hey! How much would a full detail run on my 2019 4Runner? It's pretty rough inside, two kids and a dog." },
+  { id: 'schedule', name: 'Practice · Dave',  vehicle: 'F-150',
+    body: 'Do you have anything open Saturday? Anytime in the morning works for me.' },
+  { id: 'question', name: 'Practice · Alina', vehicle: 'Model 3',
+    body: 'Do you do ceramic coating? And do you come to my place or do I drop it off?' },
+  { id: 'escalate', name: 'Practice · Ken',   vehicle: 'Tacoma',
+    body: "I just looked at the truck and there's a scratch on the hood that wasn't there this morning. Pretty unhappy about this." },
+];
+
+async function apiAssistPractice(request) {
+  const d = await readJson(request).catch(() => ({}));
+  const cfg = await loadConfig();
+  const want = String((d && d.scenario) || '').toLowerCase();
+  // Rotate through the scenarios so repeated taps exercise different shapes.
+  const prev = (await kv().get('assist:practice', { type: 'json' })) || {};
+  const idx = PRACTICE_SCENARIOS.findIndex((s) => s.id === want);
+  const sc = idx >= 0 ? PRACTICE_SCENARIOS[idx] : PRACTICE_SCENARIOS[((prev.n || 0) % PRACTICE_SCENARIOS.length)];
+  await kv().put('assist:practice', JSON.stringify({ n: ((prev.n || 0) + 1) % 1000, at: Date.now() }));
+
+  // Reset the practice conversation each run so the AI isn't answering a stale
+  // thread, and so the fake customer never accumulates history.
+  const thread = blankThread(PRACTICE_PHONE);
+  thread.name = sc.name;
+  thread.tags = ['practice'];
+  thread.status = 'new';
+  thread.statusAt = Date.now();
+  thread.notes = 'Practice conversation for testing "Answer by email". Not a real customer — nothing sent here ever leaves the app.';
+  thread.messages = [{ id: genId(), dir: 'in', body: sc.body, ts: Date.now() }];
+  thread.unread = 1;
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+
+  const ask = await assistAsk(thread, cfg).catch(() => null);
+  const core = `🧪 THIS IS A PRACTICE MESSAGE — ${sc.name} is not a real customer.\nNothing you reply here will ever be sent to anyone.\n\n${sc.name} texted:\n"${sc.body}"`;
+  const body = assistAlertBody(cfg, PRACTICE_PHONE, sc.name, core, ask);
+  const sent = await notifyMikey(`🧪 Practice · New text from ${sc.name}`, body);
+  return json({ ok: !!sent, scenario: sc.id, ask, emailed: !!sent, previewBody: body });
 }
 
 // The Gmail script that feeds this. Deliberately reads his SENT mail rather than
@@ -6168,6 +6310,10 @@ async function sendSms(to, body, opts = {}) {
   const sid = ENV.TWILIO_ACCOUNT_SID;
   const token = ENV.TWILIO_AUTH_TOKEN;
   const toNorm = normalizePhone(to) || to;
+  // Practice guard. The fake customer used to rehearse the assist loop must never
+  // be textable — not by the assist path (which stops earlier), and not by any
+  // future code that stumbles onto the thread. Unconditional, before everything.
+  if (isPracticePhone(toNorm)) throw new Error('practice_number');
   // Opt-out guard: never text a number that sent STOP. Skipped for alerts to Mikey
   // himself (opts.skipOptOut) so notifications always get through.
   if (!opts.skipOptOut) {

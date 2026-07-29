@@ -89,11 +89,28 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
     marker the dashboard plants in its own alerts, so ordinary mail is never read as
     a command. Both toggle in the menu.
 
+  **Every alert asks you a question.** Instead of just repeating what the customer
+  said, each alert names what it needs from you and shows literal example replies
+  you can type verbatim ("375" · "375, thursday works"). Complaints, damage and
+  refund requests are classified as **escalate** and get the opposite treatment —
+  flagged *handle this one yourself*, with the quick-answer path and the reply
+  marker deliberately withheld so a one-word reply can't fire an AI message at an
+  angry customer.
+
   **Gmail hookup (one time, ~2 min):** menu → *Answer by email* → **Copy the Gmail
   setup script** → paste into a new project at script.google.com → add a 1-minute
   time-driven trigger on `mikeyAssistSync`. The script reads your **Sent** mail for
   replies carrying the `[ref:…]` marker and POSTs them to `/email-in`, so no custom
   domain, no inbound-mail service and no third-party automation is needed.
+
+  **Practice mode:** menu → *Answer by email* → **Send me a practice question**
+  emails you a realistic question from a fake customer. Replying runs the entire
+  chain — Gmail script, routing, quote stripping, AI drafting, confirmation — and
+  stops one step short of Twilio: you get the finished message back marked TEST and
+  nothing is sent. Repeated taps rotate through a price question, a scheduling one,
+  a service question and a complaint. The practice number lives in the 555-01xx
+  range reserved for fiction, and `sendSms()` refuses it unconditionally, so no code
+  path can text it even by accident.
 - **Click-to-call:** rings your cell, then bridges the call to the customer through
   your Twilio number (keeps your personal number private).
 - **Instant email alerts (optional, Resend):** get emailed the moment a text,
