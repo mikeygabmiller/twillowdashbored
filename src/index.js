@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-29·assist-ask+practice';
+const BUILD = '2026-07-29·assist-script-guard';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -977,20 +977,29 @@ var DASH_URL   = ${JSON.stringify(url)};
 var DASH_TOKEN = ${JSON.stringify(token)};
 
 function mikeyAssistSync() {
-  var me = Session.getActiveUser().getEmail().toLowerCase();
+  // Who am I? A search for 'from:me' returns THREADS, and each thread holds both
+  // the dashboard's alert and my reply — so every message still has to be checked
+  // individually. If Google won't tell us the address (it can come back empty in
+  // some trigger contexts) we stop rather than treat every message as ours.
+  var me = '';
+  try { me = (Session.getActiveUser().getEmail() || '').toLowerCase(); } catch (e) {}
+  if (!me) { Logger.log('Could not read your Gmail address — re-run this once from the editor to re-approve.'); return; }
+
   var props = PropertiesService.getScriptProperties();
   var seen = JSON.parse(props.getProperty('seen') || '[]');
   var threads = GmailApp.search('from:me newer_than:2d', 0, 30);
+  var sent = 0;
 
   for (var t = 0; t < threads.length; t++) {
     var msgs = threads[t].getMessages();
     for (var i = 0; i < msgs.length; i++) {
       var m = msgs[i];
       var id = m.getId();
-      if (seen.indexOf(id) !== -1) continue;                    // already sent
-      if (m.getFrom().toLowerCase().indexOf(me) === -1) continue; // not mine
+      if (seen.indexOf(id) !== -1) continue;                      // already sent
+      var from = m.getFrom();
+      if (from.toLowerCase().indexOf(me) === -1) continue;         // the alert, not my reply
       var body = m.getPlainBody() || '';
-      if (body.indexOf('[ref:') === -1) continue;               // not a dashboard alert reply
+      if (body.indexOf('[ref:') === -1) continue;                  // not a reply to a dashboard alert
 
       try {
         UrlFetchApp.fetch(DASH_URL, {
@@ -1000,7 +1009,7 @@ function mikeyAssistSync() {
           muteHttpExceptions: true,
           payload: JSON.stringify({
             token: DASH_TOKEN,
-            from: me,
+            from: from,
             subject: m.getSubject(),
             body: body,
             messageId: id,
@@ -1008,11 +1017,13 @@ function mikeyAssistSync() {
           })
         });
         seen.push(id);
-      } catch (err) { /* try again next run */ }
+        sent++;
+      } catch (err) { /* leave it unseen and try again next run */ }
     }
   }
   if (seen.length > 300) seen = seen.slice(-300);
   props.setProperty('seen', JSON.stringify(seen));
+  Logger.log('Checked ' + threads.length + ' recent conversations, sent ' + sent + ' answer(s).');
 }
 `;
 }
