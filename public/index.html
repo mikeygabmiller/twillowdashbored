@@ -2492,7 +2492,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-29·voice-training";
+  var APP_BUILD="2026-07-29·voice-import";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4199,7 +4199,12 @@
       '<div class="fu-col"><span style="display:flex;gap:6px;flex-wrap:wrap">'+
         '<button id="cfgVoiceBuild" class="btn">Rebuild from my texts</button>'+
         '<button id="cfgVoiceTrain" class="btn">Train the voice</button>'+
+        '<button id="cfgVoiceImport" class="btn">Paste an export</button>'+
       '</span></div>'+
+      '<div class="fu-col" id="cfgVoiceImportBox" style="display:none">'+
+        '<textarea id="cfgVoiceText" rows="5" placeholder="Paste a text-message export here — the whole thing. It picks out your side and ignores the customer\'s." style="width:100%"></textarea>'+
+        '<span style="display:flex;gap:6px;margin-top:6px"><button id="cfgVoiceImportGo" class="btn">Import my side</button></span>'+
+      '</div>'+
       '<div class="hint"><b>Rebuild</b> reads the messages you\'ve actually typed to customers and learns your length, punctuation, emoji habits and phrasing from them — then shows the AI your real texts from the same kind of situation every time it drafts. <b>Train</b> replays past conversations: it writes what it would have said next to what you really sent, and you tap whether it sounds like you. The misses are the valuable ones — they teach it what to stop doing.</div>'+
       '<div class="fu-col"><span class="lbl2">Rules you\'ve told the AI</span><span style="display:flex;gap:6px"><input type="text" id="cfgRuleNew" placeholder="e.g. never quote a full detail under $150" style="flex:1"><button id="cfgRuleAdd" class="btn" style="white-space:nowrap">Add</button></span></div>'+
       '<div class="hint">Hard instructions the AI follows every time it writes for you. You can also just say one in the command centre — "stop using exclamation points" — and approve it there.</div>'+
@@ -4221,6 +4226,11 @@
     el("cfgAssistPractice").onclick=function(){sendPractice(el("cfgAssistPractice"))};
     el("cfgVoiceBuild").onclick=function(){buildVoice(el("cfgVoiceBuild"))};
     el("cfgVoiceTrain").onclick=function(){openVoiceTrainer()};
+    el("cfgVoiceImport").onclick=function(){
+      var b=el("cfgVoiceImportBox"); b.style.display=b.style.display==="none"?"":"none";
+      if(b.style.display==="")el("cfgVoiceText").focus();
+    };
+    el("cfgVoiceImportGo").onclick=function(){importVoice(el("cfgVoiceImportGo"))};
     refreshVoiceStat();
     el("cfgVmRecover").onclick=function(){recoverVoicemails(el("cfgVmRecover"))};
     el("cfgBlockBtn").onclick=function(){var v=el("cfgBlockNum").value.trim();if(v)blockNumber(v,"block")};
@@ -4454,6 +4464,26 @@
         toast("Learned from "+d.samples+" of your own texts. Drafts will sound more like you from here.");
         refreshVoiceStat();
       } else toast((d&&d.error)==="ai_not_configured"?"No AI key set on the server":"Couldn't build it: "+((d&&d.error)||"error"),{bad:true});
+    }).catch(function(){toast("Network error",{bad:true})})
+      .then(function(){if(btn){btn.disabled=false;btn.innerHTML=orig}});
+  }
+
+  // Paste a phone export. The server picks out his half and ignores the customer's.
+  function importVoice(btn){
+    var ta=el("cfgVoiceText"); if(!ta)return;
+    var text=ta.value.trim();
+    if(!text){toast("Paste the export first",{bad:true});return}
+    var orig=btn?btn.innerHTML:"";
+    if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span> Reading…'}
+    post("/api/voice/import",{text:text}).then(function(d){
+      if(d&&d.ok){
+        ta.value="";
+        el("cfgVoiceImportBox").style.display="none";
+        toast("Found "+d.found+" of your texts, added "+d.added+" new ones. Drafts will sound more like you now.");
+        refreshVoiceStat();
+      } else if(d&&d.error==="nothing_found"){
+        toast("Couldn't find your messages in that. Paste one of your texts per line instead.",{bad:true});
+      } else toast((d&&d.error)||"Import failed",{bad:true});
     }).catch(function(){toast("Network error",{bad:true})})
       .then(function(){if(btn){btn.disabled=false;btn.innerHTML=orig}});
   }

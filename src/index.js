@@ -74,7 +74,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-29·voice-training';
+const BUILD = '2026-07-29·voice-import';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -201,6 +201,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/voice/build')        return apiVoiceBuild();
   if (request.method === 'POST' && pathname === '/api/voice/replay')       return apiVoiceReplayNext(request);
   if (request.method === 'POST' && pathname === '/api/voice/score')        return apiVoiceReplayScore(request);
+  if (request.method === 'POST' && pathname === '/api/voice/import')       return apiVoiceImport(request);
   if (request.method === 'GET'  && pathname === '/api/media')      return apiMediaProxy(url);
   if (request.method === 'POST' && pathname === '/api/media-backfill') return apiMediaBackfill(request);
   if (request.method === 'POST' && pathname === '/api/voicemail-backfill') return apiVoicemailBackfill(request);
@@ -6319,17 +6320,94 @@ function emptyVoice() {
 // Add one sample to the corpus without a full rebuild. Used by the learning loop
 // (accepted drafts, his rewrites, trainer verdicts) so the profile keeps
 // sharpening between rebuilds.
-async function recordVoiceSample(text, source) {
-  const t = String(text || '').trim();
-  if (t.length < 8 || t.length > 400) return;
+async function recordVoiceSample(text, source) { return addVoiceSamples([text], source); }
+
+// Batch version — one KV read and one write no matter how many samples, which
+// matters when an import drops fifty of them in at once.
+async function addVoiceSamples(list, source) {
   const v = (await loadVoice()) || emptyVoice();
-  const b = voiceBucket(t);
-  v.buckets[b] = v.buckets[b] || [];
   const norm = (s) => s.replace(/\s+/g, ' ').toLowerCase();
-  if (v.buckets[b].some((x) => norm(x.t) === norm(t))) return;   // already have it
-  v.buckets[b].unshift({ t, s: source || 'sent', at: Date.now() });
-  if (v.buckets[b].length > VOICE_PER_BUCKET) v.buckets[b].length = VOICE_PER_BUCKET;
+  let added = 0;
+  for (const raw of (list || [])) {
+    const t = String(raw || '').replace(/\s+/g, ' ').trim();
+    if (t.length < 8 || t.length > 400) continue;
+    const b = voiceBucket(t);
+    v.buckets[b] = v.buckets[b] || [];
+    if (v.buckets[b].some((x) => norm(x.t) === norm(t))) continue;   // already have it
+    v.buckets[b].unshift({ t, s: source || 'sent', at: Date.now() });
+    if (v.buckets[b].length > VOICE_PER_BUCKET) v.buckets[b].length = VOICE_PER_BUCKET;
+    added++;
+  }
+  if (!added) return 0;
+  for (const b of VOICE_BUCKETS) v.counts[b] = (v.buckets[b] || []).length;
   await saveVoice(v);
+  return added;
+}
+
+// ---------------------------------------------------------------------------
+// Importing a transcript export
+// ---------------------------------------------------------------------------
+// The dashboard only knows the conversations that came through it. Years of his
+// real texting lives in a phone export, and that is the best training data there
+// is — so let him paste one in.
+//
+// Google Voice / Messages exports label each bubble for screen readers as
+//   "Message from you, <text>, Tuesday, July 28 2026, 3:05 PM."
+// which is a precise way to take HIS side and leave the customer's out. Anything
+// that doesn't match that shape falls back to one-message-per-line, so a plain
+// list of his texts works too.
+const VOICE_MINE_RE = /Message from you,\s*([\s\S]*?),\s*(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day,\s*[A-Z][a-z]+ \d{1,2} \d{4},\s*\d{1,2}:\d{2}\s*(?:AM|PM)\./g;
+
+function parseTranscript(raw) {
+  const text = String(raw || '');
+  const out = [];
+  let m;
+  VOICE_MINE_RE.lastIndex = 0;
+  while ((m = VOICE_MINE_RE.exec(text))) out.push(m[1]);
+  if (out.length) return { mode: 'export', texts: out };
+  // Fallback: a plain list. Drop anything that looks like the other side of the
+  // conversation rather than guessing.
+  const lines = text.split(/\r?\n/).map((s) => s.trim())
+    .filter((s) => s && !/^(me|you|customer|them)\s*[:\-]/i.test(s));
+  return { mode: 'lines', texts: lines };
+}
+
+// A bare link or a phone number is not a voice sample.
+function voiceImportable(t) {
+  const s = String(t || '').replace(/\s+/g, ' ').trim();
+  if (s.length < 8 || s.length > 400) return false;
+  if (/^https?:\/\/\S+$/i.test(s)) return false;
+  if (/^[\w.]+\.(com|net|org)\/\S*$/i.test(s)) return false;   // "venmo.com/…" on its own
+  if (/^[-+\d()\s.]+$/.test(s)) return false;                  // just a number
+  return true;
+}
+
+async function apiVoiceImport(request) {
+  const d = await readJson(request);
+  const raw = String((d && d.text) || '').slice(0, 400000);
+  if (!raw.trim()) return json({ ok: false, error: 'empty' }, 422);
+  const parsed = parseTranscript(raw);
+  const seen = new Set();
+  const texts = [];
+  for (const t of parsed.texts) {
+    const s = String(t).replace(/\s+/g, ' ').trim();
+    if (!voiceImportable(s)) continue;
+    const k = s.toLowerCase();
+    if (seen.has(k)) continue;                                  // exports repeat every bubble
+    seen.add(k); texts.push(s);
+  }
+  if (!texts.length) return json({ ok: false, error: 'nothing_found', mode: parsed.mode }, 422);
+  const added = await addVoiceSamples(texts, 'import');
+  // A fresh fingerprint is the point of importing — redo it over the new corpus.
+  let fingerprint = '';
+  if (aiConfigured()) {
+    try {
+      const v = await loadVoice();
+      fingerprint = await deriveVoiceFingerprint(v, await loadConfig());
+      if (fingerprint) { v.fingerprint = fingerprint; await saveVoice(v); }
+    } catch { /* samples are in either way */ }
+  }
+  return json({ ok: true, mode: parsed.mode, found: texts.length, added, fingerprint });
 }
 
 // Walk every conversation and pull out the texts Mikey actually typed. Expensive

@@ -124,7 +124,12 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   records the verdict; a miss feeds your real wording in as the target and the AI's
   attempt in as a thing to avoid. Sending a draft unedited is recorded as a
   positive example, which it previously threw away. The scoreboard is
-  **% sounds like you**, from the trainer.
+  **% sounds like you**, from the trainer. **Paste an export** takes a phone
+  transcript (Google Voice / Messages) and pulls out only your side — it reads the
+  `Message from you, …` labels those exports carry, so the customer's half never
+  enters the corpus; a plain list of your texts, one per line, works too. Bare
+  links, phone numbers and payment URLs are dropped; payment methods mentioned
+  inside a sentence are kept, because that's your voice.
 - **Claude writes the customer-facing drafts** when `ANTHROPIC_API_KEY` is set —
   holding one specific person's voice from example texts is the one place the model
   itself is the ceiling. Everything else (classification, triage, summaries) stays
