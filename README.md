@@ -70,15 +70,30 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   switchable in **Bookings → Settings → Booking texts**. (Day-of messages — on my
   way, I'm here, all finished — belong to the Jobs run board, which also drives live
   ETA tracking.)
-- **Answer by text (the assist loop):** text your **own business number** the bare
-  facts and the AI writes the customer reply in your voice and sends it — you supply
-  every fact, it only does the wording. `375, thursday works` answers whoever texted
-  you last; `@ruth …` picks someone; `send: …` sends your exact words; `draft: …`
-  holds it in the dashboard; `who` lists who's waiting; `cancel` pulls the last one
-  back. You get the finished wording texted back before it goes out, with a
-  configurable hold (default 60s) that is the cancel window. Only reachable from
-  `MIKEY_PHONE` over a Twilio-signed webhook. Toggle in the menu under *Answer by
-  text*.
+- **Answer by email / by text (the assist loop):** send the bare facts and the AI
+  writes the customer reply in your voice and sends it — you supply every fact, it
+  only does the wording.
+  - **By email (free):** hit **reply** on a new-text alert and type `375, thursday
+    works`. No Twilio message is used for your half of the exchange, and the reply
+    is already threaded to that customer, so there's nothing to address. Needs the
+    one-time Gmail hookup below.
+  - **By text:** text your **own business number** the same thing. Costs one inbound
+    + one outbound segment, but works anywhere.
+  - Grammar either way: `@ruth …` picks someone, `send: …` sends your exact words,
+    `draft: …` holds it in the dashboard, `who` lists who's waiting, `cancel` pulls
+    the last one back. You get the finished wording back before it goes out, with a
+    configurable hold that is the cancel window (60s by text, 180s by email since a
+    cancel has to make another trip through the inbox).
+  - Guards: the text path only accepts `MIKEY_PHONE` over a Twilio-signed webhook;
+    the email path only accepts mail from `ALERT_EMAIL` that carries the `[ref:…]`
+    marker the dashboard plants in its own alerts, so ordinary mail is never read as
+    a command. Both toggle in the menu.
+
+  **Gmail hookup (one time, ~2 min):** menu → *Answer by email* → **Copy the Gmail
+  setup script** → paste into a new project at script.google.com → add a 1-minute
+  time-driven trigger on `mikeyAssistSync`. The script reads your **Sent** mail for
+  replies carrying the `[ref:…]` marker and POSTs them to `/email-in`, so no custom
+  domain, no inbound-mail service and no third-party automation is needed.
 - **Click-to-call:** rings your cell, then bridges the call to the customer through
   your Twilio number (keeps your personal number private).
 - **Instant email alerts (optional, Resend):** get emailed the moment a text,

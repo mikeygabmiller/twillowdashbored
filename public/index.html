@@ -2492,7 +2492,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-29·bookingtexts+assist";
+  var APP_BUILD="2026-07-29·assist-by-email";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4180,9 +4180,12 @@
       '<div class="fu-row"><span class="lbl2">Missed-call text-back <span style="color:var(--muted2);font-weight:400">· never lose a missed call</span></span><span class="sw'+(c.missedCallTextback!==false?" on":"")+'" id="cfgMct"></span></div>'+
       '<div class="fu-col"><input type="text" id="cfgMctText" placeholder="Sorry I missed your call! Text me here and I\'ll get right back to you." value="'+esc(c.missedCallText||"")+'"></div>'+
       '<div class="hint">When a call goes unanswered, the caller instantly gets a friendly text so the lead turns into a conversation you can answer from anywhere. Leave the message blank to use the default.</div>'+
-      '<div class="fu-row"><span class="lbl2">Answer by text <span style="color:var(--muted2);font-weight:400">· text me the facts, I\'ll write it</span></span><span class="sw'+(c.assistSms!==false?" on":"")+'" id="cfgAssist"></span></div>'+
+      '<div class="fu-row"><span class="lbl2">Answer by email <span style="color:var(--muted2);font-weight:400">· free — no text used</span></span><span class="sw'+(c.assistEmail!==false?" on":"")+'" id="cfgAssistEmail"></span></div>'+
+      '<div class="fu-row"><span class="lbl2">Hold before sending</span><span style="display:flex;align-items:center;gap:6px"><input type="number" id="cfgAssistEmailDelay" min="0" max="900" value="'+(c.assistEmailDelaySec==null?180:c.assistEmailDelaySec)+'"><span style="color:var(--muted2)">sec</span></span></div>'+
+      '<div class="hint">Hit <b>reply</b> on a new-text alert and type the bare facts — <b>"375, thursday works"</b>. It gets written out in your voice and sent to that customer. The reply already knows who it\'s about, so there\'s nothing to address. <b>Costs nothing</b> — the only text message used is the one the customer receives.<br><button id="cfgAssistScript" class="btn" style="margin-top:8px">Copy the Gmail setup script</button> <span id="cfgAssistScriptMsg" style="color:var(--muted2)"></span></div>'+
+      '<div class="fu-row"><span class="lbl2">Answer by text <span style="color:var(--muted2);font-weight:400">· same thing, uses a text</span></span><span class="sw'+(c.assistSms!==false?" on":"")+'" id="cfgAssist"></span></div>'+
       '<div class="fu-row"><span class="lbl2">Hold before sending</span><span style="display:flex;align-items:center;gap:6px"><input type="number" id="cfgAssistDelay" min="0" max="600" value="'+(c.assistDelaySec==null?60:c.assistDelaySec)+'"><span style="color:var(--muted2)">sec</span></span></div>'+
-      '<div class="hint">Text your own business number the bare facts — <b>"375, thursday works"</b> — and it gets written out in your voice and sent to whoever texted you last. Use <b>@name</b> to pick someone, <b>send:</b> for your exact words, <b>draft:</b> to hold it here, <b>who</b> to see who\'s waiting. You get the finished wording back first and can reply <b>CANCEL</b> during the hold. Every fact comes from you — the AI only does the wording.</div>'+
+      '<div class="hint">Text your own business number the same thing when email is awkward. Use <b>@name</b> to pick someone, <b>send:</b> for your exact words, <b>draft:</b> to hold it here, <b>who</b> to see who\'s waiting, <b>cancel</b> to pull one back. Either way you get the finished wording back before it goes out, and every fact comes from you — the AI only does the wording.</div>'+
       '<div class="fu-col"><span class="lbl2">Voicemails</span><button id="cfgVmRecover" class="btn" style="white-space:nowrap;align-self:flex-start">'+ic("mic",14)+' Recover past voicemails</button></div>'+
       '<div class="hint">Pulls your recent voicemails from Twilio into the right conversations so you can play them right here. Safe to run anytime.</div>'+
       '<div class="fu-col"><span class="lbl2">Block a number</span><span style="display:flex;gap:6px"><input type="text" id="cfgBlockNum" placeholder="+1425…" style="flex:1"><button id="cfgBlockBtn" class="btn" style="white-space:nowrap">Block</button></span></div>'+
@@ -4201,6 +4204,9 @@
     el("cfgMctText").onchange=function(){saveConfig({missedCallText:el("cfgMctText").value})};
     el("cfgAssist").onclick=function(){saveConfig({assistSms:!(c.assistSms!==false)})};
     el("cfgAssistDelay").onchange=function(){saveConfig({assistDelaySec:+el("cfgAssistDelay").value})};
+    el("cfgAssistEmail").onclick=function(){saveConfig({assistEmail:!(c.assistEmail!==false)})};
+    el("cfgAssistEmailDelay").onchange=function(){saveConfig({assistEmailDelaySec:+el("cfgAssistEmailDelay").value})};
+    el("cfgAssistScript").onclick=function(){copyAssistScript()};
     el("cfgVmRecover").onclick=function(){recoverVoicemails(el("cfgVmRecover"))};
     el("cfgBlockBtn").onclick=function(){var v=el("cfgBlockNum").value.trim();if(v)blockNumber(v,"block")};
     el("cfgRuleAdd").onclick=function(){
@@ -4390,6 +4396,29 @@
     }).catch(function(){toast("Network error",{bad:true})});
   }
   // Pull recent voicemails from Twilio into their conversations so they're playable here.
+  // Fetch the ready-to-paste Gmail script and put it on the clipboard. Falls back
+  // to a textarea + manual copy on browsers that block clipboard writes.
+  function copyAssistScript(){
+    var msg=el("cfgAssistScriptMsg");
+    if(msg)msg.textContent="Getting it…";
+    api("/api/email-setup").then(function(d){
+      if(!d||!d.ok||!d.script){if(msg)msg.textContent="Couldn't build it — try again";return}
+      var done=function(){
+        if(msg)msg.textContent="Copied ✓";
+        toast("Script copied. Open script.google.com, make a new project, paste it, then add a 1-minute trigger.");
+      };
+      if(navigator.clipboard&&navigator.clipboard.writeText){
+        navigator.clipboard.writeText(d.script).then(done,function(){manualCopy(d.script,done)});
+      } else manualCopy(d.script,done);
+    }).catch(function(){if(msg)msg.textContent="Network error"});
+  }
+  function manualCopy(text,done){
+    var ta=document.createElement("textarea");
+    ta.value=text;ta.style.position="fixed";ta.style.opacity="0";
+    document.body.appendChild(ta);ta.select();
+    try{document.execCommand("copy");done()}catch(e){toast("Couldn't copy automatically — long-press to select",{bad:true})}
+    document.body.removeChild(ta);
+  }
   function recoverVoicemails(btn){
     var orig=btn?btn.innerHTML:"";
     if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span> Checking Twilio…'}

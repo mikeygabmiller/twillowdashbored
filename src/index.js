@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-29·bookingtexts+assist';
+const BUILD = '2026-07-29·assist-by-email';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -499,12 +499,9 @@ async function handleInboundSms(request) {
   // The alert doubles as the assist prompt: it tells Mikey he can answer straight
   // from his phone by texting the business number the bare facts (handleOwnerSms).
   const alertCfg = await loadConfig();
-  const assistHint = alertCfg.assistSms === false ? '' :
-    `\n\n💡 Or answer without opening anything: text ${ENV.TWILIO_FROM || 'your business number'} the facts ` +
-    `— e.g. "375, thursday works" — and I'll write it in your voice and send it to ${inThread.name || from}. ` +
-    `You'll get the exact wording back first, with a minute to reply CANCEL.`;
   await notifyMikey(`📱 New ${numMedia > 0 ? 'photo/text' : 'text'} from ${from}`,
-    `New message from ${from}:\n"${text || (numMedia > 0 ? '[photo]' : '')}"\n\nReply in your dashboard.${assistHint}`);
+    assistAlertBody(alertCfg, fromNorm, inThread.name || from,
+      `New message from ${from}:\n"${text || (numMedia > 0 ? '[photo]' : '')}"\n\nReply in your dashboard.`));
   // Pre-draft a reply in Mikey's voice so it's already waiting when he opens the
   // thread. Best-effort — never blocks or fails the inbound webhook.
   await maybeSuggestReply(fromNorm);
@@ -580,27 +577,31 @@ function assistPickTarget(index, token) {
   return null;
 }
 
-async function handleOwnerSms(rawText) {
-  const text = String(rawText || '').trim();
-  if (!text) return twiml('');
-  const cfg = await loadConfig();
-  if (cfg.assistSms === false) return twiml('');   // feature off — stay silent
-  const lower = text.toLowerCase();
+// ---------------------------------------------------------------------------
+// The channel-agnostic core. Both entry points (a text from Mikey's cell, and a
+// reply to an alert email) parse the same grammar and hit the same safety rails;
+// they differ only in how the confirmation goes back to him and how long the
+// hold is. `reply` is the callback that answers on whichever channel he used.
+// ---------------------------------------------------------------------------
+async function runAssist({ text, cfg, reply, channel, forcedPhone }) {
+  const body0 = String(text || '').trim();
+  if (!body0) return;
+  const lower = body0.toLowerCase();
 
-  if (lower === 'help' || lower === '?' || lower === 'commands') { await ownerSay(ASSIST_HELP); return twiml(''); }
+  if (lower === 'help' || lower === '?' || lower === 'commands') { await reply(ASSIST_HELP); return; }
   // Carrier keywords aren't answers — swallow them rather than rewriting "stop"
   // into a friendly sentence and texting it to a customer.
-  if (['stop', 'stopall', 'unsubscribe', 'cancel all', 'end', 'quit', 'start', 'unstop'].includes(lower)) return twiml('');
+  if (['stop', 'stopall', 'unsubscribe', 'cancel all', 'end', 'quit', 'start', 'unstop'].includes(lower)) return;
 
   const index = await loadIndex();
 
   if (lower === 'who' || lower === 'waiting' || lower === 'pending') {
     const waiting = index.filter((e) => !e.archived && e.lastDir === 'in')
       .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0)).slice(0, 5);
-    await ownerSay(waiting.length
+    await reply(waiting.length
       ? 'Waiting on you:\n' + waiting.map((e, i) => `${i + 1}. ${assistWho(e)} — ${humanAgo(Date.now() - (e.lastTs || Date.now()))}: "${(e.lastBody || '').slice(0, 60)}"`).join('\n')
       : 'Nobody\'s waiting on a reply right now. 🚗');
-    return twiml('');
+    return;
   }
 
   // Pull back a queued assist reply. Targets the newest one still in the queue,
@@ -614,17 +615,17 @@ async function handleOwnerSms(rawText) {
         if (s.kind === 'assist' && (!best || (s.at || 0) > (best.item.at || 0))) best = { thread: th, item: s };
       }
     }
-    if (!best) { await ownerSay('Nothing queued to cancel — it may have already gone out.'); return twiml(''); }
+    if (!best) { await reply('Nothing queued to cancel — it may have already gone out.'); return; }
     best.thread.scheduled = best.thread.scheduled.filter((s) => s.id !== best.item.id);
     await saveThread(best.thread);
     await updateIndexEntry(best.thread);
-    await ownerSay(`Cancelled — nothing was sent to ${best.thread.name || best.thread.phone}.`);
-    return twiml('');
+    await reply(`Cancelled — nothing was sent to ${best.thread.name || best.thread.phone}.`);
+    return;
   }
 
   // @target prefix
-  let token = '', body = text;
-  const m = text.match(/^@(\S+)\s+([\s\S]+)$/);
+  let token = '', body = body0;
+  const m = body0.match(/^@(\S+)\s+([\s\S]+)$/);
   if (m) { token = m[1]; body = m[2].trim(); }
 
   // mode prefix
@@ -635,22 +636,31 @@ async function handleOwnerSms(rawText) {
     mm = body.match(/^(?:draft|hold)\s*:\s*([\s\S]+)$/i);
     if (mm) { mode = 'draft'; body = mm[1].trim(); }
   }
-  if (!body) { await ownerSay(ASSIST_HELP); return twiml(''); }
+  if (!body) { await reply(ASSIST_HELP); return; }
 
-  const target = assistPickTarget(index, token);
+  // An email reply already knows who it's about (it's threaded to that customer's
+  // alert), so the target comes free — no @name, and no guessing when two people
+  // texted at once. An explicit @token still wins, so he can redirect.
+  let target = null;
+  if (forcedPhone && !token) {
+    const e = index.find((x) => x.phone === forcedPhone);
+    target = e || { phone: forcedPhone, name: '' };
+  } else {
+    target = assistPickTarget(index, token);
+  }
   if (!target) {
-    await ownerSay(token
-      ? `I couldn't find anyone matching "${token}". Text "who" to see who's waiting.`
+    await reply(token
+      ? `I couldn't find anyone matching "${token}". Send "who" to see who's waiting.`
       : 'Nobody has texted in, so I don\'t know who you mean. Try "@name your answer".');
-    return twiml('');
+    return;
   }
   if (target.ambiguous) {
-    await ownerSay(`"${token}" matches ${target.ambiguous.map(assistWho).join(', ')}. Try a fuller name or the last 4 digits of their number.`);
-    return twiml('');
+    await reply(`"${token}" matches ${target.ambiguous.map(assistWho).join(', ')}. Try a fuller name or the last 4 digits of their number.`);
+    return;
   }
   if (isOptedOut(cfg, target.phone)) {
-    await ownerSay(`${assistWho(target)} texted STOP, so I can't message them. Give them a call instead.`);
-    return twiml('');
+    await reply(`${assistWho(target)} texted STOP, so I can't message them. Give them a call instead.`);
+    return;
   }
 
   const thread = await loadThread(target.phone);
@@ -661,37 +671,208 @@ async function handleOwnerSms(rawText) {
     // in the hint exactly as given.
     try { out = await generateReply(thread, cfg, body); }
     catch (err) {
-      await ownerSay(`Couldn't write that one (${String((err && err.message) || err).slice(0, 60)}). Text "send: <your exact message>" and I'll send it word for word.`);
-      return twiml('');
+      await reply(`Couldn't write that one (${String((err && err.message) || err).slice(0, 60)}). Send "send: <your exact message>" and I'll send it word for word.`);
+      return;
     }
   }
   out = String(out || '').trim();
-  if (!out) { await ownerSay('That came back empty — try again, or use "send: <your exact message>".'); return twiml(''); }
+  if (!out) { await reply('That came back empty — try again, or use "send: <your exact message>".'); return; }
 
   if (mode === 'draft') {
     const last = thread.messages[thread.messages.length - 1];
     thread.suggested = { text: out, ts: Date.now(), forTs: last ? last.ts : Date.now() };
     await saveThread(thread);
     await updateIndexEntry(thread);
-    await ownerSay(`Drafted for ${assistWho(target)} (not sent):\n"${out}"\n\nIt's waiting in the dashboard.`);
-    return twiml('');
+    await reply(`Drafted for ${assistWho(target)} (not sent):\n"${out}"\n\nIt's waiting in the dashboard.`);
+    return;
   }
 
   // Queue it rather than send it. Riding the existing scheduled-send cron gives
   // at-most-once delivery and the opt-out guard for free — and the gap between
-  // now and sendAt IS the cancel window.
-  const delaySec = Math.max(0, Math.min(600, Number(cfg.assistDelaySec) || 0));
+  // now and sendAt IS the cancel window. Email gets a longer hold by default,
+  // because a "cancel" reply has to make another trip through the inbox.
+  const raw = channel === 'email' ? cfg.assistEmailDelaySec : cfg.assistDelaySec;
+  const delaySec = Math.max(0, Math.min(900, Number(raw) || 0));
   const item = { id: genId(), kind: 'assist', at: Date.now(), body: out, sendAt: Date.now() + delaySec * 1000 };
   thread.scheduled.push(item);
   thread.scheduled.sort((a, b) => a.sendAt - b.sendAt);
   thread.dateRequest = null;
   await saveThread(thread);
   await updateIndexEntry(thread);
-  await ownerSay(
+  const when = delaySec >= 60 ? `~${Math.round(delaySec / 60)} min` : delaySec ? `~${delaySec}s` : 'on the next tick (~1 min)';
+  await reply(
     `→ ${assistWho(target)}:\n"${out}"\n\n` +
-    (delaySec ? `Sending in ~${delaySec}s. Reply CANCEL to stop it.` : 'Sending on the next tick (~1 min). Reply CANCEL to stop it.'),
+    `Sending in ${when}. Reply CANCEL to stop it` +
+    (channel === 'email' ? ', or cancel it in the dashboard (faster).' : '.'),
   );
+}
+
+// Entry point 1 — a text from Mikey's own cell to the business number.
+async function handleOwnerSms(rawText) {
+  const cfg = await loadConfig();
+  if (cfg.assistSms === false) return twiml('');   // feature off — stay silent
+  await runAssist({ text: rawText, cfg, channel: 'sms', reply: ownerSay });
   return twiml('');
+}
+
+// ---------------------------------------------------------------------------
+// Entry point 2 — replying to the alert email  (the free channel)
+// ---------------------------------------------------------------------------
+// Alerts already go out as email (notifyMikey prefers Resend), so the cheapest
+// possible answer is to just hit reply. No Twilio segment for his message in,
+// none for the confirmation back — the only billable text is the one the
+// customer actually receives, which no channel can avoid.
+//
+// It also routes itself. The reply is threaded to ONE customer's alert, so we
+// know who it's about without him typing @anything — and without the "whoever
+// texted last" guess going wrong when two people text at the same minute.
+const ASSIST_CUT = '--- reply above this line ---';
+
+// Assemble an alert body that can be replied to. The cut marker goes at the very
+// TOP — when he replies, his mail client quotes everything below it, so slicing
+// at the marker leaves exactly what he typed and nothing else. (Putting it at the
+// bottom looks tidier and does not work: the alert's own text ends up above the
+// cut and gets treated as part of his answer.)
+function assistAlertBody(cfg, phone, who, core) {
+  const byEmail = cfg.assistEmail !== false;
+  const foot = [];
+  if (byEmail) {
+    foot.push(`💡 Just hit REPLY with the facts — e.g. "375, thursday works" — and I'll write it in your voice and send it to ${who}. Free: no text message used.`);
+  }
+  if (cfg.assistSms !== false) {
+    foot.push(`📱 ${byEmail ? 'Or text' : 'Text'} ${ENV.TWILIO_FROM || 'your business number'} the facts — e.g. "375, thursday works" — and I'll write it in your voice and send it to ${who}.`);
+  }
+  if (!foot.length) return core;
+  foot.push(`You'll get the exact wording back before it goes out.`);
+  // Only invite a reply when replies are actually processed. With email answering
+  // off, the marker and ref are left out entirely — otherwise he'd hit reply and
+  // nothing would ever happen. The ref is also what makes a reply routable, and
+  // requiring it is what stops ordinary mail being read as a command.
+  if (!byEmail) return `${core}\n\n${foot.join('\n')}`;
+  foot.push(`[ref:${phone}]`);
+  return `${ASSIST_CUT}\n${core}\n\n${foot.join('\n')}`;
+}
+
+// Strip the quoted original out of a reply so only what he actually typed is
+// treated as the answer. Cuts at our own marker first (exact and reliable), then
+// falls back to the usual client patterns.
+function assistStripQuoted(raw) {
+  let s = String(raw || '').replace(/\r\n/g, '\n');
+  const cuts = [
+    s.indexOf(ASSIST_CUT),
+    s.search(/^\s*On .{0,120}\bwrote:\s*$/m),
+    s.search(/^\s*-{2,}\s*Original Message\s*-{2,}/mi),
+    s.search(/^\s*_{10,}\s*$/m),
+    s.search(/^\s*From:\s.+$/m),
+    s.search(/^\s*>/m),
+  ].filter((i) => i > -1);
+  if (cuts.length) s = s.slice(0, Math.min(...cuts));
+  // Drop a trailing signature block ("-- \nMikey").
+  s = s.replace(/\n--\s*\n[\s\S]*$/, '');
+  return s.trim();
+}
+
+// Which conversation is this a reply to? ONLY the ref line we planted counts.
+// Deliberately not falling back to "a phone number somewhere in the subject" —
+// that would make any ordinary email of his with a number in the subject look
+// like a command. The ref is present on every alert, so nothing real is lost.
+// Returns a normalized phone or ''.
+function assistRefPhone(body) {
+  // Tolerant of reformatting: iOS Mail and some clients rewrite a bare number
+  // into "(360) 555-1234" even inside our marker.
+  const m = String(body || '').match(/\[ref:\s*([+\d(][\d\s()+.-]{6,})\]/);
+  if (!m) return '';
+  return normalizePhone(m[1]) || '';
+}
+
+// Bare address out of "Mikey <mikey@example.com>", lowercased.
+function emailAddr(s) {
+  const m = String(s || '').match(/<([^>]+)>/);
+  return String(m ? m[1] : s || '').trim().toLowerCase();
+}
+
+// Is this ingested email Mikey answering a customer alert? Requires the sender
+// to be the alert mailbox AND the mail to reference a conversation — so ordinary
+// customer email flowing through the same ingest is never mistaken for a command.
+function assistIsOwnerReply(cfg, email) {
+  if (cfg.assistEmail === false) return '';
+  const owner = emailAddr(ENV.ALERT_EMAIL);
+  if (!owner || emailAddr(email.from) !== owner) return '';
+  return assistRefPhone(email.body);
+}
+
+async function handleAssistEmail(cfg, email, phone) {
+  const text = assistStripQuoted(email.body);
+  if (!text) return;
+  const subject = 'Re: ' + String(email.subject || 'your reply').replace(/^(re:\s*)+/i, '');
+  await runAssist({
+    text, cfg, channel: 'email', forcedPhone: phone,
+    // The confirmation carries the marker and the ref too, so replying "cancel"
+    // to IT routes back here instead of landing in the inbox as ordinary mail.
+    reply: (msg) => sendEmail(subject, `${ASSIST_CUT}\n${msg}\n\n[ref:${phone}]`).catch(() => {}),
+  });
+}
+
+// The Gmail script that feeds this. Deliberately reads his SENT mail rather than
+// his inbox: whatever address the alert came from, his reply is in Sent, so this
+// needs no inbound-mail infrastructure, no custom domain and no third-party
+// automation — just a free 1-minute trigger on his own account.
+function assistAppsScript(url, token) {
+  return `/**
+ * Mikey's Dashboard — "Answer by email".
+ * Reply to a new-text alert with the facts and the dashboard writes the
+ * customer reply in your voice and sends it.
+ *
+ * SETUP (once, ~2 minutes)
+ *  1. Go to script.google.com -> New project
+ *  2. Delete what's there, paste ALL of this, hit Save
+ *  3. Run -> mikeyAssistSync  (approve the permission prompt the first time)
+ *  4. Triggers (clock icon) -> Add Trigger -> mikeyAssistSync ->
+ *     Time-driven -> Minutes timer -> Every minute -> Save
+ * That's it. Replying to an alert now answers the customer.
+ */
+var DASH_URL   = ${JSON.stringify(url)};
+var DASH_TOKEN = ${JSON.stringify(token)};
+
+function mikeyAssistSync() {
+  var me = Session.getActiveUser().getEmail().toLowerCase();
+  var props = PropertiesService.getScriptProperties();
+  var seen = JSON.parse(props.getProperty('seen') || '[]');
+  var threads = GmailApp.search('from:me newer_than:2d', 0, 30);
+
+  for (var t = 0; t < threads.length; t++) {
+    var msgs = threads[t].getMessages();
+    for (var i = 0; i < msgs.length; i++) {
+      var m = msgs[i];
+      var id = m.getId();
+      if (seen.indexOf(id) !== -1) continue;                    // already sent
+      if (m.getFrom().toLowerCase().indexOf(me) === -1) continue; // not mine
+      var body = m.getPlainBody() || '';
+      if (body.indexOf('[ref:') === -1) continue;               // not a dashboard alert reply
+
+      try {
+        UrlFetchApp.fetch(DASH_URL, {
+          method: 'post',
+          contentType: 'application/json',
+          headers: { 'X-Ingest-Token': DASH_TOKEN },
+          muteHttpExceptions: true,
+          payload: JSON.stringify({
+            token: DASH_TOKEN,
+            from: me,
+            subject: m.getSubject(),
+            body: body,
+            messageId: id,
+            date: m.getDate().getTime()
+          })
+        });
+        seen.push(id);
+      } catch (err) { /* try again next run */ }
+    }
+  }
+  if (seen.length > 300) seen = seen.slice(-300);
+  props.setProperty('seen', JSON.stringify(seen));
+}
+`;
 }
 
 // Small TwiML fragment that rings Mikey's cell and then falls through to
@@ -2754,6 +2935,18 @@ async function handleEmailIn(request) {
   // De-dupe on a provided messageId if the automation retries.
   const mid = data.messageId ? String(data.messageId).slice(0, 200) : '';
   if (mid) { if (list.some((e) => e.mid === mid)) return json({ ok: true, duplicate: true }); email.mid = mid; }
+
+  // Mikey replying to a customer alert isn't inbox mail — it's him answering a
+  // customer. Run it through the assist loop and don't file it in the inbox.
+  // Checked AFTER the de-dupe so a retrying forwarder can't send the same reply
+  // twice; the assist itself is queued, so a stray double would surface as a
+  // second queued message he can cancel rather than a second text going out.
+  const assistPhone = assistIsOwnerReply(cfg, email);
+  if (assistPhone) {
+    if (mid) { list.unshift({ id: email.id, mid, assist: true, date: email.date, unread: 0, from: email.from, subject: email.subject, snippet: '' }); if (list.length > 60) list.length = 60; await kv().put('emails', JSON.stringify(list)); }
+    await handleAssistEmail(cfg, email, assistPhone);
+    return json({ ok: true, assist: true });
+  }
   list.unshift(email);
   if (list.length > 60) list.length = 60;
   await kv().put('emails', JSON.stringify(list));
@@ -2776,7 +2969,15 @@ async function apiEmailSetup(request) {
     CFG_CACHE = next;
   }
   const list = (await kv().get('emails', { type: 'json' })) || [];
-  return json({ ok: true, url: `${publicBase()}/email-in`, token, connected: list.length > 0, count: list.length, lastAt: list[0] ? list[0].date : null });
+  const url = `${publicBase()}/email-in`;
+  return json({
+    ok: true, url, token,
+    connected: list.length > 0, count: list.length, lastAt: list[0] ? list[0].date : null,
+    // Ready to paste into script.google.com — this is what turns "reply to the
+    // alert" into an answered customer.
+    script: assistAppsScript(url, token),
+    assistReady: !!(ENV.RESEND_API_KEY && ENV.ALERT_EMAIL),
+  });
 }
 async function apiEmailRead(request) {
   const data = await readJson(request);
@@ -4601,6 +4802,8 @@ async function apiSaveConfig(request) {
   if (typeof data.missedCallText === 'string') next.missedCallText = data.missedCallText.slice(0, 320);
   if (typeof data.assistSms === 'boolean') next.assistSms = data.assistSms;
   if (data.assistDelaySec != null && !isNaN(+data.assistDelaySec)) next.assistDelaySec = Math.max(0, Math.min(600, Math.round(+data.assistDelaySec)));
+  if (typeof data.assistEmail === 'boolean') next.assistEmail = data.assistEmail;
+  if (data.assistEmailDelaySec != null && !isNaN(+data.assistEmailDelaySec)) next.assistEmailDelaySec = Math.max(0, Math.min(900, Math.round(+data.assistEmailDelaySec)));
   if (typeof data.teamMode === 'boolean') next.teamMode = data.teamMode;
   if (typeof data.briefEnabled === 'boolean') next.briefEnabled = data.briefEnabled;
   if (data.briefHour != null && !isNaN(+data.briefHour)) next.briefHour = Math.max(4, Math.min(11, Math.round(+data.briefHour)));
@@ -5380,6 +5583,10 @@ function defaultConfig() {
                              // works") and the AI writes the customer reply in your voice.
                              // You supply every fact; the AI only does the wording.
     assistDelaySec: 60,      // cancel window before an assist reply actually goes out
+    assistEmail: true,       // same thing by replying to the alert email — costs nothing,
+                             // and the reply already knows which customer it's about
+    assistEmailDelaySec: 180,// longer hold on the email path: a "cancel" reply has to make
+                             // another trip through the inbox before it reaches us
     teamMode: false,         // when on: conversations can be assigned, and each reply is
                              // attributed to the sender. Turn off to go back to solo.
     team: [],                // [{ id, name, role }] — the people who help answer texts
