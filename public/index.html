@@ -2492,7 +2492,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-29·assist-script-guard";
+  var APP_BUILD="2026-07-29·voice-training";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4195,6 +4195,12 @@
       '<div class="hint">Pulls your recent voicemails from Twilio into the right conversations so you can play them right here. Safe to run anytime.</div>'+
       '<div class="fu-col"><span class="lbl2">Block a number</span><span style="display:flex;gap:6px"><input type="text" id="cfgBlockNum" placeholder="+1425…" style="flex:1"><button id="cfgBlockBtn" class="btn" style="white-space:nowrap">Block</button></span></div>'+
       blockedListHtml(c.blockedNumbers)+
+      '<div class="fu-row"><span class="lbl2">Sounding like you</span><span id="cfgVoiceStat" style="color:var(--muted2);font-size:13px">…</span></div>'+
+      '<div class="fu-col"><span style="display:flex;gap:6px;flex-wrap:wrap">'+
+        '<button id="cfgVoiceBuild" class="btn">Rebuild from my texts</button>'+
+        '<button id="cfgVoiceTrain" class="btn">Train the voice</button>'+
+      '</span></div>'+
+      '<div class="hint"><b>Rebuild</b> reads the messages you\'ve actually typed to customers and learns your length, punctuation, emoji habits and phrasing from them — then shows the AI your real texts from the same kind of situation every time it drafts. <b>Train</b> replays past conversations: it writes what it would have said next to what you really sent, and you tap whether it sounds like you. The misses are the valuable ones — they teach it what to stop doing.</div>'+
       '<div class="fu-col"><span class="lbl2">Rules you\'ve told the AI</span><span style="display:flex;gap:6px"><input type="text" id="cfgRuleNew" placeholder="e.g. never quote a full detail under $150" style="flex:1"><button id="cfgRuleAdd" class="btn" style="white-space:nowrap">Add</button></span></div>'+
       '<div class="hint">Hard instructions the AI follows every time it writes for you. You can also just say one in the command centre — "stop using exclamation points" — and approve it there.</div>'+
       '<div id="cfgRules"></div>';
@@ -4213,6 +4219,9 @@
     el("cfgAssistEmailDelay").onchange=function(){saveConfig({assistEmailDelaySec:+el("cfgAssistEmailDelay").value})};
     el("cfgAssistScript").onclick=function(){copyAssistScript()};
     el("cfgAssistPractice").onclick=function(){sendPractice(el("cfgAssistPractice"))};
+    el("cfgVoiceBuild").onclick=function(){buildVoice(el("cfgVoiceBuild"))};
+    el("cfgVoiceTrain").onclick=function(){openVoiceTrainer()};
+    refreshVoiceStat();
     el("cfgVmRecover").onclick=function(){recoverVoicemails(el("cfgVmRecover"))};
     el("cfgBlockBtn").onclick=function(){var v=el("cfgBlockNum").value.trim();if(v)blockNumber(v,"block")};
     el("cfgRuleAdd").onclick=function(){
@@ -4425,6 +4434,88 @@
     try{document.execCommand("copy");done()}catch(e){toast("Couldn't copy automatically — long-press to select",{bad:true})}
     document.body.removeChild(ta);
   }
+  // ---- Voice training ------------------------------------------------------
+  function refreshVoiceStat(){
+    var s=el("cfgVoiceStat"); if(!s)return;
+    api("/api/voice/stats").then(function(d){
+      if(!d||!d.ok){s.textContent="—";return}
+      var bits=[];
+      bits.push(d.samples?(d.samples+" of your texts learned"):"not built yet");
+      if(d.matchRate!=null) bits.push(d.matchRate+"% sounds like you ("+d.rounds+" checked)");
+      if(d.provider==="claude") bits.push("Claude");
+      s.textContent=bits.join(" · ");
+    }).catch(function(){s.textContent="—"});
+  }
+  function buildVoice(btn){
+    var orig=btn?btn.innerHTML:"";
+    if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span> Reading your texts…'}
+    post("/api/voice/build",{}).then(function(d){
+      if(d&&d.ok){
+        toast("Learned from "+d.samples+" of your own texts. Drafts will sound more like you from here.");
+        refreshVoiceStat();
+      } else toast((d&&d.error)==="ai_not_configured"?"No AI key set on the server":"Couldn't build it: "+((d&&d.error)||"error"),{bad:true});
+    }).catch(function(){toast("Network error",{bad:true})})
+      .then(function(){if(btn){btn.disabled=false;btn.innerHTML=orig}});
+  }
+
+  // Full-screen trainer. One card at a time: the customer's message, what the AI
+  // would write now, and what he actually sent. Two taps' worth of decision.
+  var voiceSeen=[];
+  function openVoiceTrainer(){
+    var w=document.createElement("div");
+    w.id="voiceTrainer";
+    w.style.cssText="position:fixed;inset:0;z-index:9000;background:var(--bg);display:flex;flex-direction:column;padding:calc(14px + var(--safe-top)) 14px calc(14px + var(--safe-bottom));overflow-y:auto";
+    w.innerHTML=
+      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'+
+        '<div style="font-weight:800;font-size:17px">Does this sound like you?</div>'+
+        '<button class="btn" id="vtClose" style="margin-left:auto">Done</button>'+
+      '</div>'+
+      '<div id="vtScore" style="color:var(--muted2);font-size:13px;margin-bottom:10px"></div>'+
+      '<div id="vtBody" style="flex:1"><div class="spin" style="margin:40px auto"></div></div>';
+    document.body.appendChild(w);
+    el("vtClose").onclick=function(){w.remove();refreshVoiceStat()};
+    voiceNext();
+  }
+  function voiceCard(d){
+    var box=function(label,text,tone){
+      return '<div style="margin-bottom:12px">'+
+        '<div style="font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;color:'+tone+';font-weight:800;margin-bottom:5px">'+label+'</div>'+
+        '<div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 13px;line-height:1.5;white-space:pre-wrap">'+esc(text)+'</div>'+
+      '</div>';
+    };
+    return box("They texted"+(d.name?" · "+esc(d.name):""),d.customer,"var(--muted2)")+
+      box("What the AI would send now",d.ai,"var(--accent-text)")+
+      box("What you actually sent",d.mine,"var(--green)")+
+      '<div style="display:flex;gap:9px;margin-top:16px">'+
+        '<button class="btn" id="vtOff" style="flex:1;padding:14px;border-color:var(--line)">Not how I\'d say it</button>'+
+        '<button class="btn" id="vtMatch" style="flex:1;padding:14px;background:var(--green);color:#06331c;border-color:var(--green);font-weight:800">Sounds like me</button>'+
+      '</div>'+
+      '<div class="hint" style="margin-top:10px">Tapping <b>Not how I\'d say it</b> teaches it the most — your real wording goes in as the target and the AI\'s attempt gets recorded as a miss.</div>';
+  }
+  function voiceNext(){
+    var body=el("vtBody"); if(!body)return;
+    body.innerHTML='<div class="spin" style="margin:40px auto"></div>';
+    post("/api/voice/replay",{seen:voiceSeen}).then(function(d){
+      if(!el("vtBody"))return;                       // trainer closed mid-flight
+      if(!d||!d.ok){el("vtBody").innerHTML='<div class="hint">Couldn\'t load one: '+esc((d&&d.error)||"error")+'</div>';return}
+      if(d.done){el("vtBody").innerHTML='<div class="hint" style="padding:30px 0;text-align:center">That\'s everything worth replaying for now. Come back after a few more conversations.</div>';return}
+      voiceSeen.push(d.id); if(voiceSeen.length>200)voiceSeen.shift();
+      el("vtBody").innerHTML=voiceCard(d);
+      var send=function(verdict){
+        el("vtBody").innerHTML='<div class="spin" style="margin:40px auto"></div>';
+        post("/api/voice/score",{id:d.id,verdict:verdict,mine:d.mine,ai:d.ai}).then(function(r){
+          if(r&&r.ok&&el("vtScore")){
+            var t=(r.scores.match||0)+(r.scores.off||0);
+            el("vtScore").textContent=t?(Math.round((r.scores.match/t)*100)+"% sounds like you · "+t+" checked"):"";
+          }
+          voiceNext();
+        }).catch(function(){toast("Network error",{bad:true});voiceNext()});
+      };
+      el("vtMatch").onclick=function(){send("match")};
+      el("vtOff").onclick=function(){send("off")};
+    }).catch(function(){if(el("vtBody"))el("vtBody").innerHTML='<div class="hint">Network error.</div>'});
+  }
+
   // Fire a fake customer question at your own inbox so you can rehearse replying.
   // Nothing it produces can reach a real person.
   function sendPractice(btn){

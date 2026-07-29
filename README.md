@@ -111,6 +111,25 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   a service question and a complaint. The practice number lives in the 555-01xx
   range reserved for fiction, and `sendSms()` refuses it unconditionally, so no code
   path can text it even by accident.
+- **Sounding like you (voice training):** the AI used to learn your voice from ten
+  hand-written example texts while thousands of your real ones sat unread in KV.
+  Now **Rebuild from my texts** mines the messages you actually typed (templates,
+  follow-ups and AI-written replies are excluded — no training on itself), files
+  them by situation (price / scheduling / apology / confirmation / …), derives a
+  *measurable* style fingerprint from them, and shows the model your real texts
+  from the matching situation on every draft. A **tell-blocker** catches stock AI
+  phrasing ("Certainly!", "I'd be happy to", em-dashes) and regenerates once with
+  that phrase banned by name. **Train the voice** replays past conversations — what
+  the AI would write now, next to what you really sent — and one tap per card
+  records the verdict; a miss feeds your real wording in as the target and the AI's
+  attempt in as a thing to avoid. Sending a draft unedited is recorded as a
+  positive example, which it previously threw away. The scoreboard is
+  **% sounds like you**, from the trainer.
+- **Claude writes the customer-facing drafts** when `ANTHROPIC_API_KEY` is set —
+  holding one specific person's voice from example texts is the one place the model
+  itself is the ceiling. Everything else (classification, triage, summaries) stays
+  on Gemini Flash, and drafting falls back to Gemini automatically if the key is
+  missing or the call fails, so you never lose the ability to reply.
 - **Click-to-call:** rings your cell, then bridges the call to the customer through
   your Twilio number (keeps your personal number private).
 - **Instant email alerts (optional, Resend):** get emailed the moment a text,

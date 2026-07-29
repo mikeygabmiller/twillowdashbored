@@ -18,6 +18,13 @@
  *   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM, MIKEY_PHONE
  *   GEMINI_API_KEY        (optional — only the AI endpoints need it)
  *   GEMINI_MODEL          (optional — defaults to gemini-2.0-flash)
+ *   ANTHROPIC_API_KEY     (optional — when set, Claude writes the customer-facing
+ *                          drafts because it holds a specific person's voice far
+ *                          better; everything else stays on Gemini. Falls back to
+ *                          Gemini automatically if missing or erroring.)
+ *   ANTHROPIC_MODEL       (optional — defaults to claude-opus-5)
+ *   CLAUDE_DISABLED       (optional kill switch — set to "1" to force drafting
+ *                          back onto Gemini without removing the key)
  *   RESEND_API_KEY        (optional — email alerts instead of texting yourself)
  *   ALERT_EMAIL           (optional — where alerts go; defaults to nothing)
  *   ALERT_FROM            (optional — verified sender; defaults to Resend's)
@@ -67,7 +74,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-29·assist-script-guard';
+const BUILD = '2026-07-29·voice-training';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -189,6 +196,11 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/email-read') return apiEmailRead(request);
   if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/email-setup') return apiEmailSetup(request);
   if (request.method === 'POST' && pathname === '/api/assist/practice') return apiAssistPractice(request);
+  // Voice training — teaching the AI to sound like Mikey (see the VOICE module).
+  if (request.method === 'GET'  && pathname === '/api/voice/stats')        return apiVoiceStats();
+  if (request.method === 'POST' && pathname === '/api/voice/build')        return apiVoiceBuild();
+  if (request.method === 'POST' && pathname === '/api/voice/replay')       return apiVoiceReplayNext(request);
+  if (request.method === 'POST' && pathname === '/api/voice/score')        return apiVoiceReplayScore(request);
   if (request.method === 'GET'  && pathname === '/api/media')      return apiMediaProxy(url);
   if (request.method === 'POST' && pathname === '/api/media-backfill') return apiMediaBackfill(request);
   if (request.method === 'POST' && pathname === '/api/voicemail-backfill') return apiVoicemailBackfill(request);
@@ -3394,21 +3406,62 @@ async function apiAiSummary(request) {
 // sharper the more he uses it ("learns from your edits").
 async function generateReply(thread, cfg, hint) {
   const spend = await customerSpend(thread.phone, cfg);
-  const prompt =
+  const voice = await loadVoice();
+  // Which situation is this? Take it from what he's being asked to write about —
+  // the hint if he gave one, otherwise the customer's last message.
+  const msgs = thread.messages || [];
+  const lastIn = [...msgs].reverse().find((m) => m.dir === 'in');
+  const bucket = voiceBucket(hint || (lastIn && lastIn.body) || '');
+  // Resolve the async context blocks once, then reuse them across attempts.
+  const rulesCtx = await rulesContext();
+  const editsCtx = await editsContext(bucket);
+  const build = (extra) =>
     businessContext(cfg) +
-    (await rulesContext()) +
+    rulesCtx +
     customerContext(thread, spend) +
-    (await editsContext()) +
+    voiceContext(voice, bucket) +
+    editsCtx +
     `You are replying to a customer by text for Mikey's Mobile Detailing. ` +
-    `Write ONE friendly, professional reply (1-3 short complete sentences, no greeting line, no signature, ready to send). ` +
-    `Ground it in the business playbook above — use the real services, pricing ranges and voice, and never contradict them. ` +
+    `Write ONE reply (1-3 short complete sentences, no greeting line, no signature, ready to send). ` +
+    `It must be indistinguishable from the real texts above — same length, same rhythm, same punctuation habits. ` +
+    `Ground it in the business playbook — use the real services, pricing ranges and voice, and never contradict them. ` +
     `Do not make up a specific price or appointment time on your own. ` +
     `BUT if the goal below already specifies details the owner has decided — a price, a day, a time, an answer — use those exactly as given; that is the owner telling you what to say. ` +
-    `Finish every sentence — do not cut off mid-thought. ` +
+    `Write it the way a busy person texts, not the way an assistant writes. Finish every sentence. ` +
     (hint ? `Goal of this reply (write a text that accomplishes exactly this): ${hint}. ` : '') +
+    (extra || '') +
     `\n\nConversation so far:\n${transcript(thread)}\n\nReply:`;
-  const text = await geminiGenerate(prompt, { temperature: 0.7, maxTokens: 800 });
-  return text.replace(/^["']|["']$/g, '').trim();
+
+  let text = await aiGenerate(build(''), { tier: 'voice', maxTokens: 800, temperature: 0.45 });
+  text = cleanReply(text);
+  // One regeneration if it reached for a stock AI phrase, naming the offender so
+  // it can't simply reach for the same one again.
+  const tell = findTell(text);
+  if (tell) {
+    try {
+      const retry = await aiGenerate(
+        build(`CRITICAL: your previous attempt used the phrase "${tell}", which is a dead giveaway that a machine wrote it. Mikey never writes like that. Rewrite without it and without any similar customer-service filler. `),
+        { tier: 'voice', maxTokens: 800, temperature: 0.45 },
+      );
+      const cleaned = cleanReply(retry);
+      // Take the retry even if it still trips a rule — it was written under the
+      // stricter instruction, so it is the better of the two either way.
+      if (cleaned) text = cleaned;
+    } catch { /* keep the first attempt rather than failing the draft */ }
+  }
+  return text;
+}
+
+// Strip the wrappers models like to add, and normalise the punctuation he
+// doesn't use. Em-dashes are the single most recognisable AI tell in a text.
+function cleanReply(raw) {
+  let t = String(raw || '').trim();
+  t = t.replace(/^```[a-z]*\s*|\s*```$/g, '').trim();
+  t = t.replace(/^["']|["']$/g, '').trim();
+  t = t.replace(/\s*—\s*/g, ' - ');   // em-dash → the hyphen he actually types
+  t = t.replace(/\s*–\s*/g, ' - ');   // en-dash, same
+  t = t.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n');
+  return t.trim();
 }
 
 async function apiAiDraft(request) {
@@ -4671,7 +4724,7 @@ function followupTemplate(thread, plan, cfg) {
 // the suggest-and-approve path polishes it with Gemini using the live transcript.
 async function buildFollowupDraft(thread, plan, cfg, opts = {}) {
   const tmpl = followupTemplate(thread, plan, cfg);
-  if (opts.ai === false || !ENV.GEMINI_API_KEY) return tmpl;
+  if (opts.ai === false || !aiConfigured()) return tmpl;
 
   const ctx = businessContext(cfg);
   let prompt;
@@ -6162,25 +6215,332 @@ async function customerSpend(phone, cfg) {
 }
 
 const EDITS_KEY = 'ai:edits';
+const EDITS_KEEP = 100;   // was 12 — enough to retrieve a *relevant* pattern, not just a recent one
 async function loadEdits() {
   return (await kv().get(EDITS_KEY, { type: 'json' })) || [];
 }
 async function recordEdit(from, to) {
   from = String(from || '').trim();
   to = String(to || '').trim();
-  if (!from || !to || from === to) return;          // no change → nothing to learn
+  if (!from || !to) return;
   if (to.length > 600 || from.length > 600) return; // skip outliers
   const norm = (s) => s.replace(/\s+/g, ' ').toLowerCase();
-  if (norm(from) === norm(to)) return;              // whitespace/case only
+  // Sending a draft WORD FOR WORD is the strongest signal there is: the AI wrote
+  // it and he shipped it. That used to be thrown away — now it's a positive
+  // example that goes straight into the voice corpus.
+  if (norm(from) === norm(to)) { await recordVoiceSample(to, 'accepted'); return; }
   const list = await loadEdits();
   list.unshift({ from, to, ts: Date.now() });
-  await kv().put(EDITS_KEY, JSON.stringify(list.slice(0, 12)));
+  await kv().put(EDITS_KEY, JSON.stringify(list.slice(0, EDITS_KEEP)));
+  // His rewrite is, by definition, how he'd have said it.
+  await recordVoiceSample(to, 'edited');
 }
-async function editsContext() {
-  const recent = (await loadEdits()).filter((e) => e && e.from && e.to).slice(0, 6);
-  if (!recent.length) return '';
+// Pull the edit pairs most relevant to the situation being drafted, not merely
+// the most recent — a price rewrite teaches little about a scheduling reply.
+async function editsContext(bucket) {
+  const all = (await loadEdits()).filter((e) => e && e.from && e.to);
+  if (!all.length) return '';
+  const hits = bucket ? all.filter((e) => voiceBucket(e.to) === bucket) : [];
+  const recent = hits.concat(all.filter((e) => !hits.includes(e))).slice(0, 6);
   const rows = recent.map((e) => `- The draft said: "${e.from}"\n  Mikey changed it to: "${e.to}"`).join('\n');
   return 'HOW MIKEY EDITS DRAFTS (these are his recent corrections — learn the PATTERN of how he rewrites: his length, warmth, word choices — and apply that style, not the specific content):\n' + rows + '\n\n';
+}
+
+// ===========================================================================
+// VOICE — sounding like Mikey instead of like an assistant
+// ===========================================================================
+// The AI used to learn his voice from ten hand-written example texts while
+// thousands of his real ones sat unread in KV. This module fixes that: it mines
+// the messages he actually typed, buckets them by situation, derives a
+// measurable fingerprint from them, and shows the model the ones that match the
+// situation being drafted.
+//
+// Showing ten real texts beats any amount of describing the style in prose, and
+// unlike a hand-written list it covers the situations that actually come up, in
+// the proportions they actually come up.
+const VOICE_KEY = 'voice:profile';
+const VOICE_PER_BUCKET = 24;    // kept per situation (retrieval shows a slice of these)
+const VOICE_SHOW = 12;          // shown to the model per draft
+
+// Situation buckets. Deterministic and free — no AI call to file a message.
+const VOICE_BUCKETS = ['price', 'schedule', 'confirm', 'answer', 'apology', 'closing', 'quick', 'general'];
+// Order matters. The rule: a message goes in the bucket whose OTHER messages it
+// most resembles stylistically, because the bucket decides which of his real
+// texts the model gets shown.
+//
+// Two consequences worth stating, since both are easy to get backwards:
+//   - Bad news outranks its own subject. "Unfortunately I couldn't get a slot"
+//     belongs with how he softens bad news, not with scheduling.
+//   - A concrete day or time makes it scheduling even when it opens like a
+//     confirmation. "You're all set for Tuesday" and "Perfect, let's shoot for
+//     10:45" are the same kind of message and must not be split apart; `confirm`
+//     is for agreements with no time in them ("Sounds good!", "Yep, will do").
+function voiceBucket(text) {
+  const t = String(text || '').toLowerCase();
+  if (!t) return 'general';
+  if (/\$|\b\d{2,4}\b\s*(for|to|out the door)|\bprice|\bquote|\bcost/.test(t)) return 'price';
+  if (/\b(sorry|unfortunately|apolog|my bad|ran late|running late)\b/.test(t)) return 'apology';
+  // Bare clock times ("10:30", "let's shoot for 10:45") are how he actually writes
+  // times — an am/pm suffix is the exception, not the rule.
+  if (/\b(mon|tues|wednes|thurs|fri|satur|sun)day\b|\btomorrow\b|\btoday\b|\bnext week\b|\b\d{1,2}:\d{2}\b|\b\d{1,2}\s*(am|pm)\b|\bmorning\b|\bafternoon\b|\bslot\b|\bschedule\b|\bavailab/.test(t)) return 'schedule';
+  if (/^(yes|yep|yeah|perfect|sounds good|you'?re all set|got it|ok|okay|will do)\b/.test(t)) return 'confirm';
+  if (/\b(thank|thanks|appreciate|means a lot|no worries)\b/.test(t)) return 'closing';
+  if (/\?/.test(t)) return 'answer';
+  if (t.length <= 40) return 'quick';
+  return 'general';
+}
+
+// Is this outbound message actually HIS writing? Templates, follow-ups, booking
+// texts and run-board messages are the app's words, not his — training on them
+// would teach the AI to imitate itself, which is exactly the drift to avoid.
+const VOICE_EXCLUDE_KINDS = ['followup', 'scheduled', 'booking', 'run', 'assist', 'auto', 'payment'];
+function voiceUsable(m) {
+  if (!m || m.dir !== 'out') return false;
+  if (m.kind && VOICE_EXCLUDE_KINDS.includes(m.kind)) return false;
+  const b = String(m.body || '').trim();
+  if (b.length < 8 || b.length > 400) return false;
+  if (/^https?:\/\/\S+$/.test(b)) return false;              // a bare link teaches nothing
+  if (/- Mikey$/.test(b) && /water & power/.test(b)) return false; // stray template
+  return true;
+}
+
+async function loadVoice() {
+  return (await kv().get(VOICE_KEY, { type: 'json' })) || null;
+}
+// ⚠ KV WRITE — only on an explicit rebuild or when a training verdict lands.
+async function saveVoice(v) { await kv().put(VOICE_KEY, JSON.stringify(v)); }
+
+function emptyVoice() {
+  const buckets = {};
+  for (const b of VOICE_BUCKETS) buckets[b] = [];
+  return { builtAt: 0, fingerprint: '', counts: {}, buckets };
+}
+
+// Add one sample to the corpus without a full rebuild. Used by the learning loop
+// (accepted drafts, his rewrites, trainer verdicts) so the profile keeps
+// sharpening between rebuilds.
+async function recordVoiceSample(text, source) {
+  const t = String(text || '').trim();
+  if (t.length < 8 || t.length > 400) return;
+  const v = (await loadVoice()) || emptyVoice();
+  const b = voiceBucket(t);
+  v.buckets[b] = v.buckets[b] || [];
+  const norm = (s) => s.replace(/\s+/g, ' ').toLowerCase();
+  if (v.buckets[b].some((x) => norm(x.t) === norm(t))) return;   // already have it
+  v.buckets[b].unshift({ t, s: source || 'sent', at: Date.now() });
+  if (v.buckets[b].length > VOICE_PER_BUCKET) v.buckets[b].length = VOICE_PER_BUCKET;
+  await saveVoice(v);
+}
+
+// Walk every conversation and pull out the texts Mikey actually typed. Expensive
+// (one KV read per thread) so it is never automatic — it runs when he taps
+// "Rebuild my voice profile", and again after a training session.
+async function buildVoiceProfile(opts = {}) {
+  const index = await loadIndex();
+  const cfg = await loadConfig();
+  const v = emptyVoice();
+  let scanned = 0, kept = 0;
+  // Newest conversations first: recent writing is the better model of how he
+  // sounds now, and the per-bucket cap fills from the front.
+  const rows = index.slice().sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0)).slice(0, 400);
+  for (const e of rows) {
+    if (isPracticePhone(e.phone)) continue;             // the fake customer isn't training data
+    const thread = await loadThread(e.phone);
+    for (const m of (thread.messages || [])) {
+      scanned++;
+      if (!voiceUsable(m)) continue;
+      const b = voiceBucket(m.body);
+      if (v.buckets[b].length >= VOICE_PER_BUCKET) continue;
+      const norm = (s) => s.replace(/\s+/g, ' ').toLowerCase();
+      if (v.buckets[b].some((x) => norm(x.t) === norm(m.body))) continue;
+      v.buckets[b].push({ t: String(m.body).trim(), s: 'sent', at: m.ts || 0 });
+      kept++;
+    }
+  }
+  for (const b of VOICE_BUCKETS) v.counts[b] = v.buckets[b].length;
+  v.builtAt = Date.now();
+  v.scanned = scanned;
+  v.kept = kept;
+  // Derive the fingerprint from the real samples. One AI call, and the only one
+  // this whole build makes.
+  if (kept >= 12 && opts.fingerprint !== false) {
+    try { v.fingerprint = await deriveVoiceFingerprint(v, cfg); } catch { v.fingerprint = ''; }
+  }
+  await saveVoice(v);
+  return v;
+}
+
+// Turn the corpus into MEASURABLE rules — "one exclamation mark every third
+// message", "never says Certainly" — rather than adjectives. Evidence beats the
+// hand-written tone paragraph because it describes what he actually does.
+async function deriveVoiceFingerprint(v, cfg) {
+  const sample = [];
+  for (const b of VOICE_BUCKETS) for (const x of (v.buckets[b] || []).slice(0, 18)) sample.push(x.t);
+  if (sample.length < 12) return '';
+  const prompt =
+    `Below are real text messages a mobile car detailer sent his customers. Study them and write a STYLE FINGERPRINT ` +
+    `another writer could follow to be indistinguishable from him.\n\n` +
+    `Return ONLY plain text, max 200 words, as short factual bullets. Be MEASURABLE, not complimentary — ` +
+    `state typical sentence count and length, greeting habits (does he open with a name? dive straight in?), ` +
+    `capitalisation, punctuation and dash habits, emoji (which ones, roughly how often), contractions, sign-offs, ` +
+    `recurring phrases he actually uses, and how he softens bad news. ` +
+    `Finish with a line starting exactly "NEVER: " listing things he never does.\n\n` +
+    `Do not quote the messages back. Do not praise him. Just the rules.\n\n` +
+    sample.map((s) => `- ${s}`).join('\n');
+  const text = await aiGenerate(prompt, { tier: 'fast', maxTokens: 800, temperature: 0.2 });
+  return String(text || '').trim().slice(0, 1600);
+}
+
+// What goes into a draft prompt: the fingerprint, plus his real texts from the
+// SAME situation. This is the piece that does the heavy lifting.
+function voiceContext(voice, bucket) {
+  if (!voice) return '';
+  const out = [];
+  if (voice.fingerprint) {
+    out.push('HOW MIKEY WRITES (derived from his real texts — follow this exactly):\n' + voice.fingerprint);
+  }
+  const pick = [];
+  for (const x of (voice.buckets[bucket] || []).slice(0, VOICE_SHOW)) pick.push(x.t);
+  if (pick.length < 6) {
+    for (const x of (voice.buckets.general || []).concat(voice.buckets.quick || [])) {
+      if (pick.length >= VOICE_SHOW) break;
+      if (!pick.includes(x.t)) pick.push(x.t);
+    }
+  }
+  if (pick.length) {
+    out.push(
+      `REAL TEXTS MIKEY SENT IN THIS EXACT SITUATION (${bucket}). Match their rhythm, length and word choice — ` +
+      `these are the target, not the playbook's phrasing:\n` + pick.map((s) => `- "${s}"`).join('\n'),
+    );
+  }
+  return out.length ? out.join('\n\n') + '\n\n' : '';
+}
+
+// ---------------------------------------------------------------------------
+// The tell-blocker
+// ---------------------------------------------------------------------------
+// Being spotted as AI is mostly about a handful of characteristic phrases, not
+// about missing warmth. Cheaper and more reliable to ban them outright than to
+// ask the model nicely.
+const AI_TELLS = [
+  /\bcertainly[!,.]/i, /\bi'?d be happy to\b/i, /\bhappy to assist\b/i, /\bfeel free to\b/i,
+  /\brest assured\b/i, /\bat your earliest convenience\b/i, /\bplease don'?t hesitate\b/i,
+  /\blet me know if you have any (other )?questions\b/i, /\bi hope this (message )?finds you\b/i,
+  /\bthank you for reaching out\b/i, /\bi understand your concern\b/i, /\bgreat question\b/i,
+  /\bas an ai\b/i, /\bi'?m here to help\b/i, /\bplease be advised\b/i, /\bkindly\b/i,
+  /\bdelve\b/i, /\bit('?s| is) worth noting\b/i, /\bthat said,/i, /—/,   // em-dash: he doesn't use them
+];
+function findTell(text) {
+  for (const re of AI_TELLS) { const m = String(text || '').match(re); if (m) return m[0]; }
+  return '';
+}
+
+// ---------------------------------------------------------------------------
+// The replay trainer
+// ---------------------------------------------------------------------------
+// Find a real moment from the past — a customer texted, Mikey answered — and
+// have the AI write what it would say now. Show both, unlabelled effort on his
+// part: one tap says whether it sounds like him.
+//
+// This is the only source of NEGATIVE signal in the whole system. The corpus
+// learns how he writes; only the trainer learns which drafts he'd have thrown
+// out. It doubles as the scoreboard: the match rate is the number to watch.
+const VOICE_SCORE_KEY = 'voice:scores';
+
+async function loadVoiceScores() {
+  return (await kv().get(VOICE_SCORE_KEY, { type: 'json' })) || { rounds: [], match: 0, off: 0 };
+}
+
+// Pick one past exchange to replay. Prefers conversations we haven't drilled yet
+// and messages long enough to actually carry a voice.
+async function apiVoiceReplayNext(request) {
+  if (!aiConfigured()) return json({ ok: false, error: 'ai_not_configured' }, 503);
+  const d = await readJson(request).catch(() => ({}));
+  const seen = Array.isArray(d && d.seen) ? d.seen.map(String) : [];
+  const index = await loadIndex();
+  const rows = index.filter((e) => !e.archived && !isPracticePhone(e.phone))
+    .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0)).slice(0, 60);
+
+  for (const e of rows) {
+    const thread = await loadThread(e.phone);
+    const msgs = thread.messages || [];
+    // Walk backwards for an inbound message he answered himself.
+    for (let i = msgs.length - 1; i > 0; i--) {
+      const reply = msgs[i], asked = msgs[i - 1];
+      if (!voiceUsable(reply)) continue;
+      if (!asked || asked.dir !== 'in' || !String(asked.body || '').trim()) continue;
+      const id = `${e.phone}:${reply.ts}`;
+      if (seen.includes(id)) continue;
+      // Rebuild the thread as it stood at that moment, so the AI is answering
+      // the same question with the same history — not with hindsight.
+      const asOf = Object.assign({}, thread, { messages: msgs.slice(0, i) });
+      let draft = '';
+      try { draft = await generateReply(asOf, await loadConfig(), ''); }
+      catch (err) { return json({ ok: false, error: String((err && err.message) || err) }, 502); }
+      if (!draft) continue;
+      return json({
+        ok: true, id, phone: e.phone, name: thread.name || '',
+        customer: String(asked.body || '').slice(0, 400),
+        mine: String(reply.body || '').trim(),
+        ai: draft,
+        bucket: voiceBucket(asked.body),
+      });
+    }
+  }
+  return json({ ok: true, done: true });
+}
+
+// Record a verdict. "Off" is the valuable one — it feeds his real wording back
+// in as a positive example AND records the AI's attempt as a thing to avoid.
+async function apiVoiceReplayScore(request) {
+  const d = await readJson(request);
+  const id = String((d && d.id) || '').slice(0, 80);
+  const verdict = (d && d.verdict) === 'match' ? 'match' : 'off';
+  const mine = String((d && d.mine) || '').trim();
+  const ai = String((d && d.ai) || '').trim();
+  if (!id) return json({ ok: false, error: 'bad_request' }, 422);
+
+  const s = await loadVoiceScores();
+  s.rounds.unshift({ id, verdict, at: Date.now() });
+  if (s.rounds.length > 200) s.rounds.length = 200;
+  s[verdict] = (s[verdict] || 0) + 1;
+  await kv().put(VOICE_SCORE_KEY, JSON.stringify(s));
+
+  // His real words are always worth having in the corpus.
+  if (mine) await recordVoiceSample(mine, verdict === 'off' ? 'trainer' : 'sent');
+  // A miss is a before→after pair: what the AI wrote, and what he'd have written.
+  if (verdict === 'off' && mine && ai) { try { await recordEdit(ai, mine); } catch { /* non-fatal */ } }
+  return json({ ok: true, scores: { match: s.match || 0, off: s.off || 0 } });
+}
+
+// The scoreboard. "% sounds like me" from the trainer is the headline; the
+// corpus counts tell him whether there's enough material to learn from.
+async function apiVoiceStats() {
+  const v = await loadVoice();
+  const s = await loadVoiceScores();
+  const total = (s.match || 0) + (s.off || 0);
+  const buckets = {};
+  let samples = 0;
+  if (v) for (const b of VOICE_BUCKETS) { const n = (v.buckets[b] || []).length; buckets[b] = n; samples += n; }
+  return json({
+    ok: true,
+    built: !!(v && v.builtAt), builtAt: (v && v.builtAt) || 0,
+    fingerprint: (v && v.fingerprint) || '',
+    samples, buckets, scanned: (v && v.scanned) || 0,
+    matchRate: total ? Math.round(((s.match || 0) / total) * 100) : null,
+    rounds: total,
+    provider: ENV.ANTHROPIC_API_KEY && !envFlag('CLAUDE_DISABLED') ? 'claude' : (ENV.GEMINI_API_KEY ? 'gemini' : 'none'),
+  });
+}
+
+async function apiVoiceBuild() {
+  if (!aiConfigured()) return json({ ok: false, error: 'ai_not_configured' }, 503);
+  try {
+    const v = await buildVoiceProfile();
+    return json({ ok: true, samples: v.kept, scanned: v.scanned, buckets: v.counts, fingerprint: v.fingerprint });
+  } catch (err) {
+    return json({ ok: false, error: String((err && err.message) || err) }, 502);
+  }
 }
 
 // Proactively pre-draft a reply the instant a customer texts, so one is already
@@ -6200,7 +6560,7 @@ async function maybeSuggestReply(phone) {
     // even appears in "Needs your attention".
     let changed = await ensureReplyCheck(thread, cfg);
     if (replyOwed(thread)) {
-      if (ENV.GEMINI_API_KEY) {
+      if (aiConfigured()) {
         const text = await generateReply(thread, cfg, '');
         if (text) { thread.suggested = { text, ts: Date.now(), forTs: last.ts }; changed = true; }
       }
@@ -6234,6 +6594,76 @@ function businessContext(cfg) {
     .map(([k, label]) => `## ${label}\n${String(p[k]).trim()}`);
   if (!rows.length) return '';
   return 'BUSINESS PLAYBOOK (your source of truth — never contradict it):\n' + rows.join('\n\n') + '\n\n';
+}
+
+// ===========================================================================
+// AI router — which model writes what
+// ===========================================================================
+// Two tiers, because they want different things:
+//   'voice' — writing a message a customer will read. Holding one specific
+//             person's voice from example texts is the job, and Claude is
+//             markedly better at it than Flash. Worth the call.
+//   'fast'  — classification, triage, summaries, JSON. Gemini Flash is quick,
+//             cheap and entirely good enough.
+// Anything voice-tier falls back to Gemini automatically when ANTHROPIC_API_KEY
+// isn't set or the call fails, so the dashboard never loses the ability to draft.
+function aiConfigured() { return !!(ENV.GEMINI_API_KEY || ENV.ANTHROPIC_API_KEY); }
+
+async function aiGenerate(prompt, opts = {}) {
+  if (opts.tier === 'voice' && ENV.ANTHROPIC_API_KEY && !envFlag('CLAUDE_DISABLED')) {
+    try { return await claudeGenerate(prompt, opts); }
+    catch (err) {
+      // Never let a provider outage stop him replying — fall through to Gemini.
+      console.log('claude failed, falling back to gemini:', String((err && err.message) || err).slice(0, 200));
+    }
+  }
+  return geminiGenerate(prompt, opts);
+}
+
+// ===========================================================================
+// Claude (Anthropic Messages API)
+// ===========================================================================
+// Raw fetch rather than @anthropic-ai/sdk on purpose: this Worker has zero
+// runtime dependencies today, ships on Cloudflare's free tier (hard bundle-size
+// ceiling), and every other outbound API here — Twilio, Gemini, Resend — is a
+// plain fetch. One POST to one endpoint doesn't justify changing that for a
+// live business phone line.
+//
+// Opus 5 notes that bite if you get them wrong:
+//   - temperature / top_p / top_k are REMOVED. Sending any of them is a 400.
+//     Steering happens through the prompt and the effort level instead.
+//   - thinking is ON by default, and max_tokens caps thinking + reply together,
+//     so max_tokens needs headroom well past the length of the text itself.
+//   - a request can come back 200 with stop_reason 'refusal' and no content;
+//     check that before reading content[0].
+async function claudeGenerate(prompt, opts = {}) {
+  const key = ENV.ANTHROPIC_API_KEY;
+  if (!key) throw new Error('ANTHROPIC_API_KEY not set');
+  const body = {
+    model: ENV.ANTHROPIC_MODEL || 'claude-opus-5',
+    max_tokens: Math.max(1024, Math.min(8000, (opts.maxTokens || 800) + 1200)), // room for thinking
+    // Low effort: these are short, well-specified writing tasks with the examples
+    // already in the prompt. Thinking stays ON — disabling it on Opus 5 can leak
+    // <thinking> tags into the visible text, which a customer would see.
+    output_config: { effort: 'low' },
+    messages: [{ role: 'user', content: prompt }],
+  };
+  if (opts.json) body.messages[0].content += '\n\nReturn ONLY valid JSON. No prose, no code fences.';
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const data = await res.json();
+  if (data.stop_reason === 'refusal') throw new Error('anthropic_refusal');
+  const text = (data.content || []).filter((b) => b && b.type === 'text').map((b) => b.text || '').join('').trim();
+  if (!text) throw new Error('anthropic_empty');
+  return text;
 }
 
 // ===========================================================================
