@@ -219,7 +219,7 @@ function card(b){
 }
 function bindCards(){ $$("[data-act]").forEach(function(btn){ btn.onclick=function(){
   var act=btn.getAttribute("data-act"), id=btn.getAttribute("data-id");
-  var msg={confirm:"Confirm this booking and text the customer their confirmation + reminders?",decline:"Decline this request? The slot frees up; the customer is NOT auto-texted.",cancel:"Cancel this confirmed booking?",complete:"Mark this job as done?"}[act];
+  var msg={confirm:"Confirm this booking and text the customer their confirmation + reminders?",decline:"Decline this request? The slot frees up.",cancel:"Cancel this confirmed booking? Any queued reminders are pulled so they don't go out.",complete:"Mark this job as done? Queued reminders are pulled and the lead is marked Won."}[act];
   if(msg && !window.confirm(msg)) return;
   btn.disabled=true; btn.textContent="…";
   api("/api/booking",{method:"POST",body:JSON.stringify({id:id,action:act})}).then(function(d){
@@ -279,6 +279,18 @@ function renderSettings(c){
     grid3(fld("Max jobs / day", inputNum("maxJobsPerDay", c.maxJobsPerDay)), fld("Buffer between (min)", inputNum("bufferMin", c.bufferMin)), fld("Slot step (min)", inputNum("stepMin", c.stepMin)))+
     grid2(fld("Min notice (hours)", inputNum("minLeadHours", Math.round((c.minLeadMin||0)/60))), fld("Book up to (days out)", inputNum("windowDays", c.windowDays)));
   H.push(sec("🗓️ Hours & booking rules","When the calendar offers open slots.",hours));
+
+  // Booking texts
+  var at=c.autoTexts||{};
+  function jt(key,label,note){ return '<label class="chk"><input type="checkbox" data-f="autoTexts.'+key+'" '+(at[key]!==false?"checked":"")+'> '+label+'</label>'+(note?'<div class="hint" style="margin:0 0 8px 27px">'+note+'</div>':''); }
+  var jobTexts=
+    jt("confirm","Confirmation when you hit Confirm","“You're all set for Tue, Aug 4 at 10:00 AM…”")+
+    jt("remind24","Day-before reminder","Sent 24 hrs before the job.")+
+    jt("remindAm","Morning-of reminder","Sent at 7:30 AM on the day.")+
+    jt("cancelled","Courtesy note if you cancel a confirmed job","")+
+    jt("declined","Note if you decline a request","Off by default — a declined request usually deserves a personal reply.")+
+    '<div class="hint">These are fixed templates filled in from the booking — no AI writes them, so none of them can invent a price or a time. Cancelling or finishing a job automatically pulls any reminders it still had queued. Day-of messages (on my way, I\'m here, all finished) live on the <b>Jobs</b> run board.</div>';
+  H.push(sec("📨 Booking texts","The messages a booking sends on its own. Uncheck any you'd rather send yourself.",jobTexts));
 
   // Service area
   H.push(sec("📍 Service area","One city per line. The form blocks addresses outside these.",

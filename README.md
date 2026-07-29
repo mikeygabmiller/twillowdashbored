@@ -61,6 +61,56 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   cash, and any other method you add yourself. All of it is yours to configure under
   **menu → Payment setup**: business name, tagline, footer note, what to call cash,
   deposit %, auto-nudge, and free-form extra payment methods.
+- **Booking texts:** confirming a booking texts the confirmation and queues the
+  day-before and morning-of reminders; **cancelling or finishing a job pulls the
+  reminders it still had queued**, so a cancelled customer never gets "see you
+  tomorrow!"; and *Mark done* marks the lead **Won** so the review-ask and rebook
+  cadences start from today. All fixed templates filled in from the booking record —
+  no AI writes them, so none can invent a price or a time — and each is individually
+  switchable in **Bookings → Settings → Booking texts**. (Day-of messages — on my
+  way, I'm here, all finished — belong to the Jobs run board, which also drives live
+  ETA tracking.)
+- **Answer by email / by text (the assist loop):** send the bare facts and the AI
+  writes the customer reply in your voice and sends it — you supply every fact, it
+  only does the wording.
+  - **By email (free):** hit **reply** on a new-text alert and type `375, thursday
+    works`. No Twilio message is used for your half of the exchange, and the reply
+    is already threaded to that customer, so there's nothing to address. Needs the
+    one-time Gmail hookup below.
+  - **By text:** text your **own business number** the same thing. Costs one inbound
+    + one outbound segment, but works anywhere.
+  - Grammar either way: `@ruth …` picks someone, `send: …` sends your exact words,
+    `draft: …` holds it in the dashboard, `who` lists who's waiting, `cancel` pulls
+    the last one back. You get the finished wording back before it goes out, with a
+    configurable hold that is the cancel window (60s by text, 180s by email since a
+    cancel has to make another trip through the inbox).
+  - Guards: the text path only accepts `MIKEY_PHONE` over a Twilio-signed webhook;
+    the email path only accepts mail from `ALERT_EMAIL` that carries the `[ref:…]`
+    marker the dashboard plants in its own alerts, so ordinary mail is never read as
+    a command. Both toggle in the menu.
+
+  **Every alert asks you a question.** Instead of just repeating what the customer
+  said, each alert names what it needs from you and shows literal example replies
+  you can type verbatim ("375" · "375, thursday works"). Complaints, damage and
+  refund requests are classified as **escalate** and get the opposite treatment —
+  flagged *handle this one yourself*, with the quick-answer path and the reply
+  marker deliberately withheld so a one-word reply can't fire an AI message at an
+  angry customer.
+
+  **Gmail hookup (one time, ~2 min):** menu → *Answer by email* → **Copy the Gmail
+  setup script** → paste into a new project at script.google.com → add a 1-minute
+  time-driven trigger on `mikeyAssistSync`. The script reads your **Sent** mail for
+  replies carrying the `[ref:…]` marker and POSTs them to `/email-in`, so no custom
+  domain, no inbound-mail service and no third-party automation is needed.
+
+  **Practice mode:** menu → *Answer by email* → **Send me a practice question**
+  emails you a realistic question from a fake customer. Replying runs the entire
+  chain — Gmail script, routing, quote stripping, AI drafting, confirmation — and
+  stops one step short of Twilio: you get the finished message back marked TEST and
+  nothing is sent. Repeated taps rotate through a price question, a scheduling one,
+  a service question and a complaint. The practice number lives in the 555-01xx
+  range reserved for fiction, and `sendSms()` refuses it unconditionally, so no code
+  path can text it even by accident.
 - **Click-to-call:** rings your cell, then bridges the call to the customer through
   your Twilio number (keeps your personal number private).
 - **Instant email alerts (optional, Resend):** get emailed the moment a text,

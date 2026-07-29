@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-29·pay-receipt';
+const BUILD = '2026-07-29·assist-ask+practice';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -188,6 +188,7 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/emails')     return apiEmails();
   if (request.method === 'POST' && pathname === '/api/email-read') return apiEmailRead(request);
   if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/email-setup') return apiEmailSetup(request);
+  if (request.method === 'POST' && pathname === '/api/assist/practice') return apiAssistPractice(request);
   if (request.method === 'GET'  && pathname === '/api/media')      return apiMediaProxy(url);
   if (request.method === 'POST' && pathname === '/api/media-backfill') return apiMediaBackfill(request);
   if (request.method === 'POST' && pathname === '/api/voicemail-backfill') return apiVoicemailBackfill(request);
@@ -460,7 +461,9 @@ async function handleInboundSms(request) {
   const text = params.Body || '';
   const numMedia = parseInt(params.NumMedia || '0', 10);
   const fromNorm = normalizePhone(from) || from;
-  if (fromNorm === normalizePhone(ENV.MIKEY_PHONE)) return twiml('');
+  // A text from Mikey's own cell isn't a customer message — it's him answering
+  // one. See the assist loop below.
+  if (fromNorm === normalizePhone(ENV.MIKEY_PHONE)) return handleOwnerSms(text);
 
   // STOP / START compliance. Record the opt-out state ourselves so scheduled sends,
   // autopilot nudges and blasts all honor it — Twilio blocks at the API but never
@@ -493,9 +496,16 @@ async function handleInboundSms(request) {
   if (media.length) inMsg.media = media;
   else if (numMedia > 0) inMsg.body = text + `\n[${numMedia} attachment(s)]`;
   if (params.MessageSid) inMsg.sid = params.MessageSid;
-  await appendMessage(fromNorm, inMsg);
+  const inThread = await appendMessage(fromNorm, inMsg);
+  // The alert doubles as the assist prompt: it tells Mikey he can answer straight
+  // from his phone by texting the business number the bare facts (handleOwnerSms).
+  const alertCfg = await loadConfig();
+  // Work out what he actually needs to decide, so the alert asks him a question
+  // he can answer in four words. Best-effort — a failure just means a plainer email.
+  const ask = await assistAsk(inThread, alertCfg).catch(() => null);
   await notifyMikey(`📱 New ${numMedia > 0 ? 'photo/text' : 'text'} from ${from}`,
-    `New message from ${from}:\n"${text || (numMedia > 0 ? '[photo]' : '')}"\n\nReply in your dashboard.`);
+    assistAlertBody(alertCfg, fromNorm, inThread.name || from,
+      `${inThread.name || from} texted:\n"${text || (numMedia > 0 ? '[photo]' : '')}"`, ask));
   // Pre-draft a reply in Mikey's voice so it's already waiting when he opens the
   // thread. Best-effort — never blocks or fails the inbound webhook.
   await maybeSuggestReply(fromNorm);
@@ -503,6 +513,508 @@ async function handleInboundSms(request) {
   await maybeDetectJob(fromNorm);
   // No auto-reply to the customer — Mikey replies personally from the dashboard.
   return twiml('');
+}
+
+// ===========================================================================
+// The assist loop  (a text FROM Mikey's own cell TO the business number)
+// ---------------------------------------------------------------------------
+// The slow part of answering a customer isn't deciding what to say, it's typing
+// it out nicely. So Mikey sends the bare facts and the AI does the wording —
+// "375, thursday works" becomes a warm, on-voice reply.
+//
+// Crucially this is NOT autonomy. Every fact in the outgoing message came from
+// Mikey; generateReply() is explicitly told a hint is "the owner telling you what
+// to say" and must use it exactly. The AI never decides anything, it just writes.
+// And nothing leaves immediately: the reply is queued with a cancel window and
+// the exact wording is texted back first, so the last word is his.
+//
+// Security: only reachable from a Twilio-signed webhook whose From matches
+// MIKEY_PHONE, so the sender can't be spoofed through the public route.
+//
+// Grammar (case-insensitive):
+//   375, thursday works        → AI writes it, sends to whoever texted last
+//   @ruth 375 thursday         → …to Ruth instead (name prefix or phone digits)
+//   send: on my way            → send exactly that, no rewriting
+//   draft: ...                 → write it but hold it in the dashboard
+//   who                        → who's waiting on a reply
+//   cancel                     → pull back the queued reply before it goes
+//   help                       → this list
+// ===========================================================================
+const ASSIST_HELP =
+  'Answer a customer from your phone:\n' +
+  '• Text me the facts — "375, thursday works" — and I\'ll write it out and send it to whoever texted you last.\n' +
+  '• "@ruth 375 thursday" to pick who.\n' +
+  '• "send: ..." to send your exact words.\n' +
+  '• "draft: ..." to write it but hold it in the dashboard.\n' +
+  '• "who" = who\'s waiting. "cancel" = pull back the last one.';
+
+// Text Mikey back on his cell. Always SMS (not notifyMikey, which prefers email)
+// — he's mid-text-conversation with the dashboard, so the answer has to land in
+// the same place he's typing.
+async function ownerSay(msg) {
+  try { await sendSms(ENV.MIKEY_PHONE, msg, { skipOptOut: true }); } catch { /* best effort */ }
+}
+function assistWho(e) { return e.name || e.phone; }
+
+// Resolve which conversation an owner text is about. With a @token: match on a
+// name-word prefix, then a name substring, then trailing phone digits. Without
+// one: whoever is actually waiting on a reply, most recent first. Reads only the
+// index, so picking a target costs no extra KV reads.
+function assistPickTarget(index, token) {
+  const open = index.filter((e) => !e.archived && !e.optedOut);
+  if (!token) {
+    const waiting = open.filter((e) => e.lastDir === 'in').sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+    return waiting[0] || null;
+  }
+  const t = String(token).toLowerCase().replace(/^@/, '');
+  const digits = t.replace(/\D/g, '');
+  if (digits.length >= 7) {
+    const byPhone = open.find((e) => String(e.phone).replace(/\D/g, '').endsWith(digits));
+    if (byPhone) return byPhone;
+  }
+  const name = (e) => String(e.name || '').toLowerCase();
+  for (const test of [(e) => name(e).split(/\s+/).some((w) => w.startsWith(t)), (e) => name(e).includes(t)]) {
+    const hits = open.filter(test);
+    if (hits.length === 1) return hits[0];
+    if (hits.length > 1) return { ambiguous: hits.slice(0, 5) };
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// The channel-agnostic core. Both entry points (a text from Mikey's cell, and a
+// reply to an alert email) parse the same grammar and hit the same safety rails;
+// they differ only in how the confirmation goes back to him and how long the
+// hold is. `reply` is the callback that answers on whichever channel he used.
+// ---------------------------------------------------------------------------
+async function runAssist({ text, cfg, reply, channel, forcedPhone }) {
+  const body0 = String(text || '').trim();
+  if (!body0) return;
+  const lower = body0.toLowerCase();
+
+  if (lower === 'help' || lower === '?' || lower === 'commands') { await reply(ASSIST_HELP); return; }
+  // Carrier keywords aren't answers — swallow them rather than rewriting "stop"
+  // into a friendly sentence and texting it to a customer.
+  if (['stop', 'stopall', 'unsubscribe', 'cancel all', 'end', 'quit', 'start', 'unstop'].includes(lower)) return;
+
+  const index = await loadIndex();
+
+  if (lower === 'who' || lower === 'waiting' || lower === 'pending') {
+    const waiting = index.filter((e) => !e.archived && e.lastDir === 'in')
+      .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0)).slice(0, 5);
+    await reply(waiting.length
+      ? 'Waiting on you:\n' + waiting.map((e, i) => `${i + 1}. ${assistWho(e)} — ${humanAgo(Date.now() - (e.lastTs || Date.now()))}: "${(e.lastBody || '').slice(0, 60)}"`).join('\n')
+      : 'Nobody\'s waiting on a reply right now. 🚗');
+    return;
+  }
+
+  // Pull back a queued assist reply. Targets the newest one still in the queue,
+  // across every conversation, so "cancel" always undoes the last thing he sent.
+  if (/^(cancel|undo|nvm|nevermind|stop that|wait)\b/.test(lower)) {
+    let best = null;
+    for (const e of index) {
+      if (e.archived || !e.scheduledCount) continue;
+      const th = await loadThread(e.phone);
+      for (const s of (th.scheduled || [])) {
+        if (s.kind === 'assist' && (!best || (s.at || 0) > (best.item.at || 0))) best = { thread: th, item: s };
+      }
+    }
+    if (!best) { await reply('Nothing queued to cancel — it may have already gone out.'); return; }
+    best.thread.scheduled = best.thread.scheduled.filter((s) => s.id !== best.item.id);
+    await saveThread(best.thread);
+    await updateIndexEntry(best.thread);
+    await reply(`Cancelled — nothing was sent to ${best.thread.name || best.thread.phone}.`);
+    return;
+  }
+
+  // @target prefix
+  let token = '', body = body0;
+  const m = body0.match(/^@(\S+)\s+([\s\S]+)$/);
+  if (m) { token = m[1]; body = m[2].trim(); }
+
+  // mode prefix
+  let mode = 'ai';
+  let mm = body.match(/^(?:send|say|verbatim)\s*:\s*([\s\S]+)$/i);
+  if (mm) { mode = 'verbatim'; body = mm[1].trim(); }
+  else {
+    mm = body.match(/^(?:draft|hold)\s*:\s*([\s\S]+)$/i);
+    if (mm) { mode = 'draft'; body = mm[1].trim(); }
+  }
+  if (!body) { await reply(ASSIST_HELP); return; }
+
+  // An email reply already knows who it's about (it's threaded to that customer's
+  // alert), so the target comes free — no @name, and no guessing when two people
+  // texted at once. An explicit @token still wins, so he can redirect.
+  let target = null;
+  if (forcedPhone && !token) {
+    const e = index.find((x) => x.phone === forcedPhone);
+    target = e || { phone: forcedPhone, name: '' };
+  } else {
+    target = assistPickTarget(index, token);
+  }
+  if (!target) {
+    await reply(token
+      ? `I couldn't find anyone matching "${token}". Send "who" to see who's waiting.`
+      : 'Nobody has texted in, so I don\'t know who you mean. Try "@name your answer".');
+    return;
+  }
+  if (target.ambiguous) {
+    await reply(`"${token}" matches ${target.ambiguous.map(assistWho).join(', ')}. Try a fuller name or the last 4 digits of their number.`);
+    return;
+  }
+  if (isOptedOut(cfg, target.phone)) {
+    await reply(`${assistWho(target)} texted STOP, so I can't message them. Give them a call instead.`);
+    return;
+  }
+
+  const thread = await loadThread(target.phone);
+  let out = body;
+  if (mode !== 'verbatim') {
+    // The hint path: generateReply() is grounded in the playbook, the rules, this
+    // customer's history AND how Mikey edits drafts — and is told to use any fact
+    // in the hint exactly as given.
+    try { out = await generateReply(thread, cfg, body); }
+    catch (err) {
+      await reply(`Couldn't write that one (${String((err && err.message) || err).slice(0, 60)}). Send "send: <your exact message>" and I'll send it word for word.`);
+      return;
+    }
+  }
+  out = String(out || '').trim();
+  if (!out) { await reply('That came back empty — try again, or use "send: <your exact message>".'); return; }
+
+  if (mode === 'draft') {
+    const last = thread.messages[thread.messages.length - 1];
+    thread.suggested = { text: out, ts: Date.now(), forTs: last ? last.ts : Date.now() };
+    await saveThread(thread);
+    await updateIndexEntry(thread);
+    await reply(`Drafted for ${assistWho(target)} (not sent):\n"${out}"\n\nIt's waiting in the dashboard.`);
+    return;
+  }
+
+  // Practice mode stops here: he sees exactly what would have gone out, and
+  // nothing is queued. This is the last gate before the message becomes real.
+  if (isPracticePhone(target.phone)) {
+    await reply(
+      `🧪 PRACTICE — nothing was sent.\n\nHere's what ${assistWho(target)} would have received:\n"${out}"\n\n` +
+      `That's the whole loop working. On a real customer this would now be queued with a hold, and you'd get this same message with a countdown and a CANCEL option.`,
+    );
+    return;
+  }
+
+  // Queue it rather than send it. Riding the existing scheduled-send cron gives
+  // at-most-once delivery and the opt-out guard for free — and the gap between
+  // now and sendAt IS the cancel window. Email gets a longer hold by default,
+  // because a "cancel" reply has to make another trip through the inbox.
+  const raw = channel === 'email' ? cfg.assistEmailDelaySec : cfg.assistDelaySec;
+  const delaySec = Math.max(0, Math.min(900, Number(raw) || 0));
+  const item = { id: genId(), kind: 'assist', at: Date.now(), body: out, sendAt: Date.now() + delaySec * 1000 };
+  thread.scheduled.push(item);
+  thread.scheduled.sort((a, b) => a.sendAt - b.sendAt);
+  thread.dateRequest = null;
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+  const when = delaySec >= 60 ? `~${Math.round(delaySec / 60)} min` : delaySec ? `~${delaySec}s` : 'on the next tick (~1 min)';
+  await reply(
+    `→ ${assistWho(target)}:\n"${out}"\n\n` +
+    `Sending in ${when}. Reply CANCEL to stop it` +
+    (channel === 'email' ? ', or cancel it in the dashboard (faster).' : '.'),
+  );
+}
+
+// Entry point 1 — a text from Mikey's own cell to the business number.
+async function handleOwnerSms(rawText) {
+  const cfg = await loadConfig();
+  if (cfg.assistSms === false) return twiml('');   // feature off — stay silent
+  await runAssist({ text: rawText, cfg, channel: 'sms', reply: ownerSay });
+  return twiml('');
+}
+
+// ---------------------------------------------------------------------------
+// Entry point 2 — replying to the alert email  (the free channel)
+// ---------------------------------------------------------------------------
+// Alerts already go out as email (notifyMikey prefers Resend), so the cheapest
+// possible answer is to just hit reply. No Twilio segment for his message in,
+// none for the confirmation back — the only billable text is the one the
+// customer actually receives, which no channel can avoid.
+//
+// It also routes itself. The reply is threaded to ONE customer's alert, so we
+// know who it's about without him typing @anything — and without the "whoever
+// texted last" guess going wrong when two people text at the same minute.
+const ASSIST_CUT = '--- reply above this line ---';
+
+// Assemble an alert body that can be replied to. The cut marker goes at the very
+// TOP — when he replies, his mail client quotes everything below it, so slicing
+// at the marker leaves exactly what he typed and nothing else. (Putting it at the
+// bottom looks tidier and does not work: the alert's own text ends up above the
+// cut and gets treated as part of his answer.)
+// ---------------------------------------------------------------------------
+// "What do you actually need from me?"
+// ---------------------------------------------------------------------------
+// An alert that just repeats the customer's message leaves Mikey to work out
+// what's being asked and what a usable answer looks like. So each inbound text is
+// turned into ONE plain question plus literal example replies he could type
+// verbatim. The examples matter more than the question: they show the shape of a
+// valid answer, which is the whole skill of using this thing.
+//
+// `kind` also decides whether to offer the quick path at all — a complaint or a
+// damage claim gets "handle this one yourself", never a one-word reply box.
+const ASSIST_KINDS = ['price', 'schedule', 'question', 'confirm', 'chitchat', 'escalate'];
+
+async function assistAsk(thread, cfg) {
+  if (!ENV.GEMINI_API_KEY) return null;
+  const msgs = thread.messages || [];
+  const last = msgs[msgs.length - 1];
+  if (!last || last.dir !== 'in') return null;
+  const prompt =
+    businessContext(cfg) +
+    `You are triaging ONE inbound customer text for the owner of a mobile car detailing business, ` +
+    `so he can answer it in a few words from his phone. Return ONLY JSON:\n` +
+    `{"kind": one of ${JSON.stringify(ASSIST_KINDS)},\n` +
+    ` "ask": "ONE short sentence (max 20 words) telling the owner exactly what he needs to decide or supply. ` +
+    `Write it to him, not to the customer. Be specific to THIS message — name the vehicle/service if known.",\n` +
+    ` "examples": ["2 or 3 SHORT literal replies he could type, 1-6 words each, e.g. \\"375\\" or \\"375, thursday works\\" or \\"yes, 9am\\". ` +
+    `These are shorthand facts, NOT full sentences and NOT a message to the customer. Make them realistic for this conversation."]}\n\n` +
+    `kind guide: "price" = they want a number. "schedule" = they want a day/time. "question" = a factual question about the service. ` +
+    `"confirm" = they're agreeing/confirming and just need acknowledgement. "chitchat" = thanks/emoji, nothing needed. ` +
+    `"escalate" = a complaint, damage, refund, anger, or anything needing a careful personal reply.\n\n` +
+    `Conversation:\n${transcript(thread)}`;
+  try {
+    const raw = await geminiGenerate(prompt, { json: true, maxTokens: 500, temperature: 0.2 });
+    const p = JSON.parse(raw);
+    const examples = Array.isArray(p.examples)
+      ? p.examples.map((x) => String(x).trim()).filter(Boolean).slice(0, 3) : [];
+    return {
+      kind: ASSIST_KINDS.includes(p.kind) ? p.kind : 'question',
+      ask: String(p.ask || '').trim().slice(0, 200),
+      examples,
+    };
+  } catch { return null; }
+}
+
+// Render the ask as the middle of the alert email.
+function assistAskBlock(ask) {
+  if (!ask) return '';
+  if (ask.kind === 'escalate') {
+    return `\n⚠️  HANDLE THIS ONE YOURSELF\n   ${ask.ask || 'This needs a careful, personal reply.'}\n` +
+      `   I'm not offering a quick answer here on purpose — open the dashboard.\n`;
+  }
+  if (ask.kind === 'chitchat') {
+    return `\n✅ NOTHING NEEDED\n   ${ask.ask || 'Just a friendly note — no answer required.'}\n`;
+  }
+  // Nothing useful came back — say nothing rather than print an empty header.
+  if (!ask.ask && !ask.examples.length) return '';
+  const lines = [`\n❓ WHAT I NEED FROM YOU`];
+  if (ask.ask) lines.push(`   ${ask.ask}`);
+  if (ask.examples.length) {
+    lines.push(`\n   Reply with something like:`);
+    for (const e of ask.examples) lines.push(`     ${e}`);
+  }
+  return lines.join('\n') + '\n';
+}
+
+function assistAlertBody(cfg, phone, who, core, ask) {
+  const byEmail = cfg.assistEmail !== false;
+  // A complaint should never come with a one-word answer box next to it.
+  const quickOk = !(ask && (ask.kind === 'escalate' || ask.kind === 'chitchat'));
+  const block = assistAskBlock(ask);
+  const foot = [];
+  if (quickOk && byEmail) {
+    foot.push(`💡 Hit REPLY with just that and I'll write it out in your voice and send it to ${who}. Free — no text message used.`);
+  }
+  if (quickOk && cfg.assistSms !== false) {
+    foot.push(`📱 ${byEmail && foot.length ? 'Or text' : 'Text'} ${ENV.TWILIO_FROM || 'your business number'} the same thing.`);
+  }
+  if (quickOk && foot.length) {
+    foot.push(`\nOther things you can say: "send: <your exact words>" to skip the rewriting · "draft: …" to hold it in the dashboard · "who" to see everyone waiting · "cancel" to pull one back.`);
+    foot.push(`You'll always get the finished wording back before it goes out.`);
+  }
+  const body = `${core}\n${block}`.trimEnd();
+  if (!foot.length) return block ? body : core;
+  // Only invite a reply when replies are actually processed. With email answering
+  // off, the marker and ref are left out entirely — otherwise he'd hit reply and
+  // nothing would ever happen. The ref is also what makes a reply routable, and
+  // requiring it is what stops ordinary mail being read as a command.
+  if (!byEmail) return `${body}\n\n${foot.join('\n')}`;
+  foot.push(`[ref:${phone}]`);
+  return `${ASSIST_CUT}\n${body}\n\n${foot.join('\n')}`;
+}
+
+// Strip the quoted original out of a reply so only what he actually typed is
+// treated as the answer. Cuts at our own marker first (exact and reliable), then
+// falls back to the usual client patterns.
+function assistStripQuoted(raw) {
+  let s = String(raw || '').replace(/\r\n/g, '\n');
+  const cuts = [
+    s.indexOf(ASSIST_CUT),
+    s.search(/^\s*On .{0,120}\bwrote:\s*$/m),
+    s.search(/^\s*-{2,}\s*Original Message\s*-{2,}/mi),
+    s.search(/^\s*_{10,}\s*$/m),
+    s.search(/^\s*From:\s.+$/m),
+    s.search(/^\s*>/m),
+  ].filter((i) => i > -1);
+  if (cuts.length) s = s.slice(0, Math.min(...cuts));
+  // Drop a trailing signature block ("-- \nMikey").
+  s = s.replace(/\n--\s*\n[\s\S]*$/, '');
+  return s.trim();
+}
+
+// Which conversation is this a reply to? ONLY the ref line we planted counts.
+// Deliberately not falling back to "a phone number somewhere in the subject" —
+// that would make any ordinary email of his with a number in the subject look
+// like a command. The ref is present on every alert, so nothing real is lost.
+// Returns a normalized phone or ''.
+function assistRefPhone(body) {
+  // Tolerant of reformatting: iOS Mail and some clients rewrite a bare number
+  // into "(360) 555-1234" even inside our marker.
+  const m = String(body || '').match(/\[ref:\s*([+\d(][\d\s()+.-]{6,})\]/);
+  if (!m) return '';
+  return normalizePhone(m[1]) || '';
+}
+
+// Bare address out of "Mikey <mikey@example.com>", lowercased.
+function emailAddr(s) {
+  const m = String(s || '').match(/<([^>]+)>/);
+  return String(m ? m[1] : s || '').trim().toLowerCase();
+}
+
+// Is this ingested email Mikey answering a customer alert? Requires the sender
+// to be the alert mailbox AND the mail to reference a conversation — so ordinary
+// customer email flowing through the same ingest is never mistaken for a command.
+function assistIsOwnerReply(cfg, email) {
+  if (cfg.assistEmail === false) return '';
+  const owner = emailAddr(ENV.ALERT_EMAIL);
+  if (!owner || emailAddr(email.from) !== owner) return '';
+  return assistRefPhone(email.body);
+}
+
+async function handleAssistEmail(cfg, email, phone) {
+  const text = assistStripQuoted(email.body);
+  if (!text) return;
+  const subject = 'Re: ' + String(email.subject || 'your reply').replace(/^(re:\s*)+/i, '');
+  await runAssist({
+    text, cfg, channel: 'email', forcedPhone: phone,
+    // The confirmation carries the marker and the ref too, so replying "cancel"
+    // to IT routes back here instead of landing in the inbox as ordinary mail.
+    reply: (msg) => sendEmail(subject, `${ASSIST_CUT}\n${msg}\n\n[ref:${phone}]`).catch(() => {}),
+  });
+}
+
+// ===========================================================================
+// Practice mode — rehearse the whole loop without touching a real customer
+// ===========================================================================
+// Tapping "Send me a practice question" fabricates a realistic inbound text from
+// a fake customer and fires a genuine alert email. Replying to it exercises the
+// ENTIRE chain — the Gmail script, the ref routing, the quote stripping, the AI
+// drafting, the confirmation — and stops one step short of Twilio: the finished
+// message is shown back to him marked TEST and never sent anywhere.
+//
+// The number is in 555-0100..0199, the range reserved for fictional use, so it
+// can't collide with a real customer. sendSms() refuses it outright as a second
+// line of defence, so no future code path can text it by accident either.
+const PRACTICE_PHONE = '+15555550100';
+function isPracticePhone(p) { return normalizePhone(p) === PRACTICE_PHONE; }
+
+const PRACTICE_SCENARIOS = [
+  { id: 'price',    name: 'Practice · Ruth',  vehicle: '2019 4Runner',
+    body: "Hey! How much would a full detail run on my 2019 4Runner? It's pretty rough inside, two kids and a dog." },
+  { id: 'schedule', name: 'Practice · Dave',  vehicle: 'F-150',
+    body: 'Do you have anything open Saturday? Anytime in the morning works for me.' },
+  { id: 'question', name: 'Practice · Alina', vehicle: 'Model 3',
+    body: 'Do you do ceramic coating? And do you come to my place or do I drop it off?' },
+  { id: 'escalate', name: 'Practice · Ken',   vehicle: 'Tacoma',
+    body: "I just looked at the truck and there's a scratch on the hood that wasn't there this morning. Pretty unhappy about this." },
+];
+
+async function apiAssistPractice(request) {
+  const d = await readJson(request).catch(() => ({}));
+  const cfg = await loadConfig();
+  const want = String((d && d.scenario) || '').toLowerCase();
+  // Rotate through the scenarios so repeated taps exercise different shapes.
+  const prev = (await kv().get('assist:practice', { type: 'json' })) || {};
+  const idx = PRACTICE_SCENARIOS.findIndex((s) => s.id === want);
+  const sc = idx >= 0 ? PRACTICE_SCENARIOS[idx] : PRACTICE_SCENARIOS[((prev.n || 0) % PRACTICE_SCENARIOS.length)];
+  await kv().put('assist:practice', JSON.stringify({ n: ((prev.n || 0) + 1) % 1000, at: Date.now() }));
+
+  // Reset the practice conversation each run so the AI isn't answering a stale
+  // thread, and so the fake customer never accumulates history.
+  const thread = blankThread(PRACTICE_PHONE);
+  thread.name = sc.name;
+  thread.tags = ['practice'];
+  thread.status = 'new';
+  thread.statusAt = Date.now();
+  thread.notes = 'Practice conversation for testing "Answer by email". Not a real customer — nothing sent here ever leaves the app.';
+  thread.messages = [{ id: genId(), dir: 'in', body: sc.body, ts: Date.now() }];
+  thread.unread = 1;
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+
+  const ask = await assistAsk(thread, cfg).catch(() => null);
+  const core = `🧪 THIS IS A PRACTICE MESSAGE — ${sc.name} is not a real customer.\nNothing you reply here will ever be sent to anyone.\n\n${sc.name} texted:\n"${sc.body}"`;
+  const body = assistAlertBody(cfg, PRACTICE_PHONE, sc.name, core, ask);
+  const sent = await notifyMikey(`🧪 Practice · New text from ${sc.name}`, body);
+  return json({ ok: !!sent, scenario: sc.id, ask, emailed: !!sent, previewBody: body });
+}
+
+// The Gmail script that feeds this. Deliberately reads his SENT mail rather than
+// his inbox: whatever address the alert came from, his reply is in Sent, so this
+// needs no inbound-mail infrastructure, no custom domain and no third-party
+// automation — just a free 1-minute trigger on his own account.
+function assistAppsScript(url, token) {
+  return `/**
+ * Mikey's Dashboard — "Answer by email".
+ * Reply to a new-text alert with the facts and the dashboard writes the
+ * customer reply in your voice and sends it.
+ *
+ * SETUP (once, ~2 minutes)
+ *  1. Go to script.google.com -> New project
+ *  2. Delete what's there, paste ALL of this, hit Save
+ *  3. Run -> mikeyAssistSync  (approve the permission prompt the first time)
+ *  4. Triggers (clock icon) -> Add Trigger -> mikeyAssistSync ->
+ *     Time-driven -> Minutes timer -> Every minute -> Save
+ * That's it. Replying to an alert now answers the customer.
+ */
+var DASH_URL   = ${JSON.stringify(url)};
+var DASH_TOKEN = ${JSON.stringify(token)};
+
+function mikeyAssistSync() {
+  var me = Session.getActiveUser().getEmail().toLowerCase();
+  var props = PropertiesService.getScriptProperties();
+  var seen = JSON.parse(props.getProperty('seen') || '[]');
+  var threads = GmailApp.search('from:me newer_than:2d', 0, 30);
+
+  for (var t = 0; t < threads.length; t++) {
+    var msgs = threads[t].getMessages();
+    for (var i = 0; i < msgs.length; i++) {
+      var m = msgs[i];
+      var id = m.getId();
+      if (seen.indexOf(id) !== -1) continue;                    // already sent
+      if (m.getFrom().toLowerCase().indexOf(me) === -1) continue; // not mine
+      var body = m.getPlainBody() || '';
+      if (body.indexOf('[ref:') === -1) continue;               // not a dashboard alert reply
+
+      try {
+        UrlFetchApp.fetch(DASH_URL, {
+          method: 'post',
+          contentType: 'application/json',
+          headers: { 'X-Ingest-Token': DASH_TOKEN },
+          muteHttpExceptions: true,
+          payload: JSON.stringify({
+            token: DASH_TOKEN,
+            from: me,
+            subject: m.getSubject(),
+            body: body,
+            messageId: id,
+            date: m.getDate().getTime()
+          })
+        });
+        seen.push(id);
+      } catch (err) { /* try again next run */ }
+    }
+  }
+  if (seen.length > 300) seen = seen.slice(-300);
+  props.setProperty('seen', JSON.stringify(seen));
+}
+`;
 }
 
 // Small TwiML fragment that rings Mikey's cell and then falls through to
@@ -2565,6 +3077,18 @@ async function handleEmailIn(request) {
   // De-dupe on a provided messageId if the automation retries.
   const mid = data.messageId ? String(data.messageId).slice(0, 200) : '';
   if (mid) { if (list.some((e) => e.mid === mid)) return json({ ok: true, duplicate: true }); email.mid = mid; }
+
+  // Mikey replying to a customer alert isn't inbox mail — it's him answering a
+  // customer. Run it through the assist loop and don't file it in the inbox.
+  // Checked AFTER the de-dupe so a retrying forwarder can't send the same reply
+  // twice; the assist itself is queued, so a stray double would surface as a
+  // second queued message he can cancel rather than a second text going out.
+  const assistPhone = assistIsOwnerReply(cfg, email);
+  if (assistPhone) {
+    if (mid) { list.unshift({ id: email.id, mid, assist: true, date: email.date, unread: 0, from: email.from, subject: email.subject, snippet: '' }); if (list.length > 60) list.length = 60; await kv().put('emails', JSON.stringify(list)); }
+    await handleAssistEmail(cfg, email, assistPhone);
+    return json({ ok: true, assist: true });
+  }
   list.unshift(email);
   if (list.length > 60) list.length = 60;
   await kv().put('emails', JSON.stringify(list));
@@ -2587,7 +3111,15 @@ async function apiEmailSetup(request) {
     CFG_CACHE = next;
   }
   const list = (await kv().get('emails', { type: 'json' })) || [];
-  return json({ ok: true, url: `${publicBase()}/email-in`, token, connected: list.length > 0, count: list.length, lastAt: list[0] ? list[0].date : null });
+  const url = `${publicBase()}/email-in`;
+  return json({
+    ok: true, url, token,
+    connected: list.length > 0, count: list.length, lastAt: list[0] ? list[0].date : null,
+    // Ready to paste into script.google.com — this is what turns "reply to the
+    // alert" into an answered customer.
+    script: assistAppsScript(url, token),
+    assistReady: !!(ENV.RESEND_API_KEY && ENV.ALERT_EMAIL),
+  });
 }
 async function apiEmailRead(request) {
   const data = await readJson(request);
@@ -4410,6 +4942,10 @@ async function apiSaveConfig(request) {
   if (typeof data.callScreening === 'boolean') next.callScreening = data.callScreening;
   if (typeof data.missedCallTextback === 'boolean') next.missedCallTextback = data.missedCallTextback;
   if (typeof data.missedCallText === 'string') next.missedCallText = data.missedCallText.slice(0, 320);
+  if (typeof data.assistSms === 'boolean') next.assistSms = data.assistSms;
+  if (data.assistDelaySec != null && !isNaN(+data.assistDelaySec)) next.assistDelaySec = Math.max(0, Math.min(600, Math.round(+data.assistDelaySec)));
+  if (typeof data.assistEmail === 'boolean') next.assistEmail = data.assistEmail;
+  if (data.assistEmailDelaySec != null && !isNaN(+data.assistEmailDelaySec)) next.assistEmailDelaySec = Math.max(0, Math.min(900, Math.round(+data.assistEmailDelaySec)));
   if (typeof data.teamMode === 'boolean') next.teamMode = data.teamMode;
   if (typeof data.briefEnabled === 'boolean') next.briefEnabled = data.briefEnabled;
   if (data.briefHour != null && !isNaN(+data.briefHour)) next.briefHour = Math.max(4, Math.min(11, Math.round(+data.briefHour)));
@@ -5185,6 +5721,14 @@ function defaultConfig() {
     emailToken: '',          // shared secret for the /email-in ingest (generated in-app)
     missedCallTextback: true,// auto-text a caller we missed so the lead becomes a text thread
     missedCallText: '',      // custom missed-call text (blank = the friendly default)
+    assistSms: true,         // text your own business number the bare facts ("375, thursday
+                             // works") and the AI writes the customer reply in your voice.
+                             // You supply every fact; the AI only does the wording.
+    assistDelaySec: 60,      // cancel window before an assist reply actually goes out
+    assistEmail: true,       // same thing by replying to the alert email — costs nothing,
+                             // and the reply already knows which customer it's about
+    assistEmailDelaySec: 180,// longer hold on the email path: a "cancel" reply has to make
+                             // another trip through the inbox before it reaches us
     teamMode: false,         // when on: conversations can be assigned, and each reply is
                              // attributed to the sender. Turn off to go back to solo.
     team: [],                // [{ id, name, role }] — the people who help answer texts
@@ -5766,6 +6310,10 @@ async function sendSms(to, body, opts = {}) {
   const sid = ENV.TWILIO_ACCOUNT_SID;
   const token = ENV.TWILIO_AUTH_TOKEN;
   const toNorm = normalizePhone(to) || to;
+  // Practice guard. The fake customer used to rehearse the assist loop must never
+  // be textable — not by the assist path (which stops earlier), and not by any
+  // future code that stumbles onto the thread. Unconditional, before everything.
+  if (isPracticePhone(toNorm)) throw new Error('practice_number');
   // Opt-out guard: never text a number that sent STOP. Skipped for alerts to Mikey
   // himself (opts.skipOptOut) so notifications always get through.
   if (!opts.skipOptOut) {
@@ -5897,12 +6445,15 @@ async function dispatchDueScheduled(now = Date.now()) {
     thread.scheduled = (thread.scheduled || []).filter((s) => s.sendAt > now);
     await saveThread(thread);
     for (const s of due) {
+      // `kind` lets a queued item say what it is (a booking reminder, an assist
+      // reply) so the thread history reads correctly; plain sends stay 'scheduled'.
+      const kind = s.kind || 'scheduled';
       try {
         const r = await sendSms(thread.phone, s.body);
-        thread.messages.push({ id: genId(), dir: 'out', body: s.body, ts: Date.now(), kind: 'scheduled', status: 'sent', sid: (r && r.sid) || undefined });
+        thread.messages.push({ id: genId(), dir: 'out', body: s.body, ts: Date.now(), kind, status: 'sent', sid: (r && r.sid) || undefined });
         sent++;
       } catch (err) {
-        thread.messages.push({ id: genId(), dir: 'out', body: s.body, ts: Date.now(), kind: 'scheduled', error: String(err.message || err) });
+        thread.messages.push({ id: genId(), dir: 'out', body: s.body, ts: Date.now(), kind, error: String(err.message || err) });
         notifyMikey('⚠️ Scheduled text failed', `A scheduled message to ${thread.name || thread.phone} did not send: ${String(err.message || err)}`).catch(() => {});
       }
     }
@@ -6037,6 +6588,17 @@ function bookingDefaults() {
     proof: { rating: '5.0', reviews: 39, cars: '300+' },
     calendar: { icalUrl: '', enabled: false },   // Google Calendar "secret iCal" URL
     blockedDates: [],                             // ['2026-08-01', …] days Mikey is off
+    // Booking-lifecycle texts. Each is a fixed template filled in from the booking
+    // record — no AI writes them, so none can invent a price or a time. Individually
+    // switchable. (Day-of messages — on my way, I'm here, all finished — belong to
+    // the Jobs run board, not here; see dayJobText().)
+    autoTexts: {
+      confirm:   true,   // "you're all set" the moment you confirm
+      remind24:  true,   // day-before reminder
+      remindAm:  true,   // morning-of reminder
+      cancelled: true,   // courtesy note when a confirmed job is cancelled
+      declined:  false,  // note when a request is declined (off — usually wants a personal reply)
+    },
   };
 }
 // Merge saved overrides over the defaults (arrays replace, objects deep-merge).
@@ -6047,6 +6609,7 @@ async function loadBookingConfig() {
     content:  Object.assign({}, d.content,  saved.content  || {}),
     proof:    Object.assign({}, d.proof,    saved.proof    || {}),
     calendar: Object.assign({}, d.calendar, saved.calendar || {}),
+    autoTexts: Object.assign({}, d.autoTexts, saved.autoTexts || {}),
     sizes:    saved.sizes    || d.sizes,
     services: saved.services || d.services,
     addons:   saved.addons   || d.addons,
@@ -6216,42 +6779,122 @@ async function apiBookings(url) {
   return json({ ok: true, bookings: all });
 }
 
+// ---------------------------------------------------------------------------
+// Booking-lifecycle texts (Tier 0 — deterministic, no AI anywhere near them)
+// ---------------------------------------------------------------------------
+// Every message a booking generates is built here, from fields that already exist
+// on the booking record. Nothing is generated, so nothing can be invented: the
+// time comes from bk.slot, the service from bk.serviceName. One place to read
+// them all, one place to change the wording.
+//
+// Day-of messages (on my way / I'm here / all finished + review ask) are NOT
+// here — those belong to the Jobs run board, which does them better because it
+// also drives live ETA tracking. See dayJobText().
+function bkAutoOn(bcfg, kind) { return ((bcfg && bcfg.autoTexts) || {})[kind] !== false; }
+
+function bkMessage(kind, bk) {
+  const first = (bk.name || '').split(/\s+/)[0] || 'there';
+  const at = bkFmt12(bk.slot);
+  const car = bk.vehicle || 'car';
+  switch (kind) {
+    case 'confirm':
+      return `You're all set for ${bk.dateLabel} at ${at} — ${bk.serviceName}. I come to you; just have water & power within about 20 ft of the car. I'll text when I'm on my way. - Mikey`;
+    case 'remind24':
+      return `Quick reminder: I'm detailing your ${car} tomorrow at ${at}. Please have it accessible with water & power within ~20 ft. See you then! - Mikey`;
+    case 'remindAm':
+      return `Morning ${first}! I'm detailing your car today at ${at}. I'll text when I'm headed your way. - Mikey`;
+    case 'cancelled':
+      return `Hey ${first}, your detail on ${bk.dateLabel} at ${at} has been cancelled. No problem at all — just text me whenever you'd like to find another time. - Mikey`;
+    case 'declined':
+      return `Hey ${first}, I wasn't able to lock in ${bk.dateLabel} at ${at}. Text me and we'll find a time that works. - Mikey`;
+    default:
+      return '';
+  }
+}
+
+// Drop any still-queued texts belonging to one booking. Without this, cancelling
+// a confirmed job still texted the customer "see you tomorrow!" the next morning.
+// Returns how many were removed.
+function bkPurgeScheduled(thread, bkId) {
+  const before = (thread.scheduled || []).length;
+  thread.scheduled = (thread.scheduled || []).filter((s) => s.bkId !== bkId);
+  return before - thread.scheduled.length;
+}
+
 // Confirm / decline / cancel / complete a booking. Confirm texts the customer and
-// queues the 24h + morning-of reminders through the existing scheduled-send cron.
+// queues the 24h + morning-of reminders through the existing scheduled-send cron;
+// cancel and complete pull any reminders that are no longer wanted.
 async function apiBookingAction(request) {
   const d = await readJson(request);
   const id = String(d.id || ''), action = String(d.action || '');
   const all = await loadBookings();
   const bk = all.find((x) => x.id === id);
   if (!bk) return json({ ok: false, error: 'not_found' }, 404);
+  const bcfg = await loadBookingConfig();
+  const now = Date.now();
+  let texted = false;
 
   if (action === 'confirm') {
-    bk.status = 'confirmed'; bk.confirmedAt = Date.now();
-    const first = (bk.name || '').split(/\s+/)[0];
-    const when = `${bk.dateLabel} at ${bkFmt12(bk.slot)}`;
+    bk.status = 'confirmed'; bk.confirmedAt = now;
     const thread = await loadThread(bk.phone);
     markSource(thread, 'booking');
-  if (!thread.tags.includes('booking')) thread.tags.push('booking');
+    if (!thread.tags.includes('booking')) thread.tags.push('booking');
     thread.appointmentAt = bk.apptAt;
     if (bk.smsConsent) {
-      try { await sendSms(bk.phone, `You're all set for ${when} — ${bk.serviceName}. I come to you; just have water & power within about 20 ft of the car. I'll text when I'm on my way. - Mikey`); } catch (e) {}
-      const now = Date.now(), r24 = bk.apptAt - 86400000, rAm = bkLaEpoch(bk.date, '07:30');
+      if (bkAutoOn(bcfg, 'confirm')) {
+        const body = bkMessage('confirm', bk);
+        try {
+          const r = await sendSms(bk.phone, body);
+          // Record it — this text used to go out without ever landing in the
+          // conversation, so the thread read as if nothing was sent.
+          thread.messages.push({ id: genId(), dir: 'out', body, ts: Date.now(), kind: 'booking', status: 'sent', sid: (r && r.sid) || undefined });
+          texted = true;
+        } catch (e) { /* the booking is still confirmed even if the text fails */ }
+      }
+      // Reminders ride the existing reserve-then-send cron, so they're at-most-once
+      // and opt-out aware for free. Tagged with bkId so a later cancel can pull them.
+      const r24 = bk.apptAt - 86400000, rAm = bkLaEpoch(bk.date, '07:30');
       const add = [];
-      if (r24 > now + 60000) add.push({ id: genId(), body: `Quick reminder: I'm detailing your ${bk.vehicle || 'car'} tomorrow at ${bkFmt12(bk.slot)}. Please have it accessible with water & power within ~20 ft. See you then! - Mikey`, sendAt: r24 });
-      if (rAm > now + 60000 && rAm < bk.apptAt) add.push({ id: genId(), body: `Morning ${first}! I'm detailing your car today at ${bkFmt12(bk.slot)}. I'll text when I'm headed your way. - Mikey`, sendAt: rAm });
+      if (bkAutoOn(bcfg, 'remind24') && r24 > now + 60000) add.push({ id: genId(), bkId: bk.id, kind: 'booking', body: bkMessage('remind24', bk), sendAt: r24 });
+      if (bkAutoOn(bcfg, 'remindAm') && rAm > now + 60000 && rAm < bk.apptAt) add.push({ id: genId(), bkId: bk.id, kind: 'booking', body: bkMessage('remindAm', bk), sendAt: rAm });
       if (add.length) { thread.scheduled.push(...add); thread.scheduled.sort((a, b) => a.sendAt - b.sendAt); }
     }
     await saveThread(thread);
     await updateIndexEntry(thread);
-  } else if (action === 'decline' || action === 'cancel') {
-    bk.status = action === 'decline' ? 'declined' : 'cancelled';
+
   } else if (action === 'complete') {
-    bk.status = 'done';
+    bk.status = 'done'; bk.doneAt = now;
+    const thread = await loadThread(bk.phone);
+    const purged = bkPurgeScheduled(thread, bk.id);   // the job happened — drop leftovers
+    // Mark the lead Won so it lands in the right bucket everywhere else, and so
+    // the follow-up engine's review-ask and rebook cadences start from today.
+    // The review ask itself is left to that engine (or the Jobs board's
+    // "all finished" text) — deliberately not duplicated here.
+    const wasWon = thread.status === 'won';
+    if (!wasWon) { thread.status = 'won'; thread.statusAt = now; }
+    if (purged || !wasWon) { await saveThread(thread); await updateIndexEntry(thread); }
+
+  } else if (action === 'decline' || action === 'cancel') {
+    const kind = action === 'decline' ? 'declined' : 'cancelled';
+    bk.status = kind;
+    const thread = await loadThread(bk.phone);
+    let changed = bkPurgeScheduled(thread, bk.id) > 0;   // no job → no reminders
+    if (bk.smsConsent && bkAutoOn(bcfg, kind)) {
+      const body = bkMessage(kind, bk);
+      try {
+        const r = await sendSms(bk.phone, body);
+        thread.messages.push({ id: genId(), dir: 'out', body, ts: Date.now(), kind: 'booking', status: 'sent', sid: (r && r.sid) || undefined });
+        texted = true; changed = true;
+      } catch (e) { /* status change stands even if the courtesy text fails */ }
+    }
+    if (changed) { await saveThread(thread); await updateIndexEntry(thread); }
+
   } else {
     return json({ ok: false, error: 'bad_action' }, 422);
   }
+
   await saveBookings(all);
-  return json({ ok: true, booking: bk });
+  return json({ ok: true, booking: bk, texted });
 }
 
 // ===========================================================================
@@ -6442,6 +7085,14 @@ function bkSanitizeConfig(input) {
     },
     calendar: { enabled: !!(c.calendar && c.calendar.enabled) && !!ical, icalUrl: ical },
     blockedDates: Array.isArray(c.blockedDates) ? [...new Set(c.blockedDates.map((x) => String(x).trim()).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)))].slice(0, 200) : [],
+    // Booking texts: keep whatever the caller sent, fall back to the default for
+    // any key it didn't send, so a settings save can never silently switch one
+    // back on (this function rebuilds the whole config from scratch).
+    autoTexts: Object.keys(d.autoTexts).reduce((o, k) => {
+      const v = c.autoTexts && c.autoTexts[k];
+      o[k] = (v === true || v === false) ? v : d.autoTexts[k];
+      return o;
+    }, {}),
   };
 }
 
