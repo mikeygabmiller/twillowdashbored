@@ -1843,6 +1843,58 @@
   .jc-track button{margin-left:auto;background:none;border:none;color:var(--gold);font-size:11.5px;font-weight:800;text-decoration:underline;padding:0}
 
   /* ---- generic pieces reused across the suite ---- */
+  /* ---- payments: request composer + setup (standalone overlay) ---- */
+  #payPop{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.62);display:none;
+    align-items:flex-end;justify-content:center;backdrop-filter:blur(3px)}
+  .pp-card{background:var(--panel);border-top:1px solid var(--line);border-radius:22px 22px 0 0;
+    width:100%;max-width:620px;max-height:92vh;overflow-y:auto;overflow-x:hidden;
+    padding:20px 17px calc(20px + env(safe-area-inset-bottom))}
+  .pp-h{display:flex;align-items:center;gap:9px;font-size:18px;font-weight:800;letter-spacing:-.01em}
+  .pp-h svg{width:18px;height:18px;color:var(--accent)}
+  .pp-sub{color:var(--muted2);font-size:13px;margin:6px 0 16px;line-height:1.5}
+  .pp-lbl{font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--muted2);margin:18px 0 8px}
+  .pp-who{display:flex;gap:8px;margin-bottom:6px}
+  .pp-who input{flex:1 1 auto;width:auto;min-width:0}
+  #payPop input,#payPop textarea{background:var(--bg);border:1px solid var(--line);color:var(--text);
+    border-radius:12px;padding:12px 13px;font-size:15px;font-family:inherit;width:100%}
+  #payPop input:focus,#payPop textarea:focus{outline:none;border-color:var(--accent)}
+  .pp-line{display:flex;gap:8px;margin-bottom:8px;align-items:center}
+  /* width:auto matters: the shared input rule sets width:100%, which in a flex
+     row makes each child claim the full width and pushes the last one off. */
+  .pp-line input{width:auto;min-width:0}
+  .pp-line .pp-n,.pp-line .pp-xl,.pp-line .pp-xd{flex:1 1 auto;min-width:0}
+  .pp-line .pp-p{flex:0 0 88px;text-align:right}
+  .pp-x{background:none;border:1px solid var(--line);color:var(--muted2);border-radius:11px;
+    width:40px;height:42px;flex:none;display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .pp-add{width:100%;background:none;border:1px dashed var(--line);color:var(--muted2);border-radius:12px;
+    padding:11px;font-family:inherit;font-size:13.5px;cursor:pointer;display:flex;align-items:center;
+    justify-content:center;gap:7px;margin-bottom:4px}
+  .pp-pills{display:flex;gap:8px;margin:14px 0 4px}
+  .pp-pill{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--muted2);
+    border-radius:12px;padding:11px;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer}
+  .pp-pill.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .pp-tot{display:flex;align-items:center;justify-content:space-between;margin:16px 0 4px;
+    padding-top:14px;border-top:1px solid var(--line)}
+  .pp-tot span{font-size:13px;color:var(--muted2);font-weight:700;text-transform:uppercase;letter-spacing:.07em}
+  .pp-tot b{font-size:30px;font-weight:800;letter-spacing:-.03em;color:var(--accent-text,var(--accent))}
+  .pp-det{margin:12px 0 4px}
+  .pp-det summary{font-size:13px;color:var(--muted2);cursor:pointer;padding:6px 0}
+  .pp-det textarea{margin-top:8px;resize:vertical}
+  .pp-hint{font-size:11.5px;color:var(--muted2);line-height:1.5;margin-top:7px}
+  .pp-f{display:block;margin-bottom:10px}
+  .pp-f span{display:block;font-size:12px;color:var(--muted2);margin-bottom:5px}
+  .pp-two{display:flex;gap:9px}.pp-two .pp-f{flex:1}
+  .pp-check{display:flex;align-items:center;gap:10px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:12px;padding:12px 13px;margin-bottom:10px;cursor:pointer;font-size:14.5px}
+  .pp-check input{width:20px;height:20px;flex:none;accent-color:var(--accent)}
+  .pp-btn{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:14px;
+    color:var(--text);font-size:15px;font-weight:700;font-family:inherit;padding:14px;margin-top:10px;
+    display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer}
+  .pp-btn.pri{background:linear-gradient(135deg,var(--accent),var(--accent-dark));border-color:transparent;
+    color:#fff;box-shadow:0 10px 24px -14px var(--accent)}
+  .pp-btn.ghost{color:var(--muted2)}
+  .pp-btn:active{transform:translateY(1px)}
   /* ---- appointments spotted in a conversation (proposals, not jobs yet) ---- */
   .jd-sec .n{background:var(--panel2);border:1px solid var(--line);border-radius:99px;padding:1px 8px;font-size:10.5px;letter-spacing:0}
   .jd-det{background:linear-gradient(180deg,color-mix(in srgb,var(--accent) 9%,transparent),var(--panel));
@@ -2243,6 +2295,8 @@
     <div class="sec-lbl">Accent color</div>
     <div class="accent-row" id="accentRow"></div>
 
+    <div class="ditem" id="paySetupItem"><span class="ic" data-ic="wallet"></span>Payment setup</div>
+
     <div class="sec-lbl">Tools</div>
     <div class="ditem" id="snapshotItem"><span class="ic" data-ic="download"></span>Snapshot for Claude</div>
     <div class="ditem" id="refreshItem"><span class="ic" data-ic="refresh-cw"></span>Refresh now</div>
@@ -2366,6 +2420,7 @@
      Before/after photos, live-ETA tracking and neighborhood blasts open
      from a job inside Run.
      ============================================================ -->
+<div id="payPop"></div>
 <div class="jd" id="jdApp">
   <div class="jd-head">
     <button class="btn icon" id="jdBack" data-ic="chevron-left" aria-label="Back"></button>
@@ -2437,7 +2492,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-28·appt-autodetect";
+  var APP_BUILD="2026-07-29·pay-receipt";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4673,6 +4728,218 @@
     var box=el("suggestBox");if(box){box.style.display="none";box.innerHTML=""}
     post("/api/meta",{phone:t.phone,clearSuggested:true}).then(function(d){if(d&&d.ok&&d.thread&&state.phone===t.phone){state.thread=d.thread}});
   }
+  // ---- Payments: request + setup, reachable from anywhere ------------------
+  // Deliberately standalone (its own overlay, not the Jobs sheet) so it opens
+  // straight from a conversation. Sending a request is meant to take seconds:
+  // the customer is already filled in, you type an amount, you tap send.
+  var PAY={cfg:null,items:[],kind:"invoice",seed:{},loaded:false};
+
+  function payPop(html){
+    var w=el("payPop");
+    w.innerHTML='<div class="pp-card">'+html+'</div>';
+    w.style.display="flex";
+    hydrateIcons(w);
+    w.onclick=function(e){if(e.target===w)payClose()};
+    return w;
+  }
+  function payClose(){var w=el("payPop");w.style.display="none";w.innerHTML=""}
+
+  function payLoadCfg(){
+    if(PAY.loaded)return Promise.resolve(PAY.cfg);
+    return api("/api/pay").then(function(d){
+      if(d&&d.ok){PAY.cfg=d.config||{};PAY.loaded=true}
+      return PAY.cfg;
+    }).catch(function(){return null});
+  }
+  function payTotal(){return PAY.items.reduce(function(t,i){return t+(Number(i.price)||0)},0)}
+  function payDue(){
+    var t=payTotal();
+    if(PAY.kind!=="deposit")return t;
+    var pct=Number((PAY.cfg&&PAY.cfg.depositPct)||0);
+    return pct>0?Math.round(t*pct)/100:t;
+  }
+  function payMoney(n){n=Number(n)||0;return "$"+(Math.round(n*100)/100).toLocaleString(undefined,{maximumFractionDigits:2})}
+
+  // ---- the composer --------------------------------------------------------
+  function openPayRequest(seed){
+    seed=seed||{};
+    PAY.seed=seed;PAY.kind="invoice";
+    PAY.items=[{name:seed.memo||"Mobile detailing",price:seed.amount||""}];
+    payLoadCfg().then(function(){
+      if(!payHasMethod())return payNeedsSetup();
+      renderPayRequest();
+    });
+  }
+  function payHasMethod(){
+    var c=PAY.cfg||{};
+    return !!(c.venmo||c.cashapp||c.paypal||c.zelle||c.link||(c.extras&&c.extras.length)||c.cash);
+  }
+  function payNeedsSetup(){
+    payPop('<div class="pp-h">'+ic("wallet",18)+' Set up payments first</div>'+
+      '<p class="pp-sub">Add at least one way to get paid and this becomes a one-tap send from any conversation.</p>'+
+      '<button class="pp-btn pri" id="ppGoSetup">'+ic("plus",17)+' Set up payments</button>'+
+      '<button class="pp-btn ghost" id="ppNo">Not now</button>');
+    el("ppNo").onclick=payClose;
+    el("ppGoSetup").onclick=function(){openPaySetup()};
+  }
+
+  function renderPayRequest(){
+    var c=PAY.cfg||{};
+    var rows=PAY.items.map(function(it,i){
+      return '<div class="pp-line">'+
+        '<input class="pp-n" data-i="'+i+'" value="'+esc(it.name)+'" placeholder="What it\'s for">'+
+        '<input class="pp-p" data-i="'+i+'" type="number" inputmode="decimal" step="0.01" value="'+esc(it.price)+'" placeholder="0">'+
+        (PAY.items.length>1?'<button class="pp-x" data-del="'+i+'" aria-label="Remove">'+ic("x",14)+'</button>':'')+
+      '</div>';
+    }).join("");
+    var dep=Number(c.depositPct||0);
+    payPop(
+      '<div class="pp-h">'+ic("receipt",18)+' Send a payment request</div>'+
+      '<p class="pp-sub">They get one short text with a link. The breakdown, the total and every way to pay live on the page.</p>'+
+      '<div class="pp-who">'+
+        '<input id="ppName" value="'+esc(PAY.seed.name||"")+'" placeholder="Name">'+
+        '<input id="ppPhone" type="tel" inputmode="tel" value="'+esc(PAY.seed.phone||"")+'" placeholder="Phone">'+
+      '</div>'+
+      '<div class="pp-lbl">The breakdown they\'ll see</div>'+
+      '<div class="pp-lines">'+rows+'</div>'+
+      '<button class="pp-add" id="ppAdd">'+ic("plus",14)+' Add a line</button>'+
+      (dep>0?'<div class="pp-pills"><button class="pp-pill'+(PAY.kind==="invoice"?" on":"")+'" data-k="invoice">Full amount</button>'+
+        '<button class="pp-pill'+(PAY.kind==="deposit"?" on":"")+'" data-k="deposit">Deposit ('+dep+'%)</button></div>':"")+
+      '<div class="pp-tot"><span>'+(PAY.kind==="deposit"?"Due now":"Total")+'</span><b id="ppTot">'+payMoney(payDue())+'</b></div>'+
+      '<details class="pp-det"><summary>Edit the text that goes with it</summary>'+
+        '<textarea id="ppBody" rows="2" placeholder="Leave blank to use the short default">'+esc(PAY.body||"")+'</textarea>'+
+        '<div class="pp-hint">Default: “Here\'s your invoice — full breakdown and every way to pay: [link]”</div>'+
+      '</details>'+
+      '<button class="pp-btn pri" id="ppSend">'+ic("send",17)+' Send request</button>'+
+      '<button class="pp-btn ghost" id="ppCancel">Cancel</button>');
+    wirePayRequest();
+  }
+
+  function wirePayRequest(){
+    var w=el("payPop");
+    function recalc(){
+      var t=el("ppTot");if(t)t.textContent=payMoney(payDue());
+      var lab=w.querySelector(".pp-tot span");if(lab)lab.textContent=PAY.kind==="deposit"?"Due now":"Total";
+    }
+    Array.prototype.forEach.call(w.querySelectorAll(".pp-n"),function(i){
+      i.oninput=function(){PAY.items[+i.getAttribute("data-i")].name=i.value};
+    });
+    Array.prototype.forEach.call(w.querySelectorAll(".pp-p"),function(i){
+      i.oninput=function(){PAY.items[+i.getAttribute("data-i")].price=i.value;recalc()};
+    });
+    Array.prototype.forEach.call(w.querySelectorAll("[data-del]"),function(b){
+      b.onclick=function(){PAY.items.splice(+b.getAttribute("data-del"),1);renderPayRequest()};
+    });
+    Array.prototype.forEach.call(w.querySelectorAll("[data-k]"),function(b){
+      b.onclick=function(){PAY.kind=b.getAttribute("data-k");renderPayRequest()};
+    });
+    el("ppAdd").onclick=function(){
+      PAY.body=(el("ppBody")||{}).value||PAY.body;
+      PAY.items.push({name:"",price:""});renderPayRequest();
+    };
+    el("ppCancel").onclick=payClose;
+    el("ppSend").onclick=function(){
+      var name=el("ppName").value.trim(),phone=el("ppPhone").value.trim();
+      var items=PAY.items.filter(function(i){return (i.name||"").trim()});
+      var due=payDue();
+      if(!phone)return toast("Add a phone number",{bad:true});
+      if(!(due>0))return toast("Add an amount",{bad:true});
+      var btn=el("ppSend");btn.disabled=true;btn.innerHTML='<span class="spin"></span> Sending…';
+      post("/api/pay/request",{
+        phone:phone,name:name,amount:due,items:items,
+        memo:(items[0]&&items[0].name)||"Mobile detailing",
+        deposit:PAY.kind==="deposit",
+        body:((el("ppBody")||{}).value||"").trim()||undefined
+      }).then(function(d){
+        if(!d||!d.ok){btn.disabled=false;btn.innerHTML=ic("send",17)+" Send request";
+          return toast((d&&d.error==="bad_phone")?"That phone number didn't look right":"Couldn't send that",{bad:true})}
+        payClose();vibrate(12);refreshThreads();
+        if(typeof jdLoadPay==="function"&&JD&&JD.pay)jdLoadPay(true);
+        toast(d.texted?("Payment request sent ✓"):"Saved, but the text didn't go out",{bad:!d.texted});
+      }).catch(function(){btn.disabled=false;btn.innerHTML=ic("send",17)+" Send request";toast("Network error",{bad:true})});
+    };
+  }
+
+  // ---- setup ---------------------------------------------------------------
+  function openPaySetup(){
+    payLoadCfg().then(function(){renderPaySetup()});
+  }
+  function renderPaySetup(){
+    var c=PAY.cfg||{};
+    var extras=(c.extras||[]).map(function(x,i){
+      return '<div class="pp-line"><input class="pp-xl" data-i="'+i+'" value="'+esc(x.label)+'" placeholder="Apple Cash">'+
+        '<input class="pp-xd" data-i="'+i+'" value="'+esc(x.detail)+'" placeholder="360-555-0123">'+
+        '<button class="pp-x" data-xdel="'+i+'" aria-label="Remove">'+ic("x",14)+'</button></div>';
+    }).join("");
+    payPop(
+      '<div class="pp-h">'+ic("wallet",18)+' Payment setup</div>'+
+      '<p class="pp-sub">Everything here shows up on the page your customer opens. Fill in whatever you actually use — leave the rest blank.</p>'+
+      '<div class="pp-lbl">Ways to pay</div>'+
+      '<label class="pp-f"><span>Venmo username</span><input id="pcVenmo" value="'+esc(c.venmo||"")+'" placeholder="Mikey-Miller"></label>'+
+      '<label class="pp-f"><span>Cash App $cashtag</span><input id="pcCash" value="'+esc(c.cashapp||"")+'" placeholder="mikeysdetailing"></label>'+
+      '<label class="pp-f"><span>PayPal.me username</span><input id="pcPaypal" value="'+esc(c.paypal||"")+'" placeholder="mikeysdetailing"></label>'+
+      '<label class="pp-f"><span>Zelle (phone or email)</span><input id="pcZelle" value="'+esc(c.zelle||"")+'" placeholder="360-555-0123"></label>'+
+      '<label class="pp-f"><span>Card link (Stripe / Square)</span><input id="pcLink" value="'+esc(c.link||"")+'" placeholder="https://buy.stripe.com/..."></label>'+
+      '<label class="pp-f"><span>Label for that card button</span><input id="pcLinkLabel" value="'+esc(c.linkLabel||"")+'" placeholder="Card / Apple Pay"></label>'+
+      '<label class="pp-check"><input type="checkbox" id="pcCashOk"'+(c.cash!==false?" checked":"")+'><span>Offer cash in person</span></label>'+
+      '<label class="pp-f"><span>What to call cash</span><input id="pcCashLabel" value="'+esc(c.cashLabel||"")+'" placeholder="Cash in person"></label>'+
+      '<div class="pp-lbl">Anything else you take</div>'+
+      '<div class="pp-lines" id="ppExtras">'+extras+'</div>'+
+      '<button class="pp-add" id="ppAddExtra">'+ic("plus",14)+' Add another way to pay</button>'+
+      '<div class="pp-lbl">How the page looks</div>'+
+      '<label class="pp-f"><span>Business name</span><input id="pcBiz" value="'+esc(c.businessName||"")+'" placeholder="Mikey\'s Mobile Detailing"></label>'+
+      '<label class="pp-f"><span>Tagline under it</span><input id="pcTag" value="'+esc(c.tagline||"")+'" placeholder="Mobile detailing — I come to you"></label>'+
+      '<label class="pp-f"><span>Footer note</span><input id="pcTerms" value="'+esc(c.terms||"")+'" placeholder="Thanks for choosing us!"></label>'+
+      '<div class="pp-lbl">Rules</div>'+
+      '<div class="pp-two">'+
+        '<label class="pp-f"><span>Deposit %</span><input id="pcDep" type="number" inputmode="numeric" value="'+(c.depositPct||0)+'"></label>'+
+        '<label class="pp-f"><span>Auto-nudge (days)</span><input id="pcRem" type="number" inputmode="numeric" value="'+(c.remindDays||0)+'"></label>'+
+      '</div>'+
+      '<div class="pp-hint">Auto-nudge sends one polite reminder if an invoice is still unpaid after that many days. 0 turns it off.</div>'+
+      '<button class="pp-btn pri" id="pcSave">'+ic("check",17)+' Save</button>'+
+      '<button class="pp-btn ghost" id="pcCancel">Close</button>');
+    wirePaySetup();
+  }
+  function wirePaySetup(){
+    var w=el("payPop");
+    function readExtras(){
+      var out=[];
+      Array.prototype.forEach.call(w.querySelectorAll(".pp-xl"),function(i){
+        var idx=+i.getAttribute("data-i");
+        var d=w.querySelector('.pp-xd[data-i="'+idx+'"]');
+        if(i.value.trim())out.push({label:i.value.trim(),detail:d?d.value.trim():""});
+      });
+      return out;
+    }
+    Array.prototype.forEach.call(w.querySelectorAll("[data-xdel]"),function(b){
+      b.onclick=function(){
+        PAY.cfg.extras=readExtras();
+        PAY.cfg.extras.splice(+b.getAttribute("data-xdel"),1);
+        renderPaySetup();
+      };
+    });
+    el("ppAddExtra").onclick=function(){
+      PAY.cfg.extras=readExtras();PAY.cfg.extras.push({label:"",detail:""});renderPaySetup();
+    };
+    el("pcCancel").onclick=payClose;
+    el("pcSave").onclick=function(){
+      var btn=el("pcSave");btn.disabled=true;btn.innerHTML='<span class="spin"></span> Saving…';
+      post("/api/pay/config",{
+        venmo:el("pcVenmo").value,cashapp:el("pcCash").value,paypal:el("pcPaypal").value,
+        zelle:el("pcZelle").value,link:el("pcLink").value,linkLabel:el("pcLinkLabel").value,
+        cash:el("pcCashOk").checked,cashLabel:el("pcCashLabel").value,
+        businessName:el("pcBiz").value,tagline:el("pcTag").value,terms:el("pcTerms").value,
+        depositPct:el("pcDep").value,remindDays:el("pcRem").value,extras:readExtras()
+      }).then(function(d){
+        btn.disabled=false;btn.innerHTML=ic("check",17)+" Save";
+        if(!d||!d.ok)return toast("Couldn't save",{bad:true});
+        PAY.cfg=d.config;PAY.loaded=true;
+        if(typeof JD!=="undefined"&&JD.pay)JD.pay.config=d.config;
+        payClose();toast("Payment settings saved ✓");
+      }).catch(function(){btn.disabled=false;btn.innerHTML=ic("check",17)+" Save";toast("Network error",{bad:true})});
+    };
+  }
+
   // ---- Labeled "Tools" sheet: every composer action with its name, so a texter
   //      never has to guess what an icon does. Each row triggers the (hidden) button. ----
   function buildToolsSheet(){
@@ -4680,6 +4947,7 @@
     var rows=[
       {act:"write",  ic:"pencil",         t:"Write a reply for me", s:"Tell it what to say — it writes it in your voice", accent:true},
       {act:"reqdate",ic:"calendar-days",  t:"Request a date from Mikey", s:"Emails Mikey for his next open date", accent:true},
+      {act:"pay",    ic:"receipt",         t:"Send a payment request", s:"Texts a link with the breakdown and every way to pay", accent:true},
       {act:"draft",  ic:"sparkles",       t:"AI draft a reply", s:"Let the AI suggest a full reply to send"},
       {act:"polish", ic:"wand",           t:"Polish my text", s:"Fix spelling & grammar, keep your wording"},
       {act:"tpl",    ic:"zap",            t:"Quick replies", s:"Insert one of your saved replies"},
@@ -4700,6 +4968,11 @@
         sheet.style.display="none";
         var map={write:"writeBtn",draft:"draftBtn",polish:"polishBtn",tpl:"tplBtn",sched:"schedBtn",rem:"remBtn",mic:"micBtn"};
         if(act==="reqdate"){requestDate();return}
+        if(act==="pay"){
+          var t=state.thread||{};
+          openPayRequest({name:displayName(t)||t.name||"",phone:t.phone||""});
+          return;
+        }
         var id=map[act];
         // Defer to the next tick so THIS tap fully finishes before we open a popup —
         // otherwise the document's outside-click handler closes it again instantly.
@@ -8174,6 +8447,7 @@
   Array.prototype.forEach.call(el("moNav").querySelectorAll("[data-mv]"),function(b){b.onclick=function(){vibrate(6);moSetView(b.getAttribute("data-mv"))}});
   el("moScrim").onclick=closeMoSheet;
   el("moneyItem").onclick=function(){closeDrawer();openMoney()};
+  var pSet=el("paySetupItem");if(pSet)pSet.onclick=function(){closeDrawer();openPaySetup()};
   var anI=el("analyticsItem");if(anI)anI.onclick=function(){closeDrawer();openAnalytics()};
   el("customizeItem").onclick=function(){closeDrawer();openCustomize()};
   el("snapshotItem").onclick=function(){closeDrawer();snapshotForClaude()};

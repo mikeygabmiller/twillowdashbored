@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-28·appt-autodetect';
+const BUILD = '2026-07-29·pay-receipt';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -7177,7 +7177,13 @@ const PAY_KEY = 'pay:index';
 const PAY_CFG_KEY = 'pay:config';
 function payDefaults() {
   return { venmo: '', cashapp: '', paypal: '', zelle: '', link: '', linkLabel: 'Card / Apple Pay',
-    cash: true, depositPct: 25, remindDays: 3, terms: 'Thanks for choosing Mikey\'s Mobile Detailing!' };
+    cash: true, cashLabel: 'Cash in person', depositPct: 25, remindDays: 3,
+    businessName: "Mikey's Mobile Detailing",
+    tagline: 'Mobile detailing — I come to you',
+    terms: 'Thanks for choosing Mikey\'s Mobile Detailing!',
+    // Free-form extra ways to pay (Apple Cash, Chime, a check…) so the page can
+    // cover whatever he actually uses without a code change.
+    extras: [] };
 }
 async function loadPayConfig() { return Object.assign(payDefaults(), (await kv().get(PAY_CFG_KEY, { type: 'json' })) || {}); }
 async function loadInvoices() { return (await kv().get(PAY_KEY, { type: 'json' })) || []; }
@@ -7201,9 +7207,15 @@ async function apiPaySaveConfig(request) {
     link: /^https?:\/\//.test(String(d.link || '')) ? jdStr(d.link, 300) : '',
     linkLabel: jdStr(d.linkLabel, 40) || 'Card / Apple Pay',
     cash: d.cash !== false,
+    cashLabel: jdStr(d.cashLabel, 40) || 'Cash in person',
+    businessName: jdStr(d.businessName, 60) || "Mikey's Mobile Detailing",
+    tagline: jdStr(d.tagline, 80),
     depositPct: Math.max(0, Math.min(100, Number(d.depositPct) || 0)),
     remindDays: Math.max(0, Math.min(30, Number(d.remindDays) || 0)),
     terms: jdStr(d.terms, 300),
+    extras: Array.isArray(d.extras) ? d.extras.map((x) => ({
+      label: jdStr(x && x.label, 40), detail: jdStr(x && x.detail, 80),
+    })).filter((x) => x.label).slice(0, 6) : (cur.extras || []),
   });
   await kv().put(PAY_CFG_KEY, JSON.stringify(next));
   return json({ ok: true, config: next });
@@ -7212,21 +7224,33 @@ async function apiPaySaveConfig(request) {
 async function apiPayRequest(request) {
   const d = await readJson(request);
   const phone = normalizePhone(d.phone);
-  const amount = jdMoney(d.amount);
+  const itemTotal = Array.isArray(d.items)
+    ? d.items.reduce((t, x) => t + jdMoney(x && x.price), 0) : 0;
+  const amount = jdMoney(d.amount) || jdMoney(itemTotal);
   if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
   if (!(amount > 0)) return json({ ok: false, error: 'bad_amount' }, 422);
   const pcfg = await loadPayConfig();
+  // Line items are what turn the page into a receipt instead of a bare number.
+  const items = Array.isArray(d.items) ? d.items.map((x) => ({
+    name: jdStr(x && x.name, 80), price: jdMoney(x && x.price),
+  })).filter((x) => x.name).slice(0, 20) : [];
   const inv = {
     id: genId(), token: jdToken(), createdAt: Date.now(), status: 'open',
     phone, name: jdStr(d.name, 60), amount, memo: jdStr(d.memo, 120) || 'Mobile detailing',
+    items,
     kind: d.deposit ? 'deposit' : 'invoice', jobId: jdStr(d.jobId, 64), date: jdStr(d.date, 12),
     remindedAt: 0,
   };
   const url = `${publicBase()}/p/${inv.token}`;
-  const first = jdFirst(inv.name);
+  // The text does one job: say what the link is so they tap it. The breakdown,
+  // the total and every payment option live on the page — repeating them here
+  // just makes a wall of text people skim past.
+  // Plain hyphens, not em dashes: a single non-GSM-7 character flips the whole
+  // message to UCS-2, which cuts the segment limit from 160 to 70 and quietly
+  // doubles the Twilio cost of every payment request he sends.
   const body = jdStr(d.body, 600) || (inv.kind === 'deposit'
-    ? `${first ? 'Hey ' + first : 'Hey'} — to lock in your spot I just need a $${inv.amount} deposit (it comes off the final price). Pay here, takes 10 seconds: ${url} - Mikey`
-    : `${first ? 'Thanks ' + first + '!' : 'Thanks!'} Your total for ${inv.memo} is $${inv.amount}. Easiest way to pay: ${url} — or cash works too. - Mikey`);
+    ? `Here's the deposit to hold your spot - amount and payment options: ${url}`
+    : `Here's your invoice - full breakdown and every way to pay: ${url}`);
 
   let texted = false, err = '';
   if (d.send !== false) {
@@ -7281,24 +7305,45 @@ async function payPage(token) {
   if (pcfg.paypal) opts.push(['paypal', 'PayPal', `https://paypal.me/${encodeURIComponent(pcfg.paypal)}/${amt}`, '#0070E0']);
   if (pcfg.zelle) opts.push(['zelle', 'Zelle', '', '#6D1ED4']);
   const paid = inv.status === 'paid';
+  const money = (n) => Number(n || 0).toFixed(2).replace(/\.00$/, '');
+
+  // The breakdown. Only shown when there's more to say than the total itself —
+  // a single line item that just repeats the memo would be noise.
+  const items = Array.isArray(inv.items) ? inv.items : [];
+  const itemSum = items.reduce((t, x) => t + Number(x.price || 0), 0);
+  const showItems = items.length > 0;
+  const remainder = jdMoney(inv.amount - itemSum);
+  const lines = showItems ? `
+       <div class="rcpt">
+         <div class="rcpt-h">What this is for</div>
+         ${items.map((x) => `<div class="li"><span class="n">${jdEsc(x.name)}</span><span class="p">${x.price ? '$' + jdEsc(money(x.price)) : ''}</span></div>`).join('')}
+         ${inv.kind === 'deposit'
+           ? `<div class="li sub2"><span class="n">Deposit requested now</span><span class="p">$${jdEsc(amt)}</span></div>`
+           : (Math.abs(remainder) >= 0.01 ? `<div class="li sub2"><span class="n">Adjustment</span><span class="p">$${jdEsc(money(remainder))}</span></div>` : '')}
+         <div class="li tot"><span class="n">${inv.kind === 'deposit' ? 'Due now' : 'Total'}</span><span class="p">$${jdEsc(amt)}</span></div>
+       </div>` : '';
 
   const body = paid
-    ? `<div class="badge ok">Paid ✓</div><h1>You're all set</h1><p class="sub">$${jdEsc(amt)} received — thank you!</p>`
+    ? `<div class="badge ok">Paid ✓</div><h1>You're all set</h1><p class="sub">$${jdEsc(amt)} received — thank you!</p>${lines}`
     : `<div class="badge">${inv.kind === 'deposit' ? 'Deposit' : 'Amount due'}</div>
        <div class="amt">$${jdEsc(amt)}</div>
        <p class="sub">${jdEsc(inv.memo)}${inv.name ? ' · ' + jdEsc(jdFirst(inv.name)) : ''}</p>
+       ${lines}
        <div class="opts">${opts.map(([id, label, href, color]) => href
         ? `<a class="opt" href="${jdEsc(href)}" target="_blank" rel="noopener"><span class="dot" style="background:${color}"></span>${jdEsc(label)}<span class="go">Pay →</span></a>`
         : `<div class="opt static"><span class="dot" style="background:${color}"></span>${jdEsc(label)}<span class="go">${jdEsc(pcfg.zelle)}</span></div>`).join('')}
-       ${pcfg.cash ? '<div class="opt static"><span class="dot" style="background:#22c55e"></span>Cash in person<span class="go">On the day</span></div>' : ''}</div>
-       ${opts.length || pcfg.cash ? '' : '<p class="sub">Text Mikey for payment details.</p>'}
+       ${(pcfg.extras || []).map((x) => `<div class="opt static"><span class="dot" style="background:#8a93a1"></span>${jdEsc(x.label)}<span class="go">${jdEsc(x.detail)}</span></div>`).join('')}
+       ${pcfg.cash ? `<div class="opt static"><span class="dot" style="background:#22c55e"></span>${jdEsc(pcfg.cashLabel || 'Cash in person')}<span class="go">On the day</span></div>` : ''}</div>
+       ${opts.length || pcfg.cash || (pcfg.extras || []).length ? '' : '<p class="sub">Text Mikey for payment details.</p>'}
        <p class="fine">${jdEsc(pcfg.terms || '')}</p>`;
-  return new Response(payShell(body), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+  return new Response(payShell(body, pcfg), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
 }
-function payShell(inner) {
+function payShell(inner, pcfg) {
+  const biz = jdEsc((pcfg && pcfg.businessName) || "Mikey's Mobile Detailing");
+  const tag = jdEsc((pcfg && pcfg.tagline) || '');
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0a0a0c"><title>Pay Mikey's Mobile Detailing</title>
+<meta name="theme-color" content="#0a0a0c"><title>${biz} — invoice</title>
 <link rel="icon" href="/favicon.svg"><style>
 *{box-sizing:border-box}html,body{margin:0;min-height:100%}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -7317,13 +7362,28 @@ h1{font-size:24px;margin:12px 0 4px;letter-spacing:-.02em}
 .opt .go{margin-left:auto;font-size:13px;color:#9aa3b2;font-weight:600}
 .opt.static{opacity:.85}
 .fine{margin-top:18px;font-size:12px;color:#6b7280;line-height:1.5}
+.brand .tag{display:block;font-weight:600;font-size:11.5px;color:#9aa3b2;margin-top:3px;letter-spacing:0}
+.rcpt{margin:22px 0 4px;text-align:left;background:#16171c;border:1px solid #2a2d36;border-radius:16px;padding:14px 15px}
+.rcpt-h{font-size:10.5px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:#6b7280;margin-bottom:9px}
+.li{display:flex;gap:12px;align-items:baseline;padding:8px 0;border-bottom:1px solid #23252d;font-size:14.5px}
+.li:last-child{border-bottom:none}
+.li .n{flex:1;color:#c9cfda}
+.li .p{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.li.sub2 .n,.li.sub2 .p{color:#9aa3b2;font-size:13px;font-weight:600}
+.li.tot{border-top:1px solid #2a2d36;margin-top:4px;padding-top:11px;font-size:17px}
+.li.tot .n{color:#f2f4f8;font-weight:800}
+.li.tot .p{color:#ff8a93;font-size:19px;font-weight:800}
 @media (prefers-color-scheme:light){
 body{background:radial-gradient(1200px 600px at 50% -10%,#fff,#eef0f3 60%);color:#161820}
 .card{background:#fff;border-color:#d7dbe2;box-shadow:0 30px 70px -45px rgba(20,22,30,.45)}
 .brand{color:#c81e30}.badge{background:#f4f6f8;border-color:#d7dbe2;color:#5a626f}
 .amt{background:linear-gradient(180deg,#161820,#c81e30);-webkit-background-clip:text;background-clip:text}
-.sub{color:#5a626f}.opt{background:#f4f6f8;border-color:#d7dbe2;color:#161820}.opt .go{color:#5a626f}.fine{color:#8a93a1}}
-</style></head><body><div class="card"><div class="brand">Mikey's Mobile Detailing</div>${inner}</div></body></html>`;
+.sub{color:#5a626f}.opt{background:#f4f6f8;border-color:#d7dbe2;color:#161820}.opt .go{color:#5a626f}.fine{color:#8a93a1}
+.brand .tag{color:#5a626f}
+.rcpt{background:#f7f8fa;border-color:#d7dbe2}
+.li{border-bottom-color:#e3e6eb}.li .n{color:#3d434e}
+.li.tot{border-top-color:#d7dbe2}.li.tot .n{color:#161820}.li.tot .p{color:#c81e30}}
+</style></head><body><div class="card"><div class="brand">${biz}${tag ? `<span class="tag">${tag}</span>` : ''}</div>${inner}</div></body></html>`;
 }
 
 // ===========================================================================
