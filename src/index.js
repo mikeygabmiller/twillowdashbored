@@ -74,7 +74,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-29·voice-import';
+const BUILD = '2026-07-29·voice-every-send';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -1386,6 +1386,11 @@ async function apiSend(request) {
   // owner then tweaked, remember the before→after so future drafts sound more like him.
   const aiOriginal = (data.aiOriginal || '').trim();
   if (aiOriginal) { try { await recordEdit(aiOriginal, body); } catch { /* non-fatal */ } }
+  // A text he typed with no draft behind it is the purest voice sample there is,
+  // and it used to be dropped — the corpus only grew from drafts he accepted or
+  // rewrote, so the way he opens a conversation cold was never learned until the
+  // next full rebuild. Now every message he writes goes in as he sends it.
+  else if (voiceUsable(msg)) { try { await recordVoiceSample(body, 'sent'); } catch { /* non-fatal */ } }
   // Mikey's own "see you Saturday at 10" counts as setting a date too.
   await maybeDetectJob(phone);
   return json({ ok: true, thread });
@@ -1467,7 +1472,10 @@ async function apiSchedule(request) {
   if (!body) return json({ ok: false, error: 'empty_message' }, 422);
   if (!sendAt || sendAt < Date.now() - 60000) return json({ ok: false, error: 'bad_time' }, 422);
   const thread = await loadThread(phone);
-  thread.scheduled.push({ id: genId(), body, sendAt });
+  // src:'manual' records that Mikey typed this one in the composer, so when it goes
+  // out the voice corpus can take it. The app's own queued items (the first
+  // reach-out, booking reminders, assist replies) carry no src and stay out.
+  thread.scheduled.push({ id: genId(), body, sendAt, src: 'manual' });
   thread.scheduled.sort((a, b) => a.sendAt - b.sendAt);
   thread.dateRequest = null; // scheduling a send answers the "need a date" request
   await saveThread(thread);
@@ -4921,18 +4929,31 @@ async function apiFollowupAction(request) {
   if (action === 'send') {
     const body = (data.body || (fu.suggestion && fu.suggestion.draft) || '').trim();
     if (!body) return json({ ok: false, error: 'empty_message' }, 422);
+    // What the machine proposed, captured before the suggestion is cleared below, so
+    // we can tell a nudge he rewrote from one he approved untouched.
+    const machineDraft = (fu.suggestion && fu.suggestion.draft) || '';
     const stepKey = (fu.suggestion && fu.suggestion.stepKey) || (plan && plan.stepKey) || '';
     fu.lastStepKey = stepKey; fu.lastActionAt = now; fu.suggestion = null;
     pushLog(fu, { at: now, stepKey, action: 'sent' });
     await saveThread(thread); // reserve before send
+    // A nudge he rewrote before approving is his wording, so it counts as voice —
+    // same reasoning as an edited draft. One he approved verbatim is the template's
+    // words and stays out, which is why 'followup' is excluded from mining at all.
+    const same = (a, b) => a.replace(/\s+/g, ' ').toLowerCase() === b.replace(/\s+/g, ' ').toLowerCase();
+    const tmpl = plan ? followupTemplate(thread, plan, cfg) : '';
+    const hisWords = !same(body, machineDraft) && !same(body, tmpl);
+    const msg = { id: genId(), dir: 'out', body, ts: now, kind: 'followup', status: 'sent' };
+    if (hisWords) msg.src = 'manual'; // so a rebuild keeps it too (see voiceUsable)
     try {
       const r = await sendSms(phone, body);
-      thread.messages.push({ id: genId(), dir: 'out', body, ts: now, kind: 'followup', status: 'sent', sid: (r && r.sid) || undefined });
+      if (r && r.sid) msg.sid = r.sid;
+      thread.messages.push(msg);
     } catch (err) {
       const optedOut = /opted_out/.test(String((err && err.message) || err));
       return json({ ok: false, error: optedOut ? 'recipient_opted_out' : String((err && err.message) || err) }, optedOut ? 409 : 502);
     }
     await saveThread(thread); await updateIndexEntry(thread);
+    if (voiceUsable(msg)) { try { await recordVoiceSample(body, 'edited'); } catch { /* non-fatal */ } }
     return json({ ok: true, thread });
   }
   if (action === 'snooze') {
@@ -6297,7 +6318,11 @@ function voiceBucket(text) {
 const VOICE_EXCLUDE_KINDS = ['followup', 'scheduled', 'booking', 'run', 'assist', 'auto', 'payment'];
 function voiceUsable(m) {
   if (!m || m.dir !== 'out') return false;
-  if (m.kind && VOICE_EXCLUDE_KINDS.includes(m.kind)) return false;
+  // src:'manual' means Mikey typed these exact words, which beats the kind guess: a
+  // text he wrote and queued for later is 'scheduled', and a nudge he rewrote before
+  // approving is 'followup', yet both are his voice. Without this a rebuild would
+  // re-mine history and drop the samples the live path had already learned.
+  if (m.src !== 'manual' && m.kind && VOICE_EXCLUDE_KINDS.includes(m.kind)) return false;
   const b = String(m.body || '').trim();
   if (b.length < 8 || b.length > 400) return false;
   if (/^https?:\/\/\S+$/.test(b)) return false;              // a bare link teaches nothing
@@ -6416,6 +6441,7 @@ async function apiVoiceImport(request) {
 async function buildVoiceProfile(opts = {}) {
   const index = await loadIndex();
   const cfg = await loadConfig();
+  const prev = await loadVoice();
   const v = emptyVoice();
   let scanned = 0, kept = 0;
   // Newest conversations first: recent writing is the better model of how he
@@ -6432,6 +6458,22 @@ async function buildVoiceProfile(opts = {}) {
       const norm = (s) => s.replace(/\s+/g, ' ').toLowerCase();
       if (v.buckets[b].some((x) => norm(x.t) === norm(m.body))) continue;
       v.buckets[b].push({ t: String(m.body).trim(), s: 'sent', at: m.ts || 0 });
+      kept++;
+    }
+  }
+  // Carry over the samples a rebuild cannot re-derive. A pasted phone export never
+  // existed as a thread, and trainer verdicts come from the practice number that the
+  // scan above deliberately skips — so rebuilding from threads alone silently threw
+  // away the best training data he had. Mined samples come first; these fill in
+  // behind them, up to the same per-bucket cap.
+  const VOICE_KEEP_SOURCES = ['import', 'trainer'];
+  const vnorm = (s) => String(s || '').replace(/\s+/g, ' ').toLowerCase();
+  for (const b of VOICE_BUCKETS) {
+    for (const s of (prev && prev.buckets && prev.buckets[b]) || []) {
+      if (!s || !s.t || !VOICE_KEEP_SOURCES.includes(s.s)) continue;
+      if (v.buckets[b].length >= VOICE_PER_BUCKET) break;
+      if (v.buckets[b].some((x) => vnorm(x.t) === vnorm(s.t))) continue;
+      v.buckets[b].push(s);
       kept++;
     }
   }
@@ -6951,6 +6993,7 @@ async function setOptOut(phone, on) {
 async function dispatchDueScheduled(now = Date.now()) {
   const index = await loadIndex();
   let sent = 0;
+  const learn = []; // his own queued texts that went out — one corpus write at the end
   for (const entry of index) {
     if (!entry.scheduledCount) continue;
     const thread = await loadThread(entry.phone);
@@ -6969,9 +7012,16 @@ async function dispatchDueScheduled(now = Date.now()) {
       const kind = s.kind || 'scheduled';
       try {
         const r = await sendSms(thread.phone, s.body);
-        thread.messages.push({ id: genId(), dir: 'out', body: s.body, ts: Date.now(), kind, status: 'sent', sid: (r && r.sid) || undefined });
+        // Carry src onto the stored message so a later rebuild can tell his own
+        // queued text from the app's templated ones (see voiceUsable).
+        const m = { id: genId(), dir: 'out', body: s.body, ts: Date.now(), kind, status: 'sent', sid: (r && r.sid) || undefined };
+        if (s.src === 'manual') m.src = 'manual';
+        thread.messages.push(m);
+        if (voiceUsable(m)) learn.push(s.body);
         sent++;
       } catch (err) {
+        // Left unmarked on purpose: a text that never reached the customer stays out
+        // of the voice corpus, so a rebuild can't mine a failed send.
         thread.messages.push({ id: genId(), dir: 'out', body: s.body, ts: Date.now(), kind, error: String(err.message || err) });
         notifyMikey('⚠️ Scheduled text failed', `A scheduled message to ${thread.name || thread.phone} did not send: ${String(err.message || err)}`).catch(() => {});
       }
@@ -6979,6 +7029,8 @@ async function dispatchDueScheduled(now = Date.now()) {
     await saveThread(thread);
     await updateIndexEntry(thread);
   }
+  // Batched, so a tick that flushes ten of his texts still costs one KV write.
+  if (learn.length) { try { await addVoiceSamples(learn, 'sent'); } catch { /* non-fatal */ } }
   return sent;
 }
 
