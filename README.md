@@ -51,6 +51,16 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   you tap to send** — nothing is ever texted automatically. Costs almost nothing to
   run: a free regex kills every message with no date in it before any AI call.
   Kill switches: the **detect** settings in the menu, or `DETECT_DISABLED=1`.
+- **Payment requests, on the fly:** open a conversation → **Tools → Send a payment
+  request**. The customer is already filled in; type what it's for and the price,
+  tap **Add a line** for anything extra, and the total adds itself up. Deposits are
+  one tap (a % you set). They get **one short text that only explains what the link
+  is** — no wall of details to skim past — and the link opens a clean **receipt
+  page**: the itemised breakdown, the total, and tap-to-pay **Venmo / Cash App /
+  PayPal / card** buttons with the amount already filled in, plus your Zelle handle,
+  cash, and any other method you add yourself. All of it is yours to configure under
+  **menu → Payment setup**: business name, tagline, footer note, what to call cash,
+  deposit %, auto-nudge, and free-form extra payment methods.
 - **Click-to-call:** rings your cell, then bridges the call to the customer through
   your Twilio number (keeps your personal number private).
 - **Instant email alerts (optional, Resend):** get emailed the moment a text,
