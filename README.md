@@ -61,6 +61,24 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   cash, and any other method you add yourself. All of it is yours to configure under
   **menu → Payment setup**: business name, tagline, footer note, what to call cash,
   deposit %, auto-nudge, and free-form extra payment methods.
+- **Booking texts:** confirming a booking texts the confirmation and queues the
+  day-before and morning-of reminders; **cancelling or finishing a job pulls the
+  reminders it still had queued**, so a cancelled customer never gets "see you
+  tomorrow!"; and *Mark done* marks the lead **Won** so the review-ask and rebook
+  cadences start from today. All fixed templates filled in from the booking record —
+  no AI writes them, so none can invent a price or a time — and each is individually
+  switchable in **Bookings → Settings → Booking texts**. (Day-of messages — on my
+  way, I'm here, all finished — belong to the Jobs run board, which also drives live
+  ETA tracking.)
+- **Answer by text (the assist loop):** text your **own business number** the bare
+  facts and the AI writes the customer reply in your voice and sends it — you supply
+  every fact, it only does the wording. `375, thursday works` answers whoever texted
+  you last; `@ruth …` picks someone; `send: …` sends your exact words; `draft: …`
+  holds it in the dashboard; `who` lists who's waiting; `cancel` pulls the last one
+  back. You get the finished wording texted back before it goes out, with a
+  configurable hold (default 60s) that is the cancel window. Only reachable from
+  `MIKEY_PHONE` over a Twilio-signed webhook. Toggle in the menu under *Answer by
+  text*.
 - **Click-to-call:** rings your cell, then bridges the call to the customer through
   your Twilio number (keeps your personal number private).
 - **Instant email alerts (optional, Resend):** get emailed the moment a text,

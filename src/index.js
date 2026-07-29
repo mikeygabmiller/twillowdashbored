@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-29·pay-receipt';
+const BUILD = '2026-07-29·bookingtexts+assist';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -460,7 +460,9 @@ async function handleInboundSms(request) {
   const text = params.Body || '';
   const numMedia = parseInt(params.NumMedia || '0', 10);
   const fromNorm = normalizePhone(from) || from;
-  if (fromNorm === normalizePhone(ENV.MIKEY_PHONE)) return twiml('');
+  // A text from Mikey's own cell isn't a customer message — it's him answering
+  // one. See the assist loop below.
+  if (fromNorm === normalizePhone(ENV.MIKEY_PHONE)) return handleOwnerSms(text);
 
   // STOP / START compliance. Record the opt-out state ourselves so scheduled sends,
   // autopilot nudges and blasts all honor it — Twilio blocks at the API but never
@@ -493,15 +495,202 @@ async function handleInboundSms(request) {
   if (media.length) inMsg.media = media;
   else if (numMedia > 0) inMsg.body = text + `\n[${numMedia} attachment(s)]`;
   if (params.MessageSid) inMsg.sid = params.MessageSid;
-  await appendMessage(fromNorm, inMsg);
+  const inThread = await appendMessage(fromNorm, inMsg);
+  // The alert doubles as the assist prompt: it tells Mikey he can answer straight
+  // from his phone by texting the business number the bare facts (handleOwnerSms).
+  const alertCfg = await loadConfig();
+  const assistHint = alertCfg.assistSms === false ? '' :
+    `\n\n💡 Or answer without opening anything: text ${ENV.TWILIO_FROM || 'your business number'} the facts ` +
+    `— e.g. "375, thursday works" — and I'll write it in your voice and send it to ${inThread.name || from}. ` +
+    `You'll get the exact wording back first, with a minute to reply CANCEL.`;
   await notifyMikey(`📱 New ${numMedia > 0 ? 'photo/text' : 'text'} from ${from}`,
-    `New message from ${from}:\n"${text || (numMedia > 0 ? '[photo]' : '')}"\n\nReply in your dashboard.`);
+    `New message from ${from}:\n"${text || (numMedia > 0 ? '[photo]' : '')}"\n\nReply in your dashboard.${assistHint}`);
   // Pre-draft a reply in Mikey's voice so it's already waiting when he opens the
   // thread. Best-effort — never blocks or fails the inbound webhook.
   await maybeSuggestReply(fromNorm);
   // Watch for "so Saturday at 10 then?" and raise a one-tap job card if so.
   await maybeDetectJob(fromNorm);
   // No auto-reply to the customer — Mikey replies personally from the dashboard.
+  return twiml('');
+}
+
+// ===========================================================================
+// The assist loop  (a text FROM Mikey's own cell TO the business number)
+// ---------------------------------------------------------------------------
+// The slow part of answering a customer isn't deciding what to say, it's typing
+// it out nicely. So Mikey sends the bare facts and the AI does the wording —
+// "375, thursday works" becomes a warm, on-voice reply.
+//
+// Crucially this is NOT autonomy. Every fact in the outgoing message came from
+// Mikey; generateReply() is explicitly told a hint is "the owner telling you what
+// to say" and must use it exactly. The AI never decides anything, it just writes.
+// And nothing leaves immediately: the reply is queued with a cancel window and
+// the exact wording is texted back first, so the last word is his.
+//
+// Security: only reachable from a Twilio-signed webhook whose From matches
+// MIKEY_PHONE, so the sender can't be spoofed through the public route.
+//
+// Grammar (case-insensitive):
+//   375, thursday works        → AI writes it, sends to whoever texted last
+//   @ruth 375 thursday         → …to Ruth instead (name prefix or phone digits)
+//   send: on my way            → send exactly that, no rewriting
+//   draft: ...                 → write it but hold it in the dashboard
+//   who                        → who's waiting on a reply
+//   cancel                     → pull back the queued reply before it goes
+//   help                       → this list
+// ===========================================================================
+const ASSIST_HELP =
+  'Answer a customer from your phone:\n' +
+  '• Text me the facts — "375, thursday works" — and I\'ll write it out and send it to whoever texted you last.\n' +
+  '• "@ruth 375 thursday" to pick who.\n' +
+  '• "send: ..." to send your exact words.\n' +
+  '• "draft: ..." to write it but hold it in the dashboard.\n' +
+  '• "who" = who\'s waiting. "cancel" = pull back the last one.';
+
+// Text Mikey back on his cell. Always SMS (not notifyMikey, which prefers email)
+// — he's mid-text-conversation with the dashboard, so the answer has to land in
+// the same place he's typing.
+async function ownerSay(msg) {
+  try { await sendSms(ENV.MIKEY_PHONE, msg, { skipOptOut: true }); } catch { /* best effort */ }
+}
+function assistWho(e) { return e.name || e.phone; }
+
+// Resolve which conversation an owner text is about. With a @token: match on a
+// name-word prefix, then a name substring, then trailing phone digits. Without
+// one: whoever is actually waiting on a reply, most recent first. Reads only the
+// index, so picking a target costs no extra KV reads.
+function assistPickTarget(index, token) {
+  const open = index.filter((e) => !e.archived && !e.optedOut);
+  if (!token) {
+    const waiting = open.filter((e) => e.lastDir === 'in').sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+    return waiting[0] || null;
+  }
+  const t = String(token).toLowerCase().replace(/^@/, '');
+  const digits = t.replace(/\D/g, '');
+  if (digits.length >= 7) {
+    const byPhone = open.find((e) => String(e.phone).replace(/\D/g, '').endsWith(digits));
+    if (byPhone) return byPhone;
+  }
+  const name = (e) => String(e.name || '').toLowerCase();
+  for (const test of [(e) => name(e).split(/\s+/).some((w) => w.startsWith(t)), (e) => name(e).includes(t)]) {
+    const hits = open.filter(test);
+    if (hits.length === 1) return hits[0];
+    if (hits.length > 1) return { ambiguous: hits.slice(0, 5) };
+  }
+  return null;
+}
+
+async function handleOwnerSms(rawText) {
+  const text = String(rawText || '').trim();
+  if (!text) return twiml('');
+  const cfg = await loadConfig();
+  if (cfg.assistSms === false) return twiml('');   // feature off — stay silent
+  const lower = text.toLowerCase();
+
+  if (lower === 'help' || lower === '?' || lower === 'commands') { await ownerSay(ASSIST_HELP); return twiml(''); }
+  // Carrier keywords aren't answers — swallow them rather than rewriting "stop"
+  // into a friendly sentence and texting it to a customer.
+  if (['stop', 'stopall', 'unsubscribe', 'cancel all', 'end', 'quit', 'start', 'unstop'].includes(lower)) return twiml('');
+
+  const index = await loadIndex();
+
+  if (lower === 'who' || lower === 'waiting' || lower === 'pending') {
+    const waiting = index.filter((e) => !e.archived && e.lastDir === 'in')
+      .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0)).slice(0, 5);
+    await ownerSay(waiting.length
+      ? 'Waiting on you:\n' + waiting.map((e, i) => `${i + 1}. ${assistWho(e)} — ${humanAgo(Date.now() - (e.lastTs || Date.now()))}: "${(e.lastBody || '').slice(0, 60)}"`).join('\n')
+      : 'Nobody\'s waiting on a reply right now. 🚗');
+    return twiml('');
+  }
+
+  // Pull back a queued assist reply. Targets the newest one still in the queue,
+  // across every conversation, so "cancel" always undoes the last thing he sent.
+  if (/^(cancel|undo|nvm|nevermind|stop that|wait)\b/.test(lower)) {
+    let best = null;
+    for (const e of index) {
+      if (e.archived || !e.scheduledCount) continue;
+      const th = await loadThread(e.phone);
+      for (const s of (th.scheduled || [])) {
+        if (s.kind === 'assist' && (!best || (s.at || 0) > (best.item.at || 0))) best = { thread: th, item: s };
+      }
+    }
+    if (!best) { await ownerSay('Nothing queued to cancel — it may have already gone out.'); return twiml(''); }
+    best.thread.scheduled = best.thread.scheduled.filter((s) => s.id !== best.item.id);
+    await saveThread(best.thread);
+    await updateIndexEntry(best.thread);
+    await ownerSay(`Cancelled — nothing was sent to ${best.thread.name || best.thread.phone}.`);
+    return twiml('');
+  }
+
+  // @target prefix
+  let token = '', body = text;
+  const m = text.match(/^@(\S+)\s+([\s\S]+)$/);
+  if (m) { token = m[1]; body = m[2].trim(); }
+
+  // mode prefix
+  let mode = 'ai';
+  let mm = body.match(/^(?:send|say|verbatim)\s*:\s*([\s\S]+)$/i);
+  if (mm) { mode = 'verbatim'; body = mm[1].trim(); }
+  else {
+    mm = body.match(/^(?:draft|hold)\s*:\s*([\s\S]+)$/i);
+    if (mm) { mode = 'draft'; body = mm[1].trim(); }
+  }
+  if (!body) { await ownerSay(ASSIST_HELP); return twiml(''); }
+
+  const target = assistPickTarget(index, token);
+  if (!target) {
+    await ownerSay(token
+      ? `I couldn't find anyone matching "${token}". Text "who" to see who's waiting.`
+      : 'Nobody has texted in, so I don\'t know who you mean. Try "@name your answer".');
+    return twiml('');
+  }
+  if (target.ambiguous) {
+    await ownerSay(`"${token}" matches ${target.ambiguous.map(assistWho).join(', ')}. Try a fuller name or the last 4 digits of their number.`);
+    return twiml('');
+  }
+  if (isOptedOut(cfg, target.phone)) {
+    await ownerSay(`${assistWho(target)} texted STOP, so I can't message them. Give them a call instead.`);
+    return twiml('');
+  }
+
+  const thread = await loadThread(target.phone);
+  let out = body;
+  if (mode !== 'verbatim') {
+    // The hint path: generateReply() is grounded in the playbook, the rules, this
+    // customer's history AND how Mikey edits drafts — and is told to use any fact
+    // in the hint exactly as given.
+    try { out = await generateReply(thread, cfg, body); }
+    catch (err) {
+      await ownerSay(`Couldn't write that one (${String((err && err.message) || err).slice(0, 60)}). Text "send: <your exact message>" and I'll send it word for word.`);
+      return twiml('');
+    }
+  }
+  out = String(out || '').trim();
+  if (!out) { await ownerSay('That came back empty — try again, or use "send: <your exact message>".'); return twiml(''); }
+
+  if (mode === 'draft') {
+    const last = thread.messages[thread.messages.length - 1];
+    thread.suggested = { text: out, ts: Date.now(), forTs: last ? last.ts : Date.now() };
+    await saveThread(thread);
+    await updateIndexEntry(thread);
+    await ownerSay(`Drafted for ${assistWho(target)} (not sent):\n"${out}"\n\nIt's waiting in the dashboard.`);
+    return twiml('');
+  }
+
+  // Queue it rather than send it. Riding the existing scheduled-send cron gives
+  // at-most-once delivery and the opt-out guard for free — and the gap between
+  // now and sendAt IS the cancel window.
+  const delaySec = Math.max(0, Math.min(600, Number(cfg.assistDelaySec) || 0));
+  const item = { id: genId(), kind: 'assist', at: Date.now(), body: out, sendAt: Date.now() + delaySec * 1000 };
+  thread.scheduled.push(item);
+  thread.scheduled.sort((a, b) => a.sendAt - b.sendAt);
+  thread.dateRequest = null;
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+  await ownerSay(
+    `→ ${assistWho(target)}:\n"${out}"\n\n` +
+    (delaySec ? `Sending in ~${delaySec}s. Reply CANCEL to stop it.` : 'Sending on the next tick (~1 min). Reply CANCEL to stop it.'),
+  );
   return twiml('');
 }
 
@@ -4410,6 +4599,8 @@ async function apiSaveConfig(request) {
   if (typeof data.callScreening === 'boolean') next.callScreening = data.callScreening;
   if (typeof data.missedCallTextback === 'boolean') next.missedCallTextback = data.missedCallTextback;
   if (typeof data.missedCallText === 'string') next.missedCallText = data.missedCallText.slice(0, 320);
+  if (typeof data.assistSms === 'boolean') next.assistSms = data.assistSms;
+  if (data.assistDelaySec != null && !isNaN(+data.assistDelaySec)) next.assistDelaySec = Math.max(0, Math.min(600, Math.round(+data.assistDelaySec)));
   if (typeof data.teamMode === 'boolean') next.teamMode = data.teamMode;
   if (typeof data.briefEnabled === 'boolean') next.briefEnabled = data.briefEnabled;
   if (data.briefHour != null && !isNaN(+data.briefHour)) next.briefHour = Math.max(4, Math.min(11, Math.round(+data.briefHour)));
@@ -5185,6 +5376,10 @@ function defaultConfig() {
     emailToken: '',          // shared secret for the /email-in ingest (generated in-app)
     missedCallTextback: true,// auto-text a caller we missed so the lead becomes a text thread
     missedCallText: '',      // custom missed-call text (blank = the friendly default)
+    assistSms: true,         // text your own business number the bare facts ("375, thursday
+                             // works") and the AI writes the customer reply in your voice.
+                             // You supply every fact; the AI only does the wording.
+    assistDelaySec: 60,      // cancel window before an assist reply actually goes out
     teamMode: false,         // when on: conversations can be assigned, and each reply is
                              // attributed to the sender. Turn off to go back to solo.
     team: [],                // [{ id, name, role }] — the people who help answer texts
@@ -5897,12 +6092,15 @@ async function dispatchDueScheduled(now = Date.now()) {
     thread.scheduled = (thread.scheduled || []).filter((s) => s.sendAt > now);
     await saveThread(thread);
     for (const s of due) {
+      // `kind` lets a queued item say what it is (a booking reminder, an assist
+      // reply) so the thread history reads correctly; plain sends stay 'scheduled'.
+      const kind = s.kind || 'scheduled';
       try {
         const r = await sendSms(thread.phone, s.body);
-        thread.messages.push({ id: genId(), dir: 'out', body: s.body, ts: Date.now(), kind: 'scheduled', status: 'sent', sid: (r && r.sid) || undefined });
+        thread.messages.push({ id: genId(), dir: 'out', body: s.body, ts: Date.now(), kind, status: 'sent', sid: (r && r.sid) || undefined });
         sent++;
       } catch (err) {
-        thread.messages.push({ id: genId(), dir: 'out', body: s.body, ts: Date.now(), kind: 'scheduled', error: String(err.message || err) });
+        thread.messages.push({ id: genId(), dir: 'out', body: s.body, ts: Date.now(), kind, error: String(err.message || err) });
         notifyMikey('⚠️ Scheduled text failed', `A scheduled message to ${thread.name || thread.phone} did not send: ${String(err.message || err)}`).catch(() => {});
       }
     }
@@ -6037,6 +6235,17 @@ function bookingDefaults() {
     proof: { rating: '5.0', reviews: 39, cars: '300+' },
     calendar: { icalUrl: '', enabled: false },   // Google Calendar "secret iCal" URL
     blockedDates: [],                             // ['2026-08-01', …] days Mikey is off
+    // Booking-lifecycle texts. Each is a fixed template filled in from the booking
+    // record — no AI writes them, so none can invent a price or a time. Individually
+    // switchable. (Day-of messages — on my way, I'm here, all finished — belong to
+    // the Jobs run board, not here; see dayJobText().)
+    autoTexts: {
+      confirm:   true,   // "you're all set" the moment you confirm
+      remind24:  true,   // day-before reminder
+      remindAm:  true,   // morning-of reminder
+      cancelled: true,   // courtesy note when a confirmed job is cancelled
+      declined:  false,  // note when a request is declined (off — usually wants a personal reply)
+    },
   };
 }
 // Merge saved overrides over the defaults (arrays replace, objects deep-merge).
@@ -6047,6 +6256,7 @@ async function loadBookingConfig() {
     content:  Object.assign({}, d.content,  saved.content  || {}),
     proof:    Object.assign({}, d.proof,    saved.proof    || {}),
     calendar: Object.assign({}, d.calendar, saved.calendar || {}),
+    autoTexts: Object.assign({}, d.autoTexts, saved.autoTexts || {}),
     sizes:    saved.sizes    || d.sizes,
     services: saved.services || d.services,
     addons:   saved.addons   || d.addons,
@@ -6216,42 +6426,122 @@ async function apiBookings(url) {
   return json({ ok: true, bookings: all });
 }
 
+// ---------------------------------------------------------------------------
+// Booking-lifecycle texts (Tier 0 — deterministic, no AI anywhere near them)
+// ---------------------------------------------------------------------------
+// Every message a booking generates is built here, from fields that already exist
+// on the booking record. Nothing is generated, so nothing can be invented: the
+// time comes from bk.slot, the service from bk.serviceName. One place to read
+// them all, one place to change the wording.
+//
+// Day-of messages (on my way / I'm here / all finished + review ask) are NOT
+// here — those belong to the Jobs run board, which does them better because it
+// also drives live ETA tracking. See dayJobText().
+function bkAutoOn(bcfg, kind) { return ((bcfg && bcfg.autoTexts) || {})[kind] !== false; }
+
+function bkMessage(kind, bk) {
+  const first = (bk.name || '').split(/\s+/)[0] || 'there';
+  const at = bkFmt12(bk.slot);
+  const car = bk.vehicle || 'car';
+  switch (kind) {
+    case 'confirm':
+      return `You're all set for ${bk.dateLabel} at ${at} — ${bk.serviceName}. I come to you; just have water & power within about 20 ft of the car. I'll text when I'm on my way. - Mikey`;
+    case 'remind24':
+      return `Quick reminder: I'm detailing your ${car} tomorrow at ${at}. Please have it accessible with water & power within ~20 ft. See you then! - Mikey`;
+    case 'remindAm':
+      return `Morning ${first}! I'm detailing your car today at ${at}. I'll text when I'm headed your way. - Mikey`;
+    case 'cancelled':
+      return `Hey ${first}, your detail on ${bk.dateLabel} at ${at} has been cancelled. No problem at all — just text me whenever you'd like to find another time. - Mikey`;
+    case 'declined':
+      return `Hey ${first}, I wasn't able to lock in ${bk.dateLabel} at ${at}. Text me and we'll find a time that works. - Mikey`;
+    default:
+      return '';
+  }
+}
+
+// Drop any still-queued texts belonging to one booking. Without this, cancelling
+// a confirmed job still texted the customer "see you tomorrow!" the next morning.
+// Returns how many were removed.
+function bkPurgeScheduled(thread, bkId) {
+  const before = (thread.scheduled || []).length;
+  thread.scheduled = (thread.scheduled || []).filter((s) => s.bkId !== bkId);
+  return before - thread.scheduled.length;
+}
+
 // Confirm / decline / cancel / complete a booking. Confirm texts the customer and
-// queues the 24h + morning-of reminders through the existing scheduled-send cron.
+// queues the 24h + morning-of reminders through the existing scheduled-send cron;
+// cancel and complete pull any reminders that are no longer wanted.
 async function apiBookingAction(request) {
   const d = await readJson(request);
   const id = String(d.id || ''), action = String(d.action || '');
   const all = await loadBookings();
   const bk = all.find((x) => x.id === id);
   if (!bk) return json({ ok: false, error: 'not_found' }, 404);
+  const bcfg = await loadBookingConfig();
+  const now = Date.now();
+  let texted = false;
 
   if (action === 'confirm') {
-    bk.status = 'confirmed'; bk.confirmedAt = Date.now();
-    const first = (bk.name || '').split(/\s+/)[0];
-    const when = `${bk.dateLabel} at ${bkFmt12(bk.slot)}`;
+    bk.status = 'confirmed'; bk.confirmedAt = now;
     const thread = await loadThread(bk.phone);
     markSource(thread, 'booking');
-  if (!thread.tags.includes('booking')) thread.tags.push('booking');
+    if (!thread.tags.includes('booking')) thread.tags.push('booking');
     thread.appointmentAt = bk.apptAt;
     if (bk.smsConsent) {
-      try { await sendSms(bk.phone, `You're all set for ${when} — ${bk.serviceName}. I come to you; just have water & power within about 20 ft of the car. I'll text when I'm on my way. - Mikey`); } catch (e) {}
-      const now = Date.now(), r24 = bk.apptAt - 86400000, rAm = bkLaEpoch(bk.date, '07:30');
+      if (bkAutoOn(bcfg, 'confirm')) {
+        const body = bkMessage('confirm', bk);
+        try {
+          const r = await sendSms(bk.phone, body);
+          // Record it — this text used to go out without ever landing in the
+          // conversation, so the thread read as if nothing was sent.
+          thread.messages.push({ id: genId(), dir: 'out', body, ts: Date.now(), kind: 'booking', status: 'sent', sid: (r && r.sid) || undefined });
+          texted = true;
+        } catch (e) { /* the booking is still confirmed even if the text fails */ }
+      }
+      // Reminders ride the existing reserve-then-send cron, so they're at-most-once
+      // and opt-out aware for free. Tagged with bkId so a later cancel can pull them.
+      const r24 = bk.apptAt - 86400000, rAm = bkLaEpoch(bk.date, '07:30');
       const add = [];
-      if (r24 > now + 60000) add.push({ id: genId(), body: `Quick reminder: I'm detailing your ${bk.vehicle || 'car'} tomorrow at ${bkFmt12(bk.slot)}. Please have it accessible with water & power within ~20 ft. See you then! - Mikey`, sendAt: r24 });
-      if (rAm > now + 60000 && rAm < bk.apptAt) add.push({ id: genId(), body: `Morning ${first}! I'm detailing your car today at ${bkFmt12(bk.slot)}. I'll text when I'm headed your way. - Mikey`, sendAt: rAm });
+      if (bkAutoOn(bcfg, 'remind24') && r24 > now + 60000) add.push({ id: genId(), bkId: bk.id, kind: 'booking', body: bkMessage('remind24', bk), sendAt: r24 });
+      if (bkAutoOn(bcfg, 'remindAm') && rAm > now + 60000 && rAm < bk.apptAt) add.push({ id: genId(), bkId: bk.id, kind: 'booking', body: bkMessage('remindAm', bk), sendAt: rAm });
       if (add.length) { thread.scheduled.push(...add); thread.scheduled.sort((a, b) => a.sendAt - b.sendAt); }
     }
     await saveThread(thread);
     await updateIndexEntry(thread);
-  } else if (action === 'decline' || action === 'cancel') {
-    bk.status = action === 'decline' ? 'declined' : 'cancelled';
+
   } else if (action === 'complete') {
-    bk.status = 'done';
+    bk.status = 'done'; bk.doneAt = now;
+    const thread = await loadThread(bk.phone);
+    const purged = bkPurgeScheduled(thread, bk.id);   // the job happened — drop leftovers
+    // Mark the lead Won so it lands in the right bucket everywhere else, and so
+    // the follow-up engine's review-ask and rebook cadences start from today.
+    // The review ask itself is left to that engine (or the Jobs board's
+    // "all finished" text) — deliberately not duplicated here.
+    const wasWon = thread.status === 'won';
+    if (!wasWon) { thread.status = 'won'; thread.statusAt = now; }
+    if (purged || !wasWon) { await saveThread(thread); await updateIndexEntry(thread); }
+
+  } else if (action === 'decline' || action === 'cancel') {
+    const kind = action === 'decline' ? 'declined' : 'cancelled';
+    bk.status = kind;
+    const thread = await loadThread(bk.phone);
+    let changed = bkPurgeScheduled(thread, bk.id) > 0;   // no job → no reminders
+    if (bk.smsConsent && bkAutoOn(bcfg, kind)) {
+      const body = bkMessage(kind, bk);
+      try {
+        const r = await sendSms(bk.phone, body);
+        thread.messages.push({ id: genId(), dir: 'out', body, ts: Date.now(), kind: 'booking', status: 'sent', sid: (r && r.sid) || undefined });
+        texted = true; changed = true;
+      } catch (e) { /* status change stands even if the courtesy text fails */ }
+    }
+    if (changed) { await saveThread(thread); await updateIndexEntry(thread); }
+
   } else {
     return json({ ok: false, error: 'bad_action' }, 422);
   }
+
   await saveBookings(all);
-  return json({ ok: true, booking: bk });
+  return json({ ok: true, booking: bk, texted });
 }
 
 // ===========================================================================
@@ -6442,6 +6732,14 @@ function bkSanitizeConfig(input) {
     },
     calendar: { enabled: !!(c.calendar && c.calendar.enabled) && !!ical, icalUrl: ical },
     blockedDates: Array.isArray(c.blockedDates) ? [...new Set(c.blockedDates.map((x) => String(x).trim()).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)))].slice(0, 200) : [],
+    // Booking texts: keep whatever the caller sent, fall back to the default for
+    // any key it didn't send, so a settings save can never silently switch one
+    // back on (this function rebuilds the whole config from scratch).
+    autoTexts: Object.keys(d.autoTexts).reduce((o, k) => {
+      const v = c.autoTexts && c.autoTexts[k];
+      o[k] = (v === true || v === false) ? v : d.autoTexts[k];
+      return o;
+    }, {}),
   };
 }
 
