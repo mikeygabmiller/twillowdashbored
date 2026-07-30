@@ -731,5 +731,141 @@ export async function digestApi(request, url, env, json) {
     }
   }
 
+  // A small self-contained control panel. Exists so the whole feature can be
+  // driven from a phone or browser with no terminal: preview, force a send,
+  // change the hour, and edit the subreddit list. Posts to the JSON endpoints
+  // above using the dashboard cookie that's already set.
+  if (request.method === 'GET' && path === '/api/digest/settings') {
+    return new Response(settingsPage(await loadConfig(env), await loadState(env)), {
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    });
+  }
+
   return null;   // not a digest route
+}
+
+function settingsPage(cfg, state) {
+  const last = state.lastRun
+    ? `Last run ${new Date(state.lastRun.at).toLocaleString('en-US', { timeZone: cfg.tz })} — ${state.lastRun.ok ? `sent ${state.lastRun.items} items` : `failed: ${esc(state.lastRun.error || state.lastRun.reason || 'unknown')}`}`
+    : 'Has not run yet.';
+
+  const topicRows = cfg.topics.map((t, i) => `
+    <div class="topic">
+      <label class="row">
+        <input type="checkbox" data-i="${i}" class="ten" ${t.enabled === false ? '' : 'checked'}>
+        <strong>${esc(t.label)}</strong>
+      </label>
+      <input class="tsubs" data-i="${i}" value="${esc((t.subs || []).join(', '))}"
+             placeholder="subreddits, comma separated">
+    </div>`).join('');
+
+  return `<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Morning digest</title>
+<style>
+  body{font:16px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+       margin:0;padding:20px;background:#f6f6f4;color:#1a1a1a}
+  .wrap{max-width:640px;margin:0 auto}
+  h1{font-size:22px;margin:0 0 4px} .sub{color:#777;font-size:13px;margin-bottom:20px}
+  .card{background:#fff;border-radius:12px;padding:20px;margin-bottom:16px}
+  label.row{display:flex;align-items:center;gap:10px;margin:10px 0}
+  input[type=text],input[type=number],select,.tsubs{width:100%;box-sizing:border-box;padding:9px 11px;
+       border:1px solid #ddd;border-radius:8px;font-size:15px;font-family:inherit}
+  .topic{padding:12px 0;border-bottom:1px solid #f0f0ee} .topic:last-child{border:0}
+  button{padding:11px 18px;border-radius:9px;border:0;font-size:15px;font-weight:600;
+         cursor:pointer;margin:4px 6px 4px 0;font-family:inherit}
+  .primary{background:#111;color:#fff} .ghost{background:#eceae6;color:#222}
+  #out{white-space:pre-wrap;font:13px/1.6 ui-monospace,Menlo,monospace;background:#faf9f7;
+       border-radius:9px;padding:14px;margin-top:14px;display:none;max-height:60vh;overflow:auto}
+  .flex{display:flex;gap:12px}.flex>*{flex:1}
+</style></head><body><div class="wrap">
+  <h1>☕ Morning digest</h1>
+  <div class="sub">${esc(last)}</div>
+
+  <div class="card">
+    <button class="primary" onclick="preview()">Preview now</button>
+    <button class="ghost" onclick="openHtml()">See the email</button>
+    <button class="ghost" onclick="sendNow()">Send it to me now</button>
+    <div id="out"></div>
+  </div>
+
+  <div class="card">
+    <label class="row"><input type="checkbox" id="enabled" ${cfg.enabled ? 'checked' : ''}> Send every morning</label>
+    <div class="flex">
+      <div><div class="sub">Hour (24h, ${esc(cfg.tz)})</div>
+        <input type="number" id="hour" min="0" max="23" value="${cfg.hour}"></div>
+      <div><div class="sub">Look back over</div>
+        <select id="window">
+          ${['hour', 'day', 'week'].map((w) => `<option value="${w}" ${cfg.window === w ? 'selected' : ''}>past ${w}</option>`).join('')}
+        </select></div>
+      <div><div class="sub">Items per topic</div>
+        <input type="number" id="perTopic" min="1" max="12" value="${cfg.perTopic}"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="sub">Topics — uncheck to pause, edit the subreddit list to retune</div>
+    ${topicRows}
+  </div>
+
+  <div class="card">
+    <button class="primary" onclick="save()">Save settings</button>
+    <button class="ghost" onclick="reset()">Reset to defaults</button>
+  </div>
+</div><script>
+const out = document.getElementById('out');
+function show(t){ out.style.display='block'; out.textContent = t; }
+function busy(t){ show(t + '\\n\\n(this takes 15-30 seconds — it is fetching Reddit and writing the summary)'); }
+
+async function preview(){
+  busy('Building preview...');
+  try {
+    const r = await fetch('/api/digest/preview');
+    const d = await r.json();
+    if (!d.ok) return show('Nothing built: ' + (d.reason || d.error) + '\\n\\n' + srcs(d));
+    show(d.text + '\\n\\n--- sources ---\\n' + srcs(d));
+  } catch (e) { show('Error: ' + e.message); }
+}
+function srcs(d){
+  return 'auth: ' + (d.authMode||'?') + '  subrequests: ' + (d.subrequests||0) + '\\n' +
+    (d.diagnostics||[]).map(x => (x.ok ? '  ok  ' : ' FAIL ') + x.source +
+      (x.ok ? ' (' + x.count + ')' : ' — ' + x.error)).join('\\n');
+}
+function openHtml(){ window.open('/api/digest/preview?format=html','_blank'); }
+
+async function sendNow(){
+  if (!confirm('Send the digest to your inbox right now?')) return;
+  busy('Sending...');
+  const r = await fetch('/api/digest/send', { method:'POST' });
+  const d = await r.json();
+  show(d.ok ? 'Sent — check your inbox.\\n\\n' + srcs(d)
+            : 'Not sent: ' + (d.reason || d.error) + '\\n\\n' + srcs(d));
+}
+
+function collectTopics(){
+  const topics = ${JSON.stringify(cfg.topics)};
+  document.querySelectorAll('.ten').forEach(el => { topics[el.dataset.i].enabled = el.checked; });
+  document.querySelectorAll('.tsubs').forEach(el => {
+    topics[el.dataset.i].subs = el.value.split(',').map(s => s.trim().replace(/^\\/?r\\//,'')).filter(Boolean);
+  });
+  return topics;
+}
+async function save(){
+  const body = {
+    enabled: document.getElementById('enabled').checked,
+    hour: +document.getElementById('hour').value,
+    window: document.getElementById('window').value,
+    perTopic: +document.getElementById('perTopic').value,
+    topics: collectTopics(),
+  };
+  const r = await fetch('/api/digest/config', { method:'POST',
+    headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  show((await r.json()).ok ? 'Saved.' : 'Save failed.');
+}
+async function reset(){
+  if (!confirm('Reset topics and settings to defaults?')) return;
+  await fetch('/api/digest/reset', { method:'POST' });
+  location.reload();
+}
+</script></body></html>`;
 }
