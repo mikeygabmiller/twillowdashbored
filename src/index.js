@@ -74,7 +74,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-29·voice-every-send';
+const BUILD = '2026-07-30·train-ai-overhaul';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -3420,7 +3420,11 @@ async function generateReply(thread, cfg, hint) {
   // the hint if he gave one, otherwise the customer's last message.
   const msgs = thread.messages || [];
   const lastIn = [...msgs].reverse().find((m) => m.dir === 'in');
-  const bucket = voiceBucket(hint || (lastIn && lastIn.body) || '');
+  // The same text also drives which of his real texts get retrieved below, so a
+  // "how much for a truck" pulls his actual truck-pricing replies, not just any
+  // price text.
+  const situation = hint || (lastIn && lastIn.body) || '';
+  const bucket = voiceBucket(situation);
   // Resolve the async context blocks once, then reuse them across attempts.
   const rulesCtx = await rulesContext();
   const editsCtx = await editsContext(bucket);
@@ -3428,7 +3432,7 @@ async function generateReply(thread, cfg, hint) {
     businessContext(cfg) +
     rulesCtx +
     customerContext(thread, spend) +
-    voiceContext(voice, bucket) +
+    voiceContext(voice, bucket, situation) +
     editsCtx +
     `You are replying to a customer by text for Mikey's Mobile Detailing. ` +
     `Write ONE reply (1-3 short complete sentences, no greeting line, no signature, ready to send). ` +
@@ -3443,13 +3447,18 @@ async function generateReply(thread, cfg, hint) {
 
   let text = await aiGenerate(build(''), { tier: 'voice', maxTokens: 800, temperature: 0.45 });
   text = cleanReply(text);
-  // One regeneration if it reached for a stock AI phrase, naming the offender so
-  // it can't simply reach for the same one again.
+  // One regeneration if the draft gave itself away — either a stock AI phrase, or a
+  // shape outside his measured habits (far too long, an emoji he'd never use, a
+  // greeting he never writes). Naming the exact offence beats asking again nicely,
+  // because it can't fix what it hasn't been told is wrong.
   const tell = findTell(text);
-  if (tell) {
+  const off = tell
+    ? `used the phrase "${tell}", which is a dead giveaway that a machine wrote it`
+    : styleViolation(text, voice && voice.style);
+  if (off) {
     try {
       const retry = await aiGenerate(
-        build(`CRITICAL: your previous attempt used the phrase "${tell}", which is a dead giveaway that a machine wrote it. Mikey never writes like that. Rewrite without it and without any similar customer-service filler. `),
+        build(`CRITICAL: your previous attempt ${off}. Mikey does not write like that. Rewrite it to read exactly like the real texts above, and avoid any customer-service filler. `),
         { tier: 'voice', maxTokens: 800, temperature: 0.45 },
       );
       const cleaned = cleanReply(retry);
@@ -6281,7 +6290,10 @@ async function editsContext(bucket) {
 // unlike a hand-written list it covers the situations that actually come up, in
 // the proportions they actually come up.
 const VOICE_KEY = 'voice:profile';
-const VOICE_PER_BUCKET = 24;    // kept per situation (retrieval shows a slice of these)
+// Retrieval now ranks by relevance rather than taking the newest N, so a deeper pool
+// is a straight win: more chance something genuinely close to the question is in
+// there. 40 × 8 buckets ≈ 320 short texts, comfortably inside a single KV value.
+const VOICE_PER_BUCKET = 40;    // kept per situation (retrieval ranks across all of them)
 const VOICE_SHOW = 12;          // shown to the model per draft
 
 // Situation buckets. Deterministic and free — no AI call to file a message.
@@ -6365,6 +6377,9 @@ async function addVoiceSamples(list, source) {
   }
   if (!added) return 0;
   for (const b of VOICE_BUCKETS) v.counts[b] = (v.buckets[b] || []).length;
+  // Recount the measured style so it tracks live learning, not just rebuilds.
+  // Pure arithmetic over what we already hold — no AI call, no extra read.
+  v.style = measureStyle(v);
   await saveVoice(v);
   return added;
 }
@@ -6481,6 +6496,7 @@ async function buildVoiceProfile(opts = {}) {
   v.builtAt = Date.now();
   v.scanned = scanned;
   v.kept = kept;
+  v.style = measureStyle(v);   // free, and it drives both the prompt and the gate
   // Derive the fingerprint from the real samples. One AI call, and the only one
   // this whole build makes.
   if (kept >= 12 && opts.fingerprint !== false) {
@@ -6488,6 +6504,56 @@ async function buildVoiceProfile(opts = {}) {
   }
   await saveVoice(v);
   return v;
+}
+
+// ---------------------------------------------------------------------------
+// Measured style — counted, not described
+// ---------------------------------------------------------------------------
+// The AI-written fingerprint below is useful but it is still one model's prose
+// about another model's target. These are just counts over his real texts, so
+// they cannot drift or flatter: the model gets told his actual median length in
+// characters, how often he really uses an emoji, whether he opens with a name.
+// Free (no AI call), recomputed on every build, and the same numbers drive the
+// output gate in styleViolation() so the rule that goes in is the rule enforced.
+function measureStyle(v) {
+  const all = [];
+  for (const b of VOICE_BUCKETS) for (const x of (v.buckets[b] || [])) if (x && x.t) all.push(String(x.t));
+  if (all.length < 8) return null;
+  const med = (xs) => { const s = xs.slice().sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
+  const pct = (n) => Math.round((n / all.length) * 100);
+  const EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u;
+  const lens = all.map((t) => t.length);
+  const sentences = all.map((t) => (t.match(/[.!?]+(\s|$)/g) || []).length || 1);
+  return {
+    n: all.length,
+    medLen: med(lens),
+    p90Len: lens.slice().sort((a, b) => a - b)[Math.floor(lens.length * 0.9)],
+    maxLen: Math.max(...lens),
+    medSentences: med(sentences),
+    emojiPct: pct(all.filter((t) => EMOJI.test(t)).length),
+    exclaimPct: pct(all.filter((t) => t.includes('!')).length),
+    // "Hey Ruth!" / "Good morning" — does he open by addressing them, or dive in?
+    greetPct: pct(all.filter((t) => /^(hey|hi|hello|good (morning|afternoon|evening))\b/i.test(t)).length),
+    questionPct: pct(all.filter((t) => t.includes('?')).length),
+    lowerStartPct: pct(all.filter((t) => /^[a-z]/.test(t)).length),
+    smileyPct: pct(all.filter((t) => /:\)|:-\)/.test(t)).length),
+  };
+}
+
+// The measured numbers as prompt rules. Deliberately phrased as ranges and
+// frequencies so the model has room to write naturally inside his real habits
+// rather than mimicking one sample.
+function measuredStyleRules(st) {
+  if (!st) return '';
+  const L = [];
+  L.push(`- Length: his texts run about ${st.medLen} characters typically; ${st.p90Len} is already long for him. Do not exceed ${Math.max(st.p90Len, 160)}.`);
+  L.push(`- Sentences: usually ${st.medSentences === 1 ? 'ONE sentence' : st.medSentences + ' short sentences'}.`);
+  L.push(`- Opening: he starts with a greeting or their name in only ${st.greetPct}% of texts — ${st.greetPct < 30 ? 'so usually dive straight in with no greeting' : 'so a short greeting is normal'}.`);
+  L.push(`- Emoji: ${st.emojiPct === 0 ? 'he never uses emoji. Use none.' : `about ${st.emojiPct}% of his texts have one — so most have none.`}`);
+  if (st.smileyPct >= 5) L.push(`- He writes a plain ":)" in about ${st.smileyPct}% of texts.`);
+  L.push(`- Exclamation marks: in about ${st.exclaimPct}% of his texts${st.exclaimPct < 50 ? ' — not every message' : ''}.`);
+  if (st.lowerStartPct >= 15) L.push(`- He begins about ${st.lowerStartPct}% of texts in lowercase; that is normal for him.`);
+  return 'HIS STYLE, MEASURED FROM ' + st.n + ' REAL TEXTS (these are counts, not opinions — match them):\n' + L.join('\n');
 }
 
 // Turn the corpus into MEASURABLE rules — "one exclamation mark every third
@@ -6511,26 +6577,100 @@ async function deriveVoiceFingerprint(v, cfg) {
   return String(text || '').trim().slice(0, 1600);
 }
 
-// What goes into a draft prompt: the fingerprint, plus his real texts from the
-// SAME situation. This is the piece that does the heavy lifting.
-function voiceContext(voice, bucket) {
+// ---------------------------------------------------------------------------
+// Retrieval — which of his texts the model actually gets shown
+// ---------------------------------------------------------------------------
+// This is the highest-signal part of the prompt, so it is worth doing properly.
+// Bucketing alone is coarse: it answers "is this about scheduling?" but not "which
+// of his 24 scheduling texts is closest to what this customer just asked?" — and
+// it hands over the NEWEST 24, which on a repetitive bucket can be twelve near-
+// copies of "sounds good".
+//
+// So: score every sample against the actual incoming message by shared rare words,
+// boost same-bucket ones, and drop candidates that duplicate something already
+// picked. No embeddings and no vector store — over a few hundred short texts, IDF
+// overlap gets most of the benefit for none of the infrastructure, and it runs in
+// well under a millisecond inside the Worker.
+const VOICE_STOP = new Set(('a an the and or but if to of for on in at is are was were be been am do does did have has had ' +
+  'i you he she it we they me him her them my your his their this that these those with as by from up out so no not ' +
+  'can could will would should may might just get got go going about what when where who how why yes yeah ok okay ' +
+  'll ve re s t d m thanks thank please hey hi').split(' '));
+function voiceTokens(s) {
+  const out = new Set();
+  for (const w of String(s || '').toLowerCase().split(/[^a-z0-9$]+/)) {
+    if (w.length < 2 || VOICE_STOP.has(w)) continue;
+    out.add(w);
+  }
+  return out;
+}
+// Jaccard over token sets — used to reject a candidate that says the same thing as
+// one already chosen, so the model sees variety rather than the same text twice.
+function voiceOverlap(a, b) {
+  if (!a.size || !b.size) return 0;
+  let shared = 0;
+  for (const t of a) if (b.has(t)) shared++;
+  return shared / (a.size + b.size - shared);
+}
+
+// Rank his real texts by relevance to what the customer actually said.
+function pickVoiceExamples(voice, bucket, query, limit) {
+  const rows = [];
+  for (const b of VOICE_BUCKETS) {
+    for (const x of (voice.buckets[b] || [])) {
+      if (x && x.t) rows.push({ t: String(x.t), bucket: b, toks: voiceTokens(x.t) });
+    }
+  }
+  if (!rows.length) return [];
+  const q = voiceTokens(query);
+
+  // Document frequency, so a word like "detail" (in half his texts) counts for far
+  // less than "ceramic" or "Tuesday".
+  const df = new Map();
+  for (const r of rows) for (const t of r.toks) df.set(t, (df.get(t) || 0) + 1);
+  const idf = (t) => Math.log(1 + rows.length / (1 + (df.get(t) || 0)));
+
+  for (const r of rows) {
+    let s = 0;
+    for (const t of r.toks) if (q.has(t)) s += idf(t);
+    // Normalised so a long text does not win on sheer word count.
+    r.score = s / Math.sqrt(r.toks.size + 1);
+    if (r.bucket === bucket) r.score += 0.6;   // same situation is real evidence
+  }
+  rows.sort((a, b) => b.score - a.score);
+
+  const picked = [];
+  for (const r of rows) {
+    if (picked.length >= limit) break;
+    // Near-duplicate of something already shown teaches nothing new.
+    if (picked.some((p) => voiceOverlap(p.toks, r.toks) > 0.6)) continue;
+    picked.push(r);
+  }
+  // If dedupe was aggressive on a thin corpus, top back up rather than show too few.
+  if (picked.length < Math.min(6, rows.length)) {
+    for (const r of rows) {
+      if (picked.length >= limit) break;
+      if (!picked.includes(r)) picked.push(r);
+    }
+  }
+  return picked;
+}
+
+// What goes into a draft prompt: the measured numbers, the AI-derived fingerprint,
+// and his real texts closest to the message being answered.
+function voiceContext(voice, bucket, query) {
   if (!voice) return '';
   const out = [];
+  const measured = measuredStyleRules(voice.style);
+  if (measured) out.push(measured);
   if (voice.fingerprint) {
     out.push('HOW MIKEY WRITES (derived from his real texts — follow this exactly):\n' + voice.fingerprint);
   }
-  const pick = [];
-  for (const x of (voice.buckets[bucket] || []).slice(0, VOICE_SHOW)) pick.push(x.t);
-  if (pick.length < 6) {
-    for (const x of (voice.buckets.general || []).concat(voice.buckets.quick || [])) {
-      if (pick.length >= VOICE_SHOW) break;
-      if (!pick.includes(x.t)) pick.push(x.t);
-    }
-  }
-  if (pick.length) {
+  const picked = pickVoiceExamples(voice, bucket, query || '', VOICE_SHOW);
+  if (picked.length) {
     out.push(
-      `REAL TEXTS MIKEY SENT IN THIS EXACT SITUATION (${bucket}). Match their rhythm, length and word choice — ` +
-      `these are the target, not the playbook's phrasing:\n` + pick.map((s) => `- "${s}"`).join('\n'),
+      `REAL TEXTS MIKEY SENT, closest first, mostly from this same kind of moment (${bucket}). Match their rhythm, ` +
+      `length and word choice — these are the target, not the playbook's phrasing. Copy the STYLE, never the specific ` +
+      `prices, times or names, which belong to other conversations:\n` + picked.map((r) => `- "${r.t}"`).join('\n'),
     );
   }
   return out.length ? out.join('\n\n') + '\n\n' : '';
@@ -6555,6 +6695,33 @@ function findTell(text) {
   return '';
 }
 
+// The other half of the gate. A tell is a phrase; this catches drafts that use no
+// banned phrase but still don't read like him — three times his usual length, an
+// emoji when he almost never uses one, "Hi Sarah," when he never opens with a
+// greeting. Measured against his own counts, so the bar is his habits and not some
+// generic idea of a good text. Returns a fixable instruction, or ''.
+function styleViolation(text, st) {
+  if (!st || !text) return '';
+  const t = String(text).trim();
+  const EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u;
+  // Generous ceiling: 1.6× his 90th percentile, floor 160, so only real bloat trips.
+  const ceiling = Math.max(Math.round((st.p90Len || 120) * 1.6), 160);
+  if (t.length > ceiling) {
+    return `it is ${t.length} characters, and his texts run about ${st.medLen}. Cut it to roughly ${st.medLen}–${st.p90Len} characters — say less`;
+  }
+  if (st.emojiPct <= 5 && EMOJI.test(t)) {
+    return 'it uses an emoji, and he essentially never does. Remove it';
+  }
+  if (st.greetPct <= 15 && /^(hey|hi|hello|good (morning|afternoon|evening))\b[\s,!]*[A-Z][a-z]+[,!]/i.test(t)) {
+    return 'it opens by greeting them by name, and he almost never does. Start with the actual answer';
+  }
+  const sentences = (t.match(/[.!?]+(\s|$)/g) || []).length || 1;
+  if (st.medSentences <= 2 && sentences >= 5) {
+    return `it runs ${sentences} sentences and he usually writes ${st.medSentences}. Make it shorter`;
+  }
+  return '';
+}
+
 // ---------------------------------------------------------------------------
 // The replay trainer
 // ---------------------------------------------------------------------------
@@ -6573,41 +6740,93 @@ async function loadVoiceScores() {
 
 // Pick one past exchange to replay. Prefers conversations we haven't drilled yet
 // and messages long enough to actually carry a voice.
+// Returns a BATCH of ready-to-judge cards, with the drafts written in parallel.
+//
+// The old version served one card per request and re-walked the whole index and
+// every thread to find it, so each tap cost a fresh scan plus a serial AI call —
+// seconds of staring at a spinner per verdict. Now: scan once, collect every
+// candidate moment as cheap metadata, then draft several at once. The client keeps
+// a queue and prefetches, so tapping a verdict advances with no wait at all.
+const REPLAY_SCAN_THREADS = 60;
+const REPLAY_BATCH_MAX = 6;
 async function apiVoiceReplayNext(request) {
   if (!aiConfigured()) return json({ ok: false, error: 'ai_not_configured' }, 503);
   const d = await readJson(request).catch(() => ({}));
-  const seen = Array.isArray(d && d.seen) ? d.seen.map(String) : [];
+  const seen = new Set((Array.isArray(d && d.seen) ? d.seen : []).map(String));
+  const want = Math.max(1, Math.min(REPLAY_BATCH_MAX, Number((d && d.count) || 4)));
+  const cfg = await loadConfig();
   const index = await loadIndex();
   const rows = index.filter((e) => !e.archived && !isPracticePhone(e.phone))
-    .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0)).slice(0, 60);
+    .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0)).slice(0, REPLAY_SCAN_THREADS);
 
-  for (const e of rows) {
-    const thread = await loadThread(e.phone);
+  // One parallel pass over the threads, collecting every moment worth replaying:
+  // a customer message he answered himself. No AI yet — this is just bookkeeping.
+  const threads = await batchLoadThreads(rows.map((e) => e.phone));
+  const cands = [];
+  for (const thread of threads) {
     const msgs = thread.messages || [];
-    // Walk backwards for an inbound message he answered himself.
     for (let i = msgs.length - 1; i > 0; i--) {
       const reply = msgs[i], asked = msgs[i - 1];
       if (!voiceUsable(reply)) continue;
       if (!asked || asked.dir !== 'in' || !String(asked.body || '').trim()) continue;
-      const id = `${e.phone}:${reply.ts}`;
-      if (seen.includes(id)) continue;
-      // Rebuild the thread as it stood at that moment, so the AI is answering
-      // the same question with the same history — not with hindsight.
-      const asOf = Object.assign({}, thread, { messages: msgs.slice(0, i) });
-      let draft = '';
-      try { draft = await generateReply(asOf, await loadConfig(), ''); }
-      catch (err) { return json({ ok: false, error: String((err && err.message) || err) }, 502); }
-      if (!draft) continue;
-      return json({
-        ok: true, id, phone: e.phone, name: thread.name || '',
+      const id = `${thread.phone}:${reply.ts}`;
+      if (seen.has(id)) continue;
+      cands.push({
+        id, phone: thread.phone, name: thread.name || '', i, thread,
         customer: String(asked.body || '').slice(0, 400),
         mine: String(reply.body || '').trim(),
-        ai: draft,
         bucket: voiceBucket(asked.body),
+        ts: reply.ts || 0,
       });
     }
   }
-  return json({ ok: true, done: true });
+  if (!cands.length) return json({ ok: true, done: true, cards: [] });
+
+  // Spread the batch across situations and conversations rather than serving four
+  // near-identical scheduling moments from one thread — a mixed batch tells him far
+  // more about where the voice actually breaks down.
+  cands.sort((a, b) => b.ts - a.ts);
+  const byBucket = new Map();
+  for (const c of cands) {
+    if (!byBucket.has(c.bucket)) byBucket.set(c.bucket, []);
+    byBucket.get(c.bucket).push(c);
+  }
+  const order = [];
+  const lists = [...byBucket.values()];
+  for (let round = 0; order.length < cands.length; round++) {
+    let addedAny = false;
+    for (const l of lists) {
+      if (round < l.length) { order.push(l[round]); addedAny = true; }
+      if (order.length >= want * 3) break;   // enough to choose from; stop early
+    }
+    if (!addedAny) break;
+  }
+  const chosen = [];
+  const usedPhones = new Set();
+  for (const c of order) {                    // first pass: one per conversation
+    if (chosen.length >= want) break;
+    if (usedPhones.has(c.phone)) continue;
+    usedPhones.add(c.phone);
+    chosen.push(c);
+  }
+  for (const c of order) {                    // top up if he has few conversations
+    if (chosen.length >= want) break;
+    if (!chosen.includes(c)) chosen.push(c);
+  }
+
+  // Draft them all at once. Each one sees the thread as it stood at that moment, so
+  // the AI answers the same question with the same history — never with hindsight.
+  const cards = await Promise.all(chosen.map(async (c) => {
+    const asOf = Object.assign({}, c.thread, { messages: (c.thread.messages || []).slice(0, c.i) });
+    try {
+      const draft = await generateReply(asOf, cfg, '');
+      if (!draft) return null;
+      return { id: c.id, phone: c.phone, name: c.name, customer: c.customer, mine: c.mine, ai: draft, bucket: c.bucket };
+    } catch { return null; }   // one failed draft shouldn't sink the whole batch
+  }));
+  const out = cards.filter(Boolean);
+  if (!out.length) return json({ ok: false, error: 'draft_failed' }, 502);
+  return json({ ok: true, cards: out, remaining: Math.max(0, cands.length - out.length) });
 }
 
 // Record a verdict. "Off" is the valuable one — it feeds his real wording back
@@ -6620,21 +6839,33 @@ async function apiVoiceReplayScore(request) {
   const ai = String((d && d.ai) || '').trim();
   if (!id) return json({ ok: false, error: 'bad_request' }, 422);
 
+  // Which situation this round was, so the scoreboard can say WHERE it's weak. A
+  // single global percentage tells him the voice is 78% right but not that pricing
+  // is the half that's wrong — and pricing is the half worth fixing.
+  const bucket = VOICE_BUCKETS.includes(d && d.bucket) ? d.bucket : 'general';
+
   const s = await loadVoiceScores();
-  s.rounds.unshift({ id, verdict, at: Date.now() });
+  s.rounds.unshift({ id, verdict, at: Date.now(), b: bucket });
   if (s.rounds.length > 200) s.rounds.length = 200;
   s[verdict] = (s[verdict] || 0) + 1;
+  s.byBucket = s.byBucket || {};
+  const bb = s.byBucket[bucket] || (s.byBucket[bucket] = { match: 0, off: 0 });
+  bb[verdict] = (bb[verdict] || 0) + 1;
   await kv().put(VOICE_SCORE_KEY, JSON.stringify(s));
 
   // His real words are always worth having in the corpus.
   if (mine) await recordVoiceSample(mine, verdict === 'off' ? 'trainer' : 'sent');
   // A miss is a before→after pair: what the AI wrote, and what he'd have written.
   if (verdict === 'off' && mine && ai) { try { await recordEdit(ai, mine); } catch { /* non-fatal */ } }
-  return json({ ok: true, scores: { match: s.match || 0, off: s.off || 0 } });
+  return json({ ok: true, scores: { match: s.match || 0, off: s.off || 0 }, byBucket: s.byBucket });
 }
 
 // The scoreboard. "% sounds like me" from the trainer is the headline; the
 // corpus counts tell him whether there's enough material to learn from.
+// Everything the Train AI screen renders, in one request: how much material it has
+// per situation, how it's scoring per situation, the measured style, and which model
+// is actually writing. Also computes the ONE next action worth taking, so the screen
+// can show a single obvious button instead of a row of equal-looking ones.
 async function apiVoiceStats() {
   const v = await loadVoice();
   const s = await loadVoiceScores();
@@ -6642,14 +6873,46 @@ async function apiVoiceStats() {
   const buckets = {};
   let samples = 0;
   if (v) for (const b of VOICE_BUCKETS) { const n = (v.buckets[b] || []).length; buckets[b] = n; samples += n; }
+
+  // Per-situation scoreboard: rate plus how many rounds back it, so a 0% off one
+  // round doesn't read like a crisis.
+  const perBucket = {};
+  for (const b of VOICE_BUCKETS) {
+    const r = (s.byBucket && s.byBucket[b]) || null;
+    const n = r ? (r.match || 0) + (r.off || 0) : 0;
+    perBucket[b] = { samples: buckets[b] || 0, rounds: n, rate: n ? Math.round(((r.match || 0) / n) * 100) : null };
+  }
+
+  const provider = ENV.ANTHROPIC_API_KEY && !envFlag('CLAUDE_DISABLED') ? 'claude' : (ENV.GEMINI_API_KEY ? 'gemini' : 'none');
+
+  // The single most useful next step, in priority order.
+  let next = 'train';
+  if (provider === 'none') next = 'no_ai';
+  else if (samples < 12) next = 'build';                     // nothing to learn from yet
+  else if (!(v && v.fingerprint)) next = 'build';            // never derived the style
+  else if (samples < 60) next = 'import';                    // thin — more real texts help most
+  else if (total < 10) next = 'train';                       // unmeasured
+  else {
+    // Weakest situation with enough evidence to trust, if any is clearly behind.
+    let worst = null;
+    for (const b of VOICE_BUCKETS) {
+      const p = perBucket[b];
+      if (p.rounds >= 3 && p.rate != null && p.rate < 70 && (!worst || p.rate < perBucket[worst].rate)) worst = b;
+    }
+    next = worst ? 'train' : 'good';
+  }
+
   return json({
     ok: true,
     built: !!(v && v.builtAt), builtAt: (v && v.builtAt) || 0,
     fingerprint: (v && v.fingerprint) || '',
-    samples, buckets, scanned: (v && v.scanned) || 0,
+    style: (v && v.style) || null,
+    samples, buckets, perBucket, scanned: (v && v.scanned) || 0,
     matchRate: total ? Math.round(((s.match || 0) / total) * 100) : null,
-    rounds: total,
-    provider: ENV.ANTHROPIC_API_KEY && !envFlag('CLAUDE_DISABLED') ? 'claude' : (ENV.GEMINI_API_KEY ? 'gemini' : 'none'),
+    rounds: total, match: s.match || 0, off: s.off || 0,
+    recent: (s.rounds || []).slice(0, 20).map((r) => ({ verdict: r.verdict, at: r.at || 0, bucket: r.b || '' })),
+    provider, next,
+    perBucketCap: VOICE_PER_BUCKET,
   });
 }
 
