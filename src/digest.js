@@ -54,11 +54,11 @@ const DEFAULT_TOPICS = [
     hint: 'New tool releases, deals, and durability verdicts. Prefer tools useful to a mobile operator working out of a vehicle.',
   },
   {
-    id: 'freight',
-    label: '🚚 Freight & trucking',
-    subs: ['Truckers', 'FreightBrokers', 'logistics'],
+    id: 'harborfreight',
+    label: '🛠️ Harbor Freight',
+    subs: ['harborfreight'],
     feeds: [],
-    hint: 'Rates, load boards, Uber Freight / broker platform changes, fuel, and regulation. Prioritize anything affecting what an owner-operator earns per mile.',
+    hint: 'New arrivals, coupons and current deals, Icon/Hercules/Bauer line updates, and — most useful — which items are genuinely worth buying versus false economy. Prioritize anything a mobile detailer or someone wrenching out of a vehicle would actually use.',
   },
   {
     id: 'overwatch',
@@ -89,9 +89,9 @@ const DEFAULTS = {
   tz: 'America/Los_Angeles',
   window: 'day',         // reddit `t` param: hour|day|week|month
   perSub: 12,            // posts pulled per subreddit before ranking
-  perTopic: 5,           // items shown per topic in the email
+  perTopic: 6,           // items shown per topic in the email
   minScore: 25,          // ignore low-signal posts
-  commentBudget: 6,      // how many posts get their top comments pulled
+  commentBudget: 10,     // how many posts get their top comments pulled
   topics: DEFAULT_TOPICS,
 };
 
@@ -194,9 +194,10 @@ async function fetchSub(sub, { token, window, limit, budget }) {
         comments: p.num_comments || 0,
         ratio: p.upvote_ratio || 0,
         flair: p.link_flair_text || '',
-        // Truncate early: Worker CPU time is the scarce resource, and the
-        // summarizer doesn't need a 40kb post body to get the gist.
-        body: String(p.selftext || '').replace(/\s+/g, ' ').slice(0, 900),
+        // Truncate early: Worker CPU time is the scarce resource. Generous
+        // enough that the summarizer has the actual details to retell, since
+        // the email is meant to be read without opening the link.
+        body: String(p.selftext || '').replace(/\s+/g, ' ').slice(0, 1500),
         topComments: [],
       });
     }
@@ -227,9 +228,9 @@ async function fetchTopComments(post, { token, budget }) {
       if (!d.body || d.stickied || d.author === 'AutoModerator') continue;
       post.topComments.push({
         score: d.score || 0,
-        text: String(d.body).replace(/\s+/g, ' ').slice(0, 400),
+        text: String(d.body).replace(/\s+/g, ' ').slice(0, 600),
       });
-      if (post.topComments.length >= 3) break;
+      if (post.topComments.length >= 4) break;
     }
   } catch { /* comments are a bonus, never a failure */ }
 }
@@ -324,6 +325,11 @@ async function gather(env, cfg, { seen }) {
   }
 
   const sections = [];
+  // Topics can legitimately share a subreddit (r/Tools turns up under both
+  // tools and Harbor Freight talk), so claim each post for the first topic
+  // that takes it rather than printing it twice.
+  const claimed = new Set();
+
   for (const topic of cfg.topics) {
     if (topic.enabled === false) continue;
     const collected = [];
@@ -333,7 +339,7 @@ async function gather(env, cfg, { seen }) {
       diagnostics.push({ source: `r/${sub}`, ok: !r.error, count: r.posts.length, error: r.error });
       for (const p of r.posts) {
         if (p.score < cfg.minScore) continue;
-        if (seen.has(p.id)) continue;
+        if (seen.has(p.id) || claimed.has(p.id)) continue;
         collected.push(p);
       }
     }
@@ -342,13 +348,15 @@ async function gather(env, cfg, { seen }) {
       const r = await fetchFeed(feed, { budget });
       diagnostics.push({ source: feed, ok: !r.error, count: r.posts.length, error: r.error });
       for (const p of r.posts) {
-        if (seen.has(p.id)) continue;
+        if (seen.has(p.id) || claimed.has(p.id)) continue;
         collected.push(p);   // feeds skip minScore — they have no votes
       }
     }
 
     collected.sort((a, b) => rank(b) - rank(a));
-    sections.push({ topic, items: collected.slice(0, cfg.perTopic) });
+    const items = collected.slice(0, cfg.perTopic);
+    for (const p of items) claimed.add(p.id);
+    sections.push({ topic, items });
   }
 
   // Spend the remaining comment budget on the highest-ranked Reddit items
@@ -392,24 +400,28 @@ function buildPrompt(cfg, sections, pool) {
     }
   }
 
-  return `You are writing a personal morning briefing for Mikey, who runs a mobile car-detailing business in Snohomish County, WA. He also follows freight/trucking work, plays Overwatch 2, and pays for Claude.
+  return `You are writing a personal morning briefing for Mikey, who runs a mobile car-detailing business in Snohomish County, WA. He shops Harbor Freight, wrenches on vehicles, plays Overwatch 2, and pays for Claude.
 
 Below are the top Reddit posts and news items from the last ${cfg.window} in the topics he follows.
 
-Write him a briefing. Rules:
-- Be specific and concrete. Product names, prices, patch numbers, actual claims. "People discussed detailing products" is worthless; "Several detailers say Griot's new ceramic spray beats Turtle Wax at half the price" is what he wants.
-- Where the comments contradict or debunk the post, say so — that's often the most valuable part.
-- Skip anything that is just a meme, a rant, or a photo with no information. It is fine to return very few items for a topic, or to omit a topic entirely if nothing was worth his time.
-- Each item gets one or two sentences. He reads this with coffee, not at a desk.
-- Never invent a fact that isn't in the material below.
+THE MOST IMPORTANT RULE: this email is the whole read, not a table of contents. Mikey should never have to click a link to understand what happened. Retell the actual content — the specifics, the numbers, the argument, what people concluded. If a post compares two products, say which won and by how much. If there's a deal, give the price and the catch. If it's a patch, say what actually changed and how players are reacting. A teaser like "detailers debated ceramic coatings" is a failure; write the substance instead.
+
+Rules:
+- Every item gets a real paragraph — roughly 4 to 7 sentences. Long enough that he's genuinely informed, written plainly, no filler or throat-clearing.
+- Lead each paragraph with the actual point, not with "a user posted that". He knows it's from Reddit.
+- The comments are often more valuable than the post. Where they contradict, debunk, or add a big caveat, work that in — "top comment points out it's rebranded X" is exactly the kind of thing he wants.
+- Be specific: product names, prices, model numbers, patch numbers, real claims, real disagreements.
+- Skip memes, rants, and photos with no information. Returning fewer, meatier items beats padding. It's fine to omit a topic entirely if nothing was worth his time.
+- Write a "roundup" for each topic: 2-4 sentences on what the overall mood and through-line was, so the section reads as a story rather than a list.
+- Never invent a fact that isn't in the material below. If a detail isn't there, leave it out.
 
 Respond with JSON only, in exactly this shape:
 {
   "topics": [
     {
       "id": "<the topic id>",
-      "summary": "<one sentence on the mood/theme of this topic today, or empty string>",
-      "items": [ { "ref": <the [n] number>, "point": "<what he should know, 1-2 sentences>" } ]
+      "roundup": "<2-4 sentences on the theme and mood of this topic today>",
+      "items": [ { "ref": <the [n] number>, "point": "<the full 4-7 sentence writeup>" } ]
     }
   ],
   "headline": "<the single most useful thing in this whole briefing, one sentence>"
@@ -432,7 +444,9 @@ async function geminiJson(env, prompt) {
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
           temperature: 0.3,
-          maxOutputTokens: 4096,
+          // Long-form by design: ~6 topics x ~6 paragraphs plus roundups. Too
+          // low a ceiling here is what turns the digest back into headlines.
+          maxOutputTokens: 16384,
           responseMimeType: 'application/json',
           // Same reasoning as index.js's geminiGenerate: hidden thinking tokens
           // come out of maxOutputTokens and were truncating long JSON.
@@ -480,30 +494,36 @@ function renderEmail(cfg, summary, pool, dateLabel) {
     if (!items.length) continue;
 
     const label = topic ? topic.label : t.id;
-    textLines.push(`\n${label}`);
-    if (t.summary) textLines.push(t.summary);
+    // `roundup` is the current field; `summary` is what the first version
+    // emitted. Accept either so an in-flight model response never renders blank.
+    const roundup = t.roundup || t.summary || '';
+    textLines.push(`\n\n${'='.repeat(60)}\n${label}\n${'='.repeat(60)}`);
+    if (roundup) textLines.push(`\n${roundup}`);
 
     const rows = items.map(({ it, post }) => {
       const meta = post.flair === 'feed'
         ? esc(post.sub)
         : `r/${esc(post.sub)} · ${post.score.toLocaleString()} upvotes · ${post.comments} comments`;
-      textLines.push(`  • ${it.point}\n    ${post.url}`);
+      textLines.push(`\n${post.title}\n${it.point}\n  ↳ ${post.url}`);
+      // The paragraph is the payload; the link is a footnote for the rare case
+      // he wants the original thread. Deliberately not styled as a call to
+      // action — nothing here should read as "click to continue".
       return `
-        <tr><td style="padding:0 0 16px;">
-          <div style="font-size:15px;line-height:1.5;color:#1a1a1a;">${esc(it.point)}</div>
-          <div style="font-size:12px;line-height:1.4;margin-top:4px;">
-            <a href="${esc(post.url)}" style="color:#2563eb;text-decoration:none;">${esc(post.title)}</a>
+        <tr><td style="padding:0 0 26px;">
+          <div style="font-size:15px;font-weight:600;line-height:1.45;color:#111;margin-bottom:7px;">${esc(post.title)}</div>
+          <div style="font-size:15px;line-height:1.72;color:#2a2a2a;">${esc(it.point)}</div>
+          <div style="font-size:11px;color:#9a9a9a;margin-top:8px;">
+            ${meta} · <a href="${esc(post.url)}" style="color:#9a9a9a;text-decoration:underline;">thread</a>
           </div>
-          <div style="font-size:11px;color:#8a8a8a;margin-top:2px;">${meta}</div>
         </td></tr>`;
     }).join('');
 
     blocks.push(`
-      <tr><td style="padding:24px 0 8px;border-top:1px solid #ececec;">
-        <div style="font-size:17px;font-weight:600;color:#111;">${esc(label)}</div>
-        ${t.summary ? `<div style="font-size:13px;color:#666;margin-top:4px;line-height:1.5;">${esc(t.summary)}</div>` : ''}
+      <tr><td style="padding:34px 0 6px;border-top:2px solid #e4e4e0;">
+        <div style="font-size:19px;font-weight:700;color:#111;letter-spacing:-.01em;">${esc(label)}</div>
+        ${roundup ? `<div style="font-size:14px;color:#5a5a5a;margin-top:8px;line-height:1.65;">${esc(roundup)}</div>` : ''}
       </td></tr>
-      <tr><td style="padding-top:12px;"><table width="100%" cellpadding="0" cellspacing="0" border="0">${rows}</table></td></tr>`);
+      <tr><td style="padding-top:20px;"><table width="100%" cellpadding="0" cellspacing="0" border="0">${rows}</table></td></tr>`);
   }
 
   if (!blocks.length) {
@@ -517,10 +537,10 @@ function renderEmail(cfg, summary, pool, dateLabel) {
   const html = `<!doctype html><html><body style="margin:0;padding:0;background:#f6f6f4;">
   <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f6f6f4;padding:24px 12px;">
     <tr><td align="center">
-      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background:#fff;border-radius:12px;padding:28px 28px 32px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
-        <tr><td>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:640px;background:#fff;border-radius:12px;padding:32px 30px 36px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
+        <tr><td style="padding-bottom:6px;">
           <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:#8a8a8a;">Morning rundown · ${esc(dateLabel)}</div>
-          ${summary.headline ? `<div style="font-size:20px;line-height:1.4;font-weight:600;color:#111;margin-top:10px;">${esc(summary.headline)}</div>` : ''}
+          ${summary.headline ? `<div style="font-size:22px;line-height:1.4;font-weight:700;color:#111;margin-top:12px;letter-spacing:-.01em;">${esc(summary.headline)}</div>` : ''}
         </td></tr>
         ${blocks.join('')}
         <tr><td style="padding-top:24px;border-top:1px solid #ececec;">
