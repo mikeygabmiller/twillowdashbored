@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-21·booking+redesign';
+const BUILD = '2026-07-30·voice-corpus';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -202,6 +202,9 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/ai/analyze')  return apiAiAnalyze(request);
   if (request.method === 'POST' && pathname === '/api/ai/agent')    return apiAiAgent(request);
   if (request.method === 'POST' && pathname === '/api/ai/generate') return apiAiGenerate(request);
+  // Voice corpus: bulk-import existing texts/edit pairs, or check what's stored.
+  if (request.method === 'POST' && pathname === '/api/ai/voice')   return apiAiVoiceImport(request);
+  if (request.method === 'GET'  && pathname === '/api/ai/voice')   return json({ ok: true, corpus: await voiceStats() });
 
   // Website analytics (Grow hub) — rollup of the /px pixel data.
   if (request.method === 'GET'  && pathname === '/api/analytics')   return apiAnalytics(url);
@@ -769,10 +772,15 @@ async function apiSend(request) {
   msg.status = 'sent';
   if (r && r.sid) msg.sid = r.sid;
   const thread = await appendMessage(phone, msg);
-  // "Learns from your edits": if this send started from an AI draft/suggestion the
-  // owner then tweaked, remember the before→after so future drafts sound more like him.
+  // Voice corpus. If this send started from an AI draft the owner then tweaked,
+  // remember the before→after. If he wrote it himself, the text IS the voice
+  // sample — that's the signal we used to throw away. Either way it's one KV
+  // write on a path that already writes, and never fatal to the send.
   const aiOriginal = (data.aiOriginal || '').trim();
-  if (aiOriginal) { try { await recordEdit(aiOriginal, body); } catch { /* non-fatal */ } }
+  try {
+    if (aiOriginal) await recordEdit(aiOriginal, body);
+    else await recordVoiceSamples(body);
+  } catch { /* corpus is a bonus — never break a send over it */ }
   return json({ ok: true, thread });
 }
 
@@ -1789,6 +1797,7 @@ async function apiAiSummary(request) {
 async function generateReply(thread, cfg, hint) {
   const prompt =
     businessContext(cfg) +
+    (await voiceContext()) +
     (await editsContext()) +
     `You are replying to a customer by text for Mikey's Mobile Detailing. ` +
     `Write ONE friendly, professional reply (1-3 short complete sentences, no greeting line, no signature, ready to send). ` +
@@ -3966,33 +3975,172 @@ function transcript(thread, max = 40) {
 }
 
 // ===========================================================================
-// "Learns from your edits" — a small memory of how Mikey rewrites AI drafts
+// Voice corpus — the memory of how Mikey actually writes
 // ===========================================================================
-// When Mikey tweaks an AI draft/suggestion before sending, we save the
-// before→after pair (capped, most-recent-first) and feed the recent ones back
-// into every reply prompt. The AI drifts toward how he actually words things —
-// so it literally gets better the more he uses it. One KV write only when he
-// actually edits, so it's easy on the write budget.
+// Two stores feed every draft:
+//   ai:edits — before→after pairs, saved whenever he rewrites an AI draft.
+//   ai:voice — raw samples of texts he wrote himself (no AI draft involved).
+// Both are the thing that makes drafts sound like him rather than like a bot,
+// so STORAGE is deliberately near-unlimited: the only real ceilings are KV's
+// 25 MB per value and keeping the hot path (one KV read + JSON.parse on every
+// inbound text) fast. We cap on serialized bytes at ~2% of the KV limit, which
+// is thousands of samples — far more than a one-person shop will hand-write.
+//
+// What DOES have to stay bounded is how much of the corpus rides along in each
+// prompt: that part is paid on every single draft, in both tokens and latency,
+// and an unbounded prompt eventually overruns the model's context. So the
+// prompt side is budgeted by CHARACTERS (not a fixed count) and spent on the
+// most recent entries — a few long samples can't crowd out everything else.
 const EDITS_KEY = 'ai:edits';
+const VOICE_KEY = 'ai:voice';
+const CORPUS_MAX = 2000;                 // entries per store
+const CORPUS_MAX_BYTES = 512 * 1024;     // ~0.5 MB of the 25 MB KV ceiling
+const EDITS_PROMPT_BUDGET = 5000;        // ~1.2k tokens of before→after
+const VOICE_PROMPT_BUDGET = 6000;        // ~1.5k tokens of "how Mikey writes"
+const SAMPLE_MAX_LEN = 600;              // skip outliers, not normal texts
+
+// Keep the newest entries that fit both ceilings. Byte-trimming matters more
+// than the count: 2000 one-line texts and 2000 paragraphs are very different.
+function trimCorpus(list, maxCount = CORPUS_MAX, maxBytes = CORPUS_MAX_BYTES) {
+  let out = list.slice(0, maxCount);
+  while (out.length > 1 && JSON.stringify(out).length > maxBytes) {
+    out = out.slice(0, Math.max(1, Math.floor(out.length * 0.9)));
+  }
+  return out;
+}
+
+// Take newest-first entries until the character budget runs out. Returns at
+// least one entry when the list is non-empty, so a single long sample still
+// teaches something rather than silently contributing nothing.
+function takeWithinBudget(list, budget, render) {
+  const out = [];
+  let used = 0;
+  for (const item of list) {
+    const row = render(item);
+    if (out.length && used + row.length > budget) break;
+    out.push(row);
+    used += row.length;
+  }
+  return out;
+}
+
+const normText = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+
 async function loadEdits() {
   return (await kv().get(EDITS_KEY, { type: 'json' })) || [];
 }
+async function loadVoice() {
+  return (await kv().get(VOICE_KEY, { type: 'json' })) || [];
+}
+
 async function recordEdit(from, to) {
   from = String(from || '').trim();
   to = String(to || '').trim();
   if (!from || !to || from === to) return;          // no change → nothing to learn
-  if (to.length > 600 || from.length > 600) return; // skip outliers
-  const norm = (s) => s.replace(/\s+/g, ' ').toLowerCase();
-  if (norm(from) === norm(to)) return;              // whitespace/case only
+  if (to.length > SAMPLE_MAX_LEN || from.length > SAMPLE_MAX_LEN) return;
+  if (normText(from) === normText(to)) return;      // whitespace/case only
   const list = await loadEdits();
   list.unshift({ from, to, ts: Date.now() });
-  await kv().put(EDITS_KEY, JSON.stringify(list.slice(0, 12)));
+  await kv().put(EDITS_KEY, JSON.stringify(trimCorpus(list)));
 }
+
+// A text Mikey wrote himself is the purest voice signal there is — better than
+// a correction, because nothing steered it. Deduped on normalized text so a
+// canned quick-reply sent fifty times contributes one sample, not fifty.
+async function recordVoiceSamples(texts) {
+  const incoming = (Array.isArray(texts) ? texts : [texts])
+    .map((t) => String(t || '').trim())
+    .filter((t) => t && t.length <= SAMPLE_MAX_LEN);
+  if (!incoming.length) return 0;
+  const list = await loadVoice();
+  const seen = new Set(list.map((e) => normText(e.text)));
+  let added = 0;
+  for (const text of incoming) {
+    const key = normText(text);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    list.unshift({ text, ts: Date.now() });
+    added++;
+  }
+  if (!added) return 0;
+  await kv().put(VOICE_KEY, JSON.stringify(trimCorpus(list)));
+  return added;
+}
+
+async function voiceContext() {
+  const samples = (await loadVoice()).filter((e) => e && e.text);
+  if (!samples.length) return '';
+  const rows = takeWithinBudget(samples, VOICE_PROMPT_BUDGET, (e) => `- "${e.text}"`);
+  return 'HOW MIKEY ACTUALLY TEXTS (real messages he wrote himself — this is his voice; match its length, rhythm, punctuation, capitalisation and warmth, but never reuse their specific facts):\n'
+    + rows.join('\n') + '\n\n';
+}
+
 async function editsContext() {
-  const recent = (await loadEdits()).filter((e) => e && e.from && e.to).slice(0, 6);
+  const recent = (await loadEdits()).filter((e) => e && e.from && e.to);
   if (!recent.length) return '';
-  const rows = recent.map((e) => `- The draft said: "${e.from}"\n  Mikey changed it to: "${e.to}"`).join('\n');
-  return 'HOW MIKEY EDITS DRAFTS (these are his recent corrections — learn the PATTERN of how he rewrites: his length, warmth, word choices — and apply that style, not the specific content):\n' + rows + '\n\n';
+  const rows = takeWithinBudget(recent, EDITS_PROMPT_BUDGET,
+    (e) => `- The draft said: "${e.from}"\n  Mikey changed it to: "${e.to}"`);
+  return 'HOW MIKEY EDITS DRAFTS (these are his corrections — learn the PATTERN of how he rewrites: his length, warmth, word choices — and apply that style, not the specific content):\n'
+    + rows.join('\n') + '\n\n';
+}
+
+// ---------------------------------------------------------------------------
+// Bulk import (POST /api/ai/voice) — load a pile of existing texts/edits at once
+// ---------------------------------------------------------------------------
+// Until now the corpus could only grow one send at a time. This takes texts
+// Mikey already has (exported from his phone, pasted from anywhere) plus any
+// before→after edit pairs, in one KV write per store.
+//   { texts: "one per line" | ["...", "..."],
+//     edits: [{ from, to }, ...],
+//     replace: false }
+// Returns the resulting corpus stats so the import is verifiable, not a guess.
+async function apiAiVoiceImport(request) {
+  const data = await readJson(request);
+  const rawTexts = typeof data.texts === 'string'
+    ? data.texts.split('\n')
+    : (Array.isArray(data.texts) ? data.texts : []);
+
+  if (data.replace === true) {
+    if (rawTexts.length) await kv().put(VOICE_KEY, JSON.stringify([]));
+    if (Array.isArray(data.edits) && data.edits.length) await kv().put(EDITS_KEY, JSON.stringify([]));
+  }
+
+  const addedTexts = await recordVoiceSamples(rawTexts);
+
+  // Edit pairs go in as one batch — recordEdit() writes per call, which would
+  // burn the KV write budget on a few hundred rows.
+  let addedEdits = 0;
+  if (Array.isArray(data.edits) && data.edits.length) {
+    const list = await loadEdits();
+    for (const e of data.edits) {
+      const from = String((e && e.from) || '').trim();
+      const to = String((e && e.to) || '').trim();
+      if (!from || !to) continue;
+      if (from.length > SAMPLE_MAX_LEN || to.length > SAMPLE_MAX_LEN) continue;
+      if (normText(from) === normText(to)) continue;
+      list.unshift({ from, to, ts: Date.now() });
+      addedEdits++;
+    }
+    if (addedEdits) await kv().put(EDITS_KEY, JSON.stringify(trimCorpus(list)));
+  }
+
+  return json({ ok: true, addedTexts, addedEdits, corpus: await voiceStats() });
+}
+
+// What's stored vs. what actually reaches the model on each draft. The second
+// number is the one that matters for cost and for how well drafts match.
+async function voiceStats() {
+  const [voice, edits] = await Promise.all([loadVoice(), loadEdits()]);
+  const vCtx = await voiceContext();
+  const eCtx = await editsContext();
+  return {
+    voiceSamples: voice.length,
+    editPairs: edits.length,
+    storedBytes: JSON.stringify(voice).length + JSON.stringify(edits).length,
+    storedLimitBytes: CORPUS_MAX_BYTES * 2,
+    inPromptChars: vCtx.length + eCtx.length,
+    inPromptLimitChars: VOICE_PROMPT_BUDGET + EDITS_PROMPT_BUDGET,
+  };
 }
 
 // Proactively pre-draft a reply the instant a customer texts, so one is already
