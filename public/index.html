@@ -2601,6 +2601,88 @@
   function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
   function vibrate(ms){try{if(navigator.vibrate)navigator.vibrate(ms)}catch(e){}}
 
+  // ---- navigation stack -------------------------------------------------
+  // One place that knows what is layered on screen, so the phone's back
+  // gesture closes the top layer instead of dropping out of the app. Every
+  // full screen and sheet registers itself when it opens; closing it — by
+  // back chevron, by back gesture, by Escape, or programmatically from some
+  // other bit of code — all ends up on the same path.
+  //
+  // The contract for a screen is two lines: navOpen("id",closeFn) inside
+  // open(), and navDrop("id") at the top of close(). Nothing else changes.
+  // Depth is tracked here, not in the browser: we keep exactly ONE spare
+  // history entry ("the sentinel") alive while anything is layered, and re-arm
+  // it after each pop. Pushing one entry per layer looks tidier but breaks —
+  // history.back()/go() are async, and the menu closes itself before opening a
+  // screen ("closeDrawer(); openJobs()"), so a per-layer stack desyncs the
+  // moment those two land out of order. One sentinel cannot desync.
+  var NAV=[];             // [{id,close}] bottom → top
+  var navSentinel=false;  // is our spare history entry currently armed?
+  var navRewinding=0;     // back() calls we made ourselves; ignore their popstate
+  var navClosing=false;   // a popstate is already unwinding this layer
+  var navPendingUnarm=null; // deferred "give the sentinel back" timer
+  function navIndex(id){for(var i=NAV.length-1;i>=0;i--){if(NAV[i].id===id)return i}return -1}
+  function navTop(){return NAV.length?NAV[NAV.length-1].id:null}
+  function navArm(){
+    // A layer reappeared before the deferred unarm ran — the sentinel is still
+    // wanted, so cancel the rewind rather than push a second entry.
+    if(navPendingUnarm){clearTimeout(navPendingUnarm);navPendingUnarm=null;}
+    if(NAV.length&&!navSentinel){navSentinel=true;try{history.pushState({navGuard:1},"")}catch(e){navSentinel=false}}
+  }
+  function navOpen(id,closeFn){
+    if(navIndex(id)>=0)return;                       // already layered
+    NAV.push({id:id,close:closeFn});
+    navArm();
+  }
+  // Drop a layer and everything stacked above it. Called at the top of each
+  // close() so a programmatic close keeps the bookkeeping honest. When a
+  // popstate is what triggered the close the browser has already rewound, so
+  // we only prune.
+  function navDrop(id){
+    var i=navIndex(id);if(i<0)return 0;
+    var n=NAV.length-i;NAV.length=i;
+    if(!navClosing&&!NAV.length&&navSentinel)navUnarmSoon();
+    return n;
+  }
+  // Give back the sentinel once nothing is layered — but on a later tick.
+  // One click handler routinely closes one thing and opens another
+  // ("closeDrawer(); openJobs()"), and history.back() is async: interleaving it
+  // with the pushState from the open leaves the bookkeeping and the browser
+  // disagreeing about where we are. Deferring lets navArm() cancel instead.
+  function navUnarmSoon(){
+    if(navPendingUnarm)clearTimeout(navPendingUnarm);
+    navPendingUnarm=setTimeout(function(){
+      navPendingUnarm=null;
+      if(NAV.length||!navSentinel)return;            // re-layered meanwhile
+      navSentinel=false;navRewinding++;
+      try{history.back()}catch(e){navRewinding--}
+    },0);
+  }
+  // What every back chevron, close button and Escape calls. Returns false when
+  // nothing was layered, so callers can fall through to their own behaviour.
+  function navBack(){
+    if(!NAV.length)return false;
+    if(navSentinel){try{history.back()}catch(e){navPopTop()}}
+    else navPopTop();
+    return true;
+  }
+  function navPopTop(){
+    var layer=NAV.pop();if(!layer)return;
+    navClosing=true;
+    try{if(layer.close)layer.close()}catch(e){}
+    navClosing=false;
+  }
+  window.addEventListener("popstate",function(){
+    if(navRewinding>0){navRewinding--;return}   // our own rewind
+    navSentinel=false;                          // whatever happened, it's spent
+    // Nothing layered: back means "leave the app", which is right on a root tab.
+    if(!NAV.length)return;
+    navPopTop();
+    navArm();                                   // still layered? re-arm
+  });
+  // Read-only view of the stack, for the UI tests to assert against.
+  window.__nav=function(){return{depth:NAV.length,top:navTop(),sentinel:navSentinel,rewinding:navRewinding}};
+
   // ---- team mode helpers ----
   function teamOn(){return !!(state.config&&state.config.teamMode)}
   function teamList(){return (state.config&&state.config.team)||[]}
@@ -2724,7 +2806,7 @@
     "Mark everything as read"
   ];
   function openAiCmd(prefill){
-    var ov=el("aiCmdOverlay");ov.style.display="flex";hydrateIcons(ov);
+    var ov=el("aiCmdOverlay");ov.style.display="flex";hydrateIcons(ov);navOpen("aicmd",closeAiCmd);
     el("aiCmdResult").style.display="none";el("aiCmdResult").className="aicmd-result";
     var inp=el("aiCmdInput");inp.value=prefill||"";
     var chips=el("aiCmdChips");chips.innerHTML="";
@@ -2732,7 +2814,7 @@
     var ask=el("aiCmdAsk");ask.disabled=false;ask.innerHTML=ic("sparkles",15)+" Ask";
     if(prefill){aiCmdAsk();}else{setTimeout(function(){try{inp.focus()}catch(e){}},60);}
   }
-  function closeAiCmd(){el("aiCmdOverlay").style.display="none"}
+  function closeAiCmd(){navDrop("aicmd");el("aiCmdOverlay").style.display="none"}
   // Ask the command-center agent. It replies with an answer and/or a set of
   // proposed actions — which are shown for approval and never auto-run.
   function aiCmdAsk(){
@@ -2992,8 +3074,8 @@
 
   // ---- the Customize hub ----
   var CZ={tab:"look"};
-  function openCustomize(){el("czApp").classList.add("show");czRender();if(!UI.tourSeen)setTimeout(czTour,500);}
-  function closeCustomize(){el("czApp").classList.remove("show");}
+  function openCustomize(){el("czApp").classList.add("show");czRender();navOpen("customize",closeCustomize);if(!UI.tourSeen)setTimeout(czTour,500);}
+  function closeCustomize(){navDrop("customize");el("czApp").classList.remove("show");}
   function czToast(m){toast(m)}
   var CZ_TABS=[["look","Look","image"],["layout","Tabs","home"],["home","Home","home"],["chats","Chats","message-square"],["leads","Leads","clipboard-list"],["money","Money","dollar"],["safe","Simple & safe","check-circle"]];
   function czRender(){
@@ -4442,6 +4524,10 @@
     var prev=state.phone,switching=prev!==phone;
     if(switching&&prev)stashDraft(prev);
     state.phone=phone;document.body.classList.add("viewing");
+    // One layer for "a conversation is open" — switching between threads stays
+    // on the same layer, so back returns to the list rather than walking the
+    // history of everyone you tapped through.
+    navOpen("thread",closeThread);
     if(switching)loadDraft(phone);
     // A failure marker on the list is a "look at this" — opening it is looking.
     var fe=(state.threads||[]).find(function(x){return x.phone===phone});
@@ -4611,10 +4697,12 @@
       '<div class="tai-body" id="taiBody"><div class="spin" style="margin:50px auto"></div></div>';
     document.body.appendChild(w);
     el("taiClose").onclick=closeTrainAI;
+    navOpen("trainai",closeTrainAI);
     TA.queue=[];TA.judged=0;TA.done=false;
     taLoad();
   }
   function closeTrainAI(){
+    navDrop("trainai");
     var w=el("taiScreen"); if(w)w.remove();
     document.removeEventListener("keydown",taKeys);
     refreshVoiceStat();
@@ -4888,8 +4976,10 @@
   function openLightbox(src){
     var o=document.createElement("div");o.className="lightbox";
     o.innerHTML='<img src="'+src+'" alt="attachment"><button class="lb-close" aria-label="Close">'+ic("x",22)+'</button>';
-    o.onclick=function(){o.remove()};
+    function shut(){navDrop("lightbox");o.remove()}
+    o.onclick=shut;
     document.body.appendChild(o);
+    navOpen("lightbox",shut);
   }
   function resendMessage(body){
     if(!state.phone||!body)return;
@@ -5515,8 +5605,8 @@
     autoGrow();updateCount();closeGuide();inp.focus();
     toast("Dropped in — edit anything in [brackets] and send");
   }
-  function openGuide(){if(!state.thread)return;buildGuide();el("guideScrim").classList.add("show");el("guide").classList.add("show")}
-  function closeGuide(){el("guideScrim").classList.remove("show");el("guide").classList.remove("show")}
+  function openGuide(){if(!state.thread)return;buildGuide();el("guideScrim").classList.add("show");el("guide").classList.add("show");navOpen("guide",closeGuide)}
+  function closeGuide(){navDrop("guide");el("guideScrim").classList.remove("show");el("guide").classList.remove("show")}
   function aiDraft(){
     var t=state.thread;if(!t)return;
     var b=el("draftBtn");b.disabled=true;b.innerHTML='<span class="spin"></span>';
@@ -5977,6 +6067,8 @@
   // ---- tabs ----
   function setTab(tab){
     stashDraft(state.phone);
+    // Switching tabs abandons whatever was layered over the list.
+    navDrop("thread");
     state.tab=tab;state.phone=null;document.body.classList.remove("viewing");
     el("details").classList.remove("open");el("sheetScrim").classList.remove("show");
     el("emptyState").style.display="flex";el("chatHead").style.display="none";el("composer").style.display="none";el("schedBanner").style.display="none";el("fuBanner").style.display="none";el("remindBanner").style.display="none";
@@ -5991,8 +6083,8 @@
   }
 
   // ---- drawer ----
-  function openDrawer(){el("drawer").classList.add("open");el("scrim").classList.add("show")}
-  function closeDrawer(){el("drawer").classList.remove("open");el("scrim").classList.remove("show")}
+  function openDrawer(){el("drawer").classList.add("open");el("scrim").classList.add("show");navOpen("drawer",closeDrawer)}
+  function closeDrawer(){navDrop("drawer");el("drawer").classList.remove("open");el("scrim").classList.remove("show")}
   function checkHealth(){
     var b=el("healthBadge");el("healthTxt").textContent="…";
     api("/api/health").then(function(d){
@@ -6051,9 +6143,19 @@
 
   el("fab").onclick=newConversation;
   el("sendBtn").onclick=sendMessage;
-  function openDetails(){el("details").classList.add("open");el("sheetScrim").classList.add("show")}
-  function closeDetails(){el("details").classList.remove("open");el("sheetScrim").classList.remove("show")}
-  el("backBtn").onclick=function(){closeDetails();stashDraft(state.phone);document.body.classList.remove("viewing");state.phone=null;renderMain()};
+  function openDetails(){el("details").classList.add("open");el("sheetScrim").classList.add("show");navOpen("details",closeDetails)}
+  function closeDetails(){navDrop("details");el("details").classList.remove("open");el("sheetScrim").classList.remove("show")}
+  // Leaving a conversation: drop the thread layer (which takes the details
+  // sheet with it), hand the draft back, and return to the list.
+  function closeThread(){
+    navDrop("thread");
+    closeDetails();
+    stashDraft(state.phone);
+    document.body.classList.remove("viewing");
+    state.phone=null;
+    renderMain();
+  }
+  el("backBtn").onclick=closeThread;
   el("callBtn").onclick=placeCall;el("dtCall").onclick=placeCall;
   el("whoBtn").onclick=openDetails;
   el("detailsBtn").onclick=function(){el("details").classList.contains("open")?closeDetails():openDetails()};
@@ -6163,11 +6265,12 @@
   el("vxClose").onclick=vxClose;
   el("vxOrb").onclick=vxToggle;
   el("vxApp").addEventListener("click",function(e){if(e.target===el("vxApp"))vxClose()});
+  // Escape closes the top layer, whatever it is — same path as the phone's back
+  // gesture, so the two never disagree about what "back" means.
   document.addEventListener("keydown",function(e){
     if(e.key!=="Escape")return;
     if(el("vxApp").classList.contains("show"))return vxClose();
-    if(JD.sheetOpen)return jdSheetClose();
-    if(el("jdApp").classList.contains("show"))return closeJobs();
+    if(navBack())e.preventDefault();
   });
   el("czBack").onclick=closeCustomize;
   el("czMode").onclick=function(){UI.mode=UI.mode==="pro"?"simple":"pro";saveUI();czRender();vibrate(6)};
@@ -6224,12 +6327,13 @@
     map:["Analytics","Your map — where the work and the rankings are"]};
   function openAnalytics(){
     el("growApp").classList.add("show");
+    navOpen("analytics",closeAnalytics);
     if(!GROW.wired){growWire();GROW.wired=true;}
     if(!MO.summary&&!MO._homeFetch){MO._homeFetch=1;api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.today=d.today;MO.entries=d.entries||[];MO.cfg=d.config;MO.owed=d.owed||[];MO.week=d.week;MO.allTime=d.allTime;if(el("growApp").classList.contains("show"))growRender();}}).catch(function(){});}
     if(!state.insights)fetchInsights();
     growRender();
   }
-  function closeAnalytics(){el("growApp").classList.remove("show");}
+  function closeAnalytics(){navDrop("analytics");el("growApp").classList.remove("show");}
   function growSet(v){GROW.view=v;Array.prototype.forEach.call(el("grNav").querySelectorAll("[data-gv]"),function(b){b.classList.toggle("active",b.getAttribute("data-gv")===v)});growRender();el("grBody").scrollTop=0;}
   function growWire(){
     el("grBack").onclick=closeAnalytics;
@@ -7792,8 +7896,8 @@
     return new Date(+dstr.slice(0,4),+dstr.slice(5,7)-1,+dstr.slice(8,10)).toLocaleDateString([],{weekday:"short",month:"short",day:"numeric"});
   }
 
-  function openMoney(){MO.open=true;el("moneyApp").style.display="flex";if(!MO.loadedOnce||MO.month!==moCurMonth()){moRender();loadMoney()}else moRender()}
-  function closeMoney(){MO.open=false;el("moneyApp").style.display="none";closeMoSheet()}
+  function openMoney(){MO.open=true;el("moneyApp").style.display="flex";navOpen("money",closeMoney);if(!MO.loadedOnce||MO.month!==moCurMonth()){moRender();loadMoney()}else moRender()}
+  function closeMoney(){navDrop("money");MO.open=false;el("moneyApp").style.display="none";closeMoSheet()}
   function refreshMoBadge(){var n=el("navMoney");if(n){var c=(MO.cfg&&MO.cfg.wonNudge!==false)?(MO.nudges||[]).length:0;n.textContent=c;n.className="ndot"+(c?" show":"")}}
   function loadMoney(month){
     return api("/api/money"+(month?"?month="+encodeURIComponent(month):"")).then(function(d){
@@ -8079,7 +8183,7 @@
     if(MOS.id)h+='<button class="mo-delbtn" id="moDelE">Delete this entry</button>';
     h+='</div>';
     var sh=el("moSheet");sh.innerHTML=h;
-    el("moScrim").classList.add("show");sh.classList.add("show");
+    el("moScrim").classList.add("show");sh.classList.add("show");navOpen("moSheet",closeMoSheet);
     moUpdateAmt();moSyncWhenChips();
     el("moShX").onclick=closeMoSheet;
     Array.prototype.forEach.call(el("moPad").querySelectorAll("[data-k]"),function(b){b.onclick=function(){moPadKey(b.getAttribute("data-k"))}});
@@ -8169,6 +8273,7 @@
     MOS.amt=v;moUpdateAmt();vibrate(4);
   }
   function closeMoSheet(){
+    navDrop("moSheet");
     var sh=el("moSheet");if(sh)sh.classList.remove("show");
     var sc=el("moScrim");if(sc)sc.classList.remove("show");
   }
@@ -8962,6 +9067,7 @@
 
   function openJobs(view){
     el("jdApp").classList.add("show");
+    navOpen("jobs",closeJobs);
     if(!JD.wired){jdWire();JD.wired=true}
     if(!JD.date)JD.date=jdToday();
     if(view)JD.view=view;
@@ -8973,7 +9079,7 @@
     if(JD.view==="pay"&&!JD.pay)jdLoadPay();
     if(JD.view==="garage"&&!JD.garage)jdLoadGarage();
   }
-  function closeJobs(){el("jdApp").classList.remove("show");jdSheetClose();jdTrackDetach()}
+  function closeJobs(){navDrop("jobs");el("jdApp").classList.remove("show");jdSheetClose();jdTrackDetach()}
   function jdSyncNav(){Array.prototype.forEach.call(el("jdNav").querySelectorAll("[data-jv]"),function(b){b.classList.toggle("active",b.getAttribute("data-jv")===JD.view)})}
   function jdSet(v){
     JD.view=v;jdSyncNav();jdRender();el("jdBody").scrollTop=0;
@@ -9013,9 +9119,11 @@
     requestAnimationFrame(function(){s.classList.add("show")});
     JD.sheetOpen=true;
     hydrateIcons(s);
+    navOpen("jdSheet",jdSheetClose);
     return s;
   }
   function jdSheetClose(){
+    navDrop("jdSheet");
     el("jdSheet").classList.remove("show");
     el("jdScrim").classList.remove("show");
     JD.sheetOpen=false;
