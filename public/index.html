@@ -738,6 +738,19 @@
   .drawer .dh small{color:var(--muted);font-size:11.5px}
   .drawer .dbody{flex:1;overflow-y:auto;padding:10px 0}
   .drawer .sec-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted2);font-weight:700;padding:14px 20px 6px}
+  /* ---- feature hits in search: the app's own screens, reachable by name ---- */
+  .fx-wrap{border-bottom:1px solid var(--line2);padding:6px 0 8px;background:var(--panel)}
+  .fx-hd{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2);padding:8px 16px 6px}
+  .fx-row{display:flex;align-items:center;gap:12px;width:100%;padding:11px 16px;background:none;border:0;
+    color:var(--text);font-size:14.5px;font-family:inherit;text-align:left;cursor:pointer}
+  .fx-row:hover,.fx-row:focus-visible{background:var(--panel2);outline:none}
+  .fx-row.top{background:var(--accent-soft)}
+  .fx-row.top .fx-ic{color:var(--accent-text)}
+  .fx-ic{width:22px;display:flex;align-items:center;justify-content:center;color:var(--muted);flex:0 0 auto}
+  .fx-t{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .fx-g{flex:0 0 auto;font-size:11.5px;color:var(--muted2);background:var(--panel3);
+    border-radius:999px;padding:3px 9px}
+  .fx-row.top .fx-hint{flex:0 0 auto;font-size:11px;color:var(--accent-text);opacity:.9}
   .drawer .ditem{display:flex;align-items:center;gap:14px;padding:13px 20px;font-size:14.5px;cursor:pointer}
   .drawer .ditem:hover{background:var(--panel2)}
   .drawer .ditem.active{background:var(--accent-soft);color:var(--accent-text);font-weight:600}
@@ -2138,7 +2151,7 @@
       <button class="btn icon menubtn" id="menuBtn" data-ic="menu" aria-label="Menu"></button>
       <label class="searchpill" id="searchPill">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        <input id="search" type="text" placeholder="Search — try status:won, tag:ceramic, is:unread" autocomplete="off" />
+        <input id="search" type="text" placeholder="Search people, or a feature — try “invoice”" autocomplete="off" />
         <button class="clr" id="searchClr" data-ic="x" type="button" aria-label="Clear"></button>
       </label>
       <div class="myavatar" id="myAvatar" title="Mikey's Mobile Detailing"></div>
@@ -2590,7 +2603,7 @@
   var FU_STAGE={owed:["Reply owed","message-square"],nudge:["Follow-up","list-checks"],won:["Win follow-up","check-circle"],lost:["Revival","undo"]};
   var FU_SNOOZE=[["1 day",24],["3 days",72],["1 week",168]];
 
-  var state={threads:[],filter:"all",assign:"all",tab:"home",search:"",phone:null,thread:null,insights:null,config:null,templates:TEMPLATES.slice(),emails:[],loadedOnce:false};
+  var state={threads:[],filter:"all",assign:"all",tab:"home",search:"",searchFocus:false,phone:null,thread:null,insights:null,config:null,templates:TEMPLATES.slice(),emails:[],loadedOnce:false};
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
@@ -3400,12 +3413,146 @@
   // ---- main view dispatch ----
   function renderMain(){
     renderFilters();refreshBadges();
+    var r=renderMainInner();
+    // Searching also searches the app itself, not just the conversations —
+    // matching features are listed above whatever the current tab found, and
+    // an empty box offers somewhere to go rather than sitting there blank.
+    if(state.search||state.searchFocus)renderFeatureHits();
+    return r;
+  }
+  function renderMainInner(){
     if(state.tab==="home"&&!state.search)return renderHome();
     if(state.tab==="leads")return renderLeads();
     if(state.tab==="followups")return renderFollowups();
     if(state.tab==="scheduled")return renderList("scheduled");
     if(state.tab==="archived")return renderList("archived");
     return renderList("messages");
+  }
+
+  // ---- the app is searchable too ---------------------------------------
+  // Recognition over recall: you think "invoice", the app says "Get paid". The
+  // keywords carry that gap so you never have to remember which screen owns a
+  // thing — which is what lets the screens stay uncluttered.
+  var FEATURES=[
+    // — conversations
+    {id:"chats",t:"All messages",g:"Chats",ic:"message-square",k:"texts conversations inbox sms threads",run:function(){setTab("messages")}},
+    {id:"unread",t:"Unread",g:"Chats",ic:"bell",k:"new badge fresh",run:function(){setTab("messages");state.filter="unread";renderFilters();renderMain()}},
+    {id:"waiting",t:"Waiting on a reply",g:"Chats",ic:"clock",k:"needs response owe answer back",run:function(){setTab("messages");state.filter="waiting";renderFilters();renderMain()}},
+    {id:"followups",t:"Follow-ups",g:"Chats",ic:"list-checks",k:"chase nudge check in reminder due",run:function(){setTab("followups")}},
+    {id:"scheduled",t:"Scheduled texts",g:"Chats",ic:"calendar-days",k:"later queued send timed",run:function(){setTab("scheduled")}},
+    {id:"archived",t:"Archived",g:"Chats",ic:"archive",k:"hidden old done filed",run:function(){setTab("archived")}},
+    {id:"newmsg",t:"New message",g:"Chats",ic:"plus",k:"compose text someone start write",run:function(){var f=el("fab");if(f)f.click()}},
+    // — work
+    {id:"leads",t:"Leads pipeline",g:"Pipeline",ic:"clipboard-list",k:"prospects enquiries board stages funnel won lost",run:function(){setTab("leads")}},
+    {id:"run",t:"Today's run",g:"Pipeline",ic:"route",k:"jobs schedule route day work appointments",run:function(){openJobs("run")}},
+    {id:"quotes",t:"Quote builder",g:"Pipeline",ic:"file-text",k:"estimate bid proposal price pricing quote",run:function(){openJobs("quotes")}},
+    {id:"garage",t:"Customer garage",g:"Pipeline",ic:"car",k:"vehicles cars customers history clients",run:function(){openJobs("garage")}},
+    {id:"bookings",t:"Bookings",g:"Pipeline",ic:"calendar-days",k:"calendar appointments online booked diary",run:function(){location.href="/bookings.html"}},
+    // — money
+    {id:"money",t:"Money tracker",g:"Money",ic:"dollar",k:"income earnings revenue cash log takings",run:function(){openMoney()}},
+    {id:"pay",t:"Get paid",g:"Money",ic:"credit-card",k:"invoice charge bill payment request stripe venmo deposit",run:function(){openJobs("pay")}},
+    {id:"paysetup",t:"Payment setup",g:"Money",ic:"wallet",k:"venmo cashapp paypal zelle card terms configure",run:function(){openPaySetup()}},
+    {id:"mreport",t:"Money report",g:"Money",ic:"file-text",k:"profit tax accounting summary month costs expenses",run:function(){openMoney();moSetView("report")}},
+    {id:"mgoals",t:"Budgets & goals",g:"Money",ic:"target",k:"target savings budget goal split",run:function(){openMoney();moSetView("goals")}},
+    {id:"mhistory",t:"Money history",g:"Money",ic:"clock",k:"past months previous earlier entries",run:function(){openMoney();moSetView("history")}},
+    {id:"owed",t:"Owed to you",g:"Money",ic:"alert",k:"unpaid outstanding debt chase overdue",run:function(){openMoney()}},
+    // — insight
+    {id:"analytics",t:"Analytics",g:"Insights",ic:"bar-chart",k:"stats numbers reports overview business",run:function(){openAnalytics()}},
+    {id:"website",t:"Website analytics",g:"Insights",ic:"activity",k:"traffic visitors ga4 clarity seo google site",run:function(){openAnalytics();growSet("analytics")}},
+    {id:"customers",t:"Who your customers are",g:"Insights",ic:"users",k:"repeat churn slipping loyal segments",run:function(){openAnalytics();growSet("customers")}},
+    {id:"profit",t:"Profit per job",g:"Insights",ic:"dollar",k:"margin worth value service profitability",run:function(){openAnalytics();growSet("profit")}},
+    {id:"map",t:"Map & rankings",g:"Insights",ic:"pin",k:"geogrid local rank area territory places",run:function(){openAnalytics();growSet("map")}},
+    // — AI
+    {id:"aicmd",t:"Command AI",g:"AI",ic:"sparkles",k:"ask assistant agent do it for me chat gpt",run:function(){openAiCmd()}},
+    {id:"trainai",t:"Train AI",g:"AI",ic:"sparkles",k:"teach voice tone style learn writing sound like me",run:function(){openTrainAI()}},
+    {id:"voice",t:"Talk to your dashboard",g:"AI",ic:"mic",k:"hands free speak dictate voice control",run:function(){vxOpen()}},
+    {id:"playbook",t:"Business playbook",g:"AI",ic:"file-text",k:"rules standing instructions brain knowledge facts",run:function(){openPlaybook()}},
+    // — settings
+    {id:"customize",t:"Customize everything",g:"Settings",ic:"sliders",k:"appearance theme colour color layout tabs widgets look font dark light",run:function(){openCustomize()}},
+    {id:"push",t:"Phone notifications",g:"Settings",ic:"bell",k:"alerts push notify ping mobile",run:function(){jdPushSheet()}},
+    {id:"health",t:"Connection",g:"Settings",ic:"activity",k:"status online offline health diagnostics",run:function(){openDrawer();checkHealth()}},
+    {id:"alerttest",t:"Send test alert",g:"Settings",ic:"bell",k:"try alert check notification email",run:function(){var i=el("alertTestItem");if(i)i.click()}},
+    {id:"snapshot",t:"Snapshot for Claude",g:"Settings",ic:"download",k:"export backup debug support help bundle",run:function(){var i=el("snapshotItem");if(i)i.click()}},
+    {id:"signout",t:"Sign out",g:"Settings",ic:"log-out",k:"logout leave lock exit",run:function(){var i=el("logoutItem");if(i)i.click()}}
+  ];
+  // Title hits outrank keyword hits, and a prefix outranks a mid-word hit, so
+  // "pay" puts "Payment setup" above a keyword-only match on "repay".
+  function featureScore(f,q){
+    var t=f.t.toLowerCase(),k=(f.k||"").toLowerCase(),g=f.g.toLowerCase();
+    if(t===q)return 100;
+    if(t.indexOf(q)===0)return 90;
+    if(t.indexOf(q)>0)return 70;
+    if((" "+k).indexOf(" "+q)>0)return 60;      // keyword starts a word
+    if(k.indexOf(q)>=0)return 45;
+    if(g.indexOf(q)===0)return 30;
+    return 0;
+  }
+  function featureSearch(raw){
+    var q=String(raw||"").trim().toLowerCase();
+    // Field filters like status:won are for the conversation list, not for us.
+    if(!q||q.length<2||q.indexOf(":")>=0)return [];
+    var hits=[];
+    FEATURES.forEach(function(f){var s=featureScore(f,q);if(s)hits.push({f:f,s:s})});
+    hits.sort(function(a,b){return b.s-a.s||a.f.t.localeCompare(b.f.t)});
+    return hits.slice(0,6).map(function(h){return h.f});
+  }
+  // Most-recently jumped-to features, so the empty search box gets more useful
+  // the more it is used.
+  var FX_RECENT="mkd-fx-recent";
+  function fxRecent(){try{return JSON.parse(localStorage.getItem(FX_RECENT)||"[]")}catch(e){return []}}
+  function fxRemember(id){
+    try{var l=fxRecent().filter(function(x){return x!==id});l.unshift(id);localStorage.setItem(FX_RECENT,JSON.stringify(l.slice(0,4)))}catch(e){}
+  }
+  function fxById(id){for(var i=0;i<FEATURES.length;i++)if(FEATURES[i].id===id)return FEATURES[i];return null}
+  // What to offer before anything is typed: what he actually used, topped up
+  // with the handful of places this job needs most days.
+  function fxSuggestions(){
+    var out=[],seen={};
+    fxRecent().forEach(function(id){var f=fxById(id);if(f&&!seen[id]){seen[id]=1;out.push(f)}});
+    ["run","pay","money","leads","aicmd"].forEach(function(id){
+      if(out.length>=5)return;
+      var f=fxById(id);if(f&&!seen[id]){seen[id]=1;out.push(f)}
+    });
+    return out.slice(0,5);
+  }
+  function runFeature(f){
+    if(!f)return;
+    vibrate(6);
+    fxRemember(f.id);
+    clearSearch();
+    try{f.run()}catch(e){toast("Couldn't open that")}
+  }
+  function clearSearch(){
+    var si=el("search");if(si)si.value="";
+    state.search="";
+    var sp=el("searchPill");if(sp)sp.classList.remove("has");
+  }
+  // Rendered above the conversation results so the app's own screens are
+  // always the first thing a search can reach.
+  function renderFeatureHits(){
+    var box=el("scroll");if(!box)return;
+    // Idempotent: Home repaints itself from several async callbacks, and each
+    // one calls back in here, so re-running must replace rather than stack up.
+    var old=box.querySelector(".fx-wrap");if(old)old.remove();
+    if(!state.search&&!state.searchFocus)return;
+    var typed=!!String(state.search||"").trim();
+    var hits=typed?featureSearch(state.search):fxSuggestions();
+    if(!hits.length)return;
+    var w=document.createElement("div");w.className="fx-wrap";
+    w.innerHTML='<div class="fx-hd">'+(typed?"Features":"Jump to")+'</div>';
+    hits.forEach(function(f,i){
+      var r=document.createElement("button");
+      // Only a typed query has a "top hit" that Enter will run — highlighting
+      // one of the idle suggestions would promise a keystroke that does nothing.
+      r.className="fx-row"+(typed&&i===0?" top":"");
+      r.innerHTML='<span class="fx-ic">'+ic(f.ic,17)+'</span>'+
+        '<span class="fx-t">'+esc(f.t)+'</span>'+
+        (typed&&i===0?'<span class="fx-hint">enter</span>':'')+
+        '<span class="fx-g">'+esc(f.g)+'</span>';
+      r.onclick=function(){runFeature(f);renderMain()};
+      w.appendChild(r);
+    });
+    box.insertBefore(w,box.firstChild);
   }
 
   // ---- Home (landing) ----
@@ -3451,6 +3598,12 @@
     return '<div class="needs">'+head+'<div class="nd-list">'+rows+'</div>'+more+'</div>';
   }
   function renderHome(){
+    // A search owns the list while it is running, Home tab or not. A dozen
+    // async callbacks (money, insights, weather, polling) repaint Home the
+    // moment their fetch lands, and without this they wipe the results out
+    // from under you a second after you typed. Clearing the search re-renders
+    // Home through renderMain as usual.
+    if(state.search)return;
     var box=el("scroll");
     if(!state.loadedOnce&&!state.threads.length){box.innerHTML='<div class="home">'+skeletonList(5)+'</div>';return}
     var active=state.threads.filter(function(t){return !t.archived});
@@ -3511,6 +3664,9 @@
     wireHomeWidgets(box);
     wireAiCenter();
     wireJdHome(box);
+    // Home repaints on its own whenever a fetch lands; put the suggestions back
+    // if the search box is still focused, or they vanish a beat after opening.
+    if(state.searchFocus)renderFeatureHits();
   }
   // Job Day pieces that live on Home: the brief card and the push nudge.
   function wireJdHome(box){
@@ -6136,10 +6292,31 @@
 
   // ---- wire up ----
   var sp=el("searchPill"),si=el("search");
-  si.addEventListener("focus",function(){sp.classList.add("focus")});
-  si.addEventListener("blur",function(){sp.classList.remove("focus")});
+  si.addEventListener("focus",function(){sp.classList.add("focus");state.searchFocus=true;if(!state.search)renderMain()});
+  // Late enough that a tap on a suggestion lands before the list is rebuilt —
+  // and only if the box has not been focused again by then, or a quick
+  // blur-then-focus would clear the state right after it was set.
+  si.addEventListener("blur",function(){
+    sp.classList.remove("focus");
+    setTimeout(function(){
+      if(document.activeElement===si)return;
+      state.searchFocus=false;if(!state.search)renderMain();
+    },180);
+  });
   si.addEventListener("input",function(e){state.search=e.target.value;sp.classList.toggle("has",!!e.target.value);renderMain()});
-  el("searchClr").onclick=function(){si.value="";state.search="";sp.classList.remove("has");renderMain();si.focus()};
+  si.addEventListener("keydown",function(e){
+    if(e.key==="Enter"){var hits=featureSearch(state.search);if(hits.length){e.preventDefault();si.blur();runFeature(hits[0]);renderMain()}}
+    else if(e.key==="Escape"){e.preventDefault();clearSearch();si.blur();renderMain()}
+  });
+  el("searchClr").onclick=function(){clearSearch();renderMain();si.focus()};
+  // "/" and Cmd/Ctrl-K reach the search from anywhere — the shortcut people
+  // already have in their fingers from every other tool.
+  document.addEventListener("keydown",function(e){
+    var tag=(e.target&&e.target.tagName||"").toLowerCase();
+    var typing=tag==="input"||tag==="textarea"||(e.target&&e.target.isContentEditable);
+    if((e.metaKey||e.ctrlKey)&&(e.key==="k"||e.key==="K")){e.preventDefault();si.focus();si.select();return}
+    if(e.key==="/"&&!typing&&!e.metaKey&&!e.ctrlKey&&!e.altKey){e.preventDefault();si.focus()}
+  });
 
   el("fab").onclick=newConversation;
   el("sendBtn").onclick=sendMessage;
