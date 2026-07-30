@@ -745,6 +745,24 @@
   .drawer .ditem.active .ic{color:var(--accent-text)}
   .drawer .ditem .ic svg{width:19px;height:19px}
   .drawer .ditem .n{margin-left:auto;color:var(--muted2);font-size:12px;font-weight:700}
+  /* Collapsible groups. The menu used to be one continuous wall — every view, every
+     setting, and three inline editors, all expanded at once. Now each group is a
+     tappable heading: the everyday destinations start open, the settings start shut,
+     and their heavy panels (playbook, follow-ups, team) don't take up any room until
+     asked for. Open/shut state is remembered per device. */
+  .drawer .dgrp{border-bottom:1px solid var(--line2)}
+  .drawer .dgrp:last-child{border-bottom:none}
+  .drawer .dgh{display:flex;align-items:center;gap:10px;padding:12px 20px;cursor:pointer;user-select:none;
+    font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted2);font-weight:800}
+  .drawer .dgh:hover{background:var(--panel2)}
+  .drawer .dgh .cv{margin-left:auto;transition:transform .18s;display:inline-flex;color:var(--muted2)}
+  .drawer .dgh .cv svg{width:15px;height:15px}
+  .drawer .dgrp.open>.dgh .cv{transform:rotate(180deg)}
+  .drawer .dgh .gn{margin-left:auto;color:var(--muted2);font-size:11px;font-weight:700;text-transform:none;letter-spacing:0}
+  .drawer .dgh .gn+.cv{margin-left:8px}
+  .drawer .dgb{display:none;padding-bottom:6px}
+  .drawer .dgrp.open>.dgb{display:block}
+  .drawer .dgrp .sec-lbl{padding-top:8px}
   .accent-row{display:flex;gap:11px;padding:8px 20px 16px}
   .swatch{width:30px;height:30px;border-radius:50%;cursor:pointer;border:2.5px solid transparent;transition:transform .1s}
   .swatch:active{transform:scale(.9)}
@@ -942,6 +960,60 @@
   .pb-field label{font-size:12.5px;font-weight:600;color:var(--text)}
   .pb-ta{background:var(--panel2);border:1px solid var(--line);border-radius:10px;color:var(--text);padding:9px 10px;font-size:12.5px;line-height:1.45;resize:vertical;min-height:52px;outline:none;width:100%;font-family:inherit}
   .pb-ta:focus{border-color:var(--accent)}
+
+  /* ===== Train AI — its own screen, not a row of buttons in Settings ===== */
+  .tai{position:fixed;inset:0;z-index:9000;background:var(--bg);display:flex;flex-direction:column;animation:pop .16s ease}
+  .tai-hd{display:flex;align-items:center;gap:10px;padding:calc(13px + var(--safe-top)) 15px 12px;border-bottom:1px solid var(--line);flex:none}
+  .tai-hd .t{font-weight:800;font-size:17px;flex:1;line-height:1.2}
+  .tai-hd .t small{display:block;font-weight:500;font-size:12px;color:var(--muted2);margin-top:2px}
+  .tai-body{flex:1;overflow-y:auto;padding:16px 15px calc(24px + var(--safe-bottom))}
+  /* headline score */
+  .tai-score{display:flex;align-items:center;gap:15px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px 17px}
+  .tai-dial{width:74px;height:74px;flex:none;position:relative}
+  .tai-dial svg{transform:rotate(-90deg)}
+  .tai-dial .v{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:19px;letter-spacing:-.5px}
+  .tai-score .lbl{flex:1;min-width:0}
+  .tai-score .lbl b{display:block;font-size:14.5px;margin-bottom:3px}
+  .tai-score .lbl span{font-size:12.5px;color:var(--muted2);line-height:1.45;display:block}
+  /* the single next action */
+  .tai-cta{margin-top:14px;background:var(--accent);color:#fff;border:none;border-radius:14px;padding:15px;font-size:15px;font-weight:700;width:100%;font-family:inherit;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px}
+  .tai-cta:active{transform:scale(.99)}
+  .tai-cta[disabled]{opacity:.6}
+  .tai-why{font-size:12.5px;color:var(--muted2);line-height:1.5;margin-top:9px;text-align:center}
+  /* per-situation bars */
+  .tai-sec{margin-top:22px}
+  .tai-sec>h4{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted2);font-weight:800;margin:0 0 10px}
+  .tai-bar{display:flex;align-items:center;gap:10px;padding:7px 0;font-size:13px}
+  .tai-bar .nm{width:74px;flex:none;color:var(--txt2,var(--text));text-transform:capitalize}
+  .tai-bar .tr{flex:1;height:7px;border-radius:4px;background:var(--line2);overflow:hidden;position:relative}
+  .tai-bar .tr i{display:block;height:100%;border-radius:4px;background:var(--accent)}
+  .tai-bar .tr i.good{background:var(--green,#31c46b)}
+  .tai-bar .tr i.weak{background:#f5b842}
+  .tai-bar .vv{width:62px;flex:none;text-align:right;color:var(--muted2);font-size:11.5px}
+  /* secondary actions */
+  .tai-acts{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+  .tai-act{display:flex;align-items:center;gap:11px;background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:12px 13px;text-align:left;width:100%;font-family:inherit;font-size:13.5px;color:var(--text);cursor:pointer}
+  .tai-act:active{background:var(--panel2)}
+  .tai-act .ic{color:var(--muted)}
+  .tai-act div{flex:1;min-width:0}
+  .tai-act b{display:block;font-weight:600;margin-bottom:2px}
+  .tai-act small{color:var(--muted2);font-size:11.5px;line-height:1.4;display:block}
+  /* measured style chips */
+  .tai-chips{display:flex;flex-wrap:wrap;gap:6px}
+  .tai-chip{background:var(--panel2);border:1px solid var(--line2);border-radius:8px;padding:6px 9px;font-size:11.5px;color:var(--muted)}
+  .tai-chip b{color:var(--text)}
+  /* ===== the trainer card ===== */
+  .tc-prog{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted2);margin-bottom:12px}
+  .tc-prog .tr{flex:1;height:5px;border-radius:3px;background:var(--line2);overflow:hidden}
+  .tc-prog .tr i{display:block;height:100%;background:var(--accent);border-radius:3px;transition:width .2s}
+  .tc-box{margin-bottom:12px}
+  .tc-box .cap{font-size:11px;text-transform:uppercase;letter-spacing:.5px;font-weight:800;margin-bottom:5px}
+  .tc-box .bd{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:12px 13px;line-height:1.5;white-space:pre-wrap;font-size:14px}
+  .tc-vs{display:flex;gap:9px;margin-top:16px}
+  .tc-vs button{flex:1;padding:15px 10px;border-radius:13px;font-family:inherit;font-size:13.5px;font-weight:700;cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--text);line-height:1.3}
+  .tc-vs button.yes{background:var(--green,#31c46b);color:#06331c;border-color:var(--green,#31c46b)}
+  .tc-vs button:active{transform:scale(.98)}
+  .tai-empty{text-align:center;padding:40px 10px;color:var(--muted2);font-size:13.5px;line-height:1.6}
 
   /* assignment section in details */
   #dtAssign .assign-btn{font-size:12.5px}
@@ -2259,50 +2331,80 @@
     <div class="logo" id="drawerLogo"></div>
     <div><h1>Mikey's Detailing</h1><small>Mobile Detailing • Snohomish</small></div>
   </div>
-  <div class="dbody">
-    <div class="sec-lbl">AI assistant</div>
-    <div class="ditem" id="aiCmdItem"><span class="ic" data-ic="sparkles"></span>Command AI<span class="n" style="color:var(--accent-text)">new</span></div>
-
-    <div class="sec-lbl">Views</div>
-    <div class="ditem" id="bookingsItem" onclick="location.href='/bookings.html'"><span class="ic" data-ic="calendar-days"></span>Bookings<span class="n" style="color:var(--accent-text)">new</span></div>
+  <div class="dbody" id="dbody">
+    <!-- Conversations: the reason he opens the app. No heading, no collapsing —
+         these four are always right at the top. -->
     <div class="ditem" data-tab="messages"><span class="ic" data-ic="message-square"></span>All messages<span class="n" id="mnAll"></span></div>
     <div class="ditem" data-filter="unread"><span class="ic" data-ic="bell"></span>Unread<span class="n" id="mnUnread"></span></div>
-    <div class="ditem" data-tab="leads"><span class="ic" data-ic="clipboard-list"></span>Leads pipeline</div>
     <div class="ditem" data-tab="followups"><span class="ic" data-ic="list-checks"></span>Follow-ups<span class="n" id="mnFollow"></span></div>
-    <div class="ditem" data-tab="scheduled"><span class="ic" data-ic="calendar-days"></span>Scheduled<span class="n" id="mnSched"></span></div>
-    <div class="ditem" data-tab="archived"><span class="ic" data-ic="archive"></span>Archived<span class="n" id="mnArch"></span></div>
-    <div class="ditem" id="runItem"><span class="ic" data-ic="route"></span>Today's Run<span class="n" style="color:var(--accent-text)">new</span></div>
-    <div class="ditem" id="quotesItem"><span class="ic" data-ic="file-text"></span>Quote builder<span class="n" style="color:var(--accent-text)">new</span></div>
-    <div class="ditem" id="payItem"><span class="ic" data-ic="credit-card"></span>Get paid<span class="n" style="color:var(--accent-text)">new</span></div>
-    <div class="ditem" id="garageItem"><span class="ic" data-ic="car"></span>Customer garage<span class="n" style="color:var(--accent-text)">new</span></div>
-    <div class="ditem" id="voiceItem"><span class="ic" data-ic="mic"></span>Talk to your dashboard<span class="n" style="color:var(--accent-text)">new</span></div>
-    <div class="ditem" id="pushItem"><span class="ic" data-ic="bell"></span>Phone notifications<span class="n" id="pushState">off</span></div>
-    <div class="ditem" id="moneyItem"><span class="ic" data-ic="dollar"></span>Money tracker</div>
-    <div class="ditem" id="analyticsItem"><span class="ic" data-ic="bar-chart"></span>Analytics — website &amp; business</div>
+    <div class="ditem" id="aiCmdItem"><span class="ic" data-ic="sparkles"></span>Command AI<span class="n" style="color:var(--accent-text)">new</span></div>
 
-    <div class="sec-lbl">Auto follow-up settings</div>
-    <div class="fu-settings" id="fuSettings"></div>
+    <div class="dgrp open" data-grp="work">
+      <div class="dgh">Today &amp; jobs<span class="cv" data-ic="chevron-down"></span></div>
+      <div class="dgb">
+        <div class="ditem" id="runItem"><span class="ic" data-ic="route"></span>Today's Run</div>
+        <div class="ditem" id="bookingsItem" onclick="location.href='/bookings.html'"><span class="ic" data-ic="calendar-days"></span>Bookings</div>
+        <div class="ditem" data-tab="scheduled"><span class="ic" data-ic="calendar-days"></span>Scheduled texts<span class="n" id="mnSched"></span></div>
+        <div class="ditem" data-tab="leads"><span class="ic" data-ic="clipboard-list"></span>Leads pipeline</div>
+        <div class="ditem" id="garageItem"><span class="ic" data-ic="car"></span>Customer garage</div>
+        <div class="ditem" data-tab="archived"><span class="ic" data-ic="archive"></span>Archived<span class="n" id="mnArch"></span></div>
+      </div>
+    </div>
 
-    <div class="sec-lbl">Team</div>
-    <div class="team-panel" id="teamPanel"></div>
+    <div class="dgrp" data-grp="money">
+      <div class="dgh">Money<span class="cv" data-ic="chevron-down"></span></div>
+      <div class="dgb">
+        <div class="ditem" id="moneyItem"><span class="ic" data-ic="dollar"></span>Money tracker</div>
+        <div class="ditem" id="payItem"><span class="ic" data-ic="credit-card"></span>Get paid</div>
+        <div class="ditem" id="quotesItem"><span class="ic" data-ic="file-text"></span>Quote builder</div>
+        <div class="ditem" id="paySetupItem"><span class="ic" data-ic="wallet"></span>Payment setup</div>
+        <div class="ditem" id="analyticsItem"><span class="ic" data-ic="bar-chart"></span>Analytics — website &amp; business</div>
+      </div>
+    </div>
 
-    <div class="sec-lbl">AI training · playbook</div>
-    <div class="playbook" id="playbookPanel"></div>
+    <div class="dgrp" data-grp="ai">
+      <div class="dgh">AI<span class="cv" data-ic="chevron-down"></span></div>
+      <div class="dgb">
+        <div class="ditem" id="trainAiItem"><span class="ic" data-ic="sparkles"></span>Train AI<span class="n" id="mnTrainStat">…</span></div>
+        <div class="ditem" id="voiceItem"><span class="ic" data-ic="mic"></span>Talk to your dashboard</div>
+        <div class="ditem" id="playbookItem"><span class="ic" data-ic="file-text"></span>Business playbook</div>
+      </div>
+    </div>
 
-    <div class="sec-lbl">Appearance</div>
-    <div class="ditem" id="customizeItem"><span class="ic" data-ic="sliders"></span>Customize everything<span class="n" style="color:var(--accent-text)">new</span></div>
-    <div class="theme-seg" id="themeSeg"></div>
-    <div class="sec-lbl">Accent color</div>
-    <div class="accent-row" id="accentRow"></div>
+    <div class="dgrp" data-grp="settings">
+      <div class="dgh">Settings<span class="cv" data-ic="chevron-down"></span></div>
+      <div class="dgb">
+        <div class="ditem" id="pushItem"><span class="ic" data-ic="bell"></span>Phone notifications<span class="n" id="pushState">off</span></div>
+        <div class="sec-lbl">Auto follow-ups &amp; calls</div>
+        <div class="fu-settings" id="fuSettings"></div>
+        <div class="sec-lbl">Team</div>
+        <div class="team-panel" id="teamPanel"></div>
+        <div class="sec-lbl">Appearance</div>
+        <div class="ditem" id="customizeItem"><span class="ic" data-ic="sliders"></span>Customize everything</div>
+        <div class="theme-seg" id="themeSeg"></div>
+        <div class="sec-lbl">Accent color</div>
+        <div class="accent-row" id="accentRow"></div>
+      </div>
+    </div>
 
-    <div class="ditem" id="paySetupItem"><span class="ic" data-ic="wallet"></span>Payment setup</div>
+    <!-- The playbook editor is nine textareas; keeping it in its own collapsed group
+         means it costs nothing until he actually wants to edit it. openPlaybook()
+         opens this group and scrolls to it. -->
+    <div class="dgrp" data-grp="playbook">
+      <div class="dgh">Business playbook<span class="cv" data-ic="chevron-down"></span></div>
+      <div class="dgb"><div class="playbook" id="playbookPanel"></div></div>
+    </div>
 
-    <div class="sec-lbl">Tools</div>
-    <div class="ditem" id="snapshotItem"><span class="ic" data-ic="download"></span>Snapshot for Claude</div>
-    <div class="ditem" id="refreshItem"><span class="ic" data-ic="refresh-cw"></span>Refresh now</div>
-    <div class="ditem" id="healthItem"><span class="ic" data-ic="activity"></span>Connection<span class="n"><span class="health" id="healthBadge"><span class="dotc"></span><span id="healthTxt">check</span></span></span></div>
-    <div class="ditem" id="alertTestItem"><span class="ic" data-ic="bell"></span>Send test alert</div>
-    <div class="ditem" id="logoutItem"><span class="ic" data-ic="log-out"></span>Sign out</div>
+    <div class="dgrp" data-grp="tools">
+      <div class="dgh">Tools &amp; account<span class="cv" data-ic="chevron-down"></span></div>
+      <div class="dgb">
+        <div class="ditem" id="healthItem"><span class="ic" data-ic="activity"></span>Connection<span class="n"><span class="health" id="healthBadge"><span class="dotc"></span><span id="healthTxt">check</span></span></span></div>
+        <div class="ditem" id="refreshItem"><span class="ic" data-ic="refresh-cw"></span>Refresh now</div>
+        <div class="ditem" id="alertTestItem"><span class="ic" data-ic="bell"></span>Send test alert</div>
+        <div class="ditem" id="snapshotItem"><span class="ic" data-ic="download"></span>Snapshot for Claude</div>
+        <div class="ditem" id="logoutItem"><span class="ic" data-ic="log-out"></span>Sign out</div>
+      </div>
+    </div>
   </div>
   <div class="foot">
     Mikey's Mobile Detailing<br>
@@ -2492,7 +2594,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-29·voice-every-send";
+  var APP_BUILD="2026-07-30·train-ai-overhaul";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -3830,7 +3932,43 @@
   }
   function openPlaybook(){
     openDrawer();
-    setTimeout(function(){var el2=el("playbookPanel");if(el2){el2.scrollIntoView({block:"start",behavior:"smooth"});var ta=el2.querySelector(".pb-ta");if(ta)setTimeout(function(){ta.focus()},350)}},120);
+    openMenuGroup("playbook");
+    setTimeout(function(){var el2=el("playbookPanel");if(el2){el2.scrollIntoView({block:"start",behavior:"smooth"});var ta=el2.querySelector(".pb-ta");if(ta)setTimeout(function(){ta.focus()},350)}},160);
+  }
+
+  // ---- menu groups -------------------------------------------------------
+  // Which groups are open is remembered per device, so his own shape of the menu
+  // survives a reload. Defaults are set in the markup (Today & jobs open).
+  var MENU_KEY="mkd-menu-groups";
+  function menuGroupState(){
+    try{ var v=JSON.parse(localStorage.getItem(MENU_KEY)); return (v&&typeof v==="object")?v:null }catch(e){ return null }
+  }
+  function saveMenuGroups(){
+    var st={};
+    document.querySelectorAll("#dbody .dgrp").forEach(function(g){ st[g.getAttribute("data-grp")]=g.classList.contains("open") });
+    try{ localStorage.setItem(MENU_KEY,JSON.stringify(st)) }catch(e){}
+  }
+  function openMenuGroup(name){
+    var g=document.querySelector('#dbody .dgrp[data-grp="'+name+'"]');
+    if(g&&!g.classList.contains("open")){ g.classList.add("open"); saveMenuGroups() }
+  }
+  function initMenuGroups(){
+    var saved=menuGroupState();
+    document.querySelectorAll("#dbody .dgrp").forEach(function(g){
+      var k=g.getAttribute("data-grp");
+      if(saved&&typeof saved[k]==="boolean")g.classList.toggle("open",saved[k]);
+      var h=g.querySelector(".dgh");
+      if(h)h.addEventListener("click",function(){
+        g.classList.toggle("open");
+        saveMenuGroups();
+        // Bring a freshly-opened group into view rather than leaving it below the fold.
+        if(g.classList.contains("open"))setTimeout(function(){
+          var b=g.getBoundingClientRect(),body=el("dbody");
+          if(b.bottom>window.innerHeight)g.scrollIntoView({block:"nearest",behavior:"smooth"});
+          if(!body)return;
+        },180);
+      });
+    });
   }
   // ---- Analytics · Overview — business KPIs, pipeline, response health, spend,
   // AI briefing (this replaces the old standalone Insights tab; it renders into the
@@ -4195,17 +4333,13 @@
       '<div class="hint">Pulls your recent voicemails from Twilio into the right conversations so you can play them right here. Safe to run anytime.</div>'+
       '<div class="fu-col"><span class="lbl2">Block a number</span><span style="display:flex;gap:6px"><input type="text" id="cfgBlockNum" placeholder="+1425…" style="flex:1"><button id="cfgBlockBtn" class="btn" style="white-space:nowrap">Block</button></span></div>'+
       blockedListHtml(c.blockedNumbers)+
-      '<div class="fu-row"><span class="lbl2">Sounding like you</span><span id="cfgVoiceStat" style="color:var(--muted2);font-size:13px">…</span></div>'+
-      '<div class="fu-col"><span style="display:flex;gap:6px;flex-wrap:wrap">'+
-        '<button id="cfgVoiceBuild" class="btn">Rebuild from my texts</button>'+
-        '<button id="cfgVoiceTrain" class="btn">Train the voice</button>'+
-        '<button id="cfgVoiceImport" class="btn">Paste an export</button>'+
-      '</span></div>'+
-      '<div class="fu-col" id="cfgVoiceImportBox" style="display:none">'+
-        '<textarea id="cfgVoiceText" rows="5" placeholder="Paste a text-message export here — the whole thing. It picks out your side and ignores the customer\'s." style="width:100%"></textarea>'+
-        '<span style="display:flex;gap:6px;margin-top:6px"><button id="cfgVoiceImportGo" class="btn">Import my side</button></span>'+
-      '</div>'+
-      '<div class="hint"><b>Rebuild</b> reads the messages you\'ve actually typed to customers and learns your length, punctuation, emoji habits and phrasing from them — then shows the AI your real texts from the same kind of situation every time it drafts. <b>Train</b> replays past conversations: it writes what it would have said next to what you really sent, and you tap whether it sounds like you. The misses are the valuable ones — they teach it what to stop doing.</div>'+
+      // Training lives on its own screen now — see openTrainAI(). All this needs to
+      // do is show how it's doing and get him there.
+      '<div class="fu-col"><button id="cfgVoiceOpen" class="btn" style="justify-content:flex-start;text-align:left;padding:11px 12px">'+
+        '<span class="ic-inline" data-ic="sparkles" data-ic-size="15"></span> Train AI'+
+        '<span id="cfgVoiceStat" style="color:var(--muted2);font-size:12px;margin-left:auto;font-weight:400">…</span>'+
+      '</button></div>'+
+      '<div class="hint">How well it sounds like you, where it\'s weak, and everything for teaching it — on one screen.</div>'+
       '<div class="fu-col"><span class="lbl2">Rules you\'ve told the AI</span><span style="display:flex;gap:6px"><input type="text" id="cfgRuleNew" placeholder="e.g. never quote a full detail under $150" style="flex:1"><button id="cfgRuleAdd" class="btn" style="white-space:nowrap">Add</button></span></div>'+
       '<div class="hint">Hard instructions the AI follows every time it writes for you. You can also just say one in the command centre — "stop using exclamation points" — and approve it there.</div>'+
       '<div id="cfgRules"></div>';
@@ -4224,13 +4358,7 @@
     el("cfgAssistEmailDelay").onchange=function(){saveConfig({assistEmailDelaySec:+el("cfgAssistEmailDelay").value})};
     el("cfgAssistScript").onclick=function(){copyAssistScript()};
     el("cfgAssistPractice").onclick=function(){sendPractice(el("cfgAssistPractice"))};
-    el("cfgVoiceBuild").onclick=function(){buildVoice(el("cfgVoiceBuild"))};
-    el("cfgVoiceTrain").onclick=function(){openVoiceTrainer()};
-    el("cfgVoiceImport").onclick=function(){
-      var b=el("cfgVoiceImportBox"); b.style.display=b.style.display==="none"?"":"none";
-      if(b.style.display==="")el("cfgVoiceText").focus();
-    };
-    el("cfgVoiceImportGo").onclick=function(){importVoice(el("cfgVoiceImportGo"))};
+    el("cfgVoiceOpen").onclick=function(){openTrainAI()};
     refreshVoiceStat();
     el("cfgVmRecover").onclick=function(){recoverVoicemails(el("cfgVmRecover"))};
     el("cfgBlockBtn").onclick=function(){var v=el("cfgBlockNum").value.trim();if(v)blockNumber(v,"block")};
@@ -4445,105 +4573,272 @@
     document.body.removeChild(ta);
   }
   // ---- Voice training ------------------------------------------------------
+  // The one-line summary on the Settings entry point and the menu item. Deliberately
+  // short — the full picture is a tap away on the Train AI screen.
   function refreshVoiceStat(){
-    var s=el("cfgVoiceStat"); if(!s)return;
+    var targets=[el("cfgVoiceStat"),el("mnTrainStat")].filter(Boolean);
+    if(!targets.length)return;
     api("/api/voice/stats").then(function(d){
-      if(!d||!d.ok){s.textContent="—";return}
-      var bits=[];
-      bits.push(d.samples?(d.samples+" of your texts learned"):"not built yet");
-      if(d.matchRate!=null) bits.push(d.matchRate+"% sounds like you ("+d.rounds+" checked)");
-      if(d.provider==="claude") bits.push("Claude");
-      s.textContent=bits.join(" · ");
-    }).catch(function(){s.textContent="—"});
-  }
-  function buildVoice(btn){
-    var orig=btn?btn.innerHTML:"";
-    if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span> Reading your texts…'}
-    post("/api/voice/build",{}).then(function(d){
+      var txt="—";
       if(d&&d.ok){
-        toast("Learned from "+d.samples+" of your own texts. Drafts will sound more like you from here.");
-        refreshVoiceStat();
-      } else toast((d&&d.error)==="ai_not_configured"?"No AI key set on the server":"Couldn't build it: "+((d&&d.error)||"error"),{bad:true});
-    }).catch(function(){toast("Network error",{bad:true})})
-      .then(function(){if(btn){btn.disabled=false;btn.innerHTML=orig}});
+        txt=d.matchRate!=null?(d.matchRate+"% like you")
+           :d.samples?(d.samples+" texts learned")
+           :"not set up";
+      }
+      targets.forEach(function(t){t.textContent=txt});
+    }).catch(function(){targets.forEach(function(t){t.textContent="—"})});
   }
 
-  // Paste a phone export. The server picks out his half and ignores the customer's.
-  function importVoice(btn){
-    var ta=el("cfgVoiceText"); if(!ta)return;
-    var text=ta.value.trim();
-    if(!text){toast("Paste the export first",{bad:true});return}
-    var orig=btn?btn.innerHTML:"";
-    if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span> Reading…'}
-    post("/api/voice/import",{text:text}).then(function(d){
-      if(d&&d.ok){
-        ta.value="";
-        el("cfgVoiceImportBox").style.display="none";
-        toast("Found "+d.found+" of your texts, added "+d.added+" new ones. Drafts will sound more like you now.");
-        refreshVoiceStat();
-      } else if(d&&d.error==="nothing_found"){
-        toast("Couldn't find your messages in that. Paste one of your texts per line instead.",{bad:true});
-      } else toast((d&&d.error)||"Import failed",{bad:true});
-    }).catch(function(){toast("Network error",{bad:true})})
-      .then(function(){if(btn){btn.disabled=false;btn.innerHTML=orig}});
-  }
+  // ===========================================================================
+  // Train AI — one screen that answers "how good is it, and what do I do next?"
+  // ===========================================================================
+  // This used to be three equal-looking buttons and a stat line buried in Settings
+  // between voicemail recovery and number blocking. There was no way to tell how
+  // well it was doing, where it was weak, or which button to press. Now: one
+  // headline number, a per-situation breakdown, and a single obvious next action
+  // that the server picks (stats.next), with everything else demoted below it.
+  var TA={stats:null,queue:[],seen:[],judged:0,fetching:false,done:false};
 
-  // Full-screen trainer. One card at a time: the customer's message, what the AI
-  // would write now, and what he actually sent. Two taps' worth of decision.
-  var voiceSeen=[];
-  function openVoiceTrainer(){
+  function openTrainAI(){
+    closeDrawer();
     var w=document.createElement("div");
-    w.id="voiceTrainer";
-    w.style.cssText="position:fixed;inset:0;z-index:9000;background:var(--bg);display:flex;flex-direction:column;padding:calc(14px + var(--safe-top)) 14px calc(14px + var(--safe-bottom));overflow-y:auto";
+    w.className="tai"; w.id="taiScreen";
     w.innerHTML=
-      '<div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">'+
-        '<div style="font-weight:800;font-size:17px">Does this sound like you?</div>'+
-        '<button class="btn" id="vtClose" style="margin-left:auto">Done</button>'+
+      '<div class="tai-hd">'+
+        '<div class="t">Train AI<small id="taiSub">checking how it\'s doing…</small></div>'+
+        '<button class="btn" id="taiClose">Done</button>'+
       '</div>'+
-      '<div id="vtScore" style="color:var(--muted2);font-size:13px;margin-bottom:10px"></div>'+
-      '<div id="vtBody" style="flex:1"><div class="spin" style="margin:40px auto"></div></div>';
+      '<div class="tai-body" id="taiBody"><div class="spin" style="margin:50px auto"></div></div>';
     document.body.appendChild(w);
-    el("vtClose").onclick=function(){w.remove();refreshVoiceStat()};
-    voiceNext();
+    el("taiClose").onclick=closeTrainAI;
+    TA.queue=[];TA.judged=0;TA.done=false;
+    taLoad();
   }
-  function voiceCard(d){
-    var box=function(label,text,tone){
-      return '<div style="margin-bottom:12px">'+
-        '<div style="font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;color:'+tone+';font-weight:800;margin-bottom:5px">'+label+'</div>'+
-        '<div style="background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 13px;line-height:1.5;white-space:pre-wrap">'+esc(text)+'</div>'+
-      '</div>';
+  function closeTrainAI(){
+    var w=el("taiScreen"); if(w)w.remove();
+    document.removeEventListener("keydown",taKeys);
+    refreshVoiceStat();
+  }
+  function taLoad(){
+    return api("/api/voice/stats").then(function(d){
+      if(!el("taiBody"))return;
+      if(!d||!d.ok){el("taiBody").innerHTML='<div class="tai-empty">Couldn\'t load the training status.</div>';return}
+      TA.stats=d; taHome();
+    }).catch(function(){
+      if(el("taiBody"))el("taiBody").innerHTML='<div class="tai-empty">Network error.</div>';
+    });
+  }
+
+  // A ring rather than a bare number: at a glance it reads as "most of the way
+  // there" or "not yet", which is the only judgement he needs to make here.
+  function taDial(pct){
+    var r=32,c=2*Math.PI*r,on=pct==null?0:(pct/100)*c;
+    var col=pct==null?"var(--line2)":(pct>=80?"var(--green,#31c46b)":pct>=60?"#f5b842":"var(--accent)");
+    return '<div class="tai-dial"><svg width="74" height="74" viewBox="0 0 74 74">'+
+      '<circle cx="37" cy="37" r="'+r+'" fill="none" stroke="var(--line2)" stroke-width="7"/>'+
+      '<circle cx="37" cy="37" r="'+r+'" fill="none" stroke="'+col+'" stroke-width="7" stroke-linecap="round" '+
+        'stroke-dasharray="'+on.toFixed(1)+' '+c.toFixed(1)+'"/>'+
+      '</svg><div class="v">'+(pct==null?"–":pct+"%")+'</div></div>';
+  }
+
+  var TA_CTA={
+    no_ai:   ["No AI key set on the server","Drafting is off until an API key is configured. Nothing here can run yet."],
+    build:   ["Learn from my past texts","Reads the messages you've already sent and works out how you write. Start here."],
+    import:  ["Add more of my real texts","It has some of your writing but not much. More real texts is the biggest single improvement available."],
+    train:   ["Check 10 drafts","Replays real moments from your past conversations so you can say whether each draft sounds like you. Misses teach it the most."],
+    good:    ["Check 10 more drafts","It's scoring well everywhere. More rounds keep it sharp as your writing changes."]
+  };
+
+  function taHome(){
+    var d=TA.stats,body=el("taiBody"); if(!body)return;
+    var sub=el("taiSub");
+    if(sub)sub.textContent=(d.samples?d.samples+" of your texts learned":"nothing learned yet")+
+      (d.provider==="claude"?" · Claude":d.provider==="gemini"?" · Gemini":"");
+
+    var headline=d.matchRate!=null?"<b>Sounds like you "+d.matchRate+"% of the time</b>":"<b>Not measured yet</b>";
+    var detail=d.matchRate!=null
+      ? "<span>Based on "+d.rounds+" draft"+(d.rounds===1?"":"s")+" you've judged against what you actually sent.</span>"
+      : "<span>Check a few drafts and this becomes a real number instead of a guess.</span>";
+
+    var cta=TA_CTA[d.next]||TA_CTA.train;
+    var h='<div class="tai-score">'+taDial(d.matchRate)+'<div class="lbl">'+headline+detail+'</div></div>';
+    h+='<button class="tai-cta" id="taiCta"'+(d.next==="no_ai"?" disabled":"")+'>'+esc(cta[0])+'</button>';
+    h+='<div class="tai-why">'+esc(cta[1])+'</div>';
+
+    // Per-situation: the whole point of the screen. A global 78% hides that pricing
+    // is the part that's wrong, and pricing is the part worth fixing.
+    var order=["price","schedule","confirm","answer","apology","closing","quick","general"];
+    var any=order.some(function(b){return d.perBucket[b]&&d.perBucket[b].samples});
+    if(any){
+      h+='<div class="tai-sec"><h4>How it does by situation</h4>';
+      order.forEach(function(b){
+        var p=d.perBucket[b]; if(!p||!p.samples)return;
+        var pct=p.rate, w=pct==null?0:pct;
+        var cls=pct==null?"":(pct>=80?"good":pct<70?"weak":"");
+        var right=pct==null?(p.samples+(p.samples===1?" text":" texts")):(pct+"% · "+p.rounds);
+        h+='<div class="tai-bar"><span class="nm">'+esc(b)+'</span>'+
+           '<span class="tr"><i class="'+cls+'" style="width:'+w+'%"></i></span>'+
+           '<span class="vv">'+esc(right)+'</span></div>';
+      });
+      h+='<div class="tai-why" style="text-align:left;margin-top:8px">Percentage is how often its draft sounded like you, and the number after it is how many you\'ve checked. Situations with no percentage just haven\'t been checked yet.</div></div>';
+    }
+
+    // What it actually measured about his writing — makes the whole thing feel less
+    // like a black box, and it's free to show since the numbers are already computed.
+    if(d.style){
+      var s=d.style,c=[];
+      c.push("<b>"+s.medLen+"</b> chars typical");
+      c.push("<b>"+s.medSentences+"</b> sentence"+(s.medSentences===1?"":"s"));
+      c.push("emoji <b>"+s.emojiPct+"%</b>");
+      c.push("greets by name <b>"+s.greetPct+"%</b>");
+      c.push("exclamations <b>"+s.exclaimPct+"%</b>");
+      h+='<div class="tai-sec"><h4>What it learned about how you write</h4><div class="tai-chips">'+
+         c.map(function(x){return '<span class="tai-chip">'+x+'</span>'}).join("")+'</div>'+
+         '<div class="tai-why" style="text-align:left;margin-top:8px">Counted from your real texts — not a guess. Drafts that fall outside these get rewritten automatically.</div></div>';
+    }
+
+    h+='<div class="tai-sec"><h4>Everything else</h4><div class="tai-acts">'+
+      taAct("taiTrain","message-square","Check drafts","Judge real drafts against what you sent")+
+      taAct("taiBuild","refresh-cw","Re-read my past texts","Rescans your conversations and re-derives your style")+
+      taAct("taiImport","download","Paste texts from my phone","Years of your real texting is better material than anything in here")+
+      taAct("taiPlaybook","file-text","Edit the playbook","Your services, prices, policies and rules")+
+      '</div></div>';
+
+    body.innerHTML=h;
+    body.scrollTop=0;
+    hydrateIcons(body);
+    var go=function(){ d.next==="build"?taBuild():d.next==="import"?taImport():taTrain() };
+    if(el("taiCta")&&d.next!=="no_ai")el("taiCta").onclick=go;
+    el("taiTrain").onclick=taTrain;
+    el("taiBuild").onclick=taBuild;
+    el("taiImport").onclick=taImport;
+    el("taiPlaybook").onclick=function(){closeTrainAI();openPlaybook()};
+  }
+  function taAct(id,icon,title,sub){
+    return '<button class="tai-act" id="'+id+'"><span class="ic" data-ic="'+icon+'"></span>'+
+      '<div><b>'+esc(title)+'</b><small>'+esc(sub)+'</small></div></button>';
+  }
+
+  function taBuild(){
+    var body=el("taiBody"); if(!body)return;
+    body.innerHTML='<div class="tai-empty"><div class="spin" style="margin:0 auto 14px"></div>Reading the texts you\'ve already sent…</div>';
+    post("/api/voice/build",{}).then(function(d){
+      if(d&&d.ok)toast("Learned from "+d.samples+" of your own texts");
+      else toast((d&&d.error)==="ai_not_configured"?"No AI key set on the server":"Couldn't finish: "+((d&&d.error)||"error"),{bad:true});
+      taLoad();
+    }).catch(function(){toast("Network error",{bad:true});taLoad()});
+  }
+
+  function taImport(){
+    var body=el("taiBody"); if(!body)return;
+    body.innerHTML=
+      '<div class="tai-sec" style="margin-top:0"><h4>Paste texts from your phone</h4>'+
+      '<div class="tai-why" style="text-align:left;margin-bottom:10px">Export a conversation from your phone and paste the whole thing — it picks out <b>your</b> side and ignores the customer\'s. A plain list of your own texts, one per line, works too.</div>'+
+      '<textarea id="taiText" rows="9" class="pb-ta" placeholder="Paste here…"></textarea>'+
+      '<div style="display:flex;gap:8px;margin-top:10px">'+
+        '<button class="btn" id="taiImpBack" style="flex:none">Back</button>'+
+        '<button class="tai-cta" id="taiImpGo" style="margin-top:0;flex:1">Add my texts</button>'+
+      '</div></div>';
+    el("taiText").focus();
+    el("taiImpBack").onclick=taHome;
+    el("taiImpGo").onclick=function(){
+      var t=el("taiText").value.trim();
+      if(!t){toast("Paste the export first",{bad:true});return}
+      var b=el("taiImpGo"); b.disabled=true; b.textContent="Reading…";
+      post("/api/voice/import",{text:t}).then(function(d){
+        if(d&&d.ok)toast("Found "+d.found+" of your texts, added "+d.added+" new ones");
+        else if(d&&d.error==="nothing_found")toast("Couldn't find your messages in that — try one text per line",{bad:true});
+        else toast((d&&d.error)||"Import failed",{bad:true});
+        taLoad();
+      }).catch(function(){toast("Network error",{bad:true});b.disabled=false;b.textContent="Add my texts"});
     };
-    return box("They texted"+(d.name?" · "+esc(d.name):""),d.customer,"var(--muted2)")+
-      box("What the AI would send now",d.ai,"var(--accent-text)")+
-      box("What you actually sent",d.mine,"var(--green)")+
-      '<div style="display:flex;gap:9px;margin-top:16px">'+
-        '<button class="btn" id="vtOff" style="flex:1;padding:14px;border-color:var(--line)">Not how I\'d say it</button>'+
-        '<button class="btn" id="vtMatch" style="flex:1;padding:14px;background:var(--green);color:#06331c;border-color:var(--green);font-weight:800">Sounds like me</button>'+
-      '</div>'+
-      '<div class="hint" style="margin-top:10px">Tapping <b>Not how I\'d say it</b> teaches it the most — your real wording goes in as the target and the AI\'s attempt gets recorded as a miss.</div>';
   }
-  function voiceNext(){
-    var body=el("vtBody"); if(!body)return;
-    body.innerHTML='<div class="spin" style="margin:40px auto"></div>';
-    post("/api/voice/replay",{seen:voiceSeen}).then(function(d){
-      if(!el("vtBody"))return;                       // trainer closed mid-flight
-      if(!d||!d.ok){el("vtBody").innerHTML='<div class="hint">Couldn\'t load one: '+esc((d&&d.error)||"error")+'</div>';return}
-      if(d.done){el("vtBody").innerHTML='<div class="hint" style="padding:30px 0;text-align:center">That\'s everything worth replaying for now. Come back after a few more conversations.</div>';return}
-      voiceSeen.push(d.id); if(voiceSeen.length>200)voiceSeen.shift();
-      el("vtBody").innerHTML=voiceCard(d);
-      var send=function(verdict){
-        el("vtBody").innerHTML='<div class="spin" style="margin:40px auto"></div>';
-        post("/api/voice/score",{id:d.id,verdict:verdict,mine:d.mine,ai:d.ai}).then(function(r){
-          if(r&&r.ok&&el("vtScore")){
-            var t=(r.scores.match||0)+(r.scores.off||0);
-            el("vtScore").textContent=t?(Math.round((r.scores.match/t)*100)+"% sounds like you · "+t+" checked"):"";
-          }
-          voiceNext();
-        }).catch(function(){toast("Network error",{bad:true});voiceNext()});
-      };
-      el("vtMatch").onclick=function(){send("match")};
-      el("vtOff").onclick=function(){send("off")};
-    }).catch(function(){if(el("vtBody"))el("vtBody").innerHTML='<div class="hint">Network error.</div>'});
+
+  // ---- the trainer -------------------------------------------------------
+  // Cards arrive in batches with the drafts already written, so a verdict advances
+  // instantly instead of waiting on a fresh scan and a fresh AI call per tap. We
+  // refill in the background whenever the queue runs low.
+  var TA_GOAL=10;
+  function taTrain(){
+    TA.judged=0;TA.done=false;
+    document.addEventListener("keydown",taKeys);
+    if(TA.queue.length){taCard();taFill()} else {taSpin("Writing a few drafts to compare…");taFill(taCard)}
+  }
+  function taSpin(msg){
+    var b=el("taiBody"); if(b)b.innerHTML='<div class="tai-empty"><div class="spin" style="margin:0 auto 14px"></div>'+esc(msg)+'</div>';
+  }
+  function taFill(then){
+    if(TA.fetching||TA.done){if(then)then();return}
+    TA.fetching=true;
+    post("/api/voice/replay",{seen:TA.seen,count:4}).then(function(d){
+      TA.fetching=false;
+      if(d&&d.ok&&d.cards&&d.cards.length){
+        d.cards.forEach(function(c){TA.queue.push(c);TA.seen.push(c.id)});
+        if(TA.seen.length>300)TA.seen=TA.seen.slice(-300);
+        if(d.remaining===0&&d.cards.length<4)TA.done=true;
+      } else if(d&&d.done){TA.done=true}
+      else if(d&&!d.ok){toast((d.error==="ai_not_configured")?"No AI key set on the server":"Couldn't write a draft",{bad:true});TA.done=true}
+      if(then)then();
+    }).catch(function(){TA.fetching=false;if(then)then()});
+  }
+  function taKeys(e){
+    if(!el("taiCardBox"))return;
+    if(e.key==="ArrowRight"||e.key==="2"){e.preventDefault();taVerdict("match")}
+    if(e.key==="ArrowLeft"||e.key==="1"){e.preventDefault();taVerdict("off")}
+    if(e.key==="Escape"){e.preventDefault();taHome()}
+  }
+  function taCard(){
+    var body=el("taiBody"); if(!body)return;
+    var c=TA.queue[0];
+    if(!c){
+      body.innerHTML='<div class="tai-empty">'+
+        (TA.judged?'<b style="color:var(--text);font-size:15px">'+TA.judged+' checked — nice work.</b><br>':'')+
+        'That\'s everything worth replaying for now. Come back after a few more conversations.'+
+        '<div style="margin-top:18px"><button class="btn" id="taiBack2">Back to Train AI</button></div></div>';
+      if(el("taiBack2"))el("taiBack2").onclick=taHome;
+      document.removeEventListener("keydown",taKeys);
+      return;
+    }
+    var pct=Math.min(100,Math.round((TA.judged/TA_GOAL)*100));
+    body.innerHTML=
+      '<div id="taiCardBox">'+
+      '<div class="tc-prog"><span>'+TA.judged+' checked</span><span class="tr"><i style="width:'+pct+'%"></i></span>'+
+        '<button class="btn" id="taiStop" style="padding:4px 9px;font-size:11.5px">Stop</button></div>'+
+      '<div class="tc-box"><div class="cap" style="color:var(--muted2)">They texted'+(c.name?' · '+esc(c.name):'')+'</div>'+
+        '<div class="bd">'+esc(c.customer)+'</div></div>'+
+      '<div class="tc-box"><div class="cap" style="color:var(--accent-text)">What the AI would send now</div>'+
+        '<div class="bd">'+esc(c.ai)+'</div></div>'+
+      '<div class="tc-box"><div class="cap" style="color:var(--green,#31c46b)">What you actually sent</div>'+
+        '<div class="bd">'+esc(c.mine)+'</div></div>'+
+      '<div class="tc-vs"><button id="taiOff">Not how I\'d say it</button>'+
+        '<button id="taiYes" class="yes">Sounds like me</button></div>'+
+      '<div class="tai-why" style="text-align:left;margin-top:11px"><b>Not how I\'d say it</b> teaches it most — your real wording becomes the target and its attempt gets logged as a miss.</div>'+
+      '</div>';
+    body.scrollTop=0;
+    el("taiStop").onclick=taHome;
+    el("taiOff").onclick=function(){taVerdict("off")};
+    el("taiYes").onclick=function(){taVerdict("match")};
+  }
+  // Advance immediately and post the verdict in the background — the score is
+  // bookkeeping, and making him watch a spinner for it is what made this tedious.
+  function taVerdict(verdict){
+    var c=TA.queue.shift(); if(!c)return;
+    TA.judged++;
+    post("/api/voice/score",{id:c.id,verdict:verdict,mine:c.mine,ai:c.ai,bucket:c.bucket})
+      .catch(function(){ /* a lost verdict is not worth interrupting him for */ });
+    if(TA.queue.length<=1)taFill();
+    if(TA.judged>=TA_GOAL&&TA.queue.length){taDoneRound();return}
+    taCard();
+  }
+  function taDoneRound(){
+    var body=el("taiBody"); if(!body)return;
+    body.innerHTML='<div class="tai-empty"><b style="color:var(--text);font-size:16px">'+TA.judged+' checked.</b><br>'+
+      'Every miss went in as a correction, so the next drafts should land closer.'+
+      '<div style="display:flex;gap:8px;justify-content:center;margin-top:20px">'+
+      '<button class="btn" id="taiMore">Keep going</button>'+
+      '<button class="tai-cta" id="taiFinish" style="margin-top:0;width:auto;padding:12px 20px">See my score</button></div></div>';
+    el("taiMore").onclick=function(){TA.judged=0;taCard()};
+    el("taiFinish").onclick=function(){taLoad()};
   }
 
   // Fire a fake customer question at your own inbox so you can rehearse replying.
@@ -8629,6 +8924,11 @@
   var anI=el("analyticsItem");if(anI)anI.onclick=function(){closeDrawer();openAnalytics()};
   el("customizeItem").onclick=function(){closeDrawer();openCustomize()};
   el("snapshotItem").onclick=function(){closeDrawer();snapshotForClaude()};
+  // New menu entries and the collapsible groups.
+  var tAi=el("trainAiItem");if(tAi)tAi.onclick=function(){openTrainAI()};
+  var pbI=el("playbookItem");if(pbI)pbI.onclick=function(){openPlaybook()};
+  initMenuGroups();
+  refreshVoiceStat();
 
   // ============================================================
   // JOB DAY SUITE — Today's Run · Quotes · Get Paid · Garage
