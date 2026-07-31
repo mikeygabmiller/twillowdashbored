@@ -2594,7 +2594,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-30·train-ai-overhaul";
+  var APP_BUILD="2026-07-31·yes-no-reply";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4320,7 +4320,7 @@
       '<div class="hint">When a call goes unanswered, the caller instantly gets a friendly text so the lead turns into a conversation you can answer from anywhere. Leave the message blank to use the default.</div>'+
       '<div class="fu-row"><span class="lbl2">Answer by email <span style="color:var(--muted2);font-weight:400">· free — no text used</span></span><span class="sw'+(c.assistEmail!==false?" on":"")+'" id="cfgAssistEmail"></span></div>'+
       '<div class="fu-row"><span class="lbl2">Hold before sending</span><span style="display:flex;align-items:center;gap:6px"><input type="number" id="cfgAssistEmailDelay" min="0" max="900" value="'+(c.assistEmailDelaySec==null?180:c.assistEmailDelaySec)+'"><span style="color:var(--muted2)">sec</span></span></div>'+
-      '<div class="hint">Every new-text alert now tells you <b>exactly what it needs from you</b> and shows a couple of example answers. Hit <b>reply</b>, type the bare facts — <b>"375, thursday works"</b> — and it gets written out in your voice and sent to that customer. The reply already knows who it\'s about, so there\'s nothing to address. <b>Costs nothing</b> — the only text message used is the one the customer receives.</div>'+
+      '<div class="hint">Every new-text alert now shows you <b>the exact reply it would send</b>, written in your voice. Hit <b>reply</b> and answer <b>"yes"</b> to send it as-is, or <b>"no"</b> to drop it. Want it said differently? Reply with the bare facts instead — <b>"375, thursday works"</b> — and it gets rewritten and sent. The reply already knows who it\'s about, so there\'s nothing to address. <b>Costs nothing</b> — the only text message used is the one the customer receives.</div>'+
       '<div class="fu-col"><span class="lbl2">Set it up &amp; try it</span><span style="display:flex;gap:6px;flex-wrap:wrap">'+
         '<button id="cfgAssistScript" class="btn">1 · Copy the Gmail script</button>'+
         '<button id="cfgAssistPractice" class="btn">2 · Send me a practice question</button>'+
