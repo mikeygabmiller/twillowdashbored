@@ -55,7 +55,9 @@
  * terminal, but it is the one step that occasionally bites.
  */
 
-// The target file inside the digest project. Must match the .gs tab name there.
+// The target tab inside the digest project. If the project has exactly one code
+// tab under some other name (the default is "Code"), that one is used instead —
+// so you do not have to rename anything.
 const TARGET_FILE = 'MorningDigest';
 
 // A push is refused unless the fetched text contains this. It is the seatbelt
@@ -135,10 +137,25 @@ function sync(dryRun) {
     if (files[i].name === TARGET_FILE && files[i].type === 'SERVER_JS') target = files[i];
   }
 
+  var adopted = '';
   if (!target) {
-    // First run against a fresh project: add the file rather than failing.
-    target = { name: TARGET_FILE, type: 'SERVER_JS', source: '' };
-    files.push(target);
+    var code = files.filter(function (f) { return f.type === 'SERVER_JS'; });
+    if (code.length === 1) {
+      // One code tab under a different name — almost always the default
+      // "Code". Adopt it. Adding a second file instead would redeclare every
+      // top-level const and break the project the moment it loads.
+      target = code[0];
+      adopted = ' (into the existing "' + target.name + '" tab)';
+    } else if (code.length === 0) {
+      target = { name: TARGET_FILE, type: 'SERVER_JS', source: '' };
+      files.push(target);
+    } else {
+      return 'Refused: this project has ' + code.length + ' code tabs (' +
+        code.map(function (f) { return f.name; }).join(', ') + ') and none is ' +
+        'named "' + TARGET_FILE + '". Writing a new one would clash with the ' +
+        'existing declarations. Rename the digest tab to "' + TARGET_FILE +
+        '", or change TARGET_FILE at the top of this script to match.';
+    }
   }
 
   if (normalize(target.source) === normalize(body)) {
@@ -156,7 +173,7 @@ function sync(dryRun) {
   var pushed = putContent(scriptId, files);
   if (pushed.error) return 'Push failed — ' + pushed.error;
 
-  return 'Pushed to ' + TARGET_FILE + '.gs. ' + summary +
+  return 'Pushed to ' + target.name + '.gs' + adopted + '. ' + summary +
          ' The digest project is live with the new code; its triggers are untouched.';
 }
 
