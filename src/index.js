@@ -513,15 +513,17 @@ async function handleInboundSms(request) {
   // The alert doubles as the assist prompt: it tells Mikey he can answer straight
   // from his phone by texting the business number the bare facts (handleOwnerSms).
   const alertCfg = await loadConfig();
+  // Pre-draft a reply in Mikey's voice so it's already waiting when he opens the
+  // thread. Best-effort — never blocks or fails the inbound webhook. Drafted BEFORE
+  // the alert goes out so the alert can show him the actual wording and ask for a
+  // plain yes or no (see assistAlertBody / runAssist's YES/NO handling).
+  const draft = await maybeSuggestReply(fromNorm);
   // Work out what he actually needs to decide, so the alert asks him a question
   // he can answer in four words. Best-effort — a failure just means a plainer email.
   const ask = await assistAsk(inThread, alertCfg).catch(() => null);
   await notifyMikey(`📱 New ${numMedia > 0 ? 'photo/text' : 'text'} from ${from}`,
     assistAlertBody(alertCfg, fromNorm, inThread.name || from,
-      `${inThread.name || from} texted:\n"${text || (numMedia > 0 ? '[photo]' : '')}"`, ask));
-  // Pre-draft a reply in Mikey's voice so it's already waiting when he opens the
-  // thread. Best-effort — never blocks or fails the inbound webhook.
-  await maybeSuggestReply(fromNorm);
+      `${inThread.name || from} texted:\n"${text || (numMedia > 0 ? '[photo]' : '')}"`, ask, draft));
   // Watch for "so Saturday at 10 then?" and raise a one-tap job card if so.
   await maybeDetectJob(fromNorm);
   // No auto-reply to the customer — Mikey replies personally from the dashboard.
@@ -555,6 +557,7 @@ async function handleInboundSms(request) {
 // ===========================================================================
 const ASSIST_HELP =
   'Answer a customer from your phone:\n' +
+  '• "yes" sends the reply I wrote out for you in the alert. "no" drops it.\n' +
   '• Text me the facts — "375, thursday works" — and I\'ll write it out and send it to whoever texted you last.\n' +
   '• "@ruth 375 thursday" to pick who.\n' +
   '• "send: ..." to send your exact words.\n' +
@@ -592,6 +595,56 @@ function assistPickTarget(index, token) {
     if (hits.length > 1) return { ambiguous: hits.slice(0, 5) };
   }
   return null;
+}
+
+// A bare yes or no answering the reply we wrote out in the alert. Kept tight on
+// purpose: anything with more in it is him telling us what to say instead, and
+// should go through the normal path rather than firing off a draft.
+const ASSIST_YES = /^(y|ya|yes+|yep|yeah|yup|ok|okay|k|sure|send|send it|send that|do it|go|go ahead|perfect|sounds good|looks good|that works|👍|👌|✅)[\s.!]*$/i;
+const ASSIST_NO = /^(n|no+|nope|nah|don'?t|don'?t send|do not send|no thanks|skip|skip it|scrap it|scrap that|delete|toss it|👎)[\s.!]*$/i;
+
+// Which draft is he answering? An email reply is threaded to one customer's
+// alert, so it names itself. A text from his cell means the newest one still
+// waiting — the same "whoever texted you last" rule the rest of the loop uses.
+async function assistDraftTarget(index, forcedPhone) {
+  const phones = forcedPhone ? [forcedPhone]
+    : index.filter((e) => !e.archived && !e.optedOut && e.replyReady)
+      .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0)).slice(0, 1).map((e) => e.phone);
+  for (const p of phones) {
+    const th = await loadThread(p);
+    if (th.suggested && th.suggested.text) return th;
+  }
+  return null;
+}
+
+async function assistAnswerDraft(yes, { index, cfg, reply, channel, forcedPhone }) {
+  const thread = await assistDraftTarget(index, forcedPhone);
+  if (!thread) {
+    await reply(yes
+      ? 'I don\'t have a written-out reply waiting on that one, so there\'s nothing to send yet. Tell me the facts — "375, thursday" — and I\'ll write it.'
+      : 'Nothing was waiting to go out, so nothing changed.');
+    return;
+  }
+  const who = thread.name || thread.phone;
+  const draft = thread.suggested.text;
+  if (!yes) {
+    thread.suggested = null;
+    await saveThread(thread);
+    await updateIndexEntry(thread);
+    await reply(`Dropped it — nothing went to ${who}. Tell me what you'd rather say and I'll write that instead.`);
+    return;
+  }
+  // Send the exact words he just approved, through the same queue as everything
+  // else: opt-out guard, practice mode, the hold, and the CANCEL window all apply.
+  await runAssist({ text: `send: ${draft}`, cfg, reply, channel, forcedPhone: thread.phone });
+  // Clear the draft only after the queue write, and only if it's still the one he
+  // approved (he may have answered twice, or the customer may have texted again).
+  const after = await loadThread(thread.phone);
+  if (after.suggested && after.suggested.text === draft) {
+    after.suggested = null;
+    await saveThread(after);
+    await updateIndexEntry(after);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -637,6 +690,15 @@ async function runAssist({ text, cfg, reply, channel, forcedPhone }) {
     await saveThread(best.thread);
     await updateIndexEntry(best.thread);
     await reply(`Cancelled — nothing was sent to ${best.thread.name || best.thread.phone}.`);
+    return;
+  }
+
+  // "yes" / "no" — he's answering the reply we already wrote out for him in the
+  // alert. This is the shortest path there is: one word and the customer gets a
+  // real answer. Anything longer than a bare yes/no falls through to the normal
+  // "tell me the facts" grammar below.
+  if (ASSIST_YES.test(lower) || ASSIST_NO.test(lower)) {
+    await assistAnswerDraft(ASSIST_YES.test(lower), { index, cfg, reply, channel, forcedPhone });
     return;
   }
 
@@ -805,7 +867,7 @@ async function assistAsk(thread, cfg) {
 }
 
 // Render the ask as the middle of the alert email.
-function assistAskBlock(ask) {
+function assistAskBlock(ask, compact) {
   if (!ask) return '';
   if (ask.kind === 'escalate') {
     return `\n⚠️  HANDLE THIS ONE YOURSELF\n   ${ask.ask || 'This needs a careful, personal reply.'}\n` +
@@ -816,6 +878,14 @@ function assistAskBlock(ask) {
   }
   // Nothing useful came back — say nothing rather than print an empty header.
   if (!ask.ask && !ask.examples.length) return '';
+  // When a written-out reply is already on offer above, this block is the "or
+  // not" path, so it shrinks to one line rather than competing with the yes/no.
+  if (compact) {
+    const lines = [`\n❓ NOT WHAT YOU'D SAY?`];
+    if (ask.ask) lines.push(`   ${ask.ask}`);
+    if (ask.examples.length) lines.push(`   Reply with something like: ${ask.examples.join(' · ')}`);
+    return lines.join('\n') + '\n';
+  }
   const lines = [`\n❓ WHAT I NEED FROM YOU`];
   if (ask.ask) lines.push(`   ${ask.ask}`);
   if (ask.examples.length) {
@@ -825,14 +895,23 @@ function assistAskBlock(ask) {
   return lines.join('\n') + '\n';
 }
 
-function assistAlertBody(cfg, phone, who, core, ask) {
+function assistAlertBody(cfg, phone, who, core, ask, draft) {
   const byEmail = cfg.assistEmail !== false;
   // A complaint should never come with a one-word answer box next to it.
   const quickOk = !(ask && (ask.kind === 'escalate' || ask.kind === 'chitchat'));
-  const block = assistAskBlock(ask);
+  // The whole point of the yes/no alert: show him the actual words first, so the
+  // easiest possible answer is one letter. Only offered when there's something
+  // safe to send — never on a complaint, never on a "no reply needed".
+  const offer = quickOk && draft ? String(draft).trim() : '';
+  const block = assistAskBlock(ask, !!offer);
+  const draftBlock = offer
+    ? `\n✍️  HERE'S WHAT I'D SEND BACK\n   "${offer}"\n\n   Reply YES and it goes out as written. Reply NO and I'll drop it.\n`
+    : '';
   const foot = [];
   if (quickOk && byEmail) {
-    foot.push(`💡 Hit REPLY with just that and I'll write it out in your voice and send it to ${who}. Free — no text message used.`);
+    foot.push(offer
+      ? `💡 Hit REPLY: YES sends it, NO drops it — or just tell me what to say instead ("375, thursday") and I'll rewrite it in your voice. Free — no text message used.`
+      : `💡 Hit REPLY with just that and I'll write it out in your voice and send it to ${who}. Free — no text message used.`);
   }
   if (quickOk && cfg.assistSms !== false) {
     foot.push(`📱 ${byEmail && foot.length ? 'Or text' : 'Text'} ${ENV.TWILIO_FROM || 'your business number'} the same thing.`);
@@ -841,7 +920,7 @@ function assistAlertBody(cfg, phone, who, core, ask) {
     foot.push(`\nOther things you can say: "send: <your exact words>" to skip the rewriting · "draft: …" to hold it in the dashboard · "who" to see everyone waiting · "cancel" to pull one back.`);
     foot.push(`You'll always get the finished wording back before it goes out.`);
   }
-  const body = `${core}\n${block}`.trimEnd();
+  const body = `${core}\n${draftBlock}${block}`.trimEnd();
   if (!foot.length) return block ? body : core;
   // Only invite a reply when replies are actually processed. With email answering
   // off, the marker and ref are left out entirely — otherwise he'd hit reply and
@@ -958,12 +1037,21 @@ async function apiAssistPractice(request) {
   thread.notes = 'Practice conversation for testing "Answer by email". Not a real customer — nothing sent here ever leaves the app.';
   thread.messages = [{ id: genId(), dir: 'in', body: sc.body, ts: Date.now() }];
   thread.unread = 1;
+
+  const ask = await assistAsk(thread, cfg).catch(() => null);
+  // Practice the real thing, yes/no included: write the reply out and hang it on
+  // the practice thread so answering YES walks the same path a real one would
+  // (and stops at the practice guard instead of texting anyone).
+  let draft = '';
+  if (aiConfigured() && !(ask && (ask.kind === 'escalate' || ask.kind === 'chitchat'))) {
+    try { draft = String(await generateReply(thread, cfg, '') || '').trim(); } catch { draft = ''; }
+    if (draft) thread.suggested = { text: draft, ts: Date.now(), forTs: thread.messages[0].ts };
+  }
   await saveThread(thread);
   await updateIndexEntry(thread);
 
-  const ask = await assistAsk(thread, cfg).catch(() => null);
   const core = `🧪 THIS IS A PRACTICE MESSAGE — ${sc.name} is not a real customer.\nNothing you reply here will ever be sent to anyone.\n\n${sc.name} texted:\n"${sc.body}"`;
-  const body = assistAlertBody(cfg, PRACTICE_PHONE, sc.name, core, ask);
+  const body = assistAlertBody(cfg, PRACTICE_PHONE, sc.name, core, ask, draft);
   const sent = await notifyMikey(`🧪 Practice · New text from ${sc.name}`, body);
   return json({ ok: !!sent, scenario: sc.id, ask, emailed: !!sent, previewBody: body });
 }
@@ -6930,14 +7018,17 @@ async function apiVoiceBuild() {
 // waiting when Mikey opens the thread ("reply already waiting"). Best-effort: it
 // never blocks or fails the inbound webhook, and only runs when the ball is in
 // Mikey's court (last message is inbound, not opted out, not archived).
+// Returns the drafted text (or '' when there's nothing to draft) so the caller
+// can show it in the alert and ask for a yes/no.
 async function maybeSuggestReply(phone) {
+  let drafted = '';
   try {
     const cfg = await loadConfig();
-    if (isOptedOut(cfg, phone)) return;
+    if (isOptedOut(cfg, phone)) return '';
     const thread = await loadThread(phone);
-    if (thread.archived) return;
+    if (thread.archived) return '';
     const last = thread.messages[thread.messages.length - 1];
-    if (!last || last.dir !== 'in') return;
+    if (!last || last.dir !== 'in') return '';
     // Decide first whether this message actually leaves anything open. Doing it
     // here (rather than waiting for the follow-up engine) means a "Thanks!" never
     // even appears in "Needs your attention".
@@ -6945,13 +7036,14 @@ async function maybeSuggestReply(phone) {
     if (replyOwed(thread)) {
       if (aiConfigured()) {
         const text = await generateReply(thread, cfg, '');
-        if (text) { thread.suggested = { text, ts: Date.now(), forTs: last.ts }; changed = true; }
+        if (text) { thread.suggested = { text, ts: Date.now(), forTs: last.ts }; changed = true; drafted = text; }
       }
     } else if (thread.suggested) {
       thread.suggested = null; changed = true;   // nothing owed — drop any stale draft
     }
     if (changed) { await saveThread(thread); await updateIndexEntry(thread); }
   } catch { /* suggestions are a bonus — swallow errors so inbound never breaks */ }
+  return drafted;
 }
 
 // The AI "brain": render the business playbook into a compact prompt preamble so
