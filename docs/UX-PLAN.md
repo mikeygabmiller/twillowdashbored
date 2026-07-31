@@ -238,14 +238,21 @@ finds it.
 
 Each phase ships on its own and is independently useful.
 
-| Phase | Work | Why first |
+| Phase | Work | Status |
 |---|---|---|
-| **1. Spine** | History stack + `popstate`, one back chevron, Esc-to-close | Everything else is safer once back works |
-| **2. Search** | Feature registry, grouped results, `/` + Cmd+K, empty state | Unblocks hiding things — the core ask |
-| **3. Five tabs** | Merge Leads+Jobs → Pipeline, Analytics → More, chat filters as chips | The main de-clutter |
-| **4. Kill the drawer** | Build More screen, retire 25 drawer items, settings screen | Removes the longest scroll |
-| **5. Today** | Rundown absorbs jobs + unpaid, rest collapses | Best screen gets better |
-| **6. Simple/Pro** | Wire `UI.mode` to real behaviour | Locks in the defaults |
+| **1. Spine** | History stack + `popstate`, one back idiom, Esc-to-close | ✅ shipped |
+| **2. Search** | Feature registry, keyword synonyms, `/` + Cmd+K, empty state | ✅ shipped |
+| **3. Five tabs** | Merge Leads+Jobs → Pipeline, Analytics → More, chat filters as chips | ✅ shipped |
+| **4. Kill the drawer** | More screen, 25 drawer items retired, settings one level down | ✅ shipped |
+| **5. Today** | Rundown absorbs jobs + unpaid, rest collapses | not started |
+| **6. Simple/Pro** | Wire `UI.mode` to real behaviour | not started |
+
+Two things named above were **not** done and are still open:
+
+- **Bookings is still a separate page.** `public/bookings.html` is a standalone
+  388-line page; making it an in-app Pipeline view means porting its logic, not
+  moving a link. It stays a `location.href` from More, and search finds it.
+- **`UI.mode` is still wired to nothing** (phase 6).
 
 **Ship order note:** `public/index.html` is 468K in one file. Phase 1 and 2 are
 additive and low-risk. Before Phase 3, split Money, Analytics and Pipeline into
