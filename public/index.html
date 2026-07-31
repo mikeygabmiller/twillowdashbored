@@ -5075,7 +5075,7 @@
     var c=PE.cfg||{};
     h+='<div class="pe-set">'
       +'<div class="pe-row"><label>Photo Engine on</label><input type="checkbox" id="peEnabled"'+(c.enabled!==false?" checked":"")+'></div>'
-      +'<div class="pe-row"><label>Text me a confirmation</label><input type="checkbox" id="peConfirm"'+(c.confirmText!==false?" checked":"")+'></div>'
+      +'<div class="pe-row"><label>Text me a confirmation<br><span class="pe-meta">Off = email instead (free). On costs a Twilio message per batch.</span></label><input type="checkbox" id="peConfirm"'+(c.confirmText?" checked":"")+'></div>'
       +'<div class="pe-row"><label>Default city</label><input type="text" id="peCity" value="'+peEsc(c.defaultCity||"")+'"></div>'
       +'<div class="pe-row"><label>Publish webhook<br><span class="pe-meta">Make/Zapier catch hook — the hands-off path</span></label><input type="text" id="peHook" placeholder="https://hook.eu2.make.com/…" value="'+peEsc(c.webhookUrl||"")+'"></div>'
       +'<div class="pe-row"><label>Auto-post ready jobs<br><span class="pe-meta">Needs a webhook. Max '+(c.maxPerDay||2)+'/day.</span></label><input type="checkbox" id="peAuto"'+(c.autopost?" checked":"")+'></div>'

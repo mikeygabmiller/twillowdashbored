@@ -86,9 +86,10 @@ The first four checks are required; the rest are optional.
 From **your own phone**, text your business number:
 
 1. A photo of a dirty car, with the message: `before — Snohomish`
-   → you get back: *"📸 Saved 1 photo for Snohomish…"*
 2. A photo of the finished car, with the message: `after`
-   → you get back: *"📸 Saved 2 photos — Snohomish post is written and ready."*
+
+Confirmations arrive by **email**, not text — the engine never sends an outbound
+SMS, so there's no Twilio charge per job.
 
 Open **☰ → Photo Engine**. The job is there with a Google post, an Instagram
 caption and a review-request text, all written in your voice.

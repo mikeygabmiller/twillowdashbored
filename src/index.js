@@ -4389,8 +4389,21 @@ function peConfig(cfg) {
     reviewLink: 'https://g.page/r/CRCuKQ982VIZEBE',
     windowMin: 240,          // photos from the same number inside this window = one job
     maxPerDay: 2,            // autopost ceiling, so a busy Saturday can't spam the profile
-    confirmText: true,       // text Mikey back so he knows it landed
+    // OFF by default: a TwiML reply is a billable Twilio segment on every batch of
+    // photos, and this runs on every job. Confirmations go out by email instead
+    // (free via Resend). Flip this on in settings if you'd rather have the text.
+    confirmText: false,
   }, (cfg && cfg.photoEngine) || {});
+}
+
+// Email-only alert. Deliberately NOT notifyMikey(), which falls back to SMS when
+// email isn't configured or fails — that fallback would put a Twilio charge on
+// every single job, which is exactly what the Photo Engine is meant to avoid.
+// Silence is the correct failure mode here: the job is already saved, and the
+// dashboard badge shows it waiting.
+async function peNotify(subject, body) {
+  if (!ENV.RESEND_API_KEY || !ENV.ALERT_EMAIL) return false;
+  try { await sendEmail(subject, body); return true; } catch { return false; }
 }
 
 async function peLoad() {
@@ -4578,12 +4591,18 @@ async function peIntakeMms(fromNorm, params, numMedia, text) {
   }
   await peSave(jobs);
 
-  if (!pe.confirmText) return twiml('');
   const n = job.photos.length;
-  if (job.status === 'ready') {
-    return twiml(`📸 Saved ${n} photo${n === 1 ? '' : 's'} — ${job.city} post is written and ready. Open the dashboard → Photos to post it.`);
+  const line = job.status === 'ready'
+    ? `Saved ${n} photo${n === 1 ? '' : 's'} — the ${job.city} post is written and ready to publish.`
+    : `Saved ${n} photo${n === 1 ? '' : 's'} for ${job.city}. Text the after shot when you're done and the post gets written.`;
+
+  // Confirm by email (free) rather than a billable TwiML reply, unless the owner
+  // has explicitly asked for the text back.
+  if (!pe.confirmText) {
+    await peNotify('📸 Photo saved', `${line}\n\nOpen the dashboard → Photo Engine to review and post it.`);
+    return twiml('');
   }
-  return twiml(`📸 Saved ${n} photo${n === 1 ? '' : 's'} for ${job.city}. Text the after shot when you're done and I'll write the post.`);
+  return twiml(`📸 ${line}`);
 }
 
 // Stage a job from photos a *customer* sent (the /api/photos/stage path). Same
@@ -4781,7 +4800,7 @@ async function peCron() {
         const r = await pePushWebhook(next, cfg);
         if (r.ok) {
           next.posted.gbp = Date.now(); next.status = 'posted'; next.lastError = '';
-          notifyMikey('📣 Photo post published', `Your ${next.city} job went out:\n\n${next.caption.gbp}`).catch(() => {});
+          peNotify('📣 Photo post published', `Your ${next.city} job went out:\n\n${next.caption.gbp}`).catch(() => {});
         } else {
           next.lastError = r.error;
         }
@@ -4882,6 +4901,11 @@ async function peReadiness(cfg) {
       : pe.autopost ? `On — up to ${pe.maxPerDay} posts/day go out on their own.`
       : 'Off. Ready jobs wait for you to publish them.',
     'Turn on "Auto-post ready jobs" once a test publish has worked.');
+
+  add('email', 'Email alerts (Resend)', !!(ENV.RESEND_API_KEY && ENV.ALERT_EMAIL),
+    (ENV.RESEND_API_KEY && ENV.ALERT_EMAIL) ? `Photo confirmations go to ${ENV.ALERT_EMAIL} — no Twilio charge.`
+      : 'Not set, so saved-photo confirmations go nowhere. Nothing breaks: jobs still queue up and the Photo Engine badge shows them waiting. (Deliberately no SMS fallback here — that would bill a Twilio message on every job.)',
+    'Cloudflare dashboard → Workers → texting → Settings → Variables → add secret RESEND_API_KEY (ALERT_EMAIL is already set).');
 
   add('token', 'Automation token', !!ENV.PHOTO_ENGINE_TOKEN,
     ENV.PHOTO_ENGINE_TOKEN ? 'Set — outside tools can read /api/photo-queue.'

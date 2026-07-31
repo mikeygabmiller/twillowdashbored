@@ -71,8 +71,8 @@ Photos from the same number inside a 4-hour window are one job. No clever
 pairing heuristic — just "the photos from this visit". Anything it gets wrong is
 a dropdown in the dashboard.
 
-You get a text back confirming the post is written. Open **☰ → Photo Engine** to
-review, edit, and publish.
+You get an **email** confirming the post is written — not a text, so there's no
+Twilio charge per job. Open **☰ → Photo Engine** to review, edit, and publish.
 
 > **Note:** this was previously dead. Texts from your own number were dropped on
 > the floor by a `that's me, ignore` guard in `handleInboundSms`. An MMS from the
@@ -172,7 +172,7 @@ the EXIF survives.
 |---|---|
 | Cloudflare R2 | free tier: 10 GB, 1M writes/mo, 10M reads/mo. A few jobs a week is a rounding error. Posted jobs are pruned after 90 days and their objects deleted. |
 | Gemini | one vision call per job (~1 image + ~1k tokens). Flash pricing, effectively pennies a month. |
-| Twilio | one inbound MMS per photo + one confirmation SMS per batch. Turn the confirmation off in settings if you'd rather not. |
+| Twilio | one inbound MMS per photo. **No outbound charge** — the confirmation goes by email via Resend, and there is deliberately no SMS fallback (that would bill a message on every job). Turn on "Text me a confirmation" in settings if you'd rather pay for the text. |
 | KV writes | the whole queue is **one** value (`pe:index`), so a change is 1 write. `peCron` is gated to every 5th minute and only writes on a real state change. |
 
 The KV write budget note at the top of `src/index.js` is not decorative — the
