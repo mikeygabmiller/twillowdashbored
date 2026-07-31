@@ -99,62 +99,50 @@ Business Profile app, paste. ~15 seconds.
 
 ---
 
-## Step 6 (optional) — Hands-off publishing
+## Step 6 — Hands-off publishing (Make.com)
 
-Steps 1–5 give you a working system. This step removes the copy-paste.
+**The scenario already exists.** It was created via the Make API as
+*"Photo Engine → Google Business Profile"* (webhook trigger → Google My Business
+"Create a Post"), with every field already mapped:
 
-### About your Make.com account
+| Module field | Mapped to |
+|---|---|
+| Title | `{{1.city}}` |
+| Summary | `{{1.gbp.summary}}` |
+| Post type | Call to action |
+| Action type | Book |
+| URL | `{{1.gbp.cta_url}}` |
+| Media → Media format | Photo |
+| Media → Source URL | `{{1.gbp.photo_url}}` |
 
-Read this before signing up for anything:
+It is **inactive** and has **no Google connection**. Nothing can publish until you
+do both of the following — that is deliberate.
 
-- Your Make Free plan allows **2 scenarios** and you already have 2:
-  *"Dashboard Text → SMS to my phone"* and *"Mikey QQC Auto-Text"*.
-- The Gmail-watch scenario has used **1,969 operations** against a **1,000/month**
-  allowance, which is why the organization currently shows as paused.
+### What's left for you
 
-So there is no free slot for a publishing scenario right now. Three ways forward:
-
-**(a) Retire the Gmail scenario.** *"Dashboard Text → SMS to my phone"* polls Gmail
-every 15 minutes — that poll is what's eating the quota. The Worker now sends owner
-alerts by email directly through Resend (that was PR #56), so this scenario may be
-doing a job the dashboard already does. Check whether you still need it; deleting it
-frees both a slot and the operations.
-
-**(b) Upgrade Make** to Core (~$9/month) for more scenarios and 10,000 operations.
-
-**(c) Skip automation.** Two posts a week by hand is about a minute a week total.
-This is a completely legitimate end state.
-
-### If you free up a slot, build the scenario
-
-1. Make → **Create a new scenario**.
-2. Add **Webhooks → Custom webhook** → **Add** → name it `Photo Engine` → **Save** →
-   **Copy address to clipboard**.
-3. Add a second module: **Google My Business → Create a Post**.
-4. Click **Create a connection**, sign in with the Google account that owns the
-   business profile, allow access.
-5. Fill the module in:
-
-   | Field | Value |
-   |---|---|
-   | Enter a Location Name | Select from the list |
-   | Account / Location | pick **Mikey's Mobile Detailing - Snohomish** |
-   | Post type | **Call to action** |
-   | Title | `{{1.city}}` |
-   | Summary | `{{1.gbp.summary}}` |
-   | Action type | **Book** |
-   | URL | `{{1.gbp.cta_url}}` |
-   | Media → Add item → Media format | **Photo** |
-   | Media → Source URL | `{{1.gbp.photo_url}}` |
-
-6. **Save**, then turn the scenario **ON** (bottom-left toggle).
-7. Back in the dashboard: **☰ → Photo Engine** → paste the webhook URL into
+1. Open Make → the scenario → click the **Google My Business** module.
+2. Click **Create a connection** → sign in with the Google account that owns the
+   business profile → allow access.
+3. Two fields are intentionally blank because they need that connection to
+   populate: **Account name** and **Location name**. Pick your account, then pick
+   **Mikey's Mobile Detailing - Snohomish**.
+4. **Save**, then flip the scenario **ON** (toggle, bottom-left).
+5. In the dashboard: **☰ → Photo Engine** → paste the webhook URL from Make into
    **Publish webhook** → **Save settings**.
-8. On a ready job, tap **Publish now**. Check your Google profile.
-9. Only once a real post has appeared: turn on **Auto-post ready jobs**.
+   (Get the URL from the webhook module in Make — it is not written down in this
+   repo on purpose, since anyone holding it could post to your profile.)
+6. On a ready job, tap **Publish now**. Go look at your Google profile.
+7. **Only after a real post has appeared:** turn on **Auto-post ready jobs**.
 
-Auto-post is capped at 2/day and fires from the Worker's cron. Nothing publishes
-until you turn that switch on.
+Auto-post is capped at 2/day and fires from the Worker's cron. The cap exists so a
+busy Saturday can't flood the profile.
+
+### Operations budget
+
+Make Free allows 1,000 operations/month. This scenario uses **2 operations per
+post** (webhook + create post). At two posts a week that's ~16/month — under 2% of
+the allowance. It only runs when a post is actually published, so an idle week
+costs nothing.
 
 ---
 
