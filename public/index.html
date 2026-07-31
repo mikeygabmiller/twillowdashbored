@@ -1852,6 +1852,28 @@
      Shares the app's tokens (--accent, --panel, --line …) so it themes,
      recolors and light/dark-flips with everything else for free.
      ===================================================================== */
+  /* ---- More: grouped, scannable, two levels deep at most ---- */
+  .mr{position:fixed;inset:0;z-index:84;background:var(--bg);display:none;flex-direction:column}
+  .mr.show{display:flex}
+  .mr-head{display:flex;align-items:center;gap:10px;padding:calc(10px + var(--safe-top)) 12px 10px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--panel) 92%,transparent);backdrop-filter:blur(12px);flex:none}
+  .mr-title{flex:1;min-width:0}
+  .mr-title b{font-size:17px;letter-spacing:-.015em;font-weight:800}
+  .mr-title small{display:block;color:var(--muted2);font-size:11.5px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mr-body{flex:1;overflow-y:auto;min-height:0;-webkit-overflow-scrolling:touch;padding:14px 14px calc(28px + var(--safe-bottom));max-width:660px;width:100%;margin:0 auto}
+  .mr-grp{margin-bottom:18px}
+  .mr-gh{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2);padding:0 4px 8px}
+  .mr-list{background:var(--panel);border:1px solid var(--line2);border-radius:var(--radius);overflow:hidden}
+  .mr-row{display:flex;align-items:center;gap:13px;width:100%;padding:14px 14px;background:none;border:0;border-top:1px solid var(--line2);
+    color:var(--text);font-size:15px;font-family:inherit;text-align:left;cursor:pointer}
+  .mr-row:first-child{border-top:0}
+  .mr-row:hover{background:var(--panel2)}
+  .mr-row .e{width:22px;display:flex;align-items:center;justify-content:center;color:var(--muted);flex:0 0 auto}
+  .mr-row .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mr-row .n{flex:0 0 auto;font-size:12px;color:var(--muted2)}
+  .mr-row .cv{flex:0 0 auto;color:var(--muted2);line-height:0}
+  .mr-row.danger .t,.mr-row.danger .e{color:var(--accent-text)}
+  .mr-sec{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2);padding:16px 4px 8px}
+  .mr-foot{text-align:center;color:var(--muted2);font-size:11.5px;line-height:1.7;padding:18px 0 6px}
   .jd{position:fixed;inset:0;z-index:82;background:var(--bg);display:none;flex-direction:column}
   .jd.show{display:flex}
   .jd-head{display:flex;align-items:center;gap:10px;padding:calc(10px + var(--safe-top)) 12px 10px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--panel) 92%,transparent);backdrop-filter:blur(12px);flex:none}
@@ -2336,94 +2358,27 @@
   </section>
 </div>
 
-<!-- ============ Left menu drawer ============ -->
-<div class="scrim" id="scrim"></div>
-<aside class="drawer" id="drawer">
-  <div class="dh">
-    <div class="logo" id="drawerLogo"></div>
-    <div><h1>Mikey's Detailing</h1><small>Mobile Detailing • Snohomish</small></div>
+<!-- ============ More ============
+     Everything that isn't a daily action. This replaced a 25-item slide-out
+     menu whose first four entries duplicated tabs. Rows are built by mrRender()
+     from MORE_MENU so there is exactly one list to keep honest. -->
+<div class="mr" id="moreApp">
+  <div class="mr-head">
+    <button class="btn icon" id="mrBack" data-ic="chevron-left" aria-label="Back"></button>
+    <div class="mr-title"><b id="mrTitle">More</b><small id="mrSub">Mikey's Mobile Detailing</small></div>
   </div>
-  <div class="dbody" id="dbody">
-    <!-- Conversations: the reason he opens the app. No heading, no collapsing —
-         these four are always right at the top. -->
-    <div class="ditem" data-tab="messages"><span class="ic" data-ic="message-square"></span>All messages<span class="n" id="mnAll"></span></div>
-    <div class="ditem" data-filter="unread"><span class="ic" data-ic="bell"></span>Unread<span class="n" id="mnUnread"></span></div>
-    <div class="ditem" data-tab="followups"><span class="ic" data-ic="list-checks"></span>Follow-ups<span class="n" id="mnFollow"></span></div>
-    <div class="ditem" id="aiCmdItem"><span class="ic" data-ic="sparkles"></span>Command AI<span class="n" style="color:var(--accent-text)">new</span></div>
-
-    <div class="dgrp open" data-grp="work">
-      <div class="dgh">Today &amp; jobs<span class="cv" data-ic="chevron-down"></span></div>
-      <div class="dgb">
-        <div class="ditem" id="runItem"><span class="ic" data-ic="route"></span>Today's Run</div>
-        <div class="ditem" id="bookingsItem" onclick="location.href='/bookings.html'"><span class="ic" data-ic="calendar-days"></span>Bookings</div>
-        <div class="ditem" data-tab="scheduled"><span class="ic" data-ic="calendar-days"></span>Scheduled texts<span class="n" id="mnSched"></span></div>
-        <div class="ditem" id="leadsItem"><span class="ic" data-ic="clipboard-list"></span>Leads pipeline</div>
-        <div class="ditem" id="garageItem"><span class="ic" data-ic="car"></span>Customer garage</div>
-        <div class="ditem" data-tab="archived"><span class="ic" data-ic="archive"></span>Archived<span class="n" id="mnArch"></span></div>
-      </div>
-    </div>
-
-    <div class="dgrp" data-grp="money">
-      <div class="dgh">Money<span class="cv" data-ic="chevron-down"></span></div>
-      <div class="dgb">
-        <div class="ditem" id="moneyItem"><span class="ic" data-ic="dollar"></span>Money tracker</div>
-        <div class="ditem" id="payItem"><span class="ic" data-ic="credit-card"></span>Get paid</div>
-        <div class="ditem" id="quotesItem"><span class="ic" data-ic="file-text"></span>Quote builder</div>
-        <div class="ditem" id="paySetupItem"><span class="ic" data-ic="wallet"></span>Payment setup</div>
-        <div class="ditem" id="analyticsItem"><span class="ic" data-ic="bar-chart"></span>Analytics — website &amp; business</div>
-      </div>
-    </div>
-
-    <div class="dgrp" data-grp="ai">
-      <div class="dgh">AI<span class="cv" data-ic="chevron-down"></span></div>
-      <div class="dgb">
-        <div class="ditem" id="trainAiItem"><span class="ic" data-ic="sparkles"></span>Train AI<span class="n" id="mnTrainStat">…</span></div>
-        <div class="ditem" id="voiceItem"><span class="ic" data-ic="mic"></span>Talk to your dashboard</div>
-        <div class="ditem" id="playbookItem"><span class="ic" data-ic="file-text"></span>Business playbook</div>
-      </div>
-    </div>
-
-    <div class="dgrp" data-grp="settings">
-      <div class="dgh">Settings<span class="cv" data-ic="chevron-down"></span></div>
-      <div class="dgb">
-        <div class="ditem" id="pushItem"><span class="ic" data-ic="bell"></span>Phone notifications<span class="n" id="pushState">off</span></div>
-        <div class="sec-lbl">Auto follow-ups &amp; calls</div>
-        <div class="fu-settings" id="fuSettings"></div>
-        <div class="sec-lbl">Team</div>
-        <div class="team-panel" id="teamPanel"></div>
-        <div class="sec-lbl">Appearance</div>
-        <div class="ditem" id="customizeItem"><span class="ic" data-ic="sliders"></span>Customize everything</div>
-        <div class="theme-seg" id="themeSeg"></div>
-        <div class="sec-lbl">Accent color</div>
-        <div class="accent-row" id="accentRow"></div>
-      </div>
-    </div>
-
-    <!-- The playbook editor is nine textareas; keeping it in its own collapsed group
-         means it costs nothing until he actually wants to edit it. openPlaybook()
-         opens this group and scrolls to it. -->
-    <div class="dgrp" data-grp="playbook">
-      <div class="dgh">Business playbook<span class="cv" data-ic="chevron-down"></span></div>
-      <div class="dgb"><div class="playbook" id="playbookPanel"></div></div>
-    </div>
-
-    <div class="dgrp" data-grp="tools">
-      <div class="dgh">Tools &amp; account<span class="cv" data-ic="chevron-down"></span></div>
-      <div class="dgb">
-        <div class="ditem" id="healthItem"><span class="ic" data-ic="activity"></span>Connection<span class="n"><span class="health" id="healthBadge"><span class="dotc"></span><span id="healthTxt">check</span></span></span></div>
-        <div class="ditem" id="refreshItem"><span class="ic" data-ic="refresh-cw"></span>Refresh now</div>
-        <div class="ditem" id="alertTestItem"><span class="ic" data-ic="bell"></span>Send test alert</div>
-        <div class="ditem" id="snapshotItem"><span class="ic" data-ic="download"></span>Snapshot for Claude</div>
-        <div class="ditem" id="logoutItem"><span class="ic" data-ic="log-out"></span>Sign out</div>
-      </div>
-    </div>
-  </div>
-  <div class="foot">
-    Mikey's Mobile Detailing<br>
-    Dashboard · auto-refresh on<br>
-    <span id="buildStamp" style="opacity:.75">checking version…</span>
-  </div>
-</aside>
+  <div class="mr-body" id="mrBody"></div>
+</div>
+<!-- Panels that JS fills in by id and that must survive a re-render. They are
+     parked here and moved into whichever More view is showing, rather than
+     being rebuilt — moving a node keeps its listeners and its contents. -->
+<div id="morePanels" hidden>
+  <div class="fu-settings" id="fuSettings"></div>
+  <div class="team-panel" id="teamPanel"></div>
+  <div class="theme-seg" id="themeSeg"></div>
+  <div class="accent-row" id="accentRow"></div>
+  <div class="playbook" id="playbookPanel"></div>
+</div>
 
 <div id="loginOverlay" class="login-overlay">
   <div class="login-box" id="loginBox">
@@ -3052,9 +3007,14 @@
   // section rather than rendering into the list, so they have to light their
   // own pill and hand it back on close — otherwise the bar shows you standing
   // somewhere you are not.
+  // Follow-ups / Scheduled / Archived have no pill of their own — they are
+  // lenses on Chats, so they light the Chats pill. Without this, closing a
+  // full-screen section while on one of them leaves the bar with nothing lit.
+  function navPillFor(tab){return CHAT_TABS.indexOf(tab)>=0?"messages":tab}
   function setNavActive(tab){
+    var want=navPillFor(tab);
     Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){
-      b.classList.toggle("active",b.getAttribute("data-tab")===tab);
+      b.classList.toggle("active",b.getAttribute("data-tab")===want);
     });
   }
   function applyNavTabs(){
@@ -3344,9 +3304,8 @@
     var nh=el("navHome");if(nh){nh.textContent=c.needs;nh.className="ndot"+(c.needs?" show":"")}
     var nn=el("navNeeds");if(nn){nn.textContent=c.needs;nn.className="ndot"+(c.needs?" show":"")}
     var nf=el("navFollow");if(nf){nf.textContent=c.follow;nf.className="ndot"+(c.follow?" show":"")}
-    el("mnAll").textContent=c.all||"";el("mnUnread").textContent=c.unread||"";
-    el("mnSched").textContent=c.sched||"";el("mnArch").textContent=c.arch||"";
-    if(el("mnFollow"))el("mnFollow").textContent=c.follow||"";
+    // These counts used to live on menu rows. Those rows are Chats filter chips
+    // now and carry their own counts, drawn in renderFilters().
   }
 
   // ---- reply-time analytics (client mirror of server logic) ----
@@ -3517,10 +3476,10 @@
     // — settings
     {id:"customize",t:"Customize everything",g:"Settings",ic:"sliders",k:"appearance theme colour color layout tabs widgets look font dark light",run:function(){openCustomize()}},
     {id:"push",t:"Phone notifications",g:"Settings",ic:"bell",k:"alerts push notify ping mobile",run:function(){jdPushSheet()}},
-    {id:"health",t:"Connection",g:"Settings",ic:"activity",k:"status online offline health diagnostics",run:function(){openDrawer();checkHealth()}},
-    {id:"alerttest",t:"Send test alert",g:"Settings",ic:"bell",k:"try alert check notification email",run:function(){var i=el("alertTestItem");if(i)i.click()}},
-    {id:"snapshot",t:"Snapshot for Claude",g:"Settings",ic:"download",k:"export backup debug support help bundle",run:function(){var i=el("snapshotItem");if(i)i.click()}},
-    {id:"signout",t:"Sign out",g:"Settings",ic:"log-out",k:"logout leave lock exit",run:function(){var i=el("logoutItem");if(i)i.click()}}
+    {id:"health",t:"Connection",g:"Settings",ic:"activity",k:"status online offline health diagnostics",run:function(){openMore("account");checkHealth()}},
+    {id:"alerttest",t:"Send test alert",g:"Settings",ic:"bell",k:"try alert check notification email",run:function(){sendTestAlert()}},
+    {id:"snapshot",t:"Snapshot for Claude",g:"Settings",ic:"download",k:"export backup debug support help bundle",run:function(){snapshotForClaude()}},
+    {id:"signout",t:"Sign out",g:"Settings",ic:"log-out",k:"logout leave lock exit",run:function(){doLogout()}}
   ];
   // Title hits outrank keyword hits, and a prefix outranks a mid-word hit, so
   // "pay" puts "Payment setup" above a keyword-only match on "repay".
@@ -4218,45 +4177,13 @@
     return {pct:Math.round(done/fields.length*100),missing:missing};
   }
   function openPlaybook(){
-    openDrawer();
-    openMenuGroup("playbook");
-    setTimeout(function(){var el2=el("playbookPanel");if(el2){el2.scrollIntoView({block:"start",behavior:"smooth"});var ta=el2.querySelector(".pb-ta");if(ta)setTimeout(function(){ta.focus()},350)}},160);
+    openMore("playbook");
+    setTimeout(function(){var p=el("playbookPanel");if(p){var ta=p.querySelector(".pb-ta");if(ta)ta.focus()}},260);
   }
 
-  // ---- menu groups -------------------------------------------------------
-  // Which groups are open is remembered per device, so his own shape of the menu
-  // survives a reload. Defaults are set in the markup (Today & jobs open).
-  var MENU_KEY="mkd-menu-groups";
-  function menuGroupState(){
-    try{ var v=JSON.parse(localStorage.getItem(MENU_KEY)); return (v&&typeof v==="object")?v:null }catch(e){ return null }
-  }
-  function saveMenuGroups(){
-    var st={};
-    document.querySelectorAll("#dbody .dgrp").forEach(function(g){ st[g.getAttribute("data-grp")]=g.classList.contains("open") });
-    try{ localStorage.setItem(MENU_KEY,JSON.stringify(st)) }catch(e){}
-  }
-  function openMenuGroup(name){
-    var g=document.querySelector('#dbody .dgrp[data-grp="'+name+'"]');
-    if(g&&!g.classList.contains("open")){ g.classList.add("open"); saveMenuGroups() }
-  }
-  function initMenuGroups(){
-    var saved=menuGroupState();
-    document.querySelectorAll("#dbody .dgrp").forEach(function(g){
-      var k=g.getAttribute("data-grp");
-      if(saved&&typeof saved[k]==="boolean")g.classList.toggle("open",saved[k]);
-      var h=g.querySelector(".dgh");
-      if(h)h.addEventListener("click",function(){
-        g.classList.toggle("open");
-        saveMenuGroups();
-        // Bring a freshly-opened group into view rather than leaving it below the fold.
-        if(g.classList.contains("open"))setTimeout(function(){
-          var b=g.getBoundingClientRect(),body=el("dbody");
-          if(b.bottom>window.innerHeight)g.scrollIntoView({block:"nearest",behavior:"smooth"});
-          if(!body)return;
-        },180);
-      });
-    });
-  }
+  // The collapsible menu groups went away with the drawer: More is grouped but
+  // never folded, so there is no open/closed state left to remember.
+
   // ---- Analytics · Overview — business KPIs, pipeline, response health, spend,
   // AI briefing (this replaces the old standalone Insights tab; it renders into the
   // Analytics section's body so business + website numbers live under one roof). ----
@@ -4505,12 +4432,12 @@
     var cb=el("coachBtn");if(cb)cb.style.display=teamOn()?"":"none";
     var bar=el("teamIdentityBar");
     if(bar){
-      if(teamOn()&&!currentMe()&&state.phone){bar.style.display="flex";bar.innerHTML='<span>'+ic("bot",15)+'</span><span>Team mode is on — tap to set who you are, so your replies get signed.</span>';bar.onclick=function(){openDrawer()}}
+      if(teamOn()&&!currentMe()&&state.phone){bar.style.display="flex";bar.innerHTML='<span>'+ic("bot",15)+'</span><span>Team mode is on — tap to set who you are, so your replies get signed.</span>';bar.onclick=function(){openMore("settings")}}
       else bar.style.display="none";
     }
   }
 
-  // ---- team roster + "you are" (drawer) ----
+  // ---- team roster + "you are" (More > Settings) ----
   function renderTeam(){
     var wrap=el("teamPanel");if(!wrap)return;var c=state.config||{};
     var on=!!c.teamMode;var team=c.team||[];var me=currentMe();
@@ -4891,7 +4818,7 @@
   var TA={stats:null,queue:[],seen:[],judged:0,fetching:false,done:false};
 
   function openTrainAI(){
-    closeDrawer();
+    closeMore();
     var w=document.createElement("div");
     w.className="tai"; w.id="taiScreen";
     w.innerHTML=
@@ -6280,18 +6207,130 @@
     el("coachPanel").style.display="none";el("coachPanel")._phone=null;el("teamIdentityBar").style.display="none";
     hideAiReview();
     el("messages").innerHTML="";
-    setNavActive(CHAT_TABS.indexOf(tab)>=0?"messages":tab);
+    setNavActive(tab);
     el("scroll").scrollTop=0;
     renderMain();
     if(tab==="home")fetchInsights();
     if(tab==="followups")refreshThreads();
   }
 
-  // ---- drawer ----
-  function openDrawer(){el("drawer").classList.add("open");el("scrim").classList.add("show");navOpen("drawer",closeDrawer)}
-  function closeDrawer(){navDrop("drawer");el("drawer").classList.remove("open");el("scrim").classList.remove("show")}
+  // ---- More --------------------------------------------------------------
+  // What used to be a 25-item slide-out menu, four of whose entries duplicated
+  // tabs under different names ("Money" vs "Money tracker"). It is one screen
+  // now, grouped, never more than two levels deep, built from a single list so
+  // there is only one place to keep honest.
+  var MORE={view:"root"};
+  var MORE_MENU=[
+    {g:"AI",rows:[
+      {t:"Command AI",ic:"sparkles",note:"new",go:function(){closeMore();openAiCmd()}},
+      {t:"Train AI",ic:"sparkles",noteId:"mnTrainStat",go:function(){closeMore();openTrainAI()}},
+      {t:"Talk to your dashboard",ic:"mic",go:function(){closeMore();vxOpen()}},
+      {t:"Business playbook",ic:"file-text",into:"playbook"}
+    ]},
+    {g:"Insights",rows:[
+      {t:"Analytics — website & business",ic:"bar-chart",go:function(){closeMore();openAnalytics()}}
+    ]},
+    {g:"Pipeline",rows:[
+      {t:"Bookings",ic:"calendar-days",go:function(){location.href="/bookings.html"}}
+    ]},
+    {g:"Setup",rows:[
+      {t:"Settings",ic:"sliders",into:"settings"},
+      {t:"Tools & account",ic:"activity",into:"account"}
+    ]}
+  ];
+  var MORE_TITLES={root:["More","Mikey's Mobile Detailing"],
+    settings:["Settings","Alerts, team, and how it looks"],
+    account:["Tools & account","Connection, backups and signing out"],
+    playbook:["Business playbook","What the AI knows about your business"]};
+  // Park the JS-filled panels back in the holding div before wiping the body,
+  // so re-rendering never destroys them.
+  function mrStash(){
+    var hold=el("morePanels");if(!hold)return;
+    ["fuSettings","teamPanel","themeSeg","accentRow","playbookPanel"].forEach(function(id){
+      var n=el(id);if(n&&n.parentNode!==hold)hold.appendChild(n);
+    });
+  }
+  function mrRow(spec){
+    var r=document.createElement("button");
+    r.className="mr-row"+(spec.danger?" danger":"");
+    r.innerHTML='<span class="e">'+ic(spec.ic,19)+'</span><span class="t">'+esc(spec.t)+'</span>'+
+      (spec.note?'<span class="n" style="color:var(--accent-text)">'+esc(spec.note)+'</span>':'')+
+      (spec.noteId?'<span class="n" id="'+spec.noteId+'">…</span>':'')+
+      (spec.into?'<span class="cv">'+ic("chevron-right",17)+'</span>':'');
+    r.onclick=function(){vibrate(6);if(spec.into)return mrSet(spec.into);if(spec.go)spec.go()};
+    return r;
+  }
+  function mrGroup(name,rows){
+    var g=document.createElement("div");g.className="mr-grp";
+    if(name)g.innerHTML='<div class="mr-gh">'+esc(name)+'</div>';
+    var l=document.createElement("div");l.className="mr-list";
+    rows.forEach(function(s){l.appendChild(mrRow(s))});
+    g.appendChild(l);return g;
+  }
+  function mrLabel(text){var d=document.createElement("div");d.className="mr-sec";d.textContent=text;return d}
+  function mrRender(){
+    mrStash();
+    var b=el("mrBody");if(!b)return;
+    b.innerHTML="";b.scrollTop=0;
+    var ttl=MORE_TITLES[MORE.view]||MORE_TITLES.root;
+    el("mrTitle").textContent=ttl[0];el("mrSub").textContent=ttl[1];
+    if(MORE.view==="settings")return mrSettings(b);
+    if(MORE.view==="account")return mrAccount(b);
+    if(MORE.view==="playbook"){b.appendChild(el("playbookPanel"));return}
+    MORE_MENU.forEach(function(sec){b.appendChild(mrGroup(sec.g,sec.rows))});
+    var f=document.createElement("div");f.className="mr-foot";
+    f.innerHTML="Mikey's Mobile Detailing<br>Dashboard · auto-refresh on";
+    b.appendChild(f);
+  }
+  function mrSettings(b){
+    b.appendChild(mrGroup("",[
+      {t:"Phone notifications",ic:"bell",noteId:"pushState",go:function(){closeMore();jdPushSheet()}},
+      {t:"Customize everything",ic:"sliders",go:function(){closeMore();openCustomize()}}
+    ]));
+    b.appendChild(mrLabel("Auto follow-ups & calls"));b.appendChild(el("fuSettings"));
+    b.appendChild(mrLabel("Team"));b.appendChild(el("teamPanel"));
+    b.appendChild(mrLabel("Appearance"));b.appendChild(el("themeSeg"));
+    b.appendChild(mrLabel("Accent color"));b.appendChild(el("accentRow"));
+    updatePushBadge();
+  }
+  function mrAccount(b){
+    b.appendChild(mrGroup("",[
+      {t:"Connection",ic:"activity",go:checkHealth},
+      {t:"Refresh now",ic:"refresh-cw",go:function(){refreshThreads();if(state.phone)loadThread();toast("Refreshed");closeMore()}},
+      {t:"Send test alert",ic:"bell",go:sendTestAlert},
+      {t:"Snapshot for Claude",ic:"download",go:function(){closeMore();snapshotForClaude()}},
+      {t:"Sign out",ic:"log-out",danger:true,go:doLogout}
+    ]));
+    var h=document.createElement("div");h.className="mr-foot";
+    h.innerHTML='<span class="health" id="healthBadge"><span class="dotc"></span><span id="healthTxt">check</span></span>'+
+      '<br><span id="buildStamp" style="opacity:.75">checking version…</span>';
+    b.appendChild(h);
+    showBuild();
+  }
+  function mrSet(view){
+    if(view==="root")navDrop("moreView");
+    else navOpen("moreView",function(){MORE.view="root";mrRender()});
+    MORE.view=view;mrRender();
+  }
+  function openMore(view){
+    MORE.view=view||"root";
+    el("moreApp").classList.add("show");
+    setNavActive("more");
+    mrRender();
+    navOpen("more",closeMore);
+    if(MORE.view!=="root")navOpen("moreView",function(){MORE.view="root";mrRender()});
+    refreshVoiceStat();
+  }
+  function closeMore(){
+    navDrop("more");
+    mrStash();                       // keep the live panels out of harm's way
+    el("moreApp").classList.remove("show");
+    setNavActive(state.tab);
+    MORE.view="root";
+  }
   function checkHealth(){
-    var b=el("healthBadge");el("healthTxt").textContent="…";
+    var b=el("healthBadge");if(!b)return;
+    el("healthTxt").textContent="…";
     api("/api/health").then(function(d){
       var ok=d&&d.ok&&(d.storage==="ok"||d.blobs==="ok");
       b.className="health "+(ok?"ok":"bad");
@@ -6461,7 +6500,6 @@
   el("toolsBtn").onclick=function(){var s=el("toolsSheet");closePops("toolsSheet");var opening=s.style.display==="none";if(opening)buildToolsSheet();s.style.display=opening?"block":"none"};
   el("loginBtn").onclick=doLogin;
   el("loginPass").addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();doLogin()}});
-  el("logoutItem").onclick=function(){post("/api/logout",{}).then(function(){location.reload()})};
   el("loginSwitch").onclick=function(){
     var tm=el("passMode"),pm=el("pinMode");
     if(tm.style.display==="none"){tm.style.display="";pm.style.display="none";el("loginSub").textContent="Enter your password";el("loginSwitch").textContent="Use PIN instead";setTimeout(function(){el("loginPass").focus()},40)}
@@ -6491,7 +6529,7 @@
       var tb=b.getAttribute("data-tab");
       if(tb==="money")return openMoney();
       if(tb==="pipeline")return openJobs();
-      if(tb==="more")return openDrawer();
+      if(tb==="more")return openMore();
       setTab(tb);
     };
   });
@@ -6510,31 +6548,24 @@
   el("czBack").onclick=closeCustomize;
   el("czMode").onclick=function(){UI.mode=UI.mode==="pro"?"simple":"pro";saveUI();czRender();vibrate(6)};
 
-  el("menuBtn").onclick=openDrawer;el("myAvatar").onclick=openDrawer;el("scrim").onclick=closeDrawer;
-  el("aiCmdItem").onclick=function(){closeDrawer();openAiCmd()};
+  // The hamburger and the avatar both reach More — the menu it used to open is
+  // that screen now, and every row in it is wired from MORE_MENU, not here.
+  el("menuBtn").onclick=function(){openMore()};
+  el("myAvatar").onclick=function(){openMore()};
+  el("mrBack").onclick=function(){if(MORE.view!=="root")return mrSet("root");closeMore()};
   el("aiCmdClose").onclick=closeAiCmd;
   el("aiCmdOverlay").onclick=function(e){if(e.target===el("aiCmdOverlay"))closeAiCmd()};
   el("aiCmdAsk").onclick=aiCmdAsk;
   el("aiCmdInput").addEventListener("keydown",function(e){if((e.metaKey||e.ctrlKey)&&e.key==="Enter"){e.preventDefault();aiCmdAsk()}});
-  el("leadsItem").onclick=function(){closeDrawer();openJobs("leads")};
-  el("runItem").onclick=function(){closeDrawer();openJobs("run")};
-  el("quotesItem").onclick=function(){closeDrawer();openJobs("quotes")};
-  el("payItem").onclick=function(){closeDrawer();openJobs("pay")};
-  el("garageItem").onclick=function(){closeDrawer();openJobs("garage")};
-  el("voiceItem").onclick=function(){closeDrawer();vxOpen()};
-  el("pushItem").onclick=function(){closeDrawer();jdPushSheet()};
-  el("refreshItem").onclick=function(){refreshThreads();if(state.phone)loadThread();toast("Refreshed");closeDrawer()};
-  el("healthItem").onclick=checkHealth;
-  el("alertTestItem").onclick=function(){
+  function sendTestAlert(){
     toast("Sending test alert…");
     post("/api/alert-test",{}).then(function(d){
       if(d&&d.ok)toast(d.channel==="email"?("Test email sent to "+(d.alertEmail||"your inbox")):"Test alert sent by text");
       else toast("Test alert failed — check your alert settings");
     }).catch(function(){toast("Test alert failed")});
-    closeDrawer();
-  };
-  Array.prototype.forEach.call(document.querySelectorAll(".drawer [data-tab]"),function(it){it.onclick=function(){setTab(it.getAttribute("data-tab"));closeDrawer()}});
-  Array.prototype.forEach.call(document.querySelectorAll(".drawer [data-filter]"),function(it){it.onclick=function(){state.tab="messages";state.filter=it.getAttribute("data-filter");setTab("messages");state.filter=it.getAttribute("data-filter");renderFilters();renderMain();closeDrawer()}});
+    closeMore();
+  }
+  function doLogout(){post("/api/logout",{}).then(function(){location.reload()})}
 
   // ============================================================
   // Analytics — full-screen section, two segments:
@@ -9260,15 +9291,9 @@
   el("moRefresh").onclick=function(){MO.report=null;loadMoney(MO.view==="log"?null:MO.month);toast("Refreshed")};
   Array.prototype.forEach.call(el("moNav").querySelectorAll("[data-mv]"),function(b){b.onclick=function(){vibrate(6);moSetView(b.getAttribute("data-mv"))}});
   el("moScrim").onclick=closeMoSheet;
-  el("moneyItem").onclick=function(){closeDrawer();openMoney()};
-  var pSet=el("paySetupItem");if(pSet)pSet.onclick=function(){closeDrawer();openPaySetup()};
-  var anI=el("analyticsItem");if(anI)anI.onclick=function(){closeDrawer();openAnalytics()};
-  el("customizeItem").onclick=function(){closeDrawer();openCustomize()};
-  el("snapshotItem").onclick=function(){closeDrawer();snapshotForClaude()};
-  // New menu entries and the collapsible groups.
-  var tAi=el("trainAiItem");if(tAi)tAi.onclick=function(){openTrainAI()};
-  var pbI=el("playbookItem");if(pbI)pbI.onclick=function(){openPlaybook()};
-  initMenuGroups();
+  // Money, Payment setup, Analytics, Customize, Snapshot, Train AI and the
+  // playbook used to be menu rows wired one by one here. They are entries in
+  // MORE_MENU (or Pipeline segments) now and wire themselves.
   refreshVoiceStat();
 
   // ============================================================
@@ -10863,7 +10888,7 @@
 
   // ---- boot ----
   hydrateIcons();
-  el("myAvatar").innerHTML=brandGlyph();el("drawerLogo").innerHTML=brandGlyph();el("loginLogo").innerHTML=brandGlyph();
+  el("myAvatar").innerHTML=brandGlyph();el("loginLogo").innerHTML=brandGlyph();
   applyTheme(themePref());loadAccent();applyUI();buildAccents();buildThemeSeg();buildTplMenu();loadTemplates();buildQuickset();
   renderFilters();refreshThreads();startPoll();checkHealth();loadConfig();showBuild();fetchInsights();loadMoney();
   // Job Day suite: warm the day board (drives the Jobs badge) and the brief, and

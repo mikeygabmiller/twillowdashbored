@@ -100,10 +100,43 @@ await page.waitForTimeout(600);
 ok('the Chats pill stays lit on a sub-list', (await activeTab()) === 'messages');
 ok('the filter row is still there', await page.locator('#filters').isVisible());
 
-section('More opens the menu');
+section('More is a screen, not a 25-item drawer');
 await page.locator('.navitem[data-tab="more"]').click();
 await page.waitForTimeout(500);
-ok('menu opened', await page.locator('#drawer').evaluate((e) => e.classList.contains('open')));
+ok('More opened', await page.locator('#moreApp').evaluate((e) => e.classList.contains('show')));
+ok('the old drawer is gone', (await page.locator('#drawer').count()) === 0);
+const groups = await page.$$eval('#mrBody .mr-gh', (ns) => ns.map((n) => n.textContent.trim()));
+ok('grouped by kind of work', JSON.stringify(groups) === JSON.stringify(['AI', 'Insights', 'Pipeline', 'Setup']), groups);
+const rootRows = await page.locator('#mrBody .mr-row').count();
+ok('root stays short (was 25 rows)', rootRows <= 10, rootRows);
+ok('no duplicate of a tab on the root', !(await page.$$eval('#mrBody .mr-row .t', (ns) => ns.map((n) => n.textContent)))
+  .some((t) => /^(Money tracker|All messages|Leads pipeline|Today's Run)$/.test(t)));
+
+section('Settings is one level down, and its panels survive the trip');
+await page.locator('#mrBody .mr-row', { hasText: 'Settings' }).first().click();
+await page.waitForTimeout(500);
+ok('settings view opened', (await page.locator('#mrTitle').textContent()).trim() === 'Settings');
+ok('the follow-up panel came with it', await page.locator('#mrBody #fuSettings').count() === 1);
+ok('the team panel too', await page.locator('#mrBody #teamPanel').count() === 1);
+ok('and the accent picker', await page.locator('#mrBody #accentRow').count() === 1);
+const accentSwatches = await page.locator('#mrBody #accentRow *').count();
+ok('the accent picker kept its contents', accentSwatches > 0, accentSwatches);
+await page.locator('#mrBack').click();
+await page.waitForTimeout(450);
+ok('back returns to the More root', (await page.locator('#mrTitle').textContent()).trim() === 'More');
+await page.locator('#mrBack').click();
+await page.waitForTimeout(450);
+ok('back again closes More', !(await page.locator('#moreApp').evaluate((e) => e.classList.contains('show'))));
+// We are on the Archived lens at this point, which has no pill of its own —
+// it should light Chats rather than leaving the bar blank.
+ok('and the pill returns to the lens you were on', (await activeTab()) === 'messages');
+
+section('Re-entering Settings still has live panels (not a wiped shell)');
+await page.locator('.navitem[data-tab="more"]').click();
+await page.waitForTimeout(400);
+await page.locator('#mrBody .mr-row', { hasText: 'Settings' }).first().click();
+await page.waitForTimeout(500);
+ok('accent picker still populated second time', (await page.locator('#mrBody #accentRow *').count()) > 0);
 
 console.log('\nJS errors:', errs.length ? errs.join('\n  ') : 'none');
 if (errs.length) fail += errs.length;

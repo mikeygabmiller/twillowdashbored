@@ -2,7 +2,7 @@
 // instead of dropping out of the app. Driven in a real browser because this is
 // entirely about history behaviour, which no unit test can observe.
 //
-// The case worth guarding hardest is the menu one: the drawer closes itself
+// The case worth guarding hardest is the menu one: More closes itself
 // *before* opening a screen ("closeDrawer(); openJobs()"), and history.back()
 // is async, so a naive one-entry-per-layer stack desyncs right there.
 import { chromium } from 'playwright-core';
@@ -80,24 +80,34 @@ ok('analytics opened', await page.locator('#growApp').evaluate((e) => e.classLis
 await back();
 ok('back closed analytics', !(await page.locator('#growApp').evaluate((e) => e.classList.contains('show'))));
 
-section('The menu race: drawer closes itself, then opens a screen');
+section('The menu race: More closes itself, then opens a screen');
+// Rows in More do "closeMore(); openAnalytics()" in one handler. history.back()
+// is async, so a naive one-history-entry-per-layer stack desyncs exactly here
+// and the next back press drops out of the app.
 await page.locator('#menuBtn').click();
 await page.waitForTimeout(400);
-ok('drawer opened', await page.locator('#drawer').evaluate((e) => e.classList.contains('open')));
-// Expand the group only if it is collapsed — "work" ships open, so an
-// unconditional click would close it.
-if (!(await page.locator('.dgrp[data-grp="work"]').evaluate((e) => e.classList.contains('open')))) {
-  await page.locator('.dgrp[data-grp="work"] .dgh').click();
-  await page.waitForTimeout(300);
-}
-await page.locator('#runItem').click();
+ok('More opened', await page.locator('#moreApp').evaluate((e) => e.classList.contains('show')));
+await page.locator('#mrBody .mr-row', { hasText: 'Analytics' }).first().click();
 await page.waitForTimeout(700);
-ok('drawer closed', !(await page.locator('#drawer').evaluate((e) => e.classList.contains('open'))));
-ok('jobs opened', await page.locator('#jdApp').evaluate((e) => e.classList.contains('show')));
+ok('More closed', !(await page.locator('#moreApp').evaluate((e) => e.classList.contains('show'))));
+ok('analytics opened', await page.locator('#growApp').evaluate((e) => e.classList.contains('show')));
 await back();
-ok('one back closed jobs (no desync)', !(await page.locator('#jdApp').evaluate((e) => e.classList.contains('show'))));
+ok('one back closed analytics (no desync)', !(await page.locator('#growApp').evaluate((e) => e.classList.contains('show'))));
 ok('and did NOT leave the app', await shown('.sidebar'));
 ok('nothing left layered', (await depth()) === 0);
+
+section('More sub-views are their own layer');
+await page.locator('#menuBtn').click();
+await page.waitForTimeout(400);
+await page.locator('#mrBody .mr-row', { hasText: 'Settings' }).first().click();
+await page.waitForTimeout(450);
+ok('two layers deep', (await depth()) === 2, await nav());
+await back();
+ok('back returns to the More root', (await page.locator('#mrTitle').textContent()).trim() === 'More');
+ok('one layer left', (await depth()) === 1, await nav());
+await back();
+ok('back again closes More', !(await page.locator('#moreApp').evaluate((e) => e.classList.contains('show'))));
+ok('stack empty', (await depth()) === 0);
 
 section('Bookkeeping agrees with the browser');
 // The bug this guards: the stack thinking a sentinel is armed while the real
@@ -108,8 +118,8 @@ const agrees = () => page.evaluate(() => {
 });
 ok('agrees while idle', await agrees());
 await page.locator('#menuBtn').click(); await page.waitForTimeout(350);
-ok('agrees with the drawer open', await agrees());
-await page.locator('#runItem').click(); await page.waitForTimeout(700);
+ok('agrees with More open', await agrees());
+await page.locator('#mrBody .mr-row', { hasText: 'Analytics' }).first().click(); await page.waitForTimeout(700);
 ok('agrees after close-then-open in one tap', await agrees(), await nav());
 await back();
 ok('agrees after backing out', await agrees(), await nav());
