@@ -21,11 +21,15 @@
  *   RESEND_API_KEY        (optional — email alerts instead of texting yourself)
  *   ALERT_EMAIL           (optional — where alerts go; defaults to nothing)
  *   ALERT_FROM            (optional — verified sender; defaults to Resend's)
+ *   PHOTO_ENGINE_TOKEN    (optional — bearer token for /api/photo-queue and
+ *                          /api/photo-posted, the endpoints an outside automation
+ *                          uses to publish job photos without a dashboard session)
  *   FOLLOWUPS_DISABLED    (optional kill switch — set to "1" in the Cloudflare
  *                          dashboard to stop the follow-up cron WITHOUT a KV
  *                          write, for when the daily write limit is exhausted and
  *                          the in-app toggle therefore can't save. Unset to resume.)
  * Required KV binding: MESSAGES
+ * Optional R2 binding: PHOTOS  (Photo Engine — job photos, served at /p/<key>)
  *
  * ┌─────────────────────────────────────────────────────────────────────────┐
  * │ ⚠  KV WRITE BUDGET — READ BEFORE TOUCHING ANY put()/saveThread/saveIndex  │
@@ -67,7 +71,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-21·booking+redesign';
+const BUILD = '2026-07-31·photo-engine';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -101,6 +105,7 @@ async function runCron() {
   await dispatchDueReminders();
   await evaluateFollowups();
   await moneyCron().catch(() => {}); // money reminders must never break the SMS cron
+  await peCron().catch(() => {});    // marketing queue — likewise never breaks the SMS cron
 }
 
 // Private "remind me to follow up on <date>" reminders — a nudge to Mikey, not a
@@ -146,6 +151,15 @@ async function handle(request) {
   // First-party website analytics pixel (public, no auth — it's called from the
   // owner's marketing site). Accepts GET beacons and returns a 1x1 GIF.
   if (request.method === 'GET'  && pathname === '/px')             return handlePixel(url, request);
+  // Public photo serve. Deliberately unauthenticated: Google Business Profile and
+  // the Instagram Graph API fetch the image themselves with no credentials, which
+  // is exactly why the Twilio media URL can't be handed to them. Unguessable keys
+  // (128 random bits) are the access control — see peObjectKey.
+  if (request.method === 'GET'  && pathname.startsWith('/p/'))     return pePublicPhoto(pathname);
+  // Machine-facing photo endpoints — token auth (PHOTO_ENGINE_TOKEN), no session.
+  // Above the /api gate on purpose so Make/Zapier/a scheduled job can reach them.
+  if (request.method === 'GET'  && pathname === '/api/photo-queue')  return apiPhotoQueue(request, url);
+  if (request.method === 'POST' && pathname === '/api/photo-posted') return apiPhotoPosted(request, url);
 
   // ---- Public booking API (customer-facing /book.html — MUST stay above the /api auth gate) ----
   if (request.method === 'GET'  && (pathname === '/book' || pathname === '/book/')) return Response.redirect(new URL('/book.html', request.url).toString(), 302);
@@ -176,6 +190,13 @@ async function handle(request) {
   if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/email-setup') return apiEmailSetup(request);
   if (request.method === 'GET'  && pathname === '/api/media')      return apiMediaProxy(url);
   if (request.method === 'POST' && pathname === '/api/media-backfill') return apiMediaBackfill(request);
+  if (request.method === 'GET'  && pathname === '/api/photos')          return apiPhotos();
+  if (request.method === 'POST' && pathname === '/api/photos/stage')    return apiPhotoStage(request);
+  if (request.method === 'POST' && pathname === '/api/photos/caption')  return apiPhotoCaption(request);
+  if (request.method === 'POST' && pathname === '/api/photos/update')   return apiPhotoUpdate(request);
+  if (request.method === 'POST' && pathname === '/api/photos/publish')  return apiPhotoPublish(request);
+  if (request.method === 'POST' && pathname === '/api/photos/delete')   return apiPhotoDelete(request);
+  if (request.method === 'POST' && pathname === '/api/photos/config')   return apiPhotoConfig(request);
   if (request.method === 'POST' && pathname === '/api/voicemail-backfill') return apiVoicemailBackfill(request);
   if (request.method === 'POST' && pathname === '/api/alert-test') return apiAlertTest();
   if (request.method === 'GET'  && pathname === '/api/followups')  return apiFollowups();
@@ -386,7 +407,17 @@ async function handleInboundSms(request) {
   const text = params.Body || '';
   const numMedia = parseInt(params.NumMedia || '0', 10);
   const fromNorm = normalizePhone(from) || from;
-  if (fromNorm === normalizePhone(ENV.MIKEY_PHONE)) return twiml('');
+  // Texts from Mikey's own phone used to be dropped outright ("that's me, ignore").
+  // That silently killed the whole driveway workflow — photos he texted himself
+  // went nowhere. Now an MMS from the owner is a Photo Engine submission; a plain
+  // text from him is still ignored, exactly as before.
+  if (fromNorm === normalizePhone(ENV.MIKEY_PHONE)) {
+    if (numMedia > 0) {
+      try { return await peIntakeMms(fromNorm, params, numMedia, text); }
+      catch (err) { return twiml(`Photo engine hiccup: ${String((err && err.message) || err)}`); }
+    }
+    return twiml('');
+  }
 
   // STOP / START compliance. Record the opt-out state ourselves so scheduled sends,
   // autopilot nudges and blasts all honor it — Twilio blocks at the API but never
@@ -3716,6 +3747,7 @@ function defaultConfig() {
                              // attributed to the sender. Turn off to go back to solo.
     team: [],                // [{ id, name, role }] — the people who help answer texts
     playbook: defaultPlaybook(), // the business "brain" that trains every AI output
+    photoEngine: null,       // Photo Engine settings; null = the defaults in peConfig()
   };
 }
 
@@ -4309,6 +4341,656 @@ function apiLogout() {
       'Set-Cookie': 'mkd_auth=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0',
     },
   });
+}
+
+// ===========================================================================
+// Photo Engine — every job becomes marketing assets
+// ---------------------------------------------------------------------------
+// Mikey texts before/after photos to the business number from the driveway.
+// This module mirrors them somewhere Google and Instagram can actually fetch
+// (R2 → the public /p/<key> route), pairs them into a job, and writes the
+// caption in his voice off the same playbook the reply AI uses. What comes out
+// is a ready-to-publish post, not a folder of photos.
+//
+// WHY R2 AND NOT THE TWILIO URL: every publisher — Google Business Profile,
+// the Instagram Graph API, Make, Zapier — fetches the image itself, anonymously.
+// Twilio's media URLs need Basic auth (that's why /api/media exists), so they
+// are unusable downstream. Mirroring is the whole reason this works.
+//
+// ⚠ KV WRITE BUDGET: the entire queue lives in ONE value (`pe:index`), the same
+// trick the booking module uses — a change is 1 write, not 1-per-job. peCron()
+// runs on a 5-minute gate and only writes when a job actually changed state.
+// ===========================================================================
+
+const PE_KEY = 'pe:index';
+const PE_MAX_JOBS = 60;          // queue cap; older posted jobs get pruned (and their R2 objects deleted)
+const PE_KEEP_POSTED_DAYS = 90;
+const PE_MAX_PHOTOS = 8;
+const PE_CAPTION_TIMEOUT_MS = 8000; // intake runs inside a Twilio webhook (15s budget) — never hang it
+
+// Cities Mikey actually serves. Drives caption grounding, and which mikeysite
+// page a gallery entry belongs to. Slugs match the directories in that repo.
+const PE_CITIES = [
+  ['Snohomish', 'snohomish'], ['Monroe', 'monroe'], ['Mill Creek', 'mill-creek'],
+  ['Lake Stevens', 'lake-stevens'], ['Marysville', 'marysville'], ['Everett', 'everett'],
+  ['Duvall', 'duvall'], ['Bothell', 'bothell'],
+];
+
+function peR2() { return ENV.PHOTOS || null; }
+
+function peConfig(cfg) {
+  return Object.assign({
+    enabled: true,
+    autopost: false,         // off until a webhook is proven — see pePushWebhook
+    webhookUrl: '',          // Make/Zapier catch hook; the zero-Claude publish path
+    defaultCity: 'Snohomish',
+    ctaType: 'BOOK',
+    ctaUrl: 'https://mikeysdetailing.com/book.html',
+    reviewLink: 'https://g.page/r/CRCuKQ982VIZEBE',
+    windowMin: 240,          // photos from the same number inside this window = one job
+    maxPerDay: 2,            // autopost ceiling, so a busy Saturday can't spam the profile
+    confirmText: true,       // text Mikey back so he knows it landed
+  }, (cfg && cfg.photoEngine) || {});
+}
+
+async function peLoad() {
+  return (await kv().get(PE_KEY, { type: 'json' })) || [];
+}
+
+// ⚠ KV WRITE — one per queue change. Never call this inside a per-job loop.
+async function peSave(jobs) {
+  await kv().put(PE_KEY, JSON.stringify(jobs.slice(0, PE_MAX_JOBS)));
+}
+
+function peBlank(phone, source) {
+  const now = Date.now();
+  return {
+    id: genId(), createdAt: now, updatedAt: now,
+    phone: phone || '', source: source || 'mms',
+    city: '', service: '', vehicle: '',
+    photos: [],                                   // [{ key, url, type, role, w, h, bytes, ts }]
+    caption: { gbp: '', ig: '', review: '', alt: '' },
+    status: 'draft',                              // draft → ready → posted (or skipped)
+    posted: { gbp: 0, ig: 0, site: 0 },
+    captionPending: false, lastError: '',
+  };
+}
+
+// ---------------------------------------------------------------------------
+// R2 mirroring
+// ---------------------------------------------------------------------------
+// Keys carry 16 bytes of randomness because /p/<key> is deliberately public and
+// unauthenticated (it has to be — Google fetches it with no credentials). The
+// key IS the capability; nothing is enumerable.
+function peObjectKey(ext) {
+  const rnd = crypto.getRandomValues(new Uint8Array(16));
+  let s = ''; for (const b of rnd) s += b.toString(16).padStart(2, '0');
+  const d = new Date().toISOString().slice(0, 10);
+  return `${d}/${s}.${ext || 'jpg'}`;
+}
+
+function peExtFor(type) {
+  if (/png/i.test(type)) return 'png';
+  if (/webp/i.test(type)) return 'webp';
+  if (/gif/i.test(type)) return 'gif';
+  if (/heic|heif/i.test(type)) return 'heic';
+  return 'jpg';
+}
+
+// Pull the bytes out of Twilio (Basic auth) and put them in R2 under a public key.
+async function peMirror(twilioUrl, contentType) {
+  const bucket = peR2();
+  if (!bucket) throw new Error('r2_not_configured');
+  const sid = ENV.TWILIO_ACCOUNT_SID, token = ENV.TWILIO_AUTH_TOKEN;
+  const r = await fetch(twilioUrl, { headers: { Authorization: `Basic ${btoa(`${sid}:${token}`)}` } });
+  if (!r.ok) throw new Error(`twilio_media ${r.status}`);
+  const type = (r.headers.get('Content-Type') || contentType || 'image/jpeg').split(';')[0].trim();
+  const buf = new Uint8Array(await r.arrayBuffer());
+  const key = peObjectKey(peExtFor(type));
+  await bucket.put(key, buf, {
+    httpMetadata: { contentType: type, cacheControl: 'public, max-age=31536000, immutable' },
+  });
+  const dim = peImageSize(buf, type);
+  return {
+    key, url: `${publicBase()}/p/${key}`, type,
+    bytes: buf.length, w: dim.w, h: dim.h, ts: Date.now(),
+  };
+}
+
+// Read intrinsic dimensions straight out of the file header. Worth the ~40 lines:
+// Google rejects anything under 250x250 or 10KB, and Instagram rejects any aspect
+// ratio outside 4:5–1.91:1 — which is most portrait phone photos (3:4 = 0.75).
+// Knowing this at intake means the dashboard warns Mikey before a post fails,
+// instead of an automation erroring out silently three days later.
+function peImageSize(buf, type) {
+  try {
+    if (/png/i.test(type) && buf.length > 24) {
+      const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+      return { w: dv.getUint32(16), h: dv.getUint32(20) };
+    }
+    if (/jpe?g/i.test(type)) {
+      let i = 2;
+      while (i + 9 < buf.length) {
+        if (buf[i] !== 0xFF) { i++; continue; }
+        const marker = buf[i + 1];
+        if (marker >= 0xC0 && marker <= 0xCF && marker !== 0xC4 && marker !== 0xC8 && marker !== 0xCC) {
+          return { w: (buf[i + 7] << 8) | buf[i + 8], h: (buf[i + 5] << 8) | buf[i + 6] };
+        }
+        i += 2 + ((buf[i + 2] << 8) | buf[i + 3]);
+      }
+    }
+  } catch { /* dimensions are a nicety, never a failure */ }
+  return { w: 0, h: 0 };
+}
+
+// Publisher-readiness, computed from what we measured at intake.
+function pePhotoChecks(p) {
+  const out = { gbp: true, ig: true, notes: [] };
+  if (!p) return { gbp: false, ig: false, notes: ['no photo'] };
+  if (p.bytes && p.bytes < 10240) { out.gbp = false; out.notes.push('under 10KB — Google will reject it'); }
+  if (p.w && p.h && (p.w < 250 || p.h < 250)) { out.gbp = false; out.notes.push('under 250×250 — Google will reject it'); }
+  if (!/jpe?g/i.test(p.type || '')) { out.ig = false; out.notes.push('Instagram only accepts JPEG'); }
+  if (p.bytes && p.bytes > 8 * 1024 * 1024) { out.ig = false; out.notes.push('over 8MB — too big for Instagram'); }
+  if (p.w && p.h) {
+    const ar = p.w / p.h;
+    if (ar < 0.8 || ar > 1.91) {
+      out.ig = false;
+      out.notes.push(`${p.w}×${p.h} (${ar.toFixed(2)}:1) is outside Instagram's 4:5–1.91:1 — crop before posting there`);
+    }
+  }
+  return out;
+}
+
+// ---------------------------------------------------------------------------
+// Intake
+// ---------------------------------------------------------------------------
+// What Mikey types alongside the photos steers the job: a city name sets the
+// location, "after"/"before" forces the role, "done" closes the job out.
+function peParseHint(text) {
+  const t = String(text || '').toLowerCase();
+  const hint = { city: '', role: '', done: false, note: String(text || '').trim() };
+  for (const [name] of PE_CITIES) if (t.includes(name.toLowerCase())) { hint.city = name; break; }
+  if (/\bafter\b|\bdone\b|\bfinished\b/.test(t)) hint.role = 'after';
+  if (/\bbefore\b|\bstart(ing)?\b/.test(t)) hint.role = 'before';
+  if (/\bdone\b|\bfinished\b|\bpost it\b/.test(t)) hint.done = true;
+  return hint;
+}
+
+// Photos texted in from the business owner's own phone. Twilio drops these into
+// handleInboundSms, where they used to be discarded outright (the number was
+// filtered as "that's me"). Now they become a marketing job.
+async function peIntakeMms(fromNorm, params, numMedia, text) {
+  const cfg = await loadConfig();
+  const pe = peConfig(cfg);
+  if (!pe.enabled) return twiml('');
+  if (!peR2()) return twiml('Photo engine is not set up yet — the R2 bucket binding is missing.');
+
+  const hint = peParseHint(text);
+  const jobs = await peLoad();
+  const cutoff = Date.now() - (pe.windowMin * 60 * 1000);
+
+  // Same number, still inside the window, not yet published → same job. This is
+  // the pairing rule: no clever heuristics, just "the photos from this visit".
+  let job = jobs.find((j) => j.phone === fromNorm && j.status !== 'posted' && j.status !== 'skipped' && j.updatedAt >= cutoff);
+  const isNew = !job;
+  if (!job) { job = peBlank(fromNorm, 'mms'); jobs.unshift(job); }
+
+  const added = [];
+  for (let i = 0; i < numMedia && job.photos.length + added.length < PE_MAX_PHOTOS; i++) {
+    const u = params['MediaUrl' + i];
+    if (!u) continue;
+    const type = params['MediaContentType' + i] || '';
+    if (type && !/^image\//i.test(type)) continue;   // skip video/vcard MMS
+    try {
+      const m = await peMirror(u, type);
+      // First batch of a job is the "before"; anything later is the "after".
+      // An explicit word in the text always wins.
+      m.role = hint.role || (isNew && !added.length && !job.photos.length ? 'before' : 'after');
+      added.push(m);
+    } catch (err) {
+      job.lastError = String((err && err.message) || err);
+    }
+  }
+  if (!added.length && !job.photos.length) {
+    // Nothing landed — don't leave an empty husk in the queue.
+    const idx = jobs.indexOf(job); if (idx >= 0) jobs.splice(idx, 1);
+    await peSave(jobs);
+    return twiml('Couldn\'t save that photo — try sending it again.');
+  }
+  job.photos = job.photos.concat(added);
+  if (hint.city) job.city = hint.city;
+  if (!job.city) job.city = pe.defaultCity;
+  if (hint.note && !/^\s*(before|after|done|finished)\s*$/i.test(hint.note)) job.note = hint.note.slice(0, 300);
+  job.updatedAt = Date.now();
+
+  // Caption now, while he's still standing there — but never at the cost of the
+  // webhook. On timeout the job is flagged and peCron picks it up within 5 min.
+  const hasAfter = job.photos.some((p) => p.role === 'after');
+  if (hasAfter || hint.done) {
+    try {
+      await peCaption(job, cfg, PE_CAPTION_TIMEOUT_MS);
+      job.captionPending = false;
+      job.status = 'ready';
+    } catch (err) {
+      job.captionPending = true;
+      job.lastError = String((err && err.message) || err);
+    }
+  }
+  await peSave(jobs);
+
+  if (!pe.confirmText) return twiml('');
+  const n = job.photos.length;
+  if (job.status === 'ready') {
+    return twiml(`📸 Saved ${n} photo${n === 1 ? '' : 's'} — ${job.city} post is written and ready. Open the dashboard → Photos to post it.`);
+  }
+  return twiml(`📸 Saved ${n} photo${n === 1 ? '' : 's'} for ${job.city}. Text the after shot when you're done and I'll write the post.`);
+}
+
+// Stage a job from photos a *customer* sent (the /api/photos/stage path). Same
+// pipeline, different origin — a customer's before shot plus Mikey's after is a
+// perfectly good post, and those photos were already in the thread.
+async function peStageFromThread(phone, urls) {
+  const cfg = await loadConfig();
+  const thread = await loadThread(phone);
+  const known = new Map();
+  for (const m of (thread.messages || [])) {
+    for (const md of (m.media || [])) known.set(md.url, md.type || '');
+  }
+  const jobs = await peLoad();
+  const job = peBlank(phone, 'thread');
+  job.city = peConfig(cfg).defaultCity;
+  if (thread.name) job.customer = thread.name;
+  for (const u of (urls || []).slice(0, PE_MAX_PHOTOS)) {
+    if (!known.has(u)) continue;                    // only mirror media we actually hold
+    const m = await peMirror(u, known.get(u));
+    m.role = job.photos.length ? 'after' : 'before';
+    job.photos.push(m);
+  }
+  if (!job.photos.length) throw new Error('no_valid_media');
+  jobs.unshift(job);
+  try { await peCaption(job, cfg, 15000); job.status = 'ready'; }
+  catch (err) { job.captionPending = true; job.lastError = String((err && err.message) || err); }
+  await peSave(jobs);
+  return job;
+}
+
+// ---------------------------------------------------------------------------
+// Caption writing
+// ---------------------------------------------------------------------------
+// Grounded in the same playbook that trains every reply, so the post sounds like
+// Mikey and never invents a price or a service he doesn't offer. Only the after
+// photo goes to the model — halves the upload, and the after shot is the post.
+async function peCaption(job, cfg, timeoutMs) {
+  if (!ENV.GEMINI_API_KEY) throw new Error('ai_not_configured');
+  const pe = peConfig(cfg);
+  const after = job.photos.filter((p) => p.role === 'after').pop() || job.photos[job.photos.length - 1];
+  const pic = await peFetchR2B64(after);
+
+  const prompt = businessContext(cfg) +
+    `You are Mikey, writing marketing copy about a mobile detail you just finished in ${job.city}, WA.\n` +
+    `You are looking at the "after" photo from that job.` +
+    (job.note ? ` Your own note about the job: "${job.note}".` : '') + `\n\n` +
+    `Write in your own voice from the playbook — plain, warm, first person, no ad-speak, no emoji spam, no hashtag walls. ` +
+    `Describe only what is actually visible in the photo. NEVER state a specific price or promise a turnaround time.\n\n` +
+    `Return ONLY JSON with these keys:\n` +
+    `"gbp": a Google Business Profile post, 2-4 sentences, under 700 characters. Mention "${job.city}" naturally in the first sentence and say what the vehicle is and what you did. End with a light invitation to book.\n` +
+    `"ig": an Instagram caption for the same photo, 1-3 short sentences in the same voice, followed by 5-8 relevant hashtags on their own line (include #${job.city.replace(/\s+/g, '')}WA and #mobiledetailing).\n` +
+    `"review": a short friendly text you'd send this customer asking for a Google review, under 300 characters, ending with the link ${pe.reviewLink} — ask them to mention the city and the service in their review.\n` +
+    `"alt": a plain factual alt-text description of the photo for the website gallery, under 120 characters.\n` +
+    `"vehicle": the vehicle as best you can tell from the photo (e.g. "black Ford F-150"), or "" if unclear.\n` +
+    `"service": which of your services this looks like, using the playbook's exact service names.`;
+
+  const raw = await peWithTimeout(
+    geminiGenerate(prompt, { json: true, maxTokens: 1400, temperature: 0.6, images: [{ mimeType: pic.mimeType, dataB64: pic.dataB64 }] }),
+    timeoutMs || PE_CAPTION_TIMEOUT_MS,
+  );
+  let p = {}; try { p = JSON.parse(raw); } catch { p = {}; }
+  job.caption = {
+    gbp: String(p.gbp || '').trim().slice(0, 1500),
+    ig: String(p.ig || '').trim().slice(0, 2200),
+    review: String(p.review || '').trim().slice(0, 320),
+    alt: String(p.alt || '').trim().slice(0, 140),
+  };
+  if (!job.caption.gbp) throw new Error('empty_caption');
+  if (p.vehicle) job.vehicle = String(p.vehicle).trim().slice(0, 60);
+  if (p.service) job.service = String(p.service).trim().slice(0, 60);
+  job.updatedAt = Date.now();
+  return job;
+}
+
+function peWithTimeout(promise, ms) {
+  return Promise.race([
+    promise,
+    new Promise((_, rej) => setTimeout(() => rej(new Error('caption_timeout')), ms)),
+  ]);
+}
+
+async function peFetchR2B64(photo) {
+  const bucket = peR2();
+  if (!bucket || !photo) throw new Error('r2_not_configured');
+  const obj = await bucket.get(photo.key);
+  if (!obj) throw new Error('photo_missing');
+  const buf = new Uint8Array(await obj.arrayBuffer());
+  let bin = ''; const chunk = 0x8000;
+  for (let i = 0; i < buf.length; i += chunk) bin += String.fromCharCode.apply(null, buf.subarray(i, i + chunk));
+  return { mimeType: photo.type || 'image/jpeg', dataB64: btoa(bin) };
+}
+
+// ---------------------------------------------------------------------------
+// The publish payload
+// ---------------------------------------------------------------------------
+// One shape, consumed by all three publish paths: the Make/Zapier webhook, the
+// token-authed /api/photo-queue pull, and the dashboard's manual copy buttons.
+// Field names mirror the Google Business Profile and Instagram APIs exactly so a
+// no-code module can be wired field-to-field with no transformation step.
+function pePayload(job, cfg) {
+  const pe = peConfig(cfg);
+  const before = job.photos.find((p) => p.role === 'before') || null;
+  const after = job.photos.filter((p) => p.role === 'after').pop() || job.photos[job.photos.length - 1] || null;
+  const checks = pePhotoChecks(after);
+  return {
+    id: job.id,
+    createdAt: job.createdAt,
+    city: job.city,
+    citySlug: (PE_CITIES.find(([n]) => n === job.city) || [])[1] || '',
+    vehicle: job.vehicle || '',
+    service: job.service || '',
+    // → Google Business Profile "What's New" post (create_local_post)
+    gbp: {
+      summary: job.caption.gbp,
+      photo_url: after ? after.url : '',
+      cta_type: pe.ctaType || 'BOOK',
+      cta_url: pe.ctaUrl || '',
+      language_code: 'en',
+      ok: !!(after && checks.gbp && job.caption.gbp),
+    },
+    // → Google Business Profile gallery upload (upload_media)
+    gbp_photo: { photo_url: after ? after.url : '', category: 'AT_WORK', ok: !!(after && checks.gbp) },
+    // → Instagram feed post (create_image_post)
+    instagram: {
+      caption: job.caption.ig,
+      image_url: after ? after.url : '',
+      ok: !!(after && checks.ig && job.caption.ig),
+    },
+    // → mikeysite city-page gallery
+    gallery: {
+      before_url: before ? before.url : '',
+      after_url: after ? after.url : '',
+      alt: job.caption.alt || '',
+    },
+    // → the review ask, ready to send from the thread
+    review_text: job.caption.review,
+    review_link: pe.reviewLink,
+    warnings: checks.notes,
+    photos: job.photos.map((p) => ({ url: p.url, role: p.role, w: p.w, h: p.h, type: p.type })),
+  };
+}
+
+// The zero-Claude publish path. Make.com / Zapier / n8n give you a catch-hook
+// URL; drop it in Settings and every ready job POSTs itself there. Their GBP and
+// Instagram modules take the fields above directly. Runs entirely server-side on
+// the cron — no agent, no session, no Claude usage.
+async function pePushWebhook(job, cfg) {
+  const pe = peConfig(cfg);
+  if (!pe.webhookUrl) return { ok: false, error: 'no_webhook' };
+  const res = await fetch(pe.webhookUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(pePayload(job, cfg)),
+  });
+  if (!res.ok) return { ok: false, error: `webhook ${res.status}: ${(await res.text()).slice(0, 160)}` };
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Cron
+// ---------------------------------------------------------------------------
+// Gated to every 5th minute: this is a marketing queue, not a dispatcher, and a
+// 1-minute cadence would burn 1,440 KV reads/day for nothing. Writes only happen
+// on a real state change, per the budget rules at the top of this file.
+async function peCron() {
+  if (new Date().getUTCMinutes() % 5 !== 0) return;
+  const cfg = await loadConfig();
+  const pe = peConfig(cfg);
+  if (!pe.enabled) return;
+  const jobs = await peLoad();
+  if (!jobs.length) return;
+  let dirty = false;
+
+  // 1. Retry one stalled caption per tick (intake timed out, or Gemini blipped).
+  const pending = jobs.find((j) => j.captionPending && j.photos.length);
+  if (pending) {
+    try {
+      await peCaption(pending, cfg, 20000);
+      pending.captionPending = false; pending.status = 'ready'; pending.lastError = '';
+    } catch (err) {
+      pending.lastError = String((err && err.message) || err);
+      pending.captionPending = false;              // one retry, then it waits for a manual nudge
+    }
+    dirty = true;
+  }
+
+  // 2. Autopost. Off by default — turn it on once the webhook is proven, so a
+  //    misconfigured hook can never quietly publish nothing 40 times.
+  if (pe.autopost && pe.webhookUrl) {
+    const dayAgo = Date.now() - 86400000;
+    const postedToday = jobs.filter((j) => j.posted && j.posted.gbp > dayAgo).length;
+    if (postedToday < (pe.maxPerDay || 2)) {
+      const next = jobs.find((j) => j.status === 'ready' && !(j.posted && j.posted.gbp));
+      if (next) {
+        const r = await pePushWebhook(next, cfg);
+        if (r.ok) {
+          next.posted.gbp = Date.now(); next.status = 'posted'; next.lastError = '';
+          notifyMikey('📣 Photo post published', `Your ${next.city} job went out:\n\n${next.caption.gbp}`).catch(() => {});
+        } else {
+          next.lastError = r.error;
+        }
+        next.updatedAt = Date.now();
+        dirty = true;
+      }
+    }
+  }
+
+  // 3. Prune. Posted jobs older than the retention window free their R2 objects.
+  const keepAfter = Date.now() - PE_KEEP_POSTED_DAYS * 86400000;
+  const stale = jobs.filter((j) => (j.status === 'posted' || j.status === 'skipped') && j.updatedAt < keepAfter);
+  if (stale.length) {
+    for (const j of stale) await peDeleteObjects(j);
+    for (const j of stale) jobs.splice(jobs.indexOf(j), 1);
+    dirty = true;
+  }
+
+  if (dirty) await peSave(jobs);
+}
+
+async function peDeleteObjects(job) {
+  const bucket = peR2();
+  if (!bucket) return;
+  for (const p of (job.photos || [])) { try { await bucket.delete(p.key); } catch { /* best effort */ } }
+}
+
+// ---------------------------------------------------------------------------
+// Routes
+// ---------------------------------------------------------------------------
+
+// PUBLIC, unauthenticated, by design — Google and Instagram fetch these with no
+// credentials. Safe because the key is 128 bits of randomness (see peObjectKey)
+// and nothing here can list the bucket.
+async function pePublicPhoto(pathname) {
+  const bucket = peR2();
+  if (!bucket) return new Response('not configured', { status: 503 });
+  const key = decodeURIComponent(pathname.replace(/^\/p\//, ''));
+  if (!key || key.includes('..')) return new Response('bad key', { status: 400 });
+  const obj = await bucket.get(key);
+  if (!obj) return new Response('not found', { status: 404 });
+  const h = new Headers();
+  obj.writeHttpMetadata(h);
+  h.set('etag', obj.httpEtag);
+  h.set('Cache-Control', 'public, max-age=31536000, immutable');
+  h.set('Access-Control-Allow-Origin', '*');
+  return new Response(obj.body, { headers: h });
+}
+
+async function apiPhotos() {
+  const cfg = await loadConfig();
+  const jobs = await peLoad();
+  return json({
+    ok: true,
+    configured: !!peR2(),
+    config: peConfig(cfg),
+    jobs: jobs.map((j) => Object.assign({}, j, { payload: pePayload(j, cfg) })),
+  });
+}
+
+async function apiPhotoStage(request) {
+  const data = await readJson(request);
+  const phone = normalizePhone(data.phone);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  if (!peR2()) return json({ ok: false, error: 'r2_not_configured' }, 503);
+  try {
+    const job = await peStageFromThread(phone, data.urls || []);
+    const cfg = await loadConfig();
+    return json({ ok: true, job: Object.assign({}, job, { payload: pePayload(job, cfg) }) });
+  } catch (err) {
+    return json({ ok: false, error: String((err && err.message) || err) }, 502);
+  }
+}
+
+async function apiPhotoCaption(request) {
+  const data = await readJson(request);
+  const jobs = await peLoad();
+  const job = jobs.find((j) => j.id === data.id);
+  if (!job) return json({ ok: false, error: 'not_found' }, 404);
+  const cfg = await loadConfig();
+  try {
+    await peCaption(job, cfg, 20000);
+    job.captionPending = false; job.lastError = ''; job.status = job.status === 'draft' ? 'ready' : job.status;
+    await peSave(jobs);
+    return json({ ok: true, job: Object.assign({}, job, { payload: pePayload(job, cfg) }) });
+  } catch (err) {
+    return json({ ok: false, error: String((err && err.message) || err) }, 502);
+  }
+}
+
+// Edit anything a human should be able to fix: the words, the city, which photo
+// is the "after", whether it ships at all.
+async function apiPhotoUpdate(request) {
+  const data = await readJson(request);
+  const jobs = await peLoad();
+  const job = jobs.find((j) => j.id === data.id);
+  if (!job) return json({ ok: false, error: 'not_found' }, 404);
+  if (data.city != null) job.city = String(data.city).slice(0, 40);
+  if (data.vehicle != null) job.vehicle = String(data.vehicle).slice(0, 60);
+  if (data.service != null) job.service = String(data.service).slice(0, 60);
+  if (data.status && ['draft', 'ready', 'posted', 'skipped'].includes(data.status)) job.status = data.status;
+  if (data.caption && typeof data.caption === 'object') {
+    for (const k of ['gbp', 'ig', 'review', 'alt']) {
+      if (data.caption[k] != null) job.caption[k] = String(data.caption[k]).slice(0, 2200);
+    }
+  }
+  if (data.roles && typeof data.roles === 'object') {
+    for (const p of job.photos) if (data.roles[p.key]) p.role = data.roles[p.key] === 'before' ? 'before' : 'after';
+  }
+  job.updatedAt = Date.now();
+  await peSave(jobs);
+  const cfg = await loadConfig();
+  return json({ ok: true, job: Object.assign({}, job, { payload: pePayload(job, cfg) }) });
+}
+
+// Manual publish. `push: true` fires the webhook now; otherwise this just records
+// that Mikey posted it himself from the copy/download buttons.
+async function apiPhotoPublish(request) {
+  const data = await readJson(request);
+  const jobs = await peLoad();
+  const job = jobs.find((j) => j.id === data.id);
+  if (!job) return json({ ok: false, error: 'not_found' }, 404);
+  const cfg = await loadConfig();
+  let pushed = null;
+  if (data.push) {
+    pushed = await pePushWebhook(job, cfg);
+    if (!pushed.ok) { job.lastError = pushed.error; await peSave(jobs); return json({ ok: false, error: pushed.error }, 502); }
+  }
+  const now = Date.now();
+  for (const t of (data.targets || ['gbp'])) if (job.posted[t] != null) job.posted[t] = now;
+  if (job.posted.gbp) job.status = 'posted';
+  job.lastError = ''; job.updatedAt = now;
+  await peSave(jobs);
+  return json({ ok: true, pushed: !!(pushed && pushed.ok), job: Object.assign({}, job, { payload: pePayload(job, cfg) }) });
+}
+
+async function apiPhotoDelete(request) {
+  const data = await readJson(request);
+  const jobs = await peLoad();
+  const i = jobs.findIndex((j) => j.id === data.id);
+  if (i < 0) return json({ ok: false, error: 'not_found' }, 404);
+  await peDeleteObjects(jobs[i]);
+  jobs.splice(i, 1);
+  await peSave(jobs);
+  return json({ ok: true });
+}
+
+async function apiPhotoConfig(request) {
+  const data = await readJson(request);
+  const cfg = await loadConfig();
+  const cur = peConfig(cfg);
+  const next = Object.assign({}, cur);
+  for (const k of ['enabled', 'autopost', 'confirmText']) if (data[k] != null) next[k] = !!data[k];
+  for (const k of ['webhookUrl', 'defaultCity', 'ctaType', 'ctaUrl', 'reviewLink']) if (data[k] != null) next[k] = String(data[k]).slice(0, 300);
+  for (const k of ['windowMin', 'maxPerDay']) if (data[k] != null) next[k] = Math.max(1, parseInt(data[k], 10) || cur[k]);
+  cfg.photoEngine = next;
+  await kv().put('config', JSON.stringify(cfg));
+  CFG_CACHE = cfg;
+  return json({ ok: true, config: next });
+}
+
+// ---------------------------------------------------------------------------
+// Machine-facing endpoints (token auth, no dashboard session)
+// ---------------------------------------------------------------------------
+// These are what an external automation talks to — a Make/Zapier polling step, a
+// GitHub Action, a scheduled agent. Bearer token or ?token=, checked against the
+// PHOTO_ENGINE_TOKEN secret. Kept separate from the dashboard password so a
+// token can be rotated without logging Mikey out of his phone.
+function peTokenOk(request, url) {
+  const want = String(ENV.PHOTO_ENGINE_TOKEN || '');
+  if (!want) return false;
+  const hdr = String(request.headers.get('Authorization') || '').replace(/^Bearer\s+/i, '');
+  const got = hdr || url.searchParams.get('token') || '';
+  if (got.length !== want.length) return false;
+  let diff = 0;
+  for (let i = 0; i < want.length; i++) diff |= want.charCodeAt(i) ^ got.charCodeAt(i);
+  return diff === 0;
+}
+
+// GET /api/photo-queue — everything ready to publish, already shaped for the
+// GBP and Instagram APIs. `?limit=1` for a one-at-a-time poller.
+async function apiPhotoQueue(request, url) {
+  if (!peTokenOk(request, url)) return json({ ok: false, error: 'unauthorized' }, 401);
+  const cfg = await loadConfig();
+  const limit = Math.min(20, Math.max(1, parseInt(url.searchParams.get('limit') || '5', 10)));
+  const target = url.searchParams.get('target') || 'gbp';
+  const jobs = await peLoad();
+  const ready = jobs
+    .filter((j) => j.status === 'ready' && !(j.posted && j.posted[target]))
+    .slice(0, limit)
+    .map((j) => pePayload(j, cfg));
+  return json({ ok: true, count: ready.length, jobs: ready });
+}
+
+// POST /api/photo-posted {id, target} — the automation's acknowledgement. Without
+// this the same job would be handed out on every poll.
+async function apiPhotoPosted(request, url) {
+  if (!peTokenOk(request, url)) return json({ ok: false, error: 'unauthorized' }, 401);
+  const data = await readJson(request);
+  const jobs = await peLoad();
+  const job = jobs.find((j) => j.id === data.id);
+  if (!job) return json({ ok: false, error: 'not_found' }, 404);
+  const target = ['gbp', 'ig', 'site'].includes(data.target) ? data.target : 'gbp';
+  job.posted[target] = Date.now();
+  if (data.error) job.lastError = String(data.error).slice(0, 300);
+  if (job.posted.gbp) job.status = 'posted';
+  job.updatedAt = Date.now();
+  await peSave(jobs);
+  return json({ ok: true });
 }
 
 // ===========================================================================

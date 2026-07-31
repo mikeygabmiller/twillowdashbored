@@ -32,6 +32,19 @@ ALERT_EMAIL = "mikeysdetailing4u@gmail.com"
 binding = "MESSAGES"
 id = "e3305474d22a48ac97265b394aba685e"
 
+# Photo Engine storage. Job photos texted in from the driveway get mirrored here
+# and served publicly at /p/<key>, because every publisher downstream — Google
+# Business Profile, the Instagram Graph API, Make, Zapier — fetches the image
+# anonymously. Twilio's media URLs need Basic auth, so they cannot be used.
+#
+# Create the bucket once before the first deploy:
+#   npx wrangler r2 bucket create mikeys-photos
+# Free tier: 10 GB stored, 1M writes/mo, 10M reads/mo — a couple of jobs a week
+# uses a rounding error of that. Posted jobs are pruned after 90 days.
+[[r2_buckets]]
+binding = "PHOTOS"
+bucket_name = "mikeys-photos"
+
 # Minute cron (scheduled() handler): delivers due scheduled sends (delayed auto-
 # replies, appointment reminders, the 3.5-min first reach-out) AND advances the
 # auto follow-up engine (surfaces nudges, fires autopilot sends). Well within the
@@ -58,3 +71,7 @@ crons = ["* * * * *"]
 #   npx wrangler secret put MIKEY_PHONE
 #   npx wrangler secret put GEMINI_API_KEY   # optional, for the AI features
 #   npx wrangler secret put RESEND_API_KEY   # optional — sends owner alerts as email (with ALERT_EMAIL above) instead of texting yourself
+#   npx wrangler secret put PHOTO_ENGINE_TOKEN  # optional — lets an outside automation
+#     (Make/Zapier/GitHub Action) read /api/photo-queue and ack /api/photo-posted
+#     without the dashboard password. Any long random string. Rotate it freely;
+#     it is independent of the dashboard login.
