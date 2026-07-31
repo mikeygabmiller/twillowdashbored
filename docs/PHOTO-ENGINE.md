@@ -37,6 +37,9 @@ control — the same model as an unlisted share link.
 
 ## Setup
 
+> **No terminal? See [PHOTO-ENGINE-GO-LIVE.md](./PHOTO-ENGINE-GO-LIVE.md)** — the
+> same setup done entirely through the Cloudflare and GitHub web dashboards.
+
 ### 1. Create the bucket, deploy
 
 ```sh
@@ -44,9 +47,14 @@ npx wrangler r2 bucket create mikeys-photos
 npx wrangler deploy
 ```
 
-The `PHOTOS` binding is already in `wrangler.toml`. Until the bucket exists the
-Photo Engine panel shows a warning and intake refuses cleanly — nothing else in
-the dashboard is affected.
+The `PHOTOS` binding is already in `wrangler.toml`. **Create the bucket first** —
+a deploy fails while the binding points at a bucket that doesn't exist. Until then
+the Photo Engine panel's setup check shows exactly what's missing, and intake
+refuses cleanly; nothing else in the dashboard is affected.
+
+The panel's setup check does a real R2 write-and-read round trip rather than just
+testing whether the binding is present, so it can't report success on a broken
+bucket.
 
 ### 2. Use it
 

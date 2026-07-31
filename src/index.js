@@ -190,7 +190,7 @@ async function handle(request) {
   if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/email-setup') return apiEmailSetup(request);
   if (request.method === 'GET'  && pathname === '/api/media')      return apiMediaProxy(url);
   if (request.method === 'POST' && pathname === '/api/media-backfill') return apiMediaBackfill(request);
-  if (request.method === 'GET'  && pathname === '/api/photos')          return apiPhotos();
+  if (request.method === 'GET'  && pathname === '/api/photos')          return apiPhotos(url);
   if (request.method === 'POST' && pathname === '/api/photos/stage')    return apiPhotoStage(request);
   if (request.method === 'POST' && pathname === '/api/photos/caption')  return apiPhotoCaption(request);
   if (request.method === 'POST' && pathname === '/api/photos/update')   return apiPhotoUpdate(request);
@@ -4831,15 +4831,81 @@ async function pePublicPhoto(pathname) {
   return new Response(obj.body, { headers: h });
 }
 
-async function apiPhotos() {
+// Everything the owner needs to answer "is this actually working?" without a
+// terminal. Each check is the real thing — the R2 check does a live round-trip
+// rather than just testing whether the binding is present — because a setup
+// checklist that reports success on a broken bucket is worse than none.
+async function peReadiness(cfg) {
+  const pe = peConfig(cfg);
+  const checks = [];
+  const add = (id, label, ok, detail, fix) => checks.push({ id, label, ok, detail, fix });
+
+  let r2ok = false, r2detail = 'PHOTOS binding missing — the R2 bucket isn\'t attached to this Worker.';
+  if (peR2()) {
+    try {
+      const probe = `_healthcheck/${Date.now()}.txt`;
+      await peR2().put(probe, 'ok');
+      const back = await peR2().get(probe);
+      r2ok = !!back;
+      r2detail = r2ok ? 'Bucket is attached and writable.' : 'Bucket is attached but a test read came back empty.';
+      await peR2().delete(probe);
+    } catch (err) {
+      r2detail = `Bucket is attached but the test write failed: ${String((err && err.message) || err)}`;
+    }
+  }
+  add('r2', 'Photo storage (R2)', r2ok, r2detail,
+    'Cloudflare dashboard → R2 → Create bucket named "mikeys-photos", then redeploy.');
+
+  add('ai', 'Caption writer (Gemini)', !!ENV.GEMINI_API_KEY,
+    ENV.GEMINI_API_KEY ? 'API key is set — captions will be written automatically.'
+      : 'No GEMINI_API_KEY, so photos are stored but no post gets written.',
+    'Cloudflare dashboard → Workers → texting → Settings → Variables → add secret GEMINI_API_KEY.');
+
+  const base = publicBase();
+  add('base', 'Public URL', /^https:\/\//.test(base),
+    base ? `Photos will be served from ${base}/p/…` : 'PUBLIC_BASE_URL is not set, so photo links would be relative and unusable by Google.',
+    'Set PUBLIC_BASE_URL in wrangler.toml to the Worker\'s live https URL.');
+
+  add('phone', 'Your number is known', !!normalizePhone(ENV.MIKEY_PHONE),
+    ENV.MIKEY_PHONE ? `Photos texted from ${ENV.MIKEY_PHONE} become marketing jobs.`
+      : 'MIKEY_PHONE is not set, so the engine can\'t tell your texts from a customer\'s.',
+    'Cloudflare dashboard → Workers → texting → Settings → Variables → add secret MIKEY_PHONE.');
+
+  // Optional from here down — the manual copy/paste flow works without any of it.
+  add('webhook', 'Auto-publish webhook', !!pe.webhookUrl,
+    pe.webhookUrl ? 'A publish webhook is set. Use "Publish now" on a job to prove it before turning on auto-post.'
+      : 'Optional. Without it, use the Copy and Download buttons — that path needs no setup at all.',
+    'Paste a Make.com or Zapier catch-hook URL into the settings above.');
+
+  add('autopost', 'Auto-post', !!(pe.autopost && pe.webhookUrl),
+    !pe.webhookUrl ? 'Needs a webhook first.'
+      : pe.autopost ? `On — up to ${pe.maxPerDay} posts/day go out on their own.`
+      : 'Off. Ready jobs wait for you to publish them.',
+    'Turn on "Auto-post ready jobs" once a test publish has worked.');
+
+  add('token', 'Automation token', !!ENV.PHOTO_ENGINE_TOKEN,
+    ENV.PHOTO_ENGINE_TOKEN ? 'Set — outside tools can read /api/photo-queue.'
+      : 'Optional. Only needed if something polls the queue instead of using the webhook.',
+    'Cloudflare dashboard → Workers → texting → Settings → Variables → add secret PHOTO_ENGINE_TOKEN.');
+
+  // Required checks gate "ready"; the optional ones are reported but don't block.
+  const required = ['r2', 'ai', 'base', 'phone'];
+  return { checks, ready: checks.filter((c) => required.includes(c.id)).every((c) => c.ok) };
+}
+
+async function apiPhotos(url) {
   const cfg = await loadConfig();
   const jobs = await peLoad();
-  return json({
+  const out = {
     ok: true,
     configured: !!peR2(),
     config: peConfig(cfg),
     jobs: jobs.map((j) => Object.assign({}, j, { payload: pePayload(j, cfg) })),
-  });
+  };
+  // The R2 probe is a real write+read, so only run it when the panel asks for it
+  // (on open / on refresh), never on the background poll that keeps the badge fresh.
+  if (url && url.searchParams.get('check') === '1') out.readiness = await peReadiness(cfg);
+  return json(out);
 }
 
 async function apiPhotoStage(request) {

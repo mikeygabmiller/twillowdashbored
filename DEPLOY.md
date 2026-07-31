@@ -1,6 +1,12 @@
 # Deploying — how this app goes live (read this first)
 
-**Production branch:** `claude/qqc-submission-auto-text-cspjc3`
+**Production branch:** `main`
+
+> ⚠️ This doc used to name `claude/qqc-submission-auto-text-cspjc3` as the production
+> branch. That branch still exists but is stale — recent work (#52, #53, #54, #56)
+> merged to `main`. **Confirm the setting before trusting either name:** Cloudflare
+> dashboard → Workers & Pages → `texting` → Settings → Builds → Production branch.
+> That setting is the single source of truth for what goes live.
 
 Cloudflare Workers Builds is connected to this repo and **auto-deploys the production
 branch above** to the live Worker `texting`
@@ -22,9 +28,9 @@ So: **never trust "I pushed it" or the worker version list. Verify the live URL.
 2. **Bump the build fingerprint in BOTH files (keep them identical):**
    - `src/index.js` → `const BUILD = '…'`
    - `public/index.html` → `var APP_BUILD = '…'`
-3. Open a PR **into the production branch** (`claude/qqc-submission-auto-text-cspjc3`)
-   and merge it. (The repo's GitHub *default* branch is stale — see below — so PRs may
-   default to the wrong base. Set the base to the production branch.)
+3. Open a PR into the production branch and merge it. Confirm the base matches the
+   Cloudflare **Production branch** setting — a PR merged into any other branch only
+   produces a *preview* build.
 4. **Verify it's actually live** (not a preview):
    - Open the live URL → open the ☰ menu → the footer shows
      `app <build> · server <build> ✓ live`.
@@ -36,8 +42,9 @@ So: **never trust "I pushed it" or the worker version list. Verify the live URL.
 
 ## Gotchas baked into this repo
 
-- **The GitHub default branch (`claude/exciting-babbage-up2gi4`) is STALE** (missing
-  live features). Do not target it. Base every PR on the production branch.
+- The GitHub default branch is now `main`, and it carries the live features. An older
+  version of this doc claimed the default was `claude/exciting-babbage-up2gi4`; that is
+  no longer true. Still verify against the Cloudflare Production branch setting.
 - **Two Workers exist** on the account: the live one is **`texting`**; the other
   (`mikeys-detailing-sms`, last touched June 2026) is unused/old — ignore it.
 - If the live footer/`/api/version` doesn't move after a merge, the Cloudflare

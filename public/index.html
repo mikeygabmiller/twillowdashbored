@@ -1129,6 +1129,13 @@
   .pe-btn.bad{color:#ff453a}
   .pe-warn{background:rgba(255,159,10,.12);color:#ff9f0a;border-radius:9px;padding:8px 10px;font-size:12px;margin-top:8px;line-height:1.4}
   .pe-empty{text-align:center;color:var(--muted2);padding:40px 16px;font-size:13.5px;line-height:1.6}
+  .pe-ok{background:rgba(52,199,89,.12);color:#34c759;border-radius:12px;padding:11px 13px;font-size:13px;font-weight:700;margin-bottom:14px}
+  .pe-chk{display:flex;gap:9px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--line)}
+  .pe-chk:first-of-type{border-top:none}
+  .pe-chk b{font-size:13px}
+  .pe-chk-i{flex:none;width:18px;text-align:center;font-weight:800;color:#ff9f0a;line-height:1.5}
+  .pe-chk.ok .pe-chk-i{color:#34c759}
+  .pe-fix{font-size:11.5px;color:var(--muted2);background:var(--bg);border-radius:8px;padding:6px 8px;margin-top:5px;line-height:1.45}
   .pe-set{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:14px}
   .pe-row{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:13px}
   .pe-row label{flex:1;min-width:0}
@@ -5013,17 +5020,21 @@
   function openPhotos(){
     el("photoApp").style.display="flex";
     if(!PE.wired){peWire();PE.wired=true}
-    peRender();peFetch();
+    peRender();peFetch(true);
   }
   function closePhotos(){el("photoApp").style.display="none"}
   function peWire(){
     el("peBack").onclick=closePhotos;
-    el("peRefresh").onclick=function(){vibrate(6);peFetch();toast("Refreshed")};
+    el("peRefresh").onclick=function(){vibrate(6);peFetch(true);toast("Refreshed")};
   }
-  function peFetch(){
-    return api("/api/photos").then(function(d){
+  // check=1 makes the server run its real setup probes (including a live R2
+  // write/read). Only asked for when the panel is open, never on the background
+  // poll that keeps the drawer badge fresh.
+  function peFetch(check){
+    return api("/api/photos"+(check?"?check=1":"")).then(function(d){
       if(!d||!d.ok)return;
       PE.jobs=d.jobs||[];PE.cfg=d.config||{};PE.configured=!!d.configured;
+      if(d.readiness)PE.readiness=d.readiness;
       var n=PE.jobs.filter(function(j){return j.status==="ready"}).length;
       var dot=el("mnPhotos");if(dot)dot.textContent=n?String(n):"";
       if(el("photoApp").style.display==="flex")peRender();
@@ -5040,12 +5051,27 @@
     document.body.appendChild(t);t.select();try{document.execCommand("copy");done()}catch(e){toast("Couldn't copy",{bad:true})}
     document.body.removeChild(t);
   }
+  // Setup checklist. The only way to tell whether this thing is actually wired
+  // up without opening a terminal, so it says what's wrong AND where to click.
+  function peSetupHTML(){
+    var r=PE.readiness;
+    if(!r)return"";
+    var bad=r.checks.filter(function(c){return!c.ok});
+    if(r.ready&&!bad.length)return'<div class="pe-ok">✓ Everything is set up. Text a before and after photo to your business number.</div>';
+    var h='<div class="pe-set"><div class="pe-lbl" style="margin-top:0">Setup'
+      +(r.ready?' — ready to use':' — not live yet')+'</div>';
+    r.checks.forEach(function(c){
+      h+='<div class="pe-chk'+(c.ok?" ok":"")+'"><span class="pe-chk-i">'+(c.ok?"✓":"○")+'</span>'
+        +'<div><b>'+peEsc(c.label)+'</b><div class="pe-meta">'+peEsc(c.detail)+'</div>'
+        +(c.ok?"":'<div class="pe-fix">'+peEsc(c.fix)+'</div>')+'</div></div>';
+    });
+    if(!r.ready)h+='<div class="pe-meta" style="margin-top:8px">The first four are required. The rest are optional — the Copy and Download buttons work without them.</div>';
+    return h+'</div>';
+  }
   function peRender(){
     var b=el("peBody");if(!b)return;
     var h="";
-    if(!PE.configured){
-      h+='<div class="pe-warn">The R2 photo bucket isn\'t bound yet, so photos can\'t be mirrored anywhere Google can fetch them. Run <b>npx wrangler r2 bucket create mikeys-photos</b> and redeploy.</div>';
-    }
+    h+=peSetupHTML();
     var c=PE.cfg||{};
     h+='<div class="pe-set">'
       +'<div class="pe-row"><label>Photo Engine on</label><input type="checkbox" id="peEnabled"'+(c.enabled!==false?" checked":"")+'></div>'
