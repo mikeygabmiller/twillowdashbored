@@ -71,7 +71,10 @@ await back();
 ok('back closed money', (await page.locator('#moneyApp').evaluate((e) => e.style.display)) === 'none');
 
 section('Analytics opens and backs out');
-await page.locator('.navitem[data-tab="analytics"]').click();
+// Analytics is reached by name now, not from the nav bar.
+await page.locator('#search').fill('analytics');
+await page.waitForTimeout(300);
+await page.locator('#search').press('Enter');
 await page.waitForTimeout(700);
 ok('analytics opened', await page.locator('#growApp').evaluate((e) => e.classList.contains('show')));
 await back();

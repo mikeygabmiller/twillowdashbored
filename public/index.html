@@ -2168,12 +2168,11 @@
     </button>
 
     <nav class="bottomnav" id="bottomnav">
-      <button class="navitem active" data-tab="home"><span class="ic" data-ic="home"></span><span class="ndot" id="navHome"></span>Home</button>
+      <button class="navitem active" data-tab="home"><span class="ic" data-ic="home"></span><span class="ndot" id="navHome"></span>Today</button>
       <button class="navitem" data-tab="messages"><span class="ic" data-ic="message-square"></span><span class="ndot" id="navUnread"></span>Chats</button>
-      <button class="navitem" data-tab="leads"><span class="ic" data-ic="clipboard-list"></span><span class="ndot" id="navLeads"></span>Leads</button>
-      <button class="navitem" data-tab="jobs"><span class="ic" data-ic="route"></span><span class="ndot" id="navJobs"></span>Jobs</button>
+      <button class="navitem" data-tab="pipeline"><span class="ic" data-ic="route"></span><span class="ndot" id="navJobs"></span>Pipeline</button>
       <button class="navitem" data-tab="money"><span class="ic" data-ic="dollar"></span><span class="ndot" id="navMoney"></span>Money</button>
-      <button class="navitem" data-tab="analytics"><span class="ic" data-ic="bar-chart"></span>Analytics</button>
+      <button class="navitem" data-tab="more"><span class="ic" data-ic="menu"></span><span class="ndot" id="navMore"></span>More</button>
     </nav>
   </aside>
 
@@ -2358,7 +2357,7 @@
         <div class="ditem" id="runItem"><span class="ic" data-ic="route"></span>Today's Run</div>
         <div class="ditem" id="bookingsItem" onclick="location.href='/bookings.html'"><span class="ic" data-ic="calendar-days"></span>Bookings</div>
         <div class="ditem" data-tab="scheduled"><span class="ic" data-ic="calendar-days"></span>Scheduled texts<span class="n" id="mnSched"></span></div>
-        <div class="ditem" data-tab="leads"><span class="ic" data-ic="clipboard-list"></span>Leads pipeline</div>
+        <div class="ditem" id="leadsItem"><span class="ic" data-ic="clipboard-list"></span>Leads pipeline</div>
         <div class="ditem" id="garageItem"><span class="ic" data-ic="car"></span>Customer garage</div>
         <div class="ditem" data-tab="archived"><span class="ic" data-ic="archive"></span>Archived<span class="n" id="mnArch"></span></div>
       </div>
@@ -2543,9 +2542,12 @@
     <button class="btn icon" id="jdRefresh" data-ic="refresh-cw" aria-label="Refresh"></button>
   </div>
   <div class="jd-body" id="jdBody"></div>
+  <!-- One flow, left to right: a lead becomes a quote, becomes today's run,
+       becomes money owed, and the customer ends up in the garage. -->
   <nav class="jd-nav" id="jdNav">
-    <button data-jv="run" class="active"><span class="e" data-ic="route" data-ic-size="20"></span>Run</button>
+    <button data-jv="leads"><span class="e" data-ic="clipboard-list" data-ic-size="20"></span>Leads</button>
     <button data-jv="quotes"><span class="e" data-ic="file-text" data-ic-size="20"></span>Quotes</button>
+    <button data-jv="run" class="active"><span class="e" data-ic="route" data-ic-size="20"></span>Run</button>
     <button data-jv="pay"><span class="e" data-ic="credit-card" data-ic-size="20"></span>Pay</button>
     <button data-jv="garage"><span class="e" data-ic="car" data-ic-size="20"></span>Garage</button>
   </nav>
@@ -2579,6 +2581,10 @@
   // cost before it goes — nothing bills off this number.
   var BLAST_RATE=0.0079;
   var FILTERS=[["all","All"],["waiting","Waiting on me"],["unread","Unread"],["new","New"],["active","Active"],["won","Won"],["lost","Lost"]];
+  // Tabs that are all "Chats" as far as the nav bar is concerned — the filter
+  // row is shown for each, and the Chats pill stays lit.
+  var CHAT_TABS=["messages","followups","scheduled","archived"];
+  var CHAT_VIEWS=[["followups","Follow-ups"],["scheduled","Scheduled"],["archived","Archived"]];
   var LEAD_COLS=[["new","New leads","#3b82f6"],["active","Active","#22c55e"],["won","Won","#a855f7"],["lost","Lost","#8a93a3"]];
   var TEMPLATES=[
     ["Intro","Hey {name}! It's Mikey from Mikey's Mobile Detailing — got your request. When works best for a detail this week?"],
@@ -2991,7 +2997,11 @@
   // to any saved business data — this is pure presentation + arrangement.
   // ==========================================================================
   var UI_KEY="mkd-ui";
-  var UI_TABLIST=[["home","Home","home"],["messages","Chats","message-square"],["leads","Leads","clipboard-list"],["jobs","Jobs","route"],["money","Money","dollar"],["analytics","Analytics","bar-chart"]];
+  // Five task-based destinations. Leads, Quotes and the Run are stages of one
+  // job — lead → quote → booked → paid — so they live together under Pipeline
+  // instead of being four separate features. Analytics is a weekly review, not
+  // a daily action, so it moved to More (and search reaches it instantly).
+  var UI_TABLIST=[["home","Today","home"],["messages","Chats","message-square"],["pipeline","Pipeline","route"],["money","Money","dollar"],["more","More","menu"]];
   var UI_PRESETS=[ // id, name, accent, accentDark
     ["crimson","Crimson","#ff2e43","#c81e30"],["ocean","Ocean","#2f9bff","#1d5fd8"],
     ["mint","Mint","#22c55e","#15803d"],["grape","Grape","#a855f7","#7e22ce"],
@@ -3002,7 +3012,7 @@
     preset:"crimson", accent:["#ff2e43","#c81e30"],
     radius:"md", density:"comfy", textScale:100, font:"system", bg:"solid",
     mode:"simple", locked:false, tourSeen:false, listStyle:"compact",
-    tabsOrder:["home","messages","leads","jobs","money","analytics"], tabsHidden:[],
+    navV:2, tabsOrder:["home","messages","pipeline","money","more"], tabsHidden:[],
     mblocks:["hero","log","alerts","pulse","brain","today"], mblocksHidden:[],
     mkpis:["net","you","costs","savings","avg","jobs","margin","owed","best"],
     // Phase 2/3
@@ -3014,7 +3024,16 @@
   var STAGE_DEF={new:["New","#3b82f6"],active:["Active","#22c55e"],won:["Won","#a855f7"],lost:["Lost","#8a93a3"]};
   function stageMeta(key){var d=STAGE_DEF[key]||["",""];var lbl=(UI.stageLabels&&UI.stageLabels[key])||d[0];var col=(UI.stageColors&&UI.stageColors[key])||d[1];return{label:lbl,color:col};}
   function rowHas(f){return (UI.rowFields||["time","preview","status","tags","unread"]).indexOf(f)>=0;}
-  var UI=(function(){try{return Object.assign(defaultUI(),JSON.parse(localStorage.getItem(UI_KEY)||"{}"))}catch(e){return defaultUI()}})();
+  // Anyone who used the app before the five-tab rework has the old six-tab
+  // order saved locally, naming tabs that no longer exist ("leads", "jobs",
+  // "analytics"). Their saved order can't express the new structure, so the
+  // nav settings — and only those — go back to default. Colours, widgets and
+  // everything else they customised are kept.
+  function migrateUI(u){
+    if(u.navV!==2){var d=defaultUI();u.navV=2;u.tabsOrder=d.tabsOrder.slice();u.tabsHidden=[]}
+    return u;
+  }
+  var UI=(function(){try{return migrateUI(Object.assign(defaultUI(),JSON.parse(localStorage.getItem(UI_KEY)||"{}")))}catch(e){return defaultUI()}})();
   function saveUI(){try{localStorage.setItem(UI_KEY,JSON.stringify(UI))}catch(e){}}
   function applyUI(){
     var r=document.documentElement;
@@ -3028,6 +3047,15 @@
     try{applyAccent(a[0],a[1]);localStorage.setItem("mkd-accent",a[0]);}catch(e){}
     document.body.classList.toggle("list-cards",UI.listStyle==="cards");
     applyNavTabs();
+  }
+  // Which nav pill is lit. Pipeline and Money open their own full-screen
+  // section rather than rendering into the list, so they have to light their
+  // own pill and hand it back on close — otherwise the bar shows you standing
+  // somewhere you are not.
+  function setNavActive(tab){
+    Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){
+      b.classList.toggle("active",b.getAttribute("data-tab")===tab);
+    });
   }
   function applyNavTabs(){
     var nav=el("bottomnav");if(!nav)return;
@@ -3343,9 +3371,20 @@
 
   // ---- filters (chips, messages tab only) ----
   function renderFilters(){
-    el("filters").style.display=(state.tab==="messages")?"flex":"none";
-    if(state.tab!=="messages")return;
+    // Follow-ups, Scheduled and Archived used to be separate tabs reached from
+    // the menu. They are the same conversations under a different lens, so they
+    // are chips on the Chats filter row now — one screen, one row, no hunting.
+    var onChats=CHAT_TABS.indexOf(state.tab)>=0;
+    el("filters").style.display=onChats?"flex":"none";
+    if(!onChats)return;
     var f=el("filters");f.innerHTML="";var c=counts();
+    function addViewChip(v){
+      var chip=document.createElement("div");chip.className="chip"+(state.tab===v[0]?" active":"");
+      var n=v[0]==="followups"?c.follow:v[0]==="scheduled"?c.sched:c.arch;
+      chip.innerHTML=esc(v[1])+(n?'<span class="cnt">'+n+'</span>':'');
+      chip.onclick=function(){setTab(v[0])};
+      f.appendChild(chip);
+    }
     // In team mode, lead with "Mine" / "Unassigned" so a helper can zero in on
     // their own queue. Tapping an active chip again clears back to everyone.
     if(teamOn()){
@@ -3361,10 +3400,18 @@
       });
     }
     FILTERS.forEach(function(p){
-      var chip=document.createElement("div");chip.className="chip"+(state.filter===p[0]?" active":"");
+      var chip=document.createElement("div");
+      chip.className="chip"+((state.tab==="messages"&&state.filter===p[0])?" active":"");
       var n=p[0]==="unread"?c.unread:p[0]==="waiting"?c.needs:(p[0]==="all"?0:state.threads.filter(function(t){return !t.archived&&t.status===p[0]}).length);
       chip.innerHTML=esc(p[1])+((p[0]!=="all"&&n)?'<span class="cnt">'+n+'</span>':'');
-      chip.onclick=function(){state.filter=p[0];renderFilters();renderMain()};f.appendChild(chip);
+      chip.onclick=function(){
+        state.filter=p[0];
+        if(state.tab!=="messages")setTab("messages");    // setTab re-renders
+        else{renderFilters();renderMain()}
+      };
+      f.appendChild(chip);
+      // The lens chips sit right after the attention ones, before the statuses.
+      if(p[0]==="unread")CHAT_VIEWS.forEach(addViewChip);
     });
   }
 
@@ -3443,7 +3490,7 @@
     {id:"archived",t:"Archived",g:"Chats",ic:"archive",k:"hidden old done filed",run:function(){setTab("archived")}},
     {id:"newmsg",t:"New message",g:"Chats",ic:"plus",k:"compose text someone start write",run:function(){var f=el("fab");if(f)f.click()}},
     // — work
-    {id:"leads",t:"Leads pipeline",g:"Pipeline",ic:"clipboard-list",k:"prospects enquiries board stages funnel won lost",run:function(){setTab("leads")}},
+    {id:"leads",t:"Leads pipeline",g:"Pipeline",ic:"clipboard-list",k:"prospects enquiries board stages funnel won lost",run:function(){openJobs("leads")}},
     {id:"run",t:"Today's run",g:"Pipeline",ic:"route",k:"jobs schedule route day work appointments",run:function(){openJobs("run")}},
     {id:"quotes",t:"Quote builder",g:"Pipeline",ic:"file-text",k:"estimate bid proposal price pricing quote",run:function(){openJobs("quotes")}},
     {id:"garage",t:"Customer garage",g:"Pipeline",ic:"car",k:"vehicles cars customers history clients",run:function(){openJobs("garage")}},
@@ -4131,8 +4178,10 @@
     var more=el("sumMore");if(more)more.onclick=function(){openAnalytics()};
   }
 
-  function renderLeads(){
-    var box=el("scroll");
+  // Renders into the sidebar list by default, or into whatever container the
+  // Pipeline board hands it.
+  function renderLeads(into){
+    var box=into||el("scroll");
     var active=state.threads.filter(function(t){return !t.archived}).filter(passSearch);
     var html='<div class="board">';
     var any=false;
@@ -6231,7 +6280,7 @@
     el("coachPanel").style.display="none";el("coachPanel")._phone=null;el("teamIdentityBar").style.display="none";
     hideAiReview();
     el("messages").innerHTML="";
-    Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.classList.toggle("active",b.getAttribute("data-tab")===tab)});
+    setNavActive(CHAT_TABS.indexOf(tab)>=0?"messages":tab);
     el("scroll").scrollTop=0;
     renderMain();
     if(tab==="home")fetchInsights();
@@ -6436,7 +6485,16 @@
     if(!e.target.closest("#toolsBtn")&&!e.target.closest("#toolsSheet"))el("toolsSheet").style.display="none";
   });
 
-  Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.onclick=function(){vibrate(6);var tb=b.getAttribute("data-tab");if(tb==="money")return openMoney();if(tb==="analytics")return openAnalytics();if(tb==="jobs")return openJobs();setTab(tb)}});
+  Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){
+    b.onclick=function(){
+      vibrate(6);
+      var tb=b.getAttribute("data-tab");
+      if(tb==="money")return openMoney();
+      if(tb==="pipeline")return openJobs();
+      if(tb==="more")return openDrawer();
+      setTab(tb);
+    };
+  });
   // Job Day suite + hands-free voice
   el("vxFab").onclick=vxOpen;
   el("vxClose").onclick=vxClose;
@@ -6458,6 +6516,7 @@
   el("aiCmdOverlay").onclick=function(e){if(e.target===el("aiCmdOverlay"))closeAiCmd()};
   el("aiCmdAsk").onclick=aiCmdAsk;
   el("aiCmdInput").addEventListener("keydown",function(e){if((e.metaKey||e.ctrlKey)&&e.key==="Enter"){e.preventDefault();aiCmdAsk()}});
+  el("leadsItem").onclick=function(){closeDrawer();openJobs("leads")};
   el("runItem").onclick=function(){closeDrawer();openJobs("run")};
   el("quotesItem").onclick=function(){closeDrawer();openJobs("quotes")};
   el("payItem").onclick=function(){closeDrawer();openJobs("pay")};
@@ -8073,8 +8132,8 @@
     return new Date(+dstr.slice(0,4),+dstr.slice(5,7)-1,+dstr.slice(8,10)).toLocaleDateString([],{weekday:"short",month:"short",day:"numeric"});
   }
 
-  function openMoney(){MO.open=true;el("moneyApp").style.display="flex";navOpen("money",closeMoney);if(!MO.loadedOnce||MO.month!==moCurMonth()){moRender();loadMoney()}else moRender()}
-  function closeMoney(){navDrop("money");MO.open=false;el("moneyApp").style.display="none";closeMoSheet()}
+  function openMoney(){MO.open=true;el("moneyApp").style.display="flex";setNavActive("money");navOpen("money",closeMoney);if(!MO.loadedOnce||MO.month!==moCurMonth()){moRender();loadMoney()}else moRender()}
+  function closeMoney(){navDrop("money");MO.open=false;el("moneyApp").style.display="none";setNavActive(state.tab);closeMoSheet()}
   function refreshMoBadge(){var n=el("navMoney");if(n){var c=(MO.cfg&&MO.cfg.wonNudge!==false)?(MO.nudges||[]).length:0;n.textContent=c;n.className="ndot"+(c?" show":"")}}
   function loadMoney(month){
     return api("/api/money"+(month?"?month="+encodeURIComponent(month):"")).then(function(d){
@@ -9225,6 +9284,7 @@
     track:{token:"",jobId:"",watch:null,timer:null,eta:0,startedAt:0},
     photos:{},sheetOpen:false};
   var JD_VIEWS={
+    leads:["Leads","Everyone who asked — and where they got to"],
     run:["Today's Run","Your day, stop by stop"],
     quotes:["Quotes","Price it, text it, track it"],
     pay:["Get Paid","Payment requests & who still owes"],
@@ -9244,6 +9304,7 @@
 
   function openJobs(view){
     el("jdApp").classList.add("show");
+    setNavActive("pipeline");
     navOpen("jobs",closeJobs);
     if(!JD.wired){jdWire();JD.wired=true}
     if(!JD.date)JD.date=jdToday();
@@ -9256,7 +9317,7 @@
     if(JD.view==="pay"&&!JD.pay)jdLoadPay();
     if(JD.view==="garage"&&!JD.garage)jdLoadGarage();
   }
-  function closeJobs(){navDrop("jobs");el("jdApp").classList.remove("show");jdSheetClose();jdTrackDetach()}
+  function closeJobs(){navDrop("jobs");el("jdApp").classList.remove("show");setNavActive(state.tab);jdSheetClose();jdTrackDetach()}
   function jdSyncNav(){Array.prototype.forEach.call(el("jdNav").querySelectorAll("[data-jv]"),function(b){b.classList.toggle("active",b.getAttribute("data-jv")===JD.view)})}
   function jdSet(v){
     JD.view=v;jdSyncNav();jdRender();el("jdBody").scrollTop=0;
@@ -9282,10 +9343,25 @@
     el("jdTitle").textContent=m[0];
     el("jdSub").textContent=JD.view==="run"?(jdNiceDate(JD.date)+" · "+m[1]):m[1];
     var b=el("jdBody");
+    if(JD.view==="leads")return jdLeadsView(b);
     if(JD.view==="run")return jdRunView(b);
     if(JD.view==="quotes")return jdQuotesView(b);
     if(JD.view==="pay")return jdPayView(b);
     return jdGarageView(b);
+  }
+
+  // The leads board, living inside Pipeline as its first stage. Opening a
+  // conversation from a card leaves the board entirely — a chat is a different
+  // place, not another layer stacked on top of this one.
+  function jdLeadsView(b){
+    renderLeads(b);
+    Array.prototype.forEach.call(b.querySelectorAll(".lead-card"),function(c){
+      var ph=c.getAttribute("data-phone");
+      c.onclick=function(){
+        if(ctxJustOpened){ctxJustOpened=false;return}
+        closeJobs();setTab("messages");openThread(ph);
+      };
+    });
   }
 
   // ---- shared bottom sheet ----
