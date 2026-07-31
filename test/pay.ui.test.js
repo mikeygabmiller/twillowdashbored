@@ -116,15 +116,17 @@ await page.locator('#ppCancel').click();
 await page.waitForTimeout(400);
 ok('cancel closes it', !(await page.locator('#payPop').isVisible()));
 
-section('Setup from the menu');
-// The menu button is hidden while a conversation is open on a phone — leave the
-// conversation the way a real user would before reaching for it.
+section('Setup by searching for it');
+// This used to click the menu entry directly, which had been failing since the
+// menu groups started shipping collapsed — the item exists but is not visible,
+// so the click timed out. Searching by name is the path that works from
+// anywhere now, and it does not care how the menu is folded.
 await page.locator('#backBtn').click();
 await page.waitForTimeout(600);
-await page.locator('#menuBtn').click();
-await page.waitForTimeout(500);
-ok('menu has a Payment setup entry', await page.locator('#paySetupItem').count() === 1);
-await page.locator('#paySetupItem').click();
+await page.locator('#search').fill('payment setup');
+await page.waitForTimeout(300);
+ok('search offers Payment setup', (await page.locator('.fx-row .fx-t').allInnerTexts()).includes('Payment setup'));
+await page.locator('#search').press('Enter');
 await page.waitForTimeout(800);
 ok('setup opens', await page.locator('#payPop').isVisible());
 ok('existing Venmo shown', (await page.locator('#pcVenmo').inputValue()) === 'Mikey-Miller');

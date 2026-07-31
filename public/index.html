@@ -738,6 +738,19 @@
   .drawer .dh small{color:var(--muted);font-size:11.5px}
   .drawer .dbody{flex:1;overflow-y:auto;padding:10px 0}
   .drawer .sec-lbl{font-size:10px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted2);font-weight:700;padding:14px 20px 6px}
+  /* ---- feature hits in search: the app's own screens, reachable by name ---- */
+  .fx-wrap{border-bottom:1px solid var(--line2);padding:6px 0 8px;background:var(--panel)}
+  .fx-hd{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2);padding:8px 16px 6px}
+  .fx-row{display:flex;align-items:center;gap:12px;width:100%;padding:11px 16px;background:none;border:0;
+    color:var(--text);font-size:14.5px;font-family:inherit;text-align:left;cursor:pointer}
+  .fx-row:hover,.fx-row:focus-visible{background:var(--panel2);outline:none}
+  .fx-row.top{background:var(--accent-soft)}
+  .fx-row.top .fx-ic{color:var(--accent-text)}
+  .fx-ic{width:22px;display:flex;align-items:center;justify-content:center;color:var(--muted);flex:0 0 auto}
+  .fx-t{flex:1 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .fx-g{flex:0 0 auto;font-size:11.5px;color:var(--muted2);background:var(--panel3);
+    border-radius:999px;padding:3px 9px}
+  .fx-row.top .fx-hint{flex:0 0 auto;font-size:11px;color:var(--accent-text);opacity:.9}
   .drawer .ditem{display:flex;align-items:center;gap:14px;padding:13px 20px;font-size:14.5px;cursor:pointer}
   .drawer .ditem:hover{background:var(--panel2)}
   .drawer .ditem.active{background:var(--accent-soft);color:var(--accent-text);font-weight:600}
@@ -1839,6 +1852,28 @@
      Shares the app's tokens (--accent, --panel, --line …) so it themes,
      recolors and light/dark-flips with everything else for free.
      ===================================================================== */
+  /* ---- More: grouped, scannable, two levels deep at most ---- */
+  .mr{position:fixed;inset:0;z-index:84;background:var(--bg);display:none;flex-direction:column}
+  .mr.show{display:flex}
+  .mr-head{display:flex;align-items:center;gap:10px;padding:calc(10px + var(--safe-top)) 12px 10px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--panel) 92%,transparent);backdrop-filter:blur(12px);flex:none}
+  .mr-title{flex:1;min-width:0}
+  .mr-title b{font-size:17px;letter-spacing:-.015em;font-weight:800}
+  .mr-title small{display:block;color:var(--muted2);font-size:11.5px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mr-body{flex:1;overflow-y:auto;min-height:0;-webkit-overflow-scrolling:touch;padding:14px 14px calc(28px + var(--safe-bottom));max-width:660px;width:100%;margin:0 auto}
+  .mr-grp{margin-bottom:18px}
+  .mr-gh{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2);padding:0 4px 8px}
+  .mr-list{background:var(--panel);border:1px solid var(--line2);border-radius:var(--radius);overflow:hidden}
+  .mr-row{display:flex;align-items:center;gap:13px;width:100%;padding:14px 14px;background:none;border:0;border-top:1px solid var(--line2);
+    color:var(--text);font-size:15px;font-family:inherit;text-align:left;cursor:pointer}
+  .mr-row:first-child{border-top:0}
+  .mr-row:hover{background:var(--panel2)}
+  .mr-row .e{width:22px;display:flex;align-items:center;justify-content:center;color:var(--muted);flex:0 0 auto}
+  .mr-row .t{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .mr-row .n{flex:0 0 auto;font-size:12px;color:var(--muted2)}
+  .mr-row .cv{flex:0 0 auto;color:var(--muted2);line-height:0}
+  .mr-row.danger .t,.mr-row.danger .e{color:var(--accent-text)}
+  .mr-sec{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2);padding:16px 4px 8px}
+  .mr-foot{text-align:center;color:var(--muted2);font-size:11.5px;line-height:1.7;padding:18px 0 6px}
   .jd{position:fixed;inset:0;z-index:82;background:var(--bg);display:none;flex-direction:column}
   .jd.show{display:flex}
   .jd-head{display:flex;align-items:center;gap:10px;padding:calc(10px + var(--safe-top)) 12px 10px;border-bottom:1px solid var(--line);background:color-mix(in srgb,var(--panel) 92%,transparent);backdrop-filter:blur(12px);flex:none}
@@ -2138,7 +2173,7 @@
       <button class="btn icon menubtn" id="menuBtn" data-ic="menu" aria-label="Menu"></button>
       <label class="searchpill" id="searchPill">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        <input id="search" type="text" placeholder="Search — try status:won, tag:ceramic, is:unread" autocomplete="off" />
+        <input id="search" type="text" placeholder="Search people, or a feature — try “invoice”" autocomplete="off" />
         <button class="clr" id="searchClr" data-ic="x" type="button" aria-label="Clear"></button>
       </label>
       <div class="myavatar" id="myAvatar" title="Mikey's Mobile Detailing"></div>
@@ -2155,12 +2190,11 @@
     </button>
 
     <nav class="bottomnav" id="bottomnav">
-      <button class="navitem active" data-tab="home"><span class="ic" data-ic="home"></span><span class="ndot" id="navHome"></span>Home</button>
+      <button class="navitem active" data-tab="home"><span class="ic" data-ic="home"></span><span class="ndot" id="navHome"></span>Today</button>
       <button class="navitem" data-tab="messages"><span class="ic" data-ic="message-square"></span><span class="ndot" id="navUnread"></span>Chats</button>
-      <button class="navitem" data-tab="leads"><span class="ic" data-ic="clipboard-list"></span><span class="ndot" id="navLeads"></span>Leads</button>
-      <button class="navitem" data-tab="jobs"><span class="ic" data-ic="route"></span><span class="ndot" id="navJobs"></span>Jobs</button>
+      <button class="navitem" data-tab="pipeline"><span class="ic" data-ic="route"></span><span class="ndot" id="navJobs"></span>Pipeline</button>
       <button class="navitem" data-tab="money"><span class="ic" data-ic="dollar"></span><span class="ndot" id="navMoney"></span>Money</button>
-      <button class="navitem" data-tab="analytics"><span class="ic" data-ic="bar-chart"></span>Analytics</button>
+      <button class="navitem" data-tab="more"><span class="ic" data-ic="menu"></span><span class="ndot" id="navMore"></span>More</button>
     </nav>
   </aside>
 
@@ -2324,94 +2358,27 @@
   </section>
 </div>
 
-<!-- ============ Left menu drawer ============ -->
-<div class="scrim" id="scrim"></div>
-<aside class="drawer" id="drawer">
-  <div class="dh">
-    <div class="logo" id="drawerLogo"></div>
-    <div><h1>Mikey's Detailing</h1><small>Mobile Detailing • Snohomish</small></div>
+<!-- ============ More ============
+     Everything that isn't a daily action. This replaced a 25-item slide-out
+     menu whose first four entries duplicated tabs. Rows are built by mrRender()
+     from MORE_MENU so there is exactly one list to keep honest. -->
+<div class="mr" id="moreApp">
+  <div class="mr-head">
+    <button class="btn icon" id="mrBack" data-ic="chevron-left" aria-label="Back"></button>
+    <div class="mr-title"><b id="mrTitle">More</b><small id="mrSub">Mikey's Mobile Detailing</small></div>
   </div>
-  <div class="dbody" id="dbody">
-    <!-- Conversations: the reason he opens the app. No heading, no collapsing —
-         these four are always right at the top. -->
-    <div class="ditem" data-tab="messages"><span class="ic" data-ic="message-square"></span>All messages<span class="n" id="mnAll"></span></div>
-    <div class="ditem" data-filter="unread"><span class="ic" data-ic="bell"></span>Unread<span class="n" id="mnUnread"></span></div>
-    <div class="ditem" data-tab="followups"><span class="ic" data-ic="list-checks"></span>Follow-ups<span class="n" id="mnFollow"></span></div>
-    <div class="ditem" id="aiCmdItem"><span class="ic" data-ic="sparkles"></span>Command AI<span class="n" style="color:var(--accent-text)">new</span></div>
-
-    <div class="dgrp open" data-grp="work">
-      <div class="dgh">Today &amp; jobs<span class="cv" data-ic="chevron-down"></span></div>
-      <div class="dgb">
-        <div class="ditem" id="runItem"><span class="ic" data-ic="route"></span>Today's Run</div>
-        <div class="ditem" id="bookingsItem" onclick="location.href='/bookings.html'"><span class="ic" data-ic="calendar-days"></span>Bookings</div>
-        <div class="ditem" data-tab="scheduled"><span class="ic" data-ic="calendar-days"></span>Scheduled texts<span class="n" id="mnSched"></span></div>
-        <div class="ditem" data-tab="leads"><span class="ic" data-ic="clipboard-list"></span>Leads pipeline</div>
-        <div class="ditem" id="garageItem"><span class="ic" data-ic="car"></span>Customer garage</div>
-        <div class="ditem" data-tab="archived"><span class="ic" data-ic="archive"></span>Archived<span class="n" id="mnArch"></span></div>
-      </div>
-    </div>
-
-    <div class="dgrp" data-grp="money">
-      <div class="dgh">Money<span class="cv" data-ic="chevron-down"></span></div>
-      <div class="dgb">
-        <div class="ditem" id="moneyItem"><span class="ic" data-ic="dollar"></span>Money tracker</div>
-        <div class="ditem" id="payItem"><span class="ic" data-ic="credit-card"></span>Get paid</div>
-        <div class="ditem" id="quotesItem"><span class="ic" data-ic="file-text"></span>Quote builder</div>
-        <div class="ditem" id="paySetupItem"><span class="ic" data-ic="wallet"></span>Payment setup</div>
-        <div class="ditem" id="analyticsItem"><span class="ic" data-ic="bar-chart"></span>Analytics — website &amp; business</div>
-      </div>
-    </div>
-
-    <div class="dgrp" data-grp="ai">
-      <div class="dgh">AI<span class="cv" data-ic="chevron-down"></span></div>
-      <div class="dgb">
-        <div class="ditem" id="trainAiItem"><span class="ic" data-ic="sparkles"></span>Train AI<span class="n" id="mnTrainStat">…</span></div>
-        <div class="ditem" id="voiceItem"><span class="ic" data-ic="mic"></span>Talk to your dashboard</div>
-        <div class="ditem" id="playbookItem"><span class="ic" data-ic="file-text"></span>Business playbook</div>
-      </div>
-    </div>
-
-    <div class="dgrp" data-grp="settings">
-      <div class="dgh">Settings<span class="cv" data-ic="chevron-down"></span></div>
-      <div class="dgb">
-        <div class="ditem" id="pushItem"><span class="ic" data-ic="bell"></span>Phone notifications<span class="n" id="pushState">off</span></div>
-        <div class="sec-lbl">Auto follow-ups &amp; calls</div>
-        <div class="fu-settings" id="fuSettings"></div>
-        <div class="sec-lbl">Team</div>
-        <div class="team-panel" id="teamPanel"></div>
-        <div class="sec-lbl">Appearance</div>
-        <div class="ditem" id="customizeItem"><span class="ic" data-ic="sliders"></span>Customize everything</div>
-        <div class="theme-seg" id="themeSeg"></div>
-        <div class="sec-lbl">Accent color</div>
-        <div class="accent-row" id="accentRow"></div>
-      </div>
-    </div>
-
-    <!-- The playbook editor is nine textareas; keeping it in its own collapsed group
-         means it costs nothing until he actually wants to edit it. openPlaybook()
-         opens this group and scrolls to it. -->
-    <div class="dgrp" data-grp="playbook">
-      <div class="dgh">Business playbook<span class="cv" data-ic="chevron-down"></span></div>
-      <div class="dgb"><div class="playbook" id="playbookPanel"></div></div>
-    </div>
-
-    <div class="dgrp" data-grp="tools">
-      <div class="dgh">Tools &amp; account<span class="cv" data-ic="chevron-down"></span></div>
-      <div class="dgb">
-        <div class="ditem" id="healthItem"><span class="ic" data-ic="activity"></span>Connection<span class="n"><span class="health" id="healthBadge"><span class="dotc"></span><span id="healthTxt">check</span></span></span></div>
-        <div class="ditem" id="refreshItem"><span class="ic" data-ic="refresh-cw"></span>Refresh now</div>
-        <div class="ditem" id="alertTestItem"><span class="ic" data-ic="bell"></span>Send test alert</div>
-        <div class="ditem" id="snapshotItem"><span class="ic" data-ic="download"></span>Snapshot for Claude</div>
-        <div class="ditem" id="logoutItem"><span class="ic" data-ic="log-out"></span>Sign out</div>
-      </div>
-    </div>
-  </div>
-  <div class="foot">
-    Mikey's Mobile Detailing<br>
-    Dashboard · auto-refresh on<br>
-    <span id="buildStamp" style="opacity:.75">checking version…</span>
-  </div>
-</aside>
+  <div class="mr-body" id="mrBody"></div>
+</div>
+<!-- Panels that JS fills in by id and that must survive a re-render. They are
+     parked here and moved into whichever More view is showing, rather than
+     being rebuilt — moving a node keeps its listeners and its contents. -->
+<div id="morePanels" hidden>
+  <div class="fu-settings" id="fuSettings"></div>
+  <div class="team-panel" id="teamPanel"></div>
+  <div class="theme-seg" id="themeSeg"></div>
+  <div class="accent-row" id="accentRow"></div>
+  <div class="playbook" id="playbookPanel"></div>
+</div>
 
 <div id="loginOverlay" class="login-overlay">
   <div class="login-box" id="loginBox">
@@ -2530,9 +2497,12 @@
     <button class="btn icon" id="jdRefresh" data-ic="refresh-cw" aria-label="Refresh"></button>
   </div>
   <div class="jd-body" id="jdBody"></div>
+  <!-- One flow, left to right: a lead becomes a quote, becomes today's run,
+       becomes money owed, and the customer ends up in the garage. -->
   <nav class="jd-nav" id="jdNav">
-    <button data-jv="run" class="active"><span class="e" data-ic="route" data-ic-size="20"></span>Run</button>
+    <button data-jv="leads"><span class="e" data-ic="clipboard-list" data-ic-size="20"></span>Leads</button>
     <button data-jv="quotes"><span class="e" data-ic="file-text" data-ic-size="20"></span>Quotes</button>
+    <button data-jv="run" class="active"><span class="e" data-ic="route" data-ic-size="20"></span>Run</button>
     <button data-jv="pay"><span class="e" data-ic="credit-card" data-ic-size="20"></span>Pay</button>
     <button data-jv="garage"><span class="e" data-ic="car" data-ic-size="20"></span>Garage</button>
   </nav>
@@ -2566,6 +2536,10 @@
   // cost before it goes — nothing bills off this number.
   var BLAST_RATE=0.0079;
   var FILTERS=[["all","All"],["waiting","Waiting on me"],["unread","Unread"],["new","New"],["active","Active"],["won","Won"],["lost","Lost"]];
+  // Tabs that are all "Chats" as far as the nav bar is concerned — the filter
+  // row is shown for each, and the Chats pill stays lit.
+  var CHAT_TABS=["messages","followups","scheduled","archived"];
+  var CHAT_VIEWS=[["followups","Follow-ups"],["scheduled","Scheduled"],["archived","Archived"]];
   var LEAD_COLS=[["new","New leads","#3b82f6"],["active","Active","#22c55e"],["won","Won","#a855f7"],["lost","Lost","#8a93a3"]];
   var TEMPLATES=[
     ["Intro","Hey {name}! It's Mikey from Mikey's Mobile Detailing — got your request. When works best for a detail this week?"],
@@ -2590,16 +2564,98 @@
   var FU_STAGE={owed:["Reply owed","message-square"],nudge:["Follow-up","list-checks"],won:["Win follow-up","check-circle"],lost:["Revival","undo"]};
   var FU_SNOOZE=[["1 day",24],["3 days",72],["1 week",168]];
 
-  var state={threads:[],filter:"all",assign:"all",tab:"home",search:"",phone:null,thread:null,insights:null,config:null,templates:TEMPLATES.slice(),emails:[],loadedOnce:false};
+  var state={threads:[],filter:"all",assign:"all",tab:"home",search:"",searchFocus:false,phone:null,thread:null,insights:null,config:null,templates:TEMPLATES.slice(),emails:[],loadedOnce:false};
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-31·yes-no-reply";
+  var APP_BUILD="2026-07-31·nav-search-more";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
   function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
   function vibrate(ms){try{if(navigator.vibrate)navigator.vibrate(ms)}catch(e){}}
+
+  // ---- navigation stack -------------------------------------------------
+  // One place that knows what is layered on screen, so the phone's back
+  // gesture closes the top layer instead of dropping out of the app. Every
+  // full screen and sheet registers itself when it opens; closing it — by
+  // back chevron, by back gesture, by Escape, or programmatically from some
+  // other bit of code — all ends up on the same path.
+  //
+  // The contract for a screen is two lines: navOpen("id",closeFn) inside
+  // open(), and navDrop("id") at the top of close(). Nothing else changes.
+  // Depth is tracked here, not in the browser: we keep exactly ONE spare
+  // history entry ("the sentinel") alive while anything is layered, and re-arm
+  // it after each pop. Pushing one entry per layer looks tidier but breaks —
+  // history.back()/go() are async, and the menu closes itself before opening a
+  // screen ("closeDrawer(); openJobs()"), so a per-layer stack desyncs the
+  // moment those two land out of order. One sentinel cannot desync.
+  var NAV=[];             // [{id,close}] bottom → top
+  var navSentinel=false;  // is our spare history entry currently armed?
+  var navRewinding=0;     // back() calls we made ourselves; ignore their popstate
+  var navClosing=false;   // a popstate is already unwinding this layer
+  var navPendingUnarm=null; // deferred "give the sentinel back" timer
+  function navIndex(id){for(var i=NAV.length-1;i>=0;i--){if(NAV[i].id===id)return i}return -1}
+  function navTop(){return NAV.length?NAV[NAV.length-1].id:null}
+  function navArm(){
+    // A layer reappeared before the deferred unarm ran — the sentinel is still
+    // wanted, so cancel the rewind rather than push a second entry.
+    if(navPendingUnarm){clearTimeout(navPendingUnarm);navPendingUnarm=null;}
+    if(NAV.length&&!navSentinel){navSentinel=true;try{history.pushState({navGuard:1},"")}catch(e){navSentinel=false}}
+  }
+  function navOpen(id,closeFn){
+    if(navIndex(id)>=0)return;                       // already layered
+    NAV.push({id:id,close:closeFn});
+    navArm();
+  }
+  // Drop a layer and everything stacked above it. Called at the top of each
+  // close() so a programmatic close keeps the bookkeeping honest. When a
+  // popstate is what triggered the close the browser has already rewound, so
+  // we only prune.
+  function navDrop(id){
+    var i=navIndex(id);if(i<0)return 0;
+    var n=NAV.length-i;NAV.length=i;
+    if(!navClosing&&!NAV.length&&navSentinel)navUnarmSoon();
+    return n;
+  }
+  // Give back the sentinel once nothing is layered — but on a later tick.
+  // One click handler routinely closes one thing and opens another
+  // ("closeDrawer(); openJobs()"), and history.back() is async: interleaving it
+  // with the pushState from the open leaves the bookkeeping and the browser
+  // disagreeing about where we are. Deferring lets navArm() cancel instead.
+  function navUnarmSoon(){
+    if(navPendingUnarm)clearTimeout(navPendingUnarm);
+    navPendingUnarm=setTimeout(function(){
+      navPendingUnarm=null;
+      if(NAV.length||!navSentinel)return;            // re-layered meanwhile
+      navSentinel=false;navRewinding++;
+      try{history.back()}catch(e){navRewinding--}
+    },0);
+  }
+  // What every back chevron, close button and Escape calls. Returns false when
+  // nothing was layered, so callers can fall through to their own behaviour.
+  function navBack(){
+    if(!NAV.length)return false;
+    if(navSentinel){try{history.back()}catch(e){navPopTop()}}
+    else navPopTop();
+    return true;
+  }
+  function navPopTop(){
+    var layer=NAV.pop();if(!layer)return;
+    navClosing=true;
+    try{if(layer.close)layer.close()}catch(e){}
+    navClosing=false;
+  }
+  window.addEventListener("popstate",function(){
+    if(navRewinding>0){navRewinding--;return}   // our own rewind
+    navSentinel=false;                          // whatever happened, it's spent
+    // Nothing layered: back means "leave the app", which is right on a root tab.
+    if(!NAV.length)return;
+    navPopTop();
+    navArm();                                   // still layered? re-arm
+  });
+  // Read-only view of the stack, for the UI tests to assert against.
+  window.__nav=function(){return{depth:NAV.length,top:navTop(),sentinel:navSentinel,rewinding:navRewinding}};
 
   // ---- team mode helpers ----
   function teamOn(){return !!(state.config&&state.config.teamMode)}
@@ -2724,7 +2780,7 @@
     "Mark everything as read"
   ];
   function openAiCmd(prefill){
-    var ov=el("aiCmdOverlay");ov.style.display="flex";hydrateIcons(ov);
+    var ov=el("aiCmdOverlay");ov.style.display="flex";hydrateIcons(ov);navOpen("aicmd",closeAiCmd);
     el("aiCmdResult").style.display="none";el("aiCmdResult").className="aicmd-result";
     var inp=el("aiCmdInput");inp.value=prefill||"";
     var chips=el("aiCmdChips");chips.innerHTML="";
@@ -2732,7 +2788,7 @@
     var ask=el("aiCmdAsk");ask.disabled=false;ask.innerHTML=ic("sparkles",15)+" Ask";
     if(prefill){aiCmdAsk();}else{setTimeout(function(){try{inp.focus()}catch(e){}},60);}
   }
-  function closeAiCmd(){el("aiCmdOverlay").style.display="none"}
+  function closeAiCmd(){navDrop("aicmd");el("aiCmdOverlay").style.display="none"}
   // Ask the command-center agent. It replies with an answer and/or a set of
   // proposed actions — which are shown for approval and never auto-run.
   function aiCmdAsk(){
@@ -2896,7 +2952,11 @@
   // to any saved business data — this is pure presentation + arrangement.
   // ==========================================================================
   var UI_KEY="mkd-ui";
-  var UI_TABLIST=[["home","Home","home"],["messages","Chats","message-square"],["leads","Leads","clipboard-list"],["jobs","Jobs","route"],["money","Money","dollar"],["analytics","Analytics","bar-chart"]];
+  // Five task-based destinations. Leads, Quotes and the Run are stages of one
+  // job — lead → quote → booked → paid — so they live together under Pipeline
+  // instead of being four separate features. Analytics is a weekly review, not
+  // a daily action, so it moved to More (and search reaches it instantly).
+  var UI_TABLIST=[["home","Today","home"],["messages","Chats","message-square"],["pipeline","Pipeline","route"],["money","Money","dollar"],["more","More","menu"]];
   var UI_PRESETS=[ // id, name, accent, accentDark
     ["crimson","Crimson","#ff2e43","#c81e30"],["ocean","Ocean","#2f9bff","#1d5fd8"],
     ["mint","Mint","#22c55e","#15803d"],["grape","Grape","#a855f7","#7e22ce"],
@@ -2907,7 +2967,7 @@
     preset:"crimson", accent:["#ff2e43","#c81e30"],
     radius:"md", density:"comfy", textScale:100, font:"system", bg:"solid",
     mode:"simple", locked:false, tourSeen:false, listStyle:"compact",
-    tabsOrder:["home","messages","leads","jobs","money","analytics"], tabsHidden:[],
+    navV:2, tabsOrder:["home","messages","pipeline","money","more"], tabsHidden:[],
     mblocks:["hero","log","alerts","pulse","brain","today"], mblocksHidden:[],
     mkpis:["net","you","costs","savings","avg","jobs","margin","owed","best"],
     // Phase 2/3
@@ -2919,7 +2979,16 @@
   var STAGE_DEF={new:["New","#3b82f6"],active:["Active","#22c55e"],won:["Won","#a855f7"],lost:["Lost","#8a93a3"]};
   function stageMeta(key){var d=STAGE_DEF[key]||["",""];var lbl=(UI.stageLabels&&UI.stageLabels[key])||d[0];var col=(UI.stageColors&&UI.stageColors[key])||d[1];return{label:lbl,color:col};}
   function rowHas(f){return (UI.rowFields||["time","preview","status","tags","unread"]).indexOf(f)>=0;}
-  var UI=(function(){try{return Object.assign(defaultUI(),JSON.parse(localStorage.getItem(UI_KEY)||"{}"))}catch(e){return defaultUI()}})();
+  // Anyone who used the app before the five-tab rework has the old six-tab
+  // order saved locally, naming tabs that no longer exist ("leads", "jobs",
+  // "analytics"). Their saved order can't express the new structure, so the
+  // nav settings — and only those — go back to default. Colours, widgets and
+  // everything else they customised are kept.
+  function migrateUI(u){
+    if(u.navV!==2){var d=defaultUI();u.navV=2;u.tabsOrder=d.tabsOrder.slice();u.tabsHidden=[]}
+    return u;
+  }
+  var UI=(function(){try{return migrateUI(Object.assign(defaultUI(),JSON.parse(localStorage.getItem(UI_KEY)||"{}")))}catch(e){return defaultUI()}})();
   function saveUI(){try{localStorage.setItem(UI_KEY,JSON.stringify(UI))}catch(e){}}
   function applyUI(){
     var r=document.documentElement;
@@ -2933,6 +3002,20 @@
     try{applyAccent(a[0],a[1]);localStorage.setItem("mkd-accent",a[0]);}catch(e){}
     document.body.classList.toggle("list-cards",UI.listStyle==="cards");
     applyNavTabs();
+  }
+  // Which nav pill is lit. Pipeline and Money open their own full-screen
+  // section rather than rendering into the list, so they have to light their
+  // own pill and hand it back on close — otherwise the bar shows you standing
+  // somewhere you are not.
+  // Follow-ups / Scheduled / Archived have no pill of their own — they are
+  // lenses on Chats, so they light the Chats pill. Without this, closing a
+  // full-screen section while on one of them leaves the bar with nothing lit.
+  function navPillFor(tab){return CHAT_TABS.indexOf(tab)>=0?"messages":tab}
+  function setNavActive(tab){
+    var want=navPillFor(tab);
+    Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){
+      b.classList.toggle("active",b.getAttribute("data-tab")===want);
+    });
   }
   function applyNavTabs(){
     var nav=el("bottomnav");if(!nav)return;
@@ -2992,8 +3075,8 @@
 
   // ---- the Customize hub ----
   var CZ={tab:"look"};
-  function openCustomize(){el("czApp").classList.add("show");czRender();if(!UI.tourSeen)setTimeout(czTour,500);}
-  function closeCustomize(){el("czApp").classList.remove("show");}
+  function openCustomize(){el("czApp").classList.add("show");czRender();navOpen("customize",closeCustomize);if(!UI.tourSeen)setTimeout(czTour,500);}
+  function closeCustomize(){navDrop("customize");el("czApp").classList.remove("show");}
   function czToast(m){toast(m)}
   var CZ_TABS=[["look","Look","image"],["layout","Tabs","home"],["home","Home","home"],["chats","Chats","message-square"],["leads","Leads","clipboard-list"],["money","Money","dollar"],["safe","Simple & safe","check-circle"]];
   function czRender(){
@@ -3221,9 +3304,8 @@
     var nh=el("navHome");if(nh){nh.textContent=c.needs;nh.className="ndot"+(c.needs?" show":"")}
     var nn=el("navNeeds");if(nn){nn.textContent=c.needs;nn.className="ndot"+(c.needs?" show":"")}
     var nf=el("navFollow");if(nf){nf.textContent=c.follow;nf.className="ndot"+(c.follow?" show":"")}
-    el("mnAll").textContent=c.all||"";el("mnUnread").textContent=c.unread||"";
-    el("mnSched").textContent=c.sched||"";el("mnArch").textContent=c.arch||"";
-    if(el("mnFollow"))el("mnFollow").textContent=c.follow||"";
+    // These counts used to live on menu rows. Those rows are Chats filter chips
+    // now and carry their own counts, drawn in renderFilters().
   }
 
   // ---- reply-time analytics (client mirror of server logic) ----
@@ -3248,9 +3330,20 @@
 
   // ---- filters (chips, messages tab only) ----
   function renderFilters(){
-    el("filters").style.display=(state.tab==="messages")?"flex":"none";
-    if(state.tab!=="messages")return;
+    // Follow-ups, Scheduled and Archived used to be separate tabs reached from
+    // the menu. They are the same conversations under a different lens, so they
+    // are chips on the Chats filter row now — one screen, one row, no hunting.
+    var onChats=CHAT_TABS.indexOf(state.tab)>=0;
+    el("filters").style.display=onChats?"flex":"none";
+    if(!onChats)return;
     var f=el("filters");f.innerHTML="";var c=counts();
+    function addViewChip(v){
+      var chip=document.createElement("div");chip.className="chip"+(state.tab===v[0]?" active":"");
+      var n=v[0]==="followups"?c.follow:v[0]==="scheduled"?c.sched:c.arch;
+      chip.innerHTML=esc(v[1])+(n?'<span class="cnt">'+n+'</span>':'');
+      chip.onclick=function(){setTab(v[0])};
+      f.appendChild(chip);
+    }
     // In team mode, lead with "Mine" / "Unassigned" so a helper can zero in on
     // their own queue. Tapping an active chip again clears back to everyone.
     if(teamOn()){
@@ -3266,10 +3359,18 @@
       });
     }
     FILTERS.forEach(function(p){
-      var chip=document.createElement("div");chip.className="chip"+(state.filter===p[0]?" active":"");
+      var chip=document.createElement("div");
+      chip.className="chip"+((state.tab==="messages"&&state.filter===p[0])?" active":"");
       var n=p[0]==="unread"?c.unread:p[0]==="waiting"?c.needs:(p[0]==="all"?0:state.threads.filter(function(t){return !t.archived&&t.status===p[0]}).length);
       chip.innerHTML=esc(p[1])+((p[0]!=="all"&&n)?'<span class="cnt">'+n+'</span>':'');
-      chip.onclick=function(){state.filter=p[0];renderFilters();renderMain()};f.appendChild(chip);
+      chip.onclick=function(){
+        state.filter=p[0];
+        if(state.tab!=="messages")setTab("messages");    // setTab re-renders
+        else{renderFilters();renderMain()}
+      };
+      f.appendChild(chip);
+      // The lens chips sit right after the attention ones, before the statuses.
+      if(p[0]==="unread")CHAT_VIEWS.forEach(addViewChip);
     });
   }
 
@@ -3318,12 +3419,146 @@
   // ---- main view dispatch ----
   function renderMain(){
     renderFilters();refreshBadges();
+    var r=renderMainInner();
+    // Searching also searches the app itself, not just the conversations —
+    // matching features are listed above whatever the current tab found, and
+    // an empty box offers somewhere to go rather than sitting there blank.
+    if(state.search||state.searchFocus)renderFeatureHits();
+    return r;
+  }
+  function renderMainInner(){
     if(state.tab==="home"&&!state.search)return renderHome();
     if(state.tab==="leads")return renderLeads();
     if(state.tab==="followups")return renderFollowups();
     if(state.tab==="scheduled")return renderList("scheduled");
     if(state.tab==="archived")return renderList("archived");
     return renderList("messages");
+  }
+
+  // ---- the app is searchable too ---------------------------------------
+  // Recognition over recall: you think "invoice", the app says "Get paid". The
+  // keywords carry that gap so you never have to remember which screen owns a
+  // thing — which is what lets the screens stay uncluttered.
+  var FEATURES=[
+    // — conversations
+    {id:"chats",t:"All messages",g:"Chats",ic:"message-square",k:"texts conversations inbox sms threads",run:function(){setTab("messages")}},
+    {id:"unread",t:"Unread",g:"Chats",ic:"bell",k:"new badge fresh",run:function(){setTab("messages");state.filter="unread";renderFilters();renderMain()}},
+    {id:"waiting",t:"Waiting on a reply",g:"Chats",ic:"clock",k:"needs response owe answer back",run:function(){setTab("messages");state.filter="waiting";renderFilters();renderMain()}},
+    {id:"followups",t:"Follow-ups",g:"Chats",ic:"list-checks",k:"chase nudge check in reminder due",run:function(){setTab("followups")}},
+    {id:"scheduled",t:"Scheduled texts",g:"Chats",ic:"calendar-days",k:"later queued send timed",run:function(){setTab("scheduled")}},
+    {id:"archived",t:"Archived",g:"Chats",ic:"archive",k:"hidden old done filed",run:function(){setTab("archived")}},
+    {id:"newmsg",t:"New message",g:"Chats",ic:"plus",k:"compose text someone start write",run:function(){var f=el("fab");if(f)f.click()}},
+    // — work
+    {id:"leads",t:"Leads pipeline",g:"Pipeline",ic:"clipboard-list",k:"prospects enquiries board stages funnel won lost",run:function(){openJobs("leads")}},
+    {id:"run",t:"Today's run",g:"Pipeline",ic:"route",k:"jobs schedule route day work appointments",run:function(){openJobs("run")}},
+    {id:"quotes",t:"Quote builder",g:"Pipeline",ic:"file-text",k:"estimate bid proposal price pricing quote",run:function(){openJobs("quotes")}},
+    {id:"garage",t:"Customer garage",g:"Pipeline",ic:"car",k:"vehicles cars customers history clients",run:function(){openJobs("garage")}},
+    {id:"bookings",t:"Bookings",g:"Pipeline",ic:"calendar-days",k:"calendar appointments online booked diary",run:function(){location.href="/bookings.html"}},
+    // — money
+    {id:"money",t:"Money tracker",g:"Money",ic:"dollar",k:"income earnings revenue cash log takings",run:function(){openMoney()}},
+    {id:"pay",t:"Get paid",g:"Money",ic:"credit-card",k:"invoice charge bill payment request stripe venmo deposit",run:function(){openJobs("pay")}},
+    {id:"paysetup",t:"Payment setup",g:"Money",ic:"wallet",k:"venmo cashapp paypal zelle card terms configure",run:function(){openPaySetup()}},
+    {id:"mreport",t:"Money report",g:"Money",ic:"file-text",k:"profit tax accounting summary month costs expenses",run:function(){openMoney();moSetView("report")}},
+    {id:"mgoals",t:"Budgets & goals",g:"Money",ic:"target",k:"target savings budget goal split",run:function(){openMoney();moSetView("goals")}},
+    {id:"mhistory",t:"Money history",g:"Money",ic:"clock",k:"past months previous earlier entries",run:function(){openMoney();moSetView("history")}},
+    {id:"owed",t:"Owed to you",g:"Money",ic:"alert",k:"unpaid outstanding debt chase overdue",run:function(){openMoney()}},
+    // — insight
+    {id:"analytics",t:"Analytics",g:"Insights",ic:"bar-chart",k:"stats numbers reports overview business",run:function(){openAnalytics()}},
+    {id:"website",t:"Website analytics",g:"Insights",ic:"activity",k:"traffic visitors ga4 clarity seo google site",run:function(){openAnalytics();growSet("analytics")}},
+    {id:"customers",t:"Who your customers are",g:"Insights",ic:"users",k:"repeat churn slipping loyal segments",run:function(){openAnalytics();growSet("customers")}},
+    {id:"profit",t:"Profit per job",g:"Insights",ic:"dollar",k:"margin worth value service profitability",run:function(){openAnalytics();growSet("profit")}},
+    {id:"map",t:"Map & rankings",g:"Insights",ic:"pin",k:"geogrid local rank area territory places",run:function(){openAnalytics();growSet("map")}},
+    // — AI
+    {id:"aicmd",t:"Command AI",g:"AI",ic:"sparkles",k:"ask assistant agent do it for me chat gpt",run:function(){openAiCmd()}},
+    {id:"trainai",t:"Train AI",g:"AI",ic:"sparkles",k:"teach voice tone style learn writing sound like me",run:function(){openTrainAI()}},
+    {id:"voice",t:"Talk to your dashboard",g:"AI",ic:"mic",k:"hands free speak dictate voice control",run:function(){vxOpen()}},
+    {id:"playbook",t:"Business playbook",g:"AI",ic:"file-text",k:"rules standing instructions brain knowledge facts",run:function(){openPlaybook()}},
+    // — settings
+    {id:"customize",t:"Customize everything",g:"Settings",ic:"sliders",k:"appearance theme colour color layout tabs widgets look font dark light",run:function(){openCustomize()}},
+    {id:"push",t:"Phone notifications",g:"Settings",ic:"bell",k:"alerts push notify ping mobile",run:function(){jdPushSheet()}},
+    {id:"health",t:"Connection",g:"Settings",ic:"activity",k:"status online offline health diagnostics",run:function(){openMore("account");checkHealth()}},
+    {id:"alerttest",t:"Send test alert",g:"Settings",ic:"bell",k:"try alert check notification email",run:function(){sendTestAlert()}},
+    {id:"snapshot",t:"Snapshot for Claude",g:"Settings",ic:"download",k:"export backup debug support help bundle",run:function(){snapshotForClaude()}},
+    {id:"signout",t:"Sign out",g:"Settings",ic:"log-out",k:"logout leave lock exit",run:function(){doLogout()}}
+  ];
+  // Title hits outrank keyword hits, and a prefix outranks a mid-word hit, so
+  // "pay" puts "Payment setup" above a keyword-only match on "repay".
+  function featureScore(f,q){
+    var t=f.t.toLowerCase(),k=(f.k||"").toLowerCase(),g=f.g.toLowerCase();
+    if(t===q)return 100;
+    if(t.indexOf(q)===0)return 90;
+    if(t.indexOf(q)>0)return 70;
+    if((" "+k).indexOf(" "+q)>0)return 60;      // keyword starts a word
+    if(k.indexOf(q)>=0)return 45;
+    if(g.indexOf(q)===0)return 30;
+    return 0;
+  }
+  function featureSearch(raw){
+    var q=String(raw||"").trim().toLowerCase();
+    // Field filters like status:won are for the conversation list, not for us.
+    if(!q||q.length<2||q.indexOf(":")>=0)return [];
+    var hits=[];
+    FEATURES.forEach(function(f){var s=featureScore(f,q);if(s)hits.push({f:f,s:s})});
+    hits.sort(function(a,b){return b.s-a.s||a.f.t.localeCompare(b.f.t)});
+    return hits.slice(0,6).map(function(h){return h.f});
+  }
+  // Most-recently jumped-to features, so the empty search box gets more useful
+  // the more it is used.
+  var FX_RECENT="mkd-fx-recent";
+  function fxRecent(){try{return JSON.parse(localStorage.getItem(FX_RECENT)||"[]")}catch(e){return []}}
+  function fxRemember(id){
+    try{var l=fxRecent().filter(function(x){return x!==id});l.unshift(id);localStorage.setItem(FX_RECENT,JSON.stringify(l.slice(0,4)))}catch(e){}
+  }
+  function fxById(id){for(var i=0;i<FEATURES.length;i++)if(FEATURES[i].id===id)return FEATURES[i];return null}
+  // What to offer before anything is typed: what he actually used, topped up
+  // with the handful of places this job needs most days.
+  function fxSuggestions(){
+    var out=[],seen={};
+    fxRecent().forEach(function(id){var f=fxById(id);if(f&&!seen[id]){seen[id]=1;out.push(f)}});
+    ["run","pay","money","leads","aicmd"].forEach(function(id){
+      if(out.length>=5)return;
+      var f=fxById(id);if(f&&!seen[id]){seen[id]=1;out.push(f)}
+    });
+    return out.slice(0,5);
+  }
+  function runFeature(f){
+    if(!f)return;
+    vibrate(6);
+    fxRemember(f.id);
+    clearSearch();
+    try{f.run()}catch(e){toast("Couldn't open that")}
+  }
+  function clearSearch(){
+    var si=el("search");if(si)si.value="";
+    state.search="";
+    var sp=el("searchPill");if(sp)sp.classList.remove("has");
+  }
+  // Rendered above the conversation results so the app's own screens are
+  // always the first thing a search can reach.
+  function renderFeatureHits(){
+    var box=el("scroll");if(!box)return;
+    // Idempotent: Home repaints itself from several async callbacks, and each
+    // one calls back in here, so re-running must replace rather than stack up.
+    var old=box.querySelector(".fx-wrap");if(old)old.remove();
+    if(!state.search&&!state.searchFocus)return;
+    var typed=!!String(state.search||"").trim();
+    var hits=typed?featureSearch(state.search):fxSuggestions();
+    if(!hits.length)return;
+    var w=document.createElement("div");w.className="fx-wrap";
+    w.innerHTML='<div class="fx-hd">'+(typed?"Features":"Jump to")+'</div>';
+    hits.forEach(function(f,i){
+      var r=document.createElement("button");
+      // Only a typed query has a "top hit" that Enter will run — highlighting
+      // one of the idle suggestions would promise a keystroke that does nothing.
+      r.className="fx-row"+(typed&&i===0?" top":"");
+      r.innerHTML='<span class="fx-ic">'+ic(f.ic,17)+'</span>'+
+        '<span class="fx-t">'+esc(f.t)+'</span>'+
+        (typed&&i===0?'<span class="fx-hint">enter</span>':'')+
+        '<span class="fx-g">'+esc(f.g)+'</span>';
+      r.onclick=function(){runFeature(f);renderMain()};
+      w.appendChild(r);
+    });
+    box.insertBefore(w,box.firstChild);
   }
 
   // ---- Home (landing) ----
@@ -3369,6 +3604,12 @@
     return '<div class="needs">'+head+'<div class="nd-list">'+rows+'</div>'+more+'</div>';
   }
   function renderHome(){
+    // A search owns the list while it is running, Home tab or not. A dozen
+    // async callbacks (money, insights, weather, polling) repaint Home the
+    // moment their fetch lands, and without this they wipe the results out
+    // from under you a second after you typed. Clearing the search re-renders
+    // Home through renderMain as usual.
+    if(state.search)return;
     var box=el("scroll");
     if(!state.loadedOnce&&!state.threads.length){box.innerHTML='<div class="home">'+skeletonList(5)+'</div>';return}
     var active=state.threads.filter(function(t){return !t.archived});
@@ -3429,6 +3670,9 @@
     wireHomeWidgets(box);
     wireAiCenter();
     wireJdHome(box);
+    // Home repaints on its own whenever a fetch lands; put the suggestions back
+    // if the search box is still focused, or they vanish a beat after opening.
+    if(state.searchFocus)renderFeatureHits();
   }
   // Job Day pieces that live on Home: the brief card and the push nudge.
   function wireJdHome(box){
@@ -3893,8 +4137,10 @@
     var more=el("sumMore");if(more)more.onclick=function(){openAnalytics()};
   }
 
-  function renderLeads(){
-    var box=el("scroll");
+  // Renders into the sidebar list by default, or into whatever container the
+  // Pipeline board hands it.
+  function renderLeads(into){
+    var box=into||el("scroll");
     var active=state.threads.filter(function(t){return !t.archived}).filter(passSearch);
     var html='<div class="board">';
     var any=false;
@@ -3931,45 +4177,13 @@
     return {pct:Math.round(done/fields.length*100),missing:missing};
   }
   function openPlaybook(){
-    openDrawer();
-    openMenuGroup("playbook");
-    setTimeout(function(){var el2=el("playbookPanel");if(el2){el2.scrollIntoView({block:"start",behavior:"smooth"});var ta=el2.querySelector(".pb-ta");if(ta)setTimeout(function(){ta.focus()},350)}},160);
+    openMore("playbook");
+    setTimeout(function(){var p=el("playbookPanel");if(p){var ta=p.querySelector(".pb-ta");if(ta)ta.focus()}},260);
   }
 
-  // ---- menu groups -------------------------------------------------------
-  // Which groups are open is remembered per device, so his own shape of the menu
-  // survives a reload. Defaults are set in the markup (Today & jobs open).
-  var MENU_KEY="mkd-menu-groups";
-  function menuGroupState(){
-    try{ var v=JSON.parse(localStorage.getItem(MENU_KEY)); return (v&&typeof v==="object")?v:null }catch(e){ return null }
-  }
-  function saveMenuGroups(){
-    var st={};
-    document.querySelectorAll("#dbody .dgrp").forEach(function(g){ st[g.getAttribute("data-grp")]=g.classList.contains("open") });
-    try{ localStorage.setItem(MENU_KEY,JSON.stringify(st)) }catch(e){}
-  }
-  function openMenuGroup(name){
-    var g=document.querySelector('#dbody .dgrp[data-grp="'+name+'"]');
-    if(g&&!g.classList.contains("open")){ g.classList.add("open"); saveMenuGroups() }
-  }
-  function initMenuGroups(){
-    var saved=menuGroupState();
-    document.querySelectorAll("#dbody .dgrp").forEach(function(g){
-      var k=g.getAttribute("data-grp");
-      if(saved&&typeof saved[k]==="boolean")g.classList.toggle("open",saved[k]);
-      var h=g.querySelector(".dgh");
-      if(h)h.addEventListener("click",function(){
-        g.classList.toggle("open");
-        saveMenuGroups();
-        // Bring a freshly-opened group into view rather than leaving it below the fold.
-        if(g.classList.contains("open"))setTimeout(function(){
-          var b=g.getBoundingClientRect(),body=el("dbody");
-          if(b.bottom>window.innerHeight)g.scrollIntoView({block:"nearest",behavior:"smooth"});
-          if(!body)return;
-        },180);
-      });
-    });
-  }
+  // The collapsible menu groups went away with the drawer: More is grouped but
+  // never folded, so there is no open/closed state left to remember.
+
   // ---- Analytics · Overview — business KPIs, pipeline, response health, spend,
   // AI briefing (this replaces the old standalone Insights tab; it renders into the
   // Analytics section's body so business + website numbers live under one roof). ----
@@ -4218,12 +4432,12 @@
     var cb=el("coachBtn");if(cb)cb.style.display=teamOn()?"":"none";
     var bar=el("teamIdentityBar");
     if(bar){
-      if(teamOn()&&!currentMe()&&state.phone){bar.style.display="flex";bar.innerHTML='<span>'+ic("bot",15)+'</span><span>Team mode is on — tap to set who you are, so your replies get signed.</span>';bar.onclick=function(){openDrawer()}}
+      if(teamOn()&&!currentMe()&&state.phone){bar.style.display="flex";bar.innerHTML='<span>'+ic("bot",15)+'</span><span>Team mode is on — tap to set who you are, so your replies get signed.</span>';bar.onclick=function(){openMore("settings")}}
       else bar.style.display="none";
     }
   }
 
-  // ---- team roster + "you are" (drawer) ----
+  // ---- team roster + "you are" (More > Settings) ----
   function renderTeam(){
     var wrap=el("teamPanel");if(!wrap)return;var c=state.config||{};
     var on=!!c.teamMode;var team=c.team||[];var me=currentMe();
@@ -4442,6 +4656,10 @@
     var prev=state.phone,switching=prev!==phone;
     if(switching&&prev)stashDraft(prev);
     state.phone=phone;document.body.classList.add("viewing");
+    // One layer for "a conversation is open" — switching between threads stays
+    // on the same layer, so back returns to the list rather than walking the
+    // history of everyone you tapped through.
+    navOpen("thread",closeThread);
     if(switching)loadDraft(phone);
     // A failure marker on the list is a "look at this" — opening it is looking.
     var fe=(state.threads||[]).find(function(x){return x.phone===phone});
@@ -4600,7 +4818,7 @@
   var TA={stats:null,queue:[],seen:[],judged:0,fetching:false,done:false};
 
   function openTrainAI(){
-    closeDrawer();
+    closeMore();
     var w=document.createElement("div");
     w.className="tai"; w.id="taiScreen";
     w.innerHTML=
@@ -4611,10 +4829,12 @@
       '<div class="tai-body" id="taiBody"><div class="spin" style="margin:50px auto"></div></div>';
     document.body.appendChild(w);
     el("taiClose").onclick=closeTrainAI;
+    navOpen("trainai",closeTrainAI);
     TA.queue=[];TA.judged=0;TA.done=false;
     taLoad();
   }
   function closeTrainAI(){
+    navDrop("trainai");
     var w=el("taiScreen"); if(w)w.remove();
     document.removeEventListener("keydown",taKeys);
     refreshVoiceStat();
@@ -4888,8 +5108,10 @@
   function openLightbox(src){
     var o=document.createElement("div");o.className="lightbox";
     o.innerHTML='<img src="'+src+'" alt="attachment"><button class="lb-close" aria-label="Close">'+ic("x",22)+'</button>';
-    o.onclick=function(){o.remove()};
+    function shut(){navDrop("lightbox");o.remove()}
+    o.onclick=shut;
     document.body.appendChild(o);
+    navOpen("lightbox",shut);
   }
   function resendMessage(body){
     if(!state.phone||!body)return;
@@ -5515,8 +5737,8 @@
     autoGrow();updateCount();closeGuide();inp.focus();
     toast("Dropped in — edit anything in [brackets] and send");
   }
-  function openGuide(){if(!state.thread)return;buildGuide();el("guideScrim").classList.add("show");el("guide").classList.add("show")}
-  function closeGuide(){el("guideScrim").classList.remove("show");el("guide").classList.remove("show")}
+  function openGuide(){if(!state.thread)return;buildGuide();el("guideScrim").classList.add("show");el("guide").classList.add("show");navOpen("guide",closeGuide)}
+  function closeGuide(){navDrop("guide");el("guideScrim").classList.remove("show");el("guide").classList.remove("show")}
   function aiDraft(){
     var t=state.thread;if(!t)return;
     var b=el("draftBtn");b.disabled=true;b.innerHTML='<span class="spin"></span>';
@@ -5977,24 +6199,138 @@
   // ---- tabs ----
   function setTab(tab){
     stashDraft(state.phone);
+    // Switching tabs abandons whatever was layered over the list.
+    navDrop("thread");
     state.tab=tab;state.phone=null;document.body.classList.remove("viewing");
     el("details").classList.remove("open");el("sheetScrim").classList.remove("show");
     el("emptyState").style.display="flex";el("chatHead").style.display="none";el("composer").style.display="none";el("schedBanner").style.display="none";el("fuBanner").style.display="none";el("remindBanner").style.display="none";
     el("coachPanel").style.display="none";el("coachPanel")._phone=null;el("teamIdentityBar").style.display="none";
     hideAiReview();
     el("messages").innerHTML="";
-    Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.classList.toggle("active",b.getAttribute("data-tab")===tab)});
+    setNavActive(tab);
     el("scroll").scrollTop=0;
     renderMain();
     if(tab==="home")fetchInsights();
     if(tab==="followups")refreshThreads();
   }
 
-  // ---- drawer ----
-  function openDrawer(){el("drawer").classList.add("open");el("scrim").classList.add("show")}
-  function closeDrawer(){el("drawer").classList.remove("open");el("scrim").classList.remove("show")}
+  // ---- More --------------------------------------------------------------
+  // What used to be a 25-item slide-out menu, four of whose entries duplicated
+  // tabs under different names ("Money" vs "Money tracker"). It is one screen
+  // now, grouped, never more than two levels deep, built from a single list so
+  // there is only one place to keep honest.
+  var MORE={view:"root"};
+  var MORE_MENU=[
+    {g:"AI",rows:[
+      {t:"Command AI",ic:"sparkles",note:"new",go:function(){closeMore();openAiCmd()}},
+      {t:"Train AI",ic:"sparkles",noteId:"mnTrainStat",go:function(){closeMore();openTrainAI()}},
+      {t:"Talk to your dashboard",ic:"mic",go:function(){closeMore();vxOpen()}},
+      {t:"Business playbook",ic:"file-text",into:"playbook"}
+    ]},
+    {g:"Insights",rows:[
+      {t:"Analytics — website & business",ic:"bar-chart",go:function(){closeMore();openAnalytics()}}
+    ]},
+    {g:"Pipeline",rows:[
+      {t:"Bookings",ic:"calendar-days",go:function(){location.href="/bookings.html"}}
+    ]},
+    {g:"Setup",rows:[
+      {t:"Settings",ic:"sliders",into:"settings"},
+      {t:"Tools & account",ic:"activity",into:"account"}
+    ]}
+  ];
+  var MORE_TITLES={root:["More","Mikey's Mobile Detailing"],
+    settings:["Settings","Alerts, team, and how it looks"],
+    account:["Tools & account","Connection, backups and signing out"],
+    playbook:["Business playbook","What the AI knows about your business"]};
+  // Park the JS-filled panels back in the holding div before wiping the body,
+  // so re-rendering never destroys them.
+  function mrStash(){
+    var hold=el("morePanels");if(!hold)return;
+    ["fuSettings","teamPanel","themeSeg","accentRow","playbookPanel"].forEach(function(id){
+      var n=el(id);if(n&&n.parentNode!==hold)hold.appendChild(n);
+    });
+  }
+  function mrRow(spec){
+    var r=document.createElement("button");
+    r.className="mr-row"+(spec.danger?" danger":"");
+    r.innerHTML='<span class="e">'+ic(spec.ic,19)+'</span><span class="t">'+esc(spec.t)+'</span>'+
+      (spec.note?'<span class="n" style="color:var(--accent-text)">'+esc(spec.note)+'</span>':'')+
+      (spec.noteId?'<span class="n" id="'+spec.noteId+'">…</span>':'')+
+      (spec.into?'<span class="cv">'+ic("chevron-right",17)+'</span>':'');
+    r.onclick=function(){vibrate(6);if(spec.into)return mrSet(spec.into);if(spec.go)spec.go()};
+    return r;
+  }
+  function mrGroup(name,rows){
+    var g=document.createElement("div");g.className="mr-grp";
+    if(name)g.innerHTML='<div class="mr-gh">'+esc(name)+'</div>';
+    var l=document.createElement("div");l.className="mr-list";
+    rows.forEach(function(s){l.appendChild(mrRow(s))});
+    g.appendChild(l);return g;
+  }
+  function mrLabel(text){var d=document.createElement("div");d.className="mr-sec";d.textContent=text;return d}
+  function mrRender(){
+    mrStash();
+    var b=el("mrBody");if(!b)return;
+    b.innerHTML="";b.scrollTop=0;
+    var ttl=MORE_TITLES[MORE.view]||MORE_TITLES.root;
+    el("mrTitle").textContent=ttl[0];el("mrSub").textContent=ttl[1];
+    if(MORE.view==="settings")return mrSettings(b);
+    if(MORE.view==="account")return mrAccount(b);
+    if(MORE.view==="playbook"){b.appendChild(el("playbookPanel"));return}
+    MORE_MENU.forEach(function(sec){b.appendChild(mrGroup(sec.g,sec.rows))});
+    var f=document.createElement("div");f.className="mr-foot";
+    f.innerHTML="Mikey's Mobile Detailing<br>Dashboard · auto-refresh on";
+    b.appendChild(f);
+  }
+  function mrSettings(b){
+    b.appendChild(mrGroup("",[
+      {t:"Phone notifications",ic:"bell",noteId:"pushState",go:function(){closeMore();jdPushSheet()}},
+      {t:"Customize everything",ic:"sliders",go:function(){closeMore();openCustomize()}}
+    ]));
+    b.appendChild(mrLabel("Auto follow-ups & calls"));b.appendChild(el("fuSettings"));
+    b.appendChild(mrLabel("Team"));b.appendChild(el("teamPanel"));
+    b.appendChild(mrLabel("Appearance"));b.appendChild(el("themeSeg"));
+    b.appendChild(mrLabel("Accent color"));b.appendChild(el("accentRow"));
+    updatePushBadge();
+  }
+  function mrAccount(b){
+    b.appendChild(mrGroup("",[
+      {t:"Connection",ic:"activity",go:checkHealth},
+      {t:"Refresh now",ic:"refresh-cw",go:function(){refreshThreads();if(state.phone)loadThread();toast("Refreshed");closeMore()}},
+      {t:"Send test alert",ic:"bell",go:sendTestAlert},
+      {t:"Snapshot for Claude",ic:"download",go:function(){closeMore();snapshotForClaude()}},
+      {t:"Sign out",ic:"log-out",danger:true,go:doLogout}
+    ]));
+    var h=document.createElement("div");h.className="mr-foot";
+    h.innerHTML='<span class="health" id="healthBadge"><span class="dotc"></span><span id="healthTxt">check</span></span>'+
+      '<br><span id="buildStamp" style="opacity:.75">checking version…</span>';
+    b.appendChild(h);
+    showBuild();
+  }
+  function mrSet(view){
+    if(view==="root")navDrop("moreView");
+    else navOpen("moreView",function(){MORE.view="root";mrRender()});
+    MORE.view=view;mrRender();
+  }
+  function openMore(view){
+    MORE.view=view||"root";
+    el("moreApp").classList.add("show");
+    setNavActive("more");
+    mrRender();
+    navOpen("more",closeMore);
+    if(MORE.view!=="root")navOpen("moreView",function(){MORE.view="root";mrRender()});
+    refreshVoiceStat();
+  }
+  function closeMore(){
+    navDrop("more");
+    mrStash();                       // keep the live panels out of harm's way
+    el("moreApp").classList.remove("show");
+    setNavActive(state.tab);
+    MORE.view="root";
+  }
   function checkHealth(){
-    var b=el("healthBadge");el("healthTxt").textContent="…";
+    var b=el("healthBadge");if(!b)return;
+    el("healthTxt").textContent="…";
     api("/api/health").then(function(d){
       var ok=d&&d.ok&&(d.storage==="ok"||d.blobs==="ok");
       b.className="health "+(ok?"ok":"bad");
@@ -6044,16 +6380,47 @@
 
   // ---- wire up ----
   var sp=el("searchPill"),si=el("search");
-  si.addEventListener("focus",function(){sp.classList.add("focus")});
-  si.addEventListener("blur",function(){sp.classList.remove("focus")});
+  si.addEventListener("focus",function(){sp.classList.add("focus");state.searchFocus=true;if(!state.search)renderMain()});
+  // Late enough that a tap on a suggestion lands before the list is rebuilt —
+  // and only if the box has not been focused again by then, or a quick
+  // blur-then-focus would clear the state right after it was set.
+  si.addEventListener("blur",function(){
+    sp.classList.remove("focus");
+    setTimeout(function(){
+      if(document.activeElement===si)return;
+      state.searchFocus=false;if(!state.search)renderMain();
+    },180);
+  });
   si.addEventListener("input",function(e){state.search=e.target.value;sp.classList.toggle("has",!!e.target.value);renderMain()});
-  el("searchClr").onclick=function(){si.value="";state.search="";sp.classList.remove("has");renderMain();si.focus()};
+  si.addEventListener("keydown",function(e){
+    if(e.key==="Enter"){var hits=featureSearch(state.search);if(hits.length){e.preventDefault();si.blur();runFeature(hits[0]);renderMain()}}
+    else if(e.key==="Escape"){e.preventDefault();clearSearch();si.blur();renderMain()}
+  });
+  el("searchClr").onclick=function(){clearSearch();renderMain();si.focus()};
+  // "/" and Cmd/Ctrl-K reach the search from anywhere — the shortcut people
+  // already have in their fingers from every other tool.
+  document.addEventListener("keydown",function(e){
+    var tag=(e.target&&e.target.tagName||"").toLowerCase();
+    var typing=tag==="input"||tag==="textarea"||(e.target&&e.target.isContentEditable);
+    if((e.metaKey||e.ctrlKey)&&(e.key==="k"||e.key==="K")){e.preventDefault();si.focus();si.select();return}
+    if(e.key==="/"&&!typing&&!e.metaKey&&!e.ctrlKey&&!e.altKey){e.preventDefault();si.focus()}
+  });
 
   el("fab").onclick=newConversation;
   el("sendBtn").onclick=sendMessage;
-  function openDetails(){el("details").classList.add("open");el("sheetScrim").classList.add("show")}
-  function closeDetails(){el("details").classList.remove("open");el("sheetScrim").classList.remove("show")}
-  el("backBtn").onclick=function(){closeDetails();stashDraft(state.phone);document.body.classList.remove("viewing");state.phone=null;renderMain()};
+  function openDetails(){el("details").classList.add("open");el("sheetScrim").classList.add("show");navOpen("details",closeDetails)}
+  function closeDetails(){navDrop("details");el("details").classList.remove("open");el("sheetScrim").classList.remove("show")}
+  // Leaving a conversation: drop the thread layer (which takes the details
+  // sheet with it), hand the draft back, and return to the list.
+  function closeThread(){
+    navDrop("thread");
+    closeDetails();
+    stashDraft(state.phone);
+    document.body.classList.remove("viewing");
+    state.phone=null;
+    renderMain();
+  }
+  el("backBtn").onclick=closeThread;
   el("callBtn").onclick=placeCall;el("dtCall").onclick=placeCall;
   el("whoBtn").onclick=openDetails;
   el("detailsBtn").onclick=function(){el("details").classList.contains("open")?closeDetails():openDetails()};
@@ -6133,7 +6500,6 @@
   el("toolsBtn").onclick=function(){var s=el("toolsSheet");closePops("toolsSheet");var opening=s.style.display==="none";if(opening)buildToolsSheet();s.style.display=opening?"block":"none"};
   el("loginBtn").onclick=doLogin;
   el("loginPass").addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();doLogin()}});
-  el("logoutItem").onclick=function(){post("/api/logout",{}).then(function(){location.reload()})};
   el("loginSwitch").onclick=function(){
     var tm=el("passMode"),pm=el("pinMode");
     if(tm.style.display==="none"){tm.style.display="";pm.style.display="none";el("loginSub").textContent="Enter your password";el("loginSwitch").textContent="Use PIN instead";setTimeout(function(){el("loginPass").focus()},40)}
@@ -6157,45 +6523,49 @@
     if(!e.target.closest("#toolsBtn")&&!e.target.closest("#toolsSheet"))el("toolsSheet").style.display="none";
   });
 
-  Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.onclick=function(){vibrate(6);var tb=b.getAttribute("data-tab");if(tb==="money")return openMoney();if(tb==="analytics")return openAnalytics();if(tb==="jobs")return openJobs();setTab(tb)}});
+  Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){
+    b.onclick=function(){
+      vibrate(6);
+      var tb=b.getAttribute("data-tab");
+      if(tb==="money")return openMoney();
+      if(tb==="pipeline")return openJobs();
+      if(tb==="more")return openMore();
+      setTab(tb);
+    };
+  });
   // Job Day suite + hands-free voice
   el("vxFab").onclick=vxOpen;
   el("vxClose").onclick=vxClose;
   el("vxOrb").onclick=vxToggle;
   el("vxApp").addEventListener("click",function(e){if(e.target===el("vxApp"))vxClose()});
+  // Escape closes the top layer, whatever it is — same path as the phone's back
+  // gesture, so the two never disagree about what "back" means.
   document.addEventListener("keydown",function(e){
     if(e.key!=="Escape")return;
     if(el("vxApp").classList.contains("show"))return vxClose();
-    if(JD.sheetOpen)return jdSheetClose();
-    if(el("jdApp").classList.contains("show"))return closeJobs();
+    if(navBack())e.preventDefault();
   });
   el("czBack").onclick=closeCustomize;
   el("czMode").onclick=function(){UI.mode=UI.mode==="pro"?"simple":"pro";saveUI();czRender();vibrate(6)};
 
-  el("menuBtn").onclick=openDrawer;el("myAvatar").onclick=openDrawer;el("scrim").onclick=closeDrawer;
-  el("aiCmdItem").onclick=function(){closeDrawer();openAiCmd()};
+  // The hamburger and the avatar both reach More — the menu it used to open is
+  // that screen now, and every row in it is wired from MORE_MENU, not here.
+  el("menuBtn").onclick=function(){openMore()};
+  el("myAvatar").onclick=function(){openMore()};
+  el("mrBack").onclick=function(){if(MORE.view!=="root")return mrSet("root");closeMore()};
   el("aiCmdClose").onclick=closeAiCmd;
   el("aiCmdOverlay").onclick=function(e){if(e.target===el("aiCmdOverlay"))closeAiCmd()};
   el("aiCmdAsk").onclick=aiCmdAsk;
   el("aiCmdInput").addEventListener("keydown",function(e){if((e.metaKey||e.ctrlKey)&&e.key==="Enter"){e.preventDefault();aiCmdAsk()}});
-  el("runItem").onclick=function(){closeDrawer();openJobs("run")};
-  el("quotesItem").onclick=function(){closeDrawer();openJobs("quotes")};
-  el("payItem").onclick=function(){closeDrawer();openJobs("pay")};
-  el("garageItem").onclick=function(){closeDrawer();openJobs("garage")};
-  el("voiceItem").onclick=function(){closeDrawer();vxOpen()};
-  el("pushItem").onclick=function(){closeDrawer();jdPushSheet()};
-  el("refreshItem").onclick=function(){refreshThreads();if(state.phone)loadThread();toast("Refreshed");closeDrawer()};
-  el("healthItem").onclick=checkHealth;
-  el("alertTestItem").onclick=function(){
+  function sendTestAlert(){
     toast("Sending test alert…");
     post("/api/alert-test",{}).then(function(d){
       if(d&&d.ok)toast(d.channel==="email"?("Test email sent to "+(d.alertEmail||"your inbox")):"Test alert sent by text");
       else toast("Test alert failed — check your alert settings");
     }).catch(function(){toast("Test alert failed")});
-    closeDrawer();
-  };
-  Array.prototype.forEach.call(document.querySelectorAll(".drawer [data-tab]"),function(it){it.onclick=function(){setTab(it.getAttribute("data-tab"));closeDrawer()}});
-  Array.prototype.forEach.call(document.querySelectorAll(".drawer [data-filter]"),function(it){it.onclick=function(){state.tab="messages";state.filter=it.getAttribute("data-filter");setTab("messages");state.filter=it.getAttribute("data-filter");renderFilters();renderMain();closeDrawer()}});
+    closeMore();
+  }
+  function doLogout(){post("/api/logout",{}).then(function(){location.reload()})}
 
   // ============================================================
   // Analytics — full-screen section, two segments:
@@ -6224,12 +6594,13 @@
     map:["Analytics","Your map — where the work and the rankings are"]};
   function openAnalytics(){
     el("growApp").classList.add("show");
+    navOpen("analytics",closeAnalytics);
     if(!GROW.wired){growWire();GROW.wired=true;}
     if(!MO.summary&&!MO._homeFetch){MO._homeFetch=1;api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.today=d.today;MO.entries=d.entries||[];MO.cfg=d.config;MO.owed=d.owed||[];MO.week=d.week;MO.allTime=d.allTime;if(el("growApp").classList.contains("show"))growRender();}}).catch(function(){});}
     if(!state.insights)fetchInsights();
     growRender();
   }
-  function closeAnalytics(){el("growApp").classList.remove("show");}
+  function closeAnalytics(){navDrop("analytics");el("growApp").classList.remove("show");}
   function growSet(v){GROW.view=v;Array.prototype.forEach.call(el("grNav").querySelectorAll("[data-gv]"),function(b){b.classList.toggle("active",b.getAttribute("data-gv")===v)});growRender();el("grBody").scrollTop=0;}
   function growWire(){
     el("grBack").onclick=closeAnalytics;
@@ -7792,8 +8163,8 @@
     return new Date(+dstr.slice(0,4),+dstr.slice(5,7)-1,+dstr.slice(8,10)).toLocaleDateString([],{weekday:"short",month:"short",day:"numeric"});
   }
 
-  function openMoney(){MO.open=true;el("moneyApp").style.display="flex";if(!MO.loadedOnce||MO.month!==moCurMonth()){moRender();loadMoney()}else moRender()}
-  function closeMoney(){MO.open=false;el("moneyApp").style.display="none";closeMoSheet()}
+  function openMoney(){MO.open=true;el("moneyApp").style.display="flex";setNavActive("money");navOpen("money",closeMoney);if(!MO.loadedOnce||MO.month!==moCurMonth()){moRender();loadMoney()}else moRender()}
+  function closeMoney(){navDrop("money");MO.open=false;el("moneyApp").style.display="none";setNavActive(state.tab);closeMoSheet()}
   function refreshMoBadge(){var n=el("navMoney");if(n){var c=(MO.cfg&&MO.cfg.wonNudge!==false)?(MO.nudges||[]).length:0;n.textContent=c;n.className="ndot"+(c?" show":"")}}
   function loadMoney(month){
     return api("/api/money"+(month?"?month="+encodeURIComponent(month):"")).then(function(d){
@@ -8079,7 +8450,7 @@
     if(MOS.id)h+='<button class="mo-delbtn" id="moDelE">Delete this entry</button>';
     h+='</div>';
     var sh=el("moSheet");sh.innerHTML=h;
-    el("moScrim").classList.add("show");sh.classList.add("show");
+    el("moScrim").classList.add("show");sh.classList.add("show");navOpen("moSheet",closeMoSheet);
     moUpdateAmt();moSyncWhenChips();
     el("moShX").onclick=closeMoSheet;
     Array.prototype.forEach.call(el("moPad").querySelectorAll("[data-k]"),function(b){b.onclick=function(){moPadKey(b.getAttribute("data-k"))}});
@@ -8169,6 +8540,7 @@
     MOS.amt=v;moUpdateAmt();vibrate(4);
   }
   function closeMoSheet(){
+    navDrop("moSheet");
     var sh=el("moSheet");if(sh)sh.classList.remove("show");
     var sc=el("moScrim");if(sc)sc.classList.remove("show");
   }
@@ -8919,15 +9291,9 @@
   el("moRefresh").onclick=function(){MO.report=null;loadMoney(MO.view==="log"?null:MO.month);toast("Refreshed")};
   Array.prototype.forEach.call(el("moNav").querySelectorAll("[data-mv]"),function(b){b.onclick=function(){vibrate(6);moSetView(b.getAttribute("data-mv"))}});
   el("moScrim").onclick=closeMoSheet;
-  el("moneyItem").onclick=function(){closeDrawer();openMoney()};
-  var pSet=el("paySetupItem");if(pSet)pSet.onclick=function(){closeDrawer();openPaySetup()};
-  var anI=el("analyticsItem");if(anI)anI.onclick=function(){closeDrawer();openAnalytics()};
-  el("customizeItem").onclick=function(){closeDrawer();openCustomize()};
-  el("snapshotItem").onclick=function(){closeDrawer();snapshotForClaude()};
-  // New menu entries and the collapsible groups.
-  var tAi=el("trainAiItem");if(tAi)tAi.onclick=function(){openTrainAI()};
-  var pbI=el("playbookItem");if(pbI)pbI.onclick=function(){openPlaybook()};
-  initMenuGroups();
+  // Money, Payment setup, Analytics, Customize, Snapshot, Train AI and the
+  // playbook used to be menu rows wired one by one here. They are entries in
+  // MORE_MENU (or Pipeline segments) now and wire themselves.
   refreshVoiceStat();
 
   // ============================================================
@@ -8943,6 +9309,7 @@
     track:{token:"",jobId:"",watch:null,timer:null,eta:0,startedAt:0},
     photos:{},sheetOpen:false};
   var JD_VIEWS={
+    leads:["Leads","Everyone who asked — and where they got to"],
     run:["Today's Run","Your day, stop by stop"],
     quotes:["Quotes","Price it, text it, track it"],
     pay:["Get Paid","Payment requests & who still owes"],
@@ -8962,6 +9329,8 @@
 
   function openJobs(view){
     el("jdApp").classList.add("show");
+    setNavActive("pipeline");
+    navOpen("jobs",closeJobs);
     if(!JD.wired){jdWire();JD.wired=true}
     if(!JD.date)JD.date=jdToday();
     if(view)JD.view=view;
@@ -8973,7 +9342,7 @@
     if(JD.view==="pay"&&!JD.pay)jdLoadPay();
     if(JD.view==="garage"&&!JD.garage)jdLoadGarage();
   }
-  function closeJobs(){el("jdApp").classList.remove("show");jdSheetClose();jdTrackDetach()}
+  function closeJobs(){navDrop("jobs");el("jdApp").classList.remove("show");setNavActive(state.tab);jdSheetClose();jdTrackDetach()}
   function jdSyncNav(){Array.prototype.forEach.call(el("jdNav").querySelectorAll("[data-jv]"),function(b){b.classList.toggle("active",b.getAttribute("data-jv")===JD.view)})}
   function jdSet(v){
     JD.view=v;jdSyncNav();jdRender();el("jdBody").scrollTop=0;
@@ -8999,10 +9368,25 @@
     el("jdTitle").textContent=m[0];
     el("jdSub").textContent=JD.view==="run"?(jdNiceDate(JD.date)+" · "+m[1]):m[1];
     var b=el("jdBody");
+    if(JD.view==="leads")return jdLeadsView(b);
     if(JD.view==="run")return jdRunView(b);
     if(JD.view==="quotes")return jdQuotesView(b);
     if(JD.view==="pay")return jdPayView(b);
     return jdGarageView(b);
+  }
+
+  // The leads board, living inside Pipeline as its first stage. Opening a
+  // conversation from a card leaves the board entirely — a chat is a different
+  // place, not another layer stacked on top of this one.
+  function jdLeadsView(b){
+    renderLeads(b);
+    Array.prototype.forEach.call(b.querySelectorAll(".lead-card"),function(c){
+      var ph=c.getAttribute("data-phone");
+      c.onclick=function(){
+        if(ctxJustOpened){ctxJustOpened=false;return}
+        closeJobs();setTab("messages");openThread(ph);
+      };
+    });
   }
 
   // ---- shared bottom sheet ----
@@ -9013,9 +9397,11 @@
     requestAnimationFrame(function(){s.classList.add("show")});
     JD.sheetOpen=true;
     hydrateIcons(s);
+    navOpen("jdSheet",jdSheetClose);
     return s;
   }
   function jdSheetClose(){
+    navDrop("jdSheet");
     el("jdSheet").classList.remove("show");
     el("jdScrim").classList.remove("show");
     JD.sheetOpen=false;
@@ -10502,7 +10888,7 @@
 
   // ---- boot ----
   hydrateIcons();
-  el("myAvatar").innerHTML=brandGlyph();el("drawerLogo").innerHTML=brandGlyph();el("loginLogo").innerHTML=brandGlyph();
+  el("myAvatar").innerHTML=brandGlyph();el("loginLogo").innerHTML=brandGlyph();
   applyTheme(themePref());loadAccent();applyUI();buildAccents();buildThemeSeg();buildTplMenu();loadTemplates();buildQuickset();
   renderFilters();refreshThreads();startPoll();checkHealth();loadConfig();showBuild();fetchInsights();loadMoney();
   // Job Day suite: warm the day board (drives the Jobs badge) and the brief, and

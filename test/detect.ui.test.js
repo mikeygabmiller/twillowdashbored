@@ -66,7 +66,8 @@ let pass = 0, fail = 0;
 const ok = (n, c, x) => { if (c) { pass++; console.log('  ✓', n); } else { fail++; console.log('  ✗', n, x !== undefined ? '→ ' + JSON.stringify(x) : ''); } };
 const section = (s) => console.log('\n' + s);
 
-await page.locator('.navitem[data-tab="jobs"]').click();
+// Jobs is the "Run" stage of the Pipeline tab since the five-tab rework.
+await page.locator('.navitem[data-tab="pipeline"]').click();
 await page.waitForTimeout(900);
 
 section('Cards render on the Jobs board');

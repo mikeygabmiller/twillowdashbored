@@ -87,8 +87,12 @@ const check = (n, got, want) => {
       await page.keyboard.type('1234'); await page.keyboard.press('Enter');
       await page.waitForTimeout(800);
     }
-    await page.locator('.navitem[data-tab="analytics"]').click();
-    await page.waitForTimeout(500);
+    // Analytics left the nav bar in the five-tab rework — it is a weekly
+    // review, not a daily action. Search is how you get there now.
+    await page.locator('#search').fill('analytics');
+    await page.waitForTimeout(300);
+    await page.locator('#search').press('Enter');
+    await page.waitForTimeout(600);
     await page.locator('#grNav [data-gv="map"]').click();
     await page.waitForTimeout(500);
     await page.locator('[data-gm="rank"]').click();
