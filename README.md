@@ -70,16 +70,19 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   switchable in **Bookings → Settings → Booking texts**. (Day-of messages — on my
   way, I'm here, all finished — belong to the Jobs run board, which also drives live
   ETA tracking.)
-- **Answer by email / by text (the assist loop):** send the bare facts and the AI
-  writes the customer reply in your voice and sends it — you supply every fact, it
-  only does the wording.
-  - **By email (free):** hit **reply** on a new-text alert and type `375, thursday
-    works`. No Twilio message is used for your half of the exchange, and the reply
-    is already threaded to that customer, so there's nothing to address. Needs the
-    one-time Gmail hookup below.
+- **Answer by email / by text (the assist loop):** the alert shows you the reply it
+  would send and you answer **yes** or **no** — or send the bare facts and the AI
+  writes it in your voice instead. Either way you supply every fact; it only does
+  the wording.
+  - **By email (free):** hit **reply** on a new-text alert and answer `yes` (sends
+    the drafted reply word for word) or `no` (drops it) — or type `375, thursday
+    works` to have it written differently. No Twilio message is used for your half
+    of the exchange, and the reply is already threaded to that customer, so there's
+    nothing to address. Needs the one-time Gmail hookup below.
   - **By text:** text your **own business number** the same thing. Costs one inbound
     + one outbound segment, but works anywhere.
-  - Grammar either way: `@ruth …` picks someone, `send: …` sends your exact words,
+  - Grammar either way: `yes`/`no` answers the drafted reply, `@ruth …` picks
+    someone, `send: …` sends your exact words,
     `draft: …` holds it in the dashboard, `who` lists who's waiting, `cancel` pulls
     the last one back. You get the finished wording back before it goes out, with a
     configurable hold that is the cancel window (60s by text, 180s by email since a
@@ -89,9 +92,10 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
     marker the dashboard plants in its own alerts, so ordinary mail is never read as
     a command. Both toggle in the menu.
 
-  **Every alert asks you a question.** Instead of just repeating what the customer
-  said, each alert names what it needs from you and shows literal example replies
-  you can type verbatim ("375" · "375, thursday works"). Complaints, damage and
+  **Every alert shows the reply first.** Instead of just repeating what the customer
+  said, each alert quotes the finished reply it would send and asks for a plain yes
+  or no; underneath, it still names what it needs from you and shows literal example
+  replies you can type verbatim ("375" · "375, thursday works"). Complaints, damage and
   refund requests are classified as **escalate** and get the opposite treatment —
   flagged *handle this one yourself*, with the quick-answer path and the reply
   marker deliberately withheld so a one-word reply can't fire an AI message at an
