@@ -2050,6 +2050,19 @@
   .jd-sh-title{font-size:19px;font-weight:800;letter-spacing:-.02em;margin-bottom:3px}
   .jd-sh-sub{font-size:12.5px;color:var(--muted2);margin-bottom:16px;line-height:1.5}
 
+  /* ---- snapshot picker: tick exactly what Claude gets ---- */
+  .snap-row{display:flex;align-items:center;gap:12px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:14px;padding:11px 13px;margin-bottom:8px;cursor:pointer;transition:border-color .13s,background .13s}
+  .snap-row.on{border-color:var(--accent);background:var(--accent-soft)}
+  .snap-row .ico{flex:none;color:var(--muted);display:flex}
+  .snap-row.on .ico{color:var(--accent-text)}
+  .snap-row .mid{flex:1;min-width:0}
+  .snap-row .mid b{display:block;font-size:14px;font-weight:700}
+  .snap-row .mid small{display:block;font-size:11.5px;color:var(--muted2);margin-top:2px;line-height:1.4}
+  .snap-row .box{flex:none;width:22px;height:22px;border-radius:7px;border:1.5px solid var(--line);
+    display:flex;align-items:center;justify-content:center;color:transparent}
+  .snap-row.on .box{background:var(--accent);border-color:var(--accent);color:#fff}
+
   /* ---- quote total card ---- */
   .qt-total{background:linear-gradient(135deg,var(--accent),var(--accent-dark));color:#fff;border-radius:18px;padding:16px 18px;margin:4px 0 14px;box-shadow:0 14px 30px -18px var(--accent)}
   .qt-total .l{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;opacity:.85}
@@ -2568,7 +2581,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-31·nav-search-more";
+  var APP_BUILD="2026-08-01·snapshot-picker";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -3248,9 +3261,9 @@
     c2.appendChild(reset);
     p.appendChild(c2);
     var c3=document.createElement("div");c3.className="cz-card";
-    c3.innerHTML='<h3>Show Claude what you see</h3><p class="hint">Bundle everything in your app — conversations, leads, all your money, settings and customizations — into one file to send Claude when you want help. Read-only; nothing changes.</p>';
+    c3.innerHTML='<h3>Show Claude what you see</h3><p class="hint">Pick just the parts you want — only your texts, only your money, or the whole app — and how far back to go. You get one file to send Claude. Read-only; nothing changes.</p>';
     var snap=document.createElement("button");snap.className="cz-bigbtn";snap.innerHTML=ic("download",16)+'<span>Make a snapshot for Claude</span>';
-    snap.onclick=function(){snapshotForClaude(snap.querySelector("span"))};
+    snap.onclick=function(){snapshotForClaude()};
     c3.appendChild(snap);p.appendChild(c3);
     var c4=document.createElement("div");c4.className="cz-card";c4.innerHTML='<h3>About</h3><p class="hint">Make It Yours v2 · appearance, tabs, home widgets, chats, leads &amp; money layout. More extras coming next.</p>';
     p.appendChild(c4);
@@ -3260,23 +3273,169 @@
     t.innerHTML='<b>Welcome to Customize</b><p>Change your app’s look, rearrange tabs, and set up your Money screen — it all saves as you go, and your data is never touched. Try tapping a theme.</p><button id="czTourX">Got it</button>';
     t.classList.add("show");el("czTourX").onclick=function(){t.classList.remove("show");UI.tourSeen=true;saveUI()};
   }
-  // Bundle everything the owner sees into one file to hand to Claude — read-only.
-  function snapshotForClaude(btn){
-    if(btn){btn.disabled=true;btn.dataset.t=btn.textContent;btn.textContent="Gathering…"}
-    api("/api/snapshot").then(function(d){
-      if(!d||!d.ok){toast("Couldn't build snapshot",{bad:true});if(btn){btn.disabled=false;btn.textContent=btn.dataset.t}return}
-      // fold in the bits that only live on this device (your customizations)
-      var client={};try{client.customization=JSON.parse(localStorage.getItem("mkd-ui")||"{}")}catch(e){}
-      try{client.theme=localStorage.getItem("mkd-theme");client.accent=localStorage.getItem("mkd-accent")}catch(e){}
-      d.clientOnly=client;
+  // ============================================================
+  // SNAPSHOT FOR CLAUDE — pick exactly what goes in the file
+  // ============================================================
+  // Sending Claude the whole app when the question is about texts buries the
+  // answer in noise (and makes a huge file). So: choose the pieces and the time
+  // range, and the file contains only that. Read-only — nothing is ever changed.
+  var SNAP_PARTS=[
+    ["messages","Text messages","Every conversation, word for word","message-square"],
+    ["leads","Leads & customers","The list — names, status, tags, last contact","users"],
+    ["money","Money","Income, expenses and what you're owed","dollar"],
+    ["bookings","Bookings","Booked jobs and the schedule","calendar-days"],
+    ["emails","Emails","Anything forwarded into the app","mail"],
+    ["settings","Settings & AI training","Playbook, prices, templates, preferences","sliders"],
+    ["look","App look & layout","How you've set this device up","wand"]
+  ];
+  var SNAP_RANGES=[[30,"Last 30 days"],[90,"Last 3 months"],[365,"Last year"],[0,"Everything, all time"]];
+  var SNAP_PRESETS=[
+    ["Just my texts",["messages"],30],
+    ["Texts + who they are",["messages","leads"],90],
+    ["Just my money",["money"],365],
+    ["The whole app",["messages","leads","money","bookings","emails","settings","look"],0]
+  ];
+  function snapPrefs(){
+    var d={parts:["messages"],days:30,msgs:60,q:""};
+    try{var s=JSON.parse(localStorage.getItem("mkd-snap")||"null");if(s&&s.parts&&s.parts.length)d=s}catch(e){}
+    return d;
+  }
+  function snapSave(p){try{localStorage.setItem("mkd-snap",JSON.stringify(p))}catch(e){}}
+  // Plain-english shortcut: "just my texts from last month" ticks the right boxes.
+  function snapParse(text,p){
+    var s=String(text||"").toLowerCase(),hit=false,parts=[];
+    var add=function(k){if(parts.indexOf(k)<0)parts.push(k);hit=true};
+    if(/text|messag|sms|chat|conversation|thread/.test(s))add("messages");
+    if(/money|income|expense|revenue|profit|spend|earn|paid|owe|invoice|cash/.test(s))add("money");
+    if(/lead|customer|client|contact|people/.test(s))add("leads");
+    if(/book|appoint|schedul|calendar|job/.test(s))add("bookings");
+    if(/email|inbox/.test(s))add("emails");
+    if(/setting|playbook|train|price|pricing|template|preference/.test(s))add("settings");
+    if(/look|layout|theme|customi[sz]/.test(s))add("look");
+    if(/everything|whole app|all of it|the lot/.test(s)){parts=SNAP_PARTS.map(function(x){return x[0]});hit=true}
+    var m=s.match(/last\s+(\d+)\s*(day|week|month|year)/);
+    if(m){var n=+m[1];p.days=m[2]==="day"?n:m[2]==="week"?n*7:m[2]==="month"?n*30:n*365;hit=true}
+    else if(/all time|everything|every.*ever|since the start|from the start/.test(s)){p.days=0;hit=true}
+    else if(/this week|past week|last week/.test(s)){p.days=7;hit=true}
+    else if(/this month|past month|last month/.test(s)){p.days=30;hit=true}
+    else if(/this year|past year|last year/.test(s)){p.days=365;hit=true}
+    if(parts.length)p.parts=parts;
+    return hit;
+  }
+  function snapLabel(p){
+    if(p.parts.length===SNAP_PARTS.length)return "Everything";
+    return p.parts.map(function(k){
+      for(var i=0;i<SNAP_PARTS.length;i++)if(SNAP_PARTS[i][0]===k)return SNAP_PARTS[i][1].toLowerCase();
+      return k;
+    }).join(" + ");
+  }
+  function snapFileName(p){
+    var who=p.parts.length===SNAP_PARTS.length?"everything"
+      :p.parts.length===1?p.parts[0]:p.parts.slice(0,2).join("-");
+    return "mikeys-"+who+"-"+(p.days?p.days+"d":"all")+".json";
+  }
+  function snapNiceSize(n){return n<1024?n+" B":n<1048576?Math.round(n/1024)+" KB":(n/1048576).toFixed(1)+" MB"}
+  // The picker. Everything here is a choice — nothing downloads until you say so.
+  function snapshotForClaude(){
+    var p=snapPrefs();
+    var draw=function(){
+      var h='<div class="jd-sh-title">Snapshot for Claude</div>'+
+        '<div class="jd-sh-sub">Pick only what your question is about. A smaller file gets you a much better answer — and nothing here changes your data.</div>'+
+        '<div class="jd-field"><label>Or just say what you need</label>'+
+        '<input id="snapSay" placeholder="e.g. just my texts from the last month" autocomplete="off"></div>'+
+        '<div class="jd-pills" style="margin:2px 0 14px">'+SNAP_PRESETS.map(function(pr,i){
+          return '<button class="jd-pill" data-preset="'+i+'">'+esc(pr[0])+'</button>'}).join("")+'</div>'+
+        '<div class="jd-sec">'+ic("check",14)+' What goes in the file</div>'+
+        SNAP_PARTS.map(function(x){
+          var on=p.parts.indexOf(x[0])>=0;
+          return '<div class="snap-row'+(on?" on":"")+'" data-part="'+x[0]+'">'+
+            '<span class="ico">'+ic(x[3],17)+'</span>'+
+            '<span class="mid"><b>'+esc(x[1])+'</b><small>'+esc(x[2])+'</small></span>'+
+            '<span class="box">'+ic("check",14)+'</span></div>';
+        }).join("")+
+        '<div class="jd-field" style="margin-top:14px"><label>How far back</label><select id="snapDays">'+
+          SNAP_RANGES.map(function(r){return '<option value="'+r[0]+'"'+(r[0]===p.days?" selected":"")+'>'+r[1]+'</option>'}).join("")+
+        '</select></div>'+
+        (p.parts.indexOf("messages")>=0
+          ? '<div class="jd-field"><label>Texts kept per conversation</label><select id="snapMsgs">'+
+            [[20,"Last 20"],[60,"Last 60"],[150,"Last 150"],[500,"Everything they said"]].map(function(m){
+              return '<option value="'+m[0]+'"'+(m[0]===p.msgs?" selected":"")+'>'+m[1]+'</option>'}).join("")+'</select></div>'+
+            '<div class="jd-field"><label>Only one person (optional)</label>'+
+            '<input id="snapWho" placeholder="name or number — blank for everyone" value="'+esc(p.q||"")+'" autocomplete="off"></div>'
+          : "")+
+        '<button class="jd-btn pri" id="snapGo" style="margin-top:6px">'+ic("download",17)+' Make the file</button>'+
+        '<button class="jd-btn ghost" id="snapX" style="margin-top:8px">Cancel</button>'+
+        '<div class="jd-note">The file saves to this phone and is copied to your clipboard — send it to Claude however you like.</div>';
+      var s=jdSheetOpen(h);
+      var q=function(id){return s.querySelector("#"+id)};
+      var stash=function(){
+        if(q("snapDays"))p.days=+q("snapDays").value;
+        if(q("snapMsgs"))p.msgs=+q("snapMsgs").value;
+        if(q("snapWho"))p.q=q("snapWho").value.trim();
+      };
+      Array.prototype.forEach.call(s.querySelectorAll(".snap-row"),function(row){
+        row.onclick=function(){
+          stash();
+          var k=row.dataset.part,i=p.parts.indexOf(k);
+          if(i>=0)p.parts.splice(i,1);else p.parts.push(k);
+          vibrate(6);draw();                       // redraw: the text options come and go
+        };
+      });
+      Array.prototype.forEach.call(s.querySelectorAll("[data-preset]"),function(b){
+        b.onclick=function(){
+          var pr=SNAP_PRESETS[+b.dataset.preset];
+          p.parts=pr[1].slice();p.days=pr[2];vibrate(6);draw();
+        };
+      });
+      q("snapSay").onkeydown=function(e){
+        if(e.key!=="Enter")return;
+        e.preventDefault();stash();
+        if(snapParse(q("snapSay").value,p))draw();
+        else toast("Didn't catch that — tick the boxes below instead");
+      };
+      q("snapX").onclick=jdSheetClose;
+      q("snapGo").onclick=function(){
+        stash();
+        if(!p.parts.length){toast("Pick at least one thing to include",{bad:true});return}
+        snapSave(p);snapshotBuild(p,q("snapGo"));
+      };
+    };
+    draw();
+  }
+  // Fetch exactly the picked pieces, fold in the device-only bits, hand over a file.
+  function snapshotBuild(p,btn){
+    if(btn){btn.disabled=true;btn.innerHTML="Gathering…"}
+    var server=p.parts.filter(function(k){return k!=="look"});  // "look" lives only on this device
+    var qs=["parts="+encodeURIComponent(server.join(","))];
+    if(p.days)qs.push("days="+p.days);
+    if(p.msgs)qs.push("msgs="+p.msgs);
+    if(p.q)qs.push("q="+encodeURIComponent(p.q));
+    var done=function(){if(btn){btn.disabled=false;btn.innerHTML=ic("download",17)+" Make the file"}};
+    var deliver=function(d){
+      if(p.parts.indexOf("look")>=0){
+        var client={};try{client.customization=JSON.parse(localStorage.getItem("mkd-ui")||"{}")}catch(e){}
+        try{client.theme=localStorage.getItem("mkd-theme");client.accent=localStorage.getItem("mkd-accent")}catch(e){}
+        d.clientOnly=client;
+      }
+      d.askedFor=snapLabel(p)+(p.days?" · last "+p.days+" days":" · all time");
       var txt=JSON.stringify(d,null,2);
       var blob=new Blob([txt],{type:"application/json"});var a=document.createElement("a");
-      a.href=URL.createObjectURL(blob);a.download="mikeys-app-snapshot.json";document.body.appendChild(a);a.click();
+      a.href=URL.createObjectURL(blob);a.download=snapFileName(p);document.body.appendChild(a);a.click();
       setTimeout(function(){URL.revokeObjectURL(a.href);a.remove()},600);
-      if(navigator.clipboard){navigator.clipboard.writeText(txt).catch(function(){})}
-      toast("Snapshot saved — send me the file 👍");
-      if(btn){btn.disabled=false;btn.textContent=btn.dataset.t}
-    }).catch(function(){toast("Network error",{bad:true});if(btn){btn.disabled=false;btn.textContent=btn.dataset.t}});
+      if(navigator.clipboard)navigator.clipboard.writeText(txt).catch(function(){});
+      var c=d.counts||{},bits=[];
+      if(c.conversations!=null)bits.push(c.conversations+" chat"+(c.conversations===1?"":"s"));
+      if(c.messages!=null)bits.push(c.messages+" text"+(c.messages===1?"":"s"));
+      if(c.moneyEntries!=null)bits.push(c.moneyEntries+" money entries");
+      if(c.bookings!=null)bits.push(c.bookings+" bookings");
+      jdSheetClose();done();
+      toast((bits.length?bits.join(" · ")+" · ":"")+snapNiceSize(txt.length)+" — saved & copied 👍",{ms:4200});
+    };
+    if(!server.length){deliver({ok:true,kind:"mikeys-app-snapshot",at:new Date().toISOString(),included:["look"]});return}
+    api("/api/snapshot?"+qs.join("&")).then(function(d){
+      if(!d||!d.ok){toast("Couldn't build snapshot",{bad:true});done();return}
+      deliver(d);
+    }).catch(function(){toast("Network error",{bad:true});done()});
   }
 
   // Is this customer actually waiting on Mikey? They have to have spoken last —
@@ -3478,7 +3637,7 @@
     {id:"push",t:"Phone notifications",g:"Settings",ic:"bell",k:"alerts push notify ping mobile",run:function(){jdPushSheet()}},
     {id:"health",t:"Connection",g:"Settings",ic:"activity",k:"status online offline health diagnostics",run:function(){openMore("account");checkHealth()}},
     {id:"alerttest",t:"Send test alert",g:"Settings",ic:"bell",k:"try alert check notification email",run:function(){sendTestAlert()}},
-    {id:"snapshot",t:"Snapshot for Claude",g:"Settings",ic:"download",k:"export backup debug support help bundle",run:function(){snapshotForClaude()}},
+    {id:"snapshot",t:"Snapshot for Claude",g:"Settings",ic:"download",k:"export backup debug support help bundle send texts messages money only pick choose filter",run:function(){snapshotForClaude()}},
     {id:"signout",t:"Sign out",g:"Settings",ic:"log-out",k:"logout leave lock exit",run:function(){doLogout()}}
   ];
   // Title hits outrank keyword hits, and a prefix outranks a mid-word hit, so

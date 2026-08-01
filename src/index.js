@@ -74,7 +74,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-31·nav-search-more';
+const BUILD = '2026-08-01·snapshot-picker';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -5596,13 +5596,42 @@ async function apiMoneyByPhone(url) {
   });
 }
 
-// Read-only snapshot of everything the owner sees, in one JSON bundle — a
-// "show Claude what I see" export. Password-gated (like every /api/* route),
-// never writes, and defensively strips anything secret-looking from config.
+// Read-only snapshot of what the owner sees, in one JSON bundle — a "show Claude
+// what I see" export. Password-gated (like every /api/* route), never writes, and
+// defensively strips anything secret-looking from config.
+//
+// Ask for only the pieces you need — a file that is just the texts answers a
+// question about texts far better than a dump of the whole app:
+//   ?parts=messages,money   which sections to include (default: all of them)
+//   ?days=90                only stuff that happened in the last N days (0 = all)
+//   ?msgs=60                messages kept per conversation ('all' = up to 500)
+//   ?q=sarah                only conversations matching a name or number
+//   ?limit=300              max conversations
+// No params at all = the old behavior (everything), so older links keep working.
+const SNAP_PARTS = ['messages', 'leads', 'money', 'bookings', 'emails', 'settings'];
+
 async function apiSnapshot(url) {
-  const withMsgs = url.searchParams.get('messages') !== '0'; // default: include recent messages
-  const index = await loadIndex();
-  index.sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+  const P = url.searchParams;
+  const num = (v, dflt, lo, hi) => {
+    const n = parseInt(v, 10);
+    return isNaN(n) ? dflt : Math.max(lo, Math.min(hi, n));
+  };
+  const asked = String(P.get('parts') || '').toLowerCase().split(',').map((s) => s.trim()).filter(Boolean);
+  let parts = (!asked.length || asked.includes('all'))
+    ? SNAP_PARTS.slice()
+    : SNAP_PARTS.filter((p) => asked.includes(p));
+  if (!parts.length) parts = SNAP_PARTS.slice();          // nothing recognized → everything
+  if (P.get('messages') === '0') parts = parts.filter((p) => p !== 'messages'); // legacy flag
+  const want = (k) => parts.indexOf(k) >= 0;
+
+  const days    = num(P.get('days'), 0, 0, 3650);
+  const since   = days ? Date.now() - days * 86400000 : 0;
+  const sinceD  = since ? new Date(since).toISOString().slice(0, 10) : '';
+  const sinceM  = sinceD.slice(0, 7);
+  const msgCap  = P.get('msgs') === 'all' ? 500 : num(P.get('msgs'), 60, 1, 500);
+  const limit   = num(P.get('limit'), 300, 1, 500);
+  const q       = String(P.get('q') || '').trim().toLowerCase();
+
   const scrub = (o) => {
     if (!o || typeof o !== 'object') return o;
     const out = Array.isArray(o) ? [] : {};
@@ -5612,29 +5641,89 @@ async function apiSnapshot(url) {
     }
     return out;
   };
-  const config = scrub(await loadConfig());
-  const moneyConfig = scrub(await loadMoneyConfig());
-  // all money months
-  const list = await kv().list({ prefix: 'money:m:' });
-  const money = [];
-  for (const k of (list.keys || [])) {
-    const doc = await kv().get(k.name, { type: 'json' });
-    money.push({ month: k.name.replace('money:m:', ''), entries: (doc && doc.entries) || [] });
-  }
-  money.sort((a, b) => (a.month < b.month ? -1 : 1));
-  // full conversations (bounded so the file stays sane)
-  const threadsFull = [];
-  for (const t of index.slice(0, 300)) {
-    const doc = await loadThread(t.phone);
-    const trimmed = Object.assign({}, doc);
-    if (Array.isArray(doc.messages)) { trimmed.msgTotal = doc.messages.length; if (withMsgs) trimmed.messages = doc.messages.slice(-60); else delete trimmed.messages; }
-    threadsFull.push(scrub(trimmed));
-  }
-  return json({
+
+  const out = {
     ok: true, kind: 'mikeys-app-snapshot', build: BUILD, at: new Date().toISOString(),
-    counts: { conversations: index.length, moneyMonths: money.length },
-    config, moneyConfig, leadsAndChats: index, conversations: threadsFull, money,
-  });
+    included: parts,
+    filters: { days: days || null, since: sinceD || null, msgsPerChat: msgCap, who: q || null, maxChats: limit },
+  };
+  const counts = {};
+
+  // ---- conversations (the index rows, and optionally the texts themselves) ----
+  if (want('messages') || want('leads')) {
+    let index = await loadIndex();
+    index.sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+    counts.conversationsTotal = index.length;
+    let rows = index;
+    if (since) rows = rows.filter((t) => (t.lastTs || 0) >= since);
+    if (q) rows = rows.filter((t) => (String(t.name || '') + ' ' + String(t.phone || '')).toLowerCase().indexOf(q) >= 0);
+    rows = rows.slice(0, limit);
+    if (want('leads')) out.leadsAndChats = rows;
+    if (want('messages')) {
+      const threadsFull = [];
+      for (const t of rows) {
+        const doc = await loadThread(t.phone);
+        const trimmed = Object.assign({}, doc);
+        const all = Array.isArray(doc.messages) ? doc.messages : [];
+        trimmed.msgTotal = all.length;
+        const inRange = since ? all.filter((m) => (m.ts || 0) >= since) : all;
+        trimmed.messages = inRange.slice(-msgCap);
+        if (since && !trimmed.messages.length) continue;   // nothing said in the window
+        threadsFull.push(scrub(trimmed));
+      }
+      out.conversations = threadsFull;
+      counts.conversations = threadsFull.length;
+      counts.messages = threadsFull.reduce((a, t) => a + t.messages.length, 0);
+    } else {
+      counts.conversations = rows.length;
+    }
+  }
+
+  // ---- money (income & expenses, month by month) ----
+  if (want('money')) {
+    const list = await kv().list({ prefix: 'money:m:' });
+    const money = [];
+    for (const k of (list.keys || [])) {
+      const month = k.name.replace('money:m:', '');
+      if (sinceM && month < sinceM) continue;              // whole month predates the window
+      const doc = await kv().get(k.name, { type: 'json' });
+      let entries = (doc && doc.entries) || [];
+      if (sinceD) entries = entries.filter((e) => String(e.date || '') >= sinceD);
+      if (!entries.length && sinceD) continue;
+      money.push({ month, entries });
+    }
+    money.sort((a, b) => (a.month < b.month ? -1 : 1));
+    out.money = money;
+    counts.moneyMonths = money.length;
+    counts.moneyEntries = money.reduce((a, m) => a + m.entries.length, 0);
+  }
+
+  // ---- bookings ----
+  if (want('bookings')) {
+    let bookings = await loadBookings();
+    if (since) bookings = bookings.filter((b) => (b.apptAt || 0) >= since || (b.createdAt || 0) >= since);
+    out.bookings = scrub(bookings);
+    counts.bookings = bookings.length;
+  }
+
+  // ---- forwarded emails ----
+  if (want('emails')) {
+    let emails = (await kv().get('emails', { type: 'json' })) || [];
+    if (since) emails = emails.filter((e) => (e.ts || 0) >= since);
+    out.emails = scrub(emails);
+    counts.emails = emails.length;
+  }
+
+  // ---- settings, playbook, templates ----
+  if (want('settings')) {
+    out.config = scrub(await loadConfig());
+    out.moneyConfig = scrub(await loadMoneyConfig());
+    out.bookingConfig = scrub(await loadBookingConfig());
+    out.templates = (await kv().get('templates', { type: 'json' })) || [];
+  }
+
+  out.counts = counts;
+  return json(out);
 }
 
 // Full CSV export — every month doc, one flat file. No lock-in, ever.
