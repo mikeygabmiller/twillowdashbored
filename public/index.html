@@ -729,8 +729,12 @@
 
   .toast{position:fixed;left:50%;bottom:calc(var(--nav-h) + var(--safe-bottom) + 18px);transform:translateX(-50%) translateY(10px);
     background:#eceff4;color:#15161a;padding:13px 18px;border-radius:14px;font-size:13.5px;font-weight:500;
-    box-shadow:0 12px 40px rgba(0,0,0,.5);z-index:100;opacity:0;transition:opacity .2s,transform .2s;display:flex;align-items:center;gap:16px;max-width:calc(100vw - 28px)}
-  .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+    box-shadow:0 12px 40px rgba(0,0,0,.5);z-index:100;opacity:0;transition:opacity .2s,transform .2s;display:flex;align-items:center;gap:16px;max-width:calc(100vw - 28px);
+    /* Invisible but still on top: without pointer-events:none the hidden toast
+       swallows every tap in a band above the nav (buttons anchored to the bottom
+       of a sheet land right in it). Re-enabled while shown so Undo stays tappable. */
+    pointer-events:none}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
   .toast.bad{background:#3a1518;color:#ffd0d0}
   .toast .undo{color:var(--accent);font-weight:700;background:none;border:none;font-size:13.5px;flex:none}
   .toast.bad .undo{color:#ff8a93}
@@ -1555,6 +1559,131 @@
 
   /* Customize: locked-panel heading with inline icon. */
   .cz-card h3.cz-h-ic{display:flex;align-items:center;gap:7px}
+
+  /* =====================================================================
+     JOB DAY — the run sheet. Built for one hand, in a driveway, in the sun:
+     big targets (56px primary action), high contrast, and the next thing to
+     do always the largest thing on screen.
+     ===================================================================== */
+  .dayapp{position:fixed;inset:0;z-index:82;background:var(--bg);display:none;flex-direction:column}
+  .dy-head{display:flex;align-items:center;gap:4px;padding:calc(10px + var(--safe-top)) 8px 10px;border-bottom:1px solid var(--line);background:var(--panel);flex:none}
+  .dy-title{flex:1;min-width:0;padding-left:2px}
+  .dy-title b{display:block;font-size:17px;line-height:1.15;letter-spacing:-.01em}
+  .dy-title small{display:block;color:var(--muted);font-size:12px;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .dy-body{flex:1;overflow-y:auto;min-height:0;-webkit-overflow-scrolling:touch;padding:14px 14px calc(96px + var(--safe-bottom));max-width:660px;width:100%;margin:0 auto}
+  .dy-foot{position:absolute;left:0;right:0;bottom:0;padding:10px 14px calc(10px + var(--safe-bottom));background:linear-gradient(to top,var(--bg) 62%,transparent);display:flex;gap:10px;justify-content:center;pointer-events:none}
+  .dy-foot>*{pointer-events:auto;max-width:632px;width:100%}
+
+  /* Hero — the whole day in one glance */
+  .dy-hero{background:linear-gradient(150deg,var(--accent-dark),var(--accent));border-radius:20px;padding:16px 17px;color:#fff;box-shadow:0 14px 34px -18px var(--accent);margin-bottom:14px}
+  .dy-hero.rest{background:linear-gradient(150deg,#334155,#1e293b);box-shadow:none}
+  .dy-hero-top{display:flex;align-items:center;gap:14px}
+  .dy-ring{position:relative;flex:none;width:60px;height:60px}
+  .dy-ring svg{transform:rotate(-90deg)}
+  .dy-ring span{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:800;letter-spacing:-.02em}
+  .dy-hero h2{font-size:22px;font-weight:800;letter-spacing:-.02em;margin:0 0 3px}
+  .dy-hero p{font-size:13px;opacity:.9;margin:0;line-height:1.35}
+  .dy-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:14px}
+  .dy-kpi{background:rgba(255,255,255,.15);border-radius:12px;padding:8px 9px}
+  .dy-kpi b{display:block;font-size:16px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .dy-kpi small{display:block;font-size:10.5px;opacity:.82;text-transform:uppercase;letter-spacing:.05em;margin-top:1px}
+
+  /* Drive leg between two stops */
+  .dy-leg{display:flex;align-items:center;gap:7px;color:var(--muted2);font-size:12px;padding:7px 0 7px 22px;position:relative}
+  .dy-leg::before{content:"";position:absolute;left:9px;top:0;bottom:0;width:2px;background:repeating-linear-gradient(to bottom,var(--line) 0 4px,transparent 4px 8px)}
+  .dy-leg em{font-style:normal;opacity:.72}
+
+  /* Stop card */
+  .dy-stop{background:var(--panel);border:1px solid var(--line);border-radius:18px;overflow:hidden;transition:border-color .16s}
+  .dy-stop.now{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .dy-stop.fin{opacity:.66}
+  .dy-stop.skip{opacity:.5}
+  .dy-stop-main{display:flex;gap:11px;padding:13px 14px;cursor:pointer;align-items:flex-start}
+  .dy-num{flex:none;width:26px;height:26px;border-radius:9px;background:var(--panel3);color:var(--muted);font-size:12.5px;font-weight:800;display:flex;align-items:center;justify-content:center;margin-top:1px}
+  .dy-stop.now .dy-num{background:var(--accent);color:#fff}
+  .dy-stop.fin .dy-num{background:var(--mo-good);color:#fff}
+  .dy-info{flex:1;min-width:0}
+  .dy-when{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);margin-bottom:2px;flex-wrap:wrap}
+  .dy-name{font-size:16px;font-weight:700;letter-spacing:-.01em;display:flex;align-items:baseline;gap:8px}
+  .dy-name span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dy-name b{flex:none;font-variant-numeric:tabular-nums;color:var(--mo-good)}
+  .dy-svc{font-size:13px;color:var(--muted);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dy-addr{font-size:12.5px;color:var(--muted2);margin-top:4px;display:flex;align-items:center;gap:5px}
+  .dy-addr .ic-svg{flex:none;opacity:.8}
+  .dy-pill{font-size:10.5px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;padding:3px 8px;border-radius:999px;background:var(--panel3);color:var(--muted)}
+  .dy-pill.enroute{background:rgba(59,130,246,.18);color:#7ab0ff}
+  .dy-pill.onsite{background:var(--accent-soft);color:var(--accent-text)}
+  .dy-pill.done{background:rgba(32,196,107,.16);color:var(--mo-good)}
+  .dy-pill.late{background:rgba(245,178,61,.18);color:var(--mo-warn)}
+
+  /* Actions */
+  .dy-acts{display:flex;gap:8px;padding:0 14px 13px}
+  .dy-go{flex:1;min-height:52px;border:none;border-radius:14px;background:var(--accent);color:#fff;font-size:15.5px;font-weight:750;letter-spacing:-.01em;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;transition:transform .1s,filter .14s}
+  .dy-go:active{transform:scale(.985)}
+  .dy-go[disabled]{opacity:.6}
+  .dy-go.arrive{background:var(--blue)}
+  .dy-go.finish{background:var(--mo-good)}
+  .dy-go.ghost{background:var(--panel3);color:var(--muted)}
+  .dy-mini{flex:none;width:52px;min-height:52px;border-radius:14px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .dy-mini:active{transform:scale(.96)}
+
+  /* Expanded detail */
+  .dy-more{border-top:1px solid var(--line2);padding:13px 14px;display:none}
+  .dy-stop.open .dy-more{display:block}
+  .dy-sec{margin-bottom:15px}
+  .dy-sec:last-child{margin-bottom:4px}
+  .dy-sec h4{font-size:11.5px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;color:var(--muted2);margin:0 0 8px;display:flex;align-items:center;gap:7px}
+  .dy-sec h4 span{margin-left:auto;font-weight:700;letter-spacing:0;text-transform:none;font-size:12px;color:var(--muted)}
+  .dy-bar{height:6px;border-radius:6px;background:var(--panel3);overflow:hidden;margin-bottom:9px}
+  .dy-bar i{display:block;height:100%;background:var(--mo-good);border-radius:6px;transition:width .3s}
+  .dy-ck{display:flex;align-items:flex-start;gap:10px;padding:9px 2px;cursor:pointer;font-size:14px;line-height:1.35;border-radius:9px}
+  .dy-ck:active{background:var(--panel2)}
+  .dy-box{flex:none;width:22px;height:22px;border-radius:7px;border:2px solid var(--line);display:flex;align-items:center;justify-content:center;color:transparent;margin-top:-1px;transition:all .14s}
+  .dy-ck.on .dy-box{background:var(--mo-good);border-color:var(--mo-good);color:#fff}
+  .dy-ck.on{color:var(--muted2);text-decoration:line-through;text-decoration-color:var(--line)}
+  .dy-photos{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;padding-bottom:2px}
+  .dy-photos::-webkit-scrollbar{display:none}
+  .dy-ph{flex:none;width:76px;height:76px;border-radius:12px;overflow:hidden;position:relative;background:var(--panel3)}
+  .dy-ph img{width:100%;height:100%;object-fit:cover;display:block}
+  .dy-ph button{position:absolute;top:3px;right:3px;width:20px;height:20px;border-radius:50%;border:none;background:rgba(0,0,0,.6);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .dy-ph em{position:absolute;left:0;right:0;bottom:0;background:rgba(0,0,0,.55);color:#fff;font-size:9.5px;font-style:normal;font-weight:700;text-align:center;padding:2px 0;text-transform:uppercase;letter-spacing:.06em}
+  .dy-add-ph{flex:none;width:76px;height:76px;border-radius:12px;border:2px dashed var(--line);background:none;color:var(--muted2);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:10.5px;font-weight:700;cursor:pointer}
+  .dy-note{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:12px;color:var(--text);font:inherit;font-size:14px;padding:10px 11px;resize:vertical;min-height:66px}
+  .dy-chips{display:flex;gap:7px;flex-wrap:wrap}
+  .dy-chip{padding:8px 13px;border-radius:11px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);font-size:13px;font-weight:650;cursor:pointer}
+  .dy-chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text)}
+  .dy-money-in{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:12px;color:var(--text);font:inherit;font-size:26px;font-weight:800;padding:12px;text-align:center;font-variant-numeric:tabular-nums}
+
+  .dy-empty{text-align:center;padding:46px 20px;color:var(--muted)}
+  .dy-empty .ic-svg{opacity:.35;margin-bottom:12px}
+  .dy-empty h3{font-size:17px;font-weight:700;color:var(--text);margin:0 0 6px}
+  .dy-empty p{font-size:13.5px;line-height:1.5;margin:0 auto;max-width:300px}
+  .dy-tip{display:flex;gap:9px;align-items:flex-start;background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:11px 12px;font-size:13px;color:var(--muted);line-height:1.42;margin-bottom:12px;cursor:pointer}
+  .dy-tip .ic-svg{flex:none;color:var(--mo-warn);margin-top:1px}
+  .dy-tip b{color:var(--text);font-weight:700}
+
+  .dy-scrim{position:absolute;inset:0;background:rgba(0,0,0,.55);z-index:5;display:none}
+  .dy-scrim.show{display:block}
+  .dy-sheet{position:absolute;left:0;right:0;bottom:0;z-index:6;background:var(--panel3);border-radius:20px 20px 0 0;box-shadow:0 -10px 44px rgba(0,0,0,.55);transform:translateY(102%);transition:transform .24s cubic-bezier(.2,.7,.3,1);max-height:92%;display:flex;flex-direction:column}
+  .dy-sheet.show{transform:none}
+  /* flex:1 + min-height:0 is load-bearing: without it the sheet's content grows
+     past max-height instead of scrolling, and the Save button ends up off-screen
+     on a phone. */
+  .dy-sh-in{flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:8px 16px calc(20px + var(--safe-bottom))}
+  .dy-sh-in h3{font-size:17px;font-weight:750;margin:6px 0 4px}
+  .dy-sh-in p.sub{color:var(--muted);font-size:13px;margin:0 0 14px;line-height:1.45}
+  .dy-grab{width:38px;height:4px;border-radius:4px;background:var(--line);margin:9px auto 3px;flex:none}
+  .dy-row{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line2)}
+  .dy-row:last-child{border-bottom:none}
+  .dy-row .lb{flex:1;min-width:0}
+  .dy-row .lb b{display:block;font-size:14.5px;font-weight:650}
+  .dy-row .lb small{display:block;color:var(--muted);font-size:12px;margin-top:2px;line-height:1.35}
+  .dy-in{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:11px;color:var(--text);font:inherit;font-size:14px;padding:10px 11px}
+  .dy-save{width:100%;min-height:52px;border:none;border-radius:14px;background:var(--accent);color:#fff;font-size:16px;font-weight:750;cursor:pointer;margin-top:6px}
+  .dy-save.good{background:var(--mo-good)}
+  @media (min-width:560px){ .dy-kpis{grid-template-columns:repeat(4,1fr)} }
+  :root[data-theme="light"] .dy-sheet{background:var(--panel)}
+  @media (prefers-color-scheme: light){ :root:not([data-theme="dark"]) .dy-sheet{background:var(--panel)} }
 </style>
 </head>
 <body>
@@ -1581,6 +1710,7 @@
 
     <nav class="bottomnav" id="bottomnav">
       <button class="navitem active" data-tab="home"><span class="ic" data-ic="home"></span><span class="ndot" id="navHome"></span>Home</button>
+      <button class="navitem" data-tab="day"><span class="ic" data-ic="truck"></span><span class="ndot" id="navDay"></span>Day</button>
       <button class="navitem" data-tab="messages"><span class="ic" data-ic="message-square"></span><span class="ndot" id="navUnread"></span>Chats</button>
       <button class="navitem" data-tab="leads"><span class="ic" data-ic="clipboard-list"></span><span class="ndot" id="navLeads"></span>Leads</button>
       <button class="navitem" data-tab="money"><span class="ic" data-ic="dollar"></span><span class="ndot" id="navMoney"></span>Money</button>
@@ -1757,6 +1887,7 @@
     <div class="ditem" id="bookingsItem" onclick="location.href='/bookings.html'"><span class="ic" data-ic="calendar-days"></span>Bookings<span class="n" style="color:var(--accent-text)">new</span></div>
     <div class="ditem" data-tab="messages"><span class="ic" data-ic="message-square"></span>All messages<span class="n" id="mnAll"></span></div>
     <div class="ditem" data-filter="unread"><span class="ic" data-ic="bell"></span>Unread<span class="n" id="mnUnread"></span></div>
+    <div class="ditem" id="dmDay"><span class="ic" data-ic="truck"></span>My Day — run sheet</div>
     <div class="ditem" data-tab="leads"><span class="ic" data-ic="clipboard-list"></span>Leads pipeline</div>
     <div class="ditem" data-tab="followups"><span class="ic" data-ic="list-checks"></span>Follow-ups<span class="n" id="mnFollow"></span></div>
     <div class="ditem" data-tab="scheduled"><span class="ic" data-ic="calendar-days"></span>Scheduled<span class="n" id="mnSched"></span></div>
@@ -1861,6 +1992,22 @@
   <div class="mo-sheet" id="moSheet"></div>
 </div>
 
+<!-- Job Day — the field run sheet -->
+<div class="dayapp" id="dayApp">
+  <div class="dy-head">
+    <button class="btn icon" id="dyBack" data-ic="chevron-left" aria-label="Back to texting"></button>
+    <div class="dy-title"><b id="dyTitle">My Day</b><small id="dySub">Loading your run sheet…</small></div>
+    <button class="btn icon" id="dyPrev" data-ic="chevron-left" aria-label="Previous day"></button>
+    <button class="btn icon" id="dyNext" data-ic="chevron-right" aria-label="Next day"></button>
+    <button class="btn icon" id="dyGear" data-ic="settings" aria-label="Job Day settings"></button>
+  </div>
+  <div class="dy-body" id="dyBody"></div>
+  <div class="dy-foot" id="dyFoot"></div>
+  <div class="dy-scrim" id="dyScrim"></div>
+  <div class="dy-sheet" id="dySheet"></div>
+  <input type="file" accept="image/*" capture="environment" id="dyFile" style="display:none">
+</div>
+
 <!-- Make It Yours — Customize hub -->
 <div class="cz" id="czApp">
   <div class="cz-head">
@@ -1927,7 +2074,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-21·booking+redesign";
+  var APP_BUILD="2026-08-02·jobday";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -2020,7 +2167,14 @@
     "cloud-rain":'<path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M16 14v6"/><path d="M8 14v6"/><path d="M12 16v6"/>',
     "cloud-drizzle":'<path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M8 19v1"/><path d="M8 14v1"/><path d="M16 19v1"/><path d="M16 14v1"/><path d="M12 21v1"/><path d="M12 16v1"/>',
     "cloud-snow":'<path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M8 15h.01"/><path d="M8 19h.01"/><path d="M12 17h.01"/><path d="M12 21h.01"/><path d="M16 15h.01"/><path d="M16 19h.01"/>',
-    "cloud-lightning":'<path d="M6 16.326A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 1.5 8.742"/><path d="m13 12-3 5h4l-3 5"/>'
+    "cloud-lightning":'<path d="M6 16.326A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 1.5 8.742"/><path d="m13 12-3 5h4l-3 5"/>',
+    // Job Day
+    "map-pin":'<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>',
+    "navigation":'<polygon points="3 11 22 2 13 21 11 13 3 11"/>',
+    "camera":'<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3Z"/><circle cx="12" cy="13" r="3"/>',
+    "route":'<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>',
+    "flag":'<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/>',
+    "truck":'<path d="M14 18V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v11a1 1 0 0 0 1 1h2"/><path d="M14 9h4l4 4v4a1 1 0 0 1-1 1h-1"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>'
   };
   function ic(name,size,strokeW){
     size=size||22;var p=ICONS[name];if(p==null)return"";
@@ -2123,7 +2277,7 @@
   function submitLogin(value,wrongMsg){
     el("loginErr").textContent="";
     post("/api/login",{password:value}).then(function(d){
-      if(d&&d.ok){pin="";if(el("loginPass"))el("loginPass").value="";hideLogin();refreshThreads();loadTemplates();checkHealth();startPoll();loadConfig();fetchInsights();loadMoney();showBuild();if(state.pendingC)openThread(state.pendingC)}
+      if(d&&d.ok){pin="";if(el("loginPass"))el("loginPass").value="";hideLogin();refreshThreads();loadTemplates();checkHealth();startPoll();loadConfig();fetchInsights();loadMoney();fetchDaySummary();showBuild();if(state.pendingC)openThread(state.pendingC)}
       else{
         el("loginErr").textContent=wrongMsg||"Wrong PIN — try again";
         var box=el("loginBox");if(box){box.classList.remove("pin-shake");void box.offsetWidth;box.classList.add("pin-shake")}
@@ -2219,7 +2373,7 @@
   // to any saved business data — this is pure presentation + arrangement.
   // ==========================================================================
   var UI_KEY="mkd-ui";
-  var UI_TABLIST=[["home","Home","home"],["messages","Chats","message-square"],["leads","Leads","clipboard-list"],["money","Money","dollar"],["analytics","Analytics","bar-chart"]];
+  var UI_TABLIST=[["home","Home","home"],["day","Day","truck"],["messages","Chats","message-square"],["leads","Leads","clipboard-list"],["money","Money","dollar"],["analytics","Analytics","bar-chart"]];
   var UI_PRESETS=[ // id, name, accent, accentDark
     ["crimson","Crimson","#ff2e43","#c81e30"],["ocean","Ocean","#2f9bff","#1d5fd8"],
     ["mint","Mint","#22c55e","#15803d"],["grape","Grape","#a855f7","#7e22ce"],
@@ -2230,11 +2384,11 @@
     preset:"crimson", accent:["#ff2e43","#c81e30"],
     radius:"md", density:"comfy", textScale:100, font:"system", bg:"solid",
     mode:"simple", locked:false, tourSeen:false, listStyle:"compact",
-    tabsOrder:["home","messages","leads","money","analytics"], tabsHidden:[],
+    tabsOrder:["home","day","messages","leads","money","analytics"], tabsHidden:[],
     mblocks:["hero","log","alerts","pulse","brain","today"], mblocksHidden:[],
     mkpis:["net","you","costs","savings","avg","jobs","margin","owed","best"],
     // Phase 2/3
-    hwidgets:["money","quickactions","schedule","goal","rebook","sla","tasks","trend","funnel","vip","weather","stats"], hwidgetsHidden:["trend","funnel","vip","weather","stats"],
+    hwidgets:["day","money","quickactions","schedule","goal","rebook","sla","tasks","trend","funnel","vip","weather","stats"], hwidgetsHidden:["trend","funnel","vip","weather","stats"],
     rowFields:["time","preview","status","tags","unread"],
     stageLabels:{}, stageColors:{}
   };}
@@ -2261,6 +2415,12 @@
     var nav=el("bottomnav");if(!nav)return;
     var order=UI.tabsOrder.filter(function(t){return UI_TABLIST.some(function(x){return x[0]===t})});
     UI_TABLIST.forEach(function(t){if(order.indexOf(t[0])<0)order.push(t[0])});
+    // Newly-shipped tabs land at the end; Day belongs next to Home, so nudge it
+    // there once for layouts saved before it existed. Reordering it later sticks.
+    if(order.indexOf("day")>1&&!UI.dayTabPlaced){
+      order.splice(order.indexOf("day"),1);order.splice(1,0,"day");
+      UI.dayTabPlaced=true;UI.tabsOrder=order.slice();saveUI();
+    }
     var visible=order.filter(function(t){return UI.tabsHidden.indexOf(t)<0});
     UI_TABLIST.forEach(function(t){var b=nav.querySelector('.navitem[data-tab="'+t[0]+'"]');if(b)b.style.display=(visible.indexOf(t[0])>=0)?"":"none";});
     visible.forEach(function(k){var b=nav.querySelector('.navitem[data-tab="'+k+'"]');if(b)nav.appendChild(b)});
@@ -2335,6 +2495,7 @@
     if(CZ.tab==="safe")return czSafe(p);
   }
   var UI_HWIDGETS=[
+    ["day","My Day — run sheet","truck"],
     ["money","Today’s money","dollar"],
     ["quickactions","Quick actions","sparkles"],
     ["schedule","Today’s schedule","calendar-days"],
@@ -2537,6 +2698,7 @@
     var nh=el("navHome");if(nh){nh.textContent=c.needs;nh.className="ndot"+(c.needs?" show":"")}
     var nn=el("navNeeds");if(nn){nn.textContent=c.needs;nn.className="ndot"+(c.needs?" show":"")}
     var nf=el("navFollow");if(nf){nf.textContent=c.follow;nf.className="ndot"+(c.follow?" show":"")}
+    refreshDayBadge();
     el("mnAll").textContent=c.all||"";el("mnUnread").textContent=c.unread||"";
     el("mnSched").textContent=c.sched||"";el("mnArch").textContent=c.arch||"";
     if(el("mnFollow"))el("mnFollow").textContent=c.follow||"";
@@ -2692,6 +2854,7 @@
     // Note: the old "waiting / follow-ups / reminders" widgets are now consolidated
     // into the always-on "Needs your attention" rundown (homeNeeds) below the AI center.
     var W={};
+    W.day='<div data-hwidget="day">'+homeDayWidget()+'</div>';
     W.money='<div data-hwidget="money">'+homeMoneyWidget()+'</div>';
     // AI command center — auto summary of what needs attention + a box to dictate.
     W.aicenter='<div data-hwidget="aicenter"><div class="ai-center">'+
@@ -2721,6 +2884,9 @@
     var order=(UI&&UI.hwidgets)?UI.hwidgets.slice():defaultUI().hwidgets.slice();
     // Make newly-shipped widgets appear for users with an older saved layout.
     UI_HWIDGETS.forEach(function(w){if(order.indexOf(w[0])<0)order.push(w[0])});
+    // The run sheet is the reason to open Home in the morning — pull it to the top
+    // of layouts that were saved before Job Day existed (once; reorder still sticks).
+    if(order.indexOf("day")>0&&!(UI&&UI.dayPromoted)){order.splice(order.indexOf("day"),1);order.unshift("day");if(UI){UI.dayPromoted=true;UI.hwidgets=order.slice();saveUI()}}
     var hidden=(UI&&UI.hwidgetsHidden)||[];
     // The AI center and the Needs rundown are core — always on, always first, never toggleable.
     order=order.filter(function(k){return ["aicenter","needs","waiting","followups","reminders"].indexOf(k)<0});
@@ -2734,6 +2900,7 @@
     Array.prototype.forEach.call(box.querySelectorAll("[data-open]"),function(c){c.onclick=function(){openThread(c.getAttribute("data-open"))}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-more]"),function(c){c.onclick=function(){setTab(c.getAttribute("data-more"))}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-open-money]"),function(c){c.onclick=function(){openMoney()}});
+    Array.prototype.forEach.call(box.querySelectorAll("[data-open-day]"),function(c){c.onclick=function(){vibrate(6);openDay()}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-open-analytics]"),function(c){c.onclick=function(){openAnalytics()}});
     wireHomeWidgets(box);
     wireAiCenter();
@@ -2765,6 +2932,56 @@
   }
   // Today's schedule — a timeline built from reminders due today, scheduled sends,
   // and jobs already logged today, sorted by time.
+
+  // ===== Job Day on Home ====================================================
+  // Home is the first screen of the day, so the run sheet gets a slot here: the
+  // next stop, where it is, and a button that jumps straight into it. Fetched
+  // once per session (and refreshed after any run-sheet action) — never polled.
+  var DYB={jobs:0,left:0,totals:null,day:null,fetched:false};
+  function refreshDayBadge(){
+    var n=el("navDay");if(!n)return;
+    n.textContent=DYB.left||"";n.className="ndot"+(DYB.left?" show":"");
+  }
+  function fetchDaySummary(force){
+    if(DYB.fetched&&!force)return;
+    DYB.fetched=true;
+    api("/api/day").then(function(d){
+      if(!d||!d.ok)return;
+      DYB.totals=d.totals||{};DYB.day=d.day;
+      DYB.jobs=DYB.totals.jobs||0;DYB.left=DYB.totals.remaining||0;
+      DY.today=d.today;if(!DY.date)DY.date=d.date;
+      if(!DY.cfg)DY.cfg=d.config;
+      refreshDayBadge();
+      if(state.tab==="home")renderHome();
+    }).catch(function(){});
+  }
+  function homeDayWidget(){
+    var head='<div class="wc-h"><span class="wc-ic">'+ic("truck",18)+'</span><span class="wc-t">My Day</span>'+
+      '<span class="wc-badge">'+(DYB.totals?((DYB.totals.done||0)+"/"+(DYB.totals.jobs||0)):"")+'</span></div>';
+    if(!DYB.totals){
+      fetchDaySummary();
+      return '<div class="wcard" data-open-day="1">'+head+'<div class="wc-empty">'+ic("clock",15)+' Loading your run sheet…</div></div>';
+    }
+    var t=DYB.totals,stops=(DYB.day&&DYB.day.stops)||[];
+    if(!t.jobs)return '<div class="wcard" data-open-day="1">'+head+'<div class="wc-empty">'+ic("sun",15)+' Nothing booked today. Tap to add a stop.</div></div>';
+    var next=stops.slice().sort(function(a,b){return (a.order||0)-(b.order||0)})
+      .find(function(x){return x.status!=="done"&&x.status!=="skipped"});
+    var body;
+    if(!next){
+      body='<div class="wc-empty">'+ic("check-circle",15)+' All '+t.jobs+' done — '+fmtMoney(t.collected||0)+' collected. Tap to wrap up.</div>';
+    }else{
+      var when=next.plannedAt?fmtTime(next.plannedAt):(next.projStart?"~"+fmtTime(next.projStart):"anytime");
+      var st=next.status==="onsite"?"Working on it now":next.status==="enroute"?"On your way":"Up next";
+      body='<div class="agn"><div class="agn-row"><div class="agn-time">'+esc(when)+'</div>'+
+        '<div class="agn-rail"><div class="agn-dot" style="background:var(--accent)"></div></div>'+
+        '<div class="agn-body"><div class="agn-t">'+esc(next.name||prettyPhone(next.phone)||"Stop")+'</div>'+
+        '<div class="agn-s">'+esc(st)+(next.city?" · "+esc(next.city):"")+(next.price?" · "+fmtMoney(next.price):"")+'</div></div></div></div>'+
+        '<div class="home-strip" style="margin-top:10px"><span>'+(t.remaining||0)+' to go</span><span>'+fmtMoney(t.booked||0)+' booked</span>'+
+        (t.driveMi?'<span>'+t.driveMi+' mi</span>':"")+(t.finishAt?'<span>done ~'+fmtTime(t.finishAt)+'</span>':"")+'</div>';
+    }
+    return '<div class="wcard" data-open-day="1">'+head+body+'</div>';
+  }
+
   function homeScheduleWidget(active,reminders){
     var today=moTodayStr();var items=[];
     (reminders||[]).forEach(function(t){if(!t.reminderAt)return;var d=new Date(t.reminderAt);if(dstrOf(d)!==today)return;
@@ -3660,6 +3877,11 @@
   function maybeDeepLink(){
     try{
       // ?money=1 (from the evening-reminder / weekly-recap links) → straight to the tracker
+      // ?day=1 (from the morning brief / evening recap alerts) → straight to the run sheet
+      if(/[?&]day=1/.test(location.search)){
+        if(window.history&&history.replaceState)history.replaceState(null,"",location.pathname+location.hash);
+        openDay();return;
+      }
       if(/[?&]money=1/.test(location.search)){
         if(window.history&&history.replaceState)history.replaceState(null,"",location.pathname+location.hash);
         openMoney();return;
@@ -4499,7 +4721,7 @@
     if(!e.target.closest("#toolsBtn")&&!e.target.closest("#toolsSheet"))el("toolsSheet").style.display="none";
   });
 
-  Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.onclick=function(){vibrate(6);var tb=b.getAttribute("data-tab");if(tb==="money")return openMoney();if(tb==="analytics")return openAnalytics();setTab(tb)}});
+  Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){b.onclick=function(){vibrate(6);var tb=b.getAttribute("data-tab");if(tb==="day")return openDay();if(tb==="money")return openMoney();if(tb==="analytics")return openAnalytics();setTab(tb)}});
   el("czBack").onclick=closeCustomize;
   el("czMode").onclick=function(){UI.mode=UI.mode==="pro"?"simple":"pro";saveUI();czRender();vibrate(6)};
 
@@ -4891,6 +5113,652 @@
   // won-lead catch-up nudges, CSV in/out. Every feature has an
   // off switch in its Settings view.
   // ============================================================
+  // =====================================================================
+  // JOB DAY — the run sheet
+  // ---------------------------------------------------------------------
+  // The office tabs answer "who do I owe a reply?". This one answers "what am
+  // I doing right now, and what's next?" — so it's built for one thumb, in a
+  // driveway, in the sun. The next action is always the biggest thing on the
+  // screen, every tap is a single request, and a failed request rolls the UI
+  // back rather than lying about what happened.
+  // =====================================================================
+  var DY={open:false,date:null,today:null,day:null,totals:null,cfg:null,openId:null,busy:{},loaded:false,pending:null};
+  var DY_METHODS=[["cash","Cash"],["card","Card"],["zelle","Zelle"],["venmo","Venmo"],["check","Check"],["other","Other"]];
+
+  function dyDateStr(d){var p=function(x){return (x<10?"0":"")+x};return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())}
+  function dyShift(dateStr,n){var d=new Date(+dateStr.slice(0,4),+dateStr.slice(5,7)-1,+dateStr.slice(8,10));d.setDate(d.getDate()+n);return dyDateStr(d)}
+  function dyClock(ts){return ts?new Date(ts).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}):""}
+  function dyDayLabel(ds){
+    if(ds===DY.today)return "Today";
+    if(ds===dyShift(DY.today,1))return "Tomorrow";
+    if(ds===dyShift(DY.today,-1))return "Yesterday";
+    return new Date(+ds.slice(0,4),+ds.slice(5,7)-1,+ds.slice(8,10)).toLocaleDateString([],{weekday:"long",month:"short",day:"numeric"});
+  }
+  function dyDur(min){min=Math.round(+min||0);if(!min)return "0m";var h=Math.floor(min/60),m=min%60;return (h?h+"h":"")+(h&&m?" ":"")+(m?m+"m":"")}
+  function dyMapUrl(s){
+    var q=[s.address,s.city].filter(Boolean).join(", ");
+    if(!q)return null;
+    return "https://www.google.com/maps/dir/?api=1&destination="+encodeURIComponent(q+", WA");
+  }
+
+  function openDay(date){
+    DY.open=true;DY.date=date||DY.date||null;
+    el("dayApp").style.display="flex";
+    if(!DY.loaded||date)dyRender(),dyLoad();else dyRender();
+  }
+  function closeDay(){DY.open=false;el("dayApp").style.display="none";dyCloseSheet()}
+
+  function dyLoad(){
+    return api("/api/day"+(DY.date?"?date="+DY.date:"")).then(function(d){
+      if(!d||!d.ok)return;
+      DY.loaded=true;DY.date=d.date;DY.today=d.today;DY.day=d.day;DY.totals=d.totals;DY.cfg=d.config;
+      dySyncHome();
+      dyRender();
+    }).catch(function(){toast("Couldn't load your day — check signal",{bad:true})});
+  }
+
+  // Every mutation goes through here: one POST, optimistic spinner on the tapped
+  // control, full re-render from the server's copy so the UI can never drift from
+  // what's actually stored.
+  function dyAct(body,btn){
+    var key=(body.action||"")+":"+(body.id||"");
+    if(DY.busy[key])return Promise.resolve();
+    DY.busy[key]=1;
+    if(btn){btn.disabled=true;btn.style.opacity=".6"}
+    body.date=DY.date;
+    return post("/api/day/action",body)
+      .then(function(d){
+        delete DY.busy[key];
+        if(!d||!d.ok){
+          toast(dyErr(d),{bad:true});
+          if(btn){btn.disabled=false;btn.style.opacity=""}
+          return d;
+        }
+        DY.day=d.day;DY.totals=d.totals;DY.cfg=d.config||DY.cfg;
+        dySyncHome();
+        if(d.result&&d.result.sent&&d.result.sent.ok===false)toast("Saved — but the text didn't send ("+esc(d.result.sent.error||"error")+")",{bad:true});
+        if(d.result&&d.result.moneyError)toast("Saved — but logging the money failed",{bad:true});
+        dyRender();
+        return d;
+      })
+      .catch(function(){
+        delete DY.busy[key];
+        if(btn){btn.disabled=false;btn.style.opacity=""}
+        toast("No signal — that didn't save. Try again.",{bad:true});
+      });
+  }
+  // Mirror the run sheet into the Home widget + nav badge, but only when we're
+  // looking at TODAY — paging back to last Tuesday must not rewrite today's badge.
+  function dySyncHome(){
+    if(DY.date!==DY.today||!DY.totals)return;
+    if(typeof DYB==="undefined")return;
+    DYB.totals=DY.totals;DYB.day=DY.day;DYB.fetched=true;
+    DYB.jobs=DY.totals.jobs||0;DYB.left=DY.totals.remaining||0;
+    if(typeof refreshDayBadge==="function")refreshDayBadge();
+  }
+  function dyErr(d){
+    var e=(d&&d.error)||"error";
+    if(e==="need_addresses")return "Add an address to every stop first, then optimize";
+    if(e==="no_photo")return "Take an after photo first";
+    if(e==="not_found")return "That stop is gone — pull to refresh";
+    return "Couldn't do that: "+e;
+  }
+
+  // ---- render ----
+  function dyRender(){
+    if(!DY.open)return;
+    var b=el("dyBody"),f=el("dyFoot");
+    el("dyTitle").textContent=DY.date?dyDayLabel(DY.date):"My Day";
+    el("dyNext").style.visibility="";el("dyPrev").style.visibility="";
+    if(!DY.day){b.innerHTML='<div class="dy-empty">'+ic("truck",40)+'<h3>Loading your run sheet…</h3></div>';f.innerHTML="";hydrateIcons(b);return}
+
+    var stops=DY.day.stops||[],t=DY.totals||{};
+    el("dySub").textContent=stops.length
+      ? (t.done||0)+" of "+(t.jobs||0)+" done · "+fmtMoney(t.booked||0)+" booked"
+      : "Nothing on the sheet";
+
+    var h=dyHero(t);
+    h+=dyTips(t);
+    if(!stops.length){
+      h+='<div class="dy-empty">'+ic("calendar-days",40)+'<h3>No jobs on '+esc(dyDayLabel(DY.date).toLowerCase())+'</h3>'+
+        '<p>Bookings land here automatically the moment they come in. You can also add a stop by hand.</p></div>';
+    }else{
+      var order=stops.slice().sort(function(a,b2){return (a.order||0)-(b2.order||0)});
+      var nowId=dyCurrentId(order);
+      order.forEach(function(s,i){
+        if(s.driveMin!=null&&s.status!=="skipped"){
+          h+='<div class="dy-leg">'+ic("navigation",13)+' '+dyDur(s.driveMin)+' drive'+
+            (s.driveMi!=null?' <em>· '+s.driveMi+' mi'+(s.driveEst?" (est)":"")+'</em>':"")+'</div>';
+        }else if(i>0){h+='<div class="dy-leg">'+ic("navigation",13)+' <em>drive time needs an address</em></div>'}
+        h+=dyStopCard(s,i,nowId);
+      });
+    }
+    b.innerHTML=h;hydrateIcons(b);
+    dyBind(b);
+
+    // Footer: the most useful thing given where the day stands — plus a way to add
+    // a stop that never disappears, because walk-ups turn up after you've wrapped.
+    var doneAll=stops.length&&stops.every(function(s){return s.status==="done"||s.status==="skipped"});
+    var primary=null;
+    if(doneAll&&!DY.day.endedAt)primary=["wrap","Wrap up the day","dy-save good"];
+    else if(DY.day.endedAt)primary=["wrap","Day recap","dy-save"];
+    if(primary){
+      f.innerHTML='<div style="display:flex;gap:9px;width:100%;max-width:632px">'+
+        '<button class="'+primary[2]+'" id="dyWrapBtn" style="flex:1'+(primary[0]==="wrap"&&DY.day.endedAt?";background:var(--panel3);color:var(--text)":"")+'">'+esc(primary[1])+'</button>'+
+        '<button class="dy-save" id="dyAddBtn" aria-label="Add a stop" style="flex:none;width:56px;background:var(--panel3);color:var(--text);font-size:24px">+</button></div>';
+      el("dyWrapBtn").onclick=function(){vibrate(8);dyWrap()};
+    }else{
+      f.innerHTML='<button class="dy-save" id="dyAddBtn" style="background:var(--panel3);color:var(--text)">Add a stop</button>';
+    }
+    el("dyAddBtn").onclick=function(){vibrate(6);dyAddSheet()};
+  }
+
+  // The stop the day is actually on: whatever's in flight, else the first unfinished.
+  function dyCurrentId(order){
+    var live=order.find(function(s){return s.status==="onsite"||s.status==="enroute"});
+    if(live)return live.id;
+    var next=order.find(function(s){return s.status==="planned"});
+    return next?next.id:null;
+  }
+
+  function dyHero(t){
+    var stops=(DY.day&&DY.day.stops)||[];
+    if(!stops.length){
+      return '<div class="dy-hero rest"><div class="dy-hero-top"><span class="dy-ring">'+ic("sun",44)+'</span>'+
+        '<div><h2>Day off?</h2><p>Nothing booked for '+esc(dyDayLabel(DY.date).toLowerCase())+'. Good time to chase quotes.</p></div></div></div>';
+    }
+    var done=t.done||0,total=t.jobs||0,pct=total?done/total:0;
+    var R=25,C=2*Math.PI*R;
+    var ring='<span class="dy-ring"><svg width="60" height="60">'+
+      '<circle cx="30" cy="30" r="'+R+'" stroke="rgba(255,255,255,.28)" stroke-width="6" fill="none"/>'+
+      '<circle cx="30" cy="30" r="'+R+'" stroke="#fff" stroke-width="6" fill="none" stroke-linecap="round" stroke-dasharray="'+C+'" stroke-dashoffset="'+(C*(1-pct))+'"/>'+
+      '</svg><span>'+done+'/'+total+'</span></span>';
+    var head,sub;
+    if(done>=total){head="That's the day";sub="All "+total+" job"+(total===1?"":"s")+" done — "+fmtMoney(t.collected||0)+" collected.";}
+    else{
+      var nxt=stops.slice().sort(function(a,b){return (a.order||0)-(b.order||0)}).find(function(s){return s.status!=="done"&&s.status!=="skipped"});
+      head=done?((total-done)+" to go"):(total+" job"+(total===1?"":"s")+" today");
+      sub=nxt?("Next: "+esc(nxt.name||prettyPhone(nxt.phone)||"stop")+(nxt.city?" in "+esc(nxt.city):"")+
+        (nxt.projStart?" · "+dyClock(nxt.projStart):"")):"";
+    }
+    return '<div class="dy-hero'+(DY.date!==DY.today?" rest":"")+'"><div class="dy-hero-top">'+ring+
+      '<div style="min-width:0"><h2>'+esc(head)+'</h2><p>'+sub+'</p></div></div>'+
+      '<div class="dy-kpis">'+
+        '<div class="dy-kpi"><b>'+fmtMoney(t.collected||0)+'</b><small>collected</small></div>'+
+        '<div class="dy-kpi"><b>'+fmtMoney(t.booked||0)+'</b><small>booked</small></div>'+
+        '<div class="dy-kpi"><b>'+(t.driveMi?t.driveMi+" mi":"—")+'</b><small>driving</small></div>'+
+        '<div class="dy-kpi"><b>'+(t.finishAt?dyClock(t.finishAt):"—")+'</b><small>finish ~</small></div>'+
+      '</div></div>';
+  }
+
+  // One-line prompts for the things that make the rest of the screen better.
+  function dyTips(t){
+    var h="";
+    if(DY.cfg&&!DY.cfg.homeAddress&&(t.jobs||0)>0){
+      h+='<div class="dy-tip" data-tip="home">'+ic("map-pin",16)+'<div><b>Set your home base</b> — where you load up in the morning. Then every stop shows a real drive time and the route can be optimized.</div></div>';
+    }
+    if(t.noAddress){
+      h+='<div class="dy-tip" data-tip="addr">'+ic("alert",16)+'<div><b>'+t.noAddress+' stop'+(t.noAddress===1?" has":"s have")+' no address.</b> Add one and you\'ll get drive times, a map link and route order.</div></div>';
+    }
+    return h;
+  }
+
+  function dyStopCard(s,i,nowId){
+    var open=DY.openId===s.id;
+    var cls="dy-stop"+(s.id===nowId&&s.status!=="done"?" now":"")+(s.status==="done"?" fin":"")+(s.status==="skipped"?" skip":"")+(open?" open":"");
+    var when=s.plannedAt?dyClock(s.plannedAt):(s.projStart?"~"+dyClock(s.projStart):"anytime");
+    var pill="";
+    if(s.status==="enroute")pill='<span class="dy-pill enroute">on my way</span>';
+    else if(s.status==="onsite")pill='<span class="dy-pill onsite">working</span>';
+    else if(s.status==="done")pill='<span class="dy-pill done">done</span>';
+    else if(s.status==="skipped")pill='<span class="dy-pill">skipped</span>';
+    else if(s.late)pill='<span class="dy-pill late">running late</span>';
+
+    var price=s.status==="done"?(s.collected!=null?s.collected:s.price):s.price;
+    var h='<div class="'+cls+'" data-stop="'+s.id+'">'+
+      '<div class="dy-stop-main" data-expand="'+s.id+'">'+
+        '<span class="dy-num">'+(s.status==="done"?ic("check",14):(i+1))+'</span>'+
+        '<div class="dy-info">'+
+          '<div class="dy-when"><span>'+esc(when)+'</span>'+(s.durationMin?'<span>· '+dyDur(s.durationMin)+'</span>':"")+pill+'</div>'+
+          '<div class="dy-name"><span>'+esc(s.name||prettyPhone(s.phone)||"Stop")+'</span>'+(price?'<b>'+fmtMoney(price)+'</b>':"")+'</div>'+
+          (s.serviceName||s.vehicle?'<div class="dy-svc">'+esc([s.serviceName,s.vehicle].filter(Boolean).join(" · "))+'</div>':"")+
+          (s.address?'<div class="dy-addr">'+ic("map-pin",13)+esc([s.address,s.city].filter(Boolean).join(", "))+'</div>':"")+
+          (s.skipReason?'<div class="dy-addr">'+esc(s.skipReason)+'</div>':"")+
+        '</div>'+
+        '<span style="color:var(--muted2);align-self:center">'+ic(open?"chevron-up":"chevron-down",18)+'</span>'+
+      '</div>'+
+      dyActions(s,s.id===nowId)+
+      (open?dyDetail(s):"")+
+    '</div>';
+    return h;
+  }
+
+  function dyActions(s,isNow){
+    var go,cls="",lbl,icn;
+    // Only the stop you're actually on gets the loud button — later stops stay quiet
+    // so a glance (or a thumb) can't confuse "next" with "the one after that".
+    if(s.status==="planned"){go="enroute";lbl="On my way";icn="navigation";if(!isNow)cls=" ghost";}
+    else if(s.status==="enroute"){go="arrive";cls=" arrive";lbl="I'm here";icn="map-pin";}
+    else if(s.status==="onsite"){go="finish";cls=" finish";lbl="Finish job";icn="check-circle";}
+    else if(s.status==="done"){go="reopen";cls=" ghost";lbl="Done · "+fmtMoney(s.collected!=null?s.collected:s.price);icn="check";}
+    else {go="unskip";cls=" ghost";lbl="Put back on the sheet";icn="undo";}
+    var map=dyMapUrl(s);
+    return '<div class="dy-acts">'+
+      '<button class="dy-go'+cls+'" data-go="'+go+'" data-id="'+s.id+'">'+ic(icn,19)+' '+esc(lbl)+'</button>'+
+      (s.phone?'<button class="dy-mini" data-call="'+esc(s.phone)+'" aria-label="Call">'+ic("phone",19)+'</button>':"")+
+      (s.phone?'<button class="dy-mini" data-chat="'+esc(s.phone)+'" aria-label="Open chat">'+ic("message-square",19)+'</button>':"")+
+      (map?'<a class="dy-mini" href="'+esc(map)+'" target="_blank" rel="noopener" aria-label="Directions">'+ic("navigation",19)+'</a>':"")+
+    '</div>';
+  }
+
+  function dyDetail(s){
+    var ck=s.checklist||[],ckDone=ck.filter(function(c){return c.done}).length;
+    var pct=ck.length?Math.round(ckDone/ck.length*100):0;
+    var h='<div class="dy-more">';
+
+    if(ck.length){
+      h+='<div class="dy-sec"><h4>'+ic("list-checks",13)+' Checklist<span>'+ckDone+'/'+ck.length+'</span></h4>'+
+        '<div class="dy-bar"><i style="width:'+pct+'%"></i></div>';
+      ck.forEach(function(c){
+        h+='<div class="dy-ck'+(c.done?" on":"")+'" data-check="'+c.id+'" data-sid="'+s.id+'">'+
+          '<span class="dy-box">'+ic("check",14,3)+'</span><span>'+esc(c.label)+'</span></div>';
+      });
+      h+='<div style="display:flex;gap:8px;margin-top:8px">'+
+        '<button class="dy-chip" data-ckall="1" data-sid="'+s.id+'" data-on="'+(ckDone<ck.length?"1":"0")+'">'+(ckDone<ck.length?"Check everything":"Clear all")+'</button></div>';
+      h+='</div>';
+    }
+
+    var before=(s.photos||[]).filter(function(p){return p.kind==="before"});
+    var after=(s.photos||[]).filter(function(p){return p.kind==="after"});
+    h+='<div class="dy-sec"><h4>'+ic("camera",13)+' Photos<span>'+(before.length+after.length)+'</span></h4><div class="dy-photos">';
+    h+='<button class="dy-add-ph" data-photo="before" data-sid="'+s.id+'">'+ic("camera",18)+'Before</button>';
+    before.forEach(function(p){h+=dyPhotoTile(p,s.id)});
+    h+='<button class="dy-add-ph" data-photo="after" data-sid="'+s.id+'">'+ic("camera",18)+'After</button>';
+    after.forEach(function(p){h+=dyPhotoTile(p,s.id)});
+    h+='</div>';
+    if(after.length&&s.phone)h+='<button class="dy-chip" style="margin-top:9px" data-sendafter="'+s.id+'">'+ic("send",13)+' Text them the after photo</button>';
+    h+='</div>';
+
+    h+='<div class="dy-sec"><h4>'+ic("pencil",13)+' Job notes</h4>'+
+      '<textarea class="dy-note" data-note="'+s.id+'" placeholder="Gate code, problem spots, what you told them, what to upsell next time…">'+esc(s.notes||"")+'</textarea>'+
+      '<div style="color:var(--muted2);font-size:11.5px;margin-top:5px">Saves when you tap away. This is your memory for next time.</div></div>';
+
+    h+='<div class="dy-sec"><h4>'+ic("dollar",13)+' Job &amp; money</h4>'+
+      '<div class="dy-chips">'+
+        '<button class="dy-chip" data-edit="price" data-sid="'+s.id+'">Price '+fmtMoney(s.price||0)+'</button>'+
+        '<button class="dy-chip" data-edit="time" data-sid="'+s.id+'">Takes '+dyDur(s.durationMin)+'</button>'+
+        (s.status!=="skipped"?'<button class="dy-chip" data-skip="'+s.id+'">Skip this stop</button>':"")+
+        '<button class="dy-chip" data-move="up" data-sid="'+s.id+'">'+ic("chevron-up",13)+' Earlier</button>'+
+        '<button class="dy-chip" data-move="down" data-sid="'+s.id+'">'+ic("chevron-down",13)+' Later</button>'+
+        '<button class="dy-chip" data-remove="'+s.id+'">Remove</button>'+
+      '</div>';
+    if(s.status==="done"){
+      h+='<div style="color:var(--muted);font-size:12.5px;margin-top:9px;line-height:1.45">Logged '+fmtMoney(s.collected!=null?s.collected:s.price)+
+        (s.method?" ("+esc(s.method)+")":"")+' to the Money tracker'+(s.moneyEntryId?"":" — <b>not logged, tap Done to retry</b>")+
+        '. '+(s.thanked?"Thank-you text sent.":"")+'</div>';
+    }
+    h+='</div></div>';
+    return h;
+  }
+  function dyPhotoTile(p,sid){
+    return '<div class="dy-ph"><img src="/day-photo?p='+encodeURIComponent(p.id)+'" alt="" loading="lazy">'+
+      '<button data-delphoto="'+p.id+'" data-sid="'+sid+'" aria-label="Delete photo">'+ic("x",12)+'</button>'+
+      '<em>'+esc(p.kind)+'</em></div>';
+  }
+
+  // ---- event wiring (delegated once per render) ----
+  function dyBind(root){
+    root.querySelectorAll("[data-expand]").forEach(function(e){
+      e.onclick=function(){vibrate(5);var id=e.getAttribute("data-expand");DY.openId=(DY.openId===id)?null:id;dyRender()};
+    });
+    root.querySelectorAll("[data-tip]").forEach(function(e){
+      e.onclick=function(){vibrate(6);e.getAttribute("data-tip")==="home"?dySettings():dyRender()};
+    });
+    root.querySelectorAll("[data-go]").forEach(function(e){
+      e.onclick=function(ev){
+        ev.stopPropagation();vibrate(8);
+        var go=e.getAttribute("data-go"),id=e.getAttribute("data-id");
+        var s=(DY.day.stops||[]).find(function(x){return x.id===id});
+        if(go==="enroute")return dyOnMyWay(s,e);
+        if(go==="arrive")return dyAct({action:"arrive",id:id},e);
+        if(go==="finish")return dyFinishSheet(s);
+        if(go==="unskip")return dyAct({action:"unskip",id:id},e);
+        if(go==="reopen")return dyDoneSheet(s);
+      };
+    });
+    root.querySelectorAll("[data-call]").forEach(function(e){
+      e.onclick=function(ev){
+        ev.stopPropagation();vibrate(6);
+        // Bridged call: Mikey's cell rings first, so the customer only ever sees
+        // the business number. Same path the chat screen uses.
+        post("/api/call",{phone:e.getAttribute("data-call")}).then(function(d){
+          toast(d&&d.ok?"Calling your phone — answer to connect":"Call failed",{bad:!(d&&d.ok)});
+        });
+      };
+    });
+    root.querySelectorAll("[data-chat]").forEach(function(e){
+      e.onclick=function(ev){ev.stopPropagation();vibrate(6);closeDay();openThread(e.getAttribute("data-chat"))};
+    });
+    root.querySelectorAll("[data-check]").forEach(function(e){
+      e.onclick=function(){
+        vibrate(4);
+        var on=!e.classList.contains("on");
+        e.classList.toggle("on",on);   // instant feedback; the server call confirms
+        dyAct({action:"check",id:e.getAttribute("data-sid"),itemId:e.getAttribute("data-check"),done:on});
+      };
+    });
+    root.querySelectorAll("[data-ckall]").forEach(function(e){
+      e.onclick=function(){vibrate(6);dyAct({action:"checkAll",id:e.getAttribute("data-sid"),done:e.getAttribute("data-on")==="1"},e)};
+    });
+    root.querySelectorAll("[data-note]").forEach(function(e){
+      e.onblur=function(){
+        var s=(DY.day.stops||[]).find(function(x){return x.id===e.getAttribute("data-note")});
+        if(s&&(s.notes||"")!==e.value)dyAct({action:"note",id:e.getAttribute("data-note"),notes:e.value});
+      };
+    });
+    root.querySelectorAll("[data-photo]").forEach(function(e){
+      e.onclick=function(){vibrate(6);dyPickPhoto(e.getAttribute("data-sid"),e.getAttribute("data-photo"))};
+    });
+    root.querySelectorAll("[data-delphoto]").forEach(function(e){
+      e.onclick=function(ev){ev.stopPropagation();vibrate(6);dyAct({action:"photoDelete",id:e.getAttribute("data-sid"),photoId:e.getAttribute("data-delphoto")},e)};
+    });
+    root.querySelectorAll("[data-sendafter]").forEach(function(e){
+      e.onclick=function(){vibrate(8);dyAct({action:"sendAfter",id:e.getAttribute("data-sendafter")},e).then(function(d){if(d&&d.ok)toast("Photo sent 📸")})};
+    });
+    root.querySelectorAll("[data-move]").forEach(function(e){
+      e.onclick=function(){vibrate(6);dyAct({action:"move",id:e.getAttribute("data-sid"),dir:e.getAttribute("data-move")},e)};
+    });
+    root.querySelectorAll("[data-skip]").forEach(function(e){
+      e.onclick=function(){vibrate(6);dySkipSheet(e.getAttribute("data-skip"))};
+    });
+    root.querySelectorAll("[data-remove]").forEach(function(e){
+      e.onclick=function(){
+        vibrate(10);
+        if(!confirm("Remove this stop from today's sheet? Any money logged for it comes back out too."))return;
+        DY.openId=null;dyAct({action:"remove",id:e.getAttribute("data-remove")},e);
+      };
+    });
+    root.querySelectorAll("[data-edit]").forEach(function(e){
+      e.onclick=function(){vibrate(6);dyEditField(e.getAttribute("data-sid"),e.getAttribute("data-edit"))};
+    });
+  }
+
+  // ---- sheets ----
+  function dyOpenSheet(html){
+    var sh=el("dySheet");
+    sh.innerHTML='<div class="dy-grab"></div><div class="dy-sh-in">'+html+'</div>';
+    hydrateIcons(sh);el("dyScrim").classList.add("show");sh.classList.add("show");
+    return sh;
+  }
+  function dyCloseSheet(){el("dySheet").classList.remove("show");el("dyScrim").classList.remove("show")}
+
+  // "On my way" — the highest-value tap in the whole app. Show the ETA it's about
+  // to promise and let it be corrected before anything goes out.
+  function dyOnMyWay(s,btn){
+    var eta=s.driveMin||15;
+    var body=(DY.cfg&&DY.cfg.onMyWayText)||"";
+    var sh=dyOpenSheet(
+      '<h3>On my way to '+esc(s.name||"this stop")+'</h3>'+
+      '<p class="sub">They get a text with your ETA, and the stop flips to “on my way”.</p>'+
+      (s.phone?
+        '<div class="dy-sec"><h4>How far out are you?</h4><div class="dy-chips" id="dyEtaChips">'+
+        [5,10,15,20,30,45].map(function(m){return '<button class="dy-chip'+(m===Math.round(eta/5)*5?" on":"")+'" data-eta="'+m+'">'+m+' min</button>'}).join("")+
+        '</div></div>'+
+        '<div class="dy-sec"><h4>Message</h4><textarea class="dy-note" id="dyOmwBody" style="min-height:84px"></textarea></div>'
+        :'<p class="sub">No phone number on this stop, so nothing will be texted.</p>')+
+      '<button class="dy-save" id="dyOmwGo">'+(s.phone?"Send it & start driving":"Start driving")+'</button>'+
+      (s.phone?'<button class="dy-chip" id="dyOmwSkip" style="width:100%;margin-top:9px;text-align:center;justify-content:center">Just mark me on my way (no text)</button>':"")
+    );
+    var chosen=Math.round(eta/5)*5||15;
+    function fill(){
+      var t=el("dyOmwBody");if(!t)return;
+      t.value=body.replace(/\{eta\}/g,dyEtaWordsJs(chosen))
+        .replace(/\{first\}/g,(s.name||"there").split(/\s+/)[0])
+        .replace(/\{name\}/g,s.name||"there")
+        .replace(/\{service\}/g,s.serviceName||"detail")
+        .replace(/\{vehicle\}/g,s.vehicle||"your vehicle")
+        .replace(/\{address\}/g,s.address||"your place");
+    }
+    fill();
+    sh.querySelectorAll("[data-eta]").forEach(function(c){
+      c.onclick=function(){
+        vibrate(5);chosen=+c.getAttribute("data-eta");
+        sh.querySelectorAll("[data-eta]").forEach(function(x){x.classList.toggle("on",x===c)});
+        fill();
+      };
+    });
+    el("dyOmwGo").onclick=function(){
+      vibrate(9);dyCloseSheet();
+      var t=el("dyOmwBody");
+      dyAct({action:"enroute",id:s.id,etaMin:chosen,notify:!!s.phone,body:t?t.value:""},btn)
+        .then(function(d){if(d&&d.ok&&s.phone)toast("Sent — they know you're coming 🚗")});
+    };
+    if(el("dyOmwSkip"))el("dyOmwSkip").onclick=function(){vibrate(6);dyCloseSheet();dyAct({action:"enroute",id:s.id,notify:false},btn)};
+  }
+  function dyEtaWordsJs(m){
+    m=Math.max(1,Math.round(+m||0));
+    if(m<8)return "a few minutes";
+    if(m<60)return (Math.round(m/5)*5)+" minutes";
+    var h=Math.floor(m/60),r=m%60;
+    return r<8?(h+" hour"+(h>1?"s":"")):(h+"h "+(Math.round(r/5)*5)+"m");
+  }
+
+  // Finish — the one tap that closes the loop: money logged, lead won, thank-you sent.
+  function dyFinishSheet(s){
+    var ck=s.checklist||[],left=ck.filter(function(c){return !c.done}).length;
+    var amt=(s.collected!=null?s.collected:s.price)||0;
+    var sh=dyOpenSheet(
+      '<h3>Finish — '+esc(s.name||"this job")+'</h3>'+
+      '<p class="sub">This logs the money, marks the lead won (which arms the review ask) and texts them a thank-you.</p>'+
+      (left?'<div class="dy-tip" style="margin-bottom:14px">'+ic("alert",16)+'<div><b>'+left+' checklist item'+(left===1?"":"s")+' still unticked.</b> Finishing anyway is fine — just making sure.</div></div>':"")+
+      '<div class="dy-sec"><h4>What did they pay?</h4><input class="dy-money-in" id="dyAmt" type="number" inputmode="decimal" step="1" value="'+amt+'"></div>'+
+      '<div class="dy-sec"><h4>How?</h4><div class="dy-chips" id="dyMeth">'+
+        DY_METHODS.map(function(m){return '<button class="dy-chip'+(s.method===m[0]?" on":"")+'" data-m="'+m[0]+'">'+m[1]+'</button>'}).join("")+
+      '</div></div>'+
+      (s.phone?'<div class="dy-row"><div class="lb"><b>Text a thank-you</b><small>Personal note now — the review ask follows on its own schedule.</small></div>'+
+        '<input type="checkbox" id="dyThanks" '+((DY.cfg&&DY.cfg.thanksText!==false)?"checked":"")+' style="width:22px;height:22px"></div>':"")+
+      '<button class="dy-save good" id="dyFinGo" style="margin-top:14px">Log it &amp; finish</button>'
+    );
+    var meth=s.method||"";
+    sh.querySelectorAll("[data-m]").forEach(function(c){
+      c.onclick=function(){vibrate(5);meth=c.getAttribute("data-m");sh.querySelectorAll("[data-m]").forEach(function(x){x.classList.toggle("on",x===c)})};
+    });
+    el("dyFinGo").onclick=function(){
+      vibrate(12);
+      var v=parseFloat(el("dyAmt").value);
+      var th=el("dyThanks")?el("dyThanks").checked:false;
+      dyCloseSheet();
+      dyAct({action:"done",id:s.id,collected:isNaN(v)?undefined:v,method:meth,thanks:th}).then(function(d){
+        if(d&&d.ok)toast("Nice — "+fmtMoney(isNaN(v)?amt:v)+" logged 💰");
+      });
+    };
+  }
+
+  function dyDoneSheet(s){
+    var sh=dyOpenSheet(
+      '<h3>'+esc(s.name||"Job")+' — done</h3>'+
+      '<p class="sub">'+fmtMoney(s.collected!=null?s.collected:s.price)+(s.method?" · "+esc(s.method):"")+
+      (s.arrivedAt&&s.doneAt?" · "+dyDur((s.doneAt-s.arrivedAt)/60000)+" on site":"")+'</p>'+
+      '<button class="dy-chip" id="dyUndo" style="width:100%;justify-content:center;text-align:center">Undo — it isn\'t finished</button>'
+    );
+    el("dyUndo").onclick=function(){
+      vibrate(8);dyCloseSheet();
+      dyAct({action:"undone",id:s.id}).then(function(d){if(d&&d.ok)toast("Reopened — money entry pulled back out")});
+    };
+  }
+
+  function dySkipSheet(id){
+    dyOpenSheet(
+      '<h3>Skip this stop</h3><p class="sub">It stays on the sheet so you know what happened, but drops out of your totals and route.</p>'+
+      '<div class="dy-chips" id="dySkipWhy">'+
+        ["Customer rescheduled","Nobody home","Weather","No water/power","Ran out of daylight"].map(function(r){return '<button class="dy-chip" data-r="'+esc(r)+'">'+esc(r)+'</button>'}).join("")+
+      '</div><input class="dy-in" id="dySkipOther" placeholder="Other reason…" style="margin-top:12px">'+
+      '<button class="dy-save" id="dySkipGo" style="background:var(--panel3);color:var(--text)">Skip it</button>'
+    );
+    var why="";
+    el("dySkipWhy").querySelectorAll("[data-r]").forEach(function(c){
+      c.onclick=function(){vibrate(5);why=c.getAttribute("data-r");el("dySkipWhy").querySelectorAll("[data-r]").forEach(function(x){x.classList.toggle("on",x===c)})};
+    });
+    el("dySkipGo").onclick=function(){
+      vibrate(8);var other=el("dySkipOther").value.trim();dyCloseSheet();DY.openId=null;
+      dyAct({action:"skip",id:id,reason:other||why});
+    };
+  }
+
+  function dyEditField(id,which){
+    var s=(DY.day.stops||[]).find(function(x){return x.id===id});if(!s)return;
+    var isPrice=which==="price";
+    dyOpenSheet(
+      '<h3>'+(isPrice?"Job price":"How long it takes")+'</h3>'+
+      '<p class="sub">'+(isPrice?"What you're charging. The Finish screen starts from this number.":"Used to project when you'll finish the day.")+'</p>'+
+      '<input class="dy-money-in" id="dyEditIn" type="number" inputmode="numeric" value="'+(isPrice?(s.price||0):(s.durationMin||120))+'">'+
+      '<div style="text-align:center;color:var(--muted);font-size:12px;margin-top:6px">'+(isPrice?"dollars":"minutes")+'</div>'+
+      '<button class="dy-save" id="dyEditGo">Save</button>'
+    );
+    el("dyEditGo").onclick=function(){
+      vibrate(8);var v=parseFloat(el("dyEditIn").value);dyCloseSheet();
+      if(isNaN(v))return;
+      dyAct(isPrice?{action:"price",id:id,price:v}:{action:"price",id:id,durationMin:v});
+    };
+  }
+
+  function dyAddSheet(){
+    dyOpenSheet(
+      '<h3>Add a stop</h3><p class="sub">For work that never came through the booking page — a walk-up, a referral, a favour for a friend.</p>'+
+      '<div class="dy-sec"><h4>Who</h4><input class="dy-in" id="dyANm" placeholder="Name" style="margin-bottom:8px">'+
+      '<input class="dy-in" id="dyAPh" placeholder="Phone (so you can text them)" inputmode="tel"></div>'+
+      '<div class="dy-sec"><h4>Where</h4><input class="dy-in" id="dyAAd" placeholder="Street address" style="margin-bottom:8px">'+
+      '<input class="dy-in" id="dyACt" placeholder="City"></div>'+
+      '<div class="dy-sec"><h4>What</h4><div class="dy-chips" id="dyASvc">'+
+        [["full","Full detail"],["interior","Interior"],["exterior","Exterior"],["","Something else"]].map(function(x){return '<button class="dy-chip" data-s="'+x[0]+'" data-n="'+esc(x[1])+'">'+esc(x[1])+'</button>'}).join("")+
+      '</div><input class="dy-in" id="dyAVh" placeholder="Vehicle (optional)" style="margin-top:8px"></div>'+
+      '<div class="dy-sec"><h4>When &amp; how much</h4>'+
+      '<div style="display:flex;gap:8px"><input class="dy-in" id="dyATm" type="time" style="flex:1"><input class="dy-in" id="dyAPr" type="number" inputmode="numeric" placeholder="$ price" style="flex:1"></div></div>'+
+      '<button class="dy-save" id="dyAGo">Add to the sheet</button>'
+    );
+    var svc="",svcName="";
+    el("dyASvc").querySelectorAll("[data-s]").forEach(function(c){
+      c.onclick=function(){vibrate(5);svc=c.getAttribute("data-s");svcName=c.getAttribute("data-n");el("dyASvc").querySelectorAll("[data-s]").forEach(function(x){x.classList.toggle("on",x===c)})};
+    });
+    el("dyAGo").onclick=function(){
+      vibrate(9);
+      var nm=el("dyANm").value.trim();
+      if(!nm)return toast("Give the stop a name",{bad:true});
+      var b={action:"add",name:nm,phone:el("dyAPh").value.trim(),address:el("dyAAd").value.trim(),city:el("dyACt").value.trim(),
+        service:svc,serviceName:svcName,vehicle:el("dyAVh").value.trim(),price:parseFloat(el("dyAPr").value)||0,slot:el("dyATm").value};
+      dyCloseSheet();dyAct(b).then(function(d){if(d&&d.ok)toast("Added to the sheet")});
+    };
+  }
+
+  function dyWrap(){
+    dyAct({action:"wrap",notify:false}).then(function(d){
+      if(!d||!d.ok)return;
+      var recap=(d.result&&d.result.recap)||"";
+      dyOpenSheet(
+        '<h3>That\'s the day</h3><p class="sub">Everything below is already in your Money tracker.</p>'+
+        '<div style="white-space:pre-wrap;font-size:14px;line-height:1.55;background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:13px">'+esc(recap)+'</div>'+
+        '<button class="dy-save good" id="dyWrapDone" style="margin-top:14px">Done for today</button>'+
+        '<button class="dy-chip" id="dyWrapMoney" style="width:100%;justify-content:center;text-align:center;margin-top:9px">Open the Money tracker</button>'
+      );
+      el("dyWrapDone").onclick=function(){vibrate(8);dyCloseSheet()};
+      el("dyWrapMoney").onclick=function(){vibrate(6);dyCloseSheet();closeDay();openMoney()};
+    });
+  }
+
+  // ---- photo capture ----
+  // Phone photos are 3–8 MB. Downscale to 1400px / JPEG 0.72 in the browser so a
+  // driveway upload on one bar takes a second, not a minute.
+  function dyPickPhoto(sid,kind){
+    var f=el("dyFile");
+    f.value="";
+    f.onchange=function(){
+      var file=f.files&&f.files[0];if(!file)return;
+      toast("Uploading photo…");
+      dyShrink(file).then(function(dataUrl){
+        return post("/api/day/photo",{date:DY.date,id:sid,kind:kind,data:dataUrl});
+      }).then(function(d){
+        if(d&&d.ok){DY.day=d.day;dyRender();toast(kind==="before"?"Before photo saved":"After photo saved 📸")}
+        else toast("Photo didn't save"+(d&&d.error?" ("+d.error+")":""),{bad:true});
+      }).catch(function(){toast("Photo didn't save — check signal",{bad:true})});
+    };
+    f.click();
+  }
+  function dyShrink(file){
+    return new Promise(function(res,rej){
+      var img=new Image(),url=URL.createObjectURL(file);
+      img.onload=function(){
+        try{
+          var max=1400,w=img.width,h=img.height;
+          if(w>max||h>max){var r=Math.min(max/w,max/h);w=Math.round(w*r);h=Math.round(h*r)}
+          var c=document.createElement("canvas");c.width=w;c.height=h;
+          c.getContext("2d").drawImage(img,0,0,w,h);
+          URL.revokeObjectURL(url);
+          res(c.toDataURL("image/jpeg",0.72));
+        }catch(e){URL.revokeObjectURL(url);rej(e)}
+      };
+      img.onerror=function(){URL.revokeObjectURL(url);rej(new Error("bad image"))};
+      img.src=url;
+    });
+  }
+
+  // ---- settings ----
+  function dySettings(){
+    var c=DY.cfg||{};
+    dyOpenSheet(
+      '<h3>Job Day settings</h3><p class="sub">How the run sheet behaves and what it says on your behalf.</p>'+
+      '<div class="dy-sec"><h4>'+ic("map-pin",13)+' Home base</h4>'+
+      '<input class="dy-in" id="dySHome" placeholder="Where you load up each morning" value="'+esc(c.homeAddress||"")+'">'+
+      '<div style="color:var(--muted2);font-size:11.5px;margin-top:6px">Drive time to your first stop, and route optimizing, both come from this.</div></div>'+
+
+      '<div class="dy-sec"><h4>'+ic("bell",13)+' Automatic</h4>'+
+      dyToggle("dySBrief","Morning brief","Your whole day emailed to you before you roll out.",c.morningBrief!==false)+
+      dyToggle("dySConf","Confirm tomorrow","Texts everyone booked tomorrow the evening before. Cuts no-shows more than anything else here.",c.confirmTomorrow!==false)+
+      dyToggle("dySLate","Nudge me if I'm behind","Pings you when a stop's start time passes and you haven't left.",c.lateNudge!==false)+
+      dyToggle("dySWrap","Evening recap","What you did and what you made, at the end of the day.",c.wrapRecap!==false)+
+      '</div>'+
+
+      '<div class="dy-sec"><h4>'+ic("check-circle",13)+' When I tap Finish</h4>'+
+      dyToggle("dySMoney","Log the money","Creates the job entry in the Money tracker — real hours, real dollars.",c.autoLogMoney!==false)+
+      dyToggle("dySWin","Mark the lead Won","Which is what arms the automatic review ask.",c.autoWin!==false)+
+      dyToggle("dySThanks","Text a thank-you","On by default on the Finish screen; you can still untick it per job.",c.thanksText!==false)+
+      '</div>'+
+
+      '<div class="dy-sec"><h4>'+ic("message-square",13)+' What it says</h4>'+
+      '<div style="color:var(--muted2);font-size:11.5px;margin-bottom:7px">Use {first} {name} {service} {vehicle} {address} {eta} {time} — they fill themselves in.</div>'+
+      '<label style="font-size:12px;color:var(--muted)">On my way</label><textarea class="dy-note" id="dySOmw" style="min-height:62px;margin:4px 0 10px">'+esc(c.onMyWayText||"")+'</textarea>'+
+      '<label style="font-size:12px;color:var(--muted)">Tomorrow\'s confirmation</label><textarea class="dy-note" id="dySConfT" style="min-height:62px;margin:4px 0 10px">'+esc(c.confirmText||"")+'</textarea>'+
+      '<label style="font-size:12px;color:var(--muted)">Thank-you</label><textarea class="dy-note" id="dySThx" style="min-height:62px;margin:4px 0 0">'+esc(c.thanksBody||"")+'</textarea>'+
+      '</div>'+
+      '<button class="dy-save" id="dySGo">Save settings</button>'
+    );
+    el("dySGo").onclick=function(){
+      vibrate(9);
+      var body={
+        homeAddress:el("dySHome").value.trim(),
+        morningBrief:el("dySBrief").checked,confirmTomorrow:el("dySConf").checked,
+        lateNudge:el("dySLate").checked,wrapRecap:el("dySWrap").checked,
+        autoLogMoney:el("dySMoney").checked,autoWin:el("dySWin").checked,thanksText:el("dySThanks").checked,
+        onMyWayText:el("dySOmw").value,confirmText:el("dySConfT").value,thanksBody:el("dySThx").value
+      };
+      dyCloseSheet();
+      post("/api/day/settings",body)
+        .then(function(d){if(d&&d.ok){DY.cfg=d.config;toast("Saved");dyLoad()}else toast("Couldn't save",{bad:true})})
+        .catch(function(){toast("Couldn't save",{bad:true})});
+    };
+  }
+  function dyToggle(id,label,sub,on){
+    return '<div class="dy-row"><div class="lb"><b>'+esc(label)+'</b><small>'+esc(sub)+'</small></div>'+
+      '<input type="checkbox" id="'+id+'" '+(on?"checked":"")+' style="width:22px;height:22px;flex:none">'+'</div>';
+  }
+
+  // ---- wiring ----
+  el("dyBack").onclick=function(){vibrate(6);closeDay()};
+  el("dyGear").onclick=function(){vibrate(6);dySettings()};
+  el("dyScrim").onclick=dyCloseSheet;
+  el("dyPrev").onclick=function(){vibrate(5);DY.date=dyShift(DY.date||dyDateStr(new Date()),-1);DY.openId=null;dyLoad()};
+  el("dyNext").onclick=function(){vibrate(5);DY.date=dyShift(DY.date||dyDateStr(new Date()),1);DY.openId=null;dyLoad()};
+
+
   var MO={open:false,view:"log",month:null,today:null,entries:[],summary:null,allTime:null,cfg:null,nudges:[],report:null,loadedOnce:false};
   var MOS=null; // state of the open entry sheet
   var dtMoneyCache={};
@@ -6096,6 +6964,7 @@
   Array.prototype.forEach.call(el("moNav").querySelectorAll("[data-mv]"),function(b){b.onclick=function(){vibrate(6);moSetView(b.getAttribute("data-mv"))}});
   el("moScrim").onclick=closeMoSheet;
   el("moneyItem").onclick=function(){closeDrawer();openMoney()};
+  el("dmDay").onclick=function(){closeDrawer();openDay()};
   var anI=el("analyticsItem");if(anI)anI.onclick=function(){closeDrawer();openAnalytics()};
   el("customizeItem").onclick=function(){closeDrawer();openCustomize()};
   el("snapshotItem").onclick=function(){closeDrawer();snapshotForClaude()};
@@ -6104,7 +6973,7 @@
   hydrateIcons();
   el("myAvatar").innerHTML=brandGlyph();el("drawerLogo").innerHTML=brandGlyph();el("loginLogo").innerHTML=brandGlyph();
   applyTheme(themePref());loadAccent();applyUI();buildAccents();buildThemeSeg();buildTplMenu();loadTemplates();buildQuickset();
-  renderFilters();refreshThreads();startPoll();checkHealth();loadConfig();showBuild();fetchInsights();loadMoney();
+  renderFilters();refreshThreads();startPoll();checkHealth();loadConfig();showBuild();fetchInsights();loadMoney();fetchDaySummary();
   maybeDeepLink();
 })();
 </script>

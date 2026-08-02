@@ -67,7 +67,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-21·booking+redesign';
+const BUILD = '2026-08-02·jobday';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -101,6 +101,7 @@ async function runCron() {
   await dispatchDueReminders();
   await evaluateFollowups();
   await moneyCron().catch(() => {}); // money reminders must never break the SMS cron
+  await dayCron().catch(() => {});   // …and neither may the Job Day automations
 }
 
 // Private "remind me to follow up on <date>" reminders — a nudge to Mikey, not a
@@ -146,6 +147,10 @@ async function handle(request) {
   // First-party website analytics pixel (public, no auth — it's called from the
   // owner's marketing site). Accepts GET beacons and returns a 1x1 GIF.
   if (request.method === 'GET'  && pathname === '/px')             return handlePixel(url, request);
+  // Job Day before/after photos. Public by necessity — Twilio fetches this URL to
+  // attach the photo to an MMS — and safe because the id is 80+ random bits and
+  // nothing enumerates. Never lists, never accepts anything but a lookup.
+  if (request.method === 'GET'  && pathname === '/day-photo')      return apiDayPhotoGet(url);
 
   // ---- Public booking API (customer-facing /book.html — MUST stay above the /api auth gate) ----
   if (request.method === 'GET'  && (pathname === '/book' || pathname === '/book/')) return Response.redirect(new URL('/book.html', request.url).toString(), 302);
@@ -183,6 +188,13 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/config')     return apiGetConfig();
   if (request.method === 'POST' && pathname === '/api/config')     return apiSaveConfig(request);
   // ---- Booking management (authed — the Bookings dashboard view) ----
+  // Job Day — the field run sheet. /day-photo is deliberately public (Twilio has
+  // to fetch it to attach a photo to an MMS); its ids are random and unguessable.
+  if (request.method === 'GET'  && pathname === '/api/day')          return apiDay(url);
+  if (request.method === 'POST' && pathname === '/api/day/action')   return apiDayAction(request);
+  if (request.method === 'POST' && pathname === '/api/day/photo')    return apiDayPhoto(request);
+  if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/day/settings') return apiDaySettings(request);
+
   if (request.method === 'GET'  && pathname === '/api/bookings')   return apiBookings(url);
   if (request.method === 'POST' && pathname === '/api/booking')    return apiBookingAction(request);
   if (request.method === 'GET'  && pathname === '/api/booking-settings') return apiBookingSettings();
@@ -4132,6 +4144,9 @@ async function sendSms(to, body, opts = {}) {
     }
   }
   const form = { From: ENV.TWILIO_FROM, To: toNorm, Body: body };
+  // Optional MMS attachment (Job Day's "send the after photo"). Twilio fetches the
+  // URL itself, so it has to be publicly reachable — see /day-photo.
+  if (opts.media) form.MediaUrl = String(opts.media);
   // Attach a delivery StatusCallback so failures surface (see handleStatusCallback).
   const base = publicBase();
   if (base && !opts.skipOptOut) form.StatusCallback = `${base}/status`;
@@ -4792,4 +4807,876 @@ function bkSanitizeConfig(input) {
     calendar: { enabled: !!(c.calendar && c.calendar.enabled) && !!ical, icalUrl: ical },
     blockedDates: Array.isArray(c.blockedDates) ? [...new Set(c.blockedDates.map((x) => String(x).trim()).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)))].slice(0, 200) : [],
   };
+}
+
+// ===========================================================================
+// JOB DAY — the field-operations engine ("Run My Day")
+// ---------------------------------------------------------------------------
+// Everything above this line runs the *office*: texts, leads, bookings, money.
+// This module runs the *truck*. It takes the day's booked work and turns it into
+// an ordered run sheet Mikey drives: route + drive times, one-tap "on my way"
+// with a live ETA, arrive/start/done state per stop, a per-service checklist so
+// nothing gets skipped, before/after photos, and — the part that pays for
+// itself — a Done button that closes the whole loop in one tap:
+//
+//     Done  →  logs the job in the Money tracker (real hours, real $)
+//           →  marks the lead Won (which arms the review-ask follow-up)
+//           →  texts the customer a thank-you (optionally with the after photo)
+//
+// Design rules, in priority order:
+//   1. NEVER lose work. Every action is idempotent and keyed by stop id, so a
+//      double-tap on a bad signal can't double-text or double-log money.
+//   2. KV writes are the scarce resource (see the budget block at the top of
+//      this file). The day lives in ONE doc per date — `day:YYYY-MM-DD` — so a
+//      whole workday of tapping costs a handful of writes, not one per stop.
+//      The cron reads that doc and only writes when a flag actually flips.
+//   3. Degrade gracefully. Geocoding and routing are best-effort over the public
+//      OSM services; when they're down or an address is junk, we fall back to a
+//      straight-line estimate and label it as an estimate rather than failing.
+//
+// Storage:
+//   day:YYYY-MM-DD  the run sheet for one date (stops, statuses, totals, flags)
+//   day:cfg         settings — home base, texts, checklists, automation hours
+//   day:ph:<id>     one before/after photo (raw JPEG bytes + content-type)
+//   geo:<hash>      geocode cache, one write per never-seen address, kept forever
+// ===========================================================================
+
+const DAY_CFG_KEY = 'day:cfg';
+const dayKey = (d) => 'day:' + d;
+const dayPhotoKey = (id) => 'day:ph:' + id;
+const DAY_STATUSES = ['planned', 'enroute', 'onsite', 'done', 'skipped'];
+
+// A photo id is a public URL (Twilio has to be able to fetch it for MMS), so it
+// has to be unguessable on its own — two genIds is 80+ bits of randomness.
+function dayPhotoId() { return genId() + genId(); }
+
+function dayConfigDefaults() {
+  return {
+    enabled: true,
+    homeAddress: '',            // where the day starts and ends — drives the route legs
+    avgMph: 32,                 // fallback speed when live routing is unavailable
+    padMin: 10,                 // slack added between jobs when re-timing the run sheet
+
+    morningBrief: true,  morningHour: 6,    // "here's your day" alert
+    confirmTomorrow: true, confirmHour: 17, // day-before confirmation texts
+    lateNudge: true,                        // ping me if a stop is running late
+    wrapRecap: true,     wrapHour: 20,      // end-of-day recap alert
+
+    autoLogMoney: true,   // Done → money entry (gross, hours, service, method)
+    autoWin: true,        // Done → lead status Won (arms the review-ask follow-up)
+    thanksText: true,     // Done → thank-you text to the customer
+
+    onMyWayText: "Hey {first}, it's Mikey — on my way to you now, about {eta} out. See you soon! 🚗",
+    confirmText: "Hey {first}! Confirming your {service} tomorrow at {time} ({address}). Reply YES and I'll lock it in — or tell me if you need a different time. - Mikey",
+    thanksBody: "Thanks {first}! {vehicle} is all done and looking great. Really appreciate you — text me anytime you want it freshened up. - Mikey",
+
+    checklists: dayChecklistDefaults(),
+  };
+}
+
+// Real detailing run-throughs, ordered the way the work actually happens. These
+// are starting points — every list is editable in Day → Settings.
+function dayChecklistDefaults() {
+  return {
+    full: [
+      'Walk-around with customer + note existing damage',
+      'Photos: before (all 4 sides + interior)',
+      'Trash out, floor mats out',
+      'Full vacuum — seats, carpets, trunk, crevices',
+      'Pet hair pass',
+      'Shampoo / extract carpets + cloth seats',
+      'Leather clean + condition',
+      'All interior surfaces, vents, console, door jambs',
+      'Interior glass streak-free',
+      'Wheels, tires, wheel wells',
+      'Pre-rinse + foam + two-bucket hand wash',
+      'Bug & tar removal',
+      'Dry + spray wax / sealant',
+      'Tire shine + trim dressing',
+      'Exterior glass',
+      'Final walk-around under light',
+      'Photos: after',
+      'Walk customer through the work',
+    ],
+    interior: [
+      'Walk-around + note stains and problem spots',
+      'Photos: before',
+      'Trash out, floor mats out',
+      'Full vacuum — seats, carpets, trunk, crevices',
+      'Pet hair pass',
+      'Shampoo / extract carpets + cloth seats',
+      'Leather clean + condition',
+      'All surfaces, vents, console, cupholders, door jambs',
+      'Steam / odor treatment if booked',
+      'Interior glass streak-free',
+      'Mats back in, seats set',
+      'Photos: after',
+    ],
+    exterior: [
+      'Walk-around + note paint defects',
+      'Photos: before',
+      'Wheels, tires, wheel wells first',
+      'Pre-rinse + foam',
+      'Two-bucket hand wash top-down',
+      'Bug & tar removal',
+      'Rinse + dry (no water spots)',
+      'Polish / spray wax / sealant',
+      'Tire shine + trim dressing',
+      'Exterior glass',
+      'Final walk-around under light',
+      'Photos: after',
+    ],
+    default: [
+      'Photos: before',
+      'Confirm the work with the customer',
+      'Do the work',
+      'Final walk-around',
+      'Photos: after',
+      'Walk customer through the work',
+    ],
+  };
+}
+
+async function loadDayConfig() {
+  const saved = (await kv().get(DAY_CFG_KEY, { type: 'json' })) || {};
+  const d = dayConfigDefaults();
+  return Object.assign({}, d, saved, {
+    checklists: Object.assign({}, d.checklists, saved.checklists || {}),
+  });
+}
+// ⚠ KV WRITE — settings save only (rare, user-initiated).
+async function saveDayConfig(cfg) { await kv().put(DAY_CFG_KEY, JSON.stringify(cfg)); }
+
+async function loadDay(date) { return (await kv().get(dayKey(date), { type: 'json' })) || null; }
+// ⚠ KV WRITE — one per user action on the run sheet, or per cron flag flip.
+// Bounded by how many times Mikey taps in a day (tens), never by thread count.
+async function saveDay(doc) {
+  doc.updatedAt = Date.now();
+  await kv().put(dayKey(doc.date), JSON.stringify(doc));
+}
+
+// ---------------------------------------------------------------------------
+// Geocoding + drive times (best-effort, cached, never blocking)
+// ---------------------------------------------------------------------------
+
+function dayFullAddress(stop) {
+  const a = String(stop.address || '').trim();
+  if (!a) return '';
+  const c = String(stop.city || '').trim();
+  if (c && !a.toLowerCase().includes(c.toLowerCase())) return `${a}, ${c}, WA`;
+  return /\bWA\b/i.test(a) ? a : `${a}, WA`;
+}
+
+// One geocode per address, ever. Nominatim's usage policy wants a real UA and a
+// low request rate — a solo detailer books a handful of new addresses a week, and
+// the cache never expires, so we sit far under it.
+async function dayGeocode(address) {
+  const q = String(address || '').trim();
+  if (q.length < 6) return null;
+  const key = 'geo:' + (await fnv1aHex(q.toLowerCase())) + ':' + q.length;
+  const hit = await kv().get(key, { type: 'json' });
+  if (hit) return hit.lat != null ? hit : null;      // negative results cached too
+  let rec = { at: Date.now() };
+  try {
+    const u = 'https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=us&q=' + encodeURIComponent(q);
+    const res = await fetch(u, { headers: { 'User-Agent': "MikeysDetailingDashboard/1.0 (mikeysdetailing4u@gmail.com)", 'Accept': 'application/json' } });
+    if (res.ok) {
+      const arr = await res.json();
+      if (Array.isArray(arr) && arr[0] && arr[0].lat) {
+        rec.lat = parseFloat(arr[0].lat);
+        rec.lng = parseFloat(arr[0].lon);
+        rec.label = String(arr[0].display_name || '').slice(0, 160);
+      }
+    }
+  } catch { /* offline / blocked — cache the miss so we don't retry every open */ }
+  // ⚠ KV WRITE — once per never-before-seen address.
+  await kv().put(key, JSON.stringify(rec), { expirationTtl: rec.lat != null ? undefined : 604800 });
+  return rec.lat != null ? rec : null;
+}
+
+function haversineMi(a, b) {
+  if (!a || !b || a.lat == null || b.lat == null) return null;
+  const R = 3958.8, toRad = (x) => (x * Math.PI) / 180;
+  const dLat = toRad(b.lat - a.lat), dLng = toRad(b.lng - a.lng);
+  const s = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.min(1, Math.sqrt(s)));
+}
+
+// Straight line → road miles. 1.32 is the usual planar-to-road factor for
+// suburban arterial grids like Snohomish County.
+function dayEstimateLeg(a, b, avgMph) {
+  const mi = haversineMi(a, b);
+  if (mi == null) return null;
+  const road = mi * 1.32;
+  return { mi: Math.round(road * 10) / 10, min: Math.max(2, Math.round((road / Math.max(12, avgMph)) * 60)), est: true };
+}
+
+// Real road distances for the whole ordered trip in ONE call. If OSRM's public
+// demo server is unreachable (or slow), every leg silently falls back to the
+// straight-line estimate above — the run sheet always renders.
+async function dayRouteLegs(points, avgMph) {
+  const legs = [];
+  for (let i = 1; i < points.length; i++) legs.push(dayEstimateLeg(points[i - 1], points[i], avgMph));
+  if (points.length < 2 || points.some((p) => !p || p.lat == null)) return legs;
+  try {
+    const coords = points.map((p) => `${p.lng},${p.lat}`).join(';');
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 4000);
+    const res = await fetch(`https://router.project-osrm.org/route/v1/driving/${coords}?overview=false`, { signal: ctl.signal });
+    clearTimeout(timer);
+    if (res.ok) {
+      const j = await res.json();
+      const rl = j && j.routes && j.routes[0] && j.routes[0].legs;
+      if (Array.isArray(rl) && rl.length === legs.length) {
+        for (let i = 0; i < rl.length; i++) {
+          legs[i] = { mi: Math.round((rl[i].distance / 1609.34) * 10) / 10, min: Math.max(1, Math.round(rl[i].duration / 60)), est: false };
+        }
+      }
+    }
+  } catch { /* estimates already in place */ }
+  return legs;
+}
+
+// Nearest-neighbour from the home base, then 2-opt to unwind crossings. With
+// 1–6 stops this is instant and optimal in practice. Booked times don't move —
+// this only proposes a visiting ORDER, and the UI is explicit that any stop whose
+// time shifts needs a heads-up text.
+function dayOptimizeOrder(home, pts) {
+  const n = pts.length;
+  if (n < 3) return pts.map((_, i) => i);
+  const d = (a, b) => haversineMi(a, b) ?? 9999;
+  const unused = pts.map((_, i) => i);
+  const order = [];
+  let cur = home || pts[0];
+  while (unused.length) {
+    let best = 0;
+    for (let k = 1; k < unused.length; k++) if (d(cur, pts[unused[k]]) < d(cur, pts[unused[best]])) best = k;
+    const pick = unused.splice(best, 1)[0];
+    order.push(pick); cur = pts[pick];
+  }
+  const legLen = (o) => {
+    let t = home ? d(home, pts[o[0]]) : 0;
+    for (let i = 1; i < o.length; i++) t += d(pts[o[i - 1]], pts[o[i]]);
+    return t;
+  };
+  let improved = true, guard = 0;
+  while (improved && guard++ < 40) {
+    improved = false;
+    for (let i = 0; i < order.length - 1; i++) {
+      for (let k = i + 1; k < order.length; k++) {
+        const cand = order.slice(0, i).concat(order.slice(i, k + 1).reverse(), order.slice(k + 1));
+        if (legLen(cand) < legLen(order) - 0.01) { order.splice(0, order.length, ...cand); improved = true; }
+      }
+    }
+  }
+  return order;
+}
+
+// ---------------------------------------------------------------------------
+// Building the run sheet
+// ---------------------------------------------------------------------------
+
+function dayBlankStop(over) {
+  return Object.assign({
+    id: genId(), src: 'manual', bookingId: '', phone: '', name: '', address: '', city: '',
+    service: '', serviceName: '', vehicle: '', price: 0, durationMin: 120,
+    plannedAt: 0, order: 0, status: 'planned',
+    enrouteAt: 0, arrivedAt: 0, doneAt: 0, skipReason: '',
+    checklist: [], photos: [], notes: '',
+    collected: null, method: '', moneyEntryId: '', thanked: false, confirmSentFor: '',
+    lateAlerted: false,
+  }, over || {});
+}
+
+function dayChecklistFor(cfg, serviceId) {
+  const lists = cfg.checklists || {};
+  const src = lists[serviceId] || lists.default || [];
+  return src.map((label, i) => ({ id: 'c' + i + '-' + genId().slice(-4), label: String(label).slice(0, 120), done: false }));
+}
+
+// Merge every source of truth for a date into the stored run sheet:
+//   1. bookings (pending + confirmed) for that date — the main source
+//   2. conversations with an appointmentAt on that date — hand-set appointments
+//   3. anything Mikey added by hand, which is never touched
+// Returns { doc, changed }. Callers decide whether the change is worth a write.
+async function dayBuild(date, dayCfg) {
+  const cfg = dayCfg || (await loadDayConfig());
+  let doc = await loadDay(date);
+  let changed = false;
+  if (!doc) {
+    doc = { date, createdAt: Date.now(), updatedAt: 0, startedAt: 0, endedAt: 0, stops: [], flags: {} };
+    changed = true;
+  }
+  if (!Array.isArray(doc.stops)) { doc.stops = []; changed = true; }
+  if (!doc.flags) { doc.flags = {}; changed = true; }
+  const seenBooking = new Set(doc.stops.map((s) => s.bookingId).filter(Boolean));
+  const seenPhone = new Set(doc.stops.map((s) => s.phone).filter(Boolean));
+
+  for (const b of await loadBookings()) {
+    if (b.date !== date) continue;
+    if (b.status !== 'pending' && b.status !== 'confirmed') continue;
+    if (seenBooking.has(b.id)) continue;
+    const stop = dayBlankStop({
+      src: 'booking', bookingId: b.id, phone: b.phone || '', name: b.name || '',
+      address: b.address || '', city: b.city || '',
+      service: b.service || '', serviceName: b.serviceName || '', vehicle: b.vehicle || '',
+      price: Number(b.estimate) || Number(b.base) || 0,
+      durationMin: Number(b.durationMin) || 120,
+      plannedAt: Number(b.apptAt) || (b.slot ? bkLaEpoch(date, b.slot) : 0),
+      notes: [b.addons && b.addons.length ? 'Add-ons: ' + b.addons.join(', ') : '', b.notes || ''].filter(Boolean).join('\n'),
+    });
+    stop.checklist = dayChecklistFor(cfg, stop.service);
+    doc.stops.push(stop);
+    seenBooking.add(b.id);
+    if (stop.phone) seenPhone.add(stop.phone);
+    changed = true;
+  }
+
+  // Appointments set straight on a conversation (no booking record behind them).
+  const tz = (await loadConfig()).tz || 'America/Los_Angeles';
+  for (const e of await loadIndex()) {
+    if (!e.appointmentAt) continue;
+    if (localDateStr(e.appointmentAt, tz) !== date) continue;
+    if (seenPhone.has(e.phone)) continue;
+    const stop = dayBlankStop({
+      src: 'thread', phone: e.phone, name: e.name || '', plannedAt: e.appointmentAt, durationMin: 120,
+    });
+    stop.checklist = dayChecklistFor(cfg, '');
+    doc.stops.push(stop);
+    seenPhone.add(e.phone);
+    changed = true;
+  }
+
+  // Order: whatever Mikey set, else by planned time, else by arrival into the list.
+  doc.stops.sort((a, b) => (a.order || 0) - (b.order || 0) || (a.plannedAt || 0) - (b.plannedAt || 0));
+  doc.stops.forEach((s, i) => { if (s.order !== i + 1) { s.order = i + 1; changed = true; } });
+  return { doc, changed };
+}
+
+// Attach route legs + a projected timeline. Pure computation over the stored doc —
+// the results are returned to the client, never written back to KV.
+async function dayDecorate(doc, cfg, mainCfg) {
+  const tz = (mainCfg && mainCfg.tz) || 'America/Los_Angeles';
+  const active = doc.stops.filter((s) => s.status !== 'skipped');
+  const pts = [];
+  for (const s of active) {
+    const addr = dayFullAddress(s);
+    let g = null;
+    if (addr) { try { g = await dayGeocode(addr); } catch { g = null; } }
+    s.lat = g ? g.lat : null; s.lng = g ? g.lng : null;
+    pts.push(g);
+  }
+  let home = null;
+  if (cfg.homeAddress) { try { home = await dayGeocode(cfg.homeAddress); } catch { home = null; } }
+
+  const chain = (home ? [home] : []).concat(pts);
+  const legs = await dayRouteLegs(chain, cfg.avgMph);
+  const offset = home ? 0 : -1;   // without a home base there's no leg into stop #1
+  active.forEach((s, i) => {
+    const leg = legs[i + offset];
+    s.driveMin = leg ? leg.min : null;
+    s.driveMi = leg ? leg.mi : null;
+    s.driveEst = leg ? !!leg.est : true;
+  });
+  doc.stops.filter((s) => s.status === 'skipped').forEach((s) => { s.driveMin = null; s.driveMi = null; });
+
+  // Projected clock: from wherever the day actually stands right now, roll the
+  // remaining work forward so "you'll finish around 4:40" is honest, not the
+  // booked plan pretending nothing slipped.
+  const now = Date.now();
+  let cursor = 0;
+  for (const s of active) {
+    if (s.status === 'done') { cursor = s.doneAt || cursor; continue; }
+    if (s.status === 'onsite') { s.projStart = s.arrivedAt || now; cursor = Math.max(now, s.arrivedAt || now) + s.durationMin * 60000; s.projEnd = cursor; continue; }
+    const earliest = Math.max(now, cursor || 0) + (s.driveMin ? s.driveMin * 60000 : 0) + (cursor ? (cfg.padMin || 0) * 60000 : 0);
+    s.projStart = Math.max(s.plannedAt || 0, earliest);
+    s.projEnd = s.projStart + s.durationMin * 60000;
+    s.late = !!(s.plannedAt && s.projStart > s.plannedAt + 10 * 60000);
+    cursor = s.projEnd;
+  }
+
+  const totals = {
+    jobs: active.length,
+    done: doc.stops.filter((s) => s.status === 'done').length,
+    skipped: doc.stops.filter((s) => s.status === 'skipped').length,
+    booked: Math.round(active.reduce((n, s) => n + (Number(s.price) || 0), 0)),
+    collected: Math.round(doc.stops.filter((s) => s.status === 'done').reduce((n, s) => n + (Number(s.collected != null ? s.collected : s.price) || 0), 0)),
+    workMin: active.reduce((n, s) => n + (Number(s.durationMin) || 0), 0),
+    driveMin: active.reduce((n, s) => n + (Number(s.driveMin) || 0), 0),
+    driveMi: Math.round(active.reduce((n, s) => n + (Number(s.driveMi) || 0), 0) * 10) / 10,
+    firstAt: active.length ? (active[0].projStart || active[0].plannedAt || 0) : 0,
+    finishAt: cursor || 0,
+    hasEstimates: active.some((s) => s.driveEst && s.driveMi != null),
+    noAddress: active.filter((s) => !dayFullAddress(s)).length,
+  };
+  totals.remaining = totals.jobs - totals.done;
+  return { tz, totals };
+}
+
+// ---------------------------------------------------------------------------
+// Texting the customer from the run sheet
+// ---------------------------------------------------------------------------
+
+function dayFirstName(stop) {
+  const n = String(stop.name || '').trim();
+  return n ? n.split(/\s+/)[0] : 'there';
+}
+function dayEtaWords(min) {
+  const m = Math.max(1, Math.round(Number(min) || 0));
+  if (m < 8) return 'a few minutes';
+  if (m < 60) return `${Math.round(m / 5) * 5} minutes`;
+  const h = Math.floor(m / 60), r = m % 60;
+  return r < 8 ? `${h} hour${h > 1 ? 's' : ''}` : `${h}h ${Math.round(r / 5) * 5}m`;
+}
+function dayFill(tpl, stop, extra) {
+  const map = Object.assign({
+    first: dayFirstName(stop), name: stop.name || 'there',
+    service: stop.serviceName || 'detail',
+    vehicle: stop.vehicle || 'Your vehicle',
+    address: stop.address || 'your place',
+    price: stop.price ? '$' + Math.round(stop.price) : '',
+  }, extra || {});
+  return String(tpl || '').replace(/\{(\w+)\}/g, (m, k) => (map[k] != null ? String(map[k]) : m));
+}
+
+// Send a text to the stop's customer AND mirror it into their conversation, so
+// the thread stays the single record of everything said. Failures are returned,
+// never thrown — a texting hiccup must not block the job state advancing.
+async function dayTextCustomer(stop, body, kind, opts = {}) {
+  if (!stop.phone || !body) return { ok: false, error: 'no_phone' };
+  const thread = await loadThread(stop.phone);
+  let rec;
+  try {
+    const r = await sendSms(stop.phone, body, opts.media ? { media: opts.media } : {});
+    rec = { id: genId(), dir: 'out', body, ts: Date.now(), kind: kind || 'jobday', status: 'sent', sid: (r && r.sid) || undefined };
+    if (opts.media) rec.media = [opts.media];
+  } catch (err) {
+    rec = { id: genId(), dir: 'out', body, ts: Date.now(), kind: kind || 'jobday', error: String((err && err.message) || err) };
+  }
+  thread.messages.push(rec);
+  if (!thread.name && stop.name) thread.name = stop.name;
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+  return rec.error ? { ok: false, error: rec.error } : { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Done → money. One tap has to leave a real ledger entry, exactly once.
+// ---------------------------------------------------------------------------
+async function dayLogMoney(stop, dayCfg, date) {
+  if (dayCfg.autoLogMoney === false) return null;
+  const amount = money2(stop.collected != null ? stop.collected : stop.price);
+  if (!amount || amount <= 0) return null;
+  const month = date.slice(0, 7);
+  const doc = await loadMonth(month);
+  const hours = stop.arrivedAt && stop.doneAt
+    ? Math.max(0.25, Math.round(((stop.doneAt - stop.arrivedAt) / 3600000) * 4) / 4)
+    : Math.max(0.25, Math.round(((stop.durationMin || 0) / 60) * 4) / 4);
+  const entry = sanitizeMoneyEntry({
+    date, ts: stop.doneAt || Date.now(), type: 'job', amount,
+    service: stop.serviceName || stop.service || '', method: stop.method || '',
+    phone: stop.phone || '', name: stop.name || '', city: stop.city || '',
+    hours, veh: stop.vehicle || '',
+    note: 'Logged from Job Day',
+  }, stop.moneyEntryId || null);
+  if (!entry) return null;
+  const i = doc.entries.findIndex((x) => x.id === entry.id);
+  if (i >= 0) { entry.ts = doc.entries[i].ts || entry.ts; doc.entries[i] = entry; }
+  else doc.entries.push(entry);
+  await saveMonth(month, doc);
+  return entry.id;
+}
+async function dayUnlogMoney(stop, date) {
+  if (!stop.moneyEntryId) return;
+  const month = date.slice(0, 7);
+  const doc = await loadMonth(month);
+  const before = doc.entries.length;
+  doc.entries = doc.entries.filter((x) => x.id !== stop.moneyEntryId);
+  if (doc.entries.length !== before) await saveMonth(month, doc);
+}
+
+// ---------------------------------------------------------------------------
+// API
+// ---------------------------------------------------------------------------
+
+async function apiDay(url) {
+  const mainCfg = await loadConfig();
+  const tz = mainCfg.tz || 'America/Los_Angeles';
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get('date') || '')
+    ? url.searchParams.get('date') : localDateStr(Date.now(), tz);
+  const cfg = await loadDayConfig();
+  const { doc, changed } = await dayBuild(date, cfg);
+  // Only pay a write when new work actually landed on the sheet — opening the tab
+  // ten times in a morning must stay read-only.
+  if (changed && doc.stops.length) await saveDay(doc);
+  const { totals } = await dayDecorate(doc, cfg, mainCfg);
+  return json({ ok: true, date, today: localDateStr(Date.now(), tz), day: doc, totals, config: cfg });
+}
+
+async function apiDaySettings(request) {
+  if (request.method === 'GET') return json({ ok: true, config: await loadDayConfig() });
+  const data = await readJson(request);
+  const next = Object.assign({}, await loadDayConfig());
+  const str = (k, max) => { if (typeof data[k] === 'string') next[k] = data[k].slice(0, max); };
+  const bool = (k) => { if (typeof data[k] === 'boolean') next[k] = data[k]; };
+  const hour = (k) => { if (data[k] != null && !isNaN(+data[k])) next[k] = Math.max(0, Math.min(23, Math.round(+data[k]))); };
+  bool('enabled'); bool('morningBrief'); bool('confirmTomorrow'); bool('lateNudge');
+  bool('wrapRecap'); bool('autoLogMoney'); bool('autoWin'); bool('thanksText');
+  hour('morningHour'); hour('confirmHour'); hour('wrapHour');
+  str('homeAddress', 160); str('onMyWayText', 320); str('confirmText', 320); str('thanksBody', 320);
+  if (data.avgMph != null && !isNaN(+data.avgMph)) next.avgMph = Math.max(10, Math.min(70, Math.round(+data.avgMph)));
+  if (data.padMin != null && !isNaN(+data.padMin)) next.padMin = Math.max(0, Math.min(120, Math.round(+data.padMin)));
+  if (data.checklists && typeof data.checklists === 'object') {
+    const out = Object.assign({}, next.checklists);
+    for (const k of Object.keys(data.checklists).slice(0, 12)) {
+      if (!Array.isArray(data.checklists[k])) continue;
+      out[String(k).slice(0, 24)] = data.checklists[k].slice(0, 40).map((x) => String(x).slice(0, 120)).filter(Boolean);
+    }
+    next.checklists = out;
+  }
+  await saveDayConfig(next);
+  return json({ ok: true, config: next });
+}
+
+const DAY_ACTIONS = ['enroute', 'arrive', 'done', 'undone', 'skip', 'unskip', 'note', 'check', 'checkAll',
+  'price', 'move', 'optimize', 'add', 'remove', 'startDay', 'wrap', 'text', 'photoDelete', 'sendAfter', 'confirm'];
+
+async function apiDayAction(request) {
+  const data = await readJson(request);
+  const mainCfg = await loadConfig();
+  const tz = mainCfg.tz || 'America/Los_Angeles';
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(data.date || '')) ? String(data.date) : localDateStr(Date.now(), tz);
+  const action = String(data.action || '');
+  if (!DAY_ACTIONS.includes(action)) return json({ ok: false, error: 'bad_action' }, 422);
+  const cfg = await loadDayConfig();
+  const { doc } = await dayBuild(date, cfg);
+  const stop = data.id ? doc.stops.find((s) => s.id === String(data.id)) : null;
+  if (!stop && !['add', 'startDay', 'wrap', 'optimize'].includes(action)) return json({ ok: false, error: 'not_found' }, 404);
+  const now = Date.now();
+  const out = { sent: null };
+
+  switch (action) {
+    case 'add': {
+      const s = dayBlankStop({
+        src: 'manual',
+        phone: normalizePhone(data.phone) || '',
+        name: String(data.name || '').slice(0, 60),
+        address: String(data.address || '').slice(0, 160),
+        city: String(data.city || '').slice(0, 40),
+        service: String(data.service || '').slice(0, 24),
+        serviceName: String(data.serviceName || data.service || '').slice(0, 60),
+        vehicle: String(data.vehicle || '').slice(0, 40),
+        price: Math.max(0, Math.round(Number(data.price) || 0)),
+        durationMin: Math.max(15, Math.min(600, Math.round(Number(data.durationMin) || 120))),
+        plannedAt: /^\d{2}:\d{2}$/.test(String(data.slot || '')) ? bkLaEpoch(date, String(data.slot)) : 0,
+        notes: String(data.notes || '').slice(0, 400),
+        order: doc.stops.length + 1,
+      });
+      s.checklist = dayChecklistFor(cfg, s.service);
+      doc.stops.push(s);
+      break;
+    }
+    case 'remove':
+      if (stop.status === 'done') await dayUnlogMoney(stop, date);
+      doc.stops = doc.stops.filter((s) => s.id !== stop.id);
+      break;
+
+    case 'enroute': {
+      stop.status = 'enroute'; stop.enrouteAt = now;
+      if (data.notify !== false && stop.phone) {
+        const eta = dayEtaWords(data.etaMin != null ? data.etaMin : (stop.driveMin || 15));
+        const body = dayFill(data.body || cfg.onMyWayText, stop, { eta });
+        out.sent = await dayTextCustomer(stop, body, 'onmyway');
+      }
+      break;
+    }
+    case 'arrive':
+      stop.status = 'onsite'; stop.arrivedAt = now;
+      if (!stop.enrouteAt) stop.enrouteAt = now;
+      break;
+
+    case 'done': {
+      if (stop.status === 'done') break;                       // idempotent: no double-log
+      stop.status = 'done'; stop.doneAt = now;
+      if (!stop.arrivedAt) stop.arrivedAt = now - (stop.durationMin || 0) * 60000;
+      if (data.collected != null && !isNaN(+data.collected)) stop.collected = money2(Math.max(0, +data.collected));
+      if (stop.collected == null) stop.collected = money2(stop.price || 0);
+      if (data.method) stop.method = String(data.method).slice(0, 16);
+      try { const id = await dayLogMoney(stop, cfg, date); if (id) stop.moneyEntryId = id; }
+      catch (e) { out.moneyError = String((e && e.message) || e); }
+      if (stop.phone) {
+        const thread = await loadThread(stop.phone);
+        let touched = false;
+        if (cfg.autoWin !== false && thread.status !== 'won') { thread.status = 'won'; thread.statusAt = now; touched = true; }
+        if (!thread.name && stop.name) { thread.name = stop.name; touched = true; }
+        if (touched) { await saveThread(thread); await updateIndexEntry(thread); }
+        if (cfg.thanksText !== false && data.thanks !== false && !stop.thanked) {
+          const body = dayFill(data.thanksBody || cfg.thanksBody, stop);
+          out.sent = await dayTextCustomer(stop, body, 'thanks');
+          stop.thanked = true;
+        }
+      }
+      break;
+    }
+    case 'undone':
+      await dayUnlogMoney(stop, date);
+      stop.moneyEntryId = ''; stop.doneAt = 0; stop.collected = null;
+      stop.status = stop.arrivedAt ? 'onsite' : 'planned';
+      break;
+
+    case 'skip':
+      if (stop.status === 'done') await dayUnlogMoney(stop, date);
+      stop.status = 'skipped'; stop.skipReason = String(data.reason || '').slice(0, 120);
+      stop.moneyEntryId = ''; stop.doneAt = 0;
+      break;
+    case 'unskip':
+      stop.status = 'planned'; stop.skipReason = '';
+      break;
+
+    case 'note':
+      stop.notes = String(data.notes || '').slice(0, 2000);
+      break;
+    case 'check': {
+      const item = (stop.checklist || []).find((c) => c.id === String(data.itemId));
+      if (!item) return json({ ok: false, error: 'no_item' }, 404);
+      item.done = !!data.done;
+      break;
+    }
+    case 'checkAll':
+      (stop.checklist || []).forEach((c) => { c.done = !!data.done; });
+      break;
+    case 'price':
+      if (data.price != null && !isNaN(+data.price)) stop.price = Math.max(0, Math.round(+data.price));
+      if (data.collected != null && !isNaN(+data.collected)) stop.collected = money2(Math.max(0, +data.collected));
+      if (data.method != null) stop.method = String(data.method).slice(0, 16);
+      if (data.durationMin != null && !isNaN(+data.durationMin)) stop.durationMin = Math.max(15, Math.min(600, Math.round(+data.durationMin)));
+      // Keep the ledger honest when the real number comes in after the fact.
+      if (stop.status === 'done') { try { const id = await dayLogMoney(stop, cfg, date); if (id) stop.moneyEntryId = id; } catch { /* keep the stop update */ } }
+      break;
+
+    case 'move': {
+      const dir = data.dir === 'up' ? -1 : 1;
+      const list = doc.stops.slice().sort((a, b) => a.order - b.order);
+      const i = list.findIndex((s) => s.id === stop.id);
+      const j = i + dir;
+      if (i >= 0 && j >= 0 && j < list.length) {
+        const t = list[i].order; list[i].order = list[j].order; list[j].order = t;
+      }
+      break;
+    }
+    case 'optimize': {
+      const active = doc.stops.filter((s) => s.status !== 'skipped' && s.status !== 'done');
+      const pts = [];
+      for (const s of active) { const a = dayFullAddress(s); pts.push(a ? await dayGeocode(a) : null); }
+      if (pts.some((p) => !p)) return json({ ok: false, error: 'need_addresses' }, 422);
+      const home = cfg.homeAddress ? await dayGeocode(cfg.homeAddress) : null;
+      const order = dayOptimizeOrder(home, pts);
+      const base = doc.stops.filter((s) => s.status === 'done').length;
+      order.forEach((idx, k) => { active[idx].order = base + k + 1; });
+      doc.stops.filter((s) => s.status === 'done').forEach((s, k) => { s.order = k + 1; });
+      doc.stops.filter((s) => s.status === 'skipped').forEach((s, k) => { s.order = 900 + k; });
+      break;
+    }
+
+    case 'startDay':
+      doc.startedAt = doc.startedAt || now;
+      break;
+    case 'wrap': {
+      doc.endedAt = now;
+      const { totals } = await dayDecorate(doc, cfg, mainCfg);
+      out.recap = dayRecapText(doc, totals, tz);
+      if (data.notify !== false) notifyMikey(`✅ Day wrapped — ${totals.done} job${totals.done === 1 ? '' : 's'}, $${totals.collected}`, out.recap).catch(() => {});
+      break;
+    }
+
+    case 'confirm': {
+      const body = dayFill(data.body || cfg.confirmText, stop, {
+        time: stop.plannedAt ? new Date(stop.plannedAt).toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' }) : 'the booked time',
+      });
+      out.sent = await dayTextCustomer(stop, body, 'confirm');
+      stop.confirmSentFor = date;
+      break;
+    }
+    case 'text': {
+      const body = String(data.body || '').slice(0, 800);
+      if (!body) return json({ ok: false, error: 'empty' }, 422);
+      out.sent = await dayTextCustomer(stop, dayFill(body, stop), 'jobday');
+      break;
+    }
+    case 'sendAfter': {
+      const photo = (stop.photos || []).filter((p) => p.kind === 'after').slice(-1)[0];
+      if (!photo) return json({ ok: false, error: 'no_photo' }, 404);
+      const media = `${publicBase()}/day-photo?p=${encodeURIComponent(photo.id)}`;
+      const body = String(data.body || `All done! Here's how ${stop.vehicle || 'it'} turned out. 🚗✨`).slice(0, 400);
+      out.sent = await dayTextCustomer(stop, body, 'photo', { media });
+      break;
+    }
+    case 'photoDelete': {
+      const pid = String(data.photoId || '');
+      stop.photos = (stop.photos || []).filter((p) => p.id !== pid);
+      await kv().delete(dayPhotoKey(pid)).catch(() => {});
+      break;
+    }
+  }
+
+  doc.stops.sort((a, b) => (a.order || 0) - (b.order || 0));
+  doc.stops.forEach((s, i) => { s.order = i + 1; });
+  await saveDay(doc);
+  const { totals } = await dayDecorate(doc, cfg, mainCfg);
+  return json({ ok: true, date, day: doc, totals, config: cfg, result: out });
+}
+
+// Before/after photos. Stored as raw bytes in KV under an unguessable id so the
+// public GET below can hand the same URL to Twilio for an MMS.
+async function apiDayPhoto(request) {
+  const data = await readJson(request);
+  const mainCfg = await loadConfig();
+  const tz = mainCfg.tz || 'America/Los_Angeles';
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(data.date || '')) ? String(data.date) : localDateStr(Date.now(), tz);
+  const kind = data.kind === 'after' ? 'after' : 'before';
+  const cfg = await loadDayConfig();
+  const { doc } = await dayBuild(date, cfg);
+  const stop = doc.stops.find((s) => s.id === String(data.id || ''));
+  if (!stop) return json({ ok: false, error: 'not_found' }, 404);
+  const raw = String(data.data || '');
+  const m = /^data:(image\/(?:jpeg|png|webp));base64,(.+)$/i.exec(raw);
+  if (!m) return json({ ok: false, error: 'bad_image' }, 422);
+  const bin = atob(m[2]);
+  if (bin.length > 3_000_000) return json({ ok: false, error: 'too_big' }, 413);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const id = dayPhotoId();
+  // ⚠ KV WRITE — one per photo taken (a handful a day). 400-day TTL so old jobs
+  // don't accumulate forever on a free-tier namespace.
+  await kv().put(dayPhotoKey(id), bytes, { metadata: { ct: m[1] }, expirationTtl: 34_560_000 });
+  stop.photos = (stop.photos || []).concat([{ id, kind, ts: Date.now() }]).slice(-24);
+  await saveDay(doc);
+  return json({ ok: true, photo: { id, kind, ts: Date.now() }, day: doc });
+}
+
+// Public on purpose: Twilio fetches this URL to attach the photo to an MMS, and
+// it's the only way an <img> in the dashboard can render it. The id is random and
+// unguessable, and nothing here enumerates.
+async function apiDayPhotoGet(url) {
+  const id = String(url.searchParams.get('p') || '');
+  if (!/^[a-z0-9]{10,64}$/i.test(id)) return new Response('Not found', { status: 404 });
+  const res = await kv().getWithMetadata(dayPhotoKey(id), { type: 'arrayBuffer' });
+  if (!res || !res.value) return new Response('Not found', { status: 404 });
+  return new Response(res.value, {
+    headers: {
+      'Content-Type': (res.metadata && res.metadata.ct) || 'image/jpeg',
+      'Cache-Control': 'public, max-age=31536000, immutable',
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Plain-text day summaries (used by the morning brief, the wrap recap, and AI)
+// ---------------------------------------------------------------------------
+function dayClock(ts, tz) {
+  return ts ? new Date(ts).toLocaleTimeString('en-US', { timeZone: tz, hour: 'numeric', minute: '2-digit' }) : '—';
+}
+function dayBriefText(doc, totals, tz) {
+  const active = doc.stops.filter((s) => s.status !== 'skipped');
+  if (!active.length) return 'Nothing booked today — a good day to chase quotes or take the day.';
+  const lines = active.map((s, i) =>
+    `${i + 1}. ${dayClock(s.plannedAt || s.projStart, tz)} — ${s.name || s.phone || 'Job'}${s.serviceName ? ` (${s.serviceName})` : ''}` +
+    `${s.city ? ` · ${s.city}` : ''}${s.price ? ` · $${Math.round(s.price)}` : ''}` +
+    `${s.driveMi != null ? ` · ${s.driveMi} mi drive` : ''}`);
+  return [
+    `${totals.jobs} job${totals.jobs === 1 ? '' : 's'} today · $${totals.booked} booked`,
+    `First stop ${dayClock(totals.firstAt, tz)} · projected finish ${dayClock(totals.finishAt, tz)}`,
+    totals.driveMi ? `About ${totals.driveMi} mi of driving (${Math.round(totals.driveMin)} min)` : null,
+    '',
+    ...lines,
+    totals.noAddress ? `\n⚠ ${totals.noAddress} stop(s) have no address — add one to get the route.` : null,
+  ].filter((x) => x !== null).join('\n');
+}
+function dayRecapText(doc, totals, tz) {
+  const done = doc.stops.filter((s) => s.status === 'done');
+  const workedMs = done.reduce((n, s) => n + Math.max(0, (s.doneAt || 0) - (s.arrivedAt || 0)), 0);
+  const hrs = Math.round((workedMs / 3600000) * 10) / 10;
+  const perHr = hrs > 0 ? Math.round(totals.collected / hrs) : 0;
+  const skipped = doc.stops.filter((s) => s.status === 'skipped');
+  return [
+    `${done.length} job${done.length === 1 ? '' : 's'} done · $${totals.collected} collected`,
+    hrs > 0 ? `${hrs}h hands-on${perHr ? ` · about $${perHr}/hr on the tools` : ''}` : null,
+    totals.driveMi ? `${totals.driveMi} mi driven` : null,
+    done.length ? '' : null,
+    ...done.map((s) => `✅ ${s.name || s.phone} — ${s.serviceName || 'job'} · $${Math.round(s.collected != null ? s.collected : s.price)}${s.method ? ` (${s.method})` : ''}`),
+    skipped.length ? `\n⏭ Skipped: ${skipped.map((s) => (s.name || s.phone) + (s.skipReason ? ` (${s.skipReason})` : '')).join(', ')}` : null,
+    doc.stops.some((s) => s.status !== 'done' && s.status !== 'skipped')
+      ? `\n⚠ Still open: ${doc.stops.filter((s) => s.status !== 'done' && s.status !== 'skipped').map((s) => s.name || s.phone).join(', ')}` : null,
+  ].filter((x) => x !== null).join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// Cron — the automations that make the day run itself
+// ---------------------------------------------------------------------------
+// Write budget: reads one KV doc per tick; writes ONLY when a once-a-day flag
+// flips (brief, confirms, late alert, wrap) — at most ~5 writes/day.
+async function dayCron(now = Date.now()) {
+  if (envFlag('JOBDAY_DISABLED')) return;
+  const cfg = await loadDayConfig();
+  if (cfg.enabled === false) return;
+  const mainCfg = await loadConfig();
+  const tz = mainCfg.tz || 'America/Los_Angeles';
+  const today = localDateStr(now, tz);
+  const hour = localHour(now, tz);
+
+  // Day-before confirmations go out on TOMORROW's sheet, so handle it first and
+  // separately — it's the only branch that touches another date's doc.
+  if (cfg.confirmTomorrow !== false && hour === (cfg.confirmHour == null ? 17 : cfg.confirmHour)) {
+    const tomorrow = bkAddDays(today, 1);
+    const t = await dayBuild(tomorrow, cfg);
+    const pending = t.doc.stops.filter((s) => s.status === 'planned' && s.phone && s.confirmSentFor !== tomorrow);
+    if (pending.length && t.doc.flags.confirmedOn !== tomorrow) {
+      for (const s of pending) {
+        const body = dayFill(cfg.confirmText, s, { time: dayClock(s.plannedAt, tz) });
+        await dayTextCustomer(s, body, 'confirm');
+        s.confirmSentFor = tomorrow;
+      }
+      t.doc.flags.confirmedOn = tomorrow;
+      await saveDay(t.doc);
+      notifyMikey(`📅 Tomorrow confirmed — ${pending.length} customer${pending.length === 1 ? '' : 's'}`,
+        `I texted a confirmation to:\n${pending.map((s) => `• ${s.name || s.phone} at ${dayClock(s.plannedAt, tz)}`).join('\n')}\n\nWatch for their replies in the dashboard.`).catch(() => {});
+    }
+  }
+
+  const stored = await loadDay(today);
+  if (!stored && !(cfg.morningBrief !== false && hour === (cfg.morningHour == null ? 6 : cfg.morningHour))) return;
+  const { doc } = await dayBuild(today, cfg);
+  if (!doc.stops.length) return;
+  let dirty = false;
+
+  if (cfg.morningBrief !== false && hour === (cfg.morningHour == null ? 6 : cfg.morningHour) && doc.flags.briefedOn !== today) {
+    doc.flags.briefedOn = today; dirty = true;
+    const { totals } = await dayDecorate(doc, cfg, mainCfg);
+    notifyMikey(`☀️ Today: ${totals.jobs} job${totals.jobs === 1 ? '' : 's'} · $${totals.booked}`,
+      `${dayBriefText(doc, totals, tz)}\n\nOpen your run sheet: ${publicBase()}/?day=1`).catch(() => {});
+  }
+
+  // "You should be rolling by now." Fires once per stop, only during work hours,
+  // only when the clock has genuinely passed the booked start.
+  if (cfg.lateNudge !== false && hour >= 6 && hour <= 20) {
+    for (const s of doc.stops) {
+      if (s.status !== 'planned' || !s.plannedAt || s.lateAlerted) continue;
+      const lead = (s.driveMin || 15) * 60000;
+      if (now < s.plannedAt - lead + 10 * 60000) continue;
+      s.lateAlerted = true; dirty = true;
+      notifyMikey('⏱ Running behind?', `${s.name || s.phone} is booked for ${dayClock(s.plannedAt, tz)}${s.city ? ` in ${s.city}` : ''} and the stop hasn't been started. Tap "On my way" to send them an ETA so they're not left wondering.`).catch(() => {});
+    }
+  }
+
+  if (cfg.wrapRecap !== false && hour === (cfg.wrapHour == null ? 20 : cfg.wrapHour) && doc.flags.wrappedOn !== today) {
+    const anyDone = doc.stops.some((s) => s.status === 'done');
+    doc.flags.wrappedOn = today; dirty = true;
+    if (anyDone) {
+      const { totals } = await dayDecorate(doc, cfg, mainCfg);
+      if (!doc.endedAt) doc.endedAt = now;
+      notifyMikey(`🌙 Day recap — $${totals.collected}`, `${dayRecapText(doc, totals, tz)}\n\n${publicBase()}/?day=1`).catch(() => {});
+    }
+  }
+
+  if (dirty) await saveDay(doc);
 }
