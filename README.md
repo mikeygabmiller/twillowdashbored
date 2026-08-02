@@ -8,6 +8,17 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
 > full deploy walkthrough (browser-only, no terminal needed).
 
 ## Features
+- **Job Day — the run sheet (Day tab).** The office side of this app answers "who
+  do I owe a reply?"; the Day tab answers "what am I doing right now?" Today's
+  bookings become an ordered run sheet with drive times and a projected finish,
+  then each stop walks a state machine you drive with one thumb: **On my way**
+  (texts the customer a live ETA) → **I'm here** (starts the job timer) →
+  **Finish**. Finishing closes the whole loop in one tap — it logs the job in the
+  Money tracker with real hours, marks the lead **Won** (which arms the automatic
+  review ask), and texts a thank-you. Per-service checklists, before/after photos
+  you can MMS to the customer, per-stop notes, route optimization, and an
+  end-of-day recap. Automatic: a morning brief, day-before confirmation texts,
+  a nudge when a stop is running late, and an evening recap. See **Job Day** below.
 - **Mobile-first UI** (red & black): conversation list, search, unread badges,
   message bubbles, mark-read-on-open, Enter to send. Installs to the home screen
   as a PWA (app icon, full-screen, offline shell via `public/sw.js`).
@@ -44,6 +55,7 @@ public/index.html      the dashboard UI (static, served via Workers static asset
 public/sw.js           service worker (installable PWA / offline shell)
 public/manifest.webmanifest, icon-*.png, favicon.svg   PWA icons + manifest
 src/index.js           the Worker: API + Twilio webhooks + scheduled() cron handler
+                       (the Job Day engine is the last section of this file)
 wrangler.toml          Worker config: name, KV binding, static assets, cron trigger
 package.json           dependencies
 ```
@@ -125,6 +137,55 @@ You're only alerted once a caller clears the gate, so the notification flood
 stops too. No Twilio Console changes are needed — the existing `/call` webhook
 drives everything.
 
+## Job Day — the run sheet
+
+Open the **Day** tab (or the *My Day* card on Home). Everything booked for today
+is already on it.
+
+**Where stops come from.** Confirmed and pending bookings for the date, plus any
+conversation with an appointment set for that date, plus anything you add by hand
+(walk-ups, referrals, favours). Nothing to import — it builds itself.
+
+**The loop, per stop.**
+
+| Tap | What happens |
+|---|---|
+| **On my way** | Pick how far out you are; it texts the customer an ETA in plain English and flips the stop to *on my way*. The text is mirrored into their conversation. |
+| **I'm here** | Starts the job timer — that's where the *real* hours on the money entry come from. |
+| **Finish** | Confirm what they paid and how. Then, in one go: the job is logged to the **Money tracker** (amount, method, real hours, vehicle, service, customer), the lead is marked **Won** (which is what arms the automatic review ask), and a thank-you text goes out. |
+
+Every action is idempotent and keyed to the stop, so a double-tap on one bar of
+signal can never double-text a customer or double-log the money. Got the price
+wrong? Editing it updates the *same* ledger entry. Tapped Finish too early?
+**Undo** pulls the money entry back out.
+
+**Also on each stop:** a per-service checklist (full / interior / exterior, all
+editable), before & after photos straight from the camera — and a one-tap
+"text them the after photo" that sends it as an MMS — private job notes, a map
+link, click-to-call, and a jump into their conversation.
+
+**Route & timing.** Addresses are geocoded once (OpenStreetMap, cached forever)
+and drive times come from real road routing, falling back to a clearly-labelled
+straight-line estimate if the routing service is unreachable. Set a **home base**
+in Day → Settings to get the drive to your first stop and to unlock route
+optimization. The projected finish time re-computes from where the day actually
+stands, not from the plan it started with.
+
+**What runs on its own** (all switchable in Day → Settings):
+
+- **Morning brief** — the whole day, before you roll out.
+- **Day-before confirmations** — texts everyone booked tomorrow the evening
+  before. This is the single biggest no-show reducer here.
+- **Running-late nudge** — pings you when a stop's start time passes and you
+  haven't left, so the customer isn't left wondering.
+- **Evening recap** — what you did, what you made, what's still open.
+
+**KV write budget.** The whole day lives in one doc per date (`day:YYYY-MM-DD`),
+so a full workday of tapping costs a handful of writes. The cron reads that doc
+each minute and only writes when a once-a-day flag actually flips (≈5 writes/day).
+Opening the tab is read-only unless new work has appeared. Photos are one write
+each; geocodes are one write per address you've never visited before.
+
 ## Endpoints (reference)
 Public: `/submit` `/sms` `/call` `/call-screen` `/voicemail` `/voicemail-done`
 Auth: `/api/login` `/api/logout`
@@ -134,4 +195,6 @@ Dashboard API: `/api/health` `/api/threads` `/api/thread` `/api/send` `/api/meta
 `/api/followups` `/api/followup` `/api/config` `/api/block`
 Website analytics: `/api/analytics` (pixel) `/api/webstats` `/api/webstats/status`
 `/api/webstats/connect` `/api/webstats/disconnect` `/api/webstats/ai`
+Job Day: `/api/day` `/api/day/action` `/api/day/photo` `/api/day/settings`
+`/day-photo` *(public by design — Twilio fetches it to attach an MMS; ids are random)*
 AI (Gemini): `/api/ai/summary` `/api/ai/draft` `/api/ai/triage`
