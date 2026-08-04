@@ -12,13 +12,19 @@
  * Dashboard API:    /api/health /api/threads /api/thread /api/send /api/meta
  *                   /api/schedule /api/unschedule /api/call /api/read
  *                   /api/insights /api/ai/summary /api/ai/draft /api/ai/triage
- *                   /api/ai/predict /api/ai/style (predictive keyboard)
  *                   /api/money/* (profit tracker — see the Money module)
  *
  * Required secrets (wrangler secret put ...):
  *   TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM, MIKEY_PHONE
  *   GEMINI_API_KEY        (optional — only the AI endpoints need it)
  *   GEMINI_MODEL          (optional — defaults to gemini-2.0-flash)
+ *   ANTHROPIC_API_KEY     (optional — when set, Claude writes the customer-facing
+ *                          drafts because it holds a specific person's voice far
+ *                          better; everything else stays on Gemini. Falls back to
+ *                          Gemini automatically if missing or erroring.)
+ *   ANTHROPIC_MODEL       (optional — defaults to claude-opus-5)
+ *   CLAUDE_DISABLED       (optional kill switch — set to "1" to force drafting
+ *                          back onto Gemini without removing the key)
  *   RESEND_API_KEY        (optional — email alerts instead of texting yourself)
  *   ALERT_EMAIL           (optional — where alerts go; defaults to nothing)
  *   ALERT_FROM            (optional — verified sender; defaults to Resend's)
@@ -102,6 +108,13 @@ async function runCron() {
   await dispatchDueReminders();
   await evaluateFollowups();
   await moneyCron().catch(() => {}); // money reminders must never break the SMS cron
+  // One KV write a day: snapshot the KPIs that cannot be reconstructed later.
+  await recordPulse().catch(() => {});
+  // Job Day suite. Both are write-frugal by design: the brief stamps one key a
+  // day, the invoice sweep only writes when something is actually overdue.
+  await maybeDailyBrief().catch(() => {});
+  await maybeWeeklyRecap().catch(() => {});
+  await maybePayReminders().catch(() => {});
 }
 
 // Private "remind me to follow up on <date>" reminders — a nudge to Mikey, not a
@@ -154,6 +167,13 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/availability') return apiAvailability(url);
   if (request.method === 'POST' && pathname === '/api/book')         return apiBook(request);
 
+  // ---- Public customer pages (MUST stay above the /api auth gate) ----
+  // /t/<token> — the live "Mikey's on his way" ETA tracker the customer opens.
+  // /p/<token> — the pay page a payment-request text links to.
+  if (request.method === 'GET'  && pathname.startsWith('/t/'))      return trackPage(pathname.slice(3).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40));
+  if (request.method === 'GET'  && pathname.startsWith('/p/'))      return payPage(pathname.slice(3).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40));
+  if (request.method === 'GET'  && pathname === '/api/track/state') return apiTrackState(url);
+
   if (request.method === 'GET'  && pathname === '/api/version')    return json({ ok: true, build: BUILD });
   if (request.method === 'POST' && pathname === '/api/login')      return apiLogin(request);
   if (request.method === 'POST' && pathname === '/api/logout')     return apiLogout();
@@ -175,12 +195,24 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/emails')     return apiEmails();
   if (request.method === 'POST' && pathname === '/api/email-read') return apiEmailRead(request);
   if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/email-setup') return apiEmailSetup(request);
+  if (request.method === 'POST' && pathname === '/api/assist/practice') return apiAssistPractice(request);
+  // Voice training — teaching the AI to sound like Mikey (see the VOICE module).
+  if (request.method === 'GET'  && pathname === '/api/voice/stats')        return apiVoiceStats();
+  if (request.method === 'POST' && pathname === '/api/voice/build')        return apiVoiceBuild();
+  if (request.method === 'POST' && pathname === '/api/voice/replay')       return apiVoiceReplayNext(request);
+  if (request.method === 'POST' && pathname === '/api/voice/score')        return apiVoiceReplayScore(request);
+  if (request.method === 'POST' && pathname === '/api/voice/import')       return apiVoiceImport(request);
+  // Predictive keyboard — next-word suggestions built from that same corpus.
+  if (request.method === 'GET'  && pathname === '/api/ai/style')           return apiAiStyle(url);
+  if (request.method === 'POST' && pathname === '/api/ai/predict')         return apiAiPredict(request);
   if (request.method === 'GET'  && pathname === '/api/media')      return apiMediaProxy(url);
   if (request.method === 'POST' && pathname === '/api/media-backfill') return apiMediaBackfill(request);
   if (request.method === 'POST' && pathname === '/api/voicemail-backfill') return apiVoicemailBackfill(request);
   if (request.method === 'POST' && pathname === '/api/alert-test') return apiAlertTest();
   if (request.method === 'GET'  && pathname === '/api/followups')  return apiFollowups();
   if (request.method === 'POST' && pathname === '/api/followup')   return apiFollowupAction(request);
+  if (request.method === 'GET'  && pathname === '/api/ai/rules')   return apiRulesGet();
+  if (request.method === 'POST' && pathname === '/api/ai/rules')   return apiRulesPost(request);
   if (request.method === 'GET'  && pathname === '/api/config')     return apiGetConfig();
   if (request.method === 'POST' && pathname === '/api/config')     return apiSaveConfig(request);
   // ---- Booking management (authed — the Bookings dashboard view) ----
@@ -195,8 +227,6 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/templates')  return apiSaveTemplates(request);
   if (request.method === 'POST' && pathname === '/api/ai/summary') return apiAiSummary(request);
   if (request.method === 'POST' && pathname === '/api/ai/draft')   return apiAiDraft(request);
-  if (request.method === 'POST' && pathname === '/api/ai/predict') return apiAiPredict(request);
-  if (request.method === 'GET'  && pathname === '/api/ai/style')   return apiAiStyle(url);
   if (request.method === 'POST' && pathname === '/api/ai/triage')  return apiAiTriage();
   if (request.method === 'POST' && pathname === '/api/ai/coach')   return apiAiCoach(request);
   if (request.method === 'POST' && pathname === '/api/ai/photo-quote') return apiAiPhotoQuote(request);
@@ -216,6 +246,22 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/webstats/disconnect') return apiWebstatsDisconnect(request);
   if (request.method === 'POST' && pathname === '/api/webstats/ai')         return apiWebstatsAi(request);
 
+  // Map rank grid — Google Maps rank at a grid of points (Local Falcon style).
+  if (request.method === 'GET'  && pathname === '/api/geogrid')            return apiGeogrid();
+  if (request.method === 'POST' && pathname === '/api/geogrid/scan')       return apiGeogridScan(request);
+  if (request.method === 'POST' && pathname === '/api/geogrid/save')       return apiGeogridSave(request);
+  if (request.method === 'POST' && pathname === '/api/geogrid/connect')    return apiGeogridConnect(request);
+  if (request.method === 'POST' && pathname === '/api/geogrid/find')       return apiGeogridFind(request);
+  if (request.method === 'POST' && pathname === '/api/geogrid/preview')    return apiGeogridPreview(request);
+  if (request.method === 'POST' && pathname === '/api/geogrid/disconnect') return apiGeogridDisconnect(request);
+  if (request.method === 'POST' && pathname === '/api/geogrid/delete')     return apiGeogridDelete(request);
+
+  // Business intelligence — the five deep-analytics reports.
+  if (request.method === 'GET'  && pathname === '/api/intel/customers') return apiIntelCustomers();
+  if (request.method === 'GET'  && pathname === '/api/intel/services')  return apiIntelServices();
+  if (request.method === 'GET'  && pathname === '/api/intel/forecast')  return apiIntelForecast();
+  if (request.method === 'GET'  && pathname === '/api/intel/pulse')     return apiIntelPulse();
+
   // Money tracker (its own dashboard section — see the Money module below)
   if (request.method === 'GET'  && pathname === '/api/money')          return apiMoney(url);
   if (request.method === 'POST' && pathname === '/api/money/entry')    return apiMoneyEntry(request);
@@ -227,6 +273,47 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/money/config')   return apiMoneyGetConfig();
   if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/money/receipt') return apiMoneyReceipt(request, url);
   if (request.method === 'POST' && pathname === '/api/money/config')   return apiMoneySaveConfig(request);
+
+  // ---- Job Day suite (see the JOB DAY SUITE block near the bottom of this file) ----
+  // Today's Run
+  if (request.method === 'GET'  && pathname === '/api/day')            return apiDay(url);
+  if (request.method === 'POST' && pathname === '/api/day/state')      return apiDayState(request);
+  if (request.method === 'GET'  && pathname === '/api/detections')     return apiDetections();
+  if (request.method === 'POST' && pathname === '/api/detection')      return apiDetectionAction(request);
+  if (request.method === 'POST' && pathname === '/api/day/job')        return apiDayJob(request);
+  if (request.method === 'POST' && pathname === '/api/day/remove')     return apiDayRemove(request);
+  if (request.method === 'POST' && pathname === '/api/day/order')      return apiDayOrder(request);
+  // Live ETA tracking (the customer-facing page + /api/track/state are public, above)
+  if (request.method === 'POST' && pathname === '/api/track/start')    return apiTrackStart(request);
+  if (request.method === 'POST' && pathname === '/api/track/ping')     return apiTrackPing(request);
+  if (request.method === 'POST' && pathname === '/api/track/stop')     return apiTrackStop(request);
+  // Web push
+  if (request.method === 'GET'  && pathname === '/api/push/key')       return apiPushKey();
+  if (request.method === 'POST' && pathname === '/api/push/subscribe') return apiPushSubscribe(request);
+  if (request.method === 'POST' && pathname === '/api/push/unsubscribe') return apiPushUnsubscribe(request);
+  if (request.method === 'POST' && pathname === '/api/push/test')      return apiPushTest();
+  if (request.method === 'GET'  && pathname === '/api/push/peek')      return apiPushPeek();
+  // Quote builder
+  if (request.method === 'GET'  && pathname === '/api/quote/config')   return apiQuoteConfig();
+  if (request.method === 'POST' && pathname === '/api/quote')          return apiQuoteCreate(request);
+  if (request.method === 'POST' && pathname === '/api/quote/action')   return apiQuoteAction(request);
+  // Get paid
+  if (request.method === 'GET'  && pathname === '/api/pay')            return apiPay();
+  if (request.method === 'POST' && pathname === '/api/pay/config')     return apiPaySaveConfig(request);
+  if (request.method === 'POST' && pathname === '/api/pay/request')    return apiPayRequest(request);
+  if (request.method === 'POST' && pathname === '/api/pay/action')     return apiPayAction(request);
+  // Customer garage
+  if (request.method === 'GET'  && pathname === '/api/garage')         return apiGarage(url);
+  // Neighborhood blast
+  if (request.method === 'GET'  && pathname === '/api/blast/candidates') return apiBlastCandidates(url);
+  if (request.method === 'POST' && pathname === '/api/blast/send')     return apiBlastSend(request);
+  // Before / after photos
+  if (request.method === 'GET'  && pathname === '/api/photos')         return apiPhotosList(url);
+  if (request.method === 'POST' && pathname === '/api/photos')         return apiPhotoUpload(request);
+  if (request.method === 'GET'  && pathname === '/api/photos/img')     return apiPhotoImg(url);
+  if (request.method === 'POST' && pathname === '/api/photos/delete')  return apiPhotoDelete(request);
+  // Daily brief
+  if (request.method === 'GET'  && pathname === '/api/brief')          return apiBrief(url);
 
   // Static assets (the dashboard at "/") are served by Cloudflare's asset
   // layer before the Worker, so anything reaching here is an unknown route.
@@ -285,6 +372,7 @@ async function handleSubmit(request) {
 
   // Start the conversation, tag as a new lead, store form details as a note.
   const thread = await loadThread(clientPhone);
+  markSource(thread, 'quote');
   if (!thread.name) thread.name = name;
   if (!thread.status) { thread.status = 'new'; thread.statusAt = thread.statusAt || Date.now(); }
   const detail = [
@@ -389,7 +477,9 @@ async function handleInboundSms(request) {
   const text = params.Body || '';
   const numMedia = parseInt(params.NumMedia || '0', 10);
   const fromNorm = normalizePhone(from) || from;
-  if (fromNorm === normalizePhone(ENV.MIKEY_PHONE)) return twiml('');
+  // A text from Mikey's own cell isn't a customer message — it's him answering
+  // one. See the assist loop below.
+  if (fromNorm === normalizePhone(ENV.MIKEY_PHONE)) return handleOwnerSms(text);
 
   // STOP / START compliance. Record the opt-out state ourselves so scheduled sends,
   // autopilot nudges and blasts all honor it — Twilio blocks at the API but never
@@ -422,14 +512,624 @@ async function handleInboundSms(request) {
   if (media.length) inMsg.media = media;
   else if (numMedia > 0) inMsg.body = text + `\n[${numMedia} attachment(s)]`;
   if (params.MessageSid) inMsg.sid = params.MessageSid;
-  await appendMessage(fromNorm, inMsg);
-  await notifyMikey(`📱 New ${numMedia > 0 ? 'photo/text' : 'text'} from ${from}`,
-    `New message from ${from}:\n"${text || (numMedia > 0 ? '[photo]' : '')}"\n\nReply in your dashboard.`);
+  const inThread = await appendMessage(fromNorm, inMsg);
+  // The alert doubles as the assist prompt: it tells Mikey he can answer straight
+  // from his phone by texting the business number the bare facts (handleOwnerSms).
+  const alertCfg = await loadConfig();
   // Pre-draft a reply in Mikey's voice so it's already waiting when he opens the
-  // thread. Best-effort — never blocks or fails the inbound webhook.
-  await maybeSuggestReply(fromNorm);
+  // thread. Best-effort — never blocks or fails the inbound webhook. Drafted BEFORE
+  // the alert goes out so the alert can show him the actual wording and ask for a
+  // plain yes or no (see assistAlertBody / runAssist's YES/NO handling).
+  const draft = await maybeSuggestReply(fromNorm);
+  // Work out what he actually needs to decide, so the alert asks him a question
+  // he can answer in four words. Best-effort — a failure just means a plainer email.
+  const ask = await assistAsk(inThread, alertCfg).catch(() => null);
+  await notifyMikey(`📱 New ${numMedia > 0 ? 'photo/text' : 'text'} from ${from}`,
+    assistAlertBody(alertCfg, fromNorm, inThread.name || from,
+      `${inThread.name || from} texted:\n"${text || (numMedia > 0 ? '[photo]' : '')}"`, ask, draft));
+  // Watch for "so Saturday at 10 then?" and raise a one-tap job card if so.
+  await maybeDetectJob(fromNorm);
   // No auto-reply to the customer — Mikey replies personally from the dashboard.
   return twiml('');
+}
+
+// ===========================================================================
+// The assist loop  (a text FROM Mikey's own cell TO the business number)
+// ---------------------------------------------------------------------------
+// The slow part of answering a customer isn't deciding what to say, it's typing
+// it out nicely. So Mikey sends the bare facts and the AI does the wording —
+// "375, thursday works" becomes a warm, on-voice reply.
+//
+// Crucially this is NOT autonomy. Every fact in the outgoing message came from
+// Mikey; generateReply() is explicitly told a hint is "the owner telling you what
+// to say" and must use it exactly. The AI never decides anything, it just writes.
+// And nothing leaves immediately: the reply is queued with a cancel window and
+// the exact wording is texted back first, so the last word is his.
+//
+// Security: only reachable from a Twilio-signed webhook whose From matches
+// MIKEY_PHONE, so the sender can't be spoofed through the public route.
+//
+// Grammar (case-insensitive):
+//   375, thursday works        → AI writes it, sends to whoever texted last
+//   @ruth 375 thursday         → …to Ruth instead (name prefix or phone digits)
+//   send: on my way            → send exactly that, no rewriting
+//   draft: ...                 → write it but hold it in the dashboard
+//   who                        → who's waiting on a reply
+//   cancel                     → pull back the queued reply before it goes
+//   help                       → this list
+// ===========================================================================
+const ASSIST_HELP =
+  'Answer a customer from your phone:\n' +
+  '• "yes" sends the reply I wrote out for you in the alert. "no" drops it.\n' +
+  '• Text me the facts — "375, thursday works" — and I\'ll write it out and send it to whoever texted you last.\n' +
+  '• "@ruth 375 thursday" to pick who.\n' +
+  '• "send: ..." to send your exact words.\n' +
+  '• "draft: ..." to write it but hold it in the dashboard.\n' +
+  '• "who" = who\'s waiting. "cancel" = pull back the last one.';
+
+// Text Mikey back on his cell. Always SMS (not notifyMikey, which prefers email)
+// — he's mid-text-conversation with the dashboard, so the answer has to land in
+// the same place he's typing.
+async function ownerSay(msg) {
+  try { await sendSms(ENV.MIKEY_PHONE, msg, { skipOptOut: true }); } catch { /* best effort */ }
+}
+function assistWho(e) { return e.name || e.phone; }
+
+// Resolve which conversation an owner text is about. With a @token: match on a
+// name-word prefix, then a name substring, then trailing phone digits. Without
+// one: whoever is actually waiting on a reply, most recent first. Reads only the
+// index, so picking a target costs no extra KV reads.
+function assistPickTarget(index, token) {
+  const open = index.filter((e) => !e.archived && !e.optedOut);
+  if (!token) {
+    const waiting = open.filter((e) => e.lastDir === 'in').sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+    return waiting[0] || null;
+  }
+  const t = String(token).toLowerCase().replace(/^@/, '');
+  const digits = t.replace(/\D/g, '');
+  if (digits.length >= 7) {
+    const byPhone = open.find((e) => String(e.phone).replace(/\D/g, '').endsWith(digits));
+    if (byPhone) return byPhone;
+  }
+  const name = (e) => String(e.name || '').toLowerCase();
+  for (const test of [(e) => name(e).split(/\s+/).some((w) => w.startsWith(t)), (e) => name(e).includes(t)]) {
+    const hits = open.filter(test);
+    if (hits.length === 1) return hits[0];
+    if (hits.length > 1) return { ambiguous: hits.slice(0, 5) };
+  }
+  return null;
+}
+
+// A bare yes or no answering the reply we wrote out in the alert. Kept tight on
+// purpose: anything with more in it is him telling us what to say instead, and
+// should go through the normal path rather than firing off a draft.
+const ASSIST_YES = /^(y|ya|yes+|yep|yeah|yup|ok|okay|k|sure|send|send it|send that|do it|go|go ahead|perfect|sounds good|looks good|that works|👍|👌|✅)[\s.!]*$/i;
+const ASSIST_NO = /^(n|no+|nope|nah|don'?t|don'?t send|do not send|no thanks|skip|skip it|scrap it|scrap that|delete|toss it|👎)[\s.!]*$/i;
+
+// Which draft is he answering? An email reply is threaded to one customer's
+// alert, so it names itself. A text from his cell means the newest one still
+// waiting — the same "whoever texted you last" rule the rest of the loop uses.
+async function assistDraftTarget(index, forcedPhone) {
+  const phones = forcedPhone ? [forcedPhone]
+    : index.filter((e) => !e.archived && !e.optedOut && e.replyReady)
+      .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0)).slice(0, 1).map((e) => e.phone);
+  for (const p of phones) {
+    const th = await loadThread(p);
+    if (th.suggested && th.suggested.text) return th;
+  }
+  return null;
+}
+
+async function assistAnswerDraft(yes, { index, cfg, reply, channel, forcedPhone }) {
+  const thread = await assistDraftTarget(index, forcedPhone);
+  if (!thread) {
+    await reply(yes
+      ? 'I don\'t have a written-out reply waiting on that one, so there\'s nothing to send yet. Tell me the facts — "375, thursday" — and I\'ll write it.'
+      : 'Nothing was waiting to go out, so nothing changed.');
+    return;
+  }
+  const who = thread.name || thread.phone;
+  const draft = thread.suggested.text;
+  if (!yes) {
+    thread.suggested = null;
+    await saveThread(thread);
+    await updateIndexEntry(thread);
+    await reply(`Dropped it — nothing went to ${who}. Tell me what you'd rather say and I'll write that instead.`);
+    return;
+  }
+  // Send the exact words he just approved, through the same queue as everything
+  // else: opt-out guard, practice mode, the hold, and the CANCEL window all apply.
+  await runAssist({ text: `send: ${draft}`, cfg, reply, channel, forcedPhone: thread.phone });
+  // Clear the draft only after the queue write, and only if it's still the one he
+  // approved (he may have answered twice, or the customer may have texted again).
+  const after = await loadThread(thread.phone);
+  if (after.suggested && after.suggested.text === draft) {
+    after.suggested = null;
+    await saveThread(after);
+    await updateIndexEntry(after);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The channel-agnostic core. Both entry points (a text from Mikey's cell, and a
+// reply to an alert email) parse the same grammar and hit the same safety rails;
+// they differ only in how the confirmation goes back to him and how long the
+// hold is. `reply` is the callback that answers on whichever channel he used.
+// ---------------------------------------------------------------------------
+async function runAssist({ text, cfg, reply, channel, forcedPhone }) {
+  const body0 = String(text || '').trim();
+  if (!body0) return;
+  const lower = body0.toLowerCase();
+
+  if (lower === 'help' || lower === '?' || lower === 'commands') { await reply(ASSIST_HELP); return; }
+  // Carrier keywords aren't answers — swallow them rather than rewriting "stop"
+  // into a friendly sentence and texting it to a customer.
+  if (['stop', 'stopall', 'unsubscribe', 'cancel all', 'end', 'quit', 'start', 'unstop'].includes(lower)) return;
+
+  const index = await loadIndex();
+
+  if (lower === 'who' || lower === 'waiting' || lower === 'pending') {
+    const waiting = index.filter((e) => !e.archived && e.lastDir === 'in')
+      .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0)).slice(0, 5);
+    await reply(waiting.length
+      ? 'Waiting on you:\n' + waiting.map((e, i) => `${i + 1}. ${assistWho(e)} — ${humanAgo(Date.now() - (e.lastTs || Date.now()))}: "${(e.lastBody || '').slice(0, 60)}"`).join('\n')
+      : 'Nobody\'s waiting on a reply right now. 🚗');
+    return;
+  }
+
+  // Pull back a queued assist reply. Targets the newest one still in the queue,
+  // across every conversation, so "cancel" always undoes the last thing he sent.
+  if (/^(cancel|undo|nvm|nevermind|stop that|wait)\b/.test(lower)) {
+    let best = null;
+    for (const e of index) {
+      if (e.archived || !e.scheduledCount) continue;
+      const th = await loadThread(e.phone);
+      for (const s of (th.scheduled || [])) {
+        if (s.kind === 'assist' && (!best || (s.at || 0) > (best.item.at || 0))) best = { thread: th, item: s };
+      }
+    }
+    if (!best) { await reply('Nothing queued to cancel — it may have already gone out.'); return; }
+    best.thread.scheduled = best.thread.scheduled.filter((s) => s.id !== best.item.id);
+    await saveThread(best.thread);
+    await updateIndexEntry(best.thread);
+    await reply(`Cancelled — nothing was sent to ${best.thread.name || best.thread.phone}.`);
+    return;
+  }
+
+  // "yes" / "no" — he's answering the reply we already wrote out for him in the
+  // alert. This is the shortest path there is: one word and the customer gets a
+  // real answer. Anything longer than a bare yes/no falls through to the normal
+  // "tell me the facts" grammar below.
+  if (ASSIST_YES.test(lower) || ASSIST_NO.test(lower)) {
+    await assistAnswerDraft(ASSIST_YES.test(lower), { index, cfg, reply, channel, forcedPhone });
+    return;
+  }
+
+  // @target prefix
+  let token = '', body = body0;
+  const m = body0.match(/^@(\S+)\s+([\s\S]+)$/);
+  if (m) { token = m[1]; body = m[2].trim(); }
+
+  // mode prefix
+  let mode = 'ai';
+  let mm = body.match(/^(?:send|say|verbatim)\s*:\s*([\s\S]+)$/i);
+  if (mm) { mode = 'verbatim'; body = mm[1].trim(); }
+  else {
+    mm = body.match(/^(?:draft|hold)\s*:\s*([\s\S]+)$/i);
+    if (mm) { mode = 'draft'; body = mm[1].trim(); }
+  }
+  if (!body) { await reply(ASSIST_HELP); return; }
+
+  // An email reply already knows who it's about (it's threaded to that customer's
+  // alert), so the target comes free — no @name, and no guessing when two people
+  // texted at once. An explicit @token still wins, so he can redirect.
+  let target = null;
+  if (forcedPhone && !token) {
+    const e = index.find((x) => x.phone === forcedPhone);
+    target = e || { phone: forcedPhone, name: '' };
+  } else {
+    target = assistPickTarget(index, token);
+  }
+  if (!target) {
+    await reply(token
+      ? `I couldn't find anyone matching "${token}". Send "who" to see who's waiting.`
+      : 'Nobody has texted in, so I don\'t know who you mean. Try "@name your answer".');
+    return;
+  }
+  if (target.ambiguous) {
+    await reply(`"${token}" matches ${target.ambiguous.map(assistWho).join(', ')}. Try a fuller name or the last 4 digits of their number.`);
+    return;
+  }
+  if (isOptedOut(cfg, target.phone)) {
+    await reply(`${assistWho(target)} texted STOP, so I can't message them. Give them a call instead.`);
+    return;
+  }
+
+  const thread = await loadThread(target.phone);
+  let out = body;
+  if (mode !== 'verbatim') {
+    // The hint path: generateReply() is grounded in the playbook, the rules, this
+    // customer's history AND how Mikey edits drafts — and is told to use any fact
+    // in the hint exactly as given.
+    try { out = await generateReply(thread, cfg, body); }
+    catch (err) {
+      await reply(`Couldn't write that one (${String((err && err.message) || err).slice(0, 60)}). Send "send: <your exact message>" and I'll send it word for word.`);
+      return;
+    }
+  }
+  out = String(out || '').trim();
+  if (!out) { await reply('That came back empty — try again, or use "send: <your exact message>".'); return; }
+
+  if (mode === 'draft') {
+    const last = thread.messages[thread.messages.length - 1];
+    thread.suggested = { text: out, ts: Date.now(), forTs: last ? last.ts : Date.now() };
+    await saveThread(thread);
+    await updateIndexEntry(thread);
+    await reply(`Drafted for ${assistWho(target)} (not sent):\n"${out}"\n\nIt's waiting in the dashboard.`);
+    return;
+  }
+
+  // Practice mode stops here: he sees exactly what would have gone out, and
+  // nothing is queued. This is the last gate before the message becomes real.
+  if (isPracticePhone(target.phone)) {
+    await reply(
+      `🧪 PRACTICE — nothing was sent.\n\nHere's what ${assistWho(target)} would have received:\n"${out}"\n\n` +
+      `That's the whole loop working. On a real customer this would now be queued with a hold, and you'd get this same message with a countdown and a CANCEL option.`,
+    );
+    return;
+  }
+
+  // Queue it rather than send it. Riding the existing scheduled-send cron gives
+  // at-most-once delivery and the opt-out guard for free — and the gap between
+  // now and sendAt IS the cancel window. Email gets a longer hold by default,
+  // because a "cancel" reply has to make another trip through the inbox.
+  const raw = channel === 'email' ? cfg.assistEmailDelaySec : cfg.assistDelaySec;
+  const delaySec = Math.max(0, Math.min(900, Number(raw) || 0));
+  const item = { id: genId(), kind: 'assist', at: Date.now(), body: out, sendAt: Date.now() + delaySec * 1000 };
+  thread.scheduled.push(item);
+  thread.scheduled.sort((a, b) => a.sendAt - b.sendAt);
+  thread.dateRequest = null;
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+  const when = delaySec >= 60 ? `~${Math.round(delaySec / 60)} min` : delaySec ? `~${delaySec}s` : 'on the next tick (~1 min)';
+  await reply(
+    `→ ${assistWho(target)}:\n"${out}"\n\n` +
+    `Sending in ${when}. Reply CANCEL to stop it` +
+    (channel === 'email' ? ', or cancel it in the dashboard (faster).' : '.'),
+  );
+}
+
+// Entry point 1 — a text from Mikey's own cell to the business number.
+async function handleOwnerSms(rawText) {
+  const cfg = await loadConfig();
+  if (cfg.assistSms === false) return twiml('');   // feature off — stay silent
+  await runAssist({ text: rawText, cfg, channel: 'sms', reply: ownerSay });
+  return twiml('');
+}
+
+// ---------------------------------------------------------------------------
+// Entry point 2 — replying to the alert email  (the free channel)
+// ---------------------------------------------------------------------------
+// Alerts already go out as email (notifyMikey prefers Resend), so the cheapest
+// possible answer is to just hit reply. No Twilio segment for his message in,
+// none for the confirmation back — the only billable text is the one the
+// customer actually receives, which no channel can avoid.
+//
+// It also routes itself. The reply is threaded to ONE customer's alert, so we
+// know who it's about without him typing @anything — and without the "whoever
+// texted last" guess going wrong when two people text at the same minute.
+const ASSIST_CUT = '--- reply above this line ---';
+
+// Assemble an alert body that can be replied to. The cut marker goes at the very
+// TOP — when he replies, his mail client quotes everything below it, so slicing
+// at the marker leaves exactly what he typed and nothing else. (Putting it at the
+// bottom looks tidier and does not work: the alert's own text ends up above the
+// cut and gets treated as part of his answer.)
+// ---------------------------------------------------------------------------
+// "What do you actually need from me?"
+// ---------------------------------------------------------------------------
+// An alert that just repeats the customer's message leaves Mikey to work out
+// what's being asked and what a usable answer looks like. So each inbound text is
+// turned into ONE plain question plus literal example replies he could type
+// verbatim. The examples matter more than the question: they show the shape of a
+// valid answer, which is the whole skill of using this thing.
+//
+// `kind` also decides whether to offer the quick path at all — a complaint or a
+// damage claim gets "handle this one yourself", never a one-word reply box.
+const ASSIST_KINDS = ['price', 'schedule', 'question', 'confirm', 'chitchat', 'escalate'];
+
+async function assistAsk(thread, cfg) {
+  if (!ENV.GEMINI_API_KEY) return null;
+  const msgs = thread.messages || [];
+  const last = msgs[msgs.length - 1];
+  if (!last || last.dir !== 'in') return null;
+  const prompt =
+    businessContext(cfg) +
+    `You are triaging ONE inbound customer text for the owner of a mobile car detailing business, ` +
+    `so he can answer it in a few words from his phone. Return ONLY JSON:\n` +
+    `{"kind": one of ${JSON.stringify(ASSIST_KINDS)},\n` +
+    ` "ask": "ONE short sentence (max 20 words) telling the owner exactly what he needs to decide or supply. ` +
+    `Write it to him, not to the customer. Be specific to THIS message — name the vehicle/service if known.",\n` +
+    ` "examples": ["2 or 3 SHORT literal replies he could type, 1-6 words each, e.g. \\"375\\" or \\"375, thursday works\\" or \\"yes, 9am\\". ` +
+    `These are shorthand facts, NOT full sentences and NOT a message to the customer. Make them realistic for this conversation."]}\n\n` +
+    `kind guide: "price" = they want a number. "schedule" = they want a day/time. "question" = a factual question about the service. ` +
+    `"confirm" = they're agreeing/confirming and just need acknowledgement. "chitchat" = thanks/emoji, nothing needed. ` +
+    `"escalate" = a complaint, damage, refund, anger, or anything needing a careful personal reply.\n\n` +
+    `Conversation:\n${transcript(thread)}`;
+  try {
+    const raw = await geminiGenerate(prompt, { json: true, maxTokens: 500, temperature: 0.2 });
+    const p = JSON.parse(raw);
+    const examples = Array.isArray(p.examples)
+      ? p.examples.map((x) => String(x).trim()).filter(Boolean).slice(0, 3) : [];
+    return {
+      kind: ASSIST_KINDS.includes(p.kind) ? p.kind : 'question',
+      ask: String(p.ask || '').trim().slice(0, 200),
+      examples,
+    };
+  } catch { return null; }
+}
+
+// Render the ask as the middle of the alert email.
+function assistAskBlock(ask, compact) {
+  if (!ask) return '';
+  if (ask.kind === 'escalate') {
+    return `\n⚠️  HANDLE THIS ONE YOURSELF\n   ${ask.ask || 'This needs a careful, personal reply.'}\n` +
+      `   I'm not offering a quick answer here on purpose — open the dashboard.\n`;
+  }
+  if (ask.kind === 'chitchat') {
+    return `\n✅ NOTHING NEEDED\n   ${ask.ask || 'Just a friendly note — no answer required.'}\n`;
+  }
+  // Nothing useful came back — say nothing rather than print an empty header.
+  if (!ask.ask && !ask.examples.length) return '';
+  // When a written-out reply is already on offer above, this block is the "or
+  // not" path, so it shrinks to one line rather than competing with the yes/no.
+  if (compact) {
+    const lines = [`\n❓ NOT WHAT YOU'D SAY?`];
+    if (ask.ask) lines.push(`   ${ask.ask}`);
+    if (ask.examples.length) lines.push(`   Reply with something like: ${ask.examples.join(' · ')}`);
+    return lines.join('\n') + '\n';
+  }
+  const lines = [`\n❓ WHAT I NEED FROM YOU`];
+  if (ask.ask) lines.push(`   ${ask.ask}`);
+  if (ask.examples.length) {
+    lines.push(`\n   Reply with something like:`);
+    for (const e of ask.examples) lines.push(`     ${e}`);
+  }
+  return lines.join('\n') + '\n';
+}
+
+function assistAlertBody(cfg, phone, who, core, ask, draft) {
+  const byEmail = cfg.assistEmail !== false;
+  // A complaint should never come with a one-word answer box next to it.
+  const quickOk = !(ask && (ask.kind === 'escalate' || ask.kind === 'chitchat'));
+  // The whole point of the yes/no alert: show him the actual words first, so the
+  // easiest possible answer is one letter. Only offered when there's something
+  // safe to send — never on a complaint, never on a "no reply needed".
+  const offer = quickOk && draft ? String(draft).trim() : '';
+  const block = assistAskBlock(ask, !!offer);
+  const draftBlock = offer
+    ? `\n✍️  HERE'S WHAT I'D SEND BACK\n   "${offer}"\n\n   Reply YES and it goes out as written. Reply NO and I'll drop it.\n`
+    : '';
+  const foot = [];
+  if (quickOk && byEmail) {
+    foot.push(offer
+      ? `💡 Hit REPLY: YES sends it, NO drops it — or just tell me what to say instead ("375, thursday") and I'll rewrite it in your voice. Free — no text message used.`
+      : `💡 Hit REPLY with just that and I'll write it out in your voice and send it to ${who}. Free — no text message used.`);
+  }
+  if (quickOk && cfg.assistSms !== false) {
+    foot.push(`📱 ${byEmail && foot.length ? 'Or text' : 'Text'} ${ENV.TWILIO_FROM || 'your business number'} the same thing.`);
+  }
+  if (quickOk && foot.length) {
+    foot.push(`\nOther things you can say: "send: <your exact words>" to skip the rewriting · "draft: …" to hold it in the dashboard · "who" to see everyone waiting · "cancel" to pull one back.`);
+    foot.push(`You'll always get the finished wording back before it goes out.`);
+  }
+  const body = `${core}\n${draftBlock}${block}`.trimEnd();
+  if (!foot.length) return block ? body : core;
+  // Only invite a reply when replies are actually processed. With email answering
+  // off, the marker and ref are left out entirely — otherwise he'd hit reply and
+  // nothing would ever happen. The ref is also what makes a reply routable, and
+  // requiring it is what stops ordinary mail being read as a command.
+  if (!byEmail) return `${body}\n\n${foot.join('\n')}`;
+  foot.push(`[ref:${phone}]`);
+  return `${ASSIST_CUT}\n${body}\n\n${foot.join('\n')}`;
+}
+
+// Strip the quoted original out of a reply so only what he actually typed is
+// treated as the answer. Cuts at our own marker first (exact and reliable), then
+// falls back to the usual client patterns.
+function assistStripQuoted(raw) {
+  let s = String(raw || '').replace(/\r\n/g, '\n');
+  const cuts = [
+    s.indexOf(ASSIST_CUT),
+    s.search(/^\s*On .{0,120}\bwrote:\s*$/m),
+    s.search(/^\s*-{2,}\s*Original Message\s*-{2,}/mi),
+    s.search(/^\s*_{10,}\s*$/m),
+    s.search(/^\s*From:\s.+$/m),
+    s.search(/^\s*>/m),
+  ].filter((i) => i > -1);
+  if (cuts.length) s = s.slice(0, Math.min(...cuts));
+  // Drop a trailing signature block ("-- \nMikey").
+  s = s.replace(/\n--\s*\n[\s\S]*$/, '');
+  return s.trim();
+}
+
+// Which conversation is this a reply to? ONLY the ref line we planted counts.
+// Deliberately not falling back to "a phone number somewhere in the subject" —
+// that would make any ordinary email of his with a number in the subject look
+// like a command. The ref is present on every alert, so nothing real is lost.
+// Returns a normalized phone or ''.
+function assistRefPhone(body) {
+  // Tolerant of reformatting: iOS Mail and some clients rewrite a bare number
+  // into "(360) 555-1234" even inside our marker.
+  const m = String(body || '').match(/\[ref:\s*([+\d(][\d\s()+.-]{6,})\]/);
+  if (!m) return '';
+  return normalizePhone(m[1]) || '';
+}
+
+// Bare address out of "Mikey <mikey@example.com>", lowercased.
+function emailAddr(s) {
+  const m = String(s || '').match(/<([^>]+)>/);
+  return String(m ? m[1] : s || '').trim().toLowerCase();
+}
+
+// Is this ingested email Mikey answering a customer alert? Requires the sender
+// to be the alert mailbox AND the mail to reference a conversation — so ordinary
+// customer email flowing through the same ingest is never mistaken for a command.
+function assistIsOwnerReply(cfg, email) {
+  if (cfg.assistEmail === false) return '';
+  const owner = emailAddr(ENV.ALERT_EMAIL);
+  if (!owner || emailAddr(email.from) !== owner) return '';
+  return assistRefPhone(email.body);
+}
+
+async function handleAssistEmail(cfg, email, phone) {
+  const text = assistStripQuoted(email.body);
+  if (!text) return;
+  const subject = 'Re: ' + String(email.subject || 'your reply').replace(/^(re:\s*)+/i, '');
+  await runAssist({
+    text, cfg, channel: 'email', forcedPhone: phone,
+    // The confirmation carries the marker and the ref too, so replying "cancel"
+    // to IT routes back here instead of landing in the inbox as ordinary mail.
+    reply: (msg) => sendEmail(subject, `${ASSIST_CUT}\n${msg}\n\n[ref:${phone}]`).catch(() => {}),
+  });
+}
+
+// ===========================================================================
+// Practice mode — rehearse the whole loop without touching a real customer
+// ===========================================================================
+// Tapping "Send me a practice question" fabricates a realistic inbound text from
+// a fake customer and fires a genuine alert email. Replying to it exercises the
+// ENTIRE chain — the Gmail script, the ref routing, the quote stripping, the AI
+// drafting, the confirmation — and stops one step short of Twilio: the finished
+// message is shown back to him marked TEST and never sent anywhere.
+//
+// The number is in 555-0100..0199, the range reserved for fictional use, so it
+// can't collide with a real customer. sendSms() refuses it outright as a second
+// line of defence, so no future code path can text it by accident either.
+const PRACTICE_PHONE = '+15555550100';
+function isPracticePhone(p) { return normalizePhone(p) === PRACTICE_PHONE; }
+
+const PRACTICE_SCENARIOS = [
+  { id: 'price',    name: 'Practice · Ruth',  vehicle: '2019 4Runner',
+    body: "Hey! How much would a full detail run on my 2019 4Runner? It's pretty rough inside, two kids and a dog." },
+  { id: 'schedule', name: 'Practice · Dave',  vehicle: 'F-150',
+    body: 'Do you have anything open Saturday? Anytime in the morning works for me.' },
+  { id: 'question', name: 'Practice · Alina', vehicle: 'Model 3',
+    body: 'Do you do ceramic coating? And do you come to my place or do I drop it off?' },
+  { id: 'escalate', name: 'Practice · Ken',   vehicle: 'Tacoma',
+    body: "I just looked at the truck and there's a scratch on the hood that wasn't there this morning. Pretty unhappy about this." },
+];
+
+async function apiAssistPractice(request) {
+  const d = await readJson(request).catch(() => ({}));
+  const cfg = await loadConfig();
+  const want = String((d && d.scenario) || '').toLowerCase();
+  // Rotate through the scenarios so repeated taps exercise different shapes.
+  const prev = (await kv().get('assist:practice', { type: 'json' })) || {};
+  const idx = PRACTICE_SCENARIOS.findIndex((s) => s.id === want);
+  const sc = idx >= 0 ? PRACTICE_SCENARIOS[idx] : PRACTICE_SCENARIOS[((prev.n || 0) % PRACTICE_SCENARIOS.length)];
+  await kv().put('assist:practice', JSON.stringify({ n: ((prev.n || 0) + 1) % 1000, at: Date.now() }));
+
+  // Reset the practice conversation each run so the AI isn't answering a stale
+  // thread, and so the fake customer never accumulates history.
+  const thread = blankThread(PRACTICE_PHONE);
+  thread.name = sc.name;
+  thread.tags = ['practice'];
+  thread.status = 'new';
+  thread.statusAt = Date.now();
+  thread.notes = 'Practice conversation for testing "Answer by email". Not a real customer — nothing sent here ever leaves the app.';
+  thread.messages = [{ id: genId(), dir: 'in', body: sc.body, ts: Date.now() }];
+  thread.unread = 1;
+
+  const ask = await assistAsk(thread, cfg).catch(() => null);
+  // Practice the real thing, yes/no included: write the reply out and hang it on
+  // the practice thread so answering YES walks the same path a real one would
+  // (and stops at the practice guard instead of texting anyone).
+  let draft = '';
+  if (aiConfigured() && !(ask && (ask.kind === 'escalate' || ask.kind === 'chitchat'))) {
+    try { draft = String(await generateReply(thread, cfg, '') || '').trim(); } catch { draft = ''; }
+    if (draft) thread.suggested = { text: draft, ts: Date.now(), forTs: thread.messages[0].ts };
+  }
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+
+  const core = `🧪 THIS IS A PRACTICE MESSAGE — ${sc.name} is not a real customer.\nNothing you reply here will ever be sent to anyone.\n\n${sc.name} texted:\n"${sc.body}"`;
+  const body = assistAlertBody(cfg, PRACTICE_PHONE, sc.name, core, ask, draft);
+  const sent = await notifyMikey(`🧪 Practice · New text from ${sc.name}`, body);
+  return json({ ok: !!sent, scenario: sc.id, ask, emailed: !!sent, previewBody: body });
+}
+
+// The Gmail script that feeds this. Deliberately reads his SENT mail rather than
+// his inbox: whatever address the alert came from, his reply is in Sent, so this
+// needs no inbound-mail infrastructure, no custom domain and no third-party
+// automation — just a free 1-minute trigger on his own account.
+function assistAppsScript(url, token) {
+  return `/**
+ * Mikey's Dashboard — "Answer by email".
+ * Reply to a new-text alert with the facts and the dashboard writes the
+ * customer reply in your voice and sends it.
+ *
+ * SETUP (once, ~2 minutes)
+ *  1. Go to script.google.com -> New project
+ *  2. Delete what's there, paste ALL of this, hit Save
+ *  3. Run -> mikeyAssistSync  (approve the permission prompt the first time)
+ *  4. Triggers (clock icon) -> Add Trigger -> mikeyAssistSync ->
+ *     Time-driven -> Minutes timer -> Every minute -> Save
+ * That's it. Replying to an alert now answers the customer.
+ */
+var DASH_URL   = ${JSON.stringify(url)};
+var DASH_TOKEN = ${JSON.stringify(token)};
+
+function mikeyAssistSync() {
+  // Who am I? A search for 'from:me' returns THREADS, and each thread holds both
+  // the dashboard's alert and my reply — so every message still has to be checked
+  // individually. If Google won't tell us the address (it can come back empty in
+  // some trigger contexts) we stop rather than treat every message as ours.
+  var me = '';
+  try { me = (Session.getActiveUser().getEmail() || '').toLowerCase(); } catch (e) {}
+  if (!me) { Logger.log('Could not read your Gmail address — re-run this once from the editor to re-approve.'); return; }
+
+  var props = PropertiesService.getScriptProperties();
+  var seen = JSON.parse(props.getProperty('seen') || '[]');
+  var threads = GmailApp.search('from:me newer_than:2d', 0, 30);
+  var sent = 0;
+
+  for (var t = 0; t < threads.length; t++) {
+    var msgs = threads[t].getMessages();
+    for (var i = 0; i < msgs.length; i++) {
+      var m = msgs[i];
+      var id = m.getId();
+      if (seen.indexOf(id) !== -1) continue;                      // already sent
+      var from = m.getFrom();
+      if (from.toLowerCase().indexOf(me) === -1) continue;         // the alert, not my reply
+      var body = m.getPlainBody() || '';
+      if (body.indexOf('[ref:') === -1) continue;                  // not a reply to a dashboard alert
+
+      try {
+        UrlFetchApp.fetch(DASH_URL, {
+          method: 'post',
+          contentType: 'application/json',
+          headers: { 'X-Ingest-Token': DASH_TOKEN },
+          muteHttpExceptions: true,
+          payload: JSON.stringify({
+            token: DASH_TOKEN,
+            from: from,
+            subject: m.getSubject(),
+            body: body,
+            messageId: id,
+            date: m.getDate().getTime()
+          })
+        });
+        seen.push(id);
+        sent++;
+      } catch (err) { /* leave it unseen and try again next run */ }
+    }
+  }
+  if (seen.length > 300) seen = seen.slice(-300);
+  props.setProperty('seen', JSON.stringify(seen));
+  Logger.log('Checked ' + threads.length + ' recent conversations, sent ' + sent + ' answer(s).');
+}
+`;
 }
 
 // Small TwiML fragment that rings Mikey's cell and then falls through to
@@ -555,6 +1255,7 @@ async function handleVoicemailDone(request) {
     // transcript callback (/voicemail-tx) fills the text into this same message,
     // matched by RecordingSid so we never show two bubbles for one voicemail.
     const thread = await loadThread(fromNorm);
+    markSource(thread, 'call');
     const dup = (thread.messages || []).some((m) => m.kind === 'voicemail' && recordingSid && m.recordingSid === recordingSid);
     if (!dup) {
       thread.messages.push({
@@ -776,6 +1477,13 @@ async function apiSend(request) {
   // owner then tweaked, remember the before→after so future drafts sound more like him.
   const aiOriginal = (data.aiOriginal || '').trim();
   if (aiOriginal) { try { await recordEdit(aiOriginal, body); } catch { /* non-fatal */ } }
+  // A text he typed with no draft behind it is the purest voice sample there is,
+  // and it used to be dropped — the corpus only grew from drafts he accepted or
+  // rewrote, so the way he opens a conversation cold was never learned until the
+  // next full rebuild. Now every message he writes goes in as he sends it.
+  else if (voiceUsable(msg)) { try { await recordVoiceSample(body, 'sent'); } catch { /* non-fatal */ } }
+  // Mikey's own "see you Saturday at 10" counts as setting a date too.
+  await maybeDetectJob(phone);
   return json({ ok: true, thread });
 }
 
@@ -822,6 +1530,8 @@ async function apiMeta(request) {
   if (typeof data.pinned === 'boolean') thread.pinned = data.pinned;
   if (typeof data.archived === 'boolean') thread.archived = data.archived;
   if (typeof data.assignedTo === 'string') thread.assignedTo = data.assignedTo.slice(0, 24);
+  // Customer garage (vehicles + access notes). Sent whole; sanitized on the way in.
+  if ('garage' in data) thread.garage = data.garage ? sanitizeGarage(data.garage) : null;
   if ('appointmentAt' in data) {
     const a = Number(data.appointmentAt);
     thread.appointmentAt = (data.appointmentAt == null || !a) ? null : a;
@@ -853,7 +1563,10 @@ async function apiSchedule(request) {
   if (!body) return json({ ok: false, error: 'empty_message' }, 422);
   if (!sendAt || sendAt < Date.now() - 60000) return json({ ok: false, error: 'bad_time' }, 422);
   const thread = await loadThread(phone);
-  thread.scheduled.push({ id: genId(), body, sendAt });
+  // src:'manual' records that Mikey typed this one in the composer, so when it goes
+  // out the voice corpus can take it. The app's own queued items (the first
+  // reach-out, booking reminders, assist replies) carry no src and stay out.
+  thread.scheduled.push({ id: genId(), body, sendAt, src: 'manual' });
   thread.scheduled.sort((a, b) => a.sendAt - b.sendAt);
   thread.dateRequest = null; // scheduling a send answers the "need a date" request
   await saveThread(thread);
@@ -1449,6 +2162,988 @@ async function apiWebstatsAi(request) {
   }
 }
 
+// ===========================================================================
+// Map rank grid — "where do I actually show up on Google Maps?"
+// ---------------------------------------------------------------------------
+// The Local Falcon idea, built in-house: lay an N x N grid of points over the
+// service area, ask Google "detailing near me" AS IF standing at each point,
+// and record what position Mikey's business came back at. Colour the grid by
+// that rank and you can see, block by block, where the Maps listing is strong
+// and where it falls off.
+//
+// The rank comes from the Google Places API (New) "Text Search" endpoint with a
+// locationBias circle at each grid point. Two honest caveats, surfaced in the UI
+// too:
+//   - Places API results are a very close PROXY for the Maps local pack, not a
+//     byte-identical copy of it. (Local Falcon has the same caveat.)
+//   - Every grid point is one billable Places call. A 13x13 grid is 169 calls.
+//     Google gives a monthly free allowance per SKU; past that it is priced per
+//     1,000 calls. Check current pricing before running big grids often.
+//
+// Cloudflare's free plan caps a single request at 50 subrequests, so a scan is
+// CHUNKED: the dashboard posts one batch of grid points at a time (<= 25) and
+// stitches the results together client-side, showing a progress bar. That keeps
+// any single Worker invocation well under the cap no matter how big the grid.
+//
+// The API key is pasted once in the dashboard (Analytics -> Map -> setup) and
+// stored in KV, or supplied as a PLACES_API_KEY Worker secret, which wins. It is
+// never echoed back by any endpoint.
+// ===========================================================================
+const GEO_SCAN_MAX_POINTS = 25;   // per request — keeps us under the 50-subrequest cap
+const GEO_SCAN_KEEP = 24;         // how many past scans to retain
+const GEO_NOT_FOUND_RANK = 21;    // "20+" — outside the 20 results Places returns
+
+// ---------------------------------------------------------------------------
+// What a Places call costs, and how we stay at $0.
+//
+// Google prices Text Search by the MOST EXPENSIVE field you ask for, so the
+// field mask — not the endpoint — picks the SKU and the bill:
+//
+//   places.id (+ name/attributions) .... "Text Search Essentials (IDs only)"
+//                                        the free tier; no names come back
+//   + places.displayName / address ..... "Text Search Pro" — $32 per 1,000
+//                                        calls past the monthly free allowance
+//
+// So a scan is FREE when the Place ID is pinned: we only need to spot which
+// result is his, and the ID alone answers that. Matching on the NAME is what
+// forces the paid SKU, because names are a paid field.
+//
+// Defaults below are the published rates at the time of writing; both are
+// editable in the dashboard so a Google price change doesn't need a deploy.
+// Prices last checked: 2026-07-28.
+const GEO_PRO_PER_1000 = 32;      // USD per 1,000 Text Search Pro calls
+const GEO_PRO_FREE = 5000;        // free Pro calls per month (Pro-tier SKU)
+const GEO_IDS_FREE = 10000;       // free Essentials/IDs-only calls per month
+
+async function geogridSecrets() {
+  const saved = (await kv().get('geogrid:secrets', { type: 'json' })) || {};
+  return {
+    key: String(ENV.PLACES_API_KEY || saved.key || ''),
+    via: ENV.PLACES_API_KEY ? 'secret' : (saved.key ? 'saved' : ''),
+    placeId: String(saved.placeId || ''),
+    bizName: String(saved.bizName || ''),
+    keyword: String(saved.keyword || 'mobile detailing'),
+    centerLat: Number(saved.centerLat) || 47.9129,   // Snohomish, WA
+    centerLng: Number(saved.centerLng) || -122.0982,
+    // Spend guard. freeOnly ON is the default and the safe state: the Worker
+    // refuses any call that would land past the free allowance, so the answer
+    // to "am I being charged?" is no, by construction.
+    freeOnly: saved.freeOnly !== false,
+    idOnly: saved.idOnly !== false,
+    pricePro: Number(saved.pricePro) >= 0 ? Number(saved.pricePro) : GEO_PRO_PER_1000,
+    freePro: Number(saved.freePro) >= 0 ? Number(saved.freePro) : GEO_PRO_FREE,
+    freeIds: Number(saved.freeIds) >= 0 ? Number(saved.freeIds) : GEO_IDS_FREE,
+  };
+}
+
+// Which SKU a call bills at. ID-only is possible only with a pinned Place ID —
+// without one we need names to recognise the listing, and names cost money.
+function geoSku(sec) { return sec.idOnly && sec.placeId ? 'ids' : 'pro'; }
+function geoFieldMask(sku) {
+  return sku === 'ids' ? 'places.id' : 'places.id,places.displayName';
+}
+// Google's quotas reset at midnight Pacific, so the meter counts Pacific months
+// — that way "used this month" lines up with the allowance it's measured against.
+function geoMonthKey() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' }).slice(0, 7);
+}
+async function geoMeter() {
+  const m = (await kv().get('geogrid:meter', { type: 'json' })) || {};
+  const month = geoMonthKey();
+  return m.month === month ? { month, pro: m.pro || 0, ids: m.ids || 0 }
+    : { month, pro: 0, ids: 0 };
+}
+async function geoMeterAdd(sku, n) {
+  if (!n) return geoMeter();
+  const m = await geoMeter();
+  m[sku] = (m[sku] || 0) + n;
+  await kv().put('geogrid:meter', JSON.stringify(m));
+  return m;
+}
+// What N more calls on this SKU would do: how many land past the free
+// allowance, what they'd cost, and whether the guard should stop them.
+async function geoBudget(sec, sku, n) {
+  const m = await geoMeter();
+  const used = m[sku] || 0;
+  const free = sku === 'ids' ? sec.freeIds : sec.freePro;
+  const per1000 = sku === 'ids' ? 0 : sec.pricePro;
+  const paidCalls = Math.max(0, used + n - free);
+  const cost = +(paidCalls * per1000 / 1000).toFixed(2);
+  return {
+    month: m.month, sku, used, free, per1000, willUse: n,
+    left: Math.max(0, free - used), paidCalls, cost,
+    blocked: sec.freeOnly && paidCalls > 0,
+  };
+}
+function geoBudgetError(b) {
+  return json({
+    ok: false, error: 'budget', budget: b,
+    hint: 'Stopped before Google could charge you. This would put ' + b.paidCalls +
+      ' call' + (b.paidCalls === 1 ? '' : 's') + ' past your ' + b.free.toLocaleString() +
+      ' free ' + (b.sku === 'ids' ? 'ID-only' : 'Pro') + ' calls this month (' + b.used.toLocaleString() +
+      ' used) — about $' + b.cost.toFixed(2) + '. Wait for the 1st, run a smaller grid, or turn off ' +
+      '"Never spend real money" in setup if you want to pay for it.',
+  }, 402);
+}
+
+// Normalised name compare — Places display names carry punctuation/suffixes that
+// never match a hand-typed business name exactly.
+function geoNameKey(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+// Words that say nothing about WHICH business this is. They're stripped before
+// comparing so "Mikey's Detailing Snohomish" still matches the listing Google
+// actually shows ("Mikey's Mobile Detailing") — the old plain-substring compare
+// failed on exactly that, and a failed compare looks identical to ranking
+// nowhere: a full grid of 20+.
+const GEO_GENERIC_WORDS = ['mobile', 'detailing', 'detail', 'details', 'auto', 'autos', 'car', 'cars',
+  'wash', 'washing', 'ceramic', 'coating', 'llc', 'inc', 'co', 'company', 'the', 'and', 'of',
+  'service', 'services', 'shop', 'pro', 'pros'];
+function geoTokens(s) {
+  return String(s || '').toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+}
+function geoDistinctTokens(s) {
+  return geoTokens(s).filter((t) => t.length > 2 && GEO_GENERIC_WORDS.indexOf(t) < 0);
+}
+function geoNameMatches(displayName, want) {
+  const a = geoNameKey(displayName), b = geoNameKey(want);
+  if (!a || !b) return false;
+  if (a === b || a.includes(b) || b.includes(a)) return true;
+  // Neither contains the other — fall back to the distinctive words. Every
+  // distinctive word of the SHORTER side has to appear on the other side, so a
+  // one-word overlap only counts when that side has just the one distinctive
+  // word ("Mikey's Mobile Detailing" -> mikeys). That keeps "Mikey's Pizza" out
+  // while still catching the ordinary suffix/city drift.
+  const da = geoDistinctTokens(displayName), db = geoDistinctTokens(want);
+  if (!da.length || !db.length) return false;
+  const shorter = da.length <= db.length ? da : db;
+  const longer = da.length <= db.length ? db : da;
+  return shorter.every((t) => longer.indexOf(t) >= 0);
+}
+
+// The top few names Google returned at a point, kept tiny — it's what turns
+// "20+ everywhere" from a mystery into something the owner can act on.
+function geoTopNames(places, n) {
+  return places.slice(0, n).map((p) => ({
+    id: p.id || '', name: (p.displayName && p.displayName.text) || '',
+  }));
+}
+
+// One grid point -> the business's rank in the Places result list (1-based),
+// or GEO_NOT_FOUND_RANK when it does not appear at all.
+async function geoRankAt(sec, keyword, lat, lng, radiusM, sku) {
+  const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': sec.key,
+      'X-Goog-FieldMask': geoFieldMask(sku || geoSku(sec)),
+    },
+    body: JSON.stringify({
+      textQuery: keyword,
+      maxResultCount: 20,
+      locationBias: { circle: { center: { latitude: lat, longitude: lng }, radius: Math.max(500, Math.min(50000, radiusM)) } },
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    const err = new Error('places_' + res.status + (body ? ': ' + body.slice(0, 600) : ''));
+    err.status = res.status;
+    throw err;
+  }
+  const data = await res.json().catch(() => ({}));
+  const places = Array.isArray(data.places) ? data.places : [];
+  for (let i = 0; i < places.length; i++) {
+    const p = places[i] || {};
+    const nm = (p.displayName && p.displayName.text) || '';
+    // Place ID is the exact match and wins; the name is the fallback whenever we
+    // paid for names. Matching on a bad ID alone silently produces a grid of
+    // "20+" at every point — indistinguishable from a genuine ranking collapse —
+    // so the name keeps a mistyped ID a degraded match instead of a confident
+    // lie. On the free ID-only SKU there are no names to fall back to, which is
+    // the trade for $0: the diagnostic panel says so, and the preview call
+    // (one Pro call) is the way out.
+    if (sec.placeId && p.id === sec.placeId) return { rank: i + 1, total: places.length, by: 'id', name: nm };
+    if (geoNameMatches(nm, sec.bizName)) return { rank: i + 1, total: places.length, by: 'name', name: nm };
+  }
+  // Not found: hand back what Google DID return so the caller can show it.
+  return { rank: GEO_NOT_FOUND_RANK, total: places.length, top: geoTopNames(places, 5) };
+}
+
+// GET /api/geogrid — connection status + saved scans (newest first).
+async function apiGeogrid() {
+  const sec = await geogridSecrets();
+  const scans = (await kv().get('geogrid:scans', { type: 'json' })) || [];
+  return json({
+    ok: true,
+    connected: !!sec.key,
+    via: sec.via,
+    config: {
+      placeId: sec.placeId, bizName: sec.bizName, keyword: sec.keyword,
+      centerLat: sec.centerLat, centerLng: sec.centerLng,
+      freeOnly: sec.freeOnly, idOnly: sec.idOnly,
+      pricePro: sec.pricePro, freePro: sec.freePro, freeIds: sec.freeIds,
+    },
+    maxBatch: GEO_SCAN_MAX_POINTS,
+    // Everything the dashboard needs to answer "what will this cost me?" before
+    // a single call is made.
+    meter: await geoMeter(),
+    sku: geoSku(sec),
+    scans,
+  });
+}
+
+// POST /api/geogrid/scan — rank one BATCH of grid points. The dashboard calls
+// this repeatedly until the grid is covered. Nothing is written to KV here, so
+// a scan costs zero KV writes until it is saved.
+async function apiGeogridScan(request) {
+  const sec = await geogridSecrets();
+  if (!sec.key) return json({ ok: false, error: 'not_connected', hint: 'Add a Google Places API key first (Analytics → Map → setup).' }, 400);
+  if (!sec.placeId && !sec.bizName) return json({ ok: false, error: 'no_business', hint: 'Set the business name or Place ID to look for.' }, 400);
+
+  const data = await readJson(request);
+  const keyword = String(data.keyword || sec.keyword || '').trim().slice(0, 120);
+  if (!keyword) return json({ ok: false, error: 'no_keyword' }, 422);
+  const pts = Array.isArray(data.points) ? data.points.slice(0, GEO_SCAN_MAX_POINTS) : [];
+  if (!pts.length) return json({ ok: false, error: 'no_points' }, 422);
+  const radiusM = Math.max(500, Math.min(50000, Number(data.radiusM) || 3000));
+
+  // Check the budget BEFORE spending anything. Every point is one billable call,
+  // so a batch that would cross the free line is refused whole.
+  const sku = geoSku(sec);
+  const budget = await geoBudget(sec, sku, pts.length);
+  if (budget.blocked) return geoBudgetError(budget);
+
+  const out = [];
+  let calls = 0;          // what we actually spent, metered even if we bail early
+  let matchedName = '';   // what we matched as, the first time we matched
+  let sample = null;      // what Google returned at a point where we did NOT match
+  for (const p of pts) {
+    const lat = Number(p.lat), lng = Number(p.lng);
+    if (!isFinite(lat) || !isFinite(lng)) { out.push({ lat: 0, lng: 0, rank: GEO_NOT_FOUND_RANK, err: 'bad_point' }); continue; }
+    try {
+      calls++;
+      const r = await geoRankAt(sec, keyword, lat, lng, radiusM, sku);
+      out.push({ lat, lng, rank: r.rank, total: r.total });
+      if (r.rank < GEO_NOT_FOUND_RANK && !matchedName) matchedName = r.name || '';
+      if (r.rank >= GEO_NOT_FOUND_RANK && !sample && r.top) sample = { lat, lng, top: r.top };
+    } catch (e) {
+      // A 4xx from Google is fatal for the whole scan (bad key / API not enabled)
+      // — bail out loudly instead of silently returning a grid of "20+".
+      if (e.status && e.status >= 400 && e.status < 500) {
+        await geoMeterAdd(sku, calls);
+        return json({ ok: false, error: 'places_error', detail: String(e.message || e).slice(0, 700),
+          hint: 'Check the key is valid, the Places API (New) is enabled on the project, and billing is on.' }, 502);
+      }
+      out.push({ lat, lng, rank: GEO_NOT_FOUND_RANK, err: 'fetch_failed' });
+    }
+  }
+  const meter = await geoMeterAdd(sku, calls);
+  return json({ ok: true, results: out, matchedName, sample, lookingFor: sec.bizName, placeId: sec.placeId,
+    sku, meter, spent: sku === 'ids' ? 0 : budget.cost });
+}
+
+// The three headline numbers, computed the way the local-SEO tools define them.
+function geoStats(results) {
+  const rs = results.map((r) => Number(r.rank) || GEO_NOT_FOUND_RANK);
+  const n = rs.length || 1;
+  const found = rs.filter((r) => r < GEO_NOT_FOUND_RANK);
+  return {
+    points: rs.length,
+    // ARP — average rank across the points where the listing actually ranked.
+    arp: found.length ? +(found.reduce((a, b) => a + b, 0) / found.length).toFixed(2) : null,
+    // ATRP — average across EVERY point, counting a miss as 20+.
+    atrp: +(rs.reduce((a, b) => a + b, 0) / n).toFixed(2),
+    // SoLV — share of local voice: % of points landing in the top 3.
+    solv: +((rs.filter((r) => r <= 3).length / n) * 100).toFixed(2),
+    top3: rs.filter((r) => r <= 3).length,
+    top10: rs.filter((r) => r <= 10).length,
+    missing: rs.filter((r) => r >= GEO_NOT_FOUND_RANK).length,
+    // Points where Google returned NOTHING at all. A grid of 20+ means something
+    // completely different depending on this number: results came back and the
+    // listing wasn't among them (a ranking/matching story) vs no results at all
+    // (a keyword or API story). Worth one integer to tell them apart.
+    empty: results.filter((r) => Number(r.total) === 0).length,
+  };
+}
+
+// POST /api/geogrid/save — persist a finished scan (one KV write).
+async function apiGeogridSave(request) {
+  const data = await readJson(request);
+  const results = Array.isArray(data.results) ? data.results : [];
+  if (!results.length) return json({ ok: false, error: 'no_results' }, 422);
+  const rec = {
+    id: genId(),
+    ts: Date.now(),
+    keyword: String(data.keyword || '').slice(0, 120),
+    size: Math.max(3, Math.min(15, Number(data.size) || 7)),
+    radiusMi: +(Number(data.radiusMi) || 5).toFixed(2),
+    centerLat: Number(data.centerLat) || 0,
+    centerLng: Number(data.centerLng) || 0,
+    results: results.map((r) => ({
+      lat: +Number(r.lat).toFixed(5), lng: +Number(r.lng).toFixed(5),
+      rank: Math.max(1, Math.min(GEO_NOT_FOUND_RANK, Number(r.rank) || GEO_NOT_FOUND_RANK)),
+      total: Math.max(0, Math.min(20, Number(r.total) || 0)),
+    })),
+    // Which listing the ranks actually refer to — blank when nothing matched.
+    matchedName: String(data.matchedName || '').slice(0, 120),
+  };
+  rec.stats = geoStats(rec.results);
+  const scans = (await kv().get('geogrid:scans', { type: 'json' })) || [];
+  scans.unshift(rec);
+  await kv().put('geogrid:scans', JSON.stringify(scans.slice(0, GEO_SCAN_KEEP)));
+  return json({ ok: true, scan: rec });
+}
+
+// POST /api/geogrid/delete — drop one saved scan.
+async function apiGeogridDelete(request) {
+  const data = await readJson(request);
+  const id = String(data.id || '');
+  const scans = (await kv().get('geogrid:scans', { type: 'json' })) || [];
+  const next = scans.filter((s) => s.id !== id);
+  if (next.length !== scans.length) await kv().put('geogrid:scans', JSON.stringify(next));
+  return json({ ok: true });
+}
+
+// POST /api/geogrid/connect — save the key + what business to look for. The key
+// is verified with one real Places call so a typo surfaces immediately.
+async function apiGeogridConnect(request) {
+  const data = await readJson(request);
+  const saved = (await kv().get('geogrid:secrets', { type: 'json' })) || {};
+
+  if (typeof data.key === 'string' && data.key.trim()) {
+    const key = data.key.trim();
+    const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Goog-Api-Key': key, 'X-Goog-FieldMask': 'places.id' },
+      body: JSON.stringify({ textQuery: 'car detailing', maxResultCount: 1,
+        locationBias: { circle: { center: { latitude: 47.9129, longitude: -122.0982 }, radius: 5000 } } }),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      return json({ ok: false, error: 'key_verify_failed',
+        hint: 'Google said ' + res.status + '. Enable "Places API (New)" on the project, turn on billing, and make sure the key has no HTTP-referrer restriction (this call comes from a server).',
+        detail: body.slice(0, 600) }, 422);
+    }
+    saved.key = key;
+    await geoMeterAdd('ids', 1);   // the verify call is IDs-only: free, but counted
+  }
+
+  if (typeof data.bizName === 'string') saved.bizName = data.bizName.trim().slice(0, 80);
+  if (typeof data.placeId === 'string') {
+    const pid = data.placeId.trim().slice(0, 120);
+    // The commonest setup mistake by far: pasting the Maps CID (the long number
+    // from a maps.google.com/?cid=... link) into the Place ID box. A real Place
+    // ID is an opaque token like "ChIJ...". Reject the number outright rather
+    // than storing something that can never match.
+    if (pid && /^\d{6,}$/.test(pid)) {
+      return json({ ok: false, error: 'cid_not_place_id',
+        hint: 'That long number is a Maps CID, not a Place ID. A Place ID looks like "ChIJN1t_tDeuEmsRUsoyG83frY4". Use the "Find my Place ID" button below, or leave the field blank and match on the business name.' }, 422);
+    }
+    saved.placeId = pid;
+  }
+  if (typeof data.keyword === 'string' && data.keyword.trim()) saved.keyword = data.keyword.trim().slice(0, 120);
+  // Spend guard. freeOnly is what actually stops a charge; idOnly is what keeps
+  // scans on the free SKU in the first place. Prices are editable so a Google
+  // change can be corrected from the phone rather than a deploy.
+  if (typeof data.freeOnly === 'boolean') saved.freeOnly = data.freeOnly;
+  if (typeof data.idOnly === 'boolean') saved.idOnly = data.idOnly;
+  if (data.pricePro != null && isFinite(+data.pricePro) && +data.pricePro >= 0) saved.pricePro = +data.pricePro;
+  if (data.freePro != null && isFinite(+data.freePro) && +data.freePro >= 0) saved.freePro = Math.round(+data.freePro);
+  if (data.freeIds != null && isFinite(+data.freeIds) && +data.freeIds >= 0) saved.freeIds = Math.round(+data.freeIds);
+  if (data.centerLat != null && isFinite(+data.centerLat)) saved.centerLat = +data.centerLat;
+  if (data.centerLng != null && isFinite(+data.centerLng)) saved.centerLng = +data.centerLng;
+
+  await kv().put('geogrid:secrets', JSON.stringify(saved));
+  return json({ ok: true });
+}
+
+// POST /api/geogrid/find — look up candidate Place IDs for a business name so
+// the owner never has to go hunting through Google's Place ID Finder. Costs
+// exactly ONE Places call, and is the only place the dashboard shows a Place ID.
+async function apiGeogridFind(request) {
+  const sec = await geogridSecrets();
+  if (!sec.key) return json({ ok: false, error: 'not_connected', hint: 'Save the API key first.' }, 400);
+  const data = await readJson(request);
+  const q = String(data.q || sec.bizName || '').trim().slice(0, 120);
+  if (!q) return json({ ok: false, error: 'no_query', hint: 'Enter your business name first.' }, 422);
+  const budget = await geoBudget(sec, 'pro', 1);
+  if (budget.blocked) return geoBudgetError(budget);
+  const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': sec.key,
+      'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress',
+    },
+    body: JSON.stringify({
+      textQuery: q, maxResultCount: 8,
+      locationBias: { circle: { center: { latitude: sec.centerLat, longitude: sec.centerLng }, radius: 50000 } },
+    }),
+  });
+  await geoMeterAdd('pro', 1);
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    return json({ ok: false, error: 'places_error', detail: body.slice(0, 600),
+      hint: 'Google said ' + res.status + '. Check the key and that Places API (New) is enabled.' }, 502);
+  }
+  const d = await res.json().catch(() => ({}));
+  return json({ ok: true, results: ((d.places) || []).map((p) => ({
+    id: p.id, name: (p.displayName && p.displayName.text) || '', address: p.formattedAddress || '',
+  })) });
+}
+
+// POST /api/geogrid/preview — the "why am I 20+ everywhere?" answer. Runs the
+// EXACT same Places call one grid point makes, and returns the full result list
+// with each row flagged as a match or not. If the listing is in that list but
+// unflagged, the name we're matching on is wrong (a settings fix, one tap). If
+// it isn't in the list at all, the ranking really is that bad for that keyword.
+// Costs exactly ONE Places call.
+async function apiGeogridPreview(request) {
+  const sec = await geogridSecrets();
+  if (!sec.key) return json({ ok: false, error: 'not_connected', hint: 'Add a Google Places API key first.' }, 400);
+  const data = await readJson(request);
+  const keyword = String(data.keyword || sec.keyword || '').trim().slice(0, 120);
+  if (!keyword) return json({ ok: false, error: 'no_keyword' }, 422);
+  const lat = isFinite(Number(data.lat)) ? Number(data.lat) : sec.centerLat;
+  const lng = isFinite(Number(data.lng)) ? Number(data.lng) : sec.centerLng;
+  const radiusM = Math.max(500, Math.min(50000, Number(data.radiusM) || 3000));
+
+  // This one always bills at Pro — names and addresses are the whole point of it.
+  const budget = await geoBudget(sec, 'pro', 1);
+  if (budget.blocked) return geoBudgetError(budget);
+
+  const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': sec.key,
+      'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress',
+    },
+    body: JSON.stringify({
+      textQuery: keyword,
+      maxResultCount: 20,
+      locationBias: { circle: { center: { latitude: lat, longitude: lng }, radius: radiusM } },
+    }),
+  });
+  const meter = await geoMeterAdd('pro', 1);
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    return json({ ok: false, error: 'places_error', detail: body.slice(0, 700),
+      hint: 'Google said ' + res.status + '. Check the key, Places API (New), and billing.' }, 502);
+  }
+  const d = await res.json().catch(() => ({}));
+  const places = Array.isArray(d.places) ? d.places : [];
+  return json({
+    ok: true, keyword, lat, lng, meter,
+    lookingFor: sec.bizName, placeId: sec.placeId,
+    results: places.map((p, i) => {
+      const name = (p.displayName && p.displayName.text) || '';
+      return {
+        rank: i + 1, id: p.id || '', name, address: p.formattedAddress || '',
+        match: (!!sec.placeId && p.id === sec.placeId) || geoNameMatches(name, sec.bizName),
+      };
+    }),
+  });
+}
+
+// POST /api/geogrid/disconnect — forget the key (keeps saved scans).
+async function apiGeogridDisconnect() {
+  const saved = (await kv().get('geogrid:secrets', { type: 'json' })) || {};
+  delete saved.key;
+  await kv().put('geogrid:secrets', JSON.stringify(saved));
+  return json({ ok: true });
+}
+
+// ===========================================================================
+// 🧠 Business intelligence — the five deep-analytics reports
+// ---------------------------------------------------------------------------
+// Everything here is derived from data the app already collects (the money
+// ledger, the conversation index, the booking list). Nothing is invented and
+// nothing needs a third-party service.
+//
+//   /api/intel/customers  Retention & lifetime value + first-touch attribution.
+//   /api/intel/services   Service and vehicle profitability — the real $/hour.
+//   /api/intel/forecast   Month-end projection, booked pipeline, capacity.
+//   /api/intel/pulse      Daily KPI history + automatic anomaly detection.
+//
+// READ BUDGET: the ledger is one KV doc per month, so a report that looks back
+// 24 months is ~24 reads plus the index. That is nothing against the free tier's
+// 100k/day for a single-operator business, so these compute live and are always
+// truthful rather than serving a stale cache. The one exception is the Pulse
+// history, which has to be *recorded* daily (you cannot reconstruct "how many
+// leads were open last Tuesday" after the fact) — that is a single KV write per
+// day from the existing cron.
+// ===========================================================================
+const INTEL_MAX_MONTHS = 24;
+const PULSE_KEY = 'intel:pulse';
+const PULSE_KEEP_DAYS = 400;
+
+// Load the ledger back `months` calendar months, newest month first. Returns a
+// flat entry list with the month key attached to each row.
+async function intelLedger(months = INTEL_MAX_MONTHS) {
+  const list = await kv().list({ prefix: 'money:m:' });
+  const keys = (list.keys || []).map((k) => k.name).sort().reverse().slice(0, months);
+  const out = [];
+  for (const key of keys) {
+    const doc = await kv().get(key, { type: 'json' });
+    const m = key.slice('money:m:'.length);
+    for (const e of ((doc && doc.entries) || [])) out.push(Object.assign({ _m: m }, e));
+  }
+  return out;
+}
+function intelJobs(entries) { return entries.filter((e) => e.type === 'job'); }
+const DAY_MS = 86400000;
+function intelDays(a, b) { return Math.round((a - b) / DAY_MS); }
+// Entry timestamp we trust: the logged date is what the owner actually means,
+// `ts` is only the moment it was typed in (which can be days later).
+function intelTs(e) {
+  const d = String(e.date || '');
+  if (/^\d{4}-\d{2}-\d{2}$/.test(d)) return Date.parse(d + 'T12:00:00Z');
+  return e.ts || 0;
+}
+function median(xs) {
+  if (!xs.length) return 0;
+  const s = xs.slice().sort((a, b) => a - b), h = Math.floor(s.length / 2);
+  return s.length % 2 ? s[h] : (s[h - 1] + s[h]) / 2;
+}
+function pct(a, b) { return b ? money2((a / b) * 100) : 0; }
+
+// ---------------------------------------------------------------------------
+// 1 + 2. Customers — retention, lifetime value, win-back radar, attribution.
+// ---------------------------------------------------------------------------
+async function apiIntelCustomers() {
+  const now = Date.now();
+  const entries = await intelLedger();
+  const jobs = intelJobs(entries).filter((e) => e.phone); // anonymous jobs can't be attributed to a person
+  const anon = intelJobs(entries).length - jobs.length;
+
+  // --- group the ledger into customers -------------------------------------
+  const byPhone = new Map();
+  for (const e of jobs) {
+    const c = byPhone.get(e.phone) || { phone: e.phone, name: '', n: 0, rev: 0, first: Infinity, last: 0, tss: [] };
+    const ts = intelTs(e);
+    c.n++; c.rev += e.amount; c.tss.push(ts);
+    if (ts < c.first) c.first = ts;
+    if (ts > c.last) c.last = ts;
+    if (e.name && !c.name) c.name = e.name;
+    byPhone.set(e.phone, c);
+  }
+  const custs = [...byPhone.values()].map((c) => {
+    c.rev = money2(c.rev);
+    c.avgTicket = money2(c.rev / c.n);
+    // Personal cadence: the median gap between this customer's own visits.
+    const s = c.tss.slice().sort((a, b) => a - b), gaps = [];
+    for (let i = 1; i < s.length; i++) gaps.push(intelDays(s[i], s[i - 1]));
+    c.gaps = gaps;
+    c.cadence = gaps.length ? Math.round(median(gaps)) : 0;
+    c.daysSince = intelDays(now, c.last);
+    delete c.tss;
+    return c;
+  });
+
+  const repeat = custs.filter((c) => c.n > 1);
+  const allGaps = [].concat(...custs.map((c) => c.gaps));
+  // Fleet-wide cadence, used for one-time customers who have no personal one yet.
+  const typicalGap = allGaps.length ? Math.round(median(allGaps)) : 0;
+
+  // --- win-back radar -------------------------------------------------------
+  // "Overdue" = past their own cadence (or the fleet median) by a margin. Ranked
+  // by lifetime value, because a $2k repeat customer going quiet matters more
+  // than a one-off $80 wash.
+  const winback = custs
+    .map((c) => {
+      const due = c.cadence || typicalGap;
+      if (!due) return null;
+      const over = c.daysSince - due;
+      if (over < Math.max(14, due * 0.15)) return null;
+      return { phone: c.phone, name: c.name, rev: c.rev, n: c.n, avgTicket: c.avgTicket,
+        daysSince: c.daysSince, due, over, lapsed: c.daysSince > due * 2.5 };
+    })
+    .filter(Boolean)
+    .sort((a, b) => (b.rev / Math.max(1, b.daysSince)) - (a.rev / Math.max(1, a.daysSince)))
+    .slice(0, 25);
+
+  // --- cohorts: group customers by the month of their FIRST job -------------
+  // Classic retention grid. cell[k] = how many of that cohort came back in
+  // month k after acquisition, so you can see whether newer customers stick
+  // around better or worse than older ones.
+  const cohorts = new Map();
+  for (const c of custs) {
+    if (!isFinite(c.first)) continue;
+    const key = new Date(c.first).toISOString().slice(0, 7);
+    const row = cohorts.get(key) || { m: key, size: 0, rev: 0, cells: {} };
+    row.size++; row.rev += c.rev;
+    cohorts.set(key, row);
+  }
+  for (const e of jobs) {
+    const c = byPhone.get(e.phone);
+    if (!c || !isFinite(c.first)) continue;
+    const key = new Date(c.first).toISOString().slice(0, 7);
+    const row = cohorts.get(key);
+    if (!row) continue;
+    const off = Math.max(0, Math.round(intelDays(intelTs(e), c.first) / 30));
+    (row.cells[off] = row.cells[off] || { seen: new Set(), rev: 0 });
+    row.cells[off].seen.add(e.phone);
+    row.cells[off].rev += e.amount;
+  }
+  const cohortRows = [...cohorts.values()]
+    .sort((a, b) => (a.m < b.m ? 1 : -1))
+    .slice(0, 12)
+    .map((r) => ({
+      m: r.m, size: r.size, rev: money2(r.rev), ltv: money2(r.rev / r.size),
+      cells: Object.keys(r.cells).map(Number).sort((a, b) => a - b).slice(0, 13)
+        .map((k) => ({ k, n: r.cells[k].seen.size, pct: pct(r.cells[k].seen.size, r.size), rev: money2(r.cells[k].rev) })),
+    }));
+
+  // --- attribution: first-touch channel → leads → won → actual revenue ------
+  const index = await loadIndex();
+  const SOURCES = ['quote', 'booking', 'call', 'text'];
+  const srcOf = (row) => {
+    const s = row.source || '';
+    if (SOURCES.includes(s)) return s;
+    if ((row.tags || []).includes('booking')) return 'booking'; // pre-`source` rows
+    return 'unknown';
+  };
+  const bySource = {};
+  const bucket = (k) => (bySource[k] = bySource[k] || { src: k, leads: 0, won: 0, lost: 0, customers: 0, jobs: 0, rev: 0 });
+  const revByPhone = new Map(custs.map((c) => [c.phone, c]));
+  for (const row of index) {
+    const k = srcOf(row);
+    const b = bucket(k);
+    b.leads++;
+    if (row.status === 'won') b.won++;
+    if (row.status === 'lost') b.lost++;
+    const c = revByPhone.get(row.phone);
+    if (c) { b.customers++; b.jobs += c.n; b.rev += c.rev; }
+  }
+  // Marketing spend is logged as a single expense category, not per channel, so
+  // cost per acquisition is reported BLENDED. Splitting it across channels would
+  // be a number we made up.
+  const spendWindowStart = now - 365 * DAY_MS;
+  const marketing = entries.filter((e) => e.type === 'exp' && e.cat === 'marketing' && intelTs(e) >= spendWindowStart);
+  const marketingSpend = money2(marketing.reduce((a, e) => a + e.amount, 0));
+  const newCustomers12mo = custs.filter((c) => c.first >= spendWindowStart).length;
+  const sources = Object.values(bySource).map((b) => ({
+    src: b.src, leads: b.leads, won: b.won, lost: b.lost, customers: b.customers,
+    jobs: b.jobs, rev: money2(b.rev),
+    winRate: pct(b.won, b.leads),
+    revPerLead: b.leads ? money2(b.rev / b.leads) : 0,
+  })).sort((a, b) => b.rev - a.rev);
+
+  const totalRev = money2(custs.reduce((a, c) => a + c.rev, 0));
+  return json({
+    ok: true,
+    totals: {
+      customers: custs.length,
+      repeatCustomers: repeat.length,
+      repeatRate: pct(repeat.length, custs.length),
+      revenue: totalRev,
+      ltv: custs.length ? money2(totalRev / custs.length) : 0,
+      repeatLtv: repeat.length ? money2(repeat.reduce((a, c) => a + c.rev, 0) / repeat.length) : 0,
+      oneTimeLtv: (custs.length - repeat.length) ? money2(custs.filter((c) => c.n === 1).reduce((a, c) => a + c.rev, 0) / (custs.length - repeat.length)) : 0,
+      avgTicket: custs.length ? money2(totalRev / jobs.length) : 0,
+      typicalGap, anonJobs: anon,
+      // Share of revenue from the top 20% of customers — concentration risk.
+      top20Share: (() => {
+        const s = custs.map((c) => c.rev).sort((a, b) => b - a);
+        const cut = Math.max(1, Math.ceil(s.length * 0.2));
+        return pct(s.slice(0, cut).reduce((a, b) => a + b, 0), totalRev);
+      })(),
+    },
+    top: custs.slice().sort((a, b) => b.rev - a.rev).slice(0, 15)
+      .map((c) => ({ phone: c.phone, name: c.name, n: c.n, rev: c.rev, avgTicket: c.avgTicket, daysSince: c.daysSince, cadence: c.cadence })),
+    winback, cohorts: cohortRows,
+    attribution: { sources, marketingSpend, newCustomers12mo,
+      cpa: newCustomers12mo ? money2(marketingSpend / newCustomers12mo) : 0 },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 3. Services — what each service and vehicle size is really worth per hour.
+// ---------------------------------------------------------------------------
+async function apiIntelServices() {
+  const entries = await intelLedger();
+  const jobs = intelJobs(entries);
+
+  const group = (rows, keyFn) => {
+    const m = new Map();
+    for (const e of rows) {
+      const k = keyFn(e); if (!k) continue;
+      const g = m.get(k) || { k, n: 0, rev: 0, hours: 0, hoursN: 0, revTimed: 0, mat: 0, jp: 0, tickets: [] };
+      g.n++; g.rev += e.amount; g.tickets.push(e.amount);
+      if (e.hours > 0) { g.hours += e.hours; g.hoursN++; g.revTimed += e.amount; }
+      if (e.mat > 0) g.mat += e.mat;
+      if (e.jp > 0) g.jp += e.jp;
+      m.set(k, g);
+    }
+    return [...m.values()].map((g) => {
+      const cost = g.mat + g.jp;
+      // Effective hourly rate pairs the revenue of the timed jobs with the hours
+      // of those same jobs. Dividing TOTAL revenue by the hours of the subset
+      // that happens to be timed would inflate it every time a job is logged
+      // without hours.
+      return {
+        k: g.k, n: g.n, rev: money2(g.rev), avg: money2(g.rev / g.n),
+        median: money2(median(g.tickets)),
+        hours: money2(g.hours), hoursN: g.hoursN,
+        perHour: g.hours > 0 ? money2(g.revTimed / g.hours) : null,
+        mat: money2(g.mat), jp: money2(g.jp),
+        margin: g.rev > 0 ? pct(g.rev - cost, g.rev) : null,
+        profit: money2(g.rev - cost),
+      };
+    }).sort((a, b) => b.rev - a.rev);
+  };
+
+  const services = group(jobs, (e) => e.service || '');
+  const vehicles = group(jobs, (e) => e.veh || '');
+
+  // --- price realization: what the booking quoted vs what was actually paid --
+  // Matched on phone + a ±10-day window, because the job is logged on the day it
+  // was done and the booking was made earlier.
+  const bookings = await loadBookings();
+  const pairs = [];
+  for (const b of bookings) {
+    if (!b.phone || !b.estimate) continue;
+    const bt = b.apptAt || Date.parse((b.date || '') + 'T12:00:00Z') || b.createdAt || 0;
+    if (!bt) continue;
+    let best = null, bestGap = Infinity;
+    for (const e of jobs) {
+      if (e.phone !== b.phone) continue;
+      const gap = Math.abs(intelTs(e) - bt);
+      if (gap < bestGap && gap <= 10 * DAY_MS) { best = e; bestGap = gap; }
+    }
+    if (best) pairs.push({ name: b.name || '', service: b.serviceName || b.service || '',
+      quoted: money2(b.estimate), paid: money2(best.amount),
+      delta: money2(best.amount - b.estimate), date: best.date });
+  }
+  const realization = pairs.length ? {
+    n: pairs.length,
+    quoted: money2(pairs.reduce((a, p) => a + p.quoted, 0)),
+    paid: money2(pairs.reduce((a, p) => a + p.paid, 0)),
+    avgDelta: money2(pairs.reduce((a, p) => a + p.delta, 0) / pairs.length),
+    under: pairs.filter((p) => p.delta < -1).length,
+    over: pairs.filter((p) => p.delta > 1).length,
+    exact: pairs.filter((p) => Math.abs(p.delta) <= 1).length,
+    worst: pairs.slice().sort((a, b) => a.delta - b.delta).slice(0, 6),
+  } : null;
+
+  const timed = jobs.filter((e) => e.hours > 0);
+  const revenue = money2(jobs.reduce((a, e) => a + e.amount, 0));
+
+  // Per-service margin above only subtracts what is booked AGAINST that job
+  // (materials + helper pay), so it lands in the 90s and would flatter every
+  // service equally. Overhead — fuel, supplies, insurance, phone, marketing —
+  // is a real cost of doing the work but isn't attached to any one job, so it is
+  // spread evenly across jobs here and reported separately. That gives an honest
+  // "what a job is actually worth after running the business" number without
+  // pretending we know which job burned which gallon of fuel.
+  const overhead = money2(entries.filter((e) => e.type === 'exp').reduce((a, e) => a + e.amount, 0));
+  const overheadPerJob = jobs.length ? money2(overhead / jobs.length) : 0;
+  const directCost = money2(jobs.reduce((a, e) => a + (e.mat || 0) + (e.jp || 0), 0));
+
+  return json({
+    ok: true,
+    services: services.map((s) => Object.assign({}, s, {
+      trueProfit: money2(s.profit - overheadPerJob * s.n),
+      trueMargin: s.rev > 0 ? pct(s.profit - overheadPerJob * s.n, s.rev) : null,
+      trueProfitPerJob: money2(s.profit / s.n - overheadPerJob),
+    })),
+    vehicles, realization,
+    totals: {
+      jobs: jobs.length,
+      revenue,
+      timedJobs: timed.length,
+      hours: money2(timed.reduce((a, e) => a + e.hours, 0)),
+      blendedPerHour: timed.length
+        ? money2(timed.reduce((a, e) => a + e.amount, 0) / timed.reduce((a, e) => a + e.hours, 0)) : null,
+      untagged: jobs.filter((e) => !e.service).length,
+      overhead, overheadPerJob, directCost,
+      netProfit: money2(revenue - directCost - overhead),
+      netMargin: revenue ? pct(revenue - directCost - overhead, revenue) : null,
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 4. Forecast — where the month lands, what's already booked, spare capacity.
+// ---------------------------------------------------------------------------
+async function apiIntelForecast() {
+  const cfg = await loadConfig();
+  const now = Date.now();
+  const todayStr = localDateStr(now, cfg.tz);
+  const curMonth = todayStr.slice(0, 7);
+  const entries = await intelLedger(13);
+  const jobs = intelJobs(entries);
+
+  const dim = new Date(+curMonth.slice(0, 4), +curMonth.slice(5, 7), 0).getDate();
+  const dayOfMonth = +todayStr.slice(8, 10);
+  const daysLeft = dim - dayOfMonth;
+
+  const mtd = jobs.filter((e) => e._m === curMonth);
+  const mtdRev = money2(mtd.reduce((a, e) => a + e.amount, 0));
+
+  // Weekday earning profile from the trailing 90 days — a Saturday is worth far
+  // more than a Tuesday in this business, so a flat "daily average × days left"
+  // projection would be badly wrong near a weekend.
+  const since = now - 90 * DAY_MS;
+  const dowRev = [0, 0, 0, 0, 0, 0, 0], dowDays = [0, 0, 0, 0, 0, 0, 0];
+  const seenDay = new Set();
+  for (const e of jobs) {
+    const ts = intelTs(e); if (ts < since) continue;
+    const d = localDow(ts, cfg.tz);
+    dowRev[d] += e.amount;
+    const ds = String(e.date || '');
+    if (!seenDay.has(ds)) { seenDay.add(ds); }
+  }
+  // Count how many of each weekday actually occurred in the window, so the
+  // average is per-calendar-weekday and not per-worked-day.
+  for (let t = since; t <= now; t += DAY_MS) dowDays[localDow(t, cfg.tz)]++;
+  const dowAvg = dowRev.map((r, i) => (dowDays[i] ? r / dowDays[i] : 0));
+
+  let projectedRest = 0;
+  for (let d = dayOfMonth + 1; d <= dim; d++) {
+    const ts = Date.parse(curMonth + '-' + String(d).padStart(2, '0') + 'T12:00:00Z');
+    projectedRest += dowAvg[localDow(ts, cfg.tz)] || 0;
+  }
+  const projected = money2(mtdRev + projectedRest);
+
+  // Prior full months, for context and the pace comparison.
+  const monthTotals = {};
+  for (const e of jobs) monthTotals[e._m] = money2((monthTotals[e._m] || 0) + e.amount);
+  const priorMonths = Object.keys(monthTotals).filter((m) => m < curMonth).sort().reverse().slice(0, 12)
+    .map((m) => ({ m, rev: monthTotals[m] }));
+  const avgPrior = priorMonths.length ? money2(priorMonths.reduce((a, x) => a + x.rev, 0) / priorMonths.length) : 0;
+  // Same-day-of-month pace last month: is this month ahead or behind?
+  const lastM = prevMonthKey(curMonth);
+  const lastMSameDay = money2(jobs.filter((e) => e._m === lastM && +String(e.date).slice(8, 10) <= dayOfMonth)
+    .reduce((a, e) => a + e.amount, 0));
+
+  // Already-booked pipeline (future confirmed/pending appointments).
+  const bookings = await loadBookings();
+  const upcoming = bookings.filter((b) => (b.apptAt || 0) > now && b.status !== 'cancelled' && b.status !== 'declined');
+  const bookedThisMonth = upcoming.filter((b) => String(b.date || '').slice(0, 7) === curMonth);
+  const pipeline = money2(upcoming.reduce((a, b) => a + (b.estimate || 0), 0));
+
+  // Capacity: worked days and hours vs what's available.
+  const workedDays = new Set(mtd.map((e) => e.date)).size;
+  const mtdHours = money2(mtd.filter((e) => e.hours > 0).reduce((a, e) => a + e.hours, 0));
+  const dailyCap = 8;
+  return json({
+    ok: true, month: curMonth, today: todayStr, dayOfMonth, daysInMonth: dim, daysLeft,
+    mtd: { revenue: mtdRev, jobs: mtd.length, workedDays, hours: mtdHours,
+      perWorkedDay: workedDays ? money2(mtdRev / workedDays) : 0,
+      utilization: workedDays ? pct(mtdHours, workedDays * dailyCap) : 0 },
+    projection: { revenue: projected, fromBooked: money2(bookedThisMonth.reduce((a, b) => a + (b.estimate || 0), 0)),
+      vsLastMonth: monthTotals[lastM] ? pct(projected - monthTotals[lastM], monthTotals[lastM]) : null,
+      vsAverage: avgPrior ? pct(projected - avgPrior, avgPrior) : null },
+    pace: { lastMonthSameDay: lastMSameDay,
+      delta: lastMSameDay ? pct(mtdRev - lastMSameDay, lastMSameDay) : null },
+    pipeline: { total: pipeline, count: upcoming.length, thisMonth: bookedThisMonth.length },
+    dow: [0, 1, 2, 3, 4, 5, 6].map((i) => ({ d: i, avg: money2(dowAvg[i]) })),
+    priorMonths, avgPrior,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// 5. Pulse — recorded daily KPI history + anomaly detection.
+// ---------------------------------------------------------------------------
+// Some of this genuinely cannot be reconstructed after the fact (how many leads
+// were open on a given day, what the reply time was that day), so the cron
+// records one row per day. One KV write daily.
+async function recordPulse(now = Date.now()) {
+  const cfg = await loadConfig();
+  const day = localDateStr(now, cfg.tz);
+  const doc = (await kv().get(PULSE_KEY, { type: 'json' })) || { days: [] };
+  if (doc.days.length && doc.days[doc.days.length - 1].d === day) return false; // already recorded today
+
+  const index = await loadIndex();
+  const active = index.filter((t) => !t.archived);
+  const month = day.slice(0, 7);
+  const mdoc = await loadMonth(month);
+  const todayJobs = ((mdoc && mdoc.entries) || []).filter((e) => e.type === 'job' && e.date === day);
+
+  doc.days.push({
+    d: day,
+    rev: money2(todayJobs.reduce((a, e) => a + e.amount, 0)),
+    jobs: todayJobs.length,
+    openLeads: active.filter((t) => t.status === 'new' || t.status === 'active').length,
+    won: active.filter((t) => t.status === 'won').length,
+    waiting: active.filter(rowAwaitingReply).length,
+    newConvos: index.filter((t) => t.firstTs && localDateStr(t.firstTs, cfg.tz) === day).length,
+  });
+  doc.days = doc.days.slice(-PULSE_KEEP_DAYS);
+  await kv().put(PULSE_KEY, JSON.stringify(doc));
+  return true;
+}
+
+async function apiIntelPulse() {
+  const doc = (await kv().get(PULSE_KEY, { type: 'json' })) || { days: [] };
+  const days = doc.days || [];
+  const cfg = await loadConfig();
+  const now = Date.now();
+
+  // Revenue history comes from the ledger (complete and authoritative) rather
+  // than the recorded rows, so the trend is right even for days before Pulse was
+  // switched on or days the cron missed.
+  const entries = await intelLedger(13);
+  const jobs = intelJobs(entries);
+  const revByDay = {};
+  for (const e of jobs) revByDay[e.date] = money2((revByDay[e.date] || 0) + e.amount);
+
+  const series = [];
+  for (let i = 89; i >= 0; i--) {
+    const d = localDateStr(now - i * DAY_MS, cfg.tz);
+    const rec = days.filter((x) => x.d === d)[0] || null;
+    series.push({ d, rev: revByDay[d] || 0, jobs: jobs.filter((e) => e.date === d).length,
+      openLeads: rec ? rec.openLeads : null, waiting: rec ? rec.waiting : null });
+  }
+
+  // --- anomaly detection ----------------------------------------------------
+  // Compare the last 7 days against the 28 before them. Flag a metric only when
+  // the move is both large in percentage terms AND large relative to the noise
+  // in the baseline (a >2σ move), so a normally spiky metric doesn't cry wolf.
+  const win = (arr, from, to, f) => arr.slice(from, to).map(f).filter((x) => x != null);
+  const mean = (xs) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
+  const sd = (xs) => { if (xs.length < 2) return 0; const m = mean(xs); return Math.sqrt(mean(xs.map((x) => (x - m) * (x - m)))); };
+  const check = (label, f, opts) => {
+    const recent = win(series, series.length - 7, series.length, f);
+    const base = win(series, series.length - 35, series.length - 7, f);
+    if (recent.length < 4 || base.length < 10) return null;
+    const r = mean(recent), b = mean(base), s = sd(base);
+    if (!b && !r) return null;
+    const change = b ? ((r - b) / b) * 100 : (r > 0 ? 100 : 0);
+    const z = s > 0 ? (r - b) / s : (Math.abs(change) > 40 ? (r > b ? 3 : -3) : 0);
+    if (Math.abs(change) < 20 || Math.abs(z) < 1.6) return null;
+    const good = opts.higherIsBetter ? change > 0 : change < 0;
+    return { label, metric: opts.metric, recent: money2(r), base: money2(b),
+      change: money2(change), z: money2(z), good, hint: opts.hint };
+  };
+  const anomalies = [
+    check('Daily revenue', (x) => x.rev, { metric: 'revenue', higherIsBetter: true,
+      hint: 'Revenue over the last 7 days vs the 4 weeks before.' }),
+    check('Jobs per day', (x) => x.jobs, { metric: 'jobs', higherIsBetter: true,
+      hint: 'Volume moved, independent of ticket size.' }),
+    check('Open leads', (x) => x.openLeads, { metric: 'leads', higherIsBetter: true,
+      hint: 'Leads sitting in new/active — the top of the funnel.' }),
+    check('Waiting on you', (x) => x.waiting, { metric: 'waiting', higherIsBetter: false,
+      hint: 'Conversations where the customer spoke last.' }),
+  ].filter(Boolean).sort((a, b) => Math.abs(b.z) - Math.abs(a.z));
+
+  const last7 = series.slice(-7), prev7 = series.slice(-14, -7);
+  const sum = (xs, f) => money2(xs.reduce((a, x) => a + (f(x) || 0), 0));
+  return json({
+    ok: true, series, anomalies,
+    recorded: days.length,
+    firstRecorded: days.length ? days[0].d : null,
+    week: {
+      revenue: sum(last7, (x) => x.rev), prevRevenue: sum(prev7, (x) => x.rev),
+      jobs: sum(last7, (x) => x.jobs), prevJobs: sum(prev7, (x) => x.jobs),
+      best: series.slice().sort((a, b) => b.rev - a.rev)[0] || null,
+    },
+  });
+}
+
 // AI content generator (Grow hub → SEO / Content Studio). One flexible endpoint
 // that turns a task + short context into ready-to-use marketing copy via Gemini.
 async function apiAiGenerate(request) {
@@ -1505,6 +3200,18 @@ async function handleEmailIn(request) {
   // De-dupe on a provided messageId if the automation retries.
   const mid = data.messageId ? String(data.messageId).slice(0, 200) : '';
   if (mid) { if (list.some((e) => e.mid === mid)) return json({ ok: true, duplicate: true }); email.mid = mid; }
+
+  // Mikey replying to a customer alert isn't inbox mail — it's him answering a
+  // customer. Run it through the assist loop and don't file it in the inbox.
+  // Checked AFTER the de-dupe so a retrying forwarder can't send the same reply
+  // twice; the assist itself is queued, so a stray double would surface as a
+  // second queued message he can cancel rather than a second text going out.
+  const assistPhone = assistIsOwnerReply(cfg, email);
+  if (assistPhone) {
+    if (mid) { list.unshift({ id: email.id, mid, assist: true, date: email.date, unread: 0, from: email.from, subject: email.subject, snippet: '' }); if (list.length > 60) list.length = 60; await kv().put('emails', JSON.stringify(list)); }
+    await handleAssistEmail(cfg, email, assistPhone);
+    return json({ ok: true, assist: true });
+  }
   list.unshift(email);
   if (list.length > 60) list.length = 60;
   await kv().put('emails', JSON.stringify(list));
@@ -1527,7 +3234,15 @@ async function apiEmailSetup(request) {
     CFG_CACHE = next;
   }
   const list = (await kv().get('emails', { type: 'json' })) || [];
-  return json({ ok: true, url: `${publicBase()}/email-in`, token, connected: list.length > 0, count: list.length, lastAt: list[0] ? list[0].date : null });
+  const url = `${publicBase()}/email-in`;
+  return json({
+    ok: true, url, token,
+    connected: list.length > 0, count: list.length, lastAt: list[0] ? list[0].date : null,
+    // Ready to paste into script.google.com — this is what turns "reply to the
+    // alert" into an answered customer.
+    script: assistAppsScript(url, token),
+    assistReady: !!(ENV.RESEND_API_KEY && ENV.ALERT_EMAIL),
+  });
 }
 async function apiEmailRead(request) {
   const data = await readJson(request);
@@ -1790,19 +3505,72 @@ async function apiAiSummary(request) {
 // Mikey's voice AND in how he's been editing recent drafts, so it keeps getting
 // sharper the more he uses it ("learns from your edits").
 async function generateReply(thread, cfg, hint) {
-  const prompt =
+  const spend = await customerSpend(thread.phone, cfg);
+  const voice = await loadVoice();
+  // Which situation is this? Take it from what he's being asked to write about —
+  // the hint if he gave one, otherwise the customer's last message.
+  const msgs = thread.messages || [];
+  const lastIn = [...msgs].reverse().find((m) => m.dir === 'in');
+  // The same text also drives which of his real texts get retrieved below, so a
+  // "how much for a truck" pulls his actual truck-pricing replies, not just any
+  // price text.
+  const situation = hint || (lastIn && lastIn.body) || '';
+  const bucket = voiceBucket(situation);
+  // Resolve the async context blocks once, then reuse them across attempts.
+  const rulesCtx = await rulesContext();
+  const editsCtx = await editsContext(bucket);
+  const build = (extra) =>
     businessContext(cfg) +
-    (await editsContext()) +
+    rulesCtx +
+    customerContext(thread, spend) +
+    voiceContext(voice, bucket, situation) +
+    editsCtx +
     `You are replying to a customer by text for Mikey's Mobile Detailing. ` +
-    `Write ONE friendly, professional reply (1-3 short complete sentences, no greeting line, no signature, ready to send). ` +
-    `Ground it in the business playbook above — use the real services, pricing ranges and voice, and never contradict them. ` +
+    `Write ONE reply (1-3 short complete sentences, no greeting line, no signature, ready to send). ` +
+    `It must be indistinguishable from the real texts above — same length, same rhythm, same punctuation habits. ` +
+    `Ground it in the business playbook — use the real services, pricing ranges and voice, and never contradict them. ` +
     `Do not make up a specific price or appointment time on your own. ` +
     `BUT if the goal below already specifies details the owner has decided — a price, a day, a time, an answer — use those exactly as given; that is the owner telling you what to say. ` +
-    `Finish every sentence — do not cut off mid-thought. ` +
+    `Write it the way a busy person texts, not the way an assistant writes. Finish every sentence. ` +
     (hint ? `Goal of this reply (write a text that accomplishes exactly this): ${hint}. ` : '') +
+    (extra || '') +
     `\n\nConversation so far:\n${transcript(thread)}\n\nReply:`;
-  const text = await geminiGenerate(prompt, { temperature: 0.7, maxTokens: 800 });
-  return text.replace(/^["']|["']$/g, '').trim();
+
+  let text = await aiGenerate(build(''), { tier: 'voice', maxTokens: 800, temperature: 0.45 });
+  text = cleanReply(text);
+  // One regeneration if the draft gave itself away — either a stock AI phrase, or a
+  // shape outside his measured habits (far too long, an emoji he'd never use, a
+  // greeting he never writes). Naming the exact offence beats asking again nicely,
+  // because it can't fix what it hasn't been told is wrong.
+  const tell = findTell(text);
+  const off = tell
+    ? `used the phrase "${tell}", which is a dead giveaway that a machine wrote it`
+    : styleViolation(text, voice && voice.style);
+  if (off) {
+    try {
+      const retry = await aiGenerate(
+        build(`CRITICAL: your previous attempt ${off}. Mikey does not write like that. Rewrite it to read exactly like the real texts above, and avoid any customer-service filler. `),
+        { tier: 'voice', maxTokens: 800, temperature: 0.45 },
+      );
+      const cleaned = cleanReply(retry);
+      // Take the retry even if it still trips a rule — it was written under the
+      // stricter instruction, so it is the better of the two either way.
+      if (cleaned) text = cleaned;
+    } catch { /* keep the first attempt rather than failing the draft */ }
+  }
+  return text;
+}
+
+// Strip the wrappers models like to add, and normalise the punctuation he
+// doesn't use. Em-dashes are the single most recognisable AI tell in a text.
+function cleanReply(raw) {
+  let t = String(raw || '').trim();
+  t = t.replace(/^```[a-z]*\s*|\s*```$/g, '').trim();
+  t = t.replace(/^["']|["']$/g, '').trim();
+  t = t.replace(/\s*—\s*/g, ' - ');   // em-dash → the hyphen he actually types
+  t = t.replace(/\s*–\s*/g, ' - ');   // en-dash, same
+  t = t.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n');
+  return t.trim();
 }
 
 async function apiAiDraft(request) {
@@ -1823,6 +3591,7 @@ async function apiAiDraft(request) {
       const voice = (cfg.playbook && cfg.playbook.tone) ? `Write in this texting voice:\n${cfg.playbook.tone}\n\n` : '';
       const prompt =
         voice +
+        (await rulesContext()) +
         `You are polishing a short text message the user is about to send a customer. ` +
         `Rewrite it so it reads clearly and sounds great: fix spelling, grammar and punctuation, and reword any awkward, clunky or confusing phrasing so every sentence makes sense and flows naturally. ` +
         `KEEP the user's exact meaning and intent. Keep it casual and friendly like a real text — never stiff, formal or corporate — and keep it about the same length (it's a text, so stay concise). ` +
@@ -1849,14 +3618,18 @@ async function apiAiTriage() {
   const now = Date.now();
   const lines = open.map((e) => {
     const ago = humanAgo(now - (e.lastTs || now));
-    const who = e.lastDir === 'in' ? `WAITING ${ago} for reply` : `you replied ${ago} ago`;
+    const who = e.lastDir !== 'in' ? `you replied ${ago} ago`
+      : e.awaitingReply === false ? `they wrote ${ago} ago but nothing is owed — ${e.closedReason || 'conversation wrapped up'}`
+      : `WAITING ${ago} for reply`;
     return `- ${e.name || e.phone} [${e.status || 'no status'}] ${who}: "${e.lastBody || ''}"`;
   }).join('\n');
   const prompt =
     businessContext(cfg) +
     `You are the operations assistant for Mikey's Mobile Detailing. Below are the open SMS threads. ` +
     `Give a short, prioritized action list (max 6 bullets) of who to reply to first and the suggested next step. ` +
-    `Customers who are WAITING for a reply are top priority; longest waits first. Be concise and practical. ` +
+    `Customers who are WAITING for a reply are top priority; longest waits first. ` +
+    `Threads marked "nothing is owed" have already wrapped up (a thank-you, an acknowledgement) — leave them alone, never suggest replying to or chasing them. ` +
+    `Be concise and practical. ` +
     `Keep each bullet to one complete sentence and finish your final bullet.\n\n${lines}`;
   try {
     const briefing = await geminiGenerate(prompt, { maxTokens: 2000 });
@@ -1881,7 +3654,7 @@ async function apiAiTriage() {
 // There is deliberately no hard-delete: "delete / remove / clear out" a
 // conversation maps to ARCHIVE, so every action is reversible.
 // ===========================================================================
-const CMD_ACTIONS = ['mark_read', 'mark_unread', 'archive', 'unarchive', 'set_status', 'pin', 'unpin', 'block', 'unblock', 'emails_mark_read', 'none'];
+const CMD_ACTIONS = ['mark_read', 'mark_unread', 'archive', 'unarchive', 'set_status', 'pin', 'unpin', 'block', 'unblock', 'emails_mark_read', 'hold', 'release', 'none'];
 const CMD_STATUSES = ['new', 'active', 'won', 'lost'];
 
 // Resolve a plan's filter into the list of index rows it applies to. Pure (no
@@ -1919,8 +3692,49 @@ function describeCount(action, n, status) {
     case 'block':       return 'Blocked ' + n + ' number' + (n > 1 ? 's' : '') + '.';
     case 'unblock':     return 'Unblocked ' + n + ' number' + (n > 1 ? 's' : '') + '.';
     case 'set_status':  return 'Moved ' + c + ' to "' + (status || '') + '".';
+    case 'hold':        return 'Holding ' + c + ' — I won\'t chase them until then.';
+    case 'release':     return 'Back on your list: ' + c + '.';
     default:            return 'Done — ' + c + ' updated.';
   }
+}
+
+// ---------------------------------------------------------------------------
+// Standing instructions ("Sabine's handled, I'm doing her car in August")
+// ---------------------------------------------------------------------------
+// A hold is a snooze that remembers WHY. The follow-up engine already refuses to
+// plan anything while followup.snoozeUntil is in the future, so the mechanism
+// exists; what's new is that the reason travels with it, shows on the board, and
+// goes into the AI advisor's snapshot — so the AI stops recommending someone
+// because it knows the reason, not because they were hidden from it.
+//
+// Two things end a hold on their own: the date passing, and the customer texting
+// in. A person reaching out always beats a note you left yourself.
+const HOLD_MAX_MS = 400 * 86400000; // a year and a bit — anything longer is a parse mistake
+
+// Turn whatever the model returned into a timestamp. Accepts an ISO date
+// ("2026-08-01"), a full timestamp, or a plain number of days.
+function parseHoldUntil(until, days, now = Date.now()) {
+  if (days != null && !isNaN(+days) && +days > 0) return now + Math.min(+days * 86400000, HOLD_MAX_MS);
+  if (typeof until === 'number' && until > now) return Math.min(until, now + HOLD_MAX_MS);
+  const s = String(until || '').trim();
+  if (!s) return 0;
+  // A bare date means "the start of that day", local to the business.
+  const bare = /^\d{4}-\d{2}-\d{2}$/.test(s) ? s + 'T09:00:00' : s;
+  const t = Date.parse(bare);
+  if (isNaN(t)) return 0;
+  if (t <= now) return 0;
+  return Math.min(t, now + HOLD_MAX_MS);
+}
+
+function holdIsActive(fu, now = Date.now()) {
+  return !!(fu && fu.snoozeUntil && fu.snoozeUntil > now);
+}
+
+// One-line description used in the preview, the board snapshot and the UI.
+function describeHold(fu, cfg) {
+  if (!holdIsActive(fu)) return '';
+  const when = new Date(fu.snoozeUntil).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: (cfg && cfg.tz) || 'America/Los_Angeles' });
+  return 'on hold until ' + when + (fu.holdReason ? ' — ' + fu.holdReason : '');
 }
 
 // Gemini: plain English -> ONE structured bulk action. Strict JSON, enum-locked.
@@ -1931,8 +3745,14 @@ async function interpretCommand(text) {
     `{"action": one of ${JSON.stringify(CMD_ACTIONS)}, ` +
     `"status": one of ${JSON.stringify(CMD_STATUSES)} (ONLY when action is "set_status", else null), ` +
     `"filter": {"match": "all"|"unread"|"read"|"archived"|"active", "status": null or one of ${JSON.stringify(CMD_STATUSES)}, "olderThanDays": null or number, "newerThanDays": null or number, "nameOrPhone": null or string}, ` +
+    `"until": null or "YYYY-MM-DD" (ONLY for action "hold"), ` +
+    `"holdDays": null or number (ONLY for action "hold", when they say a duration rather than a date), ` +
+    `"reason": null or a SHORT phrase in the owner's own words explaining why (ONLY for action "hold"), ` +
     `"reply": "one short friendly sentence stating exactly what you will do"}\n\n` +
+    `Today is ${new Date().toISOString().slice(0, 10)}.\n\n` +
     `Rules:\n` +
+    `- HOLD is the important one. When the owner says a customer is handled, taken care of, doesn't need a reply, or shouldn't be chased until some point — "Sabine doesn't need responded to, I'm doing her car in August", "leave Rick alone till spring", "don't bug the Hendersons for a couple weeks" — use action "hold", put the person in filter.nameOrPhone, set "until" to the date it should end (pick a sensible date: a bare month means the 1st of that month; "spring" means Mar 1; if they only give a duration use holdDays instead), and put their reason in "reason" as a short phrase ("doing her car in August"). Set filter.match to "all" so it works even if the thread is archived.\n` +
+    `- "start chasing X again / un-hold / never mind about X / put X back" -> release.\n` +
     `- "mark as read / mark read / clear unread" -> mark_read. "mark unread" -> mark_unread.\n` +
     `- "delete / remove / clear out / get rid of / hide / clean up" a conversation -> archive. This dashboard has NO hard delete; archiving is how threads are removed. "unarchive / restore / bring back" -> unarchive.\n` +
     `- "mark won / mark lost / mark new / mark active / move to X" -> set_status with that status.\n` +
@@ -1949,6 +3769,13 @@ async function interpretCommand(text) {
   if (!CMD_ACTIONS.includes(p.action)) p.action = 'none';
   if (p.action !== 'set_status') p.status = null;
   p.filter = (p.filter && typeof p.filter === 'object') ? p.filter : {};
+  if (p.action === 'hold') {
+    p.holdUntil = parseHoldUntil(p.until, p.holdDays);
+    p.reason = String(p.reason || '').trim().slice(0, 140);
+    // A hold with no usable date is worse than none — it would silence someone
+    // forever. Fall back to asking rather than guessing.
+    if (!p.holdUntil) { p.action = 'none'; p.reply = 'Until when should I leave them alone? Give me a date or "for two weeks".'; }
+  } else { p.holdUntil = 0; p.reason = ''; }
   return p;
 }
 
@@ -1961,7 +3788,12 @@ async function previewCommandPlan(plan) {
   }
   const index = await loadIndex();
   const list = selectThreads(index, plan.filter);
-  return { count: list.length, unit: 'conversation', samples: list.slice(0, 6).map((t) => t.name || t.phone) };
+  const preview = { count: list.length, unit: 'conversation', samples: list.slice(0, 6).map((t) => t.name || t.phone) };
+  if (plan.action === 'hold' && plan.holdUntil) {
+    preview.until = plan.holdUntil;
+    preview.reason = plan.reason || '';
+  }
+  return preview;
 }
 
 // Execute a previewed plan. Batched: the thread ops mutate the index in memory
@@ -2008,6 +3840,26 @@ async function executeCommandPlan(plan) {
         if (CMD_STATUSES.includes(s) && thread.status !== s) { thread.status = s; thread.statusAt = Date.now(); ch = true; }
         break;
       }
+      case 'hold': {
+        const until = Number(plan.holdUntil) || 0;
+        if (until > Date.now()) {
+          const fu = thread.followup || (thread.followup = defaultFollowup());
+          fu.snoozeUntil = until;
+          fu.holdReason = String(plan.reason || '').slice(0, 140);
+          fu.heldAt = Date.now();
+          fu.suggestion = null;           // drop any nudge already waiting
+          ch = true;
+        }
+        break;
+      }
+      case 'release': {
+        const fu = thread.followup;
+        if (fu && (fu.snoozeUntil || fu.holdReason)) {
+          fu.snoozeUntil = null; fu.holdReason = ''; fu.heldAt = 0;
+          ch = true;
+        }
+        break;
+      }
       default: break;
     }
     if (ch) { await saveThread(thread); if (applyIndexSummary(index, buildIndexSummary(thread, cfg))) indexChanged = true; n++; }
@@ -2040,11 +3892,14 @@ async function apiAiCommand(request) {
   const preview = await previewCommandPlan(plan);
   return json({
     ok: true,
-    plan: { action: plan.action, status: plan.status || null, filter: plan.filter || {} },
+    plan: { action: plan.action, status: plan.status || null, filter: plan.filter || {},
+            holdUntil: plan.holdUntil || 0, reason: plan.reason || '' },
     reply: plan.reply || describeCount(plan.action, preview.count, plan.status),
     count: preview.count,
     unit: preview.unit,
     samples: preview.samples,
+    until: preview.until || 0,
+    reason: preview.reason || '',
   });
 }
 
@@ -2073,21 +3928,33 @@ function opsPlaybook() {
     '2. The lead pipeline must stay accurate: every open thread should have a status (New / Active / Won / Lost). A thread with no status is invisible to planning — call it out.',
     '3. Keep the inbox clean. Dead threads (Lost, or clearly finished Won jobs, or long-silent with no path forward) should be archived so what remains is what needs work. Archiving is reversible — treat it as "filing away", not deleting.',
     '4. Never drop a warm lead. Date-requested, due follow-ups, and reminders coming due are money on the table — surface them.',
+    '4b. But never invent work either: a conversation that ended on a thank-you, a 👍 or an acknowledgement is FINISHED. Do not tell Mikey to reply to it or chase it — the CLOSED OUT list below is there so you skip them.',
     '5. Won leads that were never logged in the money tracker are lost profit visibility — worth a nudge.',
     '6. Be concrete and efficient: say exactly what to do, tie it to a specific customer or bucket, and keep the "why" to one line. Prefer a few high-impact moves over a long list.',
     '7. When you recommend a bulk cleanup that the command bar can do, put the exact plain-English command in the item\'s "command" field so Mikey can run it in one tap.',
+    '8. RESPECT HOLDS. Anyone in the ON HOLD list has been parked by Mikey himself, with his reason. Do not tell him to reply to them, chase them, archive them or change their status — he has already decided. Never list a held customer under attention. The single exception: if something genuinely new has happened that his reason plainly does not cover, you may mention it in one line that repeats his own reason back to him first.',
   ].join('\n');
 }
 
 // Compact, token-cheap snapshot of the whole board for the advisor to reason on.
 function boardSnapshot(index, cfg, now) {
-  const open = index.filter((e) => !e.archived);
+  // Conversations Mikey has explicitly parked are pulled out of every priority
+  // list below and reported separately WITH his reason. The advisor then stops
+  // recommending them because it knows why they're quiet — not because they were
+  // hidden from it. That distinction is the whole point: it can still mention one
+  // if something genuinely changed.
+  const held = index.filter((e) => !e.archived && e.heldUntil && e.heldUntil > now);
+  const heldPhones = new Set(held.map((e) => e.phone));
+  const open = index.filter((e) => !e.archived && !heldPhones.has(e.phone));
   const line = (e) => {
     const ago = humanAgo(now - (e.lastTs || now));
     const who = e.lastDir === 'in' ? `waiting ${ago}` : `you replied ${ago} ago`;
     return `  - ${e.name || e.phone} [${e.status || 'NO STATUS'}] ${who}: "${(e.lastBody || '').slice(0, 70)}"`;
   };
-  const waiting = open.filter((e) => e.lastDir === 'in').sort((a, b) => (a.lastTs || 0) - (b.lastTs || 0));
+  // "Waiting" means the customer spoke last AND something is genuinely open —
+  // threads that ended on a thank-you are filed under CLOSED OUT below instead.
+  const waiting = open.filter(rowAwaitingReply).sort((a, b) => (a.lastTs || 0) - (b.lastTs || 0));
+  const closedOut = open.filter((e) => e.lastDir === 'in' && e.awaitingReply === false);
   const unread = open.filter((e) => (e.unread || 0) > 0);
   const noStatus = open.filter((e) => !e.status);
   const dueFollow = open.filter((e) => e.followupDue);
@@ -2103,6 +3970,9 @@ function boardSnapshot(index, cfg, now) {
   S.push(`WAITING ON A REPLY (${waiting.length}) — top priority, longest first:`);
   S.push(waiting.slice(0, 18).map(line).join('\n') || '  (none)');
   S.push('');
+  S.push(`CLOSED OUT — customer spoke last but nothing is owed, do NOT chase these (${closedOut.length}):`);
+  S.push(closedOut.slice(0, 12).map((e) => `  - ${e.name || e.phone}: "${(e.lastBody || '').slice(0, 50)}" (${e.closedReason || 'wrapped up'})`).join('\n') || '  (none)');
+  S.push('');
   S.push(`DUE FOLLOW-UPS (${dueFollow.length}):`);
   S.push(dueFollow.slice(0, 12).map(line).join('\n') || '  (none)');
   S.push('');
@@ -2116,6 +3986,19 @@ function boardSnapshot(index, cfg, now) {
   S.push(`STALE — active but silent 10+ days (${stale.length}): ${stale.slice(0, 14).map((e) => e.name || e.phone).join(', ') || '(none)'}`);
   S.push(`LOST leads still in the open inbox (${lost.length}): ${lost.slice(0, 14).map((e) => e.name || e.phone).join(', ') || '(none)'}`);
   S.push(`WON leads (${won.length}): ${won.slice(0, 14).map((e) => e.name || e.phone).join(', ') || '(none)'}`);
+  const aging = open.filter((e) => e.quoteAt && (now - e.quoteAt) > 2 * 86400000)
+    .sort((a, b) => a.quoteAt - b.quoteAt);
+  S.push(`QUOTES SENT, STILL NO ANSWER (${aging.length}) — the most winnable money here:`);
+  S.push(aging.slice(0, 12).map((e) =>
+    `  - ${e.name || e.phone}: $${e.quoteTotal || '?'} quoted ${humanAgo(now - e.quoteAt)} ago, not accepted or declined`
+  ).join('\n') || '  (none)');
+  S.push('');
+  S.push(`ON HOLD — Mikey told you to leave these alone (${held.length}). They are DELIBERATELY excluded from every list above:`);
+  S.push(held.slice(0, 20).map((e) =>
+    `  - ${e.name || e.phone}: until ${new Date(e.heldUntil).toISOString().slice(0, 10)}` +
+    (e.holdReason ? ` because "${e.holdReason}"` : '') +
+    (e.lastDir === 'in' ? ' (note: they texted last)' : '')
+  ).join('\n') || '  (none)');
   return S.join('\n');
 }
 
@@ -2131,6 +4014,7 @@ async function apiAiAnalyze(request) {
   }
   const prompt =
     businessContext(cfg) +
+    (await rulesContext()) +
     opsPlaybook() + '\n\n' +
     boardSnapshot(index, cfg, now) + '\n\n' +
     (focus ? `MIKEY'S FOCUS FOR THIS REVIEW: "${focus}"\n\n` : '') +
@@ -2206,6 +4090,7 @@ async function agentMoney(cfg, now) {
 async function buildAgentContext({ index, cfg, now, money }) {
   const L = [];
   const bc = businessContext(cfg); if (bc) L.push(bc);
+  const rc = await rulesContext(); if (rc) L.push(rc);
   L.push(opsPlaybook());
   L.push('');
   const m = money;
@@ -2228,7 +4113,9 @@ async function buildAgentContext({ index, cfg, now, money }) {
   top.forEach((r) => {
     const t = tById.get(r.phone);
     const ago = humanAgo(now - (r.lastTs || now));
-    const wait = r.lastDir === 'in' ? `WAITING ${ago} for your reply` : `you replied ${ago} ago`;
+    const wait = r.lastDir !== 'in' ? `you replied ${ago} ago`
+      : r.awaitingReply === false ? `they wrote ${ago} ago, nothing owed (${r.closedReason || 'wrapped up'})`
+      : `WAITING ${ago} for your reply`;
     const flags = [];
     const hasVm = r.hasVoicemail || (t && (t.messages || []).some((x) => x.kind === 'voicemail'));
     const hasPh = r.hasMedia || (t && (t.messages || []).some((x) => Array.isArray(x.media) && x.media.length));
@@ -2237,7 +4124,12 @@ async function buildAgentContext({ index, cfg, now, money }) {
     if (r.unread) flags.push('unread');
     if (r.pinned) flags.push('pinned');
     if (r.dateRequested) flags.push('ready-to-book');
-    L.push(`- ${r.name || r.phone} | phone=${r.phone} | status=${r.status || 'NONE'} | tags=[${(r.tags || []).join(', ')}] | ${wait}${flags.length ? (' | ' + flags.join(', ')) : ''}`);
+    // Mikey's own standing instruction travels with the conversation, so the AI
+    // reasons about a parked customer instead of re-suggesting them every time.
+    const heldNote = (r.heldUntil && r.heldUntil > now)
+      ? ` | ON HOLD until ${new Date(r.heldUntil).toISOString().slice(0, 10)}${r.holdReason ? ` because "${r.holdReason}"` : ''} — Mikey decided this; do not propose chasing, replying to, archiving or re-statusing them`
+      : '';
+    L.push(`- ${r.name || r.phone} | phone=${r.phone} | status=${r.status || 'NONE'} | tags=[${(r.tags || []).join(', ')}] | ${wait}${flags.length ? (' | ' + flags.join(', ')) : ''}${heldNote}`);
     if (t) {
       (t.messages || []).slice(-4).forEach((msg) => {
         const who = msg.dir === 'in' ? 'CUST' : msg.dir === 'out' ? 'YOU' : 'SYS';
@@ -2269,6 +4161,10 @@ function convActionLabel(op, name, act) {
     case 'set_status':   return 'Set ' + name + ' → ' + act.status;
     case 'add_tags':     return 'Label ' + name + ': ' + (act.tags || []).join(', ');
     case 'remove_tags':  return 'Unlabel ' + name + ': ' + (act.tags || []).join(', ');
+    case 'hold':         return 'Leave ' + name + ' alone until ' +
+                                new Date(act.holdUntil).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) +
+                                (act.reason ? ' — ' + act.reason : '');
+    case 'release':      return 'Put ' + name + ' back on the list';
     default:             return op + ' ' + name;
   }
 }
@@ -2279,13 +4175,20 @@ function moneyActionLabel(entry) {
 
 // Validate + clean the model's proposed actions into a safe, executable list,
 // attaching a human label for the approval UI. Unknown ops / bad shapes drop out.
-const AGENT_CONV_OPS = ['archive', 'unarchive', 'mark_read', 'mark_unread', 'pin', 'unpin', 'set_status', 'add_tags', 'remove_tags'];
+const AGENT_CONV_OPS = ['archive', 'unarchive', 'mark_read', 'mark_unread', 'pin', 'unpin', 'set_status', 'add_tags', 'remove_tags', 'hold', 'release'];
 function normalizeAgentActions(list, index) {
   const byPhone = index ? new Map(index.map((e) => [e.phone, e])) : null;
   const out = [];
   for (const a of (Array.isArray(list) ? list : [])) {
     if (!a || typeof a !== 'object') continue;
     const op = String(a.op || '');
+    if (op === 'remember_rule' || op === 'forget_rule') {
+      const text = String(a.text || '').trim().slice(0, 200);
+      if (!text) continue;
+      out.push({ op, text, reason: String(a.reason || '').slice(0, 160),
+                 label: (op === 'remember_rule' ? 'Remember: ' : 'Forget the rule: ') + text });
+      continue;
+    }
     if (op === 'log_money') {
       const e = a.entry || {};
       const amount = money2(e.amount);
@@ -2304,6 +4207,13 @@ function normalizeAgentActions(list, index) {
       if (!phone) continue;
       const act = { op, phone, reason: String(a.reason || '').slice(0, 160) };
       if (op === 'set_status') { if (!CMD_STATUSES.includes(a.status)) continue; act.status = a.status; }
+      if (op === 'hold') {
+        // No usable date means we'd silence someone forever — drop the action
+        // rather than guess.
+        act.holdUntil = parseHoldUntil(a.until, a.holdDays);
+        if (!act.holdUntil) continue;
+        act.reason = String(a.reason || '').trim().slice(0, 140);
+      }
       if (op === 'add_tags' || op === 'remove_tags') {
         const tags = (Array.isArray(a.tags) ? a.tags : []).map((t) => String(t).trim().slice(0, 24)).filter(Boolean).slice(0, 10);
         if (!tags.length) continue;
@@ -2323,8 +4233,14 @@ function normalizeAgentActions(list, index) {
 // their month doc. Returns a friendly summary of what changed.
 async function executeAgentActions(actions, cfg) {
   const now = Date.now();
-  const convActs = actions.filter((a) => a.op !== 'log_money');
+  const ruleActs = actions.filter((a) => a.op === 'remember_rule' || a.op === 'forget_rule');
+  const convActs = actions.filter((a) => a.op !== 'log_money' && a.op !== 'remember_rule' && a.op !== 'forget_rule');
   const moneyActs = actions.filter((a) => a.op === 'log_money');
+  let nRules = 0;
+  for (const a of ruleActs) {
+    const r = a.op === 'remember_rule' ? await addRule(a.text) : await removeRule(a.text);
+    if (r) nRules++;
+  }
   const index = await loadIndex();
   let convChanged = false, nConv = 0, nMoney = 0;
   const errors = [];
@@ -2354,6 +4270,19 @@ async function executeAgentActions(actions, cfg) {
           if (arr.length !== (thread.tags || []).length) { thread.tags = arr; ch = true; }
           break;
         }
+        case 'hold': {
+          if (a.holdUntil > now) {
+            const fu = thread.followup || (thread.followup = defaultFollowup());
+            fu.snoozeUntil = a.holdUntil; fu.holdReason = a.reason || ''; fu.heldAt = now; fu.suggestion = null;
+            ch = true;
+          }
+          break;
+        }
+        case 'release': {
+          const fu = thread.followup;
+          if (fu && (fu.snoozeUntil || fu.holdReason)) { fu.snoozeUntil = null; fu.holdReason = ''; fu.heldAt = 0; ch = true; }
+          break;
+        }
         default: break;
       }
     }
@@ -2378,9 +4307,10 @@ async function executeAgentActions(actions, cfg) {
   const parts = [];
   if (nConv) parts.push(nConv + ' conversation' + (nConv > 1 ? 's' : '') + ' updated');
   if (nMoney) parts.push(nMoney + ' money entr' + (nMoney > 1 ? 'ies' : 'y') + ' logged');
+  if (nRules) parts.push(nRules + ' rule' + (nRules > 1 ? 's' : '') + ' saved — I\'ll follow that from now on');
   let reply = parts.length ? ('Done — ' + parts.join(' and ') + '.') : 'Nothing needed changing.';
   if (errors.length) reply += ' (' + errors.join('; ') + ')';
-  return { reply, nConv, nMoney };
+  return { reply, nConv, nMoney, nRules };
 }
 
 async function apiAiAgent(request) {
@@ -2411,7 +4341,14 @@ async function apiAiAgent(request) {
     'YOU ARE THE COMMAND-CENTER AI for this dashboard. Two jobs: ANSWER questions from the data above, and PROPOSE actions Mikey can approve. You NEVER perform actions yourself — everything you list is shown to Mikey and only runs if he approves it.\n' +
     'Respond with ONLY JSON (no prose, no code fences):\n' +
     '{"answer":"your reply to Mikey — ALWAYS fill this in: answer the question fully, or clearly summarize what you\'re about to do and why","actions":[{"op":"...","phone":"exact phone from a conversation","status":"new|active|won|lost","tags":["..."],"entry":{"type":"job|exp|jp|personal","amount":0,"cat":"","service":"","note":"","name":""},"reason":"short why"}]}\n' +
-    'Conversation ops (need phone=): archive, unarchive, mark_read, mark_unread, pin, unpin, set_status (+status), add_tags (+tags), remove_tags (+tags). Money op: log_money (+entry).\n' +
+    'Conversation ops (need phone=): archive, unarchive, mark_read, mark_unread, pin, unpin, set_status (+status), add_tags (+tags), remove_tags (+tags), hold (+until +reason), release. Money op: log_money (+entry). Rule ops (no phone): remember_rule (+text), forget_rule (+text).\n' +
+    'RULES HE TELLS YOU OUTRIGHT: when Mikey states a preference about how you write or price — "stop using exclamation points", "never quote a full detail under $150", "always mention I bring my own water", "don\'t send payment links to Tanya" — propose remember_rule with "text" set to the rule in one short imperative sentence. When he takes one back ("you can use exclamation points again", "forget that pricing rule"), propose forget_rule with the text of the rule to drop. State in "answer" exactly what you are about to remember, word for word, so he can correct it before approving.\n' +
+    `Today is ${new Date().toISOString().slice(0, 10)}.\n` +
+    'STANDING INSTRUCTIONS — this is how Mikey tells you to remember something:\n' +
+    '- When he says a customer is handled, taken care of, doesn\'t need a reply, or shouldn\'t be chased until later — "Sabine doesn\'t need responded to, I\'m doing her car in August", "leave Rick alone till spring", "don\'t bug the Hendersons for a couple weeks" — propose op "hold" for that phone, with "until" as a YYYY-MM-DD date and "reason" as a SHORT phrase in HIS words ("doing her car in August"). A bare month means the 1st; "spring" means Mar 1; "a couple weeks" means 14 days from today (use "holdDays":14 instead of a date).\n' +
+    '- Say plainly in "answer" what you understood, including the date and the reason, so he can correct you before approving.\n' +
+    '- "start chasing X again / never mind about X / put X back on the list" -> op "release".\n' +
+    '- Anyone in ON HOLD has already been decided by Mikey. Never propose replying to, chasing, archiving or re-statusing them, and never list them as needing attention. If something genuinely new happened that his reason plainly doesn\'t cover, say so in "answer" and repeat his own reason back first — do not turn it into an action.\n' +
     'Rules:\n' +
     '- Pure question or ranking ("how much did I make this month", "rank my leads highest to lowest priority") → put the full answer in "answer" and leave "actions" empty.\n' +
     '- Reference conversations ONLY by an exact phone= shown above. Never invent people, phone numbers, or money figures.\n' +
@@ -2464,7 +4401,10 @@ async function apiAiPhotoQuote(request) {
   try { pic = await fetchTwilioImageB64(img.url); }
   catch { return json({ ok: false, error: 'media_fetch_failed' }, 502); }
   const cfg = await loadConfig();
+  const spend = await customerSpend(phone, cfg);
   const prompt = businessContext(cfg) +
+    (await rulesContext()) +
+    customerContext(thread, spend) +
     `You are Mikey from Mikey's Mobile Detailing, looking at a photo a customer just texted of their vehicle. ` +
     `Return ONLY JSON: {"assessment":"2-3 sentences on the vehicle type and its VISIBLE condition (dirt, swirls, stains, oxidation, etc.)", ` +
     `"services":["recommended services drawn from the playbook that fit what you see"], ` +
@@ -2491,8 +4431,11 @@ async function apiAiCoach(request) {
   const thread = await loadThread(phone);
   if (!thread.messages.length) return json({ ok: false, error: 'no_messages' }, 422);
   const cfg = await loadConfig();
+  const spend = await customerSpend(phone, cfg);
   const prompt =
     businessContext(cfg) +
+    (await rulesContext()) +
+    customerContext(thread, spend) +
     `You are coaching a NEW team member at Mikey's Mobile Detailing on how to answer this customer text. ` +
     `Use the business playbook above as the single source of truth. ` +
     `Return ONLY JSON with this shape:\n` +
@@ -2583,6 +4526,161 @@ function humanAgo(ms) {
 }
 
 // ===========================================================================
+// "Does this actually need a reply?" — conversation-closure check
+// ---------------------------------------------------------------------------
+// The follow-up engine used to treat ANY conversation whose last message came
+// from the customer as a reply Mikey owes. So a thread that ended with
+// "Thanks! 🙂", a 👍, or a "Liked ..." tapback sat in "Needs your attention"
+// forever and kept generating nudges nobody should send.
+//
+// Before an `owed` step is surfaced we now read the WHOLE conversation and ask:
+// is anything actually outstanding on Mikey's side? The verdict is cached on the
+// thread against the exact inbound message it was made for, so it costs at most
+// one small AI call per customer message — and none at all for the obvious
+// cases (a question mark, a photo, a voicemail: always needs a reply).
+//
+// Bias: when it's genuinely unclear we answer "yes, reply". Nagging Mikey about
+// a wrapped-up thread is annoying; missing a real customer costs a booking.
+// ===========================================================================
+
+// iMessage/Android tapbacks arrive as literal text ('Liked "see you then"').
+const REACTION_RE = /^(liked|loved|laughed at|emphasi[sz]ed|disliked|questioned)\s+["“”']/i;
+
+// Lowercase, drop emoji and punctuation (keeping "?"), collapse whitespace.
+function normText(s) {
+  return String(s || '')
+    .toLowerCase()
+    .replace(/[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}\uFE0F\u200D]/gu, ' ')
+    .replace(/[^a-z0-9?'\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Fast "this obviously needs an answer" test. Only ever used to SKIP the AI call
+// and keep the nudge — so a false positive costs nothing but an extra reminder.
+function looksLikeQuestion(body) {
+  const t = normText(body);
+  if (!t) return false;
+  if (t.includes('?')) return true;
+  return /\b(how much|how many|how long|what time|what day|what about|when can|when are|when will|where|can you|could you|would you|will you|do you|did you|does that|are you|is it|is that|price|quote|cost|estimate|available|availability|schedule|book|booking|appointment|reschedule|call me|text me|let me know|send me|i need|we need|i want|id like|i'd like|im looking|i'm looking|looking for|interested)\b/.test(t);
+}
+
+// Words that carry no ask on their own. A message made up entirely of these is a
+// sign-off, not a question. Deliberately conservative: bare agreements ("yes",
+// "sure", "that works") are NOT here, because after "does Saturday work?" they
+// still need Mikey to confirm. Only used as the offline fallback when the AI
+// can't be reached — the AI itself reads the whole conversation.
+const CLOSER_WORDS = new Set([
+  'thanks', 'thank', 'thankyou', 'thx', 'ty', 'tysm', 'appreciate', 'appreciated', 'thankful',
+  'you', 'u', 'so', 'much', 'very', 'again', 'a', 'lot', 'the', 'my', 'me', 'im', 'i', 'it', 'that', 'thats', 'this',
+  'ok', 'okay', 'k', 'kk', 'cool', 'alright', 'got', 'sounds', 'sound', 'good', 'well',
+  'great', 'perfect', 'awesome', 'nice', 'sweet', 'excellent', 'wonderful', 'amazing', 'beautiful', 'love', 'loved', 'lovely',
+  'no', 'nope', 'problem', 'worries', 'np', 'nvm', 'mind',
+  'see', 'ya', 'then', 'later', 'soon', 'there', 'sir', 'maam', 'man', 'bro', 'dude', 'buddy',
+  'have', 'day', 'night', 'weekend', 'one', 'take', 'care', 'too', 'and', 'best', 'cheers',
+  'welcome', 'youre', 'yw', 'copy', 'understood', 'roger', 'will', 'do', 'talk', 'bye', 'goodbye',
+]);
+function isClosingRemark(body) {
+  const raw = String(body || '').trim();
+  if (REACTION_RE.test(raw)) return true;      // tapback reaction
+  const t = normText(raw);
+  if (!t) return true;                          // emoji-only / sticker / blank
+  if (t.includes('?')) return false;
+  const words = t.split(' ').map((w) => w.replace(/'/g, '')).filter(Boolean);
+  if (words.length > 10) return false;          // a real paragraph is never a sign-off
+  return words.every((w) => CLOSER_WORDS.has(w));
+}
+
+// Ask Gemini to read the whole conversation and rule on whether Mikey still owes
+// the customer something. Returns { needed, reason }. Throws if the AI is
+// unavailable so the caller can fall back to the heuristic above.
+async function judgeReplyNeeded(thread, cfg) {
+  const prompt =
+    businessContext(cfg) +
+    `You are triaging text conversations for Mikey's Mobile Detailing so Mikey only gets reminded about the ones that still need him.\n\n` +
+    `Read the ENTIRE conversation below, then decide ONE thing: after the customer's most recent message, is there still something for Mikey to answer or do?\n\n` +
+    `Answer "needsReply": false when the conversation has reached a natural resting point — for example:\n` +
+    `- the customer's last message is just thanks, praise, or an acknowledgement ("thanks!", "ok", "sounds good", "perfect", "👍")\n` +
+    `- it is a reaction/tapback (a message that starts with Liked/Loved/Laughed at)\n` +
+    `- it simply closes out a question Mikey already answered, and nothing new was raised\n` +
+    `- it is friendly small talk that asks for nothing, and Mikey owes nothing\n\n` +
+    `Answer "needsReply": true when anything is still open — for example:\n` +
+    `- they asked a question, or asked about price, availability, timing, or booking\n` +
+    `- they raised a problem, complaint, or concern\n` +
+    `- they sent photos or a voicemail for a quote\n` +
+    `- they agreed to something that still needs Mikey to confirm a specific date, time, address, or price\n` +
+    `- Mikey's last message promised something (a quote, a time, a call back) that he has not delivered yet\n\n` +
+    `If you are genuinely unsure, answer true — missing a real customer is worse than an extra reminder.\n\n` +
+    `Return ONLY JSON: {"needsReply": true|false, "reason": "<plain English, max 10 words, why>"}\n\n` +
+    `Conversation (oldest to newest):\n${transcript(thread)}\n`;
+  const raw = await geminiGenerate(prompt, { json: true, maxTokens: 300, temperature: 0.1 });
+  const p = JSON.parse(raw);
+  return {
+    needed: p.needsReply !== false,
+    reason: String(p.reason || '').trim().slice(0, 90) || (p.needsReply === false ? 'Conversation wrapped up' : 'Something is still open'),
+  };
+}
+
+// The cached verdict for the CURRENT last inbound message, or null.
+function replyCheckFor(thread) {
+  const msgs = thread.messages || [];
+  const last = msgs[msgs.length - 1];
+  if (!last || last.dir !== 'in') return null;
+  const rc = thread.replyCheck;
+  return (rc && rc.forTs === last.ts) ? rc : null;
+}
+
+// Sync read used by the (sync) follow-up planner and the index builder.
+// Un-judged threads default to "yes" — identical to the old behavior.
+function replyOwed(thread) {
+  const rc = replyCheckFor(thread);
+  return rc ? rc.needed !== false : true;
+}
+
+// Same question against a cheap INDEX ROW (which carries the cached verdict as
+// `awaitingReply`). Use this everywhere "is someone waiting on me?" is counted —
+// the Home rundown, the daily brief, push notifications, the AI advisor — so
+// they all agree. Rows written before this shipped have no flag: treated as
+// waiting, exactly like before.
+function rowAwaitingReply(e) {
+  return !!e && e.lastDir === 'in' && e.awaitingReply !== false;
+}
+
+// Make sure the current last inbound message has a verdict. Returns whether the
+// thread was mutated (so callers can batch the KV write). At most one AI call
+// per inbound message, ever — the verdict is keyed to that message's timestamp.
+async function ensureReplyCheck(thread, cfg) {
+  const msgs = thread.messages || [];
+  const last = msgs[msgs.length - 1];
+  if (!last || last.dir !== 'in') return false;   // Mikey spoke last — nothing to judge
+  if (replyCheckFor(thread)) return false;        // already judged this message
+
+  let verdict;
+  if (last.kind === 'opt-out' || last.kind === 'opt-in') {
+    verdict = { needed: false, reason: 'STOP/START keyword — no reply', via: 'rule' };
+  } else if (last.kind === 'voicemail' || (Array.isArray(last.media) && last.media.length)) {
+    verdict = { needed: true, reason: 'Voicemail or photo to respond to', via: 'rule' };
+  } else if (looksLikeQuestion(last.body)) {
+    verdict = { needed: true, reason: 'They asked you something', via: 'rule' };
+  } else if (!ENV.GEMINI_API_KEY) {
+    verdict = isClosingRemark(last.body)
+      ? { needed: false, reason: 'Wrapped up — nothing asked', via: 'rule' }
+      : { needed: true, reason: 'Waiting on you', via: 'rule' };
+  } else {
+    try {
+      verdict = Object.assign({ via: 'ai' }, await judgeReplyNeeded(thread, cfg));
+    } catch {
+      // AI unreachable — fall back to the heuristic rather than nagging blindly.
+      verdict = isClosingRemark(last.body)
+        ? { needed: false, reason: 'Wrapped up — nothing asked', via: 'rule' }
+        : { needed: true, reason: 'Waiting on you', via: 'rule' };
+    }
+  }
+  thread.replyCheck = { forTs: last.ts, at: Date.now(), needed: verdict.needed, reason: verdict.reason, via: verdict.via };
+  return true;
+}
+
+// ===========================================================================
 // Auto follow-up engine
 // ---------------------------------------------------------------------------
 // A per-conversation state machine that decides WHEN a follow-up is due and
@@ -2625,8 +4723,14 @@ function computeFollowupPlan(thread, now, cfg) {
   const done = (p) => (p && p.stepKey === fu.lastStepKey) ? null : p;
 
   // 1) Mikey owes a reply — the customer texted last. Highest priority, never auto-sent.
+  //    ...but only when a reply is genuinely outstanding. A thread that ended on
+  //    "Thanks!" or a 👍 is at rest: fall through so the Won/Lost lifecycle can
+  //    still run (a review ask is legitimate) while never starting a nudge chase
+  //    — the chase below requires Mikey to have spoken last anyway.
   if (last.dir === 'in') {
-    return done({ stage: 'owed', step: 0, stepKey: 'owed:' + last.ts, dueAt: last.ts + FOLLOWUP.OWED_DELAY_MS, urgency: 'high', auto: false });
+    if (replyOwed(thread)) {
+      return done({ stage: 'owed', step: 0, stepKey: 'owed:' + last.ts, dueAt: last.ts + FOLLOWUP.OWED_DELAY_MS, urgency: 'high', auto: false });
+    }
   }
 
   // 2) Won lifecycle: review ask, then a rebook nudge months later.
@@ -2729,7 +4833,7 @@ function followupTemplate(thread, plan, cfg) {
 // the suggest-and-approve path polishes it with Gemini using the live transcript.
 async function buildFollowupDraft(thread, plan, cfg, opts = {}) {
   const tmpl = followupTemplate(thread, plan, cfg);
-  if (opts.ai === false || !ENV.GEMINI_API_KEY) return tmpl;
+  if (opts.ai === false || !aiConfigured()) return tmpl;
 
   const ctx = businessContext(cfg);
   let prompt;
@@ -2778,9 +4882,11 @@ function urgencyRank(u) { return u === 'high' ? 3 : u === 'normal' ? 2 : 1; }
 // nudge instantly (rather than waiting for the next cron tick). Returns whether
 // the thread was mutated and needs saving.
 async function ensureLiveSuggestion(thread, cfg, now) {
+  // Read the conversation first — a thread that ended on "Thanks!" should show no
+  // nudge at all, even the instant it's opened.
+  let changed = await ensureReplyCheck(thread, cfg);
   const plan = computeFollowupPlan(thread, now, cfg);
   const fu = thread.followup || (thread.followup = defaultFollowup());
-  let changed = false;
   if (fu.suggestion && (!plan || fu.suggestion.stepKey !== plan.stepKey)) { fu.suggestion = null; changed = true; }
   if (!plan || plan.dueAt > now) return changed;
   if (autopilotAllowed(plan, fu, cfg)) return changed;   // autopilot handles it; don't nag with a suggestion
@@ -2808,6 +4914,10 @@ async function evaluateFollowups(now = Date.now()) {
   const index = await loadIndex();
   let acted = 0;
   let indexDirty = false; // batch: write the whole index at most ONCE per tick
+  // Reading a conversation to decide whether it still needs a reply costs one AI
+  // call. Cap it per tick so a big backlog (e.g. the first tick after this
+  // shipped) spreads over a few minutes instead of stalling one cron run.
+  let judgeBudget = 8;
   for (const e of index) {
     if (e.archived) continue;
     // Nothing to do this tick — skip WITHOUT touching KV. This is THE guard that
@@ -2817,16 +4927,32 @@ async function evaluateFollowups(now = Date.now()) {
     // have followupNextAt=null because no follow-up applies — fall through here and
     // are never re-saved. (Stale suggestions still get cleared promptly: that
     // happens on the customer's inbound reply and whenever the thread is opened.)
-    if (!e.followupDue && (!e.followupNextAt || e.followupNextAt > now)) continue;
+    // ...with one addition: a conversation whose last message is the customer's
+    // and that has never been read for "is anything still open?" is loaded once
+    // so it can be judged (legacy threads, and anything whose nudge was already
+    // skipped). Once judged the flag sticks in the index and it's skipped again.
+    const dueNow = e.followupDue || !!(e.followupNextAt && e.followupNextAt <= now);
+    const needsJudging = e.lastDir === 'in' && !e.replyChecked;
+    if (!dueNow && !(needsJudging && judgeBudget > 0)) continue;
 
     const thread = await loadThread(e.phone);
     const fu = thread.followup || (thread.followup = defaultFollowup());
     // Legacy threads that had a status before this feature shipped have no
     // statusAt — anchor them to now so won/lost cadences start fresh, not in the past.
     if (thread.status && !thread.statusAt) thread.statusAt = now;
+
+    // Before deciding anything, make sure we know whether this conversation is
+    // actually still open. Skipped once the per-tick AI budget is spent — the
+    // thread just gets judged on a later tick (nothing is sent meanwhile,
+    // because an un-judged inbound-last thread only ever produces a suggestion).
+    let changed = false; // only persist this thread if we actually mutate it
+    const lastMsg = (thread.messages || [])[(thread.messages || []).length - 1];
+    if (lastMsg && lastMsg.dir === 'in' && !replyCheckFor(thread) && judgeBudget > 0) {
+      judgeBudget--;
+      if (await ensureReplyCheck(thread, cfg)) changed = true;
+    }
     const plan = computeFollowupPlan(thread, now, cfg);
 
-    let changed = false; // only persist this thread if we actually mutate it
     if (fu.suggestion && (!plan || fu.suggestion.stepKey !== plan.stepKey)) { fu.suggestion = null; changed = true; } // stale
 
     if (plan && plan.dueAt <= now && autopilotAllowed(plan, fu, cfg) && !inQuietHours(now, cfg)) {
@@ -2873,6 +4999,22 @@ async function apiFollowups() {
   return json({ ok: true, items, config: cfg });
 }
 
+// The standing rules Mikey has told the AI, so he can see and drop them without
+// having to remember what he said three weeks ago.
+async function apiRulesGet() {
+  return json({ ok: true, rules: await loadRules() });
+}
+async function apiRulesPost(request) {
+  const data = await readJson(request);
+  if (data.remove) {
+    const next = await removeRule(data.remove);
+    return json({ ok: true, rules: next || (await loadRules()) });
+  }
+  const next = await addRule(data.text);
+  if (!next) return json({ ok: false, error: 'empty' }, 422);
+  return json({ ok: true, rules: next });
+}
+
 async function apiFollowupAction(request) {
   const data = await readJson(request);
   const phone = normalizePhone(data.phone);
@@ -2887,24 +5029,55 @@ async function apiFollowupAction(request) {
   if (action === 'send') {
     const body = (data.body || (fu.suggestion && fu.suggestion.draft) || '').trim();
     if (!body) return json({ ok: false, error: 'empty_message' }, 422);
+    // What the machine proposed, captured before the suggestion is cleared below, so
+    // we can tell a nudge he rewrote from one he approved untouched.
+    const machineDraft = (fu.suggestion && fu.suggestion.draft) || '';
     const stepKey = (fu.suggestion && fu.suggestion.stepKey) || (plan && plan.stepKey) || '';
     fu.lastStepKey = stepKey; fu.lastActionAt = now; fu.suggestion = null;
     pushLog(fu, { at: now, stepKey, action: 'sent' });
     await saveThread(thread); // reserve before send
+    // A nudge he rewrote before approving is his wording, so it counts as voice —
+    // same reasoning as an edited draft. One he approved verbatim is the template's
+    // words and stays out, which is why 'followup' is excluded from mining at all.
+    const same = (a, b) => a.replace(/\s+/g, ' ').toLowerCase() === b.replace(/\s+/g, ' ').toLowerCase();
+    const tmpl = plan ? followupTemplate(thread, plan, cfg) : '';
+    const hisWords = !same(body, machineDraft) && !same(body, tmpl);
+    const msg = { id: genId(), dir: 'out', body, ts: now, kind: 'followup', status: 'sent' };
+    if (hisWords) msg.src = 'manual'; // so a rebuild keeps it too (see voiceUsable)
     try {
       const r = await sendSms(phone, body);
-      thread.messages.push({ id: genId(), dir: 'out', body, ts: now, kind: 'followup', status: 'sent', sid: (r && r.sid) || undefined });
+      if (r && r.sid) msg.sid = r.sid;
+      thread.messages.push(msg);
     } catch (err) {
       const optedOut = /opted_out/.test(String((err && err.message) || err));
       return json({ ok: false, error: optedOut ? 'recipient_opted_out' : String((err && err.message) || err) }, optedOut ? 409 : 502);
     }
     await saveThread(thread); await updateIndexEntry(thread);
+    if (voiceUsable(msg)) { try { await recordVoiceSample(body, 'edited'); } catch { /* non-fatal */ } }
     return json({ ok: true, thread });
   }
   if (action === 'snooze') {
     const hours = Number(data.hours) || 24;
     fu.snoozeUntil = now + hours * 3600000; fu.suggestion = null;
     pushLog(fu, { at: now, stepKey: (plan && plan.stepKey) || '', action: 'snoozed' });
+    await saveThread(thread); await updateIndexEntry(thread);
+    return json({ ok: true, thread });
+  }
+  // A hold is a snooze that carries Mikey's reason with it. Set from the thread
+  // UI as well as from a plain-English command.
+  if (action === 'hold') {
+    const until = parseHoldUntil(data.until, data.days, now);
+    if (!until) return json({ ok: false, error: 'bad_until' }, 422);
+    fu.snoozeUntil = until;
+    fu.holdReason = String(data.reason || '').trim().slice(0, 140);
+    fu.heldAt = now; fu.suggestion = null;
+    pushLog(fu, { at: now, stepKey: (plan && plan.stepKey) || '', action: 'held' });
+    await saveThread(thread); await updateIndexEntry(thread);
+    return json({ ok: true, thread });
+  }
+  if (action === 'release') {
+    fu.snoozeUntil = null; fu.holdReason = ''; fu.heldAt = 0;
+    pushLog(fu, { at: now, stepKey: '', action: 'released' });
     await saveThread(thread); await updateIndexEntry(thread);
     return json({ ok: true, thread });
   }
@@ -2956,9 +5129,16 @@ async function apiSaveConfig(request) {
   if (typeof data.missedCallTextback === 'boolean') next.missedCallTextback = data.missedCallTextback;
   if (typeof data.missedCallText === 'string') next.missedCallText = data.missedCallText.slice(0, 320);
   if (typeof data.predictive === 'boolean') next.predictive = data.predictive;
+  if (typeof data.assistSms === 'boolean') next.assistSms = data.assistSms;
+  if (data.assistDelaySec != null && !isNaN(+data.assistDelaySec)) next.assistDelaySec = Math.max(0, Math.min(600, Math.round(+data.assistDelaySec)));
+  if (typeof data.assistEmail === 'boolean') next.assistEmail = data.assistEmail;
+  if (data.assistEmailDelaySec != null && !isNaN(+data.assistEmailDelaySec)) next.assistEmailDelaySec = Math.max(0, Math.min(900, Math.round(+data.assistEmailDelaySec)));
   if (typeof data.teamMode === 'boolean') next.teamMode = data.teamMode;
+  if (typeof data.briefEnabled === 'boolean') next.briefEnabled = data.briefEnabled;
+  if (data.briefHour != null && !isNaN(+data.briefHour)) next.briefHour = Math.max(4, Math.min(11, Math.round(+data.briefHour)));
   if (Array.isArray(data.team)) next.team = sanitizeTeam(data.team);
   if (data.playbook && typeof data.playbook === 'object') next.playbook = sanitizePlaybook(data.playbook, next.playbook);
+  if (data.detect && typeof data.detect === 'object') next.detect = sanitizeDetect(data.detect, next.detect);
   await kv().put('config', JSON.stringify(next));
   CFG_CACHE = next;
   return json({ ok: true, config: next });
@@ -3420,13 +5600,42 @@ async function apiMoneyByPhone(url) {
   });
 }
 
-// Read-only snapshot of everything the owner sees, in one JSON bundle — a
-// "show Claude what I see" export. Password-gated (like every /api/* route),
-// never writes, and defensively strips anything secret-looking from config.
+// Read-only snapshot of what the owner sees, in one JSON bundle — a "show Claude
+// what I see" export. Password-gated (like every /api/* route), never writes, and
+// defensively strips anything secret-looking from config.
+//
+// Ask for only the pieces you need — a file that is just the texts answers a
+// question about texts far better than a dump of the whole app:
+//   ?parts=messages,money   which sections to include (default: all of them)
+//   ?days=90                only stuff that happened in the last N days (0 = all)
+//   ?msgs=60                messages kept per conversation ('all' = up to 500)
+//   ?q=sarah                only conversations matching a name or number
+//   ?limit=300              max conversations
+// No params at all = the old behavior (everything), so older links keep working.
+const SNAP_PARTS = ['messages', 'leads', 'money', 'bookings', 'emails', 'settings'];
+
 async function apiSnapshot(url) {
-  const withMsgs = url.searchParams.get('messages') !== '0'; // default: include recent messages
-  const index = await loadIndex();
-  index.sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+  const P = url.searchParams;
+  const num = (v, dflt, lo, hi) => {
+    const n = parseInt(v, 10);
+    return isNaN(n) ? dflt : Math.max(lo, Math.min(hi, n));
+  };
+  const asked = String(P.get('parts') || '').toLowerCase().split(',').map((s) => s.trim()).filter(Boolean);
+  let parts = (!asked.length || asked.includes('all'))
+    ? SNAP_PARTS.slice()
+    : SNAP_PARTS.filter((p) => asked.includes(p));
+  if (!parts.length) parts = SNAP_PARTS.slice();          // nothing recognized → everything
+  if (P.get('messages') === '0') parts = parts.filter((p) => p !== 'messages'); // legacy flag
+  const want = (k) => parts.indexOf(k) >= 0;
+
+  const days    = num(P.get('days'), 0, 0, 3650);
+  const since   = days ? Date.now() - days * 86400000 : 0;
+  const sinceD  = since ? new Date(since).toISOString().slice(0, 10) : '';
+  const sinceM  = sinceD.slice(0, 7);
+  const msgCap  = P.get('msgs') === 'all' ? 500 : num(P.get('msgs'), 60, 1, 500);
+  const limit   = num(P.get('limit'), 300, 1, 500);
+  const q       = String(P.get('q') || '').trim().toLowerCase();
+
   const scrub = (o) => {
     if (!o || typeof o !== 'object') return o;
     const out = Array.isArray(o) ? [] : {};
@@ -3436,29 +5645,89 @@ async function apiSnapshot(url) {
     }
     return out;
   };
-  const config = scrub(await loadConfig());
-  const moneyConfig = scrub(await loadMoneyConfig());
-  // all money months
-  const list = await kv().list({ prefix: 'money:m:' });
-  const money = [];
-  for (const k of (list.keys || [])) {
-    const doc = await kv().get(k.name, { type: 'json' });
-    money.push({ month: k.name.replace('money:m:', ''), entries: (doc && doc.entries) || [] });
-  }
-  money.sort((a, b) => (a.month < b.month ? -1 : 1));
-  // full conversations (bounded so the file stays sane)
-  const threadsFull = [];
-  for (const t of index.slice(0, 300)) {
-    const doc = await loadThread(t.phone);
-    const trimmed = Object.assign({}, doc);
-    if (Array.isArray(doc.messages)) { trimmed.msgTotal = doc.messages.length; if (withMsgs) trimmed.messages = doc.messages.slice(-60); else delete trimmed.messages; }
-    threadsFull.push(scrub(trimmed));
-  }
-  return json({
+
+  const out = {
     ok: true, kind: 'mikeys-app-snapshot', build: BUILD, at: new Date().toISOString(),
-    counts: { conversations: index.length, moneyMonths: money.length },
-    config, moneyConfig, leadsAndChats: index, conversations: threadsFull, money,
-  });
+    included: parts,
+    filters: { days: days || null, since: sinceD || null, msgsPerChat: msgCap, who: q || null, maxChats: limit },
+  };
+  const counts = {};
+
+  // ---- conversations (the index rows, and optionally the texts themselves) ----
+  if (want('messages') || want('leads')) {
+    let index = await loadIndex();
+    index.sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+    counts.conversationsTotal = index.length;
+    let rows = index;
+    if (since) rows = rows.filter((t) => (t.lastTs || 0) >= since);
+    if (q) rows = rows.filter((t) => (String(t.name || '') + ' ' + String(t.phone || '')).toLowerCase().indexOf(q) >= 0);
+    rows = rows.slice(0, limit);
+    if (want('leads')) out.leadsAndChats = rows;
+    if (want('messages')) {
+      const threadsFull = [];
+      for (const t of rows) {
+        const doc = await loadThread(t.phone);
+        const trimmed = Object.assign({}, doc);
+        const all = Array.isArray(doc.messages) ? doc.messages : [];
+        trimmed.msgTotal = all.length;
+        const inRange = since ? all.filter((m) => (m.ts || 0) >= since) : all;
+        trimmed.messages = inRange.slice(-msgCap);
+        if (since && !trimmed.messages.length) continue;   // nothing said in the window
+        threadsFull.push(scrub(trimmed));
+      }
+      out.conversations = threadsFull;
+      counts.conversations = threadsFull.length;
+      counts.messages = threadsFull.reduce((a, t) => a + t.messages.length, 0);
+    } else {
+      counts.conversations = rows.length;
+    }
+  }
+
+  // ---- money (income & expenses, month by month) ----
+  if (want('money')) {
+    const list = await kv().list({ prefix: 'money:m:' });
+    const money = [];
+    for (const k of (list.keys || [])) {
+      const month = k.name.replace('money:m:', '');
+      if (sinceM && month < sinceM) continue;              // whole month predates the window
+      const doc = await kv().get(k.name, { type: 'json' });
+      let entries = (doc && doc.entries) || [];
+      if (sinceD) entries = entries.filter((e) => String(e.date || '') >= sinceD);
+      if (!entries.length && sinceD) continue;
+      money.push({ month, entries });
+    }
+    money.sort((a, b) => (a.month < b.month ? -1 : 1));
+    out.money = money;
+    counts.moneyMonths = money.length;
+    counts.moneyEntries = money.reduce((a, m) => a + m.entries.length, 0);
+  }
+
+  // ---- bookings ----
+  if (want('bookings')) {
+    let bookings = await loadBookings();
+    if (since) bookings = bookings.filter((b) => (b.apptAt || 0) >= since || (b.createdAt || 0) >= since);
+    out.bookings = scrub(bookings);
+    counts.bookings = bookings.length;
+  }
+
+  // ---- forwarded emails ----
+  if (want('emails')) {
+    let emails = (await kv().get('emails', { type: 'json' })) || [];
+    if (since) emails = emails.filter((e) => (e.ts || 0) >= since);
+    out.emails = scrub(emails);
+    counts.emails = emails.length;
+  }
+
+  // ---- settings, playbook, templates ----
+  if (want('settings')) {
+    out.config = scrub(await loadConfig());
+    out.moneyConfig = scrub(await loadMoneyConfig());
+    out.bookingConfig = scrub(await loadBookingConfig());
+    out.templates = (await kv().get('templates', { type: 'json' })) || [];
+  }
+
+  out.counts = counts;
+  return json(out);
 }
 
 // Full CSV export — every month doc, one flat file. No lock-in, ever.
@@ -3665,6 +5934,13 @@ function blankThread(phone) {
     tags: [],
     status: '',        // '', 'new', 'active', 'won', 'lost'
     statusAt: 0,       // when status last changed (anchor for won/lost cadences)
+    source: '',        // FIRST-TOUCH acquisition channel — 'quote' | 'booking' |
+                       // 'call' | 'text'. Stamped once, by whichever entry point
+                       // created the conversation, and never overwritten, so the
+                       // attribution report can tell where a customer came from.
+                       // Threads that predate this field fall back to a derived
+                       // guess (see deriveSource) and are flagged as estimated.
+    sourceAt: 0,       // when the first touch happened
     notes: '',
     pinned: false,
     archived: false,
@@ -3675,6 +5951,9 @@ function blankThread(phone) {
     reminderNotified: false,
     assignedTo: '',    // team member id this conversation is assigned to (team mode)
     linked: [],
+    garage: null,      // customer garage: { vehicles[], address, city, zip, gate,
+                       // parking, water, power, prefs, avoid } — see sanitizeGarage
+    quote: null,       // most recent quote sent: { id, total, service, at }
     messages: [],      // { id, dir:'in'|'out', body, ts, kind, error? }
     suggested: null,   // proactive pre-drafted reply awaiting Mikey: { text, ts, forTs }
     dateRequest: null, // texter asked Mikey for an available date: { at, by }
@@ -3693,6 +5972,8 @@ function defaultFollowup() {
     enabled: true,
     auto: null,
     snoozeUntil: null,
+    holdReason: '',    // Mikey's own words for WHY this one is parked ("doing her car in August")
+    heldAt: 0,
     lastStepKey: '',   // the cadence step we last sent/skipped, so we don't repeat it
     lastActionAt: 0,
     suggestion: null,  // the live nudge awaiting Mikey: { id, stage, step, stepKey, reason, draft, urgency, dueAt, createdAt }
@@ -3716,12 +5997,23 @@ function defaultConfig() {
     emailToken: '',          // shared secret for the /email-in ingest (generated in-app)
     missedCallTextback: true,// auto-text a caller we missed so the lead becomes a text thread
     missedCallText: '',      // custom missed-call text (blank = the friendly default)
-    predictive: true,        // AI predictive keyboard: next-word suggestions + inline
-                             // completions above the composer, learned from your texts
+    predictive: true,        // predictive keyboard: next-word chips + inline AI completion
+                             // above the compose box, learned from the texts he's sent
+    assistSms: true,         // text your own business number the bare facts ("375, thursday
+                             // works") and the AI writes the customer reply in your voice.
+                             // You supply every fact; the AI only does the wording.
+    assistDelaySec: 60,      // cancel window before an assist reply actually goes out
+    assistEmail: true,       // same thing by replying to the alert email — costs nothing,
+                             // and the reply already knows which customer it's about
+    assistEmailDelaySec: 180,// longer hold on the email path: a "cancel" reply has to make
+                             // another trip through the inbox before it reaches us
     teamMode: false,         // when on: conversations can be assigned, and each reply is
                              // attributed to the sender. Turn off to go back to solo.
     team: [],                // [{ id, name, role }] — the people who help answer texts
+    briefEnabled: true,      // the 6am daily brief (push + email). Off = never sent.
+    briefHour: 6,            // local hour the brief fires (4–11)
     playbook: defaultPlaybook(), // the business "brain" that trains every AI output
+    detect: detDefaults(),   // auto-detecting appointments out of text conversations
   };
 }
 
@@ -3880,12 +6172,38 @@ function preview(body) {
   return String(body || '').replace(/\s+/g, ' ').trim().slice(0, 90);
 }
 
+// Stamp the first-touch source on a conversation. First writer wins — a customer
+// who fills in the web quote form and THEN texts is still a 'quote' lead, which
+// is the whole point of first-touch attribution.
+function markSource(thread, src) {
+  if (!thread.source) { thread.source = src; thread.sourceAt = thread.sourceAt || Date.now(); }
+  return thread;
+}
+// Best guess for conversations that started before `source` existed. Ordered
+// most- to least-certain. Anything that reaches the end is genuinely unknown and
+// is reported as such rather than being lumped into a real channel.
+function deriveSource(thread) {
+  if (thread.source) return thread.source;
+  const tags = thread.tags || [];
+  if (tags.includes('booking')) return 'booking';
+  const msgs = thread.messages || [];
+  if (msgs.some((m) => m.kind === 'voicemail')) return 'call';
+  if (/\bquote:/i.test(thread.notes || '')) return 'quote';
+  const firstIn = msgs.filter((m) => m.dir === 'in')[0];
+  if (firstIn) return 'text';
+  return '';
+}
+
 // Build the lightweight index row for a thread. Pure (no KV) so cron loops can
 // reuse it while holding the index in memory and batch a single saveIndex().
 function buildIndexSummary(thread, cfg) {
   const last = thread.messages[thread.messages.length - 1];
   const plan = computeFollowupPlan(thread, Date.now(), cfg);
   const fu = thread.followup || {};
+  // Whether the customer is genuinely waiting on Mikey. Only meaningful when they
+  // spoke last; un-judged threads read as `true` so nothing goes missing.
+  const rc = replyCheckFor(thread);
+  const awaiting = !!(last && last.dir === 'in') && replyOwed(thread);
   // Only mirror a suggestion the current plan still agrees with — if the customer
   // just replied, the old nudge is stale and the badge should clear immediately.
   const sug = (fu.suggestion && plan && fu.suggestion.stepKey === plan.stepKey) ? fu.suggestion : null;
@@ -3895,11 +6213,33 @@ function buildIndexSummary(thread, cfg) {
     tags: thread.tags || [],
     status: thread.status || '',
     statusAt: thread.statusAt || 0,
+    // Mirrored into the index so the attribution report never has to load every
+    // thread body. Derived here (not at read time) because the derivation needs
+    // messages/notes, which the index row deliberately doesn't carry.
+    source: thread.source || deriveSource(thread),
+    sourceAt: thread.sourceAt || thread.createdAt || 0,
+    firstTs: thread.createdAt || ((thread.messages || [])[0] || {}).ts || 0,
     pinned: !!thread.pinned,
     archived: !!thread.archived,
     assignedTo: thread.assignedTo || '',
     unread: thread.unread || 0,
     optedOut: isOptedOut(cfg, thread.phone),
+    // Booked time (the day board finds the day's jobs from here without loading
+    // every thread) plus the garage headline for the customer roster.
+    appointmentAt: thread.appointmentAt || null,
+    hasGarage: !!(thread.garage && ((thread.garage.vehicles || []).length || thread.garage.address)),
+    vehicleLabel: garageVehicleLabel(thread.garage),
+    city: (thread.garage && thread.garage.city) || '',
+    // A standing instruction Mikey gave in his own words ("doing her car in
+    // August"). Mirrored here so the board and the AI advisor can both see WHY
+    // someone is quiet without loading every thread.
+    heldUntil: (fu.snoozeUntil && fu.snoozeUntil > Date.now()) ? fu.snoozeUntil : null,
+    holdReason: (fu.snoozeUntil && fu.snoozeUntil > Date.now()) ? (fu.holdReason || '') : '',
+    // An open quote and how long it has been sitting. Mirrored so "you quoted
+    // them six days ago and never heard back" can be surfaced without loading
+    // every thread — it's the most winnable money on the board.
+    quoteAt: (thread.quote && thread.status !== 'won' && thread.status !== 'lost') ? (thread.quote.at || 0) : 0,
+    quoteTotal: (thread.quote && thread.status !== 'won' && thread.status !== 'lost') ? (thread.quote.total || 0) : 0,
     reminderAt: thread.reminderAt || null,
     reminderNote: (thread.reminderNote || '').slice(0, 120),
     reminderDue: !!(thread.reminderAt && thread.reminderAt <= Date.now()),
@@ -3914,6 +6254,13 @@ function buildIndexSummary(thread, cfg) {
     lastBody: last ? preview(last.body) : '',
     lastDir: last ? last.dir : '',
     lastTs: last ? last.ts : (thread.updatedAt || Date.now()),
+    awaitingReply: awaiting,
+    // Has the current inbound message been read for "is anything still open?"
+    // yet? Lets the cron find the few threads that still need judging without
+    // loading every conversation on every tick.
+    replyChecked: !!rc,
+    // Why we're NOT counting them as waiting ("Thanks — conversation wrapped up").
+    closedReason: (!awaiting && rc && rc.needed === false) ? (rc.reason || 'Conversation wrapped up') : '',
     followupNextAt: plan ? plan.dueAt : null,
     followupDue: !!sug,
     fu: sug ? { reason: sug.reason, urgency: sug.urgency, stage: sug.stage, dueAt: sug.dueAt, draft: (sug.draft || '').slice(0, 320) } : null,
@@ -3942,10 +6289,21 @@ async function updateIndexEntry(thread) {
 async function appendMessage(phone, message, opts = {}) {
   const thread = await loadThread(phone);
   if (opts.name && !thread.name) thread.name = opts.name;
+  // First-touch attribution: an inbound message is how most conversations start,
+  // so stamp the channel here (markSource keeps the first one that lands).
+  if (message.dir === 'in') markSource(thread, message.kind === 'voicemail' ? 'call' : 'text');
   message.id = message.id || genId();
   message.ts = message.ts || Date.now();
   thread.messages.push(message);
   if (message.dir === 'in') thread.unread = (thread.unread || 0) + 1;
+  // A customer reaching out beats any note Mikey left himself: an inbound text
+  // ends a hold immediately, so "leave Sabine alone till August" never swallows
+  // her when she actually writes in.
+  if (message.dir === 'in' && thread.followup && (thread.followup.snoozeUntil || thread.followup.holdReason)) {
+    thread.followup.snoozeUntil = null;
+    thread.followup.holdReason = '';
+    thread.followup.heldAt = 0;
+  }
   // Once Mikey replies, any pre-drafted suggestion is answered — clear it.
   if (message.dir === 'out') thread.suggested = null;
   await saveThread(thread);
@@ -3979,41 +6337,727 @@ function transcript(thread, max = 40) {
 // into every reply prompt. The AI drifts toward how he actually words things —
 // so it literally gets better the more he uses it. One KV write only when he
 // actually edits, so it's easy on the write budget.
+// ---------------------------------------------------------------------------
+// Standing rules Mikey states in words ("stop using exclamation points",
+// "never quote a full detail under $150").
+// ---------------------------------------------------------------------------
+// The AI already learns his VOICE by watching how he edits its drafts (see
+// editsContext below). What it couldn't do was be told something outright. These
+// are hard instructions, kept small and injected into every place that writes on
+// his behalf, so a correction sticks instead of having to be re-made every time.
+const RULES_KEY = 'ai:rules';
+const RULES_MAX = 25;
+async function loadRules() {
+  const list = (await kv().get(RULES_KEY, { type: 'json' })) || [];
+  return Array.isArray(list) ? list.filter((r) => r && r.text) : [];
+}
+async function addRule(text) {
+  const t = String(text || '').trim().slice(0, 200);
+  if (!t) return null;
+  const list = await loadRules();
+  // Same rule twice is a no-op rather than a duplicate line in every prompt.
+  if (list.some((r) => r.text.toLowerCase() === t.toLowerCase())) return list;
+  list.unshift({ id: genId(), text: t, at: Date.now() });
+  const next = list.slice(0, RULES_MAX);
+  await kv().put(RULES_KEY, JSON.stringify(next));
+  return next;
+}
+async function removeRule(idOrText) {
+  const key = String(idOrText || '').trim().toLowerCase();
+  if (!key) return null;
+  const list = await loadRules();
+  const next = list.filter((r) => r.id !== idOrText && r.text.toLowerCase() !== key);
+  if (next.length === list.length) return null;
+  await kv().put(RULES_KEY, JSON.stringify(next));
+  return next;
+}
+// Injected wherever the AI writes for Mikey. Phrased as non-negotiable, because
+// that is what he means when he says one of these out loud.
+async function rulesContext() {
+  const list = await loadRules();
+  if (!list.length) return '';
+  return 'MIKEY\'S STANDING RULES — he told you these directly. They override anything else, including the playbook and your own instincts. Follow every one:\n'
+    + list.map((r) => `- ${r.text}`).join('\n') + '\n\n';
+}
+
+// ---------------------------------------------------------------------------
+// What the AI knows about the person it's writing to.
+// ---------------------------------------------------------------------------
+// Drafts used to be written from the message thread alone, which is why they
+// read generically. Everything below is already stored on the conversation — the
+// vehicle, where they are, Mikey's own notes, what they've paid — it just never
+// reached the prompt.
+function customerContext(thread, spend) {
+  const L = [];
+  const g = thread.garage || {};
+  const vehicles = (g.vehicles || []).map((v) => [v.year, v.color, v.make, v.model].filter(Boolean).join(' ')).filter(Boolean);
+  if (vehicles.length) L.push(`Vehicle${vehicles.length > 1 ? 's' : ''}: ${vehicles.join('; ')}`);
+  if (g.city || g.address) L.push(`Where: ${[g.address, g.city].filter(Boolean).join(', ')}`);
+  if (thread.status) L.push(`Lead status: ${thread.status}`);
+  if (thread.appointmentAt) L.push(`Booked: ${new Date(thread.appointmentAt).toISOString().slice(0, 16).replace('T', ' ')}`);
+  if (thread.notes) L.push(`Mikey's private notes (never quote these back): ${String(thread.notes).slice(0, 300)}`);
+  if (spend && spend.jobs > 0) {
+    L.push(`History: ${spend.jobs} job${spend.jobs > 1 ? 's' : ''} paid, $${spend.total} lifetime` +
+      (spend.lastService ? `, last was ${spend.lastService}` : '') +
+      (spend.lastDate ? ` on ${spend.lastDate}` : ''));
+  }
+  if (thread.followup && thread.followup.snoozeUntil && thread.followup.snoozeUntil > Date.now() && thread.followup.holdReason) {
+    L.push(`Note: Mikey has this one on hold — "${thread.followup.holdReason}"`);
+  }
+  if (!L.length) return '';
+  return 'WHO YOU ARE WRITING TO (use it to sound like you know them — never recite it back at them):\n' + L.map((x) => '- ' + x).join('\n') + '\n\n';
+}
+
+// Lifetime spend for one customer. Walks the last 12 monthly docs, same as the
+// money-by-phone endpoint, and stays best-effort: the AI is nicer with it and
+// still correct without it.
+async function customerSpend(phone, cfg) {
+  try {
+    let m = localDateStr(Date.now(), cfg && cfg.tz).slice(0, 7);
+    let total = 0, jobs = 0, lastService = '', lastDate = '';
+    for (let i = 0; i < 12; i++) {
+      const doc = await loadMonth(m);
+      for (const e of (doc.entries || [])) {
+        if (e.phone !== phone || e.type !== 'job') continue;
+        total += Number(e.amount) || 0; jobs++;
+        if (!lastDate || e.date > lastDate) { lastDate = e.date; lastService = e.service || ''; }
+      }
+      m = prevMonthKey(m);
+    }
+    return { total: Math.round(total * 100) / 100, jobs, lastService, lastDate };
+  } catch { return null; }
+}
+
 const EDITS_KEY = 'ai:edits';
+const EDITS_KEEP = 100;   // was 12 — enough to retrieve a *relevant* pattern, not just a recent one
 async function loadEdits() {
   return (await kv().get(EDITS_KEY, { type: 'json' })) || [];
 }
 async function recordEdit(from, to) {
   from = String(from || '').trim();
   to = String(to || '').trim();
-  if (!from || !to || from === to) return;          // no change → nothing to learn
+  if (!from || !to) return;
   if (to.length > 600 || from.length > 600) return; // skip outliers
   const norm = (s) => s.replace(/\s+/g, ' ').toLowerCase();
-  if (norm(from) === norm(to)) return;              // whitespace/case only
+  // Sending a draft WORD FOR WORD is the strongest signal there is: the AI wrote
+  // it and he shipped it. That used to be thrown away — now it's a positive
+  // example that goes straight into the voice corpus.
+  if (norm(from) === norm(to)) { await recordVoiceSample(to, 'accepted'); return; }
   const list = await loadEdits();
   list.unshift({ from, to, ts: Date.now() });
-  await kv().put(EDITS_KEY, JSON.stringify(list.slice(0, 12)));
+  await kv().put(EDITS_KEY, JSON.stringify(list.slice(0, EDITS_KEEP)));
+  // His rewrite is, by definition, how he'd have said it.
+  await recordVoiceSample(to, 'edited');
 }
-async function editsContext() {
-  const recent = (await loadEdits()).filter((e) => e && e.from && e.to).slice(0, 6);
-  if (!recent.length) return '';
+// Pull the edit pairs most relevant to the situation being drafted, not merely
+// the most recent — a price rewrite teaches little about a scheduling reply.
+async function editsContext(bucket) {
+  const all = (await loadEdits()).filter((e) => e && e.from && e.to);
+  if (!all.length) return '';
+  const hits = bucket ? all.filter((e) => voiceBucket(e.to) === bucket) : [];
+  const recent = hits.concat(all.filter((e) => !hits.includes(e))).slice(0, 6);
   const rows = recent.map((e) => `- The draft said: "${e.from}"\n  Mikey changed it to: "${e.to}"`).join('\n');
   return 'HOW MIKEY EDITS DRAFTS (these are his recent corrections — learn the PATTERN of how he rewrites: his length, warmth, word choices — and apply that style, not the specific content):\n' + rows + '\n\n';
 }
 
 // ===========================================================================
-// Typing model — the keyboard that knows how YOU talk
+// VOICE — sounding like Mikey instead of like an assistant
 // ===========================================================================
-// Every text Mikey has actually typed to a customer, boiled down to a tiny model
-// the browser can run on every keystroke with zero latency: the words he opens
-// messages with, which word usually follows which (1- and 2-word context), his
-// real vocabulary (so "app" completes to "appointment", not the dictionary's
-// "apple"), and the short lines he sends over and over. Built ONLY from his own
-// outbound, hand-written messages — automated follow-ups and booking texts are
-// excluded so the model is him, not the robot.
+// The AI used to learn his voice from ten hand-written example texts while
+// thousands of his real ones sat unread in KV. This module fixes that: it mines
+// the messages he actually typed, buckets them by situation, derives a
+// measurable fingerprint from them, and shows the model the ones that match the
+// situation being drafted.
 //
-// KV cost: one read per fetch (cheap) and ONE write per rebuild, and we only
-// rebuild when the cached model is older than STYLE_TTL — about 2 writes/day.
+// Showing ten real texts beats any amount of describing the style in prose, and
+// unlike a hand-written list it covers the situations that actually come up, in
+// the proportions they actually come up.
+const VOICE_KEY = 'voice:profile';
+// Retrieval now ranks by relevance rather than taking the newest N, so a deeper pool
+// is a straight win: more chance something genuinely close to the question is in
+// there. 40 × 8 buckets ≈ 320 short texts, comfortably inside a single KV value.
+const VOICE_PER_BUCKET = 40;    // kept per situation (retrieval ranks across all of them)
+const VOICE_SHOW = 12;          // shown to the model per draft
+
+// Situation buckets. Deterministic and free — no AI call to file a message.
+const VOICE_BUCKETS = ['price', 'schedule', 'confirm', 'answer', 'apology', 'closing', 'quick', 'general'];
+// Order matters. The rule: a message goes in the bucket whose OTHER messages it
+// most resembles stylistically, because the bucket decides which of his real
+// texts the model gets shown.
+//
+// Two consequences worth stating, since both are easy to get backwards:
+//   - Bad news outranks its own subject. "Unfortunately I couldn't get a slot"
+//     belongs with how he softens bad news, not with scheduling.
+//   - A concrete day or time makes it scheduling even when it opens like a
+//     confirmation. "You're all set for Tuesday" and "Perfect, let's shoot for
+//     10:45" are the same kind of message and must not be split apart; `confirm`
+//     is for agreements with no time in them ("Sounds good!", "Yep, will do").
+function voiceBucket(text) {
+  const t = String(text || '').toLowerCase();
+  if (!t) return 'general';
+  if (/\$|\b\d{2,4}\b\s*(for|to|out the door)|\bprice|\bquote|\bcost/.test(t)) return 'price';
+  if (/\b(sorry|unfortunately|apolog|my bad|ran late|running late)\b/.test(t)) return 'apology';
+  // Bare clock times ("10:30", "let's shoot for 10:45") are how he actually writes
+  // times — an am/pm suffix is the exception, not the rule.
+  if (/\b(mon|tues|wednes|thurs|fri|satur|sun)day\b|\btomorrow\b|\btoday\b|\bnext week\b|\b\d{1,2}:\d{2}\b|\b\d{1,2}\s*(am|pm)\b|\bmorning\b|\bafternoon\b|\bslot\b|\bschedule\b|\bavailab/.test(t)) return 'schedule';
+  if (/^(yes|yep|yeah|perfect|sounds good|you'?re all set|got it|ok|okay|will do)\b/.test(t)) return 'confirm';
+  if (/\b(thank|thanks|appreciate|means a lot|no worries)\b/.test(t)) return 'closing';
+  if (/\?/.test(t)) return 'answer';
+  if (t.length <= 40) return 'quick';
+  return 'general';
+}
+
+// Is this outbound message actually HIS writing? Templates, follow-ups, booking
+// texts and run-board messages are the app's words, not his — training on them
+// would teach the AI to imitate itself, which is exactly the drift to avoid.
+const VOICE_EXCLUDE_KINDS = ['followup', 'scheduled', 'booking', 'run', 'assist', 'auto', 'payment'];
+function voiceUsable(m) {
+  if (!m || m.dir !== 'out') return false;
+  // src:'manual' means Mikey typed these exact words, which beats the kind guess: a
+  // text he wrote and queued for later is 'scheduled', and a nudge he rewrote before
+  // approving is 'followup', yet both are his voice. Without this a rebuild would
+  // re-mine history and drop the samples the live path had already learned.
+  if (m.src !== 'manual' && m.kind && VOICE_EXCLUDE_KINDS.includes(m.kind)) return false;
+  const b = String(m.body || '').trim();
+  if (b.length < 8 || b.length > 400) return false;
+  if (/^https?:\/\/\S+$/.test(b)) return false;              // a bare link teaches nothing
+  if (/- Mikey$/.test(b) && /water & power/.test(b)) return false; // stray template
+  return true;
+}
+
+async function loadVoice() {
+  return (await kv().get(VOICE_KEY, { type: 'json' })) || null;
+}
+// ⚠ KV WRITE — only on an explicit rebuild or when a training verdict lands.
+async function saveVoice(v) { await kv().put(VOICE_KEY, JSON.stringify(v)); }
+
+function emptyVoice() {
+  const buckets = {};
+  for (const b of VOICE_BUCKETS) buckets[b] = [];
+  return { builtAt: 0, fingerprint: '', counts: {}, buckets };
+}
+
+// Add one sample to the corpus without a full rebuild. Used by the learning loop
+// (accepted drafts, his rewrites, trainer verdicts) so the profile keeps
+// sharpening between rebuilds.
+async function recordVoiceSample(text, source) { return addVoiceSamples([text], source); }
+
+// Batch version — one KV read and one write no matter how many samples, which
+// matters when an import drops fifty of them in at once.
+async function addVoiceSamples(list, source) {
+  const v = (await loadVoice()) || emptyVoice();
+  const norm = (s) => s.replace(/\s+/g, ' ').toLowerCase();
+  let added = 0;
+  for (const raw of (list || [])) {
+    const t = String(raw || '').replace(/\s+/g, ' ').trim();
+    if (t.length < 8 || t.length > 400) continue;
+    const b = voiceBucket(t);
+    v.buckets[b] = v.buckets[b] || [];
+    if (v.buckets[b].some((x) => norm(x.t) === norm(t))) continue;   // already have it
+    v.buckets[b].unshift({ t, s: source || 'sent', at: Date.now() });
+    if (v.buckets[b].length > VOICE_PER_BUCKET) v.buckets[b].length = VOICE_PER_BUCKET;
+    added++;
+  }
+  if (!added) return 0;
+  for (const b of VOICE_BUCKETS) v.counts[b] = (v.buckets[b] || []).length;
+  // Recount the measured style so it tracks live learning, not just rebuilds.
+  // Pure arithmetic over what we already hold — no AI call, no extra read.
+  v.style = measureStyle(v);
+  await saveVoice(v);
+  return added;
+}
+
+// ---------------------------------------------------------------------------
+// Importing a transcript export
+// ---------------------------------------------------------------------------
+// The dashboard only knows the conversations that came through it. Years of his
+// real texting lives in a phone export, and that is the best training data there
+// is — so let him paste one in.
+//
+// Google Voice / Messages exports label each bubble for screen readers as
+//   "Message from you, <text>, Tuesday, July 28 2026, 3:05 PM."
+// which is a precise way to take HIS side and leave the customer's out. Anything
+// that doesn't match that shape falls back to one-message-per-line, so a plain
+// list of his texts works too.
+const VOICE_MINE_RE = /Message from you,\s*([\s\S]*?),\s*(?:Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day,\s*[A-Z][a-z]+ \d{1,2} \d{4},\s*\d{1,2}:\d{2}\s*(?:AM|PM)\./g;
+
+function parseTranscript(raw) {
+  const text = String(raw || '');
+  const out = [];
+  let m;
+  VOICE_MINE_RE.lastIndex = 0;
+  while ((m = VOICE_MINE_RE.exec(text))) out.push(m[1]);
+  if (out.length) return { mode: 'export', texts: out };
+  // Fallback: a plain list. Drop anything that looks like the other side of the
+  // conversation rather than guessing.
+  const lines = text.split(/\r?\n/).map((s) => s.trim())
+    .filter((s) => s && !/^(me|you|customer|them)\s*[:\-]/i.test(s));
+  return { mode: 'lines', texts: lines };
+}
+
+// A bare link or a phone number is not a voice sample.
+function voiceImportable(t) {
+  const s = String(t || '').replace(/\s+/g, ' ').trim();
+  if (s.length < 8 || s.length > 400) return false;
+  if (/^https?:\/\/\S+$/i.test(s)) return false;
+  if (/^[\w.]+\.(com|net|org)\/\S*$/i.test(s)) return false;   // "venmo.com/…" on its own
+  if (/^[-+\d()\s.]+$/.test(s)) return false;                  // just a number
+  return true;
+}
+
+async function apiVoiceImport(request) {
+  const d = await readJson(request);
+  const raw = String((d && d.text) || '').slice(0, 400000);
+  if (!raw.trim()) return json({ ok: false, error: 'empty' }, 422);
+  const parsed = parseTranscript(raw);
+  const seen = new Set();
+  const texts = [];
+  for (const t of parsed.texts) {
+    const s = String(t).replace(/\s+/g, ' ').trim();
+    if (!voiceImportable(s)) continue;
+    const k = s.toLowerCase();
+    if (seen.has(k)) continue;                                  // exports repeat every bubble
+    seen.add(k); texts.push(s);
+  }
+  if (!texts.length) return json({ ok: false, error: 'nothing_found', mode: parsed.mode }, 422);
+  const added = await addVoiceSamples(texts, 'import');
+  // A fresh fingerprint is the point of importing — redo it over the new corpus.
+  let fingerprint = '';
+  if (aiConfigured()) {
+    try {
+      const v = await loadVoice();
+      fingerprint = await deriveVoiceFingerprint(v, await loadConfig());
+      if (fingerprint) { v.fingerprint = fingerprint; await saveVoice(v); }
+    } catch { /* samples are in either way */ }
+  }
+  return json({ ok: true, mode: parsed.mode, found: texts.length, added, fingerprint });
+}
+
+// Walk every conversation and pull out the texts Mikey actually typed. Expensive
+// (one KV read per thread) so it is never automatic — it runs when he taps
+// "Rebuild my voice profile", and again after a training session.
+async function buildVoiceProfile(opts = {}) {
+  const index = await loadIndex();
+  const cfg = await loadConfig();
+  const prev = await loadVoice();
+  const v = emptyVoice();
+  let scanned = 0, kept = 0;
+  // Newest conversations first: recent writing is the better model of how he
+  // sounds now, and the per-bucket cap fills from the front.
+  const rows = index.slice().sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0)).slice(0, 400);
+  for (const e of rows) {
+    if (isPracticePhone(e.phone)) continue;             // the fake customer isn't training data
+    const thread = await loadThread(e.phone);
+    for (const m of (thread.messages || [])) {
+      scanned++;
+      if (!voiceUsable(m)) continue;
+      const b = voiceBucket(m.body);
+      if (v.buckets[b].length >= VOICE_PER_BUCKET) continue;
+      const norm = (s) => s.replace(/\s+/g, ' ').toLowerCase();
+      if (v.buckets[b].some((x) => norm(x.t) === norm(m.body))) continue;
+      v.buckets[b].push({ t: String(m.body).trim(), s: 'sent', at: m.ts || 0 });
+      kept++;
+    }
+  }
+  // Carry over the samples a rebuild cannot re-derive. A pasted phone export never
+  // existed as a thread, and trainer verdicts come from the practice number that the
+  // scan above deliberately skips — so rebuilding from threads alone silently threw
+  // away the best training data he had. Mined samples come first; these fill in
+  // behind them, up to the same per-bucket cap.
+  const VOICE_KEEP_SOURCES = ['import', 'trainer'];
+  const vnorm = (s) => String(s || '').replace(/\s+/g, ' ').toLowerCase();
+  for (const b of VOICE_BUCKETS) {
+    for (const s of (prev && prev.buckets && prev.buckets[b]) || []) {
+      if (!s || !s.t || !VOICE_KEEP_SOURCES.includes(s.s)) continue;
+      if (v.buckets[b].length >= VOICE_PER_BUCKET) break;
+      if (v.buckets[b].some((x) => vnorm(x.t) === vnorm(s.t))) continue;
+      v.buckets[b].push(s);
+      kept++;
+    }
+  }
+  for (const b of VOICE_BUCKETS) v.counts[b] = v.buckets[b].length;
+  v.builtAt = Date.now();
+  v.scanned = scanned;
+  v.kept = kept;
+  v.style = measureStyle(v);   // free, and it drives both the prompt and the gate
+  // Derive the fingerprint from the real samples. One AI call, and the only one
+  // this whole build makes.
+  if (kept >= 12 && opts.fingerprint !== false) {
+    try { v.fingerprint = await deriveVoiceFingerprint(v, cfg); } catch { v.fingerprint = ''; }
+  }
+  await saveVoice(v);
+  return v;
+}
+
+// ---------------------------------------------------------------------------
+// Measured style — counted, not described
+// ---------------------------------------------------------------------------
+// The AI-written fingerprint below is useful but it is still one model's prose
+// about another model's target. These are just counts over his real texts, so
+// they cannot drift or flatter: the model gets told his actual median length in
+// characters, how often he really uses an emoji, whether he opens with a name.
+// Free (no AI call), recomputed on every build, and the same numbers drive the
+// output gate in styleViolation() so the rule that goes in is the rule enforced.
+function measureStyle(v) {
+  const all = [];
+  for (const b of VOICE_BUCKETS) for (const x of (v.buckets[b] || [])) if (x && x.t) all.push(String(x.t));
+  if (all.length < 8) return null;
+  const med = (xs) => { const s = xs.slice().sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
+  const pct = (n) => Math.round((n / all.length) * 100);
+  const EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u;
+  const lens = all.map((t) => t.length);
+  const sentences = all.map((t) => (t.match(/[.!?]+(\s|$)/g) || []).length || 1);
+  return {
+    n: all.length,
+    medLen: med(lens),
+    p90Len: lens.slice().sort((a, b) => a - b)[Math.floor(lens.length * 0.9)],
+    maxLen: Math.max(...lens),
+    medSentences: med(sentences),
+    emojiPct: pct(all.filter((t) => EMOJI.test(t)).length),
+    exclaimPct: pct(all.filter((t) => t.includes('!')).length),
+    // "Hey Ruth!" / "Good morning" — does he open by addressing them, or dive in?
+    greetPct: pct(all.filter((t) => /^(hey|hi|hello|good (morning|afternoon|evening))\b/i.test(t)).length),
+    questionPct: pct(all.filter((t) => t.includes('?')).length),
+    lowerStartPct: pct(all.filter((t) => /^[a-z]/.test(t)).length),
+    smileyPct: pct(all.filter((t) => /:\)|:-\)/.test(t)).length),
+  };
+}
+
+// The measured numbers as prompt rules. Deliberately phrased as ranges and
+// frequencies so the model has room to write naturally inside his real habits
+// rather than mimicking one sample.
+function measuredStyleRules(st) {
+  if (!st) return '';
+  const L = [];
+  L.push(`- Length: his texts run about ${st.medLen} characters typically; ${st.p90Len} is already long for him. Do not exceed ${Math.max(st.p90Len, 160)}.`);
+  L.push(`- Sentences: usually ${st.medSentences === 1 ? 'ONE sentence' : st.medSentences + ' short sentences'}.`);
+  L.push(`- Opening: he starts with a greeting or their name in only ${st.greetPct}% of texts — ${st.greetPct < 30 ? 'so usually dive straight in with no greeting' : 'so a short greeting is normal'}.`);
+  L.push(`- Emoji: ${st.emojiPct === 0 ? 'he never uses emoji. Use none.' : `about ${st.emojiPct}% of his texts have one — so most have none.`}`);
+  if (st.smileyPct >= 5) L.push(`- He writes a plain ":)" in about ${st.smileyPct}% of texts.`);
+  L.push(`- Exclamation marks: in about ${st.exclaimPct}% of his texts${st.exclaimPct < 50 ? ' — not every message' : ''}.`);
+  if (st.lowerStartPct >= 15) L.push(`- He begins about ${st.lowerStartPct}% of texts in lowercase; that is normal for him.`);
+  return 'HIS STYLE, MEASURED FROM ' + st.n + ' REAL TEXTS (these are counts, not opinions — match them):\n' + L.join('\n');
+}
+
+// Turn the corpus into MEASURABLE rules — "one exclamation mark every third
+// message", "never says Certainly" — rather than adjectives. Evidence beats the
+// hand-written tone paragraph because it describes what he actually does.
+async function deriveVoiceFingerprint(v, cfg) {
+  const sample = [];
+  for (const b of VOICE_BUCKETS) for (const x of (v.buckets[b] || []).slice(0, 18)) sample.push(x.t);
+  if (sample.length < 12) return '';
+  const prompt =
+    `Below are real text messages a mobile car detailer sent his customers. Study them and write a STYLE FINGERPRINT ` +
+    `another writer could follow to be indistinguishable from him.\n\n` +
+    `Return ONLY plain text, max 200 words, as short factual bullets. Be MEASURABLE, not complimentary — ` +
+    `state typical sentence count and length, greeting habits (does he open with a name? dive straight in?), ` +
+    `capitalisation, punctuation and dash habits, emoji (which ones, roughly how often), contractions, sign-offs, ` +
+    `recurring phrases he actually uses, and how he softens bad news. ` +
+    `Finish with a line starting exactly "NEVER: " listing things he never does.\n\n` +
+    `Do not quote the messages back. Do not praise him. Just the rules.\n\n` +
+    sample.map((s) => `- ${s}`).join('\n');
+  const text = await aiGenerate(prompt, { tier: 'fast', maxTokens: 800, temperature: 0.2 });
+  return String(text || '').trim().slice(0, 1600);
+}
+
+// ---------------------------------------------------------------------------
+// Retrieval — which of his texts the model actually gets shown
+// ---------------------------------------------------------------------------
+// This is the highest-signal part of the prompt, so it is worth doing properly.
+// Bucketing alone is coarse: it answers "is this about scheduling?" but not "which
+// of his 24 scheduling texts is closest to what this customer just asked?" — and
+// it hands over the NEWEST 24, which on a repetitive bucket can be twelve near-
+// copies of "sounds good".
+//
+// So: score every sample against the actual incoming message by shared rare words,
+// boost same-bucket ones, and drop candidates that duplicate something already
+// picked. No embeddings and no vector store — over a few hundred short texts, IDF
+// overlap gets most of the benefit for none of the infrastructure, and it runs in
+// well under a millisecond inside the Worker.
+const VOICE_STOP = new Set(('a an the and or but if to of for on in at is are was were be been am do does did have has had ' +
+  'i you he she it we they me him her them my your his their this that these those with as by from up out so no not ' +
+  'can could will would should may might just get got go going about what when where who how why yes yeah ok okay ' +
+  'll ve re s t d m thanks thank please hey hi').split(' '));
+function voiceTokens(s) {
+  const out = new Set();
+  for (const w of String(s || '').toLowerCase().split(/[^a-z0-9$]+/)) {
+    if (w.length < 2 || VOICE_STOP.has(w)) continue;
+    out.add(w);
+  }
+  return out;
+}
+// Jaccard over token sets — used to reject a candidate that says the same thing as
+// one already chosen, so the model sees variety rather than the same text twice.
+function voiceOverlap(a, b) {
+  if (!a.size || !b.size) return 0;
+  let shared = 0;
+  for (const t of a) if (b.has(t)) shared++;
+  return shared / (a.size + b.size - shared);
+}
+
+// Rank his real texts by relevance to what the customer actually said.
+function pickVoiceExamples(voice, bucket, query, limit) {
+  const rows = [];
+  for (const b of VOICE_BUCKETS) {
+    for (const x of (voice.buckets[b] || [])) {
+      if (x && x.t) rows.push({ t: String(x.t), bucket: b, toks: voiceTokens(x.t) });
+    }
+  }
+  if (!rows.length) return [];
+  const q = voiceTokens(query);
+
+  // Document frequency, so a word like "detail" (in half his texts) counts for far
+  // less than "ceramic" or "Tuesday".
+  const df = new Map();
+  for (const r of rows) for (const t of r.toks) df.set(t, (df.get(t) || 0) + 1);
+  const idf = (t) => Math.log(1 + rows.length / (1 + (df.get(t) || 0)));
+
+  for (const r of rows) {
+    let s = 0;
+    for (const t of r.toks) if (q.has(t)) s += idf(t);
+    // Normalised so a long text does not win on sheer word count.
+    r.score = s / Math.sqrt(r.toks.size + 1);
+    if (r.bucket === bucket) r.score += 0.6;   // same situation is real evidence
+  }
+  rows.sort((a, b) => b.score - a.score);
+
+  const picked = [];
+  for (const r of rows) {
+    if (picked.length >= limit) break;
+    // Near-duplicate of something already shown teaches nothing new.
+    if (picked.some((p) => voiceOverlap(p.toks, r.toks) > 0.6)) continue;
+    picked.push(r);
+  }
+  // If dedupe was aggressive on a thin corpus, top back up rather than show too few.
+  if (picked.length < Math.min(6, rows.length)) {
+    for (const r of rows) {
+      if (picked.length >= limit) break;
+      if (!picked.includes(r)) picked.push(r);
+    }
+  }
+  return picked;
+}
+
+// What goes into a draft prompt: the measured numbers, the AI-derived fingerprint,
+// and his real texts closest to the message being answered.
+function voiceContext(voice, bucket, query) {
+  if (!voice) return '';
+  const out = [];
+  const measured = measuredStyleRules(voice.style);
+  if (measured) out.push(measured);
+  if (voice.fingerprint) {
+    out.push('HOW MIKEY WRITES (derived from his real texts — follow this exactly):\n' + voice.fingerprint);
+  }
+  const picked = pickVoiceExamples(voice, bucket, query || '', VOICE_SHOW);
+  if (picked.length) {
+    out.push(
+      `REAL TEXTS MIKEY SENT, closest first, mostly from this same kind of moment (${bucket}). Match their rhythm, ` +
+      `length and word choice — these are the target, not the playbook's phrasing. Copy the STYLE, never the specific ` +
+      `prices, times or names, which belong to other conversations:\n` + picked.map((r) => `- "${r.t}"`).join('\n'),
+    );
+  }
+  return out.length ? out.join('\n\n') + '\n\n' : '';
+}
+
+// ---------------------------------------------------------------------------
+// The tell-blocker
+// ---------------------------------------------------------------------------
+// Being spotted as AI is mostly about a handful of characteristic phrases, not
+// about missing warmth. Cheaper and more reliable to ban them outright than to
+// ask the model nicely.
+const AI_TELLS = [
+  /\bcertainly[!,.]/i, /\bi'?d be happy to\b/i, /\bhappy to assist\b/i, /\bfeel free to\b/i,
+  /\brest assured\b/i, /\bat your earliest convenience\b/i, /\bplease don'?t hesitate\b/i,
+  /\blet me know if you have any (other )?questions\b/i, /\bi hope this (message )?finds you\b/i,
+  /\bthank you for reaching out\b/i, /\bi understand your concern\b/i, /\bgreat question\b/i,
+  /\bas an ai\b/i, /\bi'?m here to help\b/i, /\bplease be advised\b/i, /\bkindly\b/i,
+  /\bdelve\b/i, /\bit('?s| is) worth noting\b/i, /\bthat said,/i, /—/,   // em-dash: he doesn't use them
+];
+function findTell(text) {
+  for (const re of AI_TELLS) { const m = String(text || '').match(re); if (m) return m[0]; }
+  return '';
+}
+
+// The other half of the gate. A tell is a phrase; this catches drafts that use no
+// banned phrase but still don't read like him — three times his usual length, an
+// emoji when he almost never uses one, "Hi Sarah," when he never opens with a
+// greeting. Measured against his own counts, so the bar is his habits and not some
+// generic idea of a good text. Returns a fixable instruction, or ''.
+function styleViolation(text, st) {
+  if (!st || !text) return '';
+  const t = String(text).trim();
+  const EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u;
+  // Generous ceiling: 1.6× his 90th percentile, floor 160, so only real bloat trips.
+  const ceiling = Math.max(Math.round((st.p90Len || 120) * 1.6), 160);
+  if (t.length > ceiling) {
+    return `it is ${t.length} characters, and his texts run about ${st.medLen}. Cut it to roughly ${st.medLen}–${st.p90Len} characters — say less`;
+  }
+  if (st.emojiPct <= 5 && EMOJI.test(t)) {
+    return 'it uses an emoji, and he essentially never does. Remove it';
+  }
+  if (st.greetPct <= 15 && /^(hey|hi|hello|good (morning|afternoon|evening))\b[\s,!]*[A-Z][a-z]+[,!]/i.test(t)) {
+    return 'it opens by greeting them by name, and he almost never does. Start with the actual answer';
+  }
+  const sentences = (t.match(/[.!?]+(\s|$)/g) || []).length || 1;
+  if (st.medSentences <= 2 && sentences >= 5) {
+    return `it runs ${sentences} sentences and he usually writes ${st.medSentences}. Make it shorter`;
+  }
+  return '';
+}
+
+// ---------------------------------------------------------------------------
+// The replay trainer
+// ---------------------------------------------------------------------------
+// Find a real moment from the past — a customer texted, Mikey answered — and
+// have the AI write what it would say now. Show both, unlabelled effort on his
+// part: one tap says whether it sounds like him.
+//
+// This is the only source of NEGATIVE signal in the whole system. The corpus
+// learns how he writes; only the trainer learns which drafts he'd have thrown
+// out. It doubles as the scoreboard: the match rate is the number to watch.
+const VOICE_SCORE_KEY = 'voice:scores';
+
+async function loadVoiceScores() {
+  return (await kv().get(VOICE_SCORE_KEY, { type: 'json' })) || { rounds: [], match: 0, off: 0 };
+}
+
+// Pick one past exchange to replay. Prefers conversations we haven't drilled yet
+// and messages long enough to actually carry a voice.
+// Returns a BATCH of ready-to-judge cards, with the drafts written in parallel.
+//
+// The old version served one card per request and re-walked the whole index and
+// every thread to find it, so each tap cost a fresh scan plus a serial AI call —
+// seconds of staring at a spinner per verdict. Now: scan once, collect every
+// candidate moment as cheap metadata, then draft several at once. The client keeps
+// a queue and prefetches, so tapping a verdict advances with no wait at all.
+const REPLAY_SCAN_THREADS = 60;
+const REPLAY_BATCH_MAX = 6;
+async function apiVoiceReplayNext(request) {
+  if (!aiConfigured()) return json({ ok: false, error: 'ai_not_configured' }, 503);
+  const d = await readJson(request).catch(() => ({}));
+  const seen = new Set((Array.isArray(d && d.seen) ? d.seen : []).map(String));
+  const want = Math.max(1, Math.min(REPLAY_BATCH_MAX, Number((d && d.count) || 4)));
+  const cfg = await loadConfig();
+  const index = await loadIndex();
+  const rows = index.filter((e) => !e.archived && !isPracticePhone(e.phone))
+    .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0)).slice(0, REPLAY_SCAN_THREADS);
+
+  // One parallel pass over the threads, collecting every moment worth replaying:
+  // a customer message he answered himself. No AI yet — this is just bookkeeping.
+  const threads = await batchLoadThreads(rows.map((e) => e.phone));
+  const cands = [];
+  for (const thread of threads) {
+    const msgs = thread.messages || [];
+    for (let i = msgs.length - 1; i > 0; i--) {
+      const reply = msgs[i], asked = msgs[i - 1];
+      if (!voiceUsable(reply)) continue;
+      if (!asked || asked.dir !== 'in' || !String(asked.body || '').trim()) continue;
+      const id = `${thread.phone}:${reply.ts}`;
+      if (seen.has(id)) continue;
+      cands.push({
+        id, phone: thread.phone, name: thread.name || '', i, thread,
+        customer: String(asked.body || '').slice(0, 400),
+        mine: String(reply.body || '').trim(),
+        bucket: voiceBucket(asked.body),
+        ts: reply.ts || 0,
+      });
+    }
+  }
+  if (!cands.length) return json({ ok: true, done: true, cards: [] });
+
+  // Spread the batch across situations and conversations rather than serving four
+  // near-identical scheduling moments from one thread — a mixed batch tells him far
+  // more about where the voice actually breaks down.
+  cands.sort((a, b) => b.ts - a.ts);
+  const byBucket = new Map();
+  for (const c of cands) {
+    if (!byBucket.has(c.bucket)) byBucket.set(c.bucket, []);
+    byBucket.get(c.bucket).push(c);
+  }
+  const order = [];
+  const lists = [...byBucket.values()];
+  for (let round = 0; order.length < cands.length; round++) {
+    let addedAny = false;
+    for (const l of lists) {
+      if (round < l.length) { order.push(l[round]); addedAny = true; }
+      if (order.length >= want * 3) break;   // enough to choose from; stop early
+    }
+    if (!addedAny) break;
+  }
+  const chosen = [];
+  const usedPhones = new Set();
+  for (const c of order) {                    // first pass: one per conversation
+    if (chosen.length >= want) break;
+    if (usedPhones.has(c.phone)) continue;
+    usedPhones.add(c.phone);
+    chosen.push(c);
+  }
+  for (const c of order) {                    // top up if he has few conversations
+    if (chosen.length >= want) break;
+    if (!chosen.includes(c)) chosen.push(c);
+  }
+
+  // Draft them all at once. Each one sees the thread as it stood at that moment, so
+  // the AI answers the same question with the same history — never with hindsight.
+  const cards = await Promise.all(chosen.map(async (c) => {
+    const asOf = Object.assign({}, c.thread, { messages: (c.thread.messages || []).slice(0, c.i) });
+    try {
+      const draft = await generateReply(asOf, cfg, '');
+      if (!draft) return null;
+      return { id: c.id, phone: c.phone, name: c.name, customer: c.customer, mine: c.mine, ai: draft, bucket: c.bucket };
+    } catch { return null; }   // one failed draft shouldn't sink the whole batch
+  }));
+  const out = cards.filter(Boolean);
+  if (!out.length) return json({ ok: false, error: 'draft_failed' }, 502);
+  return json({ ok: true, cards: out, remaining: Math.max(0, cands.length - out.length) });
+}
+
+// Record a verdict. "Off" is the valuable one — it feeds his real wording back
+// in as a positive example AND records the AI's attempt as a thing to avoid.
+async function apiVoiceReplayScore(request) {
+  const d = await readJson(request);
+  const id = String((d && d.id) || '').slice(0, 80);
+  const verdict = (d && d.verdict) === 'match' ? 'match' : 'off';
+  const mine = String((d && d.mine) || '').trim();
+  const ai = String((d && d.ai) || '').trim();
+  if (!id) return json({ ok: false, error: 'bad_request' }, 422);
+
+  // Which situation this round was, so the scoreboard can say WHERE it's weak. A
+  // single global percentage tells him the voice is 78% right but not that pricing
+  // is the half that's wrong — and pricing is the half worth fixing.
+  const bucket = VOICE_BUCKETS.includes(d && d.bucket) ? d.bucket : 'general';
+
+  const s = await loadVoiceScores();
+  s.rounds.unshift({ id, verdict, at: Date.now(), b: bucket });
+  if (s.rounds.length > 200) s.rounds.length = 200;
+  s[verdict] = (s[verdict] || 0) + 1;
+  s.byBucket = s.byBucket || {};
+  const bb = s.byBucket[bucket] || (s.byBucket[bucket] = { match: 0, off: 0 });
+  bb[verdict] = (bb[verdict] || 0) + 1;
+  await kv().put(VOICE_SCORE_KEY, JSON.stringify(s));
+
+  // His real words are always worth having in the corpus.
+  if (mine) await recordVoiceSample(mine, verdict === 'off' ? 'trainer' : 'sent');
+  // A miss is a before→after pair: what the AI wrote, and what he'd have written.
+  if (verdict === 'off' && mine && ai) { try { await recordEdit(ai, mine); } catch { /* non-fatal */ } }
+  return json({ ok: true, scores: { match: s.match || 0, off: s.off || 0 }, byBucket: s.byBucket });
+}
+
+// ===========================================================================
+// TYPING MODEL — the predictive keyboard's local half
+// ===========================================================================
+// The voice profile above already holds the texts he really wrote, filed by
+// situation. This boils that same corpus down into something a browser can run
+// on every keystroke: the words he opens messages with, which word tends to
+// follow which (1- and 2-word context), and his real vocabulary — so "app"
+// completes to "appointment" and not to the dictionary's "apple".
+//
+// Built from the voice corpus on purpose. It is already de-templated (see
+// voiceUsable) and it includes the messages imported from his Google Voice
+// history, which never existed as threads in KV. One KV read instead of eighty.
+//
+// KV cost: ONE write per rebuild, and only when the cached model is older than
+// STYLE_TTL — about 2 writes/day.
 const STYLE_KEY = 'ai:style';
 const STYLE_TTL = 12 * 60 * 60 * 1000;   // rebuild at most twice a day
 const STYLE_MAX_KEYS = 1400;             // n-gram contexts kept (payload size guard)
@@ -4031,7 +7075,6 @@ function buildStyleFrom(bodies) {
   const starters = new Map();   // first word of a message -> count
   const vocab = new Map();      // lowercased word -> count
   const surface = new Map();    // lowercased word -> Map(as-typed form -> count)
-  const phrases = new Map();    // short whole messages he reuses -> count
   let used = 0;
 
   const bumpNext = (ctx, word) => {
@@ -4060,7 +7103,6 @@ function buildStyleFrom(bodies) {
     const toks = styleTokens(body);
     if (toks.length < 2) continue;
     used++;
-    if (body.length <= 90 && toks.length >= 3) phrases.set(body, (phrases.get(body) || 0) + 1);
     starters.set(toks[0], (starters.get(toks[0]) || 0) + 1);
     for (let i = 0; i < toks.length; i++) {
       const w = toks[i];
@@ -4088,45 +7130,31 @@ function buildStyleFrom(bodies) {
     n: used,
     start: top(starters, 8).map(([w]) => w),
     next: outNext,
-    // Vocabulary for prefix completion ("app" → "appointment"). Frequency-ranked
-    // and capped rather than threshold-filtered, so the long, distinctive words
-    // he types — the ones actually worth completing — survive the cut.
+    // Vocabulary for prefix completion. Frequency-ranked and capped rather than
+    // threshold-filtered, so the long, distinctive words he types — the ones
+    // actually worth completing — survive the cut.
     words: top(vocab, STYLE_MAX_WORDS).map(([w]) => asTyped(w)),
-    phrases: top(phrases, 10).filter(([, n]) => n >= 2).map(([p]) => p),
   };
 }
 
 async function rebuildStyleModel() {
-  const index = await loadIndex();
-  const phones = index.slice()
-    .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0))
-    .slice(0, 80)
-    .map((e) => e.phone)
-    .filter(Boolean);
-  const threads = await batchLoadThreads(phones);
-  const rows = [];
-  for (const t of threads) {
-    for (const m of (t.messages || [])) {
-      // Only what a human actually typed: manual sends and scheduled sends.
-      if (m.dir !== 'out' || !m.body) continue;
-      if (m.kind && m.kind !== 'manual' && m.kind !== 'scheduled') continue;
-      rows.push({ body: String(m.body), ts: m.ts || 0 });
+  const voice = await loadVoice();
+  const bodies = [];
+  if (voice) {
+    for (const b of VOICE_BUCKETS) for (const x of (voice.buckets[b] || [])) if (x && x.t) bodies.push(String(x.t));
+  }
+  // Nothing trained yet (a fresh install, or before the first voice build) — fall
+  // back to reading his sent messages straight off the recent threads, so the
+  // keyboard still knows him on day one.
+  if (bodies.length < 20) {
+    const index = await loadIndex();
+    const phones = index.slice().sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0))
+      .slice(0, 60).map((e) => e.phone).filter(Boolean);
+    for (const t of await batchLoadThreads(phones)) {
+      for (const m of (t.messages || [])) if (voiceUsable(m)) bodies.push(String(m.body));
     }
   }
-  const model = buildStyleFrom(rows.map((r) => r.body));
-  // A few of his most recent real texts, verbatim — this is what the AI half of
-  // the keyboard reads to match his voice, and it works from message one (the
-  // repeated-phrase list needs a habit before it has anything to show).
-  const seen = new Set();
-  model.samples = rows.slice().sort((a, b) => b.ts - a.ts).map((r) => r.body.trim())
-    .filter((b) => {
-      if (b.length < 20 || b.length > 140) return false;
-      const k = b.toLowerCase();
-      if (seen.has(k)) return false;
-      seen.add(k); return true;
-    })
-    .slice(0, 10);
-  return model;
+  return buildStyleFrom(bodies);
 }
 
 async function loadStyleModel(force) {
@@ -4143,8 +7171,8 @@ async function loadStyleModel(force) {
 }
 
 // GET /api/ai/style — the browser downloads this once and predicts locally from
-// it, so word suggestions appear as fast as the phone keyboard's. ?force=1
-// retrains it on demand from the newest messages.
+// it, so word suggestions land as fast as the phone keyboard's. ?force=1
+// retrains it on demand (after an import, or a batch of new texts).
 async function apiAiStyle(url) {
   try {
     const model = await loadStyleModel(url.searchParams.get('force') === '1');
@@ -4154,20 +7182,9 @@ async function apiAiStyle(url) {
   }
 }
 
-// A handful of his real texts, for the AI half of the keyboard — short enough to
-// keep the prompt cheap, long enough to carry the voice.
-function styleSamples(model, max = 8) {
-  if (!model) return '';
-  const seen = new Set();
-  const rows = [].concat(model.phrases || [], model.samples || [])
-    .filter((p) => { const k = String(p).toLowerCase(); if (!p || seen.has(k)) return false; seen.add(k); return true; })
-    .slice(0, max);
-  return rows.length ? 'LINES MIKEY ACTUALLY TEXTS (match this voice, rhythm and punctuation exactly):\n' + rows.map((p) => `- ${p}`).join('\n') + '\n\n' : '';
-}
-
 // Rolling one-minute cap on predictive-keyboard calls, held in the isolate (no
-// KV writes). Not a precise global limit — it's a cheap ceiling that stops a
-// runaway typing session from starving the AI features that matter more.
+// KV writes). Not a precise global limit — a cheap ceiling so a long typing
+// session can't starve the AI features that matter more.
 const PREDICT_PER_MIN = 12;
 let PREDICT_HITS = [];
 function predictBudgetOk() {
@@ -4178,56 +7195,140 @@ function predictBudgetOk() {
   return true;
 }
 
-// POST /api/ai/predict — the smart half of the keyboard. Given what he's typed
-// so far, finish the sentence the way HE would, in this specific conversation.
-// Deliberately tiny: a few lines of transcript, a short output cap, low
-// temperature. It must feel like a keyboard, not like waiting on a chatbot.
+// Normalise a completion without touching its leading space — that space is load
+// bearing here (it decides whether we're finishing his word or starting the next
+// one), so cleanReply's trim() would corrupt it.
+function cleanCompletion(raw) {
+  let t = String(raw || '').replace(/^```[a-z]*\s*|\s*```$/g, '');
+  t = t.replace(/\s*—\s*/g, ' - ').replace(/\s*–\s*/g, ' - ');   // dashes he never types
+  t = t.replace(/[\r\n\t]+/g, ' ').replace(/ {2,}/g, ' ');
+  return t.slice(0, 160);
+}
+
+// POST /api/ai/predict — the smart half of the keyboard. Given what he's typed so
+// far, finish the sentence the way HE would, in THIS conversation. Deliberately
+// tiny: the fast model, a few lines of transcript, a short output cap. It has to
+// feel like a keyboard, not like waiting on a chatbot.
 async function apiAiPredict(request) {
   const data = await readJson(request);
   const phone = normalizePhone(data.phone);
   const text = String(data.text || '').slice(0, 400);
-  if (!ENV.GEMINI_API_KEY) return json({ ok: false, error: 'no_ai' }, 503);
+  if (!ENV.GEMINI_API_KEY && !ENV.ANTHROPIC_API_KEY) return json({ ok: false, error: 'no_ai' }, 503);
   if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
-  // Backstop for the shared Gemini quota. A typing suggestion is the least
-  // important thing the AI does here — if predictions are coming in hot, drop
-  // them (quietly, so the keyboard just falls back to the local model) and keep
-  // the budget for drafts, summaries and follow-ups.
+  // A typing suggestion is the least important thing the AI does here. Over
+  // budget, drop it quietly — the keyboard falls back to its local model.
   if (!predictBudgetOk()) return json({ ok: true, completion: '', options: [], throttled: true });
   try {
-    const [thread, cfg, model] = await Promise.all([loadThread(phone), loadConfig(), loadStyleModel(false).catch(() => null)]);
+    const [thread, cfg, voice, model] = await Promise.all([
+      loadThread(phone), loadConfig(), loadVoice(), loadStyleModel(false).catch(() => null),
+    ]);
+    const msgs = thread.messages || [];
+    const lastIn = [...msgs].reverse().find((m) => m.dir === 'in');
+    // Retrieve his real texts by what he's writing about — the half-typed line
+    // itself is the best clue, with the customer's last message behind it.
+    const situation = text || (lastIn && lastIn.body) || '';
+    const bucket = voiceBucket(situation);
     const convo = transcript(thread, 8);
     const prompt =
       businessContext(cfg) +
-      styleSamples(model) +
-      (await editsContext()) +
-      `You are the predictive keyboard inside Mikey's texting app — like the next-word suggestions on a phone keyboard, but it knows Mikey and it knows this conversation. ` +
-      `Mikey is part-way through typing a text to this customer. Predict how HE would finish it.\n\n` +
+      voiceContext(voice, bucket, situation) +
+      `You are the predictive keyboard inside Mikey's texting app — like the next-word suggestions on a phone keyboard, except it knows how Mikey writes and it knows this conversation. ` +
+      `He is part-way through typing a text to this customer. Predict how HE would finish it.\n\n` +
       `Return ONLY JSON: {"completion": "...", "options": ["...", "...", "..."]}\n` +
-      `- "completion": the rest of what he's typing. It is appended to his text character-for-character, so it must read correctly when glued straight on: do NOT repeat any word he already typed, and get the leading space right — if he stopped part-way through a word, start with the REST OF THAT WORD and no leading space; if he finished a word, start with a single leading space. Keep it to what plausibly comes next: the rest of this sentence (roughly 3-12 words), ending cleanly. Empty string if nothing sensible follows.\n` +
-      `- "options": 3 different single words or 2-3 word fragments that could come next, shortest first. Same rule — continuations only, never a repeat of what he typed.\n` +
-      `Match his voice from the samples above: casual, warm, contractions, his punctuation. Never invent a price, date or time he hasn't given — if a number is needed, stop the completion before it. Never add a greeting or a sign-off he didn't start.\n\n` +
+      `- "completion": the rest of what he's typing. It gets appended to his text character-for-character, so it has to read correctly glued straight on: never repeat a word he already typed, and get the leading space right — if he stopped part-way through a word, start with the REST OF THAT WORD and no leading space; if he finished a word, start with a single leading space. Keep it to what plausibly comes next — the rest of this sentence, roughly 3-12 words, ending cleanly. Empty string if nothing sensible follows.\n` +
+      `- "options": 3 single words or 2-3 word fragments that could come next, shortest first. Continuations only, never a repeat of what he typed.\n` +
+      `Match the real texts above — his length, his rhythm, his punctuation. No customer-service filler. Never invent a price, date or time he hasn't given; if a number would come next, stop the completion before it. Never add a greeting or sign-off he didn't start.\n\n` +
       (convo ? `Conversation so far:\n${convo}\n\n` : '') +
       `Mikey is typing: "${text}"\n\nJSON:`;
-    const out = await geminiGenerate(prompt, { json: true, temperature: 0.35, maxTokens: 220 });
+    const out = await aiGenerate(prompt, { tier: 'fast', json: true, temperature: 0.35, maxTokens: 220 });
     let parsed = {};
     try { parsed = JSON.parse(out); } catch { parsed = {}; }
-    // Belt and braces: the model sometimes echoes the typed text back. Strip that
-    // overlap so we only ever hand back a continuation.
+    // Belt and braces: models echo the typed text back. Strip that overlap so we
+    // only ever hand back a continuation.
     const trim = (s) => {
-      let v = String(s || '').replace(/^["']|["']$/g, '');
+      let v = cleanCompletion(s).replace(/^["']|["']$/g, '');
       const low = v.toLowerCase(); const t = text.toLowerCase().trim();
       if (t && low.startsWith(t)) v = v.slice(t.length);
       // Or it repeated just the tail of what he typed (the last few words).
       const tail = t.split(/\s+/).slice(-4).join(' ');
       if (tail.length > 6 && v.toLowerCase().trim().startsWith(tail)) v = v.trim().slice(tail.length);
-      return v.replace(/\s+/g, ' ').slice(0, 160);
+      return v;
     };
-    const completion = trim(parsed.completion);
+    let completion = trim(parsed.completion);
+    // A stock AI phrase is worse than no suggestion — drop it rather than spend a
+    // second call regenerating. This is a keyboard; the next keystroke is coming.
+    if (findTell(completion)) completion = '';
     const options = (Array.isArray(parsed.options) ? parsed.options : [])
-      .map(trim).map((s) => s.trim()).filter(Boolean).slice(0, 3);
-    return json({ ok: true, completion, options });
+      .map(trim).map((s) => s.trim()).filter((s) => s && !findTell(s)).slice(0, 3);
+    return json({ ok: true, completion, options, model: model ? model.n : 0 });
   } catch (err) {
     return json({ ok: false, error: String(err.message || err) }, 502);
+  }
+}
+
+// The scoreboard. "% sounds like me" from the trainer is the headline; the
+// corpus counts tell him whether there's enough material to learn from.
+// Everything the Train AI screen renders, in one request: how much material it has
+// per situation, how it's scoring per situation, the measured style, and which model
+// is actually writing. Also computes the ONE next action worth taking, so the screen
+// can show a single obvious button instead of a row of equal-looking ones.
+async function apiVoiceStats() {
+  const v = await loadVoice();
+  const s = await loadVoiceScores();
+  const total = (s.match || 0) + (s.off || 0);
+  const buckets = {};
+  let samples = 0;
+  if (v) for (const b of VOICE_BUCKETS) { const n = (v.buckets[b] || []).length; buckets[b] = n; samples += n; }
+
+  // Per-situation scoreboard: rate plus how many rounds back it, so a 0% off one
+  // round doesn't read like a crisis.
+  const perBucket = {};
+  for (const b of VOICE_BUCKETS) {
+    const r = (s.byBucket && s.byBucket[b]) || null;
+    const n = r ? (r.match || 0) + (r.off || 0) : 0;
+    perBucket[b] = { samples: buckets[b] || 0, rounds: n, rate: n ? Math.round(((r.match || 0) / n) * 100) : null };
+  }
+
+  const provider = ENV.ANTHROPIC_API_KEY && !envFlag('CLAUDE_DISABLED') ? 'claude' : (ENV.GEMINI_API_KEY ? 'gemini' : 'none');
+
+  // The single most useful next step, in priority order.
+  let next = 'train';
+  if (provider === 'none') next = 'no_ai';
+  else if (samples < 12) next = 'build';                     // nothing to learn from yet
+  else if (!(v && v.fingerprint)) next = 'build';            // never derived the style
+  else if (samples < 60) next = 'import';                    // thin — more real texts help most
+  else if (total < 10) next = 'train';                       // unmeasured
+  else {
+    // Weakest situation with enough evidence to trust, if any is clearly behind.
+    let worst = null;
+    for (const b of VOICE_BUCKETS) {
+      const p = perBucket[b];
+      if (p.rounds >= 3 && p.rate != null && p.rate < 70 && (!worst || p.rate < perBucket[worst].rate)) worst = b;
+    }
+    next = worst ? 'train' : 'good';
+  }
+
+  return json({
+    ok: true,
+    built: !!(v && v.builtAt), builtAt: (v && v.builtAt) || 0,
+    fingerprint: (v && v.fingerprint) || '',
+    style: (v && v.style) || null,
+    samples, buckets, perBucket, scanned: (v && v.scanned) || 0,
+    matchRate: total ? Math.round(((s.match || 0) / total) * 100) : null,
+    rounds: total, match: s.match || 0, off: s.off || 0,
+    recent: (s.rounds || []).slice(0, 20).map((r) => ({ verdict: r.verdict, at: r.at || 0, bucket: r.b || '' })),
+    provider, next,
+    perBucketCap: VOICE_PER_BUCKET,
+  });
+}
+
+async function apiVoiceBuild() {
+  if (!aiConfigured()) return json({ ok: false, error: 'ai_not_configured' }, 503);
+  try {
+    const v = await buildVoiceProfile();
+    return json({ ok: true, samples: v.kept, scanned: v.scanned, buckets: v.counts, fingerprint: v.fingerprint });
+  } catch (err) {
+    return json({ ok: false, error: String((err && err.message) || err) }, 502);
   }
 }
 
@@ -4235,21 +7336,32 @@ async function apiAiPredict(request) {
 // waiting when Mikey opens the thread ("reply already waiting"). Best-effort: it
 // never blocks or fails the inbound webhook, and only runs when the ball is in
 // Mikey's court (last message is inbound, not opted out, not archived).
+// Returns the drafted text (or '' when there's nothing to draft) so the caller
+// can show it in the alert and ask for a yes/no.
 async function maybeSuggestReply(phone) {
-  if (!ENV.GEMINI_API_KEY) return;
+  let drafted = '';
   try {
     const cfg = await loadConfig();
-    if (isOptedOut(cfg, phone)) return;
+    if (isOptedOut(cfg, phone)) return '';
     const thread = await loadThread(phone);
-    if (thread.archived) return;
+    if (thread.archived) return '';
     const last = thread.messages[thread.messages.length - 1];
-    if (!last || last.dir !== 'in') return;
-    const text = await generateReply(thread, cfg, '');
-    if (!text) return;
-    thread.suggested = { text, ts: Date.now(), forTs: last.ts };
-    await saveThread(thread);
-    await updateIndexEntry(thread);
+    if (!last || last.dir !== 'in') return '';
+    // Decide first whether this message actually leaves anything open. Doing it
+    // here (rather than waiting for the follow-up engine) means a "Thanks!" never
+    // even appears in "Needs your attention".
+    let changed = await ensureReplyCheck(thread, cfg);
+    if (replyOwed(thread)) {
+      if (aiConfigured()) {
+        const text = await generateReply(thread, cfg, '');
+        if (text) { thread.suggested = { text, ts: Date.now(), forTs: last.ts }; changed = true; drafted = text; }
+      }
+    } else if (thread.suggested) {
+      thread.suggested = null; changed = true;   // nothing owed — drop any stale draft
+    }
+    if (changed) { await saveThread(thread); await updateIndexEntry(thread); }
   } catch { /* suggestions are a bonus — swallow errors so inbound never breaks */ }
+  return drafted;
 }
 
 // The AI "brain": render the business playbook into a compact prompt preamble so
@@ -4275,6 +7387,76 @@ function businessContext(cfg) {
     .map(([k, label]) => `## ${label}\n${String(p[k]).trim()}`);
   if (!rows.length) return '';
   return 'BUSINESS PLAYBOOK (your source of truth — never contradict it):\n' + rows.join('\n\n') + '\n\n';
+}
+
+// ===========================================================================
+// AI router — which model writes what
+// ===========================================================================
+// Two tiers, because they want different things:
+//   'voice' — writing a message a customer will read. Holding one specific
+//             person's voice from example texts is the job, and Claude is
+//             markedly better at it than Flash. Worth the call.
+//   'fast'  — classification, triage, summaries, JSON. Gemini Flash is quick,
+//             cheap and entirely good enough.
+// Anything voice-tier falls back to Gemini automatically when ANTHROPIC_API_KEY
+// isn't set or the call fails, so the dashboard never loses the ability to draft.
+function aiConfigured() { return !!(ENV.GEMINI_API_KEY || ENV.ANTHROPIC_API_KEY); }
+
+async function aiGenerate(prompt, opts = {}) {
+  if (opts.tier === 'voice' && ENV.ANTHROPIC_API_KEY && !envFlag('CLAUDE_DISABLED')) {
+    try { return await claudeGenerate(prompt, opts); }
+    catch (err) {
+      // Never let a provider outage stop him replying — fall through to Gemini.
+      console.log('claude failed, falling back to gemini:', String((err && err.message) || err).slice(0, 200));
+    }
+  }
+  return geminiGenerate(prompt, opts);
+}
+
+// ===========================================================================
+// Claude (Anthropic Messages API)
+// ===========================================================================
+// Raw fetch rather than @anthropic-ai/sdk on purpose: this Worker has zero
+// runtime dependencies today, ships on Cloudflare's free tier (hard bundle-size
+// ceiling), and every other outbound API here — Twilio, Gemini, Resend — is a
+// plain fetch. One POST to one endpoint doesn't justify changing that for a
+// live business phone line.
+//
+// Opus 5 notes that bite if you get them wrong:
+//   - temperature / top_p / top_k are REMOVED. Sending any of them is a 400.
+//     Steering happens through the prompt and the effort level instead.
+//   - thinking is ON by default, and max_tokens caps thinking + reply together,
+//     so max_tokens needs headroom well past the length of the text itself.
+//   - a request can come back 200 with stop_reason 'refusal' and no content;
+//     check that before reading content[0].
+async function claudeGenerate(prompt, opts = {}) {
+  const key = ENV.ANTHROPIC_API_KEY;
+  if (!key) throw new Error('ANTHROPIC_API_KEY not set');
+  const body = {
+    model: ENV.ANTHROPIC_MODEL || 'claude-opus-5',
+    max_tokens: Math.max(1024, Math.min(8000, (opts.maxTokens || 800) + 1200)), // room for thinking
+    // Low effort: these are short, well-specified writing tasks with the examples
+    // already in the prompt. Thinking stays ON — disabling it on Opus 5 can leak
+    // <thinking> tags into the visible text, which a customer would see.
+    output_config: { effort: 'low' },
+    messages: [{ role: 'user', content: prompt }],
+  };
+  if (opts.json) body.messages[0].content += '\n\nReturn ONLY valid JSON. No prose, no code fences.';
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': key,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const data = await res.json();
+  if (data.stop_reason === 'refusal') throw new Error('anthropic_refusal');
+  const text = (data.content || []).filter((b) => b && b.type === 'text').map((b) => b.text || '').join('').trim();
+  if (!text) throw new Error('anthropic_empty');
+  return text;
 }
 
 // ===========================================================================
@@ -4324,6 +7506,9 @@ async function geminiGenerate(prompt, opts = {}) {
 // SMS is the automatic fallback when email isn't set up or the send fails, so
 // an alert always lands somewhere. Returns true if any channel succeeded.
 async function notifyMikey(subject, body) {
+  // Ring the phone too. Web push is free, instant, and doesn't wait on email or
+  // Twilio — but it's a bonus channel, never the only one, so failures are silent.
+  pushNotify().catch(() => {});
   if (ENV.RESEND_API_KEY && ENV.ALERT_EMAIL) {
     try { await sendEmail(subject, body); return true; }
     catch { /* fall through to SMS so the alert still reaches Mikey */ }
@@ -4359,6 +7544,10 @@ async function sendSms(to, body, opts = {}) {
   const sid = ENV.TWILIO_ACCOUNT_SID;
   const token = ENV.TWILIO_AUTH_TOKEN;
   const toNorm = normalizePhone(to) || to;
+  // Practice guard. The fake customer used to rehearse the assist loop must never
+  // be textable — not by the assist path (which stops earlier), and not by any
+  // future code that stumbles onto the thread. Unconditional, before everything.
+  if (isPracticePhone(toNorm)) throw new Error('practice_number');
   // Opt-out guard: never text a number that sent STOP. Skipped for alerts to Mikey
   // himself (opts.skipOptOut) so notifications always get through.
   if (!opts.skipOptOut) {
@@ -4477,6 +7666,7 @@ async function setOptOut(phone, on) {
 async function dispatchDueScheduled(now = Date.now()) {
   const index = await loadIndex();
   let sent = 0;
+  const learn = []; // his own queued texts that went out — one corpus write at the end
   for (const entry of index) {
     if (!entry.scheduledCount) continue;
     const thread = await loadThread(entry.phone);
@@ -4490,18 +7680,30 @@ async function dispatchDueScheduled(now = Date.now()) {
     thread.scheduled = (thread.scheduled || []).filter((s) => s.sendAt > now);
     await saveThread(thread);
     for (const s of due) {
+      // `kind` lets a queued item say what it is (a booking reminder, an assist
+      // reply) so the thread history reads correctly; plain sends stay 'scheduled'.
+      const kind = s.kind || 'scheduled';
       try {
         const r = await sendSms(thread.phone, s.body);
-        thread.messages.push({ id: genId(), dir: 'out', body: s.body, ts: Date.now(), kind: 'scheduled', status: 'sent', sid: (r && r.sid) || undefined });
+        // Carry src onto the stored message so a later rebuild can tell his own
+        // queued text from the app's templated ones (see voiceUsable).
+        const m = { id: genId(), dir: 'out', body: s.body, ts: Date.now(), kind, status: 'sent', sid: (r && r.sid) || undefined };
+        if (s.src === 'manual') m.src = 'manual';
+        thread.messages.push(m);
+        if (voiceUsable(m)) learn.push(s.body);
         sent++;
       } catch (err) {
-        thread.messages.push({ id: genId(), dir: 'out', body: s.body, ts: Date.now(), kind: 'scheduled', error: String(err.message || err) });
+        // Left unmarked on purpose: a text that never reached the customer stays out
+        // of the voice corpus, so a rebuild can't mine a failed send.
+        thread.messages.push({ id: genId(), dir: 'out', body: s.body, ts: Date.now(), kind, error: String(err.message || err) });
         notifyMikey('⚠️ Scheduled text failed', `A scheduled message to ${thread.name || thread.phone} did not send: ${String(err.message || err)}`).catch(() => {});
       }
     }
     await saveThread(thread);
     await updateIndexEntry(thread);
   }
+  // Batched, so a tick that flushes ten of his texts still costs one KV write.
+  if (learn.length) { try { await addVoiceSamples(learn, 'sent'); } catch { /* non-fatal */ } }
   return sent;
 }
 
@@ -4630,6 +7832,17 @@ function bookingDefaults() {
     proof: { rating: '5.0', reviews: 39, cars: '300+' },
     calendar: { icalUrl: '', enabled: false },   // Google Calendar "secret iCal" URL
     blockedDates: [],                             // ['2026-08-01', …] days Mikey is off
+    // Booking-lifecycle texts. Each is a fixed template filled in from the booking
+    // record — no AI writes them, so none can invent a price or a time. Individually
+    // switchable. (Day-of messages — on my way, I'm here, all finished — belong to
+    // the Jobs run board, not here; see dayJobText().)
+    autoTexts: {
+      confirm:   true,   // "you're all set" the moment you confirm
+      remind24:  true,   // day-before reminder
+      remindAm:  true,   // morning-of reminder
+      cancelled: true,   // courtesy note when a confirmed job is cancelled
+      declined:  false,  // note when a request is declined (off — usually wants a personal reply)
+    },
   };
 }
 // Merge saved overrides over the defaults (arrays replace, objects deep-merge).
@@ -4640,6 +7853,7 @@ async function loadBookingConfig() {
     content:  Object.assign({}, d.content,  saved.content  || {}),
     proof:    Object.assign({}, d.proof,    saved.proof    || {}),
     calendar: Object.assign({}, d.calendar, saved.calendar || {}),
+    autoTexts: Object.assign({}, d.autoTexts, saved.autoTexts || {}),
     sizes:    saved.sizes    || d.sizes,
     services: saved.services || d.services,
     addons:   saved.addons   || d.addons,
@@ -4689,8 +7903,14 @@ async function bkAvailability(date, service, size) {
   if (bkLaEpoch(date, cfg.dayStart) - now > cfg.windowDays * 86400000) return [];
   if (bkLaEpoch(date, cfg.lastStart) < now) return [];         // day already past
   const day = (await loadBookings()).filter((b) => b.date === date && (b.status === 'pending' || b.status === 'confirmed'));
-  if (day.length >= cfg.maxJobsPerDay) return [];
-  const occ = day.map((b) => ({ s: bkHm2min(b.slot), e: bkHm2min(b.slot) + (b.durationMin || dur) }));
+  // A job agreed over text holds its slot too, even before Mikey taps to confirm
+  // it — otherwise the website can sell a time he already promised in a
+  // conversation. Dismissing the card releases the hold on the next request.
+  const held = await detHeldSlots(date);
+  if (held === 'all') return [];
+  const holds = Array.isArray(held) ? held : [];
+  if (day.length + holds.length >= cfg.maxJobsPerDay) return [];
+  const occ = day.map((b) => ({ s: bkHm2min(b.slot), e: bkHm2min(b.slot) + (b.durationMin || dur) })).concat(holds);
   // Google Calendar busy times so Mikey is never offered a slot he's already booked.
   for (const iv of await bkCalBusy(cfg, date)) {
     if (iv.s <= 0 && iv.e >= 1440) return [];                  // all-day event → whole day off
@@ -4778,6 +7998,7 @@ async function apiBook(request) {
   const thread = await loadThread(phone);
   if (!thread.name) thread.name = name;
   if (!thread.status) { thread.status = 'new'; thread.statusAt = Date.now(); }
+  markSource(thread, 'booking');
   if (!thread.tags.includes('booking')) thread.tags.push('booking');
   thread.appointmentAt = rec.apptAt;
   const stamp = new Date().toLocaleString('en-US', { timeZone: cfg.tz });
@@ -4802,41 +8023,122 @@ async function apiBookings(url) {
   return json({ ok: true, bookings: all });
 }
 
+// ---------------------------------------------------------------------------
+// Booking-lifecycle texts (Tier 0 — deterministic, no AI anywhere near them)
+// ---------------------------------------------------------------------------
+// Every message a booking generates is built here, from fields that already exist
+// on the booking record. Nothing is generated, so nothing can be invented: the
+// time comes from bk.slot, the service from bk.serviceName. One place to read
+// them all, one place to change the wording.
+//
+// Day-of messages (on my way / I'm here / all finished + review ask) are NOT
+// here — those belong to the Jobs run board, which does them better because it
+// also drives live ETA tracking. See dayJobText().
+function bkAutoOn(bcfg, kind) { return ((bcfg && bcfg.autoTexts) || {})[kind] !== false; }
+
+function bkMessage(kind, bk) {
+  const first = (bk.name || '').split(/\s+/)[0] || 'there';
+  const at = bkFmt12(bk.slot);
+  const car = bk.vehicle || 'car';
+  switch (kind) {
+    case 'confirm':
+      return `You're all set for ${bk.dateLabel} at ${at} — ${bk.serviceName}. I come to you; just have water & power within about 20 ft of the car. I'll text when I'm on my way. - Mikey`;
+    case 'remind24':
+      return `Quick reminder: I'm detailing your ${car} tomorrow at ${at}. Please have it accessible with water & power within ~20 ft. See you then! - Mikey`;
+    case 'remindAm':
+      return `Morning ${first}! I'm detailing your car today at ${at}. I'll text when I'm headed your way. - Mikey`;
+    case 'cancelled':
+      return `Hey ${first}, your detail on ${bk.dateLabel} at ${at} has been cancelled. No problem at all — just text me whenever you'd like to find another time. - Mikey`;
+    case 'declined':
+      return `Hey ${first}, I wasn't able to lock in ${bk.dateLabel} at ${at}. Text me and we'll find a time that works. - Mikey`;
+    default:
+      return '';
+  }
+}
+
+// Drop any still-queued texts belonging to one booking. Without this, cancelling
+// a confirmed job still texted the customer "see you tomorrow!" the next morning.
+// Returns how many were removed.
+function bkPurgeScheduled(thread, bkId) {
+  const before = (thread.scheduled || []).length;
+  thread.scheduled = (thread.scheduled || []).filter((s) => s.bkId !== bkId);
+  return before - thread.scheduled.length;
+}
+
 // Confirm / decline / cancel / complete a booking. Confirm texts the customer and
-// queues the 24h + morning-of reminders through the existing scheduled-send cron.
+// queues the 24h + morning-of reminders through the existing scheduled-send cron;
+// cancel and complete pull any reminders that are no longer wanted.
 async function apiBookingAction(request) {
   const d = await readJson(request);
   const id = String(d.id || ''), action = String(d.action || '');
   const all = await loadBookings();
   const bk = all.find((x) => x.id === id);
   if (!bk) return json({ ok: false, error: 'not_found' }, 404);
+  const bcfg = await loadBookingConfig();
+  const now = Date.now();
+  let texted = false;
 
   if (action === 'confirm') {
-    bk.status = 'confirmed'; bk.confirmedAt = Date.now();
-    const first = (bk.name || '').split(/\s+/)[0];
-    const when = `${bk.dateLabel} at ${bkFmt12(bk.slot)}`;
+    bk.status = 'confirmed'; bk.confirmedAt = now;
     const thread = await loadThread(bk.phone);
+    markSource(thread, 'booking');
     if (!thread.tags.includes('booking')) thread.tags.push('booking');
     thread.appointmentAt = bk.apptAt;
     if (bk.smsConsent) {
-      try { await sendSms(bk.phone, `You're all set for ${when} — ${bk.serviceName}. I come to you; just have water & power within about 20 ft of the car. I'll text when I'm on my way. - Mikey`); } catch (e) {}
-      const now = Date.now(), r24 = bk.apptAt - 86400000, rAm = bkLaEpoch(bk.date, '07:30');
+      if (bkAutoOn(bcfg, 'confirm')) {
+        const body = bkMessage('confirm', bk);
+        try {
+          const r = await sendSms(bk.phone, body);
+          // Record it — this text used to go out without ever landing in the
+          // conversation, so the thread read as if nothing was sent.
+          thread.messages.push({ id: genId(), dir: 'out', body, ts: Date.now(), kind: 'booking', status: 'sent', sid: (r && r.sid) || undefined });
+          texted = true;
+        } catch (e) { /* the booking is still confirmed even if the text fails */ }
+      }
+      // Reminders ride the existing reserve-then-send cron, so they're at-most-once
+      // and opt-out aware for free. Tagged with bkId so a later cancel can pull them.
+      const r24 = bk.apptAt - 86400000, rAm = bkLaEpoch(bk.date, '07:30');
       const add = [];
-      if (r24 > now + 60000) add.push({ id: genId(), body: `Quick reminder: I'm detailing your ${bk.vehicle || 'car'} tomorrow at ${bkFmt12(bk.slot)}. Please have it accessible with water & power within ~20 ft. See you then! - Mikey`, sendAt: r24 });
-      if (rAm > now + 60000 && rAm < bk.apptAt) add.push({ id: genId(), body: `Morning ${first}! I'm detailing your car today at ${bkFmt12(bk.slot)}. I'll text when I'm headed your way. - Mikey`, sendAt: rAm });
+      if (bkAutoOn(bcfg, 'remind24') && r24 > now + 60000) add.push({ id: genId(), bkId: bk.id, kind: 'booking', body: bkMessage('remind24', bk), sendAt: r24 });
+      if (bkAutoOn(bcfg, 'remindAm') && rAm > now + 60000 && rAm < bk.apptAt) add.push({ id: genId(), bkId: bk.id, kind: 'booking', body: bkMessage('remindAm', bk), sendAt: rAm });
       if (add.length) { thread.scheduled.push(...add); thread.scheduled.sort((a, b) => a.sendAt - b.sendAt); }
     }
     await saveThread(thread);
     await updateIndexEntry(thread);
-  } else if (action === 'decline' || action === 'cancel') {
-    bk.status = action === 'decline' ? 'declined' : 'cancelled';
+
   } else if (action === 'complete') {
-    bk.status = 'done';
+    bk.status = 'done'; bk.doneAt = now;
+    const thread = await loadThread(bk.phone);
+    const purged = bkPurgeScheduled(thread, bk.id);   // the job happened — drop leftovers
+    // Mark the lead Won so it lands in the right bucket everywhere else, and so
+    // the follow-up engine's review-ask and rebook cadences start from today.
+    // The review ask itself is left to that engine (or the Jobs board's
+    // "all finished" text) — deliberately not duplicated here.
+    const wasWon = thread.status === 'won';
+    if (!wasWon) { thread.status = 'won'; thread.statusAt = now; }
+    if (purged || !wasWon) { await saveThread(thread); await updateIndexEntry(thread); }
+
+  } else if (action === 'decline' || action === 'cancel') {
+    const kind = action === 'decline' ? 'declined' : 'cancelled';
+    bk.status = kind;
+    const thread = await loadThread(bk.phone);
+    let changed = bkPurgeScheduled(thread, bk.id) > 0;   // no job → no reminders
+    if (bk.smsConsent && bkAutoOn(bcfg, kind)) {
+      const body = bkMessage(kind, bk);
+      try {
+        const r = await sendSms(bk.phone, body);
+        thread.messages.push({ id: genId(), dir: 'out', body, ts: Date.now(), kind: 'booking', status: 'sent', sid: (r && r.sid) || undefined });
+        texted = true; changed = true;
+      } catch (e) { /* status change stands even if the courtesy text fails */ }
+    }
+    if (changed) { await saveThread(thread); await updateIndexEntry(thread); }
+
   } else {
     return json({ ok: false, error: 'bad_action' }, 422);
   }
+
   await saveBookings(all);
-  return json({ ok: true, booking: bk });
+  return json({ ok: true, booking: bk, texted });
 }
 
 // ===========================================================================
@@ -5027,5 +8329,1703 @@ function bkSanitizeConfig(input) {
     },
     calendar: { enabled: !!(c.calendar && c.calendar.enabled) && !!ical, icalUrl: ical },
     blockedDates: Array.isArray(c.blockedDates) ? [...new Set(c.blockedDates.map((x) => String(x).trim()).filter((x) => /^\d{4}-\d{2}-\d{2}$/.test(x)))].slice(0, 200) : [],
+    // Booking texts: keep whatever the caller sent, fall back to the default for
+    // any key it didn't send, so a settings save can never silently switch one
+    // back on (this function rebuilds the whole config from scratch).
+    autoTexts: Object.keys(d.autoTexts).reduce((o, k) => {
+      const v = c.autoTexts && c.autoTexts[k];
+      o[k] = (v === true || v === false) ? v : d.autoTexts[k];
+      return o;
+    }, {}),
   };
+}
+
+// ###########################################################################
+// #  JOB DAY SUITE — the ten features that turn the dashboard into the app  #
+// #  Mikey actually runs the day on. Everything below is additive: no        #
+// #  existing route, storage key or cron step changes shape.                 #
+// #                                                                          #
+// #   1  Today's Run     — the day board (bookings + manual jobs + state)    #
+// #   2  Live ETA        — a DoorDash-style tracking link for the customer   #
+// #   3  Web Push        — real phone notifications, VAPID auto-generated    #
+// #   4  Quote Builder   — priced quote in 3 taps, texted + tracked          #
+// #   5  Get Paid        — payment requests, deposits, a public pay page     #
+// #   6  Customer Garage — vehicles, gate codes, water/power, lifetime value #
+// #   7  Neighborhood    — "I'll be in your area" blasts to nearby past jobs #
+// #   8  Before / After  — job photos, stored + shown side by side           #
+// #   9  (voice control is client-side; it rides on /api/ai/command)         #
+// #  10  Daily Brief     — a 6am rundown pushed/emailed once a day           #
+// #                                                                          #
+// #  KV WRITE BUDGET: none of this writes on a plain GET. The only clock-    #
+// #  driven writes are the daily brief (1/day) and the pay reminder sweep    #
+// #  (only when an invoice is actually due). Live-ETA pings are throttled    #
+// #  server-side to ~1 write/45s and only while a trip is running.           #
+// ###########################################################################
+
+const DAY_TTL_DAYS = 400;
+
+// --- shared tiny helpers ----------------------------------------------------
+function jdToday(cfg) { return localDateStr(Date.now(), cfg && cfg.tz); }
+function jdIsDate(s) { return /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')); }
+function jdMoney(n) { return Math.round((Number(n) || 0) * 100) / 100; }
+function jdStr(v, max) { return String(v == null ? '' : v).trim().slice(0, max || 200); }
+// URL-safe random token for the public tracker / pay pages. 22 chars ≈ 128 bits.
+function jdToken() {
+  const b = crypto.getRandomValues(new Uint8Array(16));
+  return b64url(b).replace(/=+$/, '');
+}
+function b64url(bytes) {
+  let s = '';
+  const a = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  for (let i = 0; i < a.length; i++) s += String.fromCharCode(a[i]);
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function b64urlStr(str) { return b64url(new TextEncoder().encode(str)); }
+function jdEsc(s) {
+  return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+function jdFirst(name) { return String(name || '').trim().split(/\s+/)[0] || ''; }
+// Straight-line miles between two coordinates — good enough for an ETA sanity
+// check and for "who lives near this job" without paying for a maps API.
+function jdMiles(a, b) {
+  if (!a || !b || a.lat == null || b.lat == null) return null;
+  const R = 3958.8, rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad, dLng = (b.lng - a.lng) * rad;
+  const la1 = a.lat * rad, la2 = b.lat * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(la1) * Math.cos(la2) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+// ===========================================================================
+// 1 · TODAY'S RUN — the day board
+// ===========================================================================
+// Bookings stay the source of truth for *what* is scheduled; the day doc only
+// stores what happened while running it (state, timestamps, notes) plus any
+// job Mikey adds by hand. That keeps a GET free of writes and means the board
+// can never drift from the booking record.
+//
+// day:<YYYY-MM-DD> = { date, manual:[job], state:{ jobId: run }, order:[jobId], updatedAt }
+function dayKey(date) { return 'day:' + date; }
+async function loadDay(date) {
+  const raw = (await kv().get(dayKey(date), { type: 'json' })) || {};
+  return { date, manual: raw.manual || [], state: raw.state || {}, order: raw.order || [], updatedAt: raw.updatedAt || 0 };
+}
+// ⚠ KV WRITE — only from an explicit tap on the day board (never on a read).
+async function saveDay(doc) {
+  doc.updatedAt = Date.now();
+  await kv().put(dayKey(doc.date), JSON.stringify(doc), { expirationTtl: DAY_TTL_DAYS * 86400 });
+}
+
+const JOB_STATES = ['queued', 'enroute', 'onsite', 'done', 'skipped'];
+
+// Merge bookings + appointments + manual jobs into one ordered run sheet.
+async function buildDay(date) {
+  const cfg = await loadConfig();
+  const bcfg = await loadBookingConfig().catch(() => null);
+  const doc = await loadDay(date);
+  const jobs = [];
+
+  for (const b of await loadBookings()) {
+    if (b.date !== date) continue;
+    if (b.status === 'declined' || b.status === 'cancelled') continue;
+    jobs.push({
+      id: 'b:' + b.id, source: 'booking', bookingId: b.id,
+      name: b.name || '', phone: b.phone || '',
+      address: b.address || '', city: b.city || '',
+      service: b.serviceName || '', size: b.sizeLabel || '', vehicle: b.vehicle || '',
+      slot: b.slot || '', at: b.apptAt || 0, durationMin: b.durationMin || 180,
+      price: b.estimate || b.base || 0, notes: b.notes || '',
+      pending: b.status === 'pending',
+    });
+  }
+
+  // Threads with a saved appointment on this day that aren't already a booking
+  // (a job Mikey locked in over text rather than through the booking page).
+  const index = await loadIndex();
+  for (const t of index) {
+    if (!t.appointmentAt || t.archived) continue;
+    if (localDateStr(t.appointmentAt, cfg.tz) !== date) continue;
+    if (jobs.some((j) => j.phone === t.phone)) continue;
+    const d = new Date(t.appointmentAt);
+    jobs.push({
+      id: 't:' + t.phone, source: 'thread', phone: t.phone, name: t.name || '',
+      address: '', city: '', service: '', size: '', vehicle: '',
+      slot: localTimeHm(t.appointmentAt, cfg.tz), at: t.appointmentAt, durationMin: 150,
+      price: 0, notes: '', pending: false,
+    });
+  }
+
+  for (const m of doc.manual) {
+    jobs.push(Object.assign({ source: 'manual', pending: false, durationMin: 120, price: 0 }, m,
+      { id: m.id, at: m.slot ? bkLaEpoch(date, m.slot) : 0 }));
+  }
+
+  // Attach the run state, then order: Mikey's manual order wins, else by time.
+  for (const j of jobs) {
+    const r = doc.state[j.id] || {};
+    j.state = JOB_STATES.includes(r.state) ? r.state : 'queued';
+    j.enrouteAt = r.enrouteAt || 0; j.startedAt = r.startedAt || 0; j.doneAt = r.doneAt || 0;
+    j.runNote = r.note || ''; j.trackToken = r.trackToken || '';
+    j.paidAmount = r.paid || 0; j.photos = r.photos || 0;
+    j.mapQuery = [j.address, j.city, j.city ? 'WA' : ''].filter(Boolean).join(', ');
+  }
+  const pos = (id) => { const i = doc.order.indexOf(id); return i < 0 ? 9999 : i; };
+  jobs.sort((a, b) => (pos(a.id) - pos(b.id)) || (a.at - b.at) || String(a.slot).localeCompare(String(b.slot)));
+
+  const done = jobs.filter((j) => j.state === 'done');
+  const money = jobs.reduce((s, j) => s + (j.state === 'done' ? (j.price || 0) : 0), 0);
+  const drive = jobs.filter((j) => j.state !== 'skipped').length;
+  return {
+    date, jobs,
+    summary: {
+      total: jobs.length, done: done.length, remaining: jobs.filter((j) => j.state !== 'done' && j.state !== 'skipped').length,
+      booked: jobs.reduce((s, j) => s + (j.state === 'skipped' ? 0 : (j.price || 0)), 0),
+      earned: jdMoney(money), hours: Math.round(jobs.reduce((s, j) => s + (j.durationMin || 0), 0) / 6) / 10,
+      stops: drive,
+    },
+    tz: cfg.tz,
+    services: bcfg ? (bcfg.services || []).map((s) => ({ id: s.id, name: s.name })) : [],
+  };
+}
+function localTimeHm(ts, tz) {
+  try {
+    const s = new Date(ts).toLocaleTimeString('en-GB', { timeZone: tz || 'America/Los_Angeles', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+    return s.slice(0, 5);
+  } catch { return '09:00'; }
+}
+
+async function apiDay(url) {
+  const cfg = await loadConfig();
+  const date = jdIsDate(url.searchParams.get('date')) ? url.searchParams.get('date') : jdToday(cfg);
+  return json(Object.assign({ ok: true }, await buildDay(date)));
+}
+
+// Advance a job through the run: queued → enroute → onsite → done. Side effects
+// are opt-in from the client (`text:true` sends the customer the matching
+// message) so a mis-tap never texts anyone by surprise.
+async function apiDayState(request) {
+  const d = await readJson(request);
+  const cfg = await loadConfig();
+  const date = jdIsDate(d.date) ? d.date : jdToday(cfg);
+  const jobId = jdStr(d.jobId, 64);
+  const state = JOB_STATES.includes(d.state) ? d.state : null;
+  if (!jobId || !state) return json({ ok: false, error: 'bad_request' }, 422);
+
+  const day = await buildDay(date);
+  const job = day.jobs.find((j) => j.id === jobId);
+  if (!job) return json({ ok: false, error: 'not_found' }, 404);
+
+  const doc = await loadDay(date);
+  const run = doc.state[jobId] || {};
+  run.state = state;
+  const now = Date.now();
+  if (state === 'enroute' && !run.enrouteAt) run.enrouteAt = now;
+  if (state === 'onsite' && !run.startedAt) run.startedAt = now;
+  if (state === 'done' && !run.doneAt) run.doneAt = now;
+  if (state === 'queued') { run.enrouteAt = 0; run.startedAt = 0; run.doneAt = 0; }
+  if (typeof d.note === 'string') run.note = d.note.slice(0, 400);
+
+  let track = null, texted = false;
+  if (state === 'enroute' && d.track && job.phone) {
+    track = await trackStart({ phone: job.phone, name: job.name, etaMin: Math.max(1, Math.min(180, Number(d.etaMin) || 20)),
+      address: job.address, city: job.city, jobId, date });
+    run.trackToken = track.token;
+  }
+  if (d.text && job.phone) {
+    const body = dayJobText(state, job, d, track, cfg);
+    if (body) {
+      try {
+        await sendSms(job.phone, body);
+        await appendMessage(job.phone, { dir: 'out', body, kind: 'run', status: 'sent' }, { name: job.name });
+        texted = true;
+      } catch (e) { /* the state change still stands; the UI reports the text failed */ }
+    }
+  }
+  doc.state[jobId] = run;
+  await saveDay(doc);
+  return json({ ok: true, day: await buildDay(date), texted, track });
+}
+
+function dayJobText(state, job, d, track, cfg) {
+  const custom = jdStr(d.body, 600);
+  if (custom) return custom;
+  const first = jdFirst(job.name);
+  const hi = first ? `Hey ${first}` : 'Hey';
+  if (state === 'enroute') {
+    const eta = Math.max(1, Math.min(180, Number(d.etaMin) || 20));
+    return `${hi}, Mikey here — on my way now, about ${eta} minutes out.` +
+      (track ? ` Track me live: ${track.url}` : '') +
+      ` If you can, please have the car accessible with water & power nearby. See you soon!`;
+  }
+  if (state === 'onsite') return `${hi} — I'm here and getting started on your vehicle. I'll let you know the moment it's done. - Mikey`;
+  if (state === 'done') {
+    const rev = cfg && cfg.reviewUrl ? ` If you've got 2 minutes, a Google review means the world: ${cfg.reviewUrl}` : '';
+    return `${hi}, all finished — your vehicle is done and looking great! Thanks for having me out.${rev} - Mikey`;
+  }
+  return '';
+}
+
+// Add / edit a hand-entered job (a cash job, a friend's truck, a re-do).
+async function apiDayJob(request) {
+  const d = await readJson(request);
+  const cfg = await loadConfig();
+  const date = jdIsDate(d.date) ? d.date : jdToday(cfg);
+  const doc = await loadDay(date);
+  const id = d.id && String(d.id).startsWith('m:') ? String(d.id) : 'm:' + genId();
+  const job = {
+    id,
+    name: jdStr(d.name, 60), phone: normalizePhone(d.phone) || '',
+    address: jdStr(d.address, 140), city: jdStr(d.city, 60),
+    service: jdStr(d.service, 60), size: jdStr(d.size, 30), vehicle: jdStr(d.vehicle, 60),
+    slot: /^\d{2}:\d{2}$/.test(String(d.slot || '')) ? d.slot : '09:00',
+    durationMin: Math.max(15, Math.min(720, Number(d.durationMin) || 120)),
+    price: jdMoney(d.price), notes: jdStr(d.notes, 400),
+  };
+  if (!job.name && !job.phone && !job.address) return json({ ok: false, error: 'need_name' }, 422);
+  const i = doc.manual.findIndex((m) => m.id === id);
+  if (i >= 0) doc.manual[i] = job; else doc.manual.push(job);
+  if (doc.manual.length > 40) return json({ ok: false, error: 'day_full' }, 422);
+  await saveDay(doc);
+  return json({ ok: true, day: await buildDay(date) });
+}
+
+async function apiDayRemove(request) {
+  const d = await readJson(request);
+  const cfg = await loadConfig();
+  const date = jdIsDate(d.date) ? d.date : jdToday(cfg);
+  const id = jdStr(d.jobId, 64);
+  const doc = await loadDay(date);
+  doc.manual = doc.manual.filter((m) => m.id !== id);
+  delete doc.state[id];
+  doc.order = doc.order.filter((x) => x !== id);
+  await saveDay(doc);
+  return json({ ok: true, day: await buildDay(date) });
+}
+
+async function apiDayOrder(request) {
+  const d = await readJson(request);
+  const cfg = await loadConfig();
+  const date = jdIsDate(d.date) ? d.date : jdToday(cfg);
+  const doc = await loadDay(date);
+  doc.order = (Array.isArray(d.order) ? d.order : []).map((x) => jdStr(x, 64)).filter(Boolean).slice(0, 60);
+  await saveDay(doc);
+  return json({ ok: true, day: await buildDay(date) });
+}
+
+// ===========================================================================
+// 2 · LIVE ETA TRACKING — the customer-facing "he's on his way" page
+// ===========================================================================
+// trk:<token> holds one trip. It expires on its own (12h TTL) so nothing has to
+// clean up, and the customer link dies with it. Position pings are throttled to
+// one write per ~45s so a long drive costs ~20 writes, not 200.
+const TRACK_TTL = 12 * 3600;
+const TRACK_MIN_WRITE_MS = 40000;
+
+async function trackStart({ phone, name, etaMin, address, city, jobId, date }) {
+  const token = jdToken();
+  const now = Date.now();
+  const trip = {
+    token, phone: normalizePhone(phone) || '', name: jdStr(name, 60),
+    dest: [jdStr(address, 140), jdStr(city, 60)].filter(Boolean).join(', '),
+    jobId: jdStr(jobId, 64), date: jdStr(date, 12),
+    startedAt: now, etaAt: now + etaMin * 60000, etaMin,
+    lat: null, lng: null, status: 'enroute', updatedAt: now,
+  };
+  await kv().put('trk:' + token, JSON.stringify(trip), { expirationTtl: TRACK_TTL });
+  return { token, url: `${publicBase()}/t/${token}`, etaAt: trip.etaAt };
+}
+
+async function apiTrackStart(request) {
+  const d = await readJson(request);
+  const phone = normalizePhone(d.phone);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  const etaMin = Math.max(1, Math.min(180, Number(d.etaMin) || 20));
+  const t = await trackStart({ phone, name: d.name, etaMin, address: d.address, city: d.city, jobId: d.jobId, date: d.date });
+  if (d.text !== false) {
+    const first = jdFirst(d.name);
+    const body = jdStr(d.body, 600) ||
+      `${first ? 'Hey ' + first : 'Hey'}, Mikey's on the way — about ${etaMin} minutes out. Watch me live here: ${t.url}`;
+    try { await sendSms(phone, body); await appendMessage(phone, { dir: 'out', body, kind: 'run', status: 'sent' }, { name: d.name }); }
+    catch (e) { return json({ ok: true, track: t, texted: false, error: String(e.message || e) }); }
+  }
+  return json({ ok: true, track: t, texted: d.text !== false });
+}
+
+// Position ping from Mikey's phone while driving. Cheap by design: we only
+// persist when the clock or the distance says it's worth a write.
+async function apiTrackPing(request) {
+  const d = await readJson(request);
+  const token = jdStr(d.token, 40);
+  const raw = await kv().get('trk:' + token, { type: 'json' });
+  if (!raw) return json({ ok: false, error: 'not_found' }, 404);
+  if (raw.status === 'ended') return json({ ok: true, stale: true });
+  const lat = Number(d.lat), lng = Number(d.lng);
+  const now = Date.now();
+  const moved = (raw.lat != null && Number.isFinite(lat))
+    ? (jdMiles({ lat: raw.lat, lng: raw.lng }, { lat, lng }) || 0) : 99;
+  const etaMin = d.etaMin != null ? Math.max(0, Math.min(240, Number(d.etaMin) || 0)) : null;
+  const etaShift = etaMin != null && Math.abs((raw.etaAt - now) / 60000 - etaMin) > 3;
+  if (!etaShift && moved < 0.12 && (now - raw.updatedAt) < TRACK_MIN_WRITE_MS) return json({ ok: true, skipped: true });
+  if (Number.isFinite(lat) && Number.isFinite(lng)) { raw.lat = Math.round(lat * 1e5) / 1e5; raw.lng = Math.round(lng * 1e5) / 1e5; }
+  if (etaMin != null) { raw.etaMin = etaMin; raw.etaAt = now + etaMin * 60000; }
+  raw.updatedAt = now;
+  const ttl = Math.max(120, TRACK_TTL - Math.round((now - raw.startedAt) / 1000));
+  await kv().put('trk:' + token, JSON.stringify(raw), { expirationTtl: ttl });
+  return json({ ok: true });
+}
+
+async function apiTrackStop(request) {
+  const d = await readJson(request);
+  const token = jdStr(d.token, 40);
+  const raw = await kv().get('trk:' + token, { type: 'json' });
+  if (!raw) return json({ ok: true });
+  raw.status = d.status === 'arrived' ? 'arrived' : 'ended';
+  raw.updatedAt = Date.now();
+  await kv().put('trk:' + token, JSON.stringify(raw), { expirationTtl: 3600 });
+  return json({ ok: true });
+}
+
+// PUBLIC — the customer's page polls this. Only ever exposes trip facts, never
+// the phone number or anything else about the business's data.
+async function apiTrackState(url) {
+  const token = jdStr(url.searchParams.get('t'), 40);
+  const raw = token ? await kv().get('trk:' + token, { type: 'json' }) : null;
+  if (!raw) return cors(json({ ok: false, error: 'expired' }, 404));
+  const cfg = await loadConfig();
+  const minsOut = Math.max(0, Math.round((raw.etaAt - Date.now()) / 60000));
+  return cors(json({
+    ok: true, status: raw.status, name: jdFirst(raw.name), dest: raw.dest,
+    etaAt: raw.etaAt, minsOut, startedAt: raw.startedAt,
+    lat: raw.lat, lng: raw.lng, updatedAt: raw.updatedAt,
+    business: 'Mikey\'s Mobile Detailing', phone: cfg.publicPhone || ENV.TWILIO_FROM || '',
+  }));
+}
+
+// PUBLIC — the tracking page itself. Self-contained (no external assets), so it
+// loads instantly on a customer's phone even on a bad connection.
+function trackPage(token) {
+  const t = jdEsc(token);
+  const html = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0c"><title>Mikey's on the way</title>
+<link rel="icon" href="/favicon.svg"><style>
+*{box-sizing:border-box}html,body{margin:0;min-height:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+background:radial-gradient(1200px 600px at 50% -10%,#1d1f27,#0a0a0c 60%);color:#f2f4f8;
+display:flex;align-items:center;justify-content:center;padding:22px}
+.card{width:100%;max-width:460px;background:#121216;border:1px solid #26293244;border-radius:24px;
+padding:26px 22px 22px;box-shadow:0 30px 80px -40px #000;text-align:center}
+.brand{display:flex;align-items:center;justify-content:center;gap:9px;font-weight:800;letter-spacing:-.01em;font-size:15px;color:#ff8a93}
+.brand svg{width:22px;height:22px}
+.pulse{margin:20px auto 6px;width:104px;height:104px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+background:radial-gradient(circle,rgba(255,46,67,.22),transparent 70%);position:relative}
+.pulse:before{content:"";position:absolute;inset:0;border-radius:50%;border:2px solid #ff2e43;opacity:.55;animation:p 2.2s ease-out infinite}
+.pulse:after{content:"";position:absolute;inset:0;border-radius:50%;border:2px solid #ff2e43;opacity:.35;animation:p 2.2s ease-out .9s infinite}
+@keyframes p{0%{transform:scale(.72);opacity:.7}100%{transform:scale(1.35);opacity:0}}
+.pulse svg{width:44px;height:44px;color:#fff;position:relative}
+h1{font-size:26px;margin:12px 0 4px;letter-spacing:-.02em}
+.eta{font-size:56px;font-weight:800;letter-spacing:-.04em;line-height:1;margin:14px 0 2px;
+background:linear-gradient(180deg,#fff,#ff8a93);-webkit-background-clip:text;background-clip:text;color:transparent}
+.etal{font-size:13px;color:#9aa3b2;letter-spacing:.06em;text-transform:uppercase;font-weight:700}
+.arrive{margin-top:14px;font-size:14px;color:#c9cfda}
+.bar{height:8px;border-radius:99px;background:#23252d;margin:22px 0 6px;overflow:hidden}
+.bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#ff2e43,#ff8a93);transition:width .8s ease}
+.steps{display:flex;justify-content:space-between;font-size:11px;color:#6b7280;font-weight:600}
+.steps b{color:#ff8a93}
+.dest{margin-top:18px;padding:12px 14px;background:#1a1b21;border:1px solid #2a2d36;border-radius:14px;font-size:13.5px;color:#c9cfda;text-align:left;display:flex;gap:10px;align-items:flex-start}
+.dest svg{width:17px;height:17px;color:#ff8a93;flex:none;margin-top:1px}
+.acts{display:flex;gap:10px;margin-top:16px}
+.acts a{flex:1;text-decoration:none;padding:13px 0;border-radius:14px;font-weight:700;font-size:14.5px;
+background:#23252d;color:#f2f4f8;border:1px solid #2a2d36;display:flex;align-items:center;justify-content:center;gap:7px}
+.acts a.p{background:linear-gradient(180deg,#ff2e43,#c81e30);border-color:#ff2e43;color:#fff}
+.acts svg{width:17px;height:17px}
+.tip{margin-top:16px;font-size:12px;color:#6b7280;line-height:1.5}
+.done .pulse:before,.done .pulse:after{animation:none;opacity:0}
+.steps span.on{color:#ff8a93;font-weight:800}
+@media (prefers-color-scheme:light){
+body{background:radial-gradient(1200px 600px at 50% -10%,#fff,#eef0f3 60%);color:#161820}
+.card{background:#fff;border-color:#d7dbe2;box-shadow:0 30px 70px -45px rgba(20,22,30,.45)}
+.brand{color:#c81e30}.eta{background:linear-gradient(180deg,#161820,#c81e30);-webkit-background-clip:text;background-clip:text}
+.etal,.steps{color:#5a626f}.arrive{color:#404755}.bar{background:#e7eaef}
+.dest{background:#f4f6f8;border-color:#d7dbe2;color:#404755}.dest svg{color:#c81e30}
+.acts a{background:#f4f6f8;color:#161820;border-color:#d7dbe2}.acts a.p{color:#fff}.tip{color:#8a93a1}
+/* white-on-white would vanish: the arrow takes the brand color on light. */
+.pulse svg{color:#c81e30}}
+</style></head><body>
+<div class="card" id="card">
+  <div class="brand">${carSvg()}Mikey's Mobile Detailing</div>
+  <div class="pulse">${navSvg()}</div>
+  <h1 id="ttl">On the way</h1>
+  <div class="eta" id="eta">—</div>
+  <div class="etal" id="etal">minutes away</div>
+  <div class="arrive" id="arrive"></div>
+  <div class="bar"><i id="bar" style="width:8%"></i></div>
+  <div class="steps"><span class="on" id="s1">Heading out</span><span id="s2">Close by</span><span id="s3">Arrived</span></div>
+  <div class="dest" id="destBox" style="display:none">${pinSvg()}<span id="dest"></span></div>
+  <div class="acts" id="acts"></div>
+  <div class="tip">Have the vehicle accessible with water &amp; power within about 20&nbsp;ft, and I'll take it from there.</div>
+</div>
+<script>
+var TOK=${JSON.stringify(token)},ICO_CALL=${JSON.stringify(phoneSvgLite())},ICO_MSG=${JSON.stringify(msgSvgLite())};
+var start=0,etaAt=0,phone="",finished=false;
+function E(id){return document.getElementById(id)}
+function pad(n){return n<10?"0"+n:""+n}
+function paint(d){
+  if(!d||!d.ok){finished=true;E("ttl").textContent="This link has expired";
+    E("eta").textContent="";E("etal").textContent="Text Mikey for an update";return}
+  start=d.startedAt;etaAt=d.etaAt;phone=d.phone||"";
+  if(d.dest){E("destBox").style.display="";E("dest").textContent=d.dest}
+  if(phone&&!E("acts").innerHTML){
+    E("acts").innerHTML='<a class="p" href="tel:'+phone+'">'+ICO_CALL+'Call</a><a href="sms:'+phone+'">'+ICO_MSG+'Text</a>';
+  }
+  if(d.status==="arrived"||d.status==="ended"){
+    finished=true;
+    E("card").className="card done";
+    E("ttl").textContent=d.status==="arrived"?"Mikey has arrived":"Trip complete";
+    E("eta").textContent=d.status==="arrived"?"Here":"\\u2713";
+    E("etal").textContent=d.status==="arrived"?"at your vehicle":"thanks for having me out";
+    E("bar").style.width="100%";E("arrive").textContent="";
+    E("s1").className="on";E("s2").className="on";E("s3").className="on";
+    return}
+  tick();
+}
+function tick(){
+  if(finished||!etaAt)return;
+  var mins=Math.max(0,Math.round((etaAt-Date.now())/60000));
+  E("eta").textContent=mins<1?"Any minute":mins;
+  E("etal").textContent=mins<1?"pulling up now":(mins===1?"minute away":"minutes away");
+  var a=new Date(etaAt),h=a.getHours(),ap=h>=12?"PM":"AM";h=h%12||12;
+  E("arrive").textContent="Arriving around "+h+":"+pad(a.getMinutes())+" "+ap;
+  var total=Math.max(1,etaAt-start),pc=Math.max(6,Math.min(97,Math.round((Date.now()-start)/total*100)));
+  E("bar").style.width=pc+"%";
+  E("s2").className=pc>55?"on":"";
+}
+function poll(){fetch("/api/track/state?t="+encodeURIComponent(TOK)).then(function(r){return r.json()}).then(paint).catch(function(){})}
+poll();setInterval(poll,20000);setInterval(tick,1000);
+document.addEventListener("visibilitychange",function(){if(!document.hidden)poll()});
+</script></body></html>`;
+  return new Response(html, { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+}
+function carSvg() { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 17h2c.6 0 1-.4 1-1v-3c0-.9-.7-1.7-1.5-1.9C18.7 10.6 16 10 16 10s-1.3-1.4-2.2-2.3c-.5-.4-1.1-.7-1.8-.7H5c-.6 0-1.1.4-1.4.9l-1.4 2.9A3.7 3.7 0 0 0 2 12v4c0 .6.4 1 1 1h2"/><circle cx="7" cy="17" r="2"/><circle cx="17" cy="17" r="2"/></svg>'; }
+function navSvg() { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>'; }
+function pinSvg() { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>'; }
+function phoneSvgLite() { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:17px;height:17px"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z"/></svg>'; }
+function msgSvgLite() { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:17px;height:17px"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'; }
+
+// ===========================================================================
+// 3 · WEB PUSH — instant phone notifications, zero setup
+// ===========================================================================
+// The VAPID keypair is generated inside the Worker on first use and stored in
+// KV, so there is nothing for the owner to create, paste or configure. Pushes
+// are sent WITHOUT a payload (no aes128gcm encryption needed): the service
+// worker wakes and calls /api/push/peek for the headline, which keeps this
+// small, dependency-free and impossible to leak message content through.
+async function vapidKeys() {
+  const cached = await kv().get('push:vapid', { type: 'json' });
+  if (cached && cached.pub && cached.jwk) return cached;
+  const kp = await crypto.subtle.generateKey({ name: 'ECDSA', namedCurve: 'P-256' }, true, ['sign', 'verify']);
+  const raw = new Uint8Array(await crypto.subtle.exportKey('raw', kp.publicKey));
+  const jwk = await crypto.subtle.exportKey('jwk', kp.privateKey);
+  const doc = { pub: b64url(raw), jwk, createdAt: Date.now() };
+  await kv().put('push:vapid', JSON.stringify(doc));   // ⚠ one KV write, once ever
+  return doc;
+}
+
+async function vapidJwt(audience, keys) {
+  const header = b64urlStr(JSON.stringify({ typ: 'JWT', alg: 'ES256' }));
+  const sub = ENV.ALERT_EMAIL ? 'mailto:' + ENV.ALERT_EMAIL : (publicBase() || 'https://example.com');
+  const payload = b64urlStr(JSON.stringify({ aud: audience, exp: Math.floor(Date.now() / 1000) + 43200, sub }));
+  const key = await crypto.subtle.importKey('jwk', keys.jwk, { name: 'ECDSA', namedCurve: 'P-256' }, false, ['sign']);
+  const sig = new Uint8Array(await crypto.subtle.sign({ name: 'ECDSA', hash: 'SHA-256' },
+    key, new TextEncoder().encode(header + '.' + payload)));
+  return `${header}.${payload}.${b64url(sig)}`;   // WebCrypto already returns raw r||s — exactly what ES256 wants
+}
+
+async function loadPushSubs() { return (await kv().get('push:subs', { type: 'json' })) || []; }
+async function savePushSubs(list) { await kv().put('push:subs', JSON.stringify(list.slice(0, 6))); }
+
+// Fire a push at every registered device. Dead subscriptions (404/410) are
+// pruned so a reinstalled phone doesn't leave a zombie behind.
+async function pushNotify() {
+  const subs = await loadPushSubs();
+  if (!subs.length) return 0;
+  let keys; try { keys = await vapidKeys(); } catch { return 0; }
+  let sent = 0; const dead = [];
+  for (const s of subs) {
+    try {
+      const jwt = await vapidJwt(new URL(s.endpoint).origin, keys);
+      const res = await fetch(s.endpoint, {
+        method: 'POST',
+        headers: { TTL: '600', Urgency: 'high', Authorization: `vapid t=${jwt},k=${keys.pub}` },
+      });
+      if (res.status === 404 || res.status === 410) dead.push(s.endpoint);
+      else if (res.ok || res.status === 201 || res.status === 202) sent++;
+    } catch { /* one bad endpoint must never break the others */ }
+  }
+  if (dead.length) await savePushSubs(subs.filter((s) => !dead.includes(s.endpoint)));
+  return sent;
+}
+
+async function apiPushKey() {
+  const keys = await vapidKeys();
+  const subs = await loadPushSubs();
+  return json({ ok: true, key: keys.pub, devices: subs.length });
+}
+
+async function apiPushSubscribe(request) {
+  const d = await readJson(request);
+  const endpoint = jdStr(d.endpoint, 500);
+  if (!/^https:\/\//.test(endpoint)) return json({ ok: false, error: 'bad_subscription' }, 422);
+  const subs = await loadPushSubs();
+  const rec = { endpoint, label: jdStr(d.label, 40) || 'This device', at: Date.now() };
+  const i = subs.findIndex((s) => s.endpoint === endpoint);
+  if (i >= 0) { subs[i] = Object.assign(subs[i], rec); }
+  else subs.unshift(rec);
+  await savePushSubs(subs);
+  return json({ ok: true, devices: subs.length });
+}
+
+async function apiPushUnsubscribe(request) {
+  const d = await readJson(request);
+  const endpoint = jdStr(d.endpoint, 500);
+  const subs = await loadPushSubs();
+  const left = endpoint ? subs.filter((s) => s.endpoint !== endpoint) : [];
+  await savePushSubs(left);
+  return json({ ok: true, devices: left.length });
+}
+
+async function apiPushTest() {
+  const n = await pushNotify();
+  return json({ ok: n > 0, sent: n, error: n ? '' : 'no_devices_or_send_failed' });
+}
+
+// What the service worker shows after a payload-less push. Read-only: it builds
+// the headline from the thread index that's already in memory-cheap KV.
+async function apiPushPeek() {
+  const index = await loadIndex();
+  const active = index.filter((t) => !t.archived);
+  const unread = active.filter((t) => t.unread > 0).sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+  const owed = active.filter(rowAwaitingReply);
+  if (unread.length) {
+    const t = unread[0];
+    const who = t.name || t.phone;
+    const more = unread.length > 1 ? ` (+${unread.length - 1} more waiting)` : '';
+    return json({ ok: true, title: `New text from ${who}`, body: (t.lastBody || 'Tap to read.') + more, url: '/' });
+  }
+  const due = active.filter((t) => t.followupDue).length;
+  if (due) return json({ ok: true, title: 'Follow-ups ready', body: `${due} customer${due > 1 ? 's are' : ' is'} due for a nudge.`, url: '/' });
+  if (owed.length) return json({ ok: true, title: 'Someone is waiting', body: `${owed.length} conversation${owed.length > 1 ? 's need' : ' needs'} your reply.`, url: '/' });
+  return json({ ok: true, title: "Mikey's Dashboard", body: 'New activity — tap to open.', url: '/' });
+}
+
+// ===========================================================================
+// 4 · QUOTE BUILDER — a priced, branded quote in three taps
+// ===========================================================================
+// Prices come from the same booking service menu the public site uses, so a
+// texted quote and the booking page can never disagree. Quotes are tracked so
+// the follow-up engine has something concrete to chase.
+const QUOTE_KEY = 'quotes';
+const QUOTE_CONDITIONS = [
+  { id: 'clean', label: 'Well kept', mult: 1, note: '' },
+  { id: 'normal', label: 'Normal use', mult: 1.1, note: 'normal wear' },
+  { id: 'rough', label: 'Rough', mult: 1.3, note: 'heavy soil' },
+  { id: 'pets', label: 'Pet hair / stains', mult: 1.45, note: 'pet hair + stain treatment' },
+];
+async function loadQuotes() { return (await kv().get(QUOTE_KEY, { type: 'json' })) || []; }
+async function saveQuotes(list) { await kv().put(QUOTE_KEY, JSON.stringify(list.slice(0, 200))); }
+
+async function apiQuoteConfig() {
+  const cfg = await loadBookingConfig();
+  return json({
+    ok: true,
+    sizes: cfg.sizes || [], addons: cfg.addons || [],
+    services: (cfg.services || []).filter((s) => s.enabled !== false)
+      .map((s) => ({ id: s.id, name: s.name, price: s.price, duration: s.duration, blurb: s.blurb || '' })),
+    conditions: QUOTE_CONDITIONS,
+    quotes: (await loadQuotes()).slice(0, 60),
+  });
+}
+
+function quoteTotal(cfg, q) {
+  const svc = (cfg.services || []).find((s) => s.id === q.service);
+  const base = svc && svc.price ? (svc.price[q.size] || svc.price.suv || 0) : 0;
+  const cond = QUOTE_CONDITIONS.find((c) => c.id === q.condition) || QUOTE_CONDITIONS[0];
+  const addons = (q.addons || []).map((id) => (cfg.addons || []).find((a) => a.id === id) || null).filter(Boolean);
+  const addTotal = addons.reduce((s, a) => s + (Number(a.price) || 0), 0);
+  const travel = Math.max(0, Number(q.travel) || 0);
+  const discount = Math.max(0, Number(q.discount) || 0);
+  const sub = Math.round(base * cond.mult) + addTotal + travel;
+  return {
+    base, condMult: cond.mult, condLabel: cond.label, addons: addons.map((a) => ({ id: a.id, name: a.name, price: a.price })),
+    addTotal, travel, discount, subtotal: sub, total: Math.max(0, sub - discount),
+    serviceName: svc ? svc.name : '', durationMin: svc && svc.duration ? (svc.duration[q.size] || 180) : 180,
+  };
+}
+
+function quoteMessage(q, calc, cfg) {
+  const first = jdFirst(q.name);
+  const lines = [];
+  lines.push(`${first ? 'Hey ' + first + '!' : 'Hey!'} Here's your quote from Mikey's Mobile Detailing:`);
+  lines.push('');
+  lines.push(`${calc.serviceName}${q.sizeLabel ? ' · ' + q.sizeLabel : ''}${q.vehicle ? ' · ' + q.vehicle : ''}`);
+  for (const a of calc.addons) lines.push(`+ ${a.name}${a.price ? ' ($' + a.price + ')' : ''}`);
+  if (calc.travel) lines.push(`+ Travel: $${calc.travel}`);
+  if (calc.discount) lines.push(`- Discount: $${calc.discount}`);
+  lines.push('');
+  lines.push(`TOTAL: $${calc.total}  ·  about ${Math.round(calc.durationMin / 30) / 2} hrs`);
+  lines.push('I come to you — I just need water & power within ~20 ft.');
+  if (q.note) { lines.push(''); lines.push(q.note); }
+  lines.push('');
+  lines.push(`Want me to lock in a day? Just reply with what works.${q.expiresDays ? ` (Good for ${q.expiresDays} days.)` : ''}`);
+  lines.push('- Mikey');
+  return lines.join('\n');
+}
+
+async function apiQuoteCreate(request) {
+  const d = await readJson(request);
+  const bcfg = await loadBookingConfig();
+  const phone = normalizePhone(d.phone);
+  const q = {
+    id: d.id && jdStr(d.id, 24) ? jdStr(d.id, 24) : genId(),
+    createdAt: Date.now(), status: 'draft',
+    phone: phone || '', name: jdStr(d.name, 60), vehicle: jdStr(d.vehicle, 60),
+    service: jdStr(d.service, 40), size: jdStr(d.size, 30), sizeLabel: jdStr(d.sizeLabel, 40),
+    addons: Array.isArray(d.addons) ? d.addons.map((x) => jdStr(x, 40)).slice(0, 12) : [],
+    condition: jdStr(d.condition, 20) || 'clean',
+    travel: jdMoney(d.travel), discount: jdMoney(d.discount),
+    note: jdStr(d.note, 300), expiresDays: Math.max(0, Math.min(60, Number(d.expiresDays) || 14)),
+  };
+  const calc = quoteTotal(bcfg, q);
+  if (!calc.serviceName) return json({ ok: false, error: 'bad_service' }, 422);
+  q.total = calc.total; q.serviceName = calc.serviceName;
+  const body = jdStr(d.body, 1200) || quoteMessage(q, calc, bcfg);
+  if (d.preview) return json({ ok: true, calc, body, quote: q });
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+
+  let texted = false, err = '';
+  if (d.send !== false) {
+    try {
+      await sendSms(phone, body);
+      await appendMessage(phone, { dir: 'out', body, kind: 'quote', status: 'sent' }, { name: q.name });
+      texted = true; q.status = 'sent'; q.sentAt = Date.now();
+    } catch (e) { err = String(e.message || e); }
+  }
+  q.body = body;
+
+  // Mirror onto the conversation so the quote is visible where the work happens.
+  const thread = await loadThread(phone);
+  if (!thread.name && q.name) thread.name = q.name;
+  if (!thread.status || thread.status === 'new') { thread.status = 'active'; thread.statusAt = Date.now(); }
+  if (!thread.tags.includes('quoted')) thread.tags.push('quoted');
+  thread.quote = { id: q.id, total: q.total, service: q.serviceName, at: Date.now() };
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+
+  const list = await loadQuotes();
+  const i = list.findIndex((x) => x.id === q.id);
+  if (i >= 0) list[i] = q; else list.unshift(q);
+  await saveQuotes(list);
+  return json({ ok: true, quote: q, calc, texted, error: err });
+}
+
+// Accept / decline / delete a quote. Accepting flips the lead to Won and, when
+// asked, drops the job straight into the money ledger — no double entry.
+async function apiQuoteAction(request) {
+  const d = await readJson(request);
+  const id = jdStr(d.id, 24), action = jdStr(d.action, 20);
+  const list = await loadQuotes();
+  const q = list.find((x) => x.id === id);
+  if (!q) return json({ ok: false, error: 'not_found' }, 404);
+
+  if (action === 'delete') {
+    await saveQuotes(list.filter((x) => x.id !== id));
+    return json({ ok: true, deleted: true });
+  }
+  if (action === 'accept') {
+    q.status = 'accepted'; q.acceptedAt = Date.now();
+    if (q.phone) {
+      const t = await loadThread(q.phone);
+      if (t.status !== 'won') { t.status = 'won'; t.statusAt = Date.now(); }
+      await saveThread(t); await updateIndexEntry(t);
+    }
+  } else if (action === 'decline') {
+    q.status = 'declined'; q.declinedAt = Date.now();
+  } else if (action === 'resend' && q.phone && q.body) {
+    try { await sendSms(q.phone, q.body); await appendMessage(q.phone, { dir: 'out', body: q.body, kind: 'quote', status: 'sent' }, { name: q.name }); q.status = 'sent'; q.sentAt = Date.now(); }
+    catch (e) { return json({ ok: false, error: String(e.message || e) }, 502); }
+  } else {
+    return json({ ok: false, error: 'bad_action' }, 422);
+  }
+  await saveQuotes(list);
+  return json({ ok: true, quote: q });
+}
+
+// ===========================================================================
+// 5 · GET PAID — payment requests, deposits and a public pay page
+// ===========================================================================
+// No processor account required: the pay page deep-links to whatever the owner
+// already uses (Venmo / Cash App / PayPal / Zelle) and can carry a Stripe or
+// Square payment link when he has one. Every request is tracked so "who still
+// owes me" is a list, not a memory.
+const PAY_KEY = 'pay:index';
+const PAY_CFG_KEY = 'pay:config';
+function payDefaults() {
+  return { venmo: '', cashapp: '', paypal: '', zelle: '', link: '', linkLabel: 'Card / Apple Pay',
+    cash: true, cashLabel: 'Cash in person', depositPct: 25, remindDays: 3,
+    businessName: "Mikey's Mobile Detailing",
+    tagline: 'Mobile detailing — I come to you',
+    terms: 'Thanks for choosing Mikey\'s Mobile Detailing!',
+    // Free-form extra ways to pay (Apple Cash, Chime, a check…) so the page can
+    // cover whatever he actually uses without a code change.
+    extras: [] };
+}
+async function loadPayConfig() { return Object.assign(payDefaults(), (await kv().get(PAY_CFG_KEY, { type: 'json' })) || {}); }
+async function loadInvoices() { return (await kv().get(PAY_KEY, { type: 'json' })) || []; }
+async function saveInvoices(list) { await kv().put(PAY_KEY, JSON.stringify(list.slice(0, 300))); }
+
+async function apiPay() {
+  const list = await loadInvoices();
+  const open = list.filter((i) => i.status === 'open');
+  return json({
+    ok: true, config: await loadPayConfig(), invoices: list.slice(0, 80),
+    outstanding: jdMoney(open.reduce((s, i) => s + i.amount, 0)), openCount: open.length,
+  });
+}
+
+async function apiPaySaveConfig(request) {
+  const d = await readJson(request);
+  const cur = await loadPayConfig();
+  const next = Object.assign(cur, {
+    venmo: jdStr(d.venmo, 40).replace(/^@/, ''), cashapp: jdStr(d.cashapp, 40).replace(/^\$/, ''),
+    paypal: jdStr(d.paypal, 60), zelle: jdStr(d.zelle, 60),
+    link: /^https?:\/\//.test(String(d.link || '')) ? jdStr(d.link, 300) : '',
+    linkLabel: jdStr(d.linkLabel, 40) || 'Card / Apple Pay',
+    cash: d.cash !== false,
+    cashLabel: jdStr(d.cashLabel, 40) || 'Cash in person',
+    businessName: jdStr(d.businessName, 60) || "Mikey's Mobile Detailing",
+    tagline: jdStr(d.tagline, 80),
+    depositPct: Math.max(0, Math.min(100, Number(d.depositPct) || 0)),
+    remindDays: Math.max(0, Math.min(30, Number(d.remindDays) || 0)),
+    terms: jdStr(d.terms, 300),
+    extras: Array.isArray(d.extras) ? d.extras.map((x) => ({
+      label: jdStr(x && x.label, 40), detail: jdStr(x && x.detail, 80),
+    })).filter((x) => x.label).slice(0, 6) : (cur.extras || []),
+  });
+  await kv().put(PAY_CFG_KEY, JSON.stringify(next));
+  return json({ ok: true, config: next });
+}
+
+async function apiPayRequest(request) {
+  const d = await readJson(request);
+  const phone = normalizePhone(d.phone);
+  const itemTotal = Array.isArray(d.items)
+    ? d.items.reduce((t, x) => t + jdMoney(x && x.price), 0) : 0;
+  const amount = jdMoney(d.amount) || jdMoney(itemTotal);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  if (!(amount > 0)) return json({ ok: false, error: 'bad_amount' }, 422);
+  const pcfg = await loadPayConfig();
+  // Line items are what turn the page into a receipt instead of a bare number.
+  const items = Array.isArray(d.items) ? d.items.map((x) => ({
+    name: jdStr(x && x.name, 80), price: jdMoney(x && x.price),
+  })).filter((x) => x.name).slice(0, 20) : [];
+  const inv = {
+    id: genId(), token: jdToken(), createdAt: Date.now(), status: 'open',
+    phone, name: jdStr(d.name, 60), amount, memo: jdStr(d.memo, 120) || 'Mobile detailing',
+    items,
+    kind: d.deposit ? 'deposit' : 'invoice', jobId: jdStr(d.jobId, 64), date: jdStr(d.date, 12),
+    remindedAt: 0,
+  };
+  const url = `${publicBase()}/p/${inv.token}`;
+  // The text does one job: say what the link is so they tap it. The breakdown,
+  // the total and every payment option live on the page — repeating them here
+  // just makes a wall of text people skim past.
+  // Plain hyphens, not em dashes: a single non-GSM-7 character flips the whole
+  // message to UCS-2, which cuts the segment limit from 160 to 70 and quietly
+  // doubles the Twilio cost of every payment request he sends.
+  const body = jdStr(d.body, 600) || (inv.kind === 'deposit'
+    ? `Here's the deposit to hold your spot - amount and payment options: ${url}`
+    : `Here's your invoice - full breakdown and every way to pay: ${url}`);
+
+  let texted = false, err = '';
+  if (d.send !== false) {
+    try { await sendSms(phone, body); await appendMessage(phone, { dir: 'out', body, kind: 'pay', status: 'sent' }, { name: inv.name }); texted = true; }
+    catch (e) { err = String(e.message || e); }
+  }
+  inv.body = body; inv.url = url;
+  const list = await loadInvoices(); list.unshift(inv); await saveInvoices(list);
+  return json({ ok: true, invoice: inv, texted, error: err, config: pcfg });
+}
+
+async function apiPayAction(request) {
+  const d = await readJson(request);
+  const id = jdStr(d.id, 24), action = jdStr(d.action, 20);
+  const list = await loadInvoices();
+  const inv = list.find((x) => x.id === id);
+  if (!inv) return json({ ok: false, error: 'not_found' }, 404);
+  if (action === 'paid') {
+    inv.status = 'paid'; inv.paidAt = Date.now(); inv.method = jdStr(d.method, 20) || 'unknown';
+  } else if (action === 'void') {
+    inv.status = 'void';
+  } else if (action === 'remind') {
+    const first = jdFirst(inv.name);
+    const body = `${first ? 'Hey ' + first : 'Hey'} — quick nudge on the $${inv.amount} for ${inv.memo}. You can knock it out here: ${inv.url} Thanks! - Mikey`;
+    try { await sendSms(inv.phone, body); await appendMessage(inv.phone, { dir: 'out', body, kind: 'pay', status: 'sent' }, { name: inv.name }); inv.remindedAt = Date.now(); }
+    catch (e) { return json({ ok: false, error: String(e.message || e) }, 502); }
+  } else if (action === 'delete') {
+    await saveInvoices(list.filter((x) => x.id !== id));
+    return json({ ok: true, deleted: true });
+  } else {
+    return json({ ok: false, error: 'bad_action' }, 422);
+  }
+  await saveInvoices(list);
+  return json({ ok: true, invoice: inv });
+}
+
+// PUBLIC — the customer taps the texted link and lands here.
+async function payPage(token) {
+  const list = await loadInvoices();
+  const inv = list.find((x) => x.token === token);
+  const pcfg = await loadPayConfig();
+  if (!inv || inv.status === 'void') {
+    return new Response(payShell('<h1>This link is no longer active</h1><p class="sub">Text Mikey and he\'ll send a fresh one.</p>'),
+      { status: 404, headers: { 'Content-Type': 'text/html; charset=utf-8' } });
+  }
+  const amt = inv.amount.toFixed(2).replace(/\.00$/, '');
+  const note = encodeURIComponent(inv.memo || 'Mobile detailing');
+  const opts = [];
+  if (pcfg.link) opts.push(['card', pcfg.linkLabel || 'Card / Apple Pay', pcfg.link, '#635bff']);
+  if (pcfg.venmo) opts.push(['venmo', 'Venmo', `https://venmo.com/${encodeURIComponent(pcfg.venmo)}?txn=pay&amount=${amt}&note=${note}`, '#008CFF']);
+  if (pcfg.cashapp) opts.push(['cashapp', 'Cash App', `https://cash.app/$${encodeURIComponent(pcfg.cashapp)}/${amt}`, '#00D54B']);
+  if (pcfg.paypal) opts.push(['paypal', 'PayPal', `https://paypal.me/${encodeURIComponent(pcfg.paypal)}/${amt}`, '#0070E0']);
+  if (pcfg.zelle) opts.push(['zelle', 'Zelle', '', '#6D1ED4']);
+  const paid = inv.status === 'paid';
+  const money = (n) => Number(n || 0).toFixed(2).replace(/\.00$/, '');
+
+  // The breakdown. Only shown when there's more to say than the total itself —
+  // a single line item that just repeats the memo would be noise.
+  const items = Array.isArray(inv.items) ? inv.items : [];
+  const itemSum = items.reduce((t, x) => t + Number(x.price || 0), 0);
+  const showItems = items.length > 0;
+  const remainder = jdMoney(inv.amount - itemSum);
+  const lines = showItems ? `
+       <div class="rcpt">
+         <div class="rcpt-h">What this is for</div>
+         ${items.map((x) => `<div class="li"><span class="n">${jdEsc(x.name)}</span><span class="p">${x.price ? '$' + jdEsc(money(x.price)) : ''}</span></div>`).join('')}
+         ${inv.kind === 'deposit'
+           ? `<div class="li sub2"><span class="n">Deposit requested now</span><span class="p">$${jdEsc(amt)}</span></div>`
+           : (Math.abs(remainder) >= 0.01 ? `<div class="li sub2"><span class="n">Adjustment</span><span class="p">$${jdEsc(money(remainder))}</span></div>` : '')}
+         <div class="li tot"><span class="n">${inv.kind === 'deposit' ? 'Due now' : 'Total'}</span><span class="p">$${jdEsc(amt)}</span></div>
+       </div>` : '';
+
+  const body = paid
+    ? `<div class="badge ok">Paid ✓</div><h1>You're all set</h1><p class="sub">$${jdEsc(amt)} received — thank you!</p>${lines}`
+    : `<div class="badge">${inv.kind === 'deposit' ? 'Deposit' : 'Amount due'}</div>
+       <div class="amt">$${jdEsc(amt)}</div>
+       <p class="sub">${jdEsc(inv.memo)}${inv.name ? ' · ' + jdEsc(jdFirst(inv.name)) : ''}</p>
+       ${lines}
+       <div class="opts">${opts.map(([id, label, href, color]) => href
+        ? `<a class="opt" href="${jdEsc(href)}" target="_blank" rel="noopener"><span class="dot" style="background:${color}"></span>${jdEsc(label)}<span class="go">Pay →</span></a>`
+        : `<div class="opt static"><span class="dot" style="background:${color}"></span>${jdEsc(label)}<span class="go">${jdEsc(pcfg.zelle)}</span></div>`).join('')}
+       ${(pcfg.extras || []).map((x) => `<div class="opt static"><span class="dot" style="background:#8a93a1"></span>${jdEsc(x.label)}<span class="go">${jdEsc(x.detail)}</span></div>`).join('')}
+       ${pcfg.cash ? `<div class="opt static"><span class="dot" style="background:#22c55e"></span>${jdEsc(pcfg.cashLabel || 'Cash in person')}<span class="go">On the day</span></div>` : ''}</div>
+       ${opts.length || pcfg.cash || (pcfg.extras || []).length ? '' : '<p class="sub">Text Mikey for payment details.</p>'}
+       <p class="fine">${jdEsc(pcfg.terms || '')}</p>`;
+  return new Response(payShell(body, pcfg), { headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+}
+function payShell(inner, pcfg) {
+  const biz = jdEsc((pcfg && pcfg.businessName) || "Mikey's Mobile Detailing");
+  const tag = jdEsc((pcfg && pcfg.tagline) || '');
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0c"><title>${biz} — invoice</title>
+<link rel="icon" href="/favicon.svg"><style>
+*{box-sizing:border-box}html,body{margin:0;min-height:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+background:radial-gradient(1200px 600px at 50% -10%,#1d1f27,#0a0a0c 60%);color:#f2f4f8;
+display:flex;align-items:center;justify-content:center;padding:22px}
+.card{width:100%;max-width:430px;background:#121216;border:1px solid #26293244;border-radius:24px;padding:28px 22px;text-align:center;box-shadow:0 30px 80px -40px #000}
+.brand{font-weight:800;font-size:14px;color:#ff8a93;letter-spacing:-.01em;margin-bottom:18px}
+.badge{display:inline-block;font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#9aa3b2;background:#1a1b21;border:1px solid #2a2d36;border-radius:99px;padding:5px 12px}
+.badge.ok{color:#22c55e;border-color:#22c55e55;background:#22c55e14}
+.amt{font-size:62px;font-weight:800;letter-spacing:-.045em;margin:14px 0 2px;background:linear-gradient(180deg,#fff,#ff8a93);-webkit-background-clip:text;background-clip:text;color:transparent}
+h1{font-size:24px;margin:12px 0 4px;letter-spacing:-.02em}
+.sub{color:#9aa3b2;font-size:14px;margin:2px 0 0}
+.opts{display:flex;flex-direction:column;gap:10px;margin:22px 0 4px}
+.opt{display:flex;align-items:center;gap:11px;text-decoration:none;color:#f2f4f8;background:#1a1b21;border:1px solid #2a2d36;border-radius:15px;padding:15px 16px;font-weight:700;font-size:15px}
+.opt .dot{width:11px;height:11px;border-radius:50%;flex:none}
+.opt .go{margin-left:auto;font-size:13px;color:#9aa3b2;font-weight:600}
+.opt.static{opacity:.85}
+.fine{margin-top:18px;font-size:12px;color:#6b7280;line-height:1.5}
+.brand .tag{display:block;font-weight:600;font-size:11.5px;color:#9aa3b2;margin-top:3px;letter-spacing:0}
+.rcpt{margin:22px 0 4px;text-align:left;background:#16171c;border:1px solid #2a2d36;border-radius:16px;padding:14px 15px}
+.rcpt-h{font-size:10.5px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:#6b7280;margin-bottom:9px}
+.li{display:flex;gap:12px;align-items:baseline;padding:8px 0;border-bottom:1px solid #23252d;font-size:14.5px}
+.li:last-child{border-bottom:none}
+.li .n{flex:1;color:#c9cfda}
+.li .p{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+.li.sub2 .n,.li.sub2 .p{color:#9aa3b2;font-size:13px;font-weight:600}
+.li.tot{border-top:1px solid #2a2d36;margin-top:4px;padding-top:11px;font-size:17px}
+.li.tot .n{color:#f2f4f8;font-weight:800}
+.li.tot .p{color:#ff8a93;font-size:19px;font-weight:800}
+@media (prefers-color-scheme:light){
+body{background:radial-gradient(1200px 600px at 50% -10%,#fff,#eef0f3 60%);color:#161820}
+.card{background:#fff;border-color:#d7dbe2;box-shadow:0 30px 70px -45px rgba(20,22,30,.45)}
+.brand{color:#c81e30}.badge{background:#f4f6f8;border-color:#d7dbe2;color:#5a626f}
+.amt{background:linear-gradient(180deg,#161820,#c81e30);-webkit-background-clip:text;background-clip:text}
+.sub{color:#5a626f}.opt{background:#f4f6f8;border-color:#d7dbe2;color:#161820}.opt .go{color:#5a626f}.fine{color:#8a93a1}
+.brand .tag{color:#5a626f}
+.rcpt{background:#f7f8fa;border-color:#d7dbe2}
+.li{border-bottom-color:#e3e6eb}.li .n{color:#3d434e}
+.li.tot{border-top-color:#d7dbe2}.li.tot .n{color:#161820}.li.tot .p{color:#c81e30}}
+</style></head><body><div class="card"><div class="brand">${biz}${tag ? `<span class="tag">${tag}</span>` : ''}</div>${inner}</div></body></html>`;
+}
+
+// ===========================================================================
+// 6 · CUSTOMER GARAGE — vehicles, access notes and lifetime value
+// ===========================================================================
+// Lives on the thread (thread.garage) so it travels with the conversation and
+// costs no extra reads. The roster view joins it against the money ledger so
+// "who is worth chasing" is a fact, not a hunch.
+// One-line "2019 Silver Tacoma" style label for list rows and the index.
+function garageVehicleLabel(g) {
+  const v = (g && g.vehicles && g.vehicles[0]) || null;
+  if (!v) return '';
+  return [v.year, v.color, v.make, v.model].filter(Boolean).join(' ').slice(0, 48);
+}
+
+function sanitizeGarage(g) {
+  if (!g || typeof g !== 'object') return null;
+  const veh = (Array.isArray(g.vehicles) ? g.vehicles : []).slice(0, 8).map((v) => ({
+    id: jdStr(v.id, 24) || genId(),
+    year: jdStr(v.year, 4), make: jdStr(v.make, 24), model: jdStr(v.model, 30),
+    color: jdStr(v.color, 20), size: jdStr(v.size, 20), plate: jdStr(v.plate, 12),
+    notes: jdStr(v.notes, 200),
+  })).filter((v) => v.make || v.model || v.year);
+  return {
+    vehicles: veh,
+    address: jdStr(g.address, 140), city: jdStr(g.city, 60), zip: jdStr(g.zip, 10),
+    gate: jdStr(g.gate, 60), parking: jdStr(g.parking, 160),
+    water: g.water === null || g.water === undefined ? null : !!g.water,
+    power: g.power === null || g.power === undefined ? null : !!g.power,
+    prefs: jdStr(g.prefs, 300), avoid: jdStr(g.avoid, 200),
+    lat: Number.isFinite(Number(g.lat)) ? Number(g.lat) : null,
+    lng: Number.isFinite(Number(g.lng)) ? Number(g.lng) : null,
+  };
+}
+
+async function apiGarage(url) {
+  const phone = normalizePhone(url.searchParams.get('phone'));
+  const cfg = await loadConfig();
+  if (phone) {
+    const t = await loadThread(phone);
+    const spend = await moneySpendFor(phone, cfg);
+    return json({ ok: true, phone, garage: t.garage || null, name: t.name || '', spend });
+  }
+  // Roster: everyone with a garage entry or a logged job, richest first.
+  const index = await loadIndex();
+  const spendMap = await moneySpendMap(cfg);
+  const rows = [];
+  for (const t of index) {
+    if (t.archived) continue;
+    const sp = spendMap[t.phone];
+    if (!sp && !t.hasGarage) continue;
+    rows.push({
+      phone: t.phone, name: t.name || '', status: t.status || '', tags: t.tags || [],
+      lastTs: t.lastTs || 0, vehicles: t.vehicleLabel || '', city: t.city || '',
+      jobs: sp ? sp.jobs : 0, total: sp ? sp.total : 0, lastJob: sp ? sp.lastDate : '',
+    });
+  }
+  rows.sort((a, b) => b.total - a.total || b.lastTs - a.lastTs);
+  return json({ ok: true, customers: rows.slice(0, 200) });
+}
+
+// Lifetime spend per phone, from the money ledger (last 18 months of docs).
+async function moneySpendMap(cfg) {
+  let m = localDateStr(Date.now(), cfg.tz).slice(0, 7);
+  const map = {};
+  for (let i = 0; i < 18; i++) {
+    const doc = await loadMonth(m);
+    for (const e of (doc.entries || [])) {
+      if (e.type !== 'job' || !e.phone) continue;
+      const r = map[e.phone] = map[e.phone] || { jobs: 0, total: 0, lastDate: '' };
+      r.jobs++; r.total = jdMoney(r.total + e.amount);
+      if (e.date > r.lastDate) r.lastDate = e.date;
+    }
+    m = prevMonthKey(m);
+  }
+  return map;
+}
+async function moneySpendFor(phone, cfg) {
+  const map = await moneySpendMap(cfg);
+  return map[phone] || { jobs: 0, total: 0, lastDate: '' };
+}
+
+// ===========================================================================
+// 7 · NEIGHBORHOOD BLAST — "I'll be in your area" batching
+// ===========================================================================
+// A mobile business makes money by not driving. When a job is booked in a town,
+// this finds past customers in the same place and offers them the same-day
+// slot at a discount. Opt-out aware, capped, and throttled.
+function jdArea(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z ]/g, '').replace(/\s+/g, ' ').trim();
+}
+function jdZip(s) { const m = String(s || '').match(/\b(\d{5})\b/); return m ? m[1] : ''; }
+
+// Where does this customer live? Checked in order of trustworthiness:
+// the garage record, then their bookings, then the quote-form notes.
+function customerPlace(thread, bookings) {
+  const g = thread.garage || {};
+  if (g.city || g.zip) return { city: jdArea(g.city), zip: g.zip || jdZip(g.address), address: g.address || '', src: 'garage' };
+  const b = bookings.find((x) => x.phone === thread.phone && x.city);
+  if (b) return { city: jdArea(b.city), zip: jdZip(b.address), address: b.address || '', src: 'booking' };
+  const m = String(thread.notes || '').match(/(?:Where|Address)\s*:\s*([^\n]+)/i);
+  if (m) { const line = m[1]; const parts = line.split(','); return { city: jdArea(parts[parts.length - 1] || parts[0]), zip: jdZip(line), address: line.trim(), src: 'notes' }; }
+  return { city: '', zip: '', address: '', src: '' };
+}
+
+async function apiBlastCandidates(url) {
+  const city = jdArea(url.searchParams.get('city'));
+  const zip = jdZip(url.searchParams.get('zip'));
+  const exclude = normalizePhone(url.searchParams.get('exclude')) || '';
+  const cfg = await loadConfig();
+  const bookings = await loadBookings();
+  const index = await loadIndex();
+  const spend = await moneySpendMap(cfg);
+  const out = [];
+  const seen = new Set();
+  for (const t of index) {
+    if (t.optedOut || t.phone === exclude || seen.has(t.phone)) continue;
+    seen.add(t.phone);
+    const thread = (t.status === 'won' || spend[t.phone]) ? await loadThread(t.phone) : null;
+    if (!thread) continue;                                   // only past/won customers get a blast
+    const place = customerPlace(thread, bookings);
+    if (!place.city && !place.zip) continue;
+    const match = (city && place.city === city) || (zip && place.zip === zip);
+    if (!match) continue;
+    const sp = spend[t.phone] || { jobs: 0, total: 0, lastDate: '' };
+    out.push({
+      phone: t.phone, name: t.name || '', city: place.city, zip: place.zip, address: place.address,
+      jobs: sp.jobs, total: sp.total, lastJob: sp.lastDate, lastTs: t.lastTs || 0,
+      daysSince: sp.lastDate ? Math.round((Date.now() - Date.parse(sp.lastDate + 'T12:00:00Z')) / 86400000) : null,
+    });
+  }
+  out.sort((a, b) => (b.daysSince || 0) - (a.daysSince || 0) || b.total - a.total);
+  return json({ ok: true, city, zip, candidates: out.slice(0, 60) });
+}
+
+// Send the blast. Hard-capped at 25 recipients per run and never texts an
+// opted-out number (sendSms enforces that too — this is the friendly check).
+async function apiBlastSend(request) {
+  const d = await readJson(request);
+  const template = jdStr(d.body, 600);
+  if (!template) return json({ ok: false, error: 'empty_message' }, 422);
+  const phones = [...new Set((Array.isArray(d.phones) ? d.phones : []).map((p) => normalizePhone(p)).filter(Boolean))].slice(0, 25);
+  if (!phones.length) return json({ ok: false, error: 'no_recipients' }, 422);
+  const cfg = await loadConfig();
+  const results = [];
+  for (const phone of phones) {
+    if (isOptedOut(cfg, phone)) { results.push({ phone, ok: false, error: 'opted_out' }); continue; }
+    const t = await loadThread(phone);
+    const body = template.replace(/\{first_name\}/g, jdFirst(t.name) || 'there').replace(/\{name\}/g, t.name || 'there');
+    try {
+      await sendSms(phone, body);
+      t.messages.push({ id: genId(), dir: 'out', body, ts: Date.now(), kind: 'blast', status: 'sent' });
+      if (!t.tags.includes('neighborhood')) t.tags.push('neighborhood');
+      await saveThread(t); await updateIndexEntry(t);
+      results.push({ phone, ok: true });
+    } catch (e) { results.push({ phone, ok: false, error: String(e.message || e) }); }
+  }
+  const sent = results.filter((r) => r.ok).length;
+  const log = (await kv().get('blast:log', { type: 'json' })) || [];
+  log.unshift({ id: genId(), at: Date.now(), city: jdStr(d.city, 60), sent, total: phones.length, body: template.slice(0, 300) });
+  await kv().put('blast:log', JSON.stringify(log.slice(0, 40)));
+  return json({ ok: true, sent, results });
+}
+
+// ===========================================================================
+// 8 · BEFORE / AFTER PHOTOS
+// ===========================================================================
+// Same proven shape as money receipts: one compressed JPEG per KV value, a tiny
+// index per job. The client compresses before upload, so a full before/after
+// pair costs two small writes and shows instantly.
+function photoIdxKey(job) { return 'ph:idx:' + job; }
+async function apiPhotosList(url) {
+  const job = jdStr(url.searchParams.get('job'), 64);
+  if (!job) return json({ ok: false, error: 'bad_request' }, 422);
+  const idx = (await kv().get(photoIdxKey(job), { type: 'json' })) || [];
+  return json({ ok: true, job, photos: idx });
+}
+async function apiPhotoUpload(request) {
+  const d = await readJson(request);
+  const job = jdStr(d.job, 64);
+  const phase = d.phase === 'after' ? 'after' : 'before';
+  const img = String(d.img || '');
+  if (!job) return json({ ok: false, error: 'bad_request' }, 422);
+  if (!/^data:image\/(jpeg|png|webp);base64,/.test(img) || img.length > 900000) return json({ ok: false, error: 'bad_image' }, 422);
+  const id = genId();
+  await kv().put('ph:img:' + id, img, { expirationTtl: DAY_TTL_DAYS * 86400 });
+  const idx = (await kv().get(photoIdxKey(job), { type: 'json' })) || [];
+  idx.push({ id, phase, ts: Date.now(), caption: jdStr(d.caption, 80) });
+  await kv().put(photoIdxKey(job), JSON.stringify(idx.slice(-24)), { expirationTtl: DAY_TTL_DAYS * 86400 });
+  // Keep the day board's photo counter honest so the run sheet shows the badge.
+  if (d.date && jdIsDate(d.date)) {
+    const doc = await loadDay(d.date);
+    const run = doc.state[job] || {};
+    run.photos = idx.length;
+    doc.state[job] = run;
+    await saveDay(doc);
+  }
+  return json({ ok: true, id, photos: idx });
+}
+async function apiPhotoImg(url) {
+  const id = jdStr(url.searchParams.get('id'), 24);
+  const data = id ? await kv().get('ph:img:' + id) : null;
+  if (!data) return json({ ok: false, error: 'not_found' }, 404);
+  const m = String(data).match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/s);
+  if (!m) return json({ ok: false, error: 'bad_data' }, 500);
+  const bin = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
+  return new Response(bin, { headers: { 'Content-Type': m[1], 'Cache-Control': 'private, max-age=86400' } });
+}
+async function apiPhotoDelete(request) {
+  const d = await readJson(request);
+  const job = jdStr(d.job, 64), id = jdStr(d.id, 24);
+  if (!job || !id) return json({ ok: false, error: 'bad_request' }, 422);
+  const idx = ((await kv().get(photoIdxKey(job), { type: 'json' })) || []).filter((p) => p.id !== id);
+  await kv().put(photoIdxKey(job), JSON.stringify(idx), { expirationTtl: DAY_TTL_DAYS * 86400 });
+  try { await kv().delete('ph:img:' + id); } catch { /* best effort */ }
+  return json({ ok: true, photos: idx });
+}
+
+// ===========================================================================
+// 10 · DAILY BRIEF — the 6am rundown
+// ===========================================================================
+// Everything the owner needs before he picks up a towel: today's run, the
+// weather risk on it, who is waiting, what came in yesterday, and the single
+// thing worth doing first. Weather is Open-Meteo (free, keyless).
+async function fetchWeather(days = 3) {
+  const url = 'https://api.open-meteo.com/v1/forecast?latitude=47.913&longitude=-122.098' +
+    '&current=temperature_2m,weather_code,precipitation_probability,wind_speed_10m' +
+    '&hourly=precipitation_probability,temperature_2m' +
+    '&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max' +
+    `&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America%2FLos_Angeles&forecast_days=${days}`;
+  const res = await fetch(url, { cf: { cacheTtl: 1800, cacheEverything: true } });
+  if (!res.ok) throw new Error('weather ' + res.status);
+  return res.json();
+}
+const WX_TEXT = { 0: 'clear', 1: 'mostly clear', 2: 'partly cloudy', 3: 'overcast', 45: 'fog', 48: 'freezing fog', 51: 'light drizzle', 53: 'drizzle', 55: 'heavy drizzle', 61: 'light rain', 63: 'rain', 65: 'heavy rain', 71: 'light snow', 73: 'snow', 75: 'heavy snow', 80: 'rain showers', 81: 'rain showers', 82: 'heavy showers', 95: 'thunderstorms', 96: 'storms', 99: 'storms' };
+
+// Rain risk over the window a job actually occupies — a 40% chance at 3pm does
+// not matter for a 9am job, and the generic daily forecast can't tell you that.
+function jobRainRisk(wx, date, slot, durationMin) {
+  try {
+    const hours = (wx.hourly && wx.hourly.time) || [];
+    const pops = (wx.hourly && wx.hourly.precipitation_probability) || [];
+    const startH = parseInt(String(slot || '09:00').slice(0, 2), 10);
+    const endH = startH + Math.ceil((durationMin || 150) / 60);
+    let worst = 0;
+    for (let i = 0; i < hours.length; i++) {
+      const t = hours[i];
+      if (!String(t).startsWith(date)) continue;
+      const h = parseInt(String(t).slice(11, 13), 10);
+      if (h < startH || h > endH) continue;
+      worst = Math.max(worst, pops[i] || 0);
+    }
+    return worst;
+  } catch { return 0; }
+}
+
+async function buildBrief(kind = 'day') {
+  const cfg = await loadConfig();
+  const today = jdToday(cfg);
+  const day = await buildDay(today);
+  const index = await loadIndex();
+  const active = index.filter((t) => !t.archived);
+  const waiting = active.filter(rowAwaitingReply);
+  const followups = active.filter((t) => t.followupDue);
+  const reminders = active.filter((t) => t.reminderDue);
+  const unread = active.reduce((s, t) => s + (t.unread || 0), 0);
+
+  let wx = null, wxLine = '', risky = [];
+  try {
+    wx = await fetchWeather(kind === 'week' ? 7 : 3);
+    const c = wx.current || {};
+    wxLine = `${Math.round(c.temperature_2m)}°F, ${WX_TEXT[c.weather_code] || '—'}, ${c.precipitation_probability || 0}% rain, ${Math.round(c.wind_speed_10m || 0)} mph wind`;
+    for (const j of day.jobs) {
+      const risk = jobRainRisk(wx, today, j.slot, j.durationMin);
+      if (risk >= 45) risky.push({ id: j.id, name: j.name, slot: j.slot, risk });
+      j.rainRisk = risk;
+    }
+  } catch { /* the brief is still useful without weather */ }
+
+  // Yesterday's money + this month so far.
+  const yest = localDateStr(Date.now() - 86400000, cfg.tz);
+  const mdoc = await loadMonth(today.slice(0, 7));
+  const ydoc = yest.slice(0, 7) === today.slice(0, 7) ? mdoc : await loadMonth(yest.slice(0, 7));
+  const yEntries = (ydoc.entries || []).filter((e) => e.date === yest);
+  const yGross = jdMoney(yEntries.filter((e) => e.type === 'job').reduce((s, e) => s + e.amount, 0));
+  const month = summarizeMonth(mdoc.entries || []);
+  const invoices = (await loadInvoices()).filter((i) => i.status === 'open');
+  const owedTotal = jdMoney(invoices.reduce((s, i) => s + i.amount, 0));
+
+  const first = day.jobs.find((j) => j.state !== 'done' && j.state !== 'skipped');
+  const priority = waiting.length
+    ? `Reply to ${waiting[0].name || waiting[0].phone} — they've been waiting${waiting[0].lastTs ? ' since ' + new Date(waiting[0].lastTs).toLocaleString('en-US', { timeZone: cfg.tz, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : ''}.`
+    : first ? `First stop: ${first.name || 'your ' + (first.slot || 'morning') + ' job'}${first.slot ? ' at ' + bkFmt12(first.slot) : ''}${first.city ? ' in ' + first.city : ''}.`
+      : followups.length ? `${followups.length} follow-up${followups.length > 1 ? 's are' : ' is'} ready to send.`
+        : invoices.length ? `Chase $${owedTotal} still owed across ${invoices.length} invoice${invoices.length > 1 ? 's' : ''}.`
+          : 'Nothing on the board — good day to chase rebooks.';
+
+  return {
+    date: today, tz: cfg.tz,
+    jobs: day.jobs.map((j) => ({ id: j.id, name: j.name, slot: j.slot, city: j.city, service: j.service, price: j.price, state: j.state, rainRisk: j.rainRisk || 0 })),
+    summary: day.summary,
+    weather: wx ? { line: wxLine, current: wx.current, daily: wx.daily } : null,
+    risky,
+    waiting: waiting.slice(0, 6).map((t) => ({ phone: t.phone, name: t.name || '', lastBody: t.lastBody, lastTs: t.lastTs })),
+    counts: { unread, waiting: waiting.length, followups: followups.length, reminders: reminders.length },
+    money: { yesterday: yGross, monthNet: month.net, monthGross: month.gross, monthJobs: month.jobs, owed: owedTotal, openInvoices: invoices.length },
+    priority,
+  };
+}
+
+function briefText(b) {
+  const L = [];
+  L.push(`☀️ Good morning Mikey — ${new Date(b.date + 'T12:00:00Z').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', timeZone: 'UTC' })}`);
+  L.push('');
+  L.push(`FIRST THING: ${b.priority}`);
+  L.push('');
+  if (b.jobs.length) {
+    L.push(`TODAY — ${b.jobs.length} job${b.jobs.length > 1 ? 's' : ''}, $${b.summary.booked} booked`);
+    for (const j of b.jobs) {
+      L.push(`  ${j.slot ? bkFmt12(j.slot) : '—'}  ${j.name || 'Job'}${j.city ? ' · ' + j.city : ''}${j.price ? ' · $' + j.price : ''}${j.rainRisk >= 45 ? `  ⚠ ${j.rainRisk}% rain` : ''}`);
+    }
+  } else {
+    L.push('TODAY — nothing booked.');
+  }
+  L.push('');
+  if (b.weather) L.push(`WEATHER: ${b.weather.line}`);
+  if (b.risky.length) L.push(`⚠ Rain risk on ${b.risky.length} job${b.risky.length > 1 ? 's' : ''} — consider a heads-up text.`);
+  L.push('');
+  L.push(`INBOX: ${b.counts.waiting} waiting on you · ${b.counts.followups} follow-ups ready · ${b.counts.unread} unread`);
+  for (const w of b.waiting.slice(0, 3)) L.push(`  • ${w.name || w.phone}: ${String(w.lastBody || '').slice(0, 70)}`);
+  L.push('');
+  L.push(`MONEY: $${b.money.yesterday} yesterday · $${b.money.monthNet} net this month (${b.money.monthJobs} jobs)` +
+    (b.money.openInvoices ? ` · $${b.money.owed} still owed` : ''));
+  L.push('');
+  L.push('Open your dashboard to run the day.');
+  return L.join('\n');
+}
+
+async function apiBrief(url) {
+  const kind = url.searchParams.get('kind') === 'week' ? 'week' : 'day';
+  const b = await buildBrief(kind);
+  return json({ ok: true, brief: b, text: briefText(b) });
+}
+
+// Cron hook. Exactly one KV write a day (the "already sent" stamp), and only
+// inside the 6–9am local window so a cold start at 3am never fires it early.
+async function maybeDailyBrief() {
+  const cfg = await loadConfig();
+  if (cfg.briefEnabled === false) return;
+  const now = Date.now();
+  const today = localDateStr(now, cfg.tz);
+  const hour = Number(new Date(now).toLocaleString('en-US', { timeZone: cfg.tz, hour: 'numeric', hour12: false }));
+  const target = Math.max(4, Math.min(11, Number(cfg.briefHour) || 6));
+  if (hour < target || hour > target + 3) return;
+  const stamp = await kv().get('brief:last');
+  if (stamp === today) return;
+  await kv().put('brief:last', today, { expirationTtl: 3 * 86400 });   // ⚠ 1 write/day
+  try {
+    const b = await buildBrief('day');
+    await notifyMikey(`☀️ Your day — ${b.jobs.length} job${b.jobs.length === 1 ? '' : 's'}, ${b.counts.waiting} waiting`, briefText(b));
+  } catch { /* never let the brief break the cron */ }
+  await pushNotify().catch(() => {});
+}
+
+// Sunday-evening recap. The weekly brief already existed (buildBrief('week'))
+// and was only reachable by asking for it — nothing ever sent it. Same shape as
+// the daily one: a 3-hour window so a cold start can't fire it early, and exactly
+// one KV write a week.
+async function maybeWeeklyRecap() {
+  const cfg = await loadConfig();
+  if (cfg.weeklyRecapEnabled === false) return;
+  const now = Date.now();
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: cfg.tz, weekday: 'short', hour: 'numeric', hour12: false })
+    .formatToParts(new Date(now));
+  const dow = (parts.find((p) => p.type === 'weekday') || {}).value;
+  const hour = Number((parts.find((p) => p.type === 'hour') || {}).value);
+  if (dow !== 'Sun') return;
+  const target = Math.max(8, Math.min(21, Number(cfg.weeklyRecapHour) || 18));
+  if (hour < target || hour > target + 2) return;
+  const week = localDateStr(now, cfg.tz);
+  const stamp = await kv().get('recap:last');
+  if (stamp === week) return;
+  await kv().put('recap:last', week, { expirationTtl: 14 * 86400 });   // ⚠ 1 write/week
+  try {
+    const b = await buildBrief('week');
+    await notifyMikey(
+      `🗓️ Week ahead — ${b.counts.waiting} waiting, ${b.counts.followups} follow-up${b.counts.followups === 1 ? '' : 's'} due`,
+      briefText(b));
+  } catch { /* never let the recap break the cron */ }
+  await pushNotify().catch(() => {});
+}
+
+// Nudge open invoices once, after the configured grace period. Only writes when
+// something is actually due, so quiet days cost nothing.
+async function maybePayReminders() {
+  const pcfg = await loadPayConfig();
+  if (!pcfg.remindDays) return;
+  const list = await loadInvoices();
+  const now = Date.now(), cut = pcfg.remindDays * 86400000;
+  const due = list.filter((i) => i.status === 'open' && !i.remindedAt && (now - i.createdAt) > cut);
+  if (!due.length) return;
+  for (const inv of due.slice(0, 5)) {
+    const first = jdFirst(inv.name);
+    const body = `${first ? 'Hey ' + first : 'Hey'} — just circling back on the $${inv.amount} for ${inv.memo}. Quick link: ${inv.url} Thanks! - Mikey`;
+    try {
+      await sendSms(inv.phone, body);
+      await appendMessage(inv.phone, { dir: 'out', body, kind: 'pay', status: 'sent' }, { name: inv.name });
+      inv.remindedAt = now;
+    } catch { inv.remindedAt = now; /* don't retry a number that refuses */ }
+  }
+  await saveInvoices(list);
+}
+
+// ===========================================================================
+// 11 · APPOINTMENT AUTO-DETECT — the job you never wrote down
+// ===========================================================================
+// Everything else in the Job Day suite assumes a job already exists: a booking
+// came through the site, or Mikey typed it onto the board. In practice most
+// jobs get agreed inside a normal text conversation and then live only in his
+// head. This watches for that moment.
+//
+// It never books anything. A detection becomes a CARD; a tap turns it into a
+// real job on the day board (and sets thread.appointmentAt, which buildDay and
+// the reminder cadences already read). Cancels and reschedules raise cards too
+// — the AI is never allowed to move or kill a job on its own.
+//
+// KV: one det:index value. A detection is 1 write; a message with no date in it
+// is 0 writes and 0 AI calls (see the regex prefilter below).
+// ===========================================================================
+const DET_KEY = 'det:index';
+
+async function loadDetections() { return (await kv().get(DET_KEY, { type: 'json' })) || []; }
+// ⚠ KV WRITE — rewrites all open detections. Called once per detection, never in a loop.
+async function saveDetections(list) { await kv().put(DET_KEY, JSON.stringify(list.slice(0, 60))); }
+
+function detDefaults() {
+  return {
+    enabled: true,      // master switch for detection
+    eager: true,        // fire on a bare day name with no time ("saturday works")
+    holdSlots: true,    // an un-confirmed detection still blocks the booking page
+    defaultDurationMin: 180,
+  };
+}
+function detCfg(cfg) { return Object.assign(detDefaults(), (cfg && cfg.detect) || {}); }
+function sanitizeDetect(input, current) {
+  const d = Object.assign(detDefaults(), current || {});
+  const i = input || {};
+  ['enabled', 'eager', 'holdSlots'].forEach((k) => { if (typeof i[k] === 'boolean') d[k] = i[k]; });
+  if (i.defaultDurationMin != null && !isNaN(+i.defaultDurationMin))
+    d.defaultDurationMin = Math.max(15, Math.min(720, Math.round(+i.defaultDurationMin)));
+  return d;
+}
+
+// --- Stage 1: the free prefilter ------------------------------------------
+// Kills the ~95% of messages that mention no day and no time ("how much for an
+// SUV?", "sounds good") before we ever pay for an AI call. Note the \w* on the
+// cancel stems: "reschedule" and "cancelled" have no word boundary right after
+// the stem, so a trailing \b there would never match them.
+const DET_DAY_RE = /\b(mon|tue|tues|wed|weds|wednes|thu|thur|thurs|fri|sat|satur|sun)(day)?\b|\b(today|tonight|tomorrow|tmrw|tmw)\b|\bnext\s+(week|mon|tue|wed|thu|fri|sat|sun)/i;
+const DET_MONTH_RE = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s*\d{1,2}\b|\b\d{1,2}\s*\/\s*\d{1,2}\b/i;
+const DET_TIME_RE = /\b\d{1,2}\s*(:\s*\d{2})?\s*(am|pm|a\.m\.|p\.m\.)\b|\b\d{1,2}:\d{2}\b|\b(noon|midnight|morning|afternoon|evening)\b|\bat\s+\d{1,2}\b/i;
+const DET_CANCEL_RE = /\b(cancel|reschedul|resched|postpon)\w*|\bpush (it )?back\b|\bmove it\b|\brain ?check\b|\bcan'?t make it\b|\bcant make it\b|\bsomething came up\b|\b(another|different) day\b/i;
+
+function detLooksSchedulish(text, eager) {
+  const t = String(text || '');
+  if (!t) return false;
+  if (DET_CANCEL_RE.test(t)) return true;
+  const hasDay = DET_DAY_RE.test(t) || DET_MONTH_RE.test(t);
+  const hasTime = DET_TIME_RE.test(t);
+  if (hasDay && (eager || hasTime)) return true;
+  // "see you at 9" — a time plus a committing verb, with no day named.
+  return hasTime && /\b(see you|works|good|ok|okay|book|schedule|come|be there|available|free|set|lock)\b/i.test(t);
+}
+
+// Runs once per message, straight after it lands. Best-effort throughout:
+// detection must never break sending or receiving a text.
+async function maybeDetectJob(phone) {
+  try {
+    if (envFlag('DETECT_DISABLED')) return;          // no-KV-write kill switch
+    if (!ENV.GEMINI_API_KEY) return;
+    const cfg = await loadConfig();
+    const dc = detCfg(cfg);
+    if (!dc.enabled) return;
+    const thread = await loadThread(phone);
+    const msgs = (thread.messages || []).filter((m) => m.body);
+    const last = msgs[msgs.length - 1];
+    if (!last || !detLooksSchedulish(last.body, dc.eager)) return;
+    const found = await detAskAi(thread, msgs.slice(-14), cfg);
+    if (found) await detApply(thread, found, dc, cfg);
+  } catch { /* never let detection break a message */ }
+}
+
+async function detAskAi(thread, msgs, cfg) {
+  const now = Date.now();
+  const tz = cfg.tz || 'America/Los_Angeles';
+  const todayStr = localDateStr(now, tz);
+  const dow = new Date(now).toLocaleDateString('en-US', { timeZone: tz, weekday: 'long' });
+  const nowHm = localTimeHm(now, tz);
+  const convo = msgs.map((m) =>
+    `[${localDateStr(m.ts, tz)} ${localTimeHm(m.ts, tz)}] ${m.dir === 'in' ? 'CUSTOMER' : 'MIKEY'}: ${jdStr(m.body, 400)}`).join('\n');
+
+  const prompt =
+    `You read text conversations for a mobile car-detailing business and pull out scheduled jobs.\n` +
+    `RIGHT NOW it is ${dow}, ${todayStr}, ${nowHm} Pacific.\n` +
+    `Resolve every relative date ("tomorrow", "this Saturday", "next week") against that.\n\n` +
+    (thread.name ? `Name on file: ${thread.name}\n` : '') +
+    (thread.notes ? `Notes on file: ${jdStr(thread.notes, 400)}\n` : '') +
+    `\nCONVERSATION (most recent last):\n${convo}\n\n` +
+    `Reply with ONLY this JSON:\n` +
+    `{"intent":"set|reschedule|cancel|none",\n` +
+    ` "date":"YYYY-MM-DD or empty","time":"HH:MM 24-hour, or empty if no specific time was given",\n` +
+    ` "tentative":true if the day is agreed but the exact hour is NOT pinned down,\n` +
+    ` "customerConfirmed":true only if the CUSTOMER clearly agreed to this day/time,\n` +
+    ` "service":"","vehicle":"","address":"","city":"","price":0,"name":"",\n` +
+    ` "notes":"gate code, parking, apartment number, pets, water/power access",\n` +
+    ` "confidence":0.0-1.0,"evidence":"the exact short quote showing the date was agreed"}\n\n` +
+    `RULES:\n` +
+    `- "set" ONLY when a real appointment day is agreed. A question ("what days are you open?"), ` +
+    `a quote with no date, or small talk is "none".\n` +
+    `- "reschedule" when an EXISTING job is moving; put the NEW date/time in date/time.\n` +
+    `- "cancel" when it's called off with no replacement date.\n` +
+    `- Never invent a date nobody said. A date in the past means you resolved it wrong.\n` +
+    `- Below 0.45 confidence, answer "none".`;
+
+  let o;
+  try { o = JSON.parse(await geminiGenerate(prompt, { json: true, temperature: 0.1, maxTokens: 700 })); }
+  catch { return null; }
+  if (!o || !o.intent || o.intent === 'none') return null;
+  if (Number(o.confidence || 0) < 0.45) return null;
+  if (o.intent === 'cancel') return { intent: 'cancel', evidence: jdStr(o.evidence, 200), confidence: Number(o.confidence) };
+
+  const date = jdStr(o.date, 12);
+  if (!jdIsDate(date)) return null;
+  const tentative = !!o.tentative || !/^\d{1,2}:\d{2}$/.test(jdStr(o.time, 6));
+  const slot = tentative ? '09:00' : jdStr(o.time, 5).padStart(5, '0');
+  const at = bkLaEpoch(date, slot);
+  if (!at || isNaN(at)) return null;
+  if (at < now - 12 * 3600000 || at > now + 400 * 86400000) return null;   // model got the year/day wrong
+
+  return {
+    intent: o.intent === 'reschedule' ? 'reschedule' : 'set',
+    date, slot, at, tentative,
+    customerConfirmed: !!o.customerConfirmed,
+    service: jdStr(o.service, 60), vehicle: jdStr(o.vehicle, 60),
+    address: jdStr(o.address, 140), city: jdStr(o.city, 60),
+    price: jdMoney(o.price), name: jdStr(o.name, 60), notes: jdStr(o.notes, 300),
+    confidence: Number(o.confidence) || 0, evidence: jdStr(o.evidence, 200),
+  };
+}
+
+// One open card per customer at a time — a later message about the same job
+// updates it in place instead of stacking up a pile of near-duplicates.
+async function detApply(thread, f, dc, cfg) {
+  const list = await loadDetections();
+  const phone = thread.phone;
+  const open = list.find((x) => x.phone === phone);
+
+  if (f.intent === 'cancel' || f.intent === 'reschedule') {
+    // Only meaningful against a job that already exists. Raise it as a card;
+    // cancelling and moving are both on the never-without-a-tap list.
+    if (!thread.appointmentAt) return;
+    const rec = open || detBlank(phone);
+    rec.kind = f.intent;
+    rec.currentAt = thread.appointmentAt;
+    rec.at = f.intent === 'reschedule' ? f.at : null;
+    rec.date = f.date || ''; rec.slot = f.slot || '';
+    rec.tentative = !!f.tentative;
+    rec.name = thread.name || rec.name;
+    rec.evidence = f.evidence; rec.confidence = f.confidence;
+    rec.at_ = Date.now();
+    if (!open) list.push(rec);
+    await saveDetections(list);
+    await notifyMikey(
+      f.intent === 'cancel' ? `🚫 ${thread.name || phone} may be cancelling` : `🔄 ${thread.name || phone} wants to move`,
+      `"${f.evidence}"\n\nNothing has changed. Open Jobs to accept or ignore it.`).catch(() => {});
+    await pushNotify().catch(() => {});
+    return;
+  }
+
+  // Already on the books at that time? Nothing to propose.
+  if (thread.appointmentAt && Math.abs(thread.appointmentAt - f.at) < 30 * 60000) return;
+
+  const rec = open || detBlank(phone);
+  rec.kind = 'set';
+  rec.at = f.at; rec.date = f.date; rec.slot = f.slot;
+  rec.tentative = f.tentative;
+  rec.customerConfirmed = f.customerConfirmed;
+  rec.name = thread.name || f.name || rec.name;
+  rec.confidence = f.confidence; rec.evidence = f.evidence;
+  rec.at_ = Date.now();
+  // Only fill blanks — never clobber something Mikey typed himself.
+  if (f.service && !rec.service) rec.service = f.service;
+  if (f.vehicle && !rec.vehicle) rec.vehicle = f.vehicle;
+  if (f.address && !rec.address) rec.address = f.address;
+  if (f.city && !rec.city) rec.city = f.city;
+  if (f.price && !rec.price) rec.price = f.price;
+  if (f.notes) rec.notes = f.notes;
+  if (!rec.durationMin) rec.durationMin = dc.defaultDurationMin;
+  if (!open) list.push(rec);
+  await saveDetections(list);
+
+  const who = rec.name || phone;
+  await notifyMikey(`📅 Looks like you booked ${who} — ${bkNiceDate(rec.date)} at ${bkFmt12(rec.slot)}`,
+    [
+      `${who} · ${bkNiceDate(rec.date)} at ${bkFmt12(rec.slot)}${rec.tentative ? ' (time not pinned down)' : ''}`,
+      rec.service ? `Service: ${rec.service}` : null,
+      rec.vehicle ? `Vehicle: ${rec.vehicle}` : null,
+      rec.address ? `Where: ${rec.address}${rec.city ? ', ' + rec.city : ''}` : null,
+      rec.price ? `Quoted: $${rec.price}` : null,
+      '', `From: "${rec.evidence}"`, '',
+      `It is NOT on your day yet — open Jobs and tap Yes to add it.`,
+    ].filter((x) => x !== null).join('\n')).catch(() => {});
+  await pushNotify().catch(() => {});
+}
+
+function detBlank(phone) {
+  return {
+    id: genId(), phone, kind: 'set', name: '', at: null, date: '', slot: '',
+    tentative: false, customerConfirmed: false, currentAt: null,
+    service: '', vehicle: '', address: '', city: '', price: 0, notes: '',
+    durationMin: 0, confidence: 0, evidence: '', at_: Date.now(),
+  };
+}
+
+// Dates that a still-unconfirmed detection is holding, so the public booking
+// page can't sell a slot Mikey already promised in a conversation. A loose
+// "Saturday morning" holds the whole day, because he can't honour a stranger's
+// 10am inside a window he already gave away.
+async function detHeldSlots(date) {
+  try {
+    const cfg = await loadConfig();
+    if (!detCfg(cfg).holdSlots) return null;
+    const list = (await loadDetections()).filter((x) => x.kind === 'set' && x.date === date);
+    if (!list.length) return [];
+    if (list.some((x) => x.tentative)) return 'all';
+    return list.map((x) => ({ s: bkHm2min(x.slot), e: bkHm2min(x.slot) + (x.durationMin || 180) }));
+  } catch { return null; }
+}
+
+// ---------------------------------------------------------------------------
+// API
+// ---------------------------------------------------------------------------
+async function apiDetections() {
+  const cfg = await loadConfig();
+  const list = (await loadDetections()).sort((a, b) => (a.at || a.currentAt || 0) - (b.at || b.currentAt || 0));
+  return json({ ok: true, detections: list, config: detCfg(cfg) });
+}
+
+async function apiDetectionAction(request) {
+  const d = await readJson(request);
+  const action = jdStr(d.action, 20);
+  const list = await loadDetections();
+  const i = list.findIndex((x) => x.id === jdStr(d.id, 40));
+  if (i < 0) return json({ ok: false, error: 'not_found' }, 404);
+  const rec = list[i];
+  const cfg = await loadConfig();
+
+  if (action === 'dismiss') {
+    list.splice(i, 1);
+    await saveDetections(list);
+    return json({ ok: true });
+  }
+
+  if (action === 'edit') {
+    if (jdIsDate(d.date)) rec.date = d.date;
+    if (/^\d{2}:\d{2}$/.test(String(d.slot || ''))) { rec.slot = d.slot; rec.tentative = false; }
+    ['name', 'service', 'vehicle', 'address', 'city', 'notes'].forEach((k) => {
+      if (typeof d[k] === 'string') rec[k] = jdStr(d[k], k === 'address' ? 140 : k === 'notes' ? 300 : 60);
+    });
+    if (d.price != null) rec.price = jdMoney(d.price);
+    if (d.durationMin != null) rec.durationMin = Math.max(15, Math.min(720, Number(d.durationMin) || 180));
+    rec.at = bkLaEpoch(rec.date, rec.slot);
+    await saveDetections(list);
+    return json({ ok: true, detection: rec });
+  }
+
+  if (action === 'confirm') {
+    // Two things happen, both of which the rest of the app already understands:
+    // the job goes on the day board, and the conversation gets its appointment.
+    const date = rec.date;
+    const doc = await loadDay(date);
+    const job = {
+      id: 'm:' + genId(),
+      name: rec.name, phone: rec.phone,
+      address: rec.address, city: rec.city,
+      service: rec.service, size: '', vehicle: rec.vehicle,
+      slot: rec.slot, durationMin: rec.durationMin || 180,
+      price: jdMoney(rec.price), notes: rec.notes,
+    };
+    if (doc.manual.length >= 40) return json({ ok: false, error: 'day_full' }, 422);
+    doc.manual.push(job);
+    await saveDay(doc);
+
+    const thread = await loadThread(rec.phone);
+    thread.appointmentAt = rec.at;
+    thread.dateRequest = null;
+    if (!thread.name && rec.name) thread.name = rec.name;
+    await saveThread(thread);
+    await updateIndexEntry(thread);
+
+    list.splice(i, 1);
+    await saveDetections(list);
+    return json({ ok: true, date, day: await buildDay(date), draft: await detConfirmDraft(rec, cfg) });
+  }
+
+  if (action === 'accept') {
+    // Accept a proposed move or cancel against the existing appointment.
+    const thread = await loadThread(rec.phone);
+    if (rec.kind === 'cancel') {
+      thread.appointmentAt = null;
+    } else if (rec.kind === 'reschedule' && rec.at) {
+      thread.appointmentAt = rec.at;
+    }
+    await saveThread(thread);
+    await updateIndexEntry(thread);
+    list.splice(i, 1);
+    await saveDetections(list);
+    return json({ ok: true, moved: rec.kind === 'reschedule' ? rec.at : null });
+  }
+
+  if (action === 'draft') return json({ ok: true, draft: await detConfirmDraft(rec, cfg, jdStr(d.kind, 12)) });
+
+  return json({ ok: false, error: 'bad_action' }, 422);
+}
+
+// The text Mikey taps to send after confirming. AI-written in his voice when
+// Gemini is available, with a solid template fallback — and never auto-sent.
+async function detConfirmDraft(rec, cfg, kind) {
+  const first = jdFirst(rec.name) || 'there';
+  const when = `${bkNiceDate(rec.date)} at ${bkFmt12(rec.slot)}`;
+  const tpl = rec.tentative || kind === 'pin'
+    ? `Hey ${first}! Looking forward to ${bkNiceDate(rec.date)}. What time works best for you — morning or afternoon? I'll lock it in. - Mikey`
+    : `Hey ${first}, you're all set for ${when}${rec.service ? ` — ${rec.service}` : ''}. ` +
+      `${rec.address ? `I'll come to you at ${rec.address}. ` : ''}Just have the car accessible with water & power within about 20 ft. ` +
+      `I'll text you when I'm on my way. - Mikey`;
+  if (!ENV.GEMINI_API_KEY) return tpl;
+  try {
+    const out = await geminiGenerate(
+      `You are Mikey, owner of Mikey's Mobile Detailing. Write ONE short, warm, professional text to a customer.\n` +
+      `Goal: ${rec.tentative || kind === 'pin' ? 'ask what exact time works that day so it can be pinned down' : 'confirm the appointment is locked in'}.\n` +
+      `Customer: ${first}. When: ${when}.${rec.service ? ` Service: ${rec.service}.` : ''}${rec.address ? ` Address: ${rec.address}.` : ''}\n` +
+      ((cfg.playbook && cfg.playbook.rules) ? `Rules you follow:\n${jdStr(cfg.playbook.rules, 600)}\n` : '') +
+      `Never invent a price. Sign off "- Mikey". 2 sentences max. Return only the message text.`,
+      { temperature: 0.5, maxTokens: 220 });
+    const clean = jdStr(out, 600);
+    // Only trust it if it reads like a sentence; a stray JSON blob falls back.
+    if (clean.length < 15 || !/[a-z]{3}/i.test(clean) || /^[[{]/.test(clean)) return tpl;
+    return clean;
+  } catch { return tpl; }
 }

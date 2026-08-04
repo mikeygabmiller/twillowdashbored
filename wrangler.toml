@@ -48,6 +48,10 @@ id = "e3305474d22a48ac97265b394aba685e"
 #     can't drop real inbound texts. Turn it ON with  TWILIO_SIGNATURE_ENFORCE = 1
 #     under Variables (validated with your existing TWILIO_AUTH_TOKEN — no new secret).
 #     Remove the var to instantly go back to accept-all if webhooks ever stop arriving.
+#   - Kill appointment detection + the day-of briefs only: add  DAYOF_DISABLED = 1
+#     under Variables. Texting, follow-ups and scheduled sends all keep working.
+#     Remove it to resume. (The in-app master switch does the same thing, but it
+#     writes to KV — this one works even when the daily write budget is spent.)
 [triggers]
 crons = ["* * * * *"]
 

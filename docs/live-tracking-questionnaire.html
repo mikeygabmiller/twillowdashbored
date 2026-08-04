@@ -1,0 +1,652 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d0f">
+<title>Mikey's Detailing — Live Tracking &amp; Auto-Scheduling Questionnaire</title>
+<style>
+  :root{
+    --bg:#0c0c0e; --bg2:#111114; --card:#17171b; --card2:#1d1d22;
+    --line:#2a2a31; --line2:#34343d;
+    --txt:#f4f4f6; --muted:#a2a2ac; --faint:#75757f;
+    --red:#ff2d3f; --red2:#e11020; --redsoft:rgba(255,45,63,.14);
+    --good:#37d67a; --gold:#ffb020;
+    --radius:16px; --maxw:820px;
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;background:var(--bg);color:var(--txt);font-family:var(--font);
+    font-size:16px;line-height:1.5;-webkit-font-smoothing:antialiased;padding-bottom:120px;
+  }
+  a{color:var(--red);}
+  .wrap{max-width:var(--maxw);margin:0 auto;padding:0 18px;}
+
+  /* ---------- sticky header + progress ---------- */
+  .topbar{position:sticky;top:0;z-index:50;background:rgba(12,12,14,.86);backdrop-filter:blur(12px);
+    border-bottom:1px solid var(--line);}
+  .topbar-inner{max-width:var(--maxw);margin:0 auto;padding:10px 18px 12px;}
+  .topbar h1{margin:0;font-size:15px;font-weight:700;letter-spacing:.2px;display:flex;align-items:center;gap:8px;}
+  .topbar h1 .dot{width:9px;height:9px;border-radius:50%;background:var(--red);box-shadow:0 0 12px var(--red);}
+  .progrow{display:flex;align-items:center;gap:12px;margin-top:9px;}
+  .progbar{flex:1;height:8px;border-radius:999px;background:#26262d;overflow:hidden;}
+  .progfill{height:100%;width:0;background:linear-gradient(90deg,var(--red2),var(--red));border-radius:999px;transition:width .35s ease;}
+  .progpct{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;min-width:104px;text-align:right;}
+  .navchips{display:flex;gap:7px;overflow-x:auto;margin-top:11px;padding-bottom:2px;scrollbar-width:none;}
+  .navchips::-webkit-scrollbar{display:none}
+  .navchips a{flex:0 0 auto;font-size:12px;color:var(--muted);text-decoration:none;border:1px solid var(--line);
+    padding:5px 11px;border-radius:999px;background:var(--card);white-space:nowrap;}
+  .navchips a:hover{color:var(--txt);border-color:var(--line2);}
+
+  /* ---------- hero ---------- */
+  .hero{padding:34px 0 10px;}
+  .kicker{display:inline-block;font-size:12px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;
+    color:var(--red);background:var(--redsoft);border:1px solid rgba(255,45,63,.3);padding:5px 11px;border-radius:999px;}
+  .hero h2{font-size:30px;line-height:1.15;margin:16px 0 8px;font-weight:800;letter-spacing:-.4px;}
+  .hero p{color:var(--muted);margin:0 0 6px;max-width:62ch;}
+  .hero .meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px;}
+  .pill{font-size:12.5px;color:var(--muted);background:var(--card);border:1px solid var(--line);
+    padding:6px 11px;border-radius:999px;display:inline-flex;align-items:center;gap:6px;}
+  .howto{margin-top:20px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;}
+  .howto h3{margin:0 0 10px;font-size:14px;letter-spacing:.3px;text-transform:uppercase;color:var(--faint);}
+  .howto ol{margin:0;padding-left:20px;}
+  .howto li{margin:6px 0;color:var(--txt);}
+  .howto li b{color:var(--red);}
+  .legend{margin-top:12px;font-size:12.5px;color:var(--faint);}
+  .rec-tag{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:700;color:#0b0b0c;
+    background:var(--gold);padding:2px 7px;border-radius:6px;vertical-align:middle;letter-spacing:.2px;}
+
+  /* ---------- sections ---------- */
+  section.sec{margin:26px 0;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    overflow:hidden;scroll-margin-top:150px;}
+  .sec-head{display:flex;align-items:center;gap:13px;padding:18px 20px;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,rgba(255,45,63,.05),transparent);}
+  .sec-num{flex:0 0 auto;width:34px;height:34px;border-radius:10px;background:var(--red);color:#fff;font-weight:800;
+    display:flex;align-items:center;justify-content:center;font-size:15px;box-shadow:0 4px 14px rgba(255,45,63,.35);}
+  .sec-head h3{margin:0;font-size:19px;font-weight:800;letter-spacing:-.2px;}
+  .sec-head .sub{color:var(--muted);font-size:13px;margin-top:2px;}
+  .sec-body{padding:6px 20px 18px;}
+
+  /* ---------- question ---------- */
+  .q{padding:18px 0;border-bottom:1px solid var(--line);}
+  .q:last-child{border-bottom:none;}
+  .q-title{font-size:16px;font-weight:650;margin:0 0 3px;display:block;}
+  .q-title .num{color:var(--faint);font-weight:600;margin-right:7px;font-variant-numeric:tabular-nums;}
+  .q-sub{color:var(--muted);font-size:13.5px;margin:0 0 12px;}
+  .tip{display:flex;gap:8px;background:var(--redsoft);border:1px solid rgba(255,45,63,.22);border-radius:10px;
+    padding:9px 12px;margin:10px 0 13px;font-size:13px;color:#ffd9dd;}
+  .tip b{color:#fff;}
+  .tip .ic{flex:0 0 auto;}
+
+  .opts{display:flex;flex-direction:column;gap:9px;margin-top:12px;}
+  .opts.grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;}
+  @media(max-width:560px){.opts.grid{grid-template-columns:1fr;}}
+  .opt{position:relative;display:flex;align-items:flex-start;gap:11px;padding:13px 14px;border:1.5px solid var(--line);
+    border-radius:12px;background:var(--card2);cursor:pointer;transition:border-color .12s,background .12s;}
+  .opt:hover{border-color:var(--line2);}
+  .opt input{position:absolute;opacity:0;pointer-events:none;}
+  .opt .mark{flex:0 0 auto;width:20px;height:20px;border:2px solid var(--line2);background:#0e0e11;margin-top:1px;
+    display:flex;align-items:center;justify-content:center;transition:all .12s;}
+  .opt[data-type="single"] .mark{border-radius:50%;}
+  .opt[data-type="multi"] .mark{border-radius:6px;}
+  .opt .mark svg{width:12px;height:12px;opacity:0;transform:scale(.6);transition:all .12s;}
+  .opt .otext{flex:1;font-size:14.5px;}
+  .opt .otext small{display:block;color:var(--muted);font-size:12.5px;margin-top:2px;line-height:1.4;}
+  .opt.is-checked{border-color:var(--red);background:rgba(255,45,63,.09);}
+  .opt.is-checked .mark{border-color:var(--red);background:var(--red);}
+  .opt.is-checked .mark svg{opacity:1;transform:scale(1);}
+  .opt .rec{margin-left:6px;}
+
+  .field{margin-top:12px;}
+  .field label.flab{display:block;font-size:13px;color:var(--muted);margin-bottom:6px;}
+  input.txt,textarea.txt,select.txt{width:100%;background:#0e0e11;border:1.5px solid var(--line);color:var(--txt);
+    border-radius:11px;padding:12px 13px;font-family:var(--font);font-size:15px;transition:border-color .12s;}
+  input.txt:focus,textarea.txt:focus,select.txt:focus{outline:none;border-color:var(--red);}
+  textarea.txt{min-height:88px;resize:vertical;line-height:1.5;}
+  input.txt::placeholder,textarea.txt::placeholder{color:#5c5c66;}
+  .other-wrap{margin-top:9px;}
+  .other-wrap input{max-width:100%;}
+
+  /* ---------- export ---------- */
+  #export{margin:32px 0;border:1.5px solid var(--red);border-radius:var(--radius);overflow:hidden;
+    background:linear-gradient(180deg,rgba(255,45,63,.08),var(--card));scroll-margin-top:120px;}
+  #export .sec-head{border-bottom:1px solid rgba(255,45,63,.3);background:none;}
+  #export .sec-body{padding:18px 20px 22px;}
+  #export p.lead{color:var(--muted);margin:0 0 16px;}
+  .btnrow{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:14px;}
+  .btn{border:none;font-family:var(--font);font-size:15px;font-weight:700;padding:13px 20px;border-radius:12px;
+    cursor:pointer;display:inline-flex;align-items:center;gap:8px;transition:transform .08s,filter .12s;}
+  .btn:active{transform:translateY(1px);}
+  .btn-primary{background:var(--red);color:#fff;box-shadow:0 6px 18px rgba(255,45,63,.35);}
+  .btn-primary:hover{filter:brightness(1.08);}
+  .btn-ghost{background:var(--card2);color:var(--txt);border:1.5px solid var(--line2);}
+  .btn-ghost:hover{border-color:var(--muted);}
+  textarea#output{width:100%;min-height:230px;background:#0a0a0c;border:1px solid var(--line);border-radius:12px;
+    color:#d7d7dd;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;line-height:1.55;
+    padding:14px;resize:vertical;white-space:pre;}
+  .toast{position:fixed;left:50%;bottom:96px;transform:translateX(-50%) translateY(20px);background:var(--good);
+    color:#062;padding:11px 20px;border-radius:12px;font-weight:700;font-size:14px;opacity:0;pointer-events:none;
+    transition:all .3s;z-index:100;box-shadow:0 8px 24px rgba(0,0,0,.4);}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  /* ---------- floating finish button ---------- */
+  #floater{position:fixed;right:16px;bottom:18px;z-index:60;background:var(--red);color:#fff;border:none;
+    font-family:var(--font);font-weight:700;font-size:14.5px;padding:14px 20px;border-radius:999px;cursor:pointer;
+    box-shadow:0 8px 26px rgba(255,45,63,.45);display:inline-flex;align-items:center;gap:8px;}
+  #floater:active{transform:translateY(1px);}
+  #floater .fp{font-variant-numeric:tabular-nums;opacity:.85;font-weight:600;}
+
+  footer{color:var(--faint);font-size:12.5px;text-align:center;padding:8px 0 30px;}
+  footer a{color:var(--muted);}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-inner">
+    <h1><span class="dot"></span> Mikey's Detailing — Day-of-Service Build</h1>
+    <div class="progrow">
+      <div class="progbar"><div class="progfill" id="progfill"></div></div>
+      <div class="progpct" id="progpct">0 of 0 answered</div>
+    </div>
+    <nav class="navchips" id="navchips"></nav>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="hero">
+    <span class="kicker">Auto-Scheduling &amp; Live Tracking Questionnaire</span>
+    <h2>Stop writing jobs down twice. Then show up like Uber.</h2>
+    <p>Three connected pieces: it <b>notices on its own</b> when you and a customer set a date in a text, it <b>wakes you up the morning of</b> with your run for the day, and it gives you a <b>one-tap tracking link</b> so the customer watches you roll up with a live ETA. Answer these and I'll build it exactly your way. Most are quick taps.</p>
+    <div class="meta">
+      <span class="pill">⏱ ~12–15 minutes</span>
+      <span class="pill">💾 Saves automatically on this device</span>
+      <span class="pill">📋 Exports clean text to send back</span>
+    </div>
+
+    <div class="howto">
+      <h3>How this works</h3>
+      <ol>
+        <li>Go through the sections — tap answers, type where it asks.</li>
+        <li>Skip anything that doesn't apply. Nothing is required.</li>
+        <li>At the bottom, hit <b>"Get my answers"</b> — then <b>Copy</b> or <b>Download</b> and send it back to me.</li>
+      </ol>
+      <div class="legend">The <span class="rec-tag">★ Recommended</span> tag marks what I'd build if it were my call — based on what already exists in your app, what actually works on a phone in a driveway, and what keeps this on free tiers. Some questions have a <b>💡 Pro tip</b> explaining the trade-off. Overrule me anywhere.</div>
+    </div>
+  </div>
+
+  <div id="form"><!-- rendered by JS --></div>
+
+  <section id="export" class="sec">
+    <div class="sec-head">
+      <div class="sec-num" style="background:#0b0b0c;border:1.5px solid var(--red);color:var(--red)">✓</div>
+      <div><h3>Get my answers</h3><div class="sub">Send this back to me and I'll start building.</div></div>
+    </div>
+    <div class="sec-body">
+      <p class="lead">Click generate, then copy the text (or download the file) and paste it back into our chat.</p>
+      <div class="btnrow">
+        <button class="btn btn-primary" id="btnGen">⚡ Generate my answers</button>
+        <button class="btn btn-ghost" id="btnCopy">📋 Copy to clipboard</button>
+        <button class="btn btn-ghost" id="btnDl">⬇ Download .txt</button>
+        <button class="btn btn-ghost" id="btnReset" style="margin-left:auto">↺ Start over</button>
+      </div>
+      <textarea id="output" readonly placeholder="Your answers will appear here when you click &quot;Generate my answers&quot;…"></textarea>
+    </div>
+  </section>
+
+  <footer>
+    Built for Mikey's Mobile Detailing • Snohomish County, WA • This file works offline — nothing is sent anywhere until <em>you</em> copy or download it.
+  </footer>
+</div>
+
+<button id="floater" onclick="document.getElementById('export').scrollIntoView()">
+  Finish &amp; get answers <span class="fp" id="floatpct"></span>
+</button>
+<div class="toast" id="toast">Copied!</div>
+
+<script>
+/* ============================================================
+   SURVEY DEFINITION
+   type: single | multi | text | textarea
+   opts: [{v:label, sub?:hint, rec?:true}]  (v is stored + shown)
+   pre: pre-selected value(s) (facts pulled from Mikey's site — editable)
+   other: true -> adds an "Other:" text field
+   ============================================================ */
+const SURVEY = [
+{
+  id:"how", title:"How Jobs Get Set Now", sub:"Before I automate it, I need to see how a date actually gets agreed on today.",
+  qs:[
+    {id:"where_set", type:"multi", q:"Where do you and a customer actually land on a day & time?", grid:true,
+      sub:"Check everything that happens, even the messy ones.",
+      tip:"This is the whole point of the feature. Anywhere a date gets agreed but never gets written down is a job that can slip. I want to catch it automatically at the moment it happens.",
+      opts:[{v:"Texting back and forth"},{v:"On a phone call"},{v:"The booking form on my site"},{v:"Facebook / Instagram DMs"},{v:"In person after another job"},{v:"Repeat customer just texts me"},{v:"Email"}],
+      pre:["Texting back and forth","On a phone call","The booking form on my site","Repeat customer just texts me"]},
+    {id:"pct_text", type:"single", q:"Roughly what share of your jobs get scheduled purely over text?",
+      sub:"Helps me know how much weight to put on reading your texts vs. other sources.",
+      opts:[{v:"Almost all of them (80%+)"},{v:"About half"},{v:"Maybe a quarter"},{v:"Not sure"}]},
+    {id:"pain", type:"multi", q:"What actually goes wrong today?", grid:true,
+      opts:[{v:"I agree to a time and forget to write it down"},{v:"I double-book myself"},{v:"I forget to confirm the day before"},{v:"Customer isn't ready / car isn't accessible when I show up"},{v:"Customer ghosts on the day"},{v:"I lose time re-reading old texts to remember the address"},{v:"I show up and they thought it was a different day"}],
+      pre:["I agree to a time and forget to write it down","I forget to confirm the day before","I lose time re-reading old texts to remember the address"]},
+    {id:"jobs_day", type:"single", q:"How many jobs on a typical working day?",
+      sub:"Drives how much the routing / 'leave now' math matters.",
+      opts:[{v:"1"},{v:"2"},{v:"3"},{v:"4+"},{v:"Varies a lot"}]},
+    {id:"double_entry", type:"single", q:"Right now, after you agree on a time, where do you write it?",
+      opts:[{v:"Google Calendar on my phone"},{v:"Nowhere — I just remember it"},{v:"Notes app / paper"},{v:"The dashboard's booking screen"},{v:"Depends on the day"}], other:true}
+  ]
+},
+{
+  id:"detect", title:"Auto-Detecting the Appointment", sub:"The core ask: it should notice you set a job, without you telling it.",
+  qs:[
+    {id:"detect_action", type:"single", q:"When you and a customer land on a day & time in a text, what should happen?",
+      tip:"I strongly recommend the one-tap confirm card. The AI will be right most of the time, but 'most of the time' silently writing to your calendar is how you end up driving to a job that was never real. One tap keeps you in control and still takes 2 seconds.",
+      opts:[
+        {v:"Pop a one-tap card: 'Add Sat 10am — Jenna, Tahoe?' → Yes / Edit / No", rec:true, sub:"Fast, but nothing is real until you tap"},
+        {v:"Just create it automatically — I'll fix it if it's wrong", sub:"Zero taps, but wrong jobs land on your calendar"},
+        {v:"Don't create anything — just badge the conversation 'looks like a date was set'"},
+        {v:"Create it automatically, but only if the customer clearly confirmed"}]},
+    {id:"detect_notify", type:"multi", q:"How should it tell you it caught one?", grid:true,
+      opts:[{v:"Badge / card at the top of the dashboard", rec:true},{v:"Push notification on my phone", rec:true},{v:"Text me"},{v:"Email me"},{v:"Just quietly wait until I open the app"}],
+      pre:["Badge / card at the top of the dashboard","Push notification on my phone"]},
+    {id:"sensitivity", type:"single", q:"How eager should the detector be?",
+      tip:"Since a detection is just a card you tap (not a live booking), leaning eager costs you almost nothing and catches the jobs you'd otherwise forget. You can always tap No.",
+      opts:[{v:"Eager — catch everything, I'll dismiss the misses", rec:true},{v:"Balanced — only when it's pretty clear"},{v:"Strict — only when a specific day AND time are both stated"}]},
+    {id:"vague", type:"single", q:"What about vague ones — 'Saturday morning', 'sometime next week'?",
+      tip:"A tentative hold is the money move here: it reserves your day so nobody else books it, and hands you a ready-to-send text that pins down the exact hour. That's the back-and-forth killer.",
+      opts:[
+        {v:"Make a tentative hold + draft me a text to pin the exact time", rec:true},
+        {v:"Ask me to pick the time on the confirm card"},
+        {v:"Ignore it until an exact time is said"},
+        {v:"Auto-text the customer 2–3 time options to choose from"}]},
+    {id:"sources", type:"multi", q:"What should it read to find appointments?", grid:true,
+      sub:"It already sees your texts and your booking form.",
+      opts:[{v:"My SMS conversations", rec:true},{v:"Booking form submissions (already works)"},{v:"Events I type into Google Calendar myself"},{v:"Notes I leave on a conversation"},{v:"Voicemail transcripts"},{v:"Facebook / Instagram DMs"},{v:"Emails"}],
+      pre:["My SMS conversations","Booking form submissions (already works)","Events I type into Google Calendar myself","Notes I leave on a conversation"]},
+    {id:"grab_fields", type:"multi", q:"Besides date & time, what else should it pull out of the conversation automatically?", grid:true,
+      tip:"Grabbing the address is the sleeper feature — it's the thing you scroll back through texts hunting for on the morning of the job.",
+      opts:[{v:"Service address", rec:true},{v:"Vehicle (year / make / model)", rec:true},{v:"Which service they want", rec:true},{v:"Price you quoted", rec:true},{v:"Gate code / parking / apartment notes"},{v:"Whether they have water & power"},{v:"Pets in the car"},{v:"Their name if I don't have it"}],
+      pre:["Service address","Vehicle (year / make / model)","Which service they want","Price you quoted","Gate code / parking / apartment notes","Whether they have water & power"]},
+    {id:"reschedule", type:"single", q:"Should it also catch reschedules and cancellations? ('can we move to Thursday', 'something came up')",
+      opts:[{v:"Yes — one-tap move / cancel card", rec:true},{v:"Yes, but only tell me — don't offer to change it"},{v:"No, I'll handle those myself"}]},
+    {id:"conflict", type:"single", q:"If a detected time collides with a job you already have?",
+      opts:[{v:"Warn me on the card and show what it conflicts with", rec:true},{v:"Warn me AND draft a text offering the customer a different time"},{v:"Just add it, I'll sort it out"}]},
+    {id:"hold_slot", type:"single", q:"Should a detected-but-unconfirmed job block that slot on your public booking page?",
+      tip:"A soft hold prevents the nightmare where your website books someone into a time you already promised over text. It releases automatically if you tap No.",
+      opts:[{v:"Yes — soft-hold it until I confirm or dismiss", rec:true},{v:"No — only confirmed jobs block the calendar"}]},
+    {id:"gcal", type:"single", q:"Should confirmed jobs write to your Google Calendar automatically?",
+      sub:"Right now the app only reads your calendar to see when you're busy.",
+      opts:[{v:"Yes — put every confirmed job on my Google Calendar", rec:true, sub:"So it's on your phone/watch like everything else"},{v:"No — keep jobs only in the dashboard"},{v:"Only if I tap 'add to calendar'"}]},
+    {id:"ai_ok", type:"single", q:"Are you OK with the AI reading your customer texts to do this?",
+      sub:"It already reads them for the follow-up suggestions. Nothing leaves your Worker except the AI call itself.",
+      opts:[{v:"Yes, fine", rec:true},{v:"Yes, but only messages from the last ~2 weeks"},{v:"No — use plain keyword matching only, no AI", sub:"Cheaper, but misses a lot"}]}
+  ]
+},
+{
+  id:"lockin", title:"Locking It In With the Customer", sub:"Turning 'we said Saturday' into a job that actually happens.",
+  qs:[
+    {id:"auto_confirm_text", type:"single", q:"When you confirm a detected job, should the customer get an automatic confirmation text?",
+      tip:"A written confirmation is the cheapest no-show insurance there is — it puts the date, time and address in their phone in your words, so 'I thought it was Sunday' stops happening.",
+      opts:[{v:"Yes — auto-send a confirmation text", rec:true},{v:"Draft it and let me tap send"},{v:"No — I'll say it myself"}]},
+    {id:"confirm_text_content", type:"multi", q:"What should that confirmation include?", grid:true,
+      opts:[{v:"Day, time and service", rec:true},{v:"The address I have for them", rec:true, sub:"Catches wrong-address problems early"},{v:"Price / estimate"},{v:"What they need ready (water, power, car accessible, keys)", rec:true},{v:"That you'll text an 'on my way' link that day", rec:true},{v:"A link to reschedule without texting you"},{v:"Add to their calendar link"}],
+      pre:["Day, time and service","The address I have for them","What they need ready (water, power, car accessible, keys)","That you'll text an 'on my way' link that day"]},
+    {id:"night_before", type:"single", q:"Night before the job — chase the ones that never actually confirmed?",
+      opts:[{v:"Yes — auto-text 'still good for tomorrow at 10?'", rec:true},{v:"Show me the list and I'll tap send on each"},{v:"No night-before chase"}]},
+    {id:"unconfirmed_flag", type:"single", q:"How should the app treat a job the customer never explicitly said yes to?",
+      opts:[{v:"Show it on my day but flagged 'unconfirmed'", rec:true},{v:"Treat it the same as confirmed"},{v:"Keep it off my day until they confirm"}]},
+    {id:"self_reschedule", type:"single", q:"Let customers reschedule themselves from a link?",
+      tip:"Self-serve reschedule sounds risky but it's better than a no-show: they move it instead of ghosting, and it only offers slots you're actually open.",
+      opts:[{v:"Yes — but only to slots I'm actually free", rec:true},{v:"Yes, but it just requests a change I have to approve"},{v:"No — make them text me"}]}
+  ]
+},
+{
+  id:"morning", title:"The Morning-Of Brief ('Today's Run')", sub:"The nudge that tells you what today looks like and when to roll out.",
+  qs:[
+    {id:"brief_time", type:"single", q:"What time should the morning brief hit you?",
+      opts:[{v:"6:00 am"},{v:"6:30 am"},{v:"7:00 am", rec:true, sub:"Early enough to react, late enough to be awake"},{v:"7:30 am"},{v:"90 minutes before my first job"}], other:true},
+    {id:"brief_channel", type:"multi", q:"How should it reach you?", grid:true,
+      tip:"Push notification on the installed app is free and instant. Texting yourself costs a Twilio segment every day — worth it as a backup, not as the main channel.",
+      opts:[{v:"Push notification on the installed app", rec:true, sub:"Free — needs a one-time 'Allow'"},{v:"Email", rec:true, sub:"Free, and you already get alerts by email"},{v:"Text to my cell"},{v:"Just show it in the app when I open it"}],
+      pre:["Push notification on the installed app","Email"]},
+    {id:"brief_content", type:"multi", q:"What's in the brief?", grid:true,
+      opts:[{v:"Every job today with time, customer, service"},{v:"Addresses, in the order I should drive them", rec:true},{v:"Total money expected today", rec:true},{v:"Which jobs are NOT confirmed yet", rec:true},{v:"Weather + rain warning", rec:true},{v:"Each customer's notes (vehicle, gate code, pets, water/power)", rec:true},{v:"What time I need to leave for the first job", rec:true},{v:"One tap: text everyone 'see you today'"},{v:"Supplies / water tank reminder"},{v:"Yesterday's money if I didn't log it"}],
+      pre:["Every job today with time, customer, service","Addresses, in the order I should drive them","Total money expected today","Which jobs are NOT confirmed yet","Weather + rain warning","Each customer's notes (vehicle, gate code, pets, water/power)","What time I need to leave for the first job"]},
+    {id:"route", type:"single", q:"Should it re-order your day by drive time?",
+      tip:"Suggest-don't-move is the right call — you know things the app doesn't (a customer who can only do 8am, a job you want to end near home). But a 'this order saves you 40 minutes' tip is free money.",
+      opts:[{v:"Suggest a better order, never change it on its own", rec:true},{v:"Auto-order it and just tell me"},{v:"Leave my order alone"}]},
+    {id:"leave_now", type:"single", q:"Want a 'leave now' alert before each job?",
+      sub:"Calculated from live drive time, not a fixed guess.",
+      opts:[{v:"Yes — alert me when it's time to leave", rec:true},{v:"Only for the first job of the day"},{v:"No"}]},
+    {id:"leave_buffer", type:"text", q:"How much padding do you want built in before a job starts?",
+      sub:"Time to park, unload, and get set up before the clock starts.",
+      ph:"e.g. 15 minutes to set up, and leave 10 min early for traffic"},
+    {id:"weather", type:"single", q:"If rain is likely on a job day, what should it do?",
+      tip:"You already have a rain-reschedule template in your app. Wiring the forecast to that template means you handle a rained-out day in one tap at 7am instead of scrambling at 9.",
+      opts:[{v:"Flag it and draft the reschedule text — I tap send", rec:true},{v:"Just warn me, no text"},{v:"Auto-text the customer to reschedule"},{v:"Ignore weather — I work in the rain"}]},
+    {id:"rain_threshold", type:"text", q:"What counts as 'too wet to work'?",
+      ph:"e.g. over 50% chance of rain, or steady rain during the job window"},
+    {id:"night_recap", type:"single", q:"Want a short recap the night before too?",
+      opts:[{v:"Yes — 'tomorrow: 2 jobs, first at 9am in Everett'", rec:true},{v:"No, morning only"}]},
+    {id:"nojob_days", type:"single", q:"On a day with no jobs, should it still ping you?",
+      opts:[{v:"Yes — 'no jobs today, here's who to follow up with'", rec:true, sub:"Turns empty days into booked days"},{v:"No — stay quiet"}]}
+  ]
+},
+{
+  id:"tracking", title:"The Tracking Link (the Uber part)", sub:"What the customer sees when you're on your way.",
+  qs:[
+    {id:"trigger", type:"single", q:"What sends the tracking link?",
+      tip:"The manual tap is the reliable one — you're the only one who knows you're truly rolling. I'd add a nudge so the app reminds you to tap it when it sees you should be leaving.",
+      opts:[
+        {v:"I tap 'On my way' and it texts the link", rec:true},
+        {v:"I tap it, but the app nudges me when it's time", rec:true, sub:"Best of both"},
+        {v:"Automatically when I leave home / the last job"},
+        {v:"Automatically at a set time before the appointment"}]},
+    {id:"see", type:"single", q:"What should the customer actually see on that page?",
+      tip:"'Live map only while you're driving' is the sweet spot: it's the full Uber wow-factor, but your location stops being shared the second you arrive. Nobody can watch you all day.",
+      opts:[
+        {v:"Live map with my truck moving + ETA, auto-off when I arrive", rec:true},
+        {v:"Just a clean ETA countdown — 'Mikey is 12 minutes away', no map"},
+        {v:"ETA the whole drive, map only for the last few minutes"},
+        {v:"Map with my dot but no route line"}]},
+    {id:"loc_comfort", type:"single", q:"How do you feel about sharing your live location with a customer during the drive?",
+      opts:[{v:"Fine — as long as it stops when I arrive", rec:true},{v:"Only show a rough area, not my exact dot"},{v:"I'd rather share ETA only, no location"}]},
+    {id:"phone_reality", type:"single", q:"Reality check: a true moving dot needs your phone awake with the app open. How do you want to handle that?",
+      tip:"This is the single biggest technical decision here. Phones aggressively kill background location for web apps. My recommendation: smart ETA as the base — it locks in a real drive time when you tap 'On my way' and counts down honestly — and it upgrades to a live moving dot any time your phone is mounted with the app open. The customer always sees something accurate, and you never have to think about it.",
+      opts:[
+        {v:"Smart ETA that counts down, upgrading to a live dot whenever my app is open", rec:true, sub:"Always works, no babysitting"},
+        {v:"I'll mount my phone with the app open — give me the true live map"},
+        {v:"Smart ETA only, never track my position"},
+        {v:"I'd install a small companion app if that's what makes it rock solid"}]},
+    {id:"page_content", type:"multi", q:"What else goes on the customer's tracking page?", grid:true,
+      tip:"This page is the highest-attention moment you get all day — they're literally watching it. A tip button and a one-tap add-on offer here are the two things most likely to put real money in your pocket.",
+      opts:[{v:"My photo + name so they know who's pulling up", rec:true},{v:"Photo of my truck / setup", rec:true, sub:"They know it's you in the driveway"},{v:"'Text Mikey' button", rec:true},{v:"5.0★ and review count", rec:true},{v:"What they need ready before I arrive (car accessible, water, power, keys)", rec:true},{v:"What today's service includes"},{v:"The price / estimate"},{v:"One-tap add-on offer ('add carpet shampoo +$60?')", rec:true, sub:"Real upsell revenue"},{v:"Tip button", rec:true},{v:"Which job of the day they are ('you're my 2nd stop')"},{v:"Before/after photos from past jobs"}],
+      pre:["My photo + name so they know who's pulling up","Photo of my truck / setup","'Text Mikey' button","5.0★ and review count","What they need ready before I arrive (car accessible, water, power, keys)","One-tap add-on offer ('add carpet shampoo +$60?')","Tip button"]},
+    {id:"stages", type:"multi", q:"Should the page keep updating after you arrive?", grid:true,
+      tip:"Letting the page ride through the whole job is what makes it feel like a real tech company instead of a gimmick — and it ends on the two screens you care about: tip and review.",
+      opts:[{v:"'Mikey has arrived'", rec:true},{v:"'Working on your car' with a rough finish time", rec:true},{v:"Progress photos I snap mid-job"},{v:"'All done!' with before/after photos", rec:true},{v:"Pay / tip screen when it's done", rec:true},{v:"Review link when it's done", rec:true},{v:"Rebook / Clean Club offer at the end"}],
+      pre:["'Mikey has arrived'","'Working on your car' with a rough finish time","'All done!' with before/after photos","Pay / tip screen when it's done","Review link when it's done"]},
+    {id:"link_life", type:"single", q:"How long should the link stay alive?",
+      opts:[{v:"Until the job is done, plus an hour", rec:true},{v:"Rest of the day"},{v:"Forever — it becomes their job receipt"},{v:"Only while I'm driving"}]},
+    {id:"texts_count", type:"multi", q:"Which day-of texts should actually go out?", grid:true,
+      tip:"Every text is a Twilio charge and a chance to annoy someone. The 'on my way' text with the link is the one that matters — the rest of the story can live on the page they already have open.",
+      opts:[{v:"'On my way' with the tracking link", rec:true},{v:"'I've arrived'", sub:"Useful if they need to come outside"},{v:"'Running about 20 min behind'", rec:true},{v:"'All done' with photos + review link", rec:true},{v:"Morning-of 'see you at 10' reminder", rec:true}],
+      pre:["'On my way' with the tracking link","'Running about 20 min behind'","'All done' with photos + review link","Morning-of 'see you at 10' reminder"]},
+    {id:"late", type:"single", q:"If your ETA slips and you're going to be late?",
+      opts:[{v:"Detect it and offer me a one-tap 'running behind' text", rec:true},{v:"Auto-send it without asking"},{v:"Say nothing — I'll handle it"}]},
+    {id:"late_threshold", type:"single", q:"How late is 'late enough' to say something?",
+      opts:[{v:"10 minutes"},{v:"15 minutes", rec:true},{v:"20 minutes"},{v:"30 minutes"}]},
+    {id:"map_cost", type:"single", q:"Maps cost money at scale. Preference?",
+      tip:"A free OpenStreetMap map with your red brand colors looks every bit as premium to a customer, and keeps this feature at $0/month like the rest of your stack. Google's look costs per page view.",
+      opts:[{v:"Free open-source map styled in my red & black", rec:true, sub:"$0/month"},{v:"Google Maps look, even if it costs a few dollars a month"},{v:"Whatever looks the most professional"}]},
+    {id:"budget", type:"single", q:"What's your monthly budget for this whole feature (maps, routing, push)?",
+      opts:[{v:"$0 — keep it on free tiers", rec:true},{v:"Up to $10/mo"},{v:"Up to $25/mo"},{v:"Whatever it takes if it makes me money"}]}
+  ]
+},
+{
+  id:"after", title:"When the Job's Done", sub:"Closing the loop — money, reviews, and the next booking.",
+  qs:[
+    {id:"done_actions", type:"multi", q:"When you tap 'Job done', what should fire automatically?", grid:true,
+      tip:"You already have the money log, the review ask and the rebook engine built. Hanging them off one 'Done' tap is the cheapest win in this whole feature.",
+      opts:[{v:"Mark the lead Won", rec:true},{v:"Log the money for the job", rec:true},{v:"Ask me what they actually paid (in case it changed)", rec:true},{v:"Text a thank-you + review link", rec:true},{v:"Send the customer their before/after photos"},{v:"Start the rebook reminder clock", rec:true},{v:"Offer the Clean Club membership"},{v:"Send an invoice / payment link"}],
+      pre:["Mark the lead Won","Log the money for the job","Ask me what they actually paid (in case it changed)","Text a thank-you + review link","Start the rebook reminder clock"]},
+    {id:"tips", type:"single", q:"Do you want a tip option in the flow?",
+      opts:[{v:"Yes — on the done screen and in the thank-you text", rec:true},{v:"Yes, but only on the tracking page"},{v:"No tipping"}]},
+    {id:"tip_amounts", type:"text", q:"If yes — what tip presets?",
+      ph:"e.g. $10 / $20 / $40 / custom, or 15% / 20% / 25%"},
+    {id:"pay_link", type:"single", q:"Should the customer be able to pay through the page?",
+      opts:[{v:"Yes — card / Apple Pay"},{v:"Just a Venmo / Cash App link", rec:true, sub:"Zero setup, no processor fees"},{v:"No — they pay me in person"}]},
+    {id:"photos", type:"single", q:"Do you take before/after photos on jobs now?",
+      sub:"If yes, the app can prompt you and reuse them for the customer page and your marketing.",
+      opts:[{v:"Yes, most jobs", rec:true},{v:"Sometimes"},{v:"Rarely — but I'd do it if the app reminded me"},{v:"No"}]}
+  ]
+},
+{
+  id:"rails", title:"Guardrails & Control", sub:"So nothing embarrassing ever goes out on its own.",
+  qs:[
+    {id:"never_auto", type:"multi", q:"What should NEVER happen without you tapping something?", grid:true,
+      opts:[{v:"Texting a customer a price"},{v:"Creating a job on my calendar"},{v:"Canceling or moving a job"},{v:"Sharing my live location"},{v:"Texting after hours"},{v:"Asking for a tip"},{v:"Marking a job done / logging money"}],
+      pre:["Texting a customer a price","Canceling or moving a job","Sharing my live location","Texting after hours"]},
+    {id:"quiet", type:"single", q:"Quiet hours for anything automatic going to customers?",
+      opts:[{v:"8am–8pm", rec:true},{v:"7am–9pm"},{v:"9am–7pm"},{v:"No quiet hours"}], other:true},
+    {id:"kill", type:"single", q:"Want a single 'pause all automation' switch?",
+      sub:"One toggle that freezes detection, briefs and auto-texts — for vacations or a bad week.",
+      opts:[{v:"Yes, definitely", rec:true},{v:"Not necessary"}]},
+    {id:"wrong_job", type:"text", q:"If the AI ever creates a job that's wrong, what would make you trust it again?",
+      ph:"e.g. as long as nothing gets texted to the customer until I tap, I'm fine"},
+    {id:"helper", type:"single", q:"Does anyone else need to see today's run or send tracking links?",
+      opts:[{v:"No — just me", rec:true},{v:"A helper who rides with me"},{v:"A second detailer running their own jobs"}]}
+  ]
+},
+{
+  id:"build", title:"Build Order & Anything Else", sub:"So I build the piece that pays you back first.",
+  qs:[
+    {id:"phone", type:"single", q:"What phone do you carry?",
+      tip:"This genuinely changes the build. iPhone only supports push notifications when the app is installed to the home screen — which you already do — and it's stricter about background location than Android.",
+      opts:[{v:"iPhone"},{v:"Android"},{v:"Both / it changes"}]},
+    {id:"installed", type:"single", q:"Do you have the dashboard installed to your home screen as an app?",
+      opts:[{v:"Yes"},{v:"No, I use it in the browser"},{v:"Not sure"}]},
+    {id:"first", type:"single", q:"If I could only ship ONE piece first, which one?",
+      tip:"My vote is auto-detect + the morning brief. That's the part that saves you time and stops lost jobs every single day. The tracking link is the wow factor, but it only matters after the job is reliably on the calendar.",
+      opts:[
+        {v:"Auto-detecting jobs from my texts + the morning brief", rec:true, sub:"Fixes the daily pain first"},
+        {v:"The customer tracking link"},
+        {v:"The 'job done' → money + review flow"},
+        {v:"All of it, in whatever order is fastest"}]},
+    {id:"phase2", type:"multi", q:"Which of these would you want later, once the core works?", grid:true,
+      opts:[{v:"Full drag-and-drop day planner"},{v:"Multi-day route optimizing"},{v:"Customer accounts with job history"},{v:"Automatic invoices"},{v:"Two-way Google Calendar sync"},{v:"A crew view when I hire someone"},{v:"Recurring / subscription jobs on autopilot"}]},
+    {id:"wow", type:"text", q:"What would make you say 'holy crap, this is exactly it' the first time you use it?",
+      ph:"Describe the moment. That's what I'll build toward."},
+    {id:"deadline", type:"single", q:"When do you want this live?",
+      opts:[{v:"ASAP"},{v:"This month"},{v:"Next month"},{v:"Just planning for now"}]},
+    {id:"anything", type:"textarea", q:"Anything else I should know? Half-formed ideas welcome.",
+      ph:"The more you dump here, the closer version one lands."}
+  ]
+}
+];
+
+/* ============================================================
+   RENDER + STATE
+   ============================================================ */
+const LS_KEY = "mikeys-tracking-questionnaire-v1";
+const $ = (s,el=document)=>el.querySelector(s);
+const state = load();
+
+function load(){ try{ return JSON.parse(localStorage.getItem(LS_KEY)) || {}; }catch(e){ return {}; } }
+function save(){ try{ localStorage.setItem(LS_KEY, JSON.stringify(state)); }catch(e){} }
+
+const svg = '<svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+
+let qCount = 0;
+const allQ = [];
+
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+
+function render(){
+  const form = $("#form");
+  const nav = $("#navchips");
+  let qn = 0;
+  SURVEY.forEach((sec, si)=>{
+    // nav chip
+    const chip = document.createElement("a");
+    chip.href = "#sec-"+sec.id; chip.textContent = (si+1)+". "+sec.title;
+    nav.appendChild(chip);
+
+    const el = document.createElement("section");
+    el.className = "sec"; el.id = "sec-"+sec.id;
+    let html = '<div class="sec-head"><div class="sec-num">'+(si+1)+'</div><div><h3>'+esc(sec.title)+'</h3>'+(sec.sub?'<div class="sub">'+esc(sec.sub)+'</div>':'')+'</div></div><div class="sec-body">';
+
+    sec.qs.forEach(q=>{
+      qn++; qCount++; allQ.push(q);
+      // seed pre-selected defaults into state (only first load, if untouched)
+      if(q.pre && state[q.id]===undefined){ state[q.id] = q.type==="multi" ? q.pre.slice() : q.pre; }
+      html += '<div class="q" id="q-'+q.id+'">';
+      html += '<label class="q-title"><span class="num">'+qn+'.</span>'+esc(q.q)+'</label>';
+      if(q.sub) html += '<div class="q-sub">'+esc(q.sub)+'</div>';
+      if(q.tip) html += '<div class="tip"><span class="ic">💡</span><span><b>Pro tip:</b> '+esc(q.tip)+'</span></div>';
+
+      if(q.type==="single" || q.type==="multi"){
+        html += '<div class="opts'+(q.grid?' grid':'')+'">';
+        q.opts.forEach((o,oi)=>{
+          const val = typeof o==="string"?o:o.v;
+          const checked = isChecked(q,val);
+          html += '<label class="opt'+(checked?' is-checked':'')+'" data-type="'+q.type+'" data-q="'+q.id+'" data-v="'+esc(val)+'">'
+            + '<input type="'+(q.type==="single"?"radio":"checkbox")+'" name="'+q.id+'" value="'+esc(val)+'"'+(checked?' checked':'')+'>'
+            + '<span class="mark">'+svg+'</span>'
+            + '<span class="otext">'+esc(val)+ (o.rec?' <span class="rec rec-tag">★ Recommended</span>':'') + (o.sub?'<small>'+esc(o.sub)+'</small>':'') +'</span>'
+            + '</label>';
+        });
+        html += '</div>';
+        if(q.other){
+          const ov = state[q.id+"__other"]||"";
+          html += '<div class="other-wrap"><input class="txt" type="text" data-other="'+q.id+'" placeholder="Other / add your own…" value="'+esc(ov)+'"></div>';
+        }
+      } else if(q.type==="text"){
+        html += '<div class="field"><input class="txt" type="text" data-text="'+q.id+'" placeholder="'+esc(q.ph||"")+'" value="'+esc(state[q.id]||"")+'"></div>';
+      } else if(q.type==="textarea"){
+        html += '<div class="field"><textarea class="txt" data-text="'+q.id+'" placeholder="'+esc(q.ph||"")+'">'+esc(state[q.id]||"")+'</textarea></div>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+    el.innerHTML = html;
+    form.appendChild(el);
+  });
+  save(); // persist any seeded defaults
+  attach();
+  updateProgress();
+}
+
+function isChecked(q,val){
+  const s = state[q.id];
+  if(q.type==="multi") return Array.isArray(s) && s.indexOf(val)>-1;
+  return s===val;
+}
+
+function attach(){
+  // option clicks
+  document.querySelectorAll(".opt").forEach(opt=>{
+    const input = opt.querySelector("input");
+    input.addEventListener("change", ()=>{
+      const qid = opt.dataset.q, val = opt.dataset.v, type = opt.dataset.type;
+      if(type==="single"){
+        state[qid] = val;
+        document.querySelectorAll('.opt[data-q="'+qid+'"]').forEach(o=>o.classList.toggle("is-checked", o.dataset.v===val));
+      } else {
+        let arr = Array.isArray(state[qid])?state[qid]:[];
+        if(input.checked){ if(arr.indexOf(val)<0) arr.push(val); }
+        else { arr = arr.filter(x=>x!==val); }
+        state[qid] = arr;
+        opt.classList.toggle("is-checked", input.checked);
+      }
+      save(); updateProgress();
+    });
+  });
+  // text + textarea
+  document.querySelectorAll("[data-text]").forEach(inp=>{
+    inp.addEventListener("input", ()=>{ state[inp.dataset.text] = inp.value; save(); updateProgress(); });
+  });
+  // other fields
+  document.querySelectorAll("[data-other]").forEach(inp=>{
+    inp.addEventListener("input", ()=>{ state[inp.dataset.other+"__other"] = inp.value; save(); updateProgress(); });
+  });
+}
+
+function answered(q){
+  const s = state[q.id];
+  const other = state[q.id+"__other"];
+  if(q.type==="multi") return (Array.isArray(s)&&s.length>0) || (other&&other.trim());
+  if(q.type==="single") return (s&&s.length) || (other&&other.trim());
+  return s && String(s).trim().length>0;
+}
+
+function updateProgress(){
+  let done = 0;
+  allQ.forEach(q=>{ if(answered(q)) done++; });
+  const pct = qCount? Math.round(done/qCount*100):0;
+  $("#progfill").style.width = pct+"%";
+  $("#progpct").textContent = done+" of "+qCount+" answered";
+  $("#floatpct").textContent = pct+"%";
+}
+
+/* ============================================================
+   EXPORT
+   ============================================================ */
+function buildReport(){
+  const now = new Date();
+  let done=0; allQ.forEach(q=>{ if(answered(q)) done++; });
+  let out = "";
+  out += "MIKEY'S DETAILING — AUTO-SCHEDULING & LIVE TRACKING BUILD\n";
+  out += "Filled out: " + now.toLocaleString() + "\n";
+  out += "Completed: " + done + " of " + qCount + " questions\n";
+  out += "Paste this whole thing back to Claude to start the build.\n";
+
+  SURVEY.forEach((sec,si)=>{
+    out += "\n============================================================\n";
+    out += (si+1)+". "+sec.title.toUpperCase()+"\n";
+    out += "============================================================\n";
+    sec.qs.forEach(q=>{
+      out += "\n• " + q.q + "\n";
+      let ans = "";
+      if(q.type==="multi"){
+        const arr = Array.isArray(state[q.id])?state[q.id].slice():[];
+        const other = (state[q.id+"__other"]||"").trim();
+        if(other) arr.push("Other: "+other);
+        ans = arr.length ? arr.map(a=>"    - "+a).join("\n") : "";
+        out += ans ? ans+"\n" : "    → (skipped)\n";
+      } else if(q.type==="single"){
+        let v = state[q.id]||"";
+        const other = (state[q.id+"__other"]||"").trim();
+        if(other) v = (v? v+" / ":"") + "Other: "+other;
+        out += v ? "    → "+v+"\n" : "    → (skipped)\n";
+      } else {
+        const v = (state[q.id]||"").trim();
+        out += v ? "    → "+v.replace(/\n/g,"\n      ")+"\n" : "    → (skipped)\n";
+      }
+    });
+  });
+  out += "\n— end —\n";
+  return out;
+}
+
+function generate(){ const t=buildReport(); $("#output").value=t; return t; }
+
+function toast(msg){ const t=$("#toast"); t.textContent=msg; t.classList.add("show"); setTimeout(()=>t.classList.remove("show"),1900); }
+
+function copyText(text){
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(()=>toast("Copied! Paste it back to me."),()=>fallbackCopy(text));
+  } else { fallbackCopy(text); }
+}
+function fallbackCopy(text){
+  const ta=$("#output"); ta.value=text; ta.removeAttribute("readonly"); ta.focus(); ta.select();
+  try{ document.execCommand("copy"); toast("Copied! Paste it back to me."); }
+  catch(e){ toast("Select the text below & copy"); }
+  ta.setAttribute("readonly","");
+}
+function download(text){
+  const blob=new Blob([text],{type:"text/plain"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a");
+  a.href=url; a.download="mikeys-tracking-answers.txt";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+  toast("Downloaded — attach it in our chat.");
+}
+
+/* wire buttons */
+document.addEventListener("DOMContentLoaded", ()=>{
+  render();
+  $("#btnGen").addEventListener("click", ()=>{ generate(); $("#output").scrollIntoView({block:"center"}); toast("Generated below ⤵"); });
+  $("#btnCopy").addEventListener("click", ()=>copyText(generate()));
+  $("#btnDl").addEventListener("click", ()=>download(generate()));
+  $("#btnReset").addEventListener("click", ()=>{
+    if(confirm("Start over? This clears all your answers on this device.")){
+      localStorage.removeItem(LS_KEY);
+      location.reload();
+    }
+  });
+});
+</script>
+</body>
+</html>
