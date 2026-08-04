@@ -12,6 +12,7 @@
  * Dashboard API:    /api/health /api/threads /api/thread /api/send /api/meta
  *                   /api/schedule /api/unschedule /api/call /api/read
  *                   /api/insights /api/ai/summary /api/ai/draft /api/ai/triage
+ *                   /api/ai/predict /api/ai/style (predictive keyboard)
  *                   /api/money/* (profit tracker — see the Money module)
  *
  * Required secrets (wrangler secret put ...):
@@ -67,7 +68,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-21·booking+redesign';
+const BUILD = '2026-08-04·ai-keyboard';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -194,6 +195,8 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/templates')  return apiSaveTemplates(request);
   if (request.method === 'POST' && pathname === '/api/ai/summary') return apiAiSummary(request);
   if (request.method === 'POST' && pathname === '/api/ai/draft')   return apiAiDraft(request);
+  if (request.method === 'POST' && pathname === '/api/ai/predict') return apiAiPredict(request);
+  if (request.method === 'GET'  && pathname === '/api/ai/style')   return apiAiStyle(url);
   if (request.method === 'POST' && pathname === '/api/ai/triage')  return apiAiTriage();
   if (request.method === 'POST' && pathname === '/api/ai/coach')   return apiAiCoach(request);
   if (request.method === 'POST' && pathname === '/api/ai/photo-quote') return apiAiPhotoQuote(request);
@@ -2952,6 +2955,7 @@ async function apiSaveConfig(request) {
   if (typeof data.callScreening === 'boolean') next.callScreening = data.callScreening;
   if (typeof data.missedCallTextback === 'boolean') next.missedCallTextback = data.missedCallTextback;
   if (typeof data.missedCallText === 'string') next.missedCallText = data.missedCallText.slice(0, 320);
+  if (typeof data.predictive === 'boolean') next.predictive = data.predictive;
   if (typeof data.teamMode === 'boolean') next.teamMode = data.teamMode;
   if (Array.isArray(data.team)) next.team = sanitizeTeam(data.team);
   if (data.playbook && typeof data.playbook === 'object') next.playbook = sanitizePlaybook(data.playbook, next.playbook);
@@ -3712,6 +3716,8 @@ function defaultConfig() {
     emailToken: '',          // shared secret for the /email-in ingest (generated in-app)
     missedCallTextback: true,// auto-text a caller we missed so the lead becomes a text thread
     missedCallText: '',      // custom missed-call text (blank = the friendly default)
+    predictive: true,        // AI predictive keyboard: next-word suggestions + inline
+                             // completions above the composer, learned from your texts
     teamMode: false,         // when on: conversations can be assigned, and each reply is
                              // attributed to the sender. Turn off to go back to solo.
     team: [],                // [{ id, name, role }] — the people who help answer texts
@@ -3993,6 +3999,236 @@ async function editsContext() {
   if (!recent.length) return '';
   const rows = recent.map((e) => `- The draft said: "${e.from}"\n  Mikey changed it to: "${e.to}"`).join('\n');
   return 'HOW MIKEY EDITS DRAFTS (these are his recent corrections — learn the PATTERN of how he rewrites: his length, warmth, word choices — and apply that style, not the specific content):\n' + rows + '\n\n';
+}
+
+// ===========================================================================
+// Typing model — the keyboard that knows how YOU talk
+// ===========================================================================
+// Every text Mikey has actually typed to a customer, boiled down to a tiny model
+// the browser can run on every keystroke with zero latency: the words he opens
+// messages with, which word usually follows which (1- and 2-word context), his
+// real vocabulary (so "app" completes to "appointment", not the dictionary's
+// "apple"), and the short lines he sends over and over. Built ONLY from his own
+// outbound, hand-written messages — automated follow-ups and booking texts are
+// excluded so the model is him, not the robot.
+//
+// KV cost: one read per fetch (cheap) and ONE write per rebuild, and we only
+// rebuild when the cached model is older than STYLE_TTL — about 2 writes/day.
+const STYLE_KEY = 'ai:style';
+const STYLE_TTL = 12 * 60 * 60 * 1000;   // rebuild at most twice a day
+const STYLE_MAX_KEYS = 1400;             // n-gram contexts kept (payload size guard)
+const STYLE_MAX_WORDS = 500;             // vocabulary kept for prefix completion
+let STYLE_CACHE = null;
+
+// Words as a texter types them: letters/digits, plus the apostrophes, hyphens
+// and $ that show up in real messages ("I'll", "add-on", "$160").
+function styleTokens(body) {
+  return String(body || '').match(/[A-Za-z0-9$][A-Za-z0-9'’\-$%]*/g) || [];
+}
+
+function buildStyleFrom(bodies) {
+  const next = new Map();       // context (lowercased, 1 or 2 words) -> Map(word -> count)
+  const starters = new Map();   // first word of a message -> count
+  const vocab = new Map();      // lowercased word -> count
+  const surface = new Map();    // lowercased word -> Map(as-typed form -> count)
+  const phrases = new Map();    // short whole messages he reuses -> count
+  let used = 0;
+
+  const bumpNext = (ctx, word) => {
+    let m = next.get(ctx);
+    if (!m) { m = new Map(); next.set(ctx, m); }
+    m.set(word, (m.get(word) || 0) + 1);
+  };
+  const noteForm = (w) => {
+    const k = w.toLowerCase();
+    let m = surface.get(k);
+    if (!m) { m = new Map(); surface.set(k, m); }
+    m.set(w, (m.get(w) || 0) + 1);
+  };
+  // The casing he actually uses most for a word ("I'll", "Mikey", "Tuesday").
+  const asTyped = (k) => {
+    const m = surface.get(k);
+    if (!m) return k;
+    let best = k, bestN = -1;
+    for (const [form, n] of m) if (n > bestN) { bestN = n; best = form; }
+    return best;
+  };
+
+  for (const raw of bodies) {
+    const body = String(raw || '').replace(/https?:\/\/\S+/g, ' ').trim();
+    if (!body || body.length > 400) continue;
+    const toks = styleTokens(body);
+    if (toks.length < 2) continue;
+    used++;
+    if (body.length <= 90 && toks.length >= 3) phrases.set(body, (phrases.get(body) || 0) + 1);
+    starters.set(toks[0], (starters.get(toks[0]) || 0) + 1);
+    for (let i = 0; i < toks.length; i++) {
+      const w = toks[i];
+      const lw = w.toLowerCase();
+      noteForm(w);
+      vocab.set(lw, (vocab.get(lw) || 0) + 1);
+      if (i === 0) continue;
+      const p1 = toks[i - 1].toLowerCase();
+      bumpNext(p1, lw);
+      if (i > 1) bumpNext(toks[i - 2].toLowerCase() + ' ' + p1, lw);
+    }
+  }
+
+  // Rank + prune. Keep the contexts he uses most, up to 4 predictions each, and
+  // drop the one-offs — a word he typed once isn't a habit worth predicting.
+  const total = (m) => { let s = 0; for (const n of m.values()) s += n; return s; };
+  const top = (m, k) => [...m.entries()].sort((a, b) => b[1] - a[1]).slice(0, k);
+  const outNext = {};
+  for (const [ctx, m] of [...next.entries()].sort((a, b) => total(b[1]) - total(a[1])).slice(0, STYLE_MAX_KEYS)) {
+    const picks = top(m, 4).filter(([, n]) => n >= 2 || ctx.indexOf(' ') > 0).map(([w]) => asTyped(w));
+    if (picks.length) outNext[ctx] = picks;
+  }
+  return {
+    builtAt: Date.now(),
+    n: used,
+    start: top(starters, 8).map(([w]) => w),
+    next: outNext,
+    // Vocabulary for prefix completion ("app" → "appointment"). Frequency-ranked
+    // and capped rather than threshold-filtered, so the long, distinctive words
+    // he types — the ones actually worth completing — survive the cut.
+    words: top(vocab, STYLE_MAX_WORDS).map(([w]) => asTyped(w)),
+    phrases: top(phrases, 10).filter(([, n]) => n >= 2).map(([p]) => p),
+  };
+}
+
+async function rebuildStyleModel() {
+  const index = await loadIndex();
+  const phones = index.slice()
+    .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0))
+    .slice(0, 80)
+    .map((e) => e.phone)
+    .filter(Boolean);
+  const threads = await batchLoadThreads(phones);
+  const rows = [];
+  for (const t of threads) {
+    for (const m of (t.messages || [])) {
+      // Only what a human actually typed: manual sends and scheduled sends.
+      if (m.dir !== 'out' || !m.body) continue;
+      if (m.kind && m.kind !== 'manual' && m.kind !== 'scheduled') continue;
+      rows.push({ body: String(m.body), ts: m.ts || 0 });
+    }
+  }
+  const model = buildStyleFrom(rows.map((r) => r.body));
+  // A few of his most recent real texts, verbatim — this is what the AI half of
+  // the keyboard reads to match his voice, and it works from message one (the
+  // repeated-phrase list needs a habit before it has anything to show).
+  const seen = new Set();
+  model.samples = rows.slice().sort((a, b) => b.ts - a.ts).map((r) => r.body.trim())
+    .filter((b) => {
+      if (b.length < 20 || b.length > 140) return false;
+      const k = b.toLowerCase();
+      if (seen.has(k)) return false;
+      seen.add(k); return true;
+    })
+    .slice(0, 10);
+  return model;
+}
+
+async function loadStyleModel(force) {
+  const now = Date.now();
+  if (!force && STYLE_CACHE && now - (STYLE_CACHE.builtAt || 0) < STYLE_TTL) return STYLE_CACHE;
+  if (!force) {
+    const cached = await kv().get(STYLE_KEY, { type: 'json' }).catch(() => null);
+    if (cached && now - (cached.builtAt || 0) < STYLE_TTL) { STYLE_CACHE = cached; return cached; }
+  }
+  const model = await rebuildStyleModel();
+  await kv().put(STYLE_KEY, JSON.stringify(model));
+  STYLE_CACHE = model;
+  return model;
+}
+
+// GET /api/ai/style — the browser downloads this once and predicts locally from
+// it, so word suggestions appear as fast as the phone keyboard's. ?force=1
+// retrains it on demand from the newest messages.
+async function apiAiStyle(url) {
+  try {
+    const model = await loadStyleModel(url.searchParams.get('force') === '1');
+    return json({ ok: true, style: model, ttl: STYLE_TTL });
+  } catch (err) {
+    return json({ ok: false, error: String(err.message || err) }, 500);
+  }
+}
+
+// A handful of his real texts, for the AI half of the keyboard — short enough to
+// keep the prompt cheap, long enough to carry the voice.
+function styleSamples(model, max = 8) {
+  if (!model) return '';
+  const seen = new Set();
+  const rows = [].concat(model.phrases || [], model.samples || [])
+    .filter((p) => { const k = String(p).toLowerCase(); if (!p || seen.has(k)) return false; seen.add(k); return true; })
+    .slice(0, max);
+  return rows.length ? 'LINES MIKEY ACTUALLY TEXTS (match this voice, rhythm and punctuation exactly):\n' + rows.map((p) => `- ${p}`).join('\n') + '\n\n' : '';
+}
+
+// Rolling one-minute cap on predictive-keyboard calls, held in the isolate (no
+// KV writes). Not a precise global limit — it's a cheap ceiling that stops a
+// runaway typing session from starving the AI features that matter more.
+const PREDICT_PER_MIN = 12;
+let PREDICT_HITS = [];
+function predictBudgetOk() {
+  const now = Date.now();
+  PREDICT_HITS = PREDICT_HITS.filter((t) => now - t < 60000);
+  if (PREDICT_HITS.length >= PREDICT_PER_MIN) return false;
+  PREDICT_HITS.push(now);
+  return true;
+}
+
+// POST /api/ai/predict — the smart half of the keyboard. Given what he's typed
+// so far, finish the sentence the way HE would, in this specific conversation.
+// Deliberately tiny: a few lines of transcript, a short output cap, low
+// temperature. It must feel like a keyboard, not like waiting on a chatbot.
+async function apiAiPredict(request) {
+  const data = await readJson(request);
+  const phone = normalizePhone(data.phone);
+  const text = String(data.text || '').slice(0, 400);
+  if (!ENV.GEMINI_API_KEY) return json({ ok: false, error: 'no_ai' }, 503);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  // Backstop for the shared Gemini quota. A typing suggestion is the least
+  // important thing the AI does here — if predictions are coming in hot, drop
+  // them (quietly, so the keyboard just falls back to the local model) and keep
+  // the budget for drafts, summaries and follow-ups.
+  if (!predictBudgetOk()) return json({ ok: true, completion: '', options: [], throttled: true });
+  try {
+    const [thread, cfg, model] = await Promise.all([loadThread(phone), loadConfig(), loadStyleModel(false).catch(() => null)]);
+    const convo = transcript(thread, 8);
+    const prompt =
+      businessContext(cfg) +
+      styleSamples(model) +
+      (await editsContext()) +
+      `You are the predictive keyboard inside Mikey's texting app — like the next-word suggestions on a phone keyboard, but it knows Mikey and it knows this conversation. ` +
+      `Mikey is part-way through typing a text to this customer. Predict how HE would finish it.\n\n` +
+      `Return ONLY JSON: {"completion": "...", "options": ["...", "...", "..."]}\n` +
+      `- "completion": the rest of what he's typing. It is appended to his text character-for-character, so it must read correctly when glued straight on: do NOT repeat any word he already typed, and get the leading space right — if he stopped part-way through a word, start with the REST OF THAT WORD and no leading space; if he finished a word, start with a single leading space. Keep it to what plausibly comes next: the rest of this sentence (roughly 3-12 words), ending cleanly. Empty string if nothing sensible follows.\n` +
+      `- "options": 3 different single words or 2-3 word fragments that could come next, shortest first. Same rule — continuations only, never a repeat of what he typed.\n` +
+      `Match his voice from the samples above: casual, warm, contractions, his punctuation. Never invent a price, date or time he hasn't given — if a number is needed, stop the completion before it. Never add a greeting or a sign-off he didn't start.\n\n` +
+      (convo ? `Conversation so far:\n${convo}\n\n` : '') +
+      `Mikey is typing: "${text}"\n\nJSON:`;
+    const out = await geminiGenerate(prompt, { json: true, temperature: 0.35, maxTokens: 220 });
+    let parsed = {};
+    try { parsed = JSON.parse(out); } catch { parsed = {}; }
+    // Belt and braces: the model sometimes echoes the typed text back. Strip that
+    // overlap so we only ever hand back a continuation.
+    const trim = (s) => {
+      let v = String(s || '').replace(/^["']|["']$/g, '');
+      const low = v.toLowerCase(); const t = text.toLowerCase().trim();
+      if (t && low.startsWith(t)) v = v.slice(t.length);
+      // Or it repeated just the tail of what he typed (the last few words).
+      const tail = t.split(/\s+/).slice(-4).join(' ');
+      if (tail.length > 6 && v.toLowerCase().trim().startsWith(tail)) v = v.trim().slice(tail.length);
+      return v.replace(/\s+/g, ' ').slice(0, 160);
+    };
+    const completion = trim(parsed.completion);
+    const options = (Array.isArray(parsed.options) ? parsed.options : [])
+      .map(trim).map((s) => s.trim()).filter(Boolean).slice(0, 3);
+    return json({ ok: true, completion, options });
+  } catch (err) {
+    return json({ ok: false, error: String(err.message || err) }, 502);
+  }
 }
 
 // Proactively pre-draft a reply the instant a customer texts, so one is already

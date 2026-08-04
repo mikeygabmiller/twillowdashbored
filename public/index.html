@@ -312,9 +312,39 @@
   .ctools{display:flex;gap:4px;align-items:center;margin-bottom:7px;position:relative}
   .ctools .spacer{flex:1}
   .crow{display:flex;gap:9px;align-items:flex-end}
+  .tawrap{flex:1;position:relative;display:flex}
   .crow textarea{flex:1;resize:none;height:46px;max-height:140px;background:var(--panel2);border:1px solid var(--line);
     color:var(--text);border-radius:23px;padding:12px 16px;outline:none;font-size:14.5px;line-height:1.35;transition:border-color .15s}
   .crow textarea:focus{border-color:var(--accent)}
+
+  /* ---- AI predictive keyboard ----------------------------------------------
+     Two layers. (1) The strip: Gboard-style word chips above the box, predicted
+     from Mikey's own texting habits (instant, offline) and sharpened by AI.
+     (2) The ghost: a mirror of the textarea sitting exactly under it, drawing the
+     rest of the sentence in dim grey behind the caret. Tab (desktop) or the wide
+     ✨ chip on the strip (phones) accepts it. */
+  .predbar{display:flex;align-items:stretch;gap:0;margin:0 0 7px;min-height:38px;background:var(--panel2);
+    border:1px solid var(--line);border-radius:12px;overflow:hidden;animation:predin .16s ease}
+  @keyframes predin{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+  .predbar .pb-c{flex:1 1 0;min-width:0;display:flex;align-items:center;justify-content:center;gap:5px;
+    padding:8px 6px;font-size:13.5px;font-weight:600;color:var(--text);background:none;border:none;
+    border-right:1px solid var(--line);text-align:center;line-height:1.2;transition:background .12s}
+  .predbar .pb-c:last-child{border-right:none}
+  .predbar .pb-c:active{background:var(--accent-soft)}
+  .predbar .pb-c span.t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .predbar .pb-c.ai{color:var(--accent-text)}
+  .predbar .pb-c.ai svg{width:12px;height:12px;flex:none;opacity:.9}
+  .predbar .pb-c.wide{flex:2 1 0;font-weight:650}
+  .predbar .pb-hint{flex:none;display:flex;align-items:center;padding:0 9px;font-size:10px;font-weight:700;
+    letter-spacing:.4px;text-transform:uppercase;color:var(--muted2);background:var(--panel3)}
+  .predbar.thinking .pb-hint{color:var(--accent-text)}
+  /* ghost overlay — identical metrics to the textarea so the text lines up exactly */
+  .ghost{position:absolute;inset:0;pointer-events:none;overflow:hidden;z-index:1;
+    border:1px solid transparent;border-radius:23px;padding:12px 16px;font-size:14.5px;line-height:1.35;
+    font-family:inherit;white-space:pre-wrap;overflow-wrap:break-word;color:transparent}
+  .ghost i{font-style:normal;color:var(--muted2);opacity:.95}
+  .crow textarea{position:relative;z-index:2;background:transparent}
+  .tawrap::before{content:"";position:absolute;inset:0;border-radius:23px;background:var(--panel2);z-index:0}
   .sendcircle{flex:none;width:46px;height:46px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent-dark));
     border:none;color:#fff;font-size:19px;display:flex;align-items:center;justify-content:center;transition:transform .1s,opacity .15s}
   .sendcircle:active{transform:scale(.9)}
@@ -1669,8 +1699,13 @@
           <button class="btn accent ic-btn" id="writeGo" data-ic="pencil" data-ic-label="Write it for me" style="width:100%"></button>
         </div>
       </div>
+      <!-- AI predictive keyboard: next-word chips learned from how you text -->
+      <div class="predbar" id="predBar" style="display:none"></div>
       <div class="crow">
-        <textarea id="msgInput" placeholder="Text message" rows="1"></textarea>
+        <div class="tawrap">
+          <div class="ghost" id="msgGhost" aria-hidden="true"></div>
+          <textarea id="msgInput" placeholder="Text message" rows="1"></textarea>
+        </div>
         <button class="sendcircle" id="sendBtn" title="Send" aria-label="Send">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M3.4 20.4 21 12 3.4 3.6 3.39 10.1 15 12l-11.61 1.9z"/></svg>
         </button>
@@ -1927,7 +1962,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-21·booking+redesign";
+  var APP_BUILD="2026-08-04·ai-keyboard";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -3461,6 +3496,8 @@
   // textareas (that would fight the cursor while typing) — they save on blur and
   // keep their own DOM state.
   function afterConfig(){
+    PK.off=!!(state.config&&state.config.predictive===false);
+    if(PK.off)pkHide();
     renderFuSettings();renderTeam();applyTeamUI();renderMain();
     if(state.phone&&state.thread)renderDetails();
   }
@@ -3574,6 +3611,10 @@
       '<div class="fu-row"><span class="lbl2">Missed-call text-back <span style="color:var(--muted2);font-weight:400">· never lose a missed call</span></span><span class="sw'+(c.missedCallTextback!==false?" on":"")+'" id="cfgMct"></span></div>'+
       '<div class="fu-col"><input type="text" id="cfgMctText" placeholder="Sorry I missed your call! Text me here and I\'ll get right back to you." value="'+esc(c.missedCallText||"")+'"></div>'+
       '<div class="hint">When a call goes unanswered, the caller instantly gets a friendly text so the lead turns into a conversation you can answer from anywhere. Leave the message blank to use the default.</div>'+
+      '<div class="fu-row"><span class="lbl2">AI keyboard <span style="color:var(--muted2);font-weight:400">· suggests your next word</span></span><span class="sw'+(c.predictive!==false?" on":"")+'" id="cfgPredict"></span></div>'+
+      '<div class="fu-col"><button id="cfgPredictTrain" class="btn" style="white-space:nowrap;align-self:flex-start">'+ic("sparkles",14)+' Relearn how I text</button></div>'+
+      '<div class="hint">'+(PK.style&&PK.style.n?('Learned from <b>'+PK.style.n+'</b> texts you\'ve sent. '):"")+
+        'The strip above the message box predicts your next word from your own texting habits — instantly, right on your phone — and the AI reads the conversation to finish the sentence in dim grey behind the cursor (tap the ✨ suggestion, or press Tab, to take it). Relearn after you\'ve sent a batch of new texts.</div>'+
       '<div class="fu-col"><span class="lbl2">Voicemails</span><button id="cfgVmRecover" class="btn" style="white-space:nowrap;align-self:flex-start">'+ic("mic",14)+' Recover past voicemails</button></div>'+
       '<div class="hint">Pulls your recent voicemails from Twilio into the right conversations so you can play them right here. Safe to run anytime.</div>'+
       '<div class="fu-col"><span class="lbl2">Block a number</span><span style="display:flex;gap:6px"><input type="text" id="cfgBlockNum" placeholder="+1425…" style="flex:1"><button id="cfgBlockBtn" class="btn" style="white-space:nowrap">Block</button></span></div>'+
@@ -3587,6 +3628,14 @@
     el("cfgScreen").onclick=function(){saveConfig({callScreening:!(c.callScreening!==false)})};
     el("cfgMct").onclick=function(){saveConfig({missedCallTextback:!(c.missedCallTextback!==false)})};
     el("cfgMctText").onchange=function(){saveConfig({missedCallText:el("cfgMctText").value})};
+    el("cfgPredict").onclick=function(){saveConfig({predictive:!(c.predictive!==false)})};
+    el("cfgPredictTrain").onclick=function(){
+      var b=el("cfgPredictTrain");b.disabled=true;b.innerHTML='<span class="spin"></span> Learning…';
+      pkLoadStyle(true).then(function(m){
+        toast(m&&m.n?("Learned from "+m.n+" of your texts"):"Nothing to learn from yet — send a few texts first",{bad:!(m&&m.n)});
+        renderFuSettings();
+      }).catch(function(){toast("Couldn't retrain",{bad:true});renderFuSettings()});
+    };
     el("cfgVmRecover").onclick=function(){recoverVoicemails(el("cfgVmRecover"))};
     el("cfgBlockBtn").onclick=function(){var v=el("cfgBlockNum").value.trim();if(v)blockNumber(v,"block")};
     Array.prototype.forEach.call(document.querySelectorAll("[data-unblock]"),function(b){
@@ -3642,7 +3691,7 @@
     // reset any in-thread find when moving to a different conversation
     state.threadFind="";state.findIdx=0;var fb=el("findBar");if(fb)fb.style.display="none";var fi=el("findInput");if(fi)fi.value="";
     state.lastAiText=null;
-    hideAiReview();
+    hideAiReview();pkHide();pkLoadStyle(false);
     var sbx=el("suggestBox");if(sbx){sbx.style.display="none";sbx.innerHTML=""}
     var dbx=el("dateBanner");if(dbx){dbx.style.display="none";dbx.innerHTML=""}
     el("emptyState").style.display="none";renderMain();
@@ -4063,6 +4112,191 @@
   }
   function openGuide(){if(!state.thread)return;buildGuide();el("guideScrim").classList.add("show");el("guide").classList.add("show")}
   function closeGuide(){el("guideScrim").classList.remove("show");el("guide").classList.remove("show")}
+  // =========================================================================
+  // AI predictive keyboard — the strip above the message box
+  // =========================================================================
+  // Two brains, layered so it never feels slow:
+  //   1. YOUR typing model (/api/ai/style) — a tiny n-gram model built from the
+  //      texts you've actually sent. It runs in the browser on every keystroke,
+  //      so word suggestions appear instantly, offline, with zero API cost. It
+  //      only ever suggests words YOU use, in the casing you use them.
+  //   2. The AI (/api/ai/predict) — fires ~0.4s after you pause, reads the
+  //      conversation, and finishes the sentence the way you would. It shows up
+  //      as dim ghost text behind the caret (Tab, or tap the ✨ chip, to accept).
+  // Everything is best-effort: if the model hasn't loaded or the AI is off, the
+  // strip just stays hidden and typing works exactly as before.
+  // off = switched off in settings · noAi = no Gemini key, so the local half of
+  // the keyboard carries on alone (it needs no API at all).
+  var PK={style:null,chips:[],ghost:"",ghostFor:"",timer:null,seq:0,cache:{},cacheKeys:[],off:false,noAi:false,asked:"",lastAsk:0};
+  // The local half runs on every keystroke; the AI half is deliberately rationed —
+  // it only fires after you pause, never twice inside PK_MIN_GAP, and never for a
+  // fragment too short to predict from. Drafts, summaries and follow-ups share the
+  // same Gemini quota, and they matter more than a suggestion.
+  var PK_LS="mkd-style-v1", PK_STYLE_TTL=6*3600*1000, PK_DEBOUNCE=600, PK_MIN_GAP=1100;
+  var PK_WORD=/[A-Za-z0-9$][A-Za-z0-9'’\-$%]*/g;
+
+  function pkEnabled(){return !PK.off&&!!state.thread&&!!state.phone}
+  function pkHide(){PK.chips=[];PK.ghost="";PK.ghostFor="";clearTimeout(PK.timer);
+    var b=el("predBar");if(b){b.style.display="none";b.innerHTML="";b.classList.remove("thinking")}
+    var g=el("msgGhost");if(g)g.innerHTML="";}
+
+  // The personal typing model. Cached in localStorage so it costs nothing on
+  // reload, refreshed in the background every few hours as you send more texts.
+  function pkLoadStyle(force){
+    if(!force){
+      try{var raw=localStorage.getItem(PK_LS);if(raw){var o=JSON.parse(raw);
+        if(o&&o.style&&Date.now()-(o.at||0)<PK_STYLE_TTL){PK.style=o.style;return Promise.resolve(o.style)}}}catch(e){}
+    }
+    return api("/api/ai/style"+(force?"?force=1":"")).then(function(d){
+      if(d&&d.ok&&d.style){PK.style=d.style;
+        try{localStorage.setItem(PK_LS,JSON.stringify({at:Date.now(),style:d.style}))}catch(e){}}
+      return PK.style;
+    }).catch(function(){return null});
+  }
+
+  // Instant, local next-word prediction from your own habits. Returns
+  // [{t:word, rep:charsToReplace}] — `rep` is set when we're completing a word
+  // you're part-way through typing.
+  function pkLocal(text){
+    var m=PK.style;if(!m)return [];
+    var out=[],seen={};
+    var push=function(w){if(!w)return;var k=w.toLowerCase();if(seen[k])return;seen[k]=1;out.push(w)};
+    var toks=text.match(PK_WORD)||[];
+    // Fresh message, or right after a finished sentence → your usual openers.
+    if(!toks.length||/[.!?]["'’)]?\s+$/.test(text))return (m.start||[]).slice(0,3).map(function(w){return {t:w,rep:0}});
+    var midWord=/[A-Za-z0-9'’\-$%]$/.test(text);
+    if(midWord){
+      var frag=toks[toks.length-1].toLowerCase();
+      var c1=toks.length>1?toks[toks.length-2].toLowerCase():null;
+      var c2=toks.length>2?(toks[toks.length-3].toLowerCase()+" "+c1):null;
+      // Words that both follow this context AND start with what you've typed are
+      // the best guesses; plain vocabulary fills any gaps.
+      [c2,c1].forEach(function(c){
+        if(!c)return;
+        ((m.next&&m.next[c])||[]).forEach(function(w){if(w.toLowerCase().indexOf(frag)===0&&w.length>frag.length)push(w)});
+      });
+      (m.words||[]).forEach(function(w){if(out.length<5&&w.toLowerCase().indexOf(frag)===0&&w.length>frag.length)push(w)});
+      return out.slice(0,3).map(function(w){return {t:w,rep:frag.length}});
+    }
+    var last=toks[toks.length-1].toLowerCase();
+    var pair=toks.length>1?(toks[toks.length-2].toLowerCase()+" "+last):null;
+    [pair,last].forEach(function(c){if(c)((m.next&&m.next[c])||[]).forEach(push)});
+    return out.slice(0,3).map(function(w){return {t:w,rep:0}});
+  }
+
+  function pkCaretAtEnd(){var i=el("msgInput");return i.selectionStart===i.value.length&&i.selectionEnd===i.value.length}
+
+  // Draw the AI's completion as dim text behind the caret. The ghost layer is an
+  // exact metric copy of the textarea, so the grey text lands where the next
+  // character would.
+  function pkGhost(comp,forText){
+    var g=el("msgGhost"),inp=el("msgInput");if(!g||!inp)return;
+    PK.ghost=comp||"";PK.ghostFor=comp?(forText==null?inp.value:forText):"";
+    if(!PK.ghost||inp.value!==PK.ghostFor){PK.ghost="";PK.ghostFor="";g.innerHTML="";autoGrow();return}
+    g.innerHTML=esc(inp.value)+'<i>'+esc(PK.ghost)+'</i>';
+    autoGrow();
+    g.scrollTop=inp.scrollTop;
+  }
+  function pkAcceptGhost(){
+    if(!PK.ghost)return false;
+    var inp=el("msgInput");if(inp.value!==PK.ghostFor)return false;
+    inp.value=inp.value+PK.ghost;
+    pkGhost("");autoGrow();updateCount();vibrate(6);
+    try{inp.setSelectionRange(inp.value.length,inp.value.length)}catch(e){}
+    inp.focus();pkOnType();return true;
+  }
+
+  function pkInsert(item){
+    var inp=el("msgInput");var text=inp.value;
+    var base=item.rep?text.slice(0,text.length-item.rep):text;
+    var word=item.t;
+    // Capitalize when it opens the message or a new sentence — same as a phone keyboard.
+    if(!/\S/.test(base)||/[.!?]["'’)]?\s*$/.test(base))word=word.charAt(0).toUpperCase()+word.slice(1);
+    var gap=(!item.rep&&base.length&&!/\s$/.test(base))?" ":"";
+    var tail=/[\s.!?,]$/.test(word)?"":" ";
+    inp.value=base+gap+word+tail;
+    pkGhost("");autoGrow();updateCount();vibrate(6);
+    try{inp.setSelectionRange(inp.value.length,inp.value.length)}catch(e){}
+    inp.focus();pkOnType();
+  }
+
+  function pkRender(){
+    var bar=el("predBar");if(!bar)return;
+    if(!pkEnabled()){bar.style.display="none";bar.innerHTML="";return}
+    var items=PK.chips.slice(0,4);
+    if(!items.length&&!PK.ghost){bar.style.display="none";bar.innerHTML="";return}
+    var h="";
+    if(PK.ghost){
+      h+='<button class="pb-c ai wide" type="button" data-ghost="1">'+ic("sparkles",12)+
+         '<span class="t">'+esc(PK.ghost.trim())+'</span></button>';
+    }
+    items.forEach(function(it,i){
+      h+='<button class="pb-c'+(it.ai?" ai":"")+'" type="button" data-i="'+i+'">'+
+         (it.ai?ic("sparkles",12):"")+'<span class="t">'+esc(it.t)+'</span></button>';
+    });
+    h+='<span class="pb-hint">'+(PK.ghost?"Tab":"AI")+'</span>';
+    bar.innerHTML=h;bar.style.display="flex";
+    Array.prototype.forEach.call(bar.querySelectorAll(".pb-c"),function(b){
+      // mousedown/touchstart, not click — the textarea must never lose the caret.
+      b.addEventListener("mousedown",function(e){e.preventDefault()});
+      b.onclick=function(e){
+        e.preventDefault();
+        if(b.getAttribute("data-ghost")){pkAcceptGhost();return}
+        var it=PK.chips[+b.getAttribute("data-i")];if(it)pkInsert(it);
+      };
+    });
+  }
+
+  function pkCachePut(k,v){
+    PK.cache[k]=v;PK.cacheKeys.push(k);
+    while(PK.cacheKeys.length>40){delete PK.cache[PK.cacheKeys.shift()]}
+  }
+  function pkApplyAi(text,r){
+    var inp=el("msgInput");if(inp.value!==text)return;      // he kept typing
+    if(r.completion&&pkCaretAtEnd())pkGhost(r.completion,text);
+    // The AI's short options ride alongside your own word predictions.
+    var aiChips=(r.options||[]).slice(0,2).map(function(o){return {t:o,rep:0,ai:true}});
+    var seen={};
+    PK.chips=aiChips.concat(pkLocal(text)).filter(function(c){
+      var k=c.t.toLowerCase();if(seen[k])return false;seen[k]=1;return true;
+    }).slice(0,3);
+    pkRender();
+  }
+  function pkAsk(text){
+    if(!pkEnabled()||PK.noAi)return;
+    if(text.length<3||text.length>300)return;
+    if((text.match(PK_WORD)||[]).length<2)return;    // one word in, nothing to go on yet
+    // A prediction we've already made is re-shown instantly (free); only the
+    // network call itself is de-duped, so coming back to the same text — after
+    // accepting or dismissing a ghost — still gets its suggestion.
+    if(PK.cache[text]){pkApplyAi(text,PK.cache[text]);return}
+    if(PK.asked===text)return;
+    // Too soon after the last one: wait out the gap instead of firing.
+    var wait=PK_MIN_GAP-(Date.now()-PK.lastAsk);
+    if(wait>0){clearTimeout(PK.timer);PK.timer=setTimeout(function(){pkAsk(el("msgInput").value)},wait);return}
+    PK.asked=text;PK.lastAsk=Date.now();
+    var seq=++PK.seq;var bar=el("predBar");if(bar)bar.classList.add("thinking");
+    post("/api/ai/predict",{phone:state.phone,text:text}).then(function(d){
+      if(seq!==PK.seq)return;                                // a newer keystroke won
+      if(bar)bar.classList.remove("thinking");
+      if(!(d&&d.ok)){if(d&&d.error==="no_ai")PK.noAi=true;return}
+      var r={completion:d.completion||"",options:d.options||[]};
+      pkCachePut(text,r);pkApplyAi(text,r);
+    }).catch(function(){if(seq===PK.seq&&bar)bar.classList.remove("thinking")});
+  }
+
+  // Runs on every keystroke: instant local chips now, AI a beat after you pause.
+  function pkOnType(){
+    if(!pkEnabled()){pkHide();return}
+    var v=el("msgInput").value;
+    if(PK.ghostFor!==v)pkGhost("");
+    if(!PK.style){pkLoadStyle(false).then(function(m){if(m)pkOnType()})}
+    PK.chips=pkLocal(v);
+    pkRender();
+    clearTimeout(PK.timer);
+    PK.timer=setTimeout(function(){pkAsk(el("msgInput").value)},PK_DEBOUNCE);
+  }
+
   function aiDraft(){
     var t=state.thread;if(!t)return;
     var b=el("draftBtn");b.disabled=true;b.innerHTML='<span class="spin"></span>';
@@ -4182,7 +4416,7 @@
       state.thread.messages.push({id:tempId,dir:"out",body:body,ts:Date.now(),kind:"manual",status:"sending",by:payload.by});
       renderThread();
     }
-    inp.value="";autoGrow();updateCount();hideAiReview();
+    inp.value="";autoGrow();updateCount();hideAiReview();PK.asked="";pkOnType();
     var fail=function(errMsg){
       var mm=state.thread&&state.thread.phone===forPhone&&(state.thread.messages||[]).find(function(x){return x.id===tempId});
       if(mm){mm.status="failed";mm.error=errMsg;renderThread()}
@@ -4307,7 +4541,21 @@
     });
   }
   function updateCount(){var v=el("msgInput").value;var n=v.length;el("charCount").textContent=n?n+" · "+Math.ceil(n/160)+" SMS":""}
-  function autoGrow(){var ta=el("msgInput");ta.style.height="46px";ta.style.height=Math.min(ta.scrollHeight,140)+"px"}
+  // Grows for what you typed AND for the AI's ghost completion behind it, so a
+  // suggestion that runs onto a second line is never clipped.
+  function autoGrow(){
+    var ta=el("msgInput");
+    // Anything that fills the box without a keystroke — a quick reply, an accepted
+    // AI draft, dictation — invalidates a ghost drawn for the old text. Drop it
+    // here so the two layers can never disagree.
+    var gg=el("msgGhost");
+    if(gg&&gg.innerHTML&&PK&&PK.ghostFor!==ta.value){gg.innerHTML="";PK.ghost="";PK.ghostFor="";pkRender()}
+    ta.style.height="46px";
+    var h=ta.scrollHeight;
+    // scrollHeight excludes borders, and the box is border-box sized — add them back.
+    var g=el("msgGhost");if(g&&g.innerHTML)h=Math.max(h,g.scrollHeight+(g.offsetHeight-g.clientHeight));
+    ta.style.height=Math.min(h,140)+"px";
+  }
 
   // ---- appointment reminders ----
   var remSel={when:0,tpl:0};
@@ -4360,7 +4608,7 @@
   function setTab(tab){
     state.tab=tab;state.phone=null;document.body.classList.remove("viewing");
     el("details").classList.remove("open");el("sheetScrim").classList.remove("show");
-    el("emptyState").style.display="flex";el("chatHead").style.display="none";el("composer").style.display="none";el("schedBanner").style.display="none";el("fuBanner").style.display="none";el("remindBanner").style.display="none";
+    el("emptyState").style.display="flex";el("chatHead").style.display="none";el("composer").style.display="none";el("schedBanner").style.display="none";el("fuBanner").style.display="none";el("remindBanner").style.display="none";pkHide();
     el("coachPanel").style.display="none";el("coachPanel")._phone=null;el("teamIdentityBar").style.display="none";
     hideAiReview();
     el("messages").innerHTML="";
@@ -4450,8 +4698,21 @@
   el("dtRename").onclick=function(){var v=prompt("Contact name:",state.thread.name||"");if(v!==null)saveMeta({name:v.trim()})};
   el("dtArchive").onclick=function(){var t=state.thread;doArchiveToggle(t);closeDetails();if(!t.archived){document.body.classList.remove("viewing");state.phone=null}};
 
-  el("msgInput").addEventListener("input",function(){updateCount();autoGrow()});
-  el("msgInput").addEventListener("keydown",function(e){if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}});
+  el("msgInput").addEventListener("input",function(){updateCount();autoGrow();pkOnType()});
+  el("msgInput").addEventListener("keydown",function(e){
+    // Predictive keyboard first: Tab (or → at the very end) takes the AI's
+    // completion, Esc waves it off. Everything else falls through to Enter=send.
+    if(PK.ghost&&!e.shiftKey&&!e.ctrlKey&&!e.metaKey){
+      if(e.key==="Tab"||(e.key==="ArrowRight"&&pkCaretAtEnd())){if(pkAcceptGhost()){e.preventDefault();return}}
+      if(e.key==="Escape"){pkGhost("");pkRender();return}
+    }
+    if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();sendMessage()}
+  });
+  el("msgInput").addEventListener("scroll",function(){var g=el("msgGhost");if(g)g.scrollTop=el("msgInput").scrollTop});
+  el("msgInput").addEventListener("click",function(){if(PK.ghost&&!pkCaretAtEnd()){pkGhost("");pkRender()}});
+  el("msgInput").addEventListener("blur",function(){var b=el("predBar");if(b)b.classList.remove("thinking")});
+  // Tapping into an empty box offers the openers you actually use, like a phone keyboard.
+  el("msgInput").addEventListener("focus",function(){pkOnType()});
   el("dtNotes").addEventListener("blur",function(){if(state.thread&&el("dtNotes").value!==(state.thread.notes||""))saveMeta({notes:el("dtNotes").value})});
   function closePops(except){["tplMenu","schedPop","remPop","writePop","toolsSheet"].forEach(function(id){if(id!==except)el(id).style.display="none"})}
   el("tplBtn").onclick=function(){var m=el("tplMenu");closePops("tplMenu");m.style.display=m.style.display==="none"?"block":"none"};

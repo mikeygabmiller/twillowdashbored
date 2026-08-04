@@ -33,6 +33,16 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
 - **Instant email alerts (optional, Resend):** get emailed the moment a text,
   call, missed call, voicemail, or quote comes in — free, instead of paying Twilio
   to text your own phone. Falls back to SMS automatically if email isn't set up.
+- **AI predictive keyboard:** a Gboard-style suggestion strip above the message
+  box that knows how *you* text. Two layers: a tiny **typing model built from the
+  texts you've actually sent** (your openers, which word follows which, your real
+  vocabulary) runs in the browser on every keystroke — instant, offline, free;
+  and the **AI** reads the conversation a beat after you pause and finishes the
+  sentence in your voice as dim ghost text behind the cursor. Tap the ✨ chip or
+  press <kbd>Tab</kbd> to take it, tap a word chip to add just that word. It only
+  learns from messages you typed yourself (automated follow-ups are excluded),
+  retrains twice a day, and has a **Relearn how I text** button plus an on/off
+  switch in the menu. Without a Gemini key the local half still works on its own.
 - **AI helpers (optional, Gemini):** conversation summary, draft/polish a reply,
   and an inbox triage briefing.
 - **Editable quick-reply templates**, contact rename, pin, and archive.
@@ -135,3 +145,4 @@ Dashboard API: `/api/health` `/api/threads` `/api/thread` `/api/send` `/api/meta
 Website analytics: `/api/analytics` (pixel) `/api/webstats` `/api/webstats/status`
 `/api/webstats/connect` `/api/webstats/disconnect` `/api/webstats/ai`
 AI (Gemini): `/api/ai/summary` `/api/ai/draft` `/api/ai/triage`
+Predictive keyboard: `/api/ai/style` (your typing model) `/api/ai/predict` (next-phrase)
