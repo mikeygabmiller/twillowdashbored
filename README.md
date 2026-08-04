@@ -144,6 +144,18 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
 - **Instant email alerts (optional, Resend):** get emailed the moment a text,
   call, missed call, voicemail, or quote comes in — free, instead of paying Twilio
   to text your own phone. Falls back to SMS automatically if email isn't set up.
+- **AI predictive keyboard:** a phone-keyboard-style suggestion strip above the
+  message box that knows how *you* text. Two layers: the **voice corpus** (the
+  same real texts Train AI learns from, imports included) is boiled down to a
+  tiny typing model — your openers, which word follows which, your actual
+  vocabulary — that runs **in the browser on every keystroke**, instant and free;
+  and the **AI** reads the conversation a beat after you pause and finishes the
+  sentence in your voice as dim ghost text behind the cursor. Tap the ✨ chip or
+  press <kbd>Tab</kbd> to take it, tap a word chip to add just that word. It
+  shares the row with the contextual quick replies — those answer *what do I
+  send*, this answers *what's my next word*. Rebuilt twice a day, with a
+  **Relearn how I text** button and an on/off switch in the menu; the local half
+  keeps working even with no AI key configured.
 - **AI helpers (optional, Gemini):** conversation summary, draft/polish a reply,
   and an inbox triage briefing.
 - **Editable quick-reply templates**, contact rename, pin, and archive.
@@ -330,6 +342,7 @@ Dashboard API: `/api/health` `/api/threads` `/api/thread` `/api/send` `/api/meta
 Website analytics: `/api/analytics` (pixel) `/api/webstats` `/api/webstats/status`
 `/api/webstats/connect` `/api/webstats/disconnect` `/api/webstats/ai`
 AI (Gemini): `/api/ai/summary` `/api/ai/draft` `/api/ai/triage` `/api/ai/agent`
+Predictive keyboard: `/api/ai/style` (your typing model) `/api/ai/predict` (next phrase)
 Job Day suite: `/api/day` `/api/day/state` `/api/day/job` `/api/day/remove`
 `/api/day/order` · `/api/track/start` `/api/track/ping` `/api/track/stop` ·
 `/api/push/key` `/api/push/subscribe` `/api/push/unsubscribe` `/api/push/test`
