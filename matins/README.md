@@ -99,22 +99,31 @@ Verify the sending domain in Resend, then set `FROM_EMAIL` in `wrangler.toml`
 
 ### 4. The Pages site
 
-Create the public repo named in `SITE_REPO` (e.g. `mikeygabmiller/matins`),
-enable GitHub Pages on its default branch, then:
+Create the public repo named in `SITE_REPO` (e.g. `mikeygabmiller/matins`) —
+initialised with a README so it has a branch — and enable GitHub Pages on it
+(Settings → Pages → deploy from `main`, root).
+
+**That is the whole job. The Worker fills the repo in.** On its first publish it
+writes the landing page, `mark.svg` and `.nojekyll` into an empty repo, and from
+then on commits each day's issue: `/<YYYY-MM-DD>/index.html` (the permalink),
+`/archive/index.html`, `/today/index.html`, and `/issues/<date>.json`. The
+issue pages and archive are rewritten daily; the landing page and mark are
+written **once and never overwritten**, so anything you hand-edit there
+survives.
+
+The signup form it writes points at `WORKER_URL` — set that in `wrangler.toml`
+to the deployed Worker URL, since the cron has no incoming request to infer it
+from.
+
+`npm run site` renders the same static files locally if you would rather commit
+them yourself:
 
 ```bash
 WORKER_URL=https://matins.<your-subdomain>.workers.dev npm run site
 ```
 
-That writes `site/` — the signup landing page, an empty archive, a `/today`
-redirect, `mark.svg`, and `.nojekyll`. Commit the contents of `site/` to the
-Pages repo. **Re-run it with the real `WORKER_URL`**: the committed copy here
-points at `matins.REPLACE-ME.workers.dev` so a misconfiguration is obvious
-rather than silent.
-
-From then on the Worker commits each day's issue to that repo itself:
-`/<YYYY-MM-DD>/index.html` (the permalink), `/archive/index.html`,
-`/today/index.html`, and `/issues/<date>.json`.
+The copy committed in `site/` is built for
+`https://matins.mikeysdetailingsnohomish.workers.dev`.
 
 ### 5. Deploy
 
@@ -150,7 +159,11 @@ the daylight-saving shift; the handler ignores any run whose local hour is not
 | `POST /admin/run?date=&force=1&send=0` | run the daily job by hand |
 | `GET /admin/status` | build, send lock, subscriber counts |
 
-`/admin/*` requires `Authorization: Bearer $ADMIN_TOKEN`.
+`/admin/*` requires `Authorization: Bearer $ADMIN_TOKEN`. The two **read-only
+GET** routes also accept `?token=$ADMIN_TOKEN`, so a preview can be opened from
+a phone browser, which cannot set headers. That puts the token in URLs and
+request logs — `POST /admin/run`, the only route that builds and sends, never
+accepts it. Rotate `ADMIN_TOKEN` whenever you want; nothing else depends on it.
 
 Confirm and unsubscribe links are HMAC-SHA256 tokens over `purpose:email`, so a
 link cannot be forged, guessed, or reused for the other purpose.

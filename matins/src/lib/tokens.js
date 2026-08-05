@@ -44,6 +44,11 @@ export async function readToken({ secret, purpose, token }) {
   }
 }
 
+export function safeEqualString(a, b) {
+  const enc2 = new TextEncoder();
+  return timingSafeEqual(enc2.encode(String(a)), enc2.encode(String(b)));
+}
+
 function timingSafeEqual(a, b) {
   if (a.length !== b.length) return false;
   let diff = 0;

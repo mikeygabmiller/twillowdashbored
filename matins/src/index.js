@@ -10,6 +10,7 @@ import { subscribe, confirm, unsubscribe, activeSubscribers, subscriberCounts } 
 import { renderNotice, renderSignupPage } from './render/web.js';
 import { renderEmail } from './render/email.js';
 import { json, html } from './lib/http.js';
+import { safeEqualString } from './lib/tokens.js';
 import { isValidDate } from './lib/calendar.js';
 import { BUILD } from './build.js';
 
@@ -58,7 +59,7 @@ export default {
 
       // --- admin (ADMIN_TOKEN) --------------------------------------------
       if (path.startsWith('/admin/')) {
-        if (!cfg.adminToken || bearer(request) !== cfg.adminToken) return json({ error: 'unauthorized' }, { status: 401 });
+        if (!adminAuthorized(request, url, cfg)) return json({ error: 'unauthorized' }, { status: 401 });
 
         // Dry run in production: builds and renders, sends and marks nothing.
         if (path === '/admin/preview') {
@@ -164,6 +165,19 @@ function wantsJson(request) {
 function bearer(request) {
   const h = request.headers.get('authorization') || '';
   return h.startsWith('Bearer ') ? h.slice(7) : null;
+}
+
+// The Authorization header is the real mechanism. Read-only GET routes also
+// accept ?token=, so a preview can be opened from a phone browser — which
+// cannot set headers. That puts the token in URLs and request logs, so the one
+// route that actually builds and sends (POST /admin/run) never accepts it.
+function adminAuthorized(request, url, cfg) {
+  if (!cfg.adminToken) return false;
+  const header = bearer(request);
+  if (header && safeEqualString(header, cfg.adminToken)) return true;
+  if (request.method !== 'GET') return false;
+  const query = url.searchParams.get('token');
+  return !!query && safeEqualString(query, cfg.adminToken);
 }
 
 function cors() {

@@ -22,6 +22,10 @@ LLM_MODEL = ""
 FROM_EMAIL = "Matins <matins@example.com>"
 REPLY_TO = ""
 SITE_URL = "https://mikeygabmiller.github.io/matins"
+# This Worker's own origin. Request-time routes detect it automatically; the
+# cron has no request to read it from, so confirm/unsubscribe links and the
+# published signup form use this. Must match the deployed Worker URL.
+WORKER_URL = "https://matins.mikeysdetailingsnohomish.workers.dev"
 CALENDAR_LOCALE = "en-US"
 READINGS_API_BASE = "https://cpbjr.github.io/catholic-readings-api"
 # Optional public-domain Douay-Rheims text source for the verse of the day.
