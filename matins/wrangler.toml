@@ -18,11 +18,14 @@ SEND_HOUR = "5"
 SEND_TZ = "America/Los_Angeles"
 # "anthropic" | "gemini" | "stub" (stub = deterministic offline text, never calls out)
 LLM_PROVIDER = "gemini"
-# Blank uses the provider default (gemini-2.5-flash / claude-sonnet-5). If the
-# API answers 404 for that model name, put a current one here — the preview
-# JSON reports the exact error under safetyReport.degraded.
+# Blank uses the provider default (gemini-3.6-flash / claude-sonnet-5). Model
+# names go stale — GET /admin/models lists what your key can actually reach.
+# If the API 404s on the default, put a current name here.
 LLM_MODEL = ""
-FROM_EMAIL = "Matins <matins@example.com>"
+# Resend's shared sender needs no DNS and delivers ONLY to your own Resend
+# account address — right for a first look, useless for real subscribers.
+# Verify a domain in Resend and change this before anyone else signs up.
+FROM_EMAIL = "Matins <onboarding@resend.dev>"
 REPLY_TO = ""
 SITE_URL = "https://mikeygabmiller.github.io/matins"
 # This Worker's own origin. Request-time routes detect it automatically; the
@@ -37,8 +40,9 @@ DR_API_BASE = "https://bible-api.com"
 # GitHub Pages repo the web archive is committed to.
 SITE_REPO = "mikeygabmiller/matins"
 SITE_BRANCH = "main"
-# Set to "1" to keep auto-send off (build + publish only). Flip to "0" to send.
-SEND_PAUSED = "1"
+# "1" builds and publishes without emailing. Now "0": the daily cron sends to
+# every CONFIRMED subscriber. Nobody is emailed until they double opt in.
+SEND_PAUSED = "0"
 
 # Subscribers, issue archive, rotation state. Create with:
 #   npx wrangler kv namespace create DEVOTIONAL
