@@ -115,6 +115,16 @@ export default {
             sentToday: await store.getJson(`sent:${date}`),
             subscribers: await subscriberCounts(store),
             provider: cfg.llmProvider,
+            model: cfg.llmModel,
+            fromEmail: cfg.fromEmail,
+            // Which secrets are present — never their values.
+            secretsSet: {
+              LLM_API_KEY: !!cfg.llmApiKey,
+              RESEND_API_KEY: !!cfg.resendKey,
+              TOKEN_SECRET: !!cfg.tokenSecret,
+              GITHUB_TOKEN: !!cfg.githubToken,
+            },
+            lastEmailError: await store.getJson('diag:lastEmailError'),
           });
         }
       }
