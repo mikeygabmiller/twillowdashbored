@@ -1,0 +1,22 @@
+{
+  "name": "matins",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Matins — a daily Catholic devotional. Cloudflare Worker + KV, email via Resend, web archive on GitHub Pages.",
+  "scripts": {
+    "preview": "node scripts/preview.mjs",
+    "site": "node scripts/build-site.mjs",
+    "test": "node --test 'test/**/*.test.mjs'",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "dependencies": {
+    "@romcal/calendar.united-states": "3.0.0-dev.125",
+    "romcal": "3.0.0-dev.125"
+  },
+  "devDependencies": {
+    "wrangler": "^3.99.0"
+  }
+}
