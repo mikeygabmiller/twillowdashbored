@@ -40,7 +40,15 @@ export async function subscribe({ store, cfg, rawEmail, fetchImpl }) {
   const url = `${cfg.workerUrl}/confirm?t=${encodeURIComponent(token)}`;
   const mail = confirmationEmail({ cfg, url });
   const res = await sendOne({ cfg, to: email, ...mail, fetchImpl });
-  if (!res.ok) return { ok: false, status: 502, message: 'We could not send the confirmation email. Try again in a minute.', error: res.error };
+  if (!res.ok) {
+    // The reader gets a calm message; whoever is on call needs the real reason,
+    // which is almost always an unverified sender or a missing Resend key.
+    console.error(`subscribe: confirmation email to ${email} failed — ${res.error}`);
+    // Also kept where it can be read from a browser, since /admin/status is the
+    // only diagnostic surface for someone running this without a terminal.
+    await store.putJson('diag:lastEmailError', { at: new Date().toISOString(), kind: 'confirmation', error: res.error }).catch(() => {});
+    return { ok: false, status: 502, message: 'We could not send the confirmation email. Try again in a minute.', error: res.error };
+  }
 
   return { ok: true, status: 200, message: 'Check your inbox — click the link and you are in.', state: 'pending' };
 }
