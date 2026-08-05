@@ -41,7 +41,7 @@ SEND_PAUSED = "1"
 #   npx wrangler kv namespace create DEVOTIONAL
 [[kv_namespaces]]
 binding = "DEVOTIONAL"
-id = "REPLACE_WITH_KV_NAMESPACE_ID"
+id = "2469221591314033a84969f0f5815e69"
 
 # Daily build + send. Cron is UTC: 12:00 UTC = 5am PDT / 4am PST.
 # Keep SEND_HOUR/SEND_TZ in sync — the handler re-checks local time and skips
