@@ -86,7 +86,18 @@ export default {
 
       // --- admin (ADMIN_TOKEN) --------------------------------------------
       if (path.startsWith('/admin/')) {
-        if (!adminAuthorized(request, url, cfg)) return json({ error: 'unauthorized' }, { status: 401 });
+        // "Unauthorized" conflates two very different problems: a wrong token,
+        // and no token configured at all. Saying which costs nothing — that the
+        // secret is unset is not a secret — and saves a blind hunt.
+        if (!cfg.adminToken) {
+          return json(
+            { error: 'admin is not configured', hint: 'The ADMIN_TOKEN secret is not set on this Worker. Add it under Settings → Variables and Secrets, as a Secret (a plain-text Variable is wiped by the next deploy).' },
+            { status: 503 }
+          );
+        }
+        if (!adminAuthorized(request, url, cfg)) {
+          return json({ error: 'unauthorized', hint: 'ADMIN_TOKEN is set but does not match. Check for a trailing space, and prefer letters and digits only — a token with +, &, # or % is mangled by the query string.' }, { status: 401 });
+        }
 
         // Dry run in production: builds and renders, sends and marks nothing.
         if (path === '/admin/preview') {
