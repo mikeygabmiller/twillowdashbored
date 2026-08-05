@@ -57,6 +57,13 @@
 // env is identical across every request of a deployment (bindings + secrets
 // don't change per request), so stashing it in module scope is safe even under
 // concurrency. Each invocation sets it before doing any work.
+// The morning rundown lives in its own modules (src/digest*.js) and talks to
+// this file only through the small `digestCtx()` bridge further down — it
+// borrows Gemini, email, the money ledger, the lead index and the booking
+// calendar, and owns nothing else in here.
+import { digestRoute } from './digest-api.js';
+import { digestCron, digestIngest } from './digest.js';
+
 let ENV = null;
 // Per-invocation cache of the KV `config` doc so a single request/cron tick
 // doesn't re-read it for every thread it touches. Cleared at the top of each
@@ -74,7 +81,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-04·ai-keyboard';
+const BUILD = '2026-08-05·morning-rundown';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -115,6 +122,10 @@ async function runCron() {
   await maybeDailyBrief().catch(() => {});
   await maybeWeeklyRecap().catch(() => {});
   await maybePayReminders().catch(() => {});
+  // The morning rundown: the 7am digest, its reminders, the weekly rollup and
+  // the hourly breaking check. Same rule as the money cron — it must never be
+  // able to break the SMS side.
+  await digestCron(digestCtx()).catch(() => {});
 }
 
 // Private "remind me to follow up on <date>" reminders — a nudge to Mikey, not a
@@ -173,6 +184,13 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname.startsWith('/t/'))      return trackPage(pathname.slice(3).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40));
   if (request.method === 'GET'  && pathname.startsWith('/p/'))      return payPage(pathname.slice(3).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40));
   if (request.method === 'GET'  && pathname === '/api/track/state') return apiTrackState(url);
+  // Morning-rundown one-tap buttons (Buy / Not for me / Remind me Friday).
+  // Public by necessity — they're tapped from an email client with no session —
+  // and authorized by the signed, expiring token in the path itself.
+  if (pathname.startsWith('/d/a/')) {
+    const r = await digestRoute(request, url, digestCtx());
+    if (r) return r;
+  }
 
   if (request.method === 'GET'  && pathname === '/api/version')    return json({ ok: true, build: BUILD });
   if (request.method === 'POST' && pathname === '/api/login')      return apiLogin(request);
@@ -237,6 +255,12 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/ai/generate') return apiAiGenerate(request);
 
   // Website analytics (Grow hub) — rollup of the /px pixel data.
+  // Morning rundown — settings, context doc, preview/send, archive, feedback.
+  if (pathname.startsWith('/api/digest')) {
+    const r = await digestRoute(request, url, digestCtx());
+    if (r) return r;
+  }
+
   if (request.method === 'GET'  && pathname === '/api/analytics')   return apiAnalytics(url);
 
   // Website analytics command center — GA4 + Microsoft Clarity, merged & cached.
@@ -800,8 +824,23 @@ async function runAssist({ text, cfg, reply, channel, forcedPhone }) {
 }
 
 // Entry point 1 — a text from Mikey's own cell to the business number.
+// A `#` prefix hands the text to the morning rundown instead of the assist loop
+// — a note captured mid-job, an answer to the question of the day, or a retune.
+// It has to be explicit: the assist loop reads a bare "375, thursday works" as
+// facts for a customer reply, so an unprefixed "ran out of towels" must keep
+// going there rather than being quietly swallowed as digest context.
+const DIGEST_SMS_PREFIX = /^#(note|answer|tune|retune|digest)\b/i;
+
 async function handleOwnerSms(rawText) {
   const cfg = await loadConfig();
+  if (DIGEST_SMS_PREFIX.test(String(rawText || '').trim())) {
+    try {
+      const r = await digestIngest(digestCtx(), { text: rawText, source: 'sms' });
+      return twiml(r.reply || 'Captured.');
+    } catch (err) {
+      return twiml('Could not save that: ' + String((err && err.message) || err).slice(0, 120));
+    }
+  }
   if (cfg.assistSms === false) return twiml('');   // feature off — stay silent
   await runAssist({ text: rawText, cfg, channel: 'sms', reply: ownerSay });
   return twiml('');
@@ -1790,15 +1829,22 @@ function pemToArrayBuffer(pem) {
   for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
   return buf.buffer;
 }
-async function gaAccessToken(creds) {
-  const cached = await kv().get('webstats:gatok', { type: 'json' });
+// `scope` defaults to Analytics (what the Website tab needs). The morning
+// rundown asks for Drive/Sheets/TTS scopes off the SAME service account, so the
+// token cache is keyed by scope — otherwise a Drive call would happily reuse an
+// analytics-only token and 403 in a way that looks like a permissions problem.
+const GA_SCOPE = 'https://www.googleapis.com/auth/analytics.readonly';
+async function gaAccessToken(creds, scope) {
+  const useScope = scope || GA_SCOPE;
+  const cacheKey = 'webstats:gatok' + (useScope === GA_SCOPE ? '' : ':' + await fnv1aHex(useScope));
+  const cached = await kv().get(cacheKey, { type: 'json' });
   if (cached && cached.email === creds.client_email && cached.exp > Date.now() + 120000) return cached.token;
   const iat = Math.floor(Date.now() / 1000);
   const aud = creds.token_uri || 'https://oauth2.googleapis.com/token';
   const enc = (obj) => b64urlFromBytes(new TextEncoder().encode(JSON.stringify(obj)));
   const unsigned = enc({ alg: 'RS256', typ: 'JWT' }) + '.' + enc({
     iss: creds.client_email,
-    scope: 'https://www.googleapis.com/auth/analytics.readonly',
+    scope: useScope,
     aud, iat, exp: iat + 3600,
   });
   const key = await crypto.subtle.importKey('pkcs8', pemToArrayBuffer(creds.private_key),
@@ -1813,11 +1859,23 @@ async function gaAccessToken(creds) {
   if (!res.ok) throw new Error('Google auth ' + res.status + ': ' + (await res.text()).slice(0, 180));
   const data = await res.json();
   // Cache ~55 min (1 KV write per hour of active use, max).
-  await kv().put('webstats:gatok', JSON.stringify({
+  await kv().put(cacheKey, JSON.stringify({
     token: data.access_token, email: creds.client_email,
     exp: Date.now() + Math.max(60, (data.expires_in || 3600) - 300) * 1000,
   }), { expirationTtl: 3600 });
   return data.access_token;
+}
+
+// Any-scope token off the same service account, for the morning rundown's
+// optional Google Doc / Sheet / text-to-speech reads. Throws when no account is
+// connected so the caller can fall back to its KV copy.
+async function googleTokenForScope(scope) {
+  const sec = await webstatsSecrets();
+  if (!sec.gaJson) throw new Error('no Google service account connected');
+  let creds;
+  try { creds = JSON.parse(sec.gaJson); } catch { throw new Error('service account JSON is not valid JSON'); }
+  if (!creds.client_email || !creds.private_key) throw new Error('service account JSON is missing client_email/private_key');
+  return gaAccessToken(creds, scope);
 }
 
 // --- GA4 Data API ---
@@ -3212,11 +3270,35 @@ async function handleEmailIn(request) {
     await handleAssistEmail(cfg, email, assistPhone);
     return json({ ok: true, assist: true });
   }
+  // Mikey replying to his own morning rundown is the other half of that loop:
+  // the reply retunes tomorrow, or answers the question of the day into the
+  // context doc. Checked after the assist loop (which owns anything carrying a
+  // [ref:…] marker) and matched narrowly on his own address plus the rundown
+  // subject, so ordinary mail is never read as an instruction.
+  const fromSelf = ENV.ALERT_EMAIL && email.from.toLowerCase().includes(String(ENV.ALERT_EMAIL).toLowerCase());
+  if (fromSelf && /morning rundown|rundown —|^re:.*rundown/i.test(email.subject)) {
+    const reply = replyBodyOnly(email.body);
+    if (reply) {
+      const r = await digestIngest(digestCtx(), { text: reply, source: 'email' }).catch(() => null);
+      if (r) return json({ ok: true, digest: r.intent, reply: r.reply });
+    }
+  }
+
   list.unshift(email);
   if (list.length > 60) list.length = 60;
   await kv().put('emails', JSON.stringify(list));
   return json({ ok: true });
 }
+
+// Strip the quoted original off an email reply. Without this the rundown would
+// ingest its own text back as "context" every time he answers a question.
+function replyBodyOnly(body) {
+  const cut = String(body || '')
+    .split(/^\s*(?:On .+ wrote:|-{2,}\s*Original Message|_{5,}|From: )/m)[0]
+    .split(/\n\s*>/)[0];
+  return cut.replace(/\s+$/, '').slice(0, 4000).trim();
+}
+
 async function apiEmails() {
   const list = (await kv().get('emails', { type: 'json' })) || [];
   return json({ ok: true, emails: list });
@@ -5920,6 +6002,28 @@ async function moneyCron(now = Date.now()) {
 // ===========================================================================
 // Storage model (Cloudflare KV)
 // ===========================================================================
+// ===========================================================================
+// Morning Rundown bridge
+// ---------------------------------------------------------------------------
+// The digest modules are deliberately dependency-free: they take a context
+// object and never reach into this file's module scope. That is what lets the
+// whole pipeline — sources, verification, ranking, rendering — run offline in
+// test/digest.test.mjs against fake KV, fake fetch and a fake model.
+// ===========================================================================
+function digestCtx() {
+  return {
+    env: ENV,
+    kv: kv(),
+    gemini: (prompt, opts) => geminiGenerate(prompt, opts),
+    notify: (subject, body) => notifyMikey(subject, body),
+    sendMail: ({ subject, text, html, to }) => sendEmail(subject, text, { html, to }),
+    googleToken: (scope) => googleTokenForScope(scope),
+    loadConfig, loadIndex, loadThread, loadBookings,
+    loadMonth, summarizeMonth, summarizeWeek, weekWindow, prevMonthKey,
+    publicBase, json, readJson,
+  };
+}
+
 const INDEX_KEY = 'threads-index';
 const threadKey = (phone) => `thread:${phone}`;
 
@@ -7471,6 +7575,11 @@ async function geminiGenerate(prompt, opts = {}) {
     maxOutputTokens: opts.maxTokens || 1024,
   };
   if (opts.json) gen.responseMimeType = 'application/json';
+  // A server-enforced schema turns "the model returned a slightly different
+  // shape" from a rendering bug into an impossibility. Used by the morning
+  // rundown, whose per-topic responses are big enough that a hand-parsed shape
+  // would drift.
+  if (opts.schema) { gen.responseMimeType = 'application/json'; gen.responseSchema = opts.schema; }
   // Gemini 2.5 models "think" by default, and those hidden thinking tokens are
   // spent out of maxOutputTokens — which was truncating replies mid-sentence
   // (and sometimes leaving nothing at all). These are short, direct tasks, so
@@ -7521,17 +7630,22 @@ async function notifyMikey(subject, body) {
 // a phone notification. ALERT_FROM must be a Resend-verified sender; until a
 // domain is verified, Resend only allows onboarding@resend.dev -> your own
 // account email, which is exactly the single-recipient case here.
-async function sendEmail(subject, text) {
-  const to = ENV.ALERT_EMAIL;
-  const from = ENV.ALERT_FROM || 'Mikeys Dashboard <onboarding@resend.dev>';
+// `opts` covers the richer sends (the morning rundown): an HTML body, a
+// different recipient, a different From. Plain alerts keep calling this with two
+// arguments and behave exactly as before.
+async function sendEmail(subject, text, opts = {}) {
+  const to = opts.to || ENV.ALERT_EMAIL;
+  const from = opts.from || ENV.ALERT_FROM || 'Mikeys Dashboard <onboarding@resend.dev>';
   if (!to) throw new Error('ALERT_EMAIL not set');
+  const payload = { from, to: [to], subject, text };
+  if (opts.html) payload.html = opts.html;
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${ENV.RESEND_API_KEY}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ from, to: [to], subject, text }),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error(`Resend ${res.status}: ${(await res.text()).slice(0, 300)}`);
   return res.json();

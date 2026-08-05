@@ -1,0 +1,830 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#14140f">
+<title>Morning Rundown</title>
+<link rel="icon" href="/favicon.svg">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  :root{
+    --bg:#14140f; --panel:#1d1d17; --panel2:#26261e; --line:#33332a;
+    --ink:#f5f5ef; --mute:#9a9a8e; --accent:#c0261f; --accent2:#e8433a;
+    --good:#3fa971; --warn:#d79a2b;
+  }
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Helvetica,Arial,sans-serif;
+    font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  a{color:var(--accent2)}
+  header{position:sticky;top:0;z-index:20;background:rgba(20,20,15,.96);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line);padding:calc(env(safe-area-inset-top) + 10px) 14px 0}
+  .htop{display:flex;align-items:center;gap:10px}
+  .htop h1{font-size:17px;margin:0;font-weight:800;letter-spacing:-.2px;flex:1}
+  .htop .sub{font-size:11px;color:var(--mute);font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+  nav{display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;margin-top:9px;padding-bottom:2px}
+  nav::-webkit-scrollbar{display:none}
+  nav button{flex:0 0 auto;background:none;border:0;border-bottom:2px solid transparent;color:var(--mute);
+    font:inherit;font-size:13px;font-weight:700;padding:8px 11px;cursor:pointer;white-space:nowrap}
+  nav button.on{color:var(--ink);border-bottom-color:var(--accent)}
+  main{padding:14px 12px calc(env(safe-area-inset-bottom) + 40px);max-width:760px;margin:0 auto}
+  .view{display:none} .view.on{display:block}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:15px;margin-bottom:12px}
+  .card h2{font-size:12px;letter-spacing:.11em;text-transform:uppercase;color:var(--mute);margin:0 0 10px;font-weight:800}
+  .card p.help{font-size:12.5px;color:var(--mute);margin:0 0 11px;line-height:1.6}
+  label{display:block;font-size:12px;font-weight:700;color:var(--mute);margin:11px 0 5px}
+  input[type=text],input[type=number],input[type=password],textarea,select{
+    width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:9px;color:var(--ink);
+    font:inherit;font-size:14px;padding:10px 11px;outline:none}
+  input:focus,textarea:focus,select:focus{border-color:var(--accent)}
+  textarea{resize:vertical;min-height:80px;line-height:1.55}
+  textarea.tall{min-height:340px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px}
+  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .row>*{flex:1 1 auto}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  /* Anchors wear .btn too (the MP3 link), so these can't be button-only rules. */
+  .btn{display:inline-block;background:var(--accent);border:0;color:#fff;font:inherit;font-weight:700;
+    font-size:14px;padding:11px 15px;border-radius:9px;cursor:pointer;text-decoration:none;text-align:center}
+  .btn:disabled{opacity:.5}
+  .btn.ghost{background:var(--panel2);color:var(--ink);border:1px solid var(--line)}
+  .btn.sm{padding:7px 11px;font-size:13px}
+  .chip{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-radius:999px;
+    padding:4px 10px;font-size:12px;font-weight:700;margin:0 5px 5px 0}
+  .chip.up{border-color:#2c6b47;color:#7fd5a6} .chip.down{border-color:#7a2a26;color:#f0928c}
+  .sw{display:flex;align-items:center;gap:9px;padding:8px 0;border-bottom:1px solid var(--line)}
+  .sw:last-child{border-bottom:0}
+  .sw label{margin:0;flex:1;font-size:13.5px;color:var(--ink);font-weight:600}
+  .sw input[type=checkbox]{width:20px;height:20px;accent-color:var(--accent);flex:0 0 auto}
+  .sw input[type=number]{width:74px;flex:0 0 auto}
+  .status{font-size:12.5px;color:var(--mute);margin-top:9px;min-height:18px}
+  .status.err{color:#f0928c} .status.ok{color:#7fd5a6}
+  .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;line-height:1.65;
+    white-space:pre-wrap;word-break:break-word;color:var(--mute);max-height:340px;overflow:auto}
+  .render{background:#fff;border-radius:12px;overflow-x:auto;color:#14140f}
+  .render table{max-width:100%}
+  .item{border-bottom:1px solid var(--line);padding:11px 0}
+  .item:last-child{border-bottom:0}
+  .item .t{font-weight:700;font-size:14px}
+  .item .m{font-size:12px;color:var(--mute);margin-top:3px}
+  .overlay{position:fixed;inset:0;background:rgba(10,10,8,.95);display:none;align-items:center;
+    justify-content:center;z-index:60;padding:20px}
+  .overlay.show{display:flex}
+  .overlay .box{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:26px 22px;
+    width:100%;max-width:330px;text-align:center}
+  .toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,20px);background:#fff;color:#14140f;
+    font-size:14px;font-weight:700;padding:11px 17px;border-radius:11px;opacity:0;pointer-events:none;
+    transition:.22s;z-index:70;max-width:88vw}
+  .toast.show{opacity:1;transform:translate(-50%,0)}
+  .toast.bad{background:var(--accent);color:#fff}
+  .spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.35);
+    border-top-color:#fff;border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .audiobar{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .audiobar .now{flex:1 1 100%;font-size:13px;color:var(--mute);line-height:1.6;min-height:40px}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="htop">
+    <div style="flex:1">
+      <div class="sub">Mikey's Mobile Detailing</div>
+      <h1>Morning Rundown</h1>
+    </div>
+    <button class="btn ghost sm" id="btnRefresh">Refresh</button>
+  </div>
+  <nav>
+    <button data-v="today" class="on">Today</button>
+    <button data-v="archive">Archive</button>
+    <button data-v="listen">Listen</button>
+    <button data-v="context">About me</button>
+    <button data-v="kit">My kit</button>
+    <button data-v="orders">Rules</button>
+    <button data-v="capture">Notes</button>
+    <button data-v="tune">Tune</button>
+    <button data-v="settings">Settings</button>
+    <button data-v="health">Health</button>
+  </nav>
+</header>
+
+<main>
+  <!-- TODAY -->
+  <section class="view on" id="v-today">
+    <div class="card">
+      <h2>Latest issue</h2>
+      <div id="todayMeta" class="status">Loading…</div>
+      <div class="row" style="margin-top:11px">
+        <button class="btn" id="btnPreview">Build a preview</button>
+        <button class="btn ghost" id="btnSend">Build &amp; email it now</button>
+      </div>
+      <div class="status" id="runStatus"></div>
+    </div>
+    <div class="card" id="todayCard" style="display:none">
+      <h2 id="todayTitle">Issue</h2>
+      <div class="render" id="todayRender"></div>
+    </div>
+    <div class="card" id="diagCard" style="display:none">
+      <h2>What the build did</h2>
+      <p class="help">Every source it hit, every number it stripped for not appearing in the source, and
+        everything the editor cut. If a section is thin, the reason is in here.</p>
+      <div class="mono" id="diagOut"></div>
+    </div>
+  </section>
+
+  <!-- ARCHIVE -->
+  <section class="view" id="v-archive">
+    <div class="card">
+      <h2>Search every issue</h2>
+      <p class="help">“what was that polish from last month?” — searches headlines, write-ups, quotes and
+        product names across everything it has ever sent you.</p>
+      <div class="row">
+        <input type="text" id="q" placeholder="polish, CQuartz, impact wrench…" style="flex:3 1 200px">
+        <button class="btn sm" id="btnSearch" style="flex:0 0 auto">Search</button>
+      </div>
+      <div class="status" id="archStatus"></div>
+      <div id="archList"></div>
+    </div>
+    <div class="card" id="archDocCard" style="display:none">
+      <h2 id="archDocTitle">Issue</h2>
+      <div class="render" id="archDocRender"></div>
+    </div>
+  </section>
+
+  <!-- LISTEN -->
+  <section class="view" id="v-listen">
+    <div class="card">
+      <h2>Audio version</h2>
+      <p class="help">About four minutes, written for the ear rather than the page. Your phone speaks it —
+        no data, no download. If a Google service account with Text-to-Speech is connected you can also pull
+        a real MP3.</p>
+      <div class="audiobar">
+        <button class="btn" id="btnSpeak">▶ Play</button>
+        <button class="btn ghost sm" id="btnPause">Pause</button>
+        <button class="btn ghost sm" id="btnStop">Stop</button>
+        <select id="rate" style="flex:0 0 96px"><option value="0.9">0.9×</option><option value="1" selected>1×</option><option value="1.15">1.15×</option><option value="1.3">1.3×</option></select>
+        <a class="btn ghost sm" id="btnMp3" href="#" style="text-decoration:none;text-align:center">MP3</a>
+        <div class="now" id="speakNow"></div>
+      </div>
+      <div class="status" id="audioStatus"></div>
+    </div>
+    <div class="card">
+      <h2>Script</h2>
+      <div class="mono" id="audioScript" style="max-height:none"></div>
+    </div>
+  </section>
+
+  <!-- CONTEXT -->
+  <section class="view" id="v-context">
+    <div class="card">
+      <h2>The living context doc</h2>
+      <p class="help">Read fresh every single morning, before anything else. Everything in here shapes what
+        gets written and what gets cut. Edit it from your phone whenever something changes — or text the
+        business number and it lands in Notes.</p>
+      <textarea id="ctxText" class="tall"></textarea>
+      <div class="row" style="margin-top:10px">
+        <button class="btn" id="btnSaveCtx">Save</button>
+        <span class="status" id="ctxStatus" style="flex:2 1 100%"></span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Today's question</h2>
+      <p class="help">Every issue ends with one question. Your answer gets appended here with the date — that
+        is how this doc grows without you having to sit down and write it.</p>
+      <div id="pendingQ" style="font-weight:700;margin-bottom:9px"></div>
+      <textarea id="answerText" placeholder="Answer it here…"></textarea>
+      <div class="row" style="margin-top:9px"><button class="btn" id="btnAnswer">Save answer</button></div>
+      <div class="status" id="ansStatus"></div>
+    </div>
+    <div class="card">
+      <h2>Pull from a Google Doc instead</h2>
+      <p class="help">Optional. Paste a Google Doc ID and the digest reads that doc every morning instead of
+        the text above — handy if you'd rather edit in the Docs app. The doc must be shared with the same
+        service account the Website tab uses.</p>
+      <label>Google Doc ID</label>
+      <input type="text" id="gdocId" placeholder="1AbC…">
+      <div class="row" style="margin-top:9px"><button class="btn ghost" id="btnSaveGdoc">Save</button></div>
+    </div>
+  </section>
+
+  <!-- KIT -->
+  <section class="view" id="v-kit">
+    <div class="card">
+      <h2>Kit &amp; opinions</h2>
+      <p class="help">What you own, what you've tried, and what you think of it. Deals get matched against
+        this list — a sale on something you already have and hate is not news.</p>
+      <div id="kitRows"></div>
+      <div class="row" style="margin-top:11px">
+        <button class="btn ghost sm" id="btnAddKit">Add a product</button>
+        <button class="btn" id="btnSaveKit">Save kit</button>
+      </div>
+      <div class="status" id="kitStatus"></div>
+      <label style="margin-top:16px">…or pull from a Google Sheet (columns: product · verdict · note · owned)</label>
+      <input type="text" id="gsheetId" placeholder="Spreadsheet ID">
+      <div class="row" style="margin-top:8px"><button class="btn ghost sm" id="btnSaveSheet">Save sheet ID</button></div>
+    </div>
+  </section>
+
+  <!-- ORDERS -->
+  <section class="view" id="v-orders">
+    <div class="card">
+      <h2>Standing orders</h2>
+      <p class="help">Permanent rules. These are enforced as hard filters before anything reaches the writer,
+        so “never show me anything needing a compressor” actually stays true. Add the literal words to filter
+        on — that's what does the blocking.</p>
+      <div id="orderRows"></div>
+      <div class="row" style="margin-top:11px">
+        <button class="btn ghost sm" id="btnAddOrder">Add a rule</button>
+        <button class="btn" id="btnSaveOrders">Save rules</button>
+      </div>
+      <div class="status" id="ordStatus"></div>
+    </div>
+  </section>
+
+  <!-- CAPTURE -->
+  <section class="view" id="v-capture">
+    <div class="card">
+      <h2>Capture inbox</h2>
+      <p class="help">Anything you text to the business number from your own phone lands here, and gets folded
+        into tomorrow's context. Same for replying to the digest email.</p>
+      <textarea id="capText" placeholder="Customer asked about ceramic on a matte wrap — look into it"></textarea>
+      <div class="row" style="margin-top:9px">
+        <button class="btn" id="btnCapture">Capture</button>
+        <button class="btn ghost sm" id="btnClearCap">Clear inbox</button>
+      </div>
+      <div class="status" id="capStatus"></div>
+      <div id="capList" style="margin-top:11px"></div>
+    </div>
+  </section>
+
+  <!-- TUNE -->
+  <section class="view" id="v-tune">
+    <div class="card">
+      <h2>Retune in plain English</h2>
+      <p class="help">“less Overwatch, more coatings.” “Stop showing me anything from that one guy.” It takes
+        effect tomorrow, and the effect fades over about two weeks unless you say it again.</p>
+      <textarea id="tuneText" placeholder="less Overwatch, more ceramic coating stuff"></textarea>
+      <div class="row" style="margin-top:9px"><button class="btn" id="btnTune">Apply</button></div>
+      <div class="status" id="tuneStatus"></div>
+    </div>
+    <div class="card">
+      <h2>Current weighting</h2>
+      <p class="help">Where your taps and replies have moved things. 1× is neutral; everything drifts back
+        toward 1× on a two-week half-life.</p>
+      <div id="weightChips"></div>
+      <div class="row" style="margin-top:10px"><button class="btn ghost sm" id="btnResetWeights">Reset weighting</button></div>
+    </div>
+    <div class="card">
+      <h2>Recent taps</h2>
+      <div id="fbList"></div>
+    </div>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="view" id="v-settings">
+    <div class="card">
+      <h2>Delivery</h2>
+      <div class="sw"><label for="sEnabled">Send the daily digest</label><input type="checkbox" id="sEnabled"></div>
+      <div class="sw"><label for="sHour">Hour it arrives (24h, your time)</label><input type="number" id="sHour" min="0" max="23"></div>
+      <div class="sw"><label for="sMax">Hard cap on items ("nothing today" is allowed)</label><input type="number" id="sMax" min="0" max="30"></div>
+      <div class="sw"><label for="sDiv">Max items from any one source</label><input type="number" id="sDiv" min="1" max="10"></div>
+      <div class="sw"><label for="sDedupe">Days before it may repeat a claim</label><input type="number" id="sDedupe" min="1" max="120"></div>
+      <div class="sw"><label for="sEditorial">Second pass whose only job is cutting</label><input type="checkbox" id="sEditorial"></div>
+      <div class="sw"><label for="sSkim">Include the 30-second skim version</label><input type="checkbox" id="sSkim"></div>
+      <div class="sw"><label for="sEmoji">Emoji section headers (off = typography-led)</label><input type="checkbox" id="sEmoji"></div>
+      <div class="sw"><label for="sAudio">Write the audio script</label><input type="checkbox" id="sAudio"></div>
+      <label>Send to</label><input type="text" id="sTo" placeholder="defaults to your alert email">
+    </div>
+    <div class="card">
+      <h2>Interrupts &amp; rollup</h2>
+      <div class="sw"><label for="bEnabled">Break in before 7am for things that can't wait</label><input type="checkbox" id="bEnabled"></div>
+      <div class="sw"><label for="bMax">Most interrupts per day</label><input type="number" id="bMax" min="1" max="6"></div>
+      <div class="sw"><label for="bDisc">Discount % that counts as urgent</label><input type="number" id="bDisc" min="5" max="90"></div>
+      <div class="sw"><label for="wEnabled">Weekly rollup</label><input type="checkbox" id="wEnabled"></div>
+      <div class="sw"><label for="wHour">Rollup hour (Sundays)</label><input type="number" id="wHour" min="0" max="23"></div>
+    </div>
+    <div class="card">
+      <h2>Where you are</h2>
+      <p class="help">Drives the weather over tomorrow's jobs, the seasonal warnings, and the local/competitor
+        watch.</p>
+      <label>City</label><input type="text" id="lCity">
+      <div class="grid2">
+        <div><label>Latitude</label><input type="text" id="lLat"></div>
+        <div><label>Longitude</label><input type="text" id="lLon"></div>
+      </div>
+      <label>Local searches (one per line)</label><textarea id="lQueries"></textarea>
+      <label>Competitor searches (one per line)</label><textarea id="lComp"></textarea>
+    </div>
+    <div class="card">
+      <h2>Topics</h2>
+      <p class="help">Section order here is the section order in the email, every day, forever. The context box
+        is that topic's private briefing — your price list for detailing, your rank for Overwatch.</p>
+      <div id="topicRows"></div>
+    </div>
+    <div class="card">
+      <h2>Voice</h2>
+      <p class="help">Paste writing you like the sound of. The digest matches that register instead of
+        defaulting to newsletter voice.</p>
+      <label>Register, in a sentence</label><input type="text" id="vRegister" placeholder="blunt, concrete, no adjectives it can't back up">
+      <label>Samples (separate with a line of ---)</label><textarea id="vSamples" style="min-height:130px"></textarea>
+    </div>
+    <div class="row" style="margin:4px 0 30px">
+      <button class="btn" id="btnSaveSettings">Save all settings</button>
+      <span class="status" id="setStatus" style="flex:2 1 100%"></span>
+    </div>
+  </section>
+
+  <!-- HEALTH -->
+  <section class="view" id="v-health">
+    <div class="card">
+      <h2>Can it reach everything?</h2>
+      <p class="help">Runs from the Worker itself, which is the only place the answer matters — Reddit refuses
+        some datacenter ranges, and this tells you which fallback answered.</p>
+      <div class="row"><button class="btn" id="btnSelfTest">Run the check</button></div>
+      <div class="status" id="stStatus"></div>
+      <div id="stList"></div>
+    </div>
+    <div class="card">
+      <h2>Last run</h2>
+      <div class="mono" id="stateOut"></div>
+    </div>
+    <div class="card">
+      <h2>Start over</h2>
+      <p class="help">"Already told you" memory, seen posts, price history and weighting. Clearing the seen
+        list makes tomorrow's issue repeat things you've already read.</p>
+      <div class="row">
+        <button class="btn ghost sm" data-reset="seen">Clear seen posts</button>
+        <button class="btn ghost sm" data-reset="ledger">Clear told-you ledger</button>
+        <button class="btn ghost sm" data-reset="weights">Clear weighting</button>
+        <button class="btn ghost sm" data-reset="entities">Clear price history</button>
+      </div>
+      <div class="status" id="resetStatus"></div>
+    </div>
+  </section>
+</main>
+
+<div class="overlay" id="loginOverlay">
+  <div class="box">
+    <div style="font-size:30px">☕</div>
+    <h2 style="font-size:17px;margin:11px 0 4px">Morning Rundown</h2>
+    <p style="font-size:13px;color:var(--mute);margin:0 0 15px">Same PIN as the dashboard.</p>
+    <input type="password" id="loginPass" inputmode="numeric" placeholder="PIN" style="text-align:center;font-size:19px;letter-spacing:.25em">
+    <div style="margin-top:11px"><button class="btn" id="btnLogin" style="width:100%">Unlock</button></div>
+    <div class="status err" id="loginErr"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function(){
+  "use strict";
+  var APP_BUILD="2026-08-05·morning-digest";
+  var S=null, DOC=null, AUDIO=null;
+
+  function el(id){return document.getElementById(id)}
+  function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;")}
+  function toast(m,bad){var t=el("toast");t.textContent=m;t.className="toast show"+(bad?" bad":"");setTimeout(function(){t.className="toast"},2400)}
+  function say(id,msg,kind){var e=el(id);if(!e)return;e.textContent=msg||"";e.className="status"+(kind?" "+kind:"")}
+
+  // ---- API ----
+  function api(path,opts){
+    opts=opts||{};
+    return fetch(path,opts).then(function(r){
+      if(r.status===401){showLogin();return{ok:false,unauthorized:true}}
+      return r.json().catch(function(){return{ok:false,error:"bad response"}});
+    });
+  }
+  function post(path,body){return api(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})})}
+  function showLogin(){el("loginOverlay").classList.add("show");setTimeout(function(){el("loginPass").focus()},60)}
+  function hideLogin(){el("loginOverlay").classList.remove("show")}
+  el("btnLogin").onclick=function(){
+    var v=el("loginPass").value;
+    post("/api/login",{password:v}).then(function(d){
+      if(d&&d.ok){hideLogin();el("loginPass").value="";boot()}
+      else say("loginErr","Wrong PIN — try again","err");
+    });
+  };
+  el("loginPass").addEventListener("keydown",function(e){if(e.key==="Enter")el("btnLogin").click()});
+
+  // ---- nav ----
+  Array.prototype.forEach.call(document.querySelectorAll("nav button"),function(b){
+    b.onclick=function(){
+      Array.prototype.forEach.call(document.querySelectorAll("nav button"),function(x){x.classList.remove("on")});
+      Array.prototype.forEach.call(document.querySelectorAll(".view"),function(x){x.classList.remove("on")});
+      b.classList.add("on");el("v-"+b.dataset.v).classList.add("on");
+      window.scrollTo(0,0);
+      if(b.dataset.v==="listen")loadAudio();
+      if(b.dataset.v==="archive"&&!el("archList").innerHTML)search("");
+    };
+  });
+
+  // ---- boot ----
+  function boot(){
+    api("/api/digest/state").then(function(d){
+      if(!d||!d.ok){if(!d||!d.unauthorized)say("todayMeta","Could not load: "+((d&&d.error)||"error"),"err");return}
+      S=d;
+      paintToday();paintContext();paintKit();paintOrders();paintCapture();paintTune();paintSettings();paintState();
+      loadLatestDoc();
+      openDeepLink();
+    });
+  }
+
+  // The email links straight into a specific issue, the audio player, or the
+  // question box, so those all have to land somewhere real rather than on Today.
+  var deepLinked=false;
+  function openDeepLink(){
+    if(deepLinked)return;deepLinked=true;
+    var p=new URLSearchParams(location.search);
+    if(p.get("audio")==="1"){go("listen");if(p.get("id"))el("btnMp3").href="/api/digest/audio?mp3=1&id="+encodeURIComponent(p.get("id"));return}
+    if(p.get("ask")==="1"){go("context");setTimeout(function(){el("answerText").focus()},250);return}
+    if(p.get("id")){go("archive");openDoc(p.get("id"))}
+  }
+  function go(view){
+    var b=document.querySelector('nav button[data-v="'+view+'"]');
+    if(b)b.click();
+  }
+  el("btnRefresh").onclick=boot;
+
+  // ---- today ----
+  function paintToday(){
+    var st=S.state,a=S.archive[0];
+    var bits=[];
+    bits.push(st.lastSentOn?("Last sent "+st.lastSentOn):"Never sent yet");
+    bits.push("scheduled for "+String(S.cfg.hour).padStart(2,"0")+":00 "+(S.cfg.enabled?"":"(paused)"));
+    bits.push("now "+S.localNow);
+    if(!S.hasGemini)bits.push("⚠ GEMINI_API_KEY not set");
+    if(!S.hasEmail)bits.push("⚠ email not configured");
+    if(st.lastError)bits.push("⚠ last error: "+st.lastError);
+    say("todayMeta",bits.join(" · "),st.lastError?"err":"");
+    if(a)el("todayTitle").textContent=a.dateLabel+" · "+a.readingMin+" min · "+a.items+" items";
+  }
+
+  function loadLatestDoc(){
+    if(!S.archive.length)return;
+    api("/api/digest/doc?id="+encodeURIComponent(S.archive[0].id)).then(function(d){
+      if(!d||!d.ok)return;
+      DOC=d.doc;
+      el("todayCard").style.display="";
+      el("todayRender").innerHTML=d.doc.html||"";
+      if(d.doc.diagnostics&&d.doc.diagnostics.length){
+        el("diagCard").style.display="";el("diagOut").textContent=d.doc.diagnostics.join("\n");
+      }
+    });
+  }
+
+  el("btnPreview").onclick=function(){runBuild(false)};
+  el("btnSend").onclick=function(){
+    if(!confirm("Build it now and email it to you? This also marks everything in it as seen."))return;
+    runBuild(true);
+  };
+  function runBuild(send){
+    el("btnPreview").disabled=true;el("btnSend").disabled=true;
+    say("runStatus",send?"Building and sending — this takes a minute…":"Building a preview — this takes a minute…");
+    post("/api/digest/run",{send:!!send}).then(function(d){
+      el("btnPreview").disabled=false;el("btnSend").disabled=false;
+      if(!d||!d.ok){
+        say("runStatus","Nothing built: "+((d&&d.error)||"error"),"err");
+        if(d&&d.diagnostics){el("diagCard").style.display="";el("diagOut").textContent=d.diagnostics.join("\n")}
+        return;
+      }
+      if(d.diagnostics){el("diagCard").style.display="";el("diagOut").textContent=d.diagnostics.join("\n")}
+      if(send){
+        say("runStatus",d.delivered?("Sent: "+d.subject):("Built, but the email failed: "+d.error),d.delivered?"ok":"err");
+        toast(d.delivered?"Emailed":"Email failed",!d.delivered);
+        setTimeout(boot,900);
+      }else{
+        say("runStatus","Preview built (nothing sent, nothing marked as read).","ok");
+        el("todayCard").style.display="";el("todayTitle").textContent="Preview · "+d.subject;
+        el("todayRender").innerHTML=d.html||"";
+        AUDIO=d.audio||null;
+        toast("Preview ready");
+      }
+    });
+  }
+
+  // ---- archive ----
+  el("btnSearch").onclick=function(){search(el("q").value)};
+  el("q").addEventListener("keydown",function(e){if(e.key==="Enter")search(el("q").value)});
+  function search(q){
+    say("archStatus","Searching…");
+    api("/api/digest/archive?q="+encodeURIComponent(q||"")+"&limit=40").then(function(d){
+      if(!d||!d.ok){say("archStatus","Search failed","err");return}
+      say("archStatus",d.total+" issue"+(d.total===1?"":"s")+(q?(" mentioning “"+q+"”"):""));
+      el("archList").innerHTML=d.results.map(function(r){
+        return '<div class="item"><div class="t"><a href="#" data-id="'+esc(r.id)+'">'+esc(r.headline||r.dateLabel)+'</a></div>'+
+          '<div class="m">'+esc(r.dateLabel)+' · '+r.readingMin+' min · '+r.items+' items</div>'+
+          (r.excerpt?'<div class="m">…'+esc(r.excerpt)+'</div>':'')+'</div>';
+      }).join("")||'<div class="item m">Nothing matched.</div>';
+      Array.prototype.forEach.call(el("archList").querySelectorAll("a[data-id]"),function(a){
+        a.onclick=function(e){e.preventDefault();openDoc(a.dataset.id)};
+      });
+    });
+  }
+  function openDoc(id){
+    api("/api/digest/doc?id="+encodeURIComponent(id)).then(function(d){
+      if(!d||!d.ok){toast("Could not open that issue",true);return}
+      el("archDocCard").style.display="";
+      el("archDocTitle").textContent=d.doc.dateLabel;
+      el("archDocRender").innerHTML=d.doc.html||"";
+      el("archDocCard").scrollIntoView({behavior:"smooth"});
+    });
+  }
+
+  // ---- listen ----
+  function loadAudio(){
+    if(AUDIO&&AUDIO.script){paintAudio();return}
+    api("/api/digest/audio").then(function(d){
+      if(!d||!d.ok){say("audioStatus","No audio yet — build an issue first.","err");return}
+      AUDIO={script:d.script,minutes:d.minutes};paintAudio();
+      el("btnMp3").href="/api/digest/audio?mp3=1"+(d.id?"&id="+encodeURIComponent(d.id):"");
+    });
+  }
+  function paintAudio(){
+    el("audioScript").textContent=AUDIO.script||"(empty)";
+    say("audioStatus","About "+(AUDIO.minutes||4)+" minutes. Your phone reads it out loud — it keeps playing with the screen off on most phones.");
+  }
+  var chunks=[],ci=0;
+  function speak(){
+    if(!AUDIO||!AUDIO.script){toast("No script yet",true);return}
+    if(!("speechSynthesis" in window)){say("audioStatus","This browser can't speak. Use the MP3 button.","err");return}
+    if(speechSynthesis.paused&&speechSynthesis.speaking){speechSynthesis.resume();return}
+    speechSynthesis.cancel();
+    // Chunked by paragraph: long utterances get silently truncated in several
+    // mobile browsers, and chunking also gives us a progress line.
+    chunks=AUDIO.script.split(/\n{2,}/).filter(function(s){return s.trim()});
+    ci=0;next();
+  }
+  function next(){
+    if(ci>=chunks.length){el("speakNow").textContent="Done.";return}
+    var u=new SpeechSynthesisUtterance(chunks[ci]);
+    u.rate=parseFloat(el("rate").value)||1;u.pitch=1;
+    u.onend=function(){ci++;next()};
+    u.onerror=function(){ci++;next()};
+    el("speakNow").textContent=chunks[ci];
+    speechSynthesis.speak(u);
+  }
+  el("btnSpeak").onclick=speak;
+  el("btnPause").onclick=function(){if(window.speechSynthesis)speechSynthesis.pause()};
+  el("btnStop").onclick=function(){if(window.speechSynthesis)speechSynthesis.cancel();el("speakNow").textContent=""};
+
+  // ---- context ----
+  function paintContext(){
+    el("ctxText").value=S.context.text||"";
+    el("gdocId").value=S.cfg.googleDocId||"";
+    el("pendingQ").textContent=S.state.pendingQuestion||"No question waiting — the next issue will ask one.";
+  }
+  el("btnSaveCtx").onclick=function(){
+    say("ctxStatus","Saving…");
+    post("/api/digest/context",{text:el("ctxText").value}).then(function(d){
+      say("ctxStatus",d&&d.ok?"Saved. Tomorrow's issue reads this.":"Save failed",d&&d.ok?"ok":"err");
+      if(d&&d.ok){S.context=d.context;toast("Saved")}
+    });
+  };
+  el("btnAnswer").onclick=function(){
+    var t=el("answerText").value.trim();if(!t)return;
+    say("ansStatus","Saving…");
+    post("/api/digest/ingest",{text:"#answer "+t,source:"app"}).then(function(d){
+      if(d&&d.ok){el("answerText").value="";say("ansStatus",d.reply||"Saved.","ok");boot()}
+      else say("ansStatus",(d&&d.error)||"Failed","err");
+    });
+  };
+  el("btnSaveGdoc").onclick=function(){
+    post("/api/digest/config",{googleDocId:el("gdocId").value.trim()}).then(function(d){
+      toast(d&&d.ok?"Saved":"Failed",!(d&&d.ok));if(d&&d.ok)S.cfg=d.cfg;
+    });
+  };
+
+  // ---- kit ----
+  function kitRow(k){
+    k=k||{name:"",verdict:"",note:"",owned:true};
+    return '<div class="item kitrow">'+
+      '<input type="text" class="k-name" placeholder="Product" value="'+esc(k.name)+'">'+
+      '<div class="row" style="margin-top:6px">'+
+        '<select class="k-verdict" style="flex:1 1 110px">'+
+          ["","love it","fine","hate it","want it","replaced it"].map(function(v){
+            return '<option value="'+esc(v)+'"'+(k.verdict===v?" selected":"")+'>'+esc(v||"— verdict —")+'</option>'}).join("")+
+        '</select>'+
+        '<label style="flex:0 0 auto;margin:0;display:flex;align-items:center;gap:6px;color:var(--ink)">'+
+          '<input type="checkbox" class="k-owned" '+(k.owned!==false?"checked":"")+' style="width:18px;height:18px;accent-color:var(--accent)"> own it</label>'+
+        '<button class="btn ghost sm k-del" style="flex:0 0 auto">✕</button>'+
+      '</div>'+
+      '<input type="text" class="k-note" placeholder="What you actually think" value="'+esc(k.note)+'" style="margin-top:6px">'+
+      '</div>';
+  }
+  function paintKit(){
+    el("kitRows").innerHTML=(S.kit||[]).map(kitRow).join("")||kitRow(null);
+    el("gsheetId").value=S.cfg.googleSheetId||"";
+    wireKitDelete();
+  }
+  function wireKitDelete(){
+    Array.prototype.forEach.call(el("kitRows").querySelectorAll(".k-del"),function(b){
+      b.onclick=function(){b.closest(".kitrow").remove()};
+    });
+  }
+  el("btnAddKit").onclick=function(){el("kitRows").insertAdjacentHTML("beforeend",kitRow(null));wireKitDelete()};
+  el("btnSaveKit").onclick=function(){
+    var kit=[];
+    Array.prototype.forEach.call(el("kitRows").querySelectorAll(".kitrow"),function(r){
+      var n=r.querySelector(".k-name").value.trim();if(!n)return;
+      kit.push({name:n,verdict:r.querySelector(".k-verdict").value,note:r.querySelector(".k-note").value.trim(),owned:r.querySelector(".k-owned").checked});
+    });
+    say("kitStatus","Saving…");
+    post("/api/digest/kit",{kit:kit}).then(function(d){
+      say("kitStatus",d&&d.ok?(kit.length+" products saved."):"Save failed",d&&d.ok?"ok":"err");
+      if(d&&d.ok){S.kit=d.kit;toast("Kit saved")}
+    });
+  };
+  el("btnSaveSheet").onclick=function(){
+    post("/api/digest/config",{googleSheetId:el("gsheetId").value.trim()}).then(function(d){
+      toast(d&&d.ok?"Saved":"Failed",!(d&&d.ok));if(d&&d.ok)S.cfg=d.cfg;
+    });
+  };
+
+  // ---- orders ----
+  function orderRow(o){
+    o=o||{text:"",never:[],enabled:true};
+    return '<div class="item ordrow">'+
+      '<input type="text" class="o-text" placeholder="never show me anything needing a compressor" value="'+esc(o.text)+'">'+
+      '<input type="text" class="o-never" placeholder="words to block, comma separated: compressor, air line" value="'+esc((o.never||[]).join(", "))+'" style="margin-top:6px">'+
+      '<div class="row" style="margin-top:6px">'+
+        '<label style="flex:1;margin:0;display:flex;align-items:center;gap:7px;color:var(--ink)">'+
+          '<input type="checkbox" class="o-on" '+(o.enabled!==false?"checked":"")+' style="width:18px;height:18px;accent-color:var(--accent)"> active</label>'+
+        '<button class="btn ghost sm o-del" style="flex:0 0 auto">✕</button></div>'+
+      '</div>';
+  }
+  function paintOrders(){
+    el("orderRows").innerHTML=(S.orders||[]).map(orderRow).join("")||orderRow(null);
+    wireOrderDelete();
+  }
+  function wireOrderDelete(){
+    Array.prototype.forEach.call(el("orderRows").querySelectorAll(".o-del"),function(b){
+      b.onclick=function(){b.closest(".ordrow").remove()};
+    });
+  }
+  el("btnAddOrder").onclick=function(){el("orderRows").insertAdjacentHTML("beforeend",orderRow(null));wireOrderDelete()};
+  el("btnSaveOrders").onclick=function(){
+    var orders=[];
+    Array.prototype.forEach.call(el("orderRows").querySelectorAll(".ordrow"),function(r){
+      var t=r.querySelector(".o-text").value.trim();if(!t)return;
+      orders.push({text:t,never:r.querySelector(".o-never").value.split(",").map(function(s){return s.trim()}).filter(Boolean),enabled:r.querySelector(".o-on").checked});
+    });
+    say("ordStatus","Saving…");
+    post("/api/digest/orders",{orders:orders}).then(function(d){
+      say("ordStatus",d&&d.ok?(orders.length+" rule(s) active."):"Save failed",d&&d.ok?"ok":"err");
+      if(d&&d.ok){S.orders=d.orders;toast("Rules saved")}
+    });
+  };
+
+  // ---- capture ----
+  function paintCapture(){
+    el("capList").innerHTML=(S.capture||[]).map(function(c){
+      return '<div class="item"><div class="t">'+esc(c.text)+'</div><div class="m">'+esc(c.source)+' · '+new Date(c.at).toLocaleString()+'</div></div>';
+    }).join("")||'<div class="item m">Nothing captured. Text the business number from your phone and it lands here.</div>';
+  }
+  el("btnCapture").onclick=function(){
+    var t=el("capText").value.trim();if(!t)return;
+    post("/api/digest/capture",{text:t}).then(function(d){
+      if(d&&d.ok){el("capText").value="";S.capture=d.capture;paintCapture();say("capStatus","Captured.","ok");toast("Captured")}
+      else say("capStatus",(d&&d.error)||"Failed","err");
+    });
+  };
+  el("btnClearCap").onclick=function(){
+    if(!confirm("Clear the capture inbox?"))return;
+    post("/api/digest/capture",{clear:true}).then(function(d){if(d&&d.ok){S.capture=[];paintCapture()}});
+  };
+
+  // ---- tune ----
+  function paintTune(){
+    var w=S.weights||{topics:{},terms:{}},out=[];
+    Object.keys(w.topics||{}).forEach(function(k){
+      out.push('<span class="chip '+(w.topics[k]>1?"up":"down")+'">'+esc(k)+' ×'+w.topics[k]+'</span>');
+    });
+    Object.keys(w.terms||{}).forEach(function(k){
+      out.push('<span class="chip '+(w.terms[k]>1?"up":"down")+'">“'+esc(k)+'” ×'+w.terms[k]+'</span>');
+    });
+    el("weightChips").innerHTML=out.join("")||'<span class="chip">everything neutral</span>';
+    el("fbList").innerHTML=(S.feedback||[]).slice(0,15).map(function(f){
+      return '<div class="item"><div class="t">'+esc(f.action)+' · '+esc(f.entity||f.itemKey||"")+'</div>'+
+        '<div class="m">'+esc(f.topicId||"")+' · '+new Date(f.at).toLocaleString()+'</div></div>';
+    }).join("")||'<div class="item m">No taps yet. The buttons in the email are what train this.</div>';
+  }
+  el("btnTune").onclick=function(){
+    var t=el("tuneText").value.trim();if(!t)return;
+    say("tuneStatus","Working…");
+    post("/api/digest/retune",{text:t}).then(function(d){
+      if(d&&d.ok){say("tuneStatus",d.reply+(d.changed&&d.changed.length?(" ("+d.changed.join(", ")+")"):""),"ok");el("tuneText").value="";boot()}
+      else say("tuneStatus",(d&&d.error)||"Could not read that","err");
+    });
+  };
+  el("btnResetWeights").onclick=function(){
+    if(!confirm("Reset all topic and term weighting to neutral?"))return;
+    post("/api/digest/reset",{what:"weights"}).then(function(){toast("Weighting reset");boot()});
+  };
+
+  // ---- settings ----
+  function paintSettings(){
+    var c=S.cfg;
+    el("sEnabled").checked=c.enabled!==false;
+    el("sHour").value=c.hour;el("sMax").value=c.maxItems;el("sDiv").value=c.diversityMax;el("sDedupe").value=c.dedupeDays;
+    el("sEditorial").checked=c.editorialPass!==false;el("sSkim").checked=c.skim!==false;
+    el("sEmoji").checked=c.emojiHeaders!==false;el("sAudio").checked=c.audio!==false;
+    el("sTo").value=c.to||"";
+    el("bEnabled").checked=c.breaking.enabled!==false;el("bMax").value=c.breaking.maxPerDay;el("bDisc").value=c.breaking.minDiscount;
+    el("wEnabled").checked=c.weekly.enabled!==false;el("wHour").value=c.weekly.hour;
+    el("lCity").value=c.local.city||"";el("lLat").value=c.local.lat;el("lLon").value=c.local.lon;
+    el("lQueries").value=(c.local.queries||[]).join("\n");el("lComp").value=(c.local.competitors||[]).join("\n");
+    el("vRegister").value=(c.voice&&c.voice.register)||"";
+    el("vSamples").value=((c.voice&&c.voice.samples)||[]).join("\n---\n");
+    el("topicRows").innerHTML=(c.topics||[]).map(function(t,i){
+      return '<div class="item toprow" data-i="'+i+'">'+
+        '<div class="row"><label style="flex:1;margin:0;color:var(--ink);font-size:14px">'+esc(t.emoji||"")+' '+esc(t.label)+'</label>'+
+        '<label style="flex:0 0 auto;margin:0;display:flex;align-items:center;gap:6px;color:var(--mute)"><input type="checkbox" class="t-on" '+(t.enabled!==false?"checked":"")+' style="width:18px;height:18px;accent-color:var(--accent)"> on</label>'+
+        '<input type="number" class="t-max" value="'+(t.max||3)+'" min="0" max="10" style="flex:0 0 66px" title="max items"></div>'+
+        '<input type="text" class="t-subs" value="'+esc((t.subs||[]).join(", "))+'" placeholder="subreddits, comma separated" style="margin-top:6px">'+
+        '<textarea class="t-ctx" placeholder="context just for this topic — your prices, your rank, your setup" style="margin-top:6px;min-height:56px">'+esc(t.context||"")+'</textarea>'+
+        '<div class="row" style="margin-top:6px">'+
+          '<label style="flex:1;margin:0;display:flex;align-items:center;gap:6px;color:var(--mute);font-size:12px"><input type="checkbox" class="t-brk" '+(t.breaking?"checked":"")+' style="width:17px;height:17px;accent-color:var(--accent)"> can interrupt before 7am</label>'+
+          '<label style="flex:1;margin:0;display:flex;align-items:center;gap:6px;color:var(--mute);font-size:12px"><input type="checkbox" class="t-pb" '+(t.usePlaybook?"checked":"")+' style="width:17px;height:17px;accent-color:var(--accent)"> give it my price list</label>'+
+        '</div></div>';
+    }).join("");
+  }
+  el("btnSaveSettings").onclick=function(){
+    var c=S.cfg;
+    var topics=(c.topics||[]).map(function(t,i){
+      var r=el("topicRows").querySelector('.toprow[data-i="'+i+'"]');
+      if(!r)return t;
+      return Object.assign({},t,{
+        enabled:r.querySelector(".t-on").checked,
+        max:parseInt(r.querySelector(".t-max").value,10)||0,
+        subs:r.querySelector(".t-subs").value.split(",").map(function(s){return s.trim()}).filter(Boolean),
+        context:r.querySelector(".t-ctx").value,
+        breaking:r.querySelector(".t-brk").checked,
+        usePlaybook:r.querySelector(".t-pb").checked
+      });
+    });
+    var patch={
+      enabled:el("sEnabled").checked,hour:+el("sHour").value,maxItems:+el("sMax").value,
+      diversityMax:+el("sDiv").value,dedupeDays:+el("sDedupe").value,
+      editorialPass:el("sEditorial").checked,skim:el("sSkim").checked,
+      emojiHeaders:el("sEmoji").checked,audio:el("sAudio").checked,to:el("sTo").value.trim(),
+      breaking:Object.assign({},c.breaking,{enabled:el("bEnabled").checked,maxPerDay:+el("bMax").value,minDiscount:+el("bDisc").value}),
+      weekly:Object.assign({},c.weekly,{enabled:el("wEnabled").checked,hour:+el("wHour").value}),
+      local:Object.assign({},c.local,{
+        city:el("lCity").value.trim(),lat:parseFloat(el("lLat").value),lon:parseFloat(el("lLon").value),
+        queries:el("lQueries").value.split("\n").map(function(s){return s.trim()}).filter(Boolean),
+        competitors:el("lComp").value.split("\n").map(function(s){return s.trim()}).filter(Boolean)
+      }),
+      voice:{register:el("vRegister").value.trim(),samples:el("vSamples").value.split(/\n-{3,}\n/).map(function(s){return s.trim()}).filter(Boolean)},
+      topics:topics
+    };
+    say("setStatus","Saving…");
+    post("/api/digest/config",patch).then(function(d){
+      if(d&&d.ok){S.cfg=d.cfg;say("setStatus","Saved.","ok");toast("Settings saved");paintToday()}
+      else say("setStatus","Save failed","err");
+    });
+  };
+
+  // ---- health ----
+  function paintState(){
+    var st=S.state;
+    el("stateOut").textContent=[
+      "local time      "+S.localNow,
+      "send hour       "+S.cfg.hour+":00",
+      "email to        "+S.emailTo,
+      "last sent       "+(st.lastSentOn||"never")+(st.lastId?(" ("+st.lastId+")"):""),
+      "last error      "+(st.lastError||"none"),
+      "interrupts      "+(st.breakingCount||0)+" today",
+      "skill index     "+(st.skillIndex||0),
+      "tracked things  "+S.trackedEntities,
+      "reminders       "+(st.reminders||[]).map(function(r){return r.on+" "+r.text}).join(" | "),
+      "",
+      (st.lastDiagnostics||[]).join("\n")
+    ].join("\n");
+  }
+  el("btnSelfTest").onclick=function(){
+    say("stStatus","Checking…");el("btnSelfTest").disabled=true;
+    api("/api/digest/selftest").then(function(d){
+      el("btnSelfTest").disabled=false;
+      if(!d){say("stStatus","Check failed","err");return}
+      say("stStatus",d.ok?"Everything it needs is reachable.":"Some sources are not reachable — see below.",d.ok?"ok":"err");
+      el("stList").innerHTML=(d.checks||[]).map(function(c){
+        return '<div class="item"><div class="t">'+(c.ok?"✅":"⛔")+" "+esc(c.name)+'</div>'+
+          '<div class="m">'+(c.code?("HTTP "+c.code+" · "):"")+(c.items!=null?(c.items+" items · "):"")+esc(c.error||c.sample||"ok")+'</div></div>';
+      }).join("");
+    });
+  };
+  Array.prototype.forEach.call(document.querySelectorAll("[data-reset]"),function(b){
+    b.onclick=function(){
+      if(!confirm("Clear "+b.dataset.reset+"?"))return;
+      post("/api/digest/reset",{what:b.dataset.reset}).then(function(d){
+        say("resetStatus",d&&d.ok?("Cleared "+b.dataset.reset+"."):"Failed",d&&d.ok?"ok":"err");boot();
+      });
+    };
+  });
+
+  boot();
+})();
+</script>
+</body>
+</html>
