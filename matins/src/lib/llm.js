@@ -47,18 +47,79 @@ export async function llmText({ cfg, system, prompt, maxTokens = 700, temperatur
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: system }] },
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { temperature, maxOutputTokens: maxTokens },
+        generationConfig: geminiGenerationConfig({ cfg, temperature, maxTokens }),
       }),
     });
     const body = await res.text();
     if (!res.ok) throw new LlmError(`gemini ${res.status}: ${body.slice(0, 300)}`);
     const data = JSON.parse(body);
     const text = (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('').trim();
-    if (!text) throw new LlmError('gemini returned no text');
+    if (!text) throw new LlmError(`gemini returned no text (${describeEmptyGemini(data)})`);
     return text;
   }
 
   throw new LlmError(`unknown LLM_PROVIDER: ${provider}`);
+}
+
+// Recent Gemini models reason before answering, and those tokens are drawn
+// from maxOutputTokens. Every call here asks for something short — a nine-word
+// headline, a two-field JSON verdict — so without headroom the model can spend
+// the whole budget thinking and return an empty candidate. safety.js reads an
+// empty reply as "the checker failed" and fails closed on it, so that quirk
+// alone could drop every generated block while the issue still sent.
+//
+// Headroom is the fix that survives a model generation: it costs nothing when
+// unused and does not depend on a field name. The field that *disables*
+// thinking has been renamed across generations, so it is sent only when
+// GEMINI_THINKING_BUDGET is set deliberately — an unrecognised field is a 400,
+// which would cause the very failure this is guarding against.
+const GEMINI_MIN_OUTPUT_TOKENS = 1024;
+
+function geminiGenerationConfig({ cfg, temperature, maxTokens }) {
+  const generationConfig = { temperature, maxOutputTokens: Math.max(maxTokens, GEMINI_MIN_OUTPUT_TOKENS) };
+  if (cfg.geminiThinkingBudget !== '') {
+    generationConfig.thinkingConfig = { thinkingBudget: Number(cfg.geminiThinkingBudget) };
+  }
+  return generationConfig;
+}
+
+// Lists the models the configured key can actually reach. Model names change;
+// this is how you find the current one instead of guessing (GET /admin/models).
+export async function listModels({ cfg, fetchImpl }) {
+  const f = fetchImpl || globalThis.fetch;
+  if (cfg.llmProvider !== 'gemini') return { provider: cfg.llmProvider, models: null, note: 'model listing is only wired up for gemini' };
+  if (!cfg.llmApiKey) return { provider: 'gemini', models: null, error: 'LLM_API_KEY is not set' };
+  try {
+    const res = await f('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', {
+      headers: { 'x-goog-api-key': cfg.llmApiKey },
+    });
+    const body = await res.text();
+    if (!res.ok) return { provider: 'gemini', models: null, error: `gemini ${res.status}: ${body.slice(0, 300)}` };
+    const all = JSON.parse(body).models || [];
+    return {
+      provider: 'gemini',
+      configured: cfg.llmModel,
+      // Only the ones this app could actually use.
+      models: all
+        .filter((m) => (m.supportedGenerationMethods || []).includes('generateContent'))
+        .map((m) => String(m.name || '').replace(/^models\//, ''))
+        .sort(),
+    };
+  } catch (err) {
+    return { provider: 'gemini', models: null, error: String(err?.message || err) };
+  }
+}
+
+// An empty Gemini candidate is never self-explanatory. Say why, so the reason
+// lands in safetyReport instead of a shrug.
+function describeEmptyGemini(data) {
+  const block = data?.promptFeedback?.blockReason;
+  if (block) return `prompt blocked: ${block}`;
+  const c = data?.candidates?.[0];
+  if (!c) return 'no candidates returned';
+  if (c.finishReason === 'MAX_TOKENS') return 'hit maxOutputTokens before writing anything';
+  if (c.finishReason && c.finishReason !== 'STOP') return `finishReason ${c.finishReason}`;
+  return 'empty candidate';
 }
 
 // Parses a JSON object out of a model reply that may be fenced or padded.

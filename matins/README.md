@@ -83,7 +83,7 @@ default.
 ### 2. Secrets
 
 ```bash
-npx wrangler secret put LLM_API_KEY      # Anthropic or Gemini, per LLM_PROVIDER
+npx wrangler secret put LLM_API_KEY      # Anthropic or Gemini, per LLM_PROVIDER (currently gemini)
 npx wrangler secret put RESEND_API_KEY
 npx wrangler secret put TOKEN_SECRET     # any long random string
 npx wrangler secret put GITHUB_TOKEN     # fine-grained PAT, Contents: read/write on SITE_REPO
@@ -192,6 +192,14 @@ Only the liturgical calendar can stop an issue, and it is computed offline.
 
 Set `DR_API_BASE` to an empty string to print references only and never any
 verse text at all.
+
+**On Gemini:** the 2.5 models reason before answering and those tokens come out
+of `maxOutputTokens`. The calls here are short — a nine-word headline, a
+two-field JSON verdict — so thinking could consume the whole budget and return
+an empty candidate, which the safety pass would read as "checker failed" and
+fail closed on, dropping every generated block. `thinkingConfig.thinkingBudget`
+is therefore set to 0; none of this work needs deliberation. Leave `LLM_MODEL`
+blank for the provider default, or set it if the API 404s on that model name.
 
 ## Design
 

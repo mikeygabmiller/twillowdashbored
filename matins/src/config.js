@@ -23,9 +23,12 @@ export const ROTATION_COOLDOWN = { prayer: 10, qa: 14 };
 
 // Model defaults per provider. Deliberately small + cheap; this is short-form
 // devotional prose and a rubric check, not reasoning work.
+// Model names go stale faster than anything else in this file. These are only
+// defaults — set LLM_MODEL to override, and hit GET /admin/models to see what
+// the configured key can actually reach today rather than guessing.
 export const MODEL_DEFAULTS = {
   anthropic: 'claude-sonnet-5',
-  gemini: 'gemini-2.5-flash',
+  gemini: 'gemini-3.6-flash',
 };
 
 export const TEMPERATURE = { generate: 0.3, safety: 0 };
@@ -40,6 +43,8 @@ export function config(env = {}) {
     llmProvider: provider,
     llmModel: env.LLM_MODEL || MODEL_DEFAULTS[provider] || '',
     llmApiKey: env.LLM_API_KEY || '',
+    // Blank means "don't send a thinking field at all" — see lib/llm.js.
+    geminiThinkingBudget: env.GEMINI_THINKING_BUDGET == null ? '' : String(env.GEMINI_THINKING_BUDGET),
     resendKey: env.RESEND_API_KEY || '',
     fromEmail: get('FROM_EMAIL'),
     replyTo: get('REPLY_TO'),

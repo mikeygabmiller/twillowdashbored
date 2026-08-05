@@ -7,10 +7,11 @@ import { makeStore, saveIssue, ISSUE_INDEX_KEY } from './lib/store.js';
 import { publishIssue } from './lib/publish.js';
 import { sendIssue } from './lib/send.js';
 import { subscribe, confirm, unsubscribe, activeSubscribers, subscriberCounts } from './lib/subscribers.js';
-import { renderNotice, renderSignupPage } from './render/web.js';
+import { renderNotice, renderSignupPage, renderIssuePage, renderArchivePage } from './render/web.js';
 import { renderEmail } from './render/email.js';
 import { json, html } from './lib/http.js';
 import { safeEqualString } from './lib/tokens.js';
+import { listModels } from './lib/llm.js';
 import { isValidDate } from './lib/calendar.js';
 import { BUILD } from './build.js';
 
@@ -49,6 +50,32 @@ export default {
         return html(renderNotice({ cfg, title: res.ok ? 'Unsubscribed' : 'Link not valid', message: res.message }), { status: res.status });
       }
 
+      // The Worker serves the archive too, from KV. GitHub Pages is the public
+      // home and the shareable permalink, but this means an issue is readable
+      // the moment it is built — before Pages is wired up, or if a publish
+      // fails. Links stay on this origin so browsing here is self-consistent.
+      const localCfg = { ...cfg, siteUrl: cfg.workerUrl };
+      const pageMatch = path.match(/^\/(\d{4}-\d{2}-\d{2})$/);
+      if (pageMatch) {
+        const issue = await store.getJson(`issue:${pageMatch[1]}`);
+        if (!issue) {
+          return html(
+            renderNotice({ cfg: localCfg, title: 'Nothing for that day', message: 'No issue has been built for that date yet.' }),
+            { status: 404 }
+          );
+        }
+        return html(renderIssuePage(issue, { cfg: localCfg }));
+      }
+      if (path === '/archive') {
+        return html(renderArchivePage(await store.getJson(ISSUE_INDEX_KEY, []), { cfg: localCfg }));
+      }
+      if (path === '/today') {
+        const [latest] = await store.getJson(ISSUE_INDEX_KEY, []);
+        return latest
+          ? Response.redirect(`${cfg.workerUrl}/${latest.date}`, 302)
+          : html(renderNotice({ cfg: localCfg, title: 'Not yet', message: 'The first issue has not been built.' }), { status: 404 });
+      }
+
       // Read API for the archive / anyone building on top of it.
       const issueMatch = path.match(/^\/api\/issue\/(\d{4}-\d{2}-\d{2})$/);
       if (issueMatch) {
@@ -75,6 +102,9 @@ export default {
           const force = url.searchParams.get('force') === '1';
           return json(await runDaily({ cfg, store, date, force, send: url.searchParams.get('send') !== '0' }));
         }
+
+        // Which models this key can actually reach. Names change; look, don't guess.
+        if (path === '/admin/models') return json(await listModels({ cfg }));
 
         if (path === '/admin/status') {
           const date = todayIn(cfg.sendTz);
