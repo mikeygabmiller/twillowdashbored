@@ -2,6 +2,12 @@
 import fs from 'fs';
 let src = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
 src = src.replace(/^export default \{[\s\S]*?^\};$/m, '');
+// The Worker imports the morning-rundown modules; `new Function` can't hold an
+// import statement, so they're stripped and stubbed. Nothing in this file
+// exercises the rundown — it has its own suite in digest.test.mjs.
+src = src.replace(/^import[^\n]*\n/gm, '');
+src = 'const digestRoute = async () => null, digestCron = async () => {}, ' +
+      'digestIngest = async () => ({ ok: true, reply: "" });\n' + src;
 
 const EXPORTS = ['payDefaults', 'loadPayConfig', 'apiPaySaveConfig', 'apiPayRequest', 'payPage',
   'loadInvoices', 'saveInvoices', 'apiPayAction', 'apiPay'];

@@ -2619,7 +2619,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-04·ai-keyboard";
+  var APP_BUILD="2026-08-05·morning-rundown";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -3661,6 +3661,7 @@
     {id:"owed",t:"Owed to you",g:"Money",ic:"alert",k:"unpaid outstanding debt chase overdue",run:function(){openMoney()}},
     // — insight
     {id:"analytics",t:"Analytics",g:"Insights",ic:"bar-chart",k:"stats numbers reports overview business",run:function(){openAnalytics()}},
+    {id:"rundown",t:"Morning rundown",g:"Insights",ic:"sun",k:"digest daily email reddit brief news deals context tune archive audio",run:function(){location.href="/digest.html"}},
     {id:"website",t:"Website analytics",g:"Insights",ic:"activity",k:"traffic visitors ga4 clarity seo google site",run:function(){openAnalytics();growSet("analytics")}},
     {id:"customers",t:"Who your customers are",g:"Insights",ic:"users",k:"repeat churn slipping loyal segments",run:function(){openAnalytics();growSet("customers")}},
     {id:"profit",t:"Profit per job",g:"Insights",ic:"dollar",k:"margin worth value service profitability",run:function(){openAnalytics();growSet("profit")}},
@@ -6652,7 +6653,8 @@
       {t:"Business playbook",ic:"file-text",into:"playbook"}
     ]},
     {g:"Insights",rows:[
-      {t:"Analytics — website & business",ic:"bar-chart",go:function(){closeMore();openAnalytics()}}
+      {t:"Analytics — website & business",ic:"bar-chart",go:function(){closeMore();openAnalytics()}},
+      {t:"Morning rundown",ic:"sun",note:"new",go:function(){location.href="/digest.html"}}
     ]},
     {g:"Pipeline",rows:[
       {t:"Bookings",ic:"calendar-days",go:function(){location.href="/bookings.html"}}

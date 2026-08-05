@@ -7,6 +7,12 @@ import fs from 'fs';
 
 let src = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
 src = src.replace(/^export default \{[\s\S]*?^\};$/m, '');
+// The Worker imports the morning-rundown modules; `new Function` can't hold an
+// import statement, so they're stripped and stubbed. Nothing in this file
+// exercises the rundown — it has its own suite in digest.test.mjs.
+src = src.replace(/^import[^\n]*\n/gm, '');
+src = 'const digestRoute = async () => null, digestCron = async () => {}, ' +
+      'digestIngest = async () => ({ ok: true, reply: "" });\n' + src;
 
 const EXPORTS = ['detLooksSchedulish', 'detDefaults', 'sanitizeDetect', 'detApply', 'detHeldSlots',
   'loadDetections', 'saveDetections', 'apiDetections', 'apiDetectionAction', 'detConfirmDraft',
@@ -165,20 +171,25 @@ await kv.put('bk:config', JSON.stringify({
   services: [{ id: 'full', name: 'Full', enabled: true, price: { suv: 339 }, duration: { suv: 180 } }],
   addons: [], cities: [], content: {}, proof: {}, calendar: { enabled: false }, blockedDates: [],
 }));
-const free = await M.bkAvailability('2026-08-02', 'full', 'suv');
+// A hard-coded date silently stops testing anything once it goes past — the
+// availability lookup correctly refuses to offer slots in the past, so every
+// assertion below degenerates to 0 === 0. Always ask about a day that is still
+// in the future when the suite runs.
+const HOLD_DATE = new Date(Date.now() + 14 * 86400000).toISOString().slice(0, 10);
+const free = await M.bkAvailability(HOLD_DATE, 'full', 'suv');
 ok('slots open before any detection', free.length > 0, free.length);
-await M.saveDetections([{ id: 'd1', phone: '+1', kind: 'set', date: '2026-08-02', slot: '10:00', durationMin: 180, tentative: false }]);
-const held = await M.bkAvailability('2026-08-02', 'full', 'suv');
+await M.saveDetections([{ id: 'd1', phone: '+1', kind: 'set', date: HOLD_DATE, slot: '10:00', durationMin: 180, tentative: false }]);
+const held = await M.bkAvailability(HOLD_DATE, 'full', 'suv');
 ok('an UNCONFIRMED card already holds its slot', held.length < free.length, { before: free.length, after: held.length });
 ok('10:00 is no longer offered', !held.includes('10:00'));
-await M.saveDetections([{ id: 'd1', phone: '+1', kind: 'set', date: '2026-08-02', slot: '10:00', durationMin: 180, tentative: true }]);
-ok('a loose "Saturday morning" hold blocks the whole day', (await M.bkAvailability('2026-08-02', 'full', 'suv')).length === 0);
+await M.saveDetections([{ id: 'd1', phone: '+1', kind: 'set', date: HOLD_DATE, slot: '10:00', durationMin: 180, tentative: true }]);
+ok('a loose "Saturday morning" hold blocks the whole day', (await M.bkAvailability(HOLD_DATE, 'full', 'suv')).length === 0);
 await M.saveDetections([]);
-ok('dismissing releases the hold immediately', (await M.bkAvailability('2026-08-02', 'full', 'suv')).length === free.length);
+ok('dismissing releases the hold immediately', (await M.bkAvailability(HOLD_DATE, 'full', 'suv')).length === free.length);
 M.__resetCfg();
 await kv.put('config', JSON.stringify({ detect: Object.assign(M.detDefaults(), { holdSlots: false }) }));
-await M.saveDetections([{ id: 'd1', phone: '+1', kind: 'set', date: '2026-08-02', slot: '10:00', durationMin: 180, tentative: true }]);
-ok('holds can be turned off', (await M.bkAvailability('2026-08-02', 'full', 'suv')).length === free.length);
+await M.saveDetections([{ id: 'd1', phone: '+1', kind: 'set', date: HOLD_DATE, slot: '10:00', durationMin: 180, tentative: true }]);
+ok('holds can be turned off', (await M.bkAvailability(HOLD_DATE, 'full', 'suv')).length === free.length);
 
 // ---------------------------------------------------------------- drafting
 section('The confirmation draft');

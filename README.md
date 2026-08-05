@@ -212,12 +212,33 @@ writes are the brief (1/day) and the invoice sweep (only when something is
 actually overdue); live-ETA pings are throttled server-side to ~1 write/45 s and
 only while a trip is running.
 
+- **Morning Rundown (the daily digest):** a 7am briefing that puts **your numbers
+  first** — month net, week gross, jobs today, jobs booked tomorrow, unanswered
+  leads, review pool — then the weather over **each** of tomorrow's jobs ("your
+  2pm is outdoors and it's 82% rain — move it"), and only then what actually
+  happened on the internet worth your time (detailing, tools, Harbor Freight,
+  Overwatch, AI, Claude, and local/competitor news). Every price and model number
+  is verified against its source before it can ship, every item carries the exact
+  sentence it came from, disagreements are shown as disagreements, and a second
+  AI pass exists **only to delete** anything that won't change a decision —
+  "nothing worth your time today" is a valid answer. It learns: one-tap
+  **Buy / Not for me / Remind me Friday** buttons in the email, plain-English
+  replies ("less Overwatch, more coatings"), a living context doc you edit from
+  your phone, a kit list so deals match gear you actually own, and standing rules
+  it can't talk itself out of. Plus a ~4-minute audio version for the drive, a
+  searchable web archive, and interrupts for things that can't wait for 7am.
+  Runs on this Worker — it used to be a Google Apps Script. Full detail in
+  **DIGEST.md**.
+
 ## How it's built
 ```
 public/index.html      the dashboard UI (static, served via Workers static assets)
+public/digest.html     the Morning Rundown console (archive, context doc, tuning)
 public/sw.js           service worker (installable PWA / offline shell)
 public/manifest.webmanifest, icon-*.png, favicon.svg   PWA icons + manifest
 src/index.js           the Worker: API + Twilio webhooks + scheduled() cron handler
+src/digest*.js         Morning Rundown: sources, verification, render, routes
+test/                  test suite — `npm test`
 wrangler.toml          Worker config: name, KV binding, static assets, cron trigger
 package.json           dependencies
 ```
@@ -335,6 +356,9 @@ drives everything.
 Public: `/submit` `/sms` `/call` `/call-screen` `/voicemail` `/voicemail-done`
 `/t/<token>` (live ETA page) `/p/<token>` (pay page) `/api/track/state`
 Auth: `/api/login` `/api/logout`
+Morning Rundown: `/api/digest/state` `/config` `/context` `/kit` `/orders`
+`/capture` `/ingest` `/run` `/archive` `/doc` `/audio` `/feedback` `/retune`
+`/selftest` `/reset` · public one-tap actions at `/d/a/<token>` (see DIGEST.md)
 Dashboard API: `/api/health` `/api/threads` `/api/thread` `/api/send` `/api/meta`
 `/api/schedule` `/api/unschedule` `/api/call` `/api/read` `/api/insights`
 `/api/alert-test` `/api/templates` `/api/migrate`

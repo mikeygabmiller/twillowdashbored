@@ -3,8 +3,8 @@
  * app shell. API calls are always live (never cached). Also receives Web Push
  * so new texts, missed calls and the morning brief ring the phone instantly
  * instead of waiting for the next poll. */
-const CACHE = 'mkd-shell-v16';
-const SHELL = ['/', '/manifest.webmanifest', '/favicon.svg', '/icon-192.png', '/icon-512.png'];
+const CACHE = 'mkd-shell-v17';
+const SHELL = ['/', '/digest.html', '/manifest.webmanifest', '/favicon.svg', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
@@ -26,16 +26,20 @@ self.addEventListener('fetch', (e) => {
   // Never cache the backend — texts/threads must always be live.
   if (url.pathname.startsWith('/api/') || url.pathname === '/submit' ||
       url.pathname === '/sms' || url.pathname === '/call' ||
-      url.pathname.startsWith('/voicemail')) {
+      url.pathname.startsWith('/voicemail') || url.pathname.startsWith('/d/a/')) {
     return;
   }
 
-  // App shell (the page itself): network-first, fall back to cache when offline.
+  // App shell: network-first, fall back to cache when offline. There is more
+  // than one page now (the dashboard and the morning-rundown console), so each
+  // caches under its OWN path — caching every navigation as "/" served the wrong
+  // page offline the moment a second page existed.
   if (req.mode === 'navigate') {
+    const shellKey = url.pathname === '/' || url.pathname === '/index.html' ? '/' : url.pathname;
     e.respondWith(
       fetch(req)
-        .then((r) => { const copy = r.clone(); caches.open(CACHE).then((c) => c.put('/', copy)); return r; })
-        .catch(() => caches.match('/'))
+        .then((r) => { const copy = r.clone(); caches.open(CACHE).then((c) => c.put(shellKey, copy)); return r; })
+        .catch(() => caches.match(shellKey).then((c) => c || caches.match('/')))
     );
     return;
   }
