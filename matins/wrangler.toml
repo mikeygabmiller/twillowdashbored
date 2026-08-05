@@ -17,7 +17,10 @@ APP_NAME = "Matins"
 SEND_HOUR = "5"
 SEND_TZ = "America/Los_Angeles"
 # "anthropic" | "gemini" | "stub" (stub = deterministic offline text, never calls out)
-LLM_PROVIDER = "anthropic"
+LLM_PROVIDER = "gemini"
+# Blank uses the provider default (gemini-2.5-flash / claude-sonnet-5). If the
+# API answers 404 for that model name, put a current one here — the preview
+# JSON reports the exact error under safetyReport.degraded.
 LLM_MODEL = ""
 FROM_EMAIL = "Matins <matins@example.com>"
 REPLY_TO = ""

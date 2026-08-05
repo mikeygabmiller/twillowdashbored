@@ -47,18 +47,40 @@ export async function llmText({ cfg, system, prompt, maxTokens = 700, temperatur
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: system }] },
         contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: { temperature, maxOutputTokens: maxTokens },
+        generationConfig: {
+          temperature,
+          maxOutputTokens: maxTokens,
+          // The 2.5 models reason before answering, and those tokens come out
+          // of maxOutputTokens. On the short calls here — a one-line headline,
+          // a two-field JSON verdict — thinking can eat the entire budget and
+          // return an empty candidate. That reads as "the checker failed",
+          // which fails closed and silently drops every block. None of this
+          // work needs deliberation, so it is switched off.
+          thinkingConfig: { thinkingBudget: 0 },
+        },
       }),
     });
     const body = await res.text();
     if (!res.ok) throw new LlmError(`gemini ${res.status}: ${body.slice(0, 300)}`);
     const data = JSON.parse(body);
     const text = (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('').trim();
-    if (!text) throw new LlmError('gemini returned no text');
+    if (!text) throw new LlmError(`gemini returned no text (${describeEmptyGemini(data)})`);
     return text;
   }
 
   throw new LlmError(`unknown LLM_PROVIDER: ${provider}`);
+}
+
+// An empty Gemini candidate is never self-explanatory. Say why, so the reason
+// lands in safetyReport instead of a shrug.
+function describeEmptyGemini(data) {
+  const block = data?.promptFeedback?.blockReason;
+  if (block) return `prompt blocked: ${block}`;
+  const c = data?.candidates?.[0];
+  if (!c) return 'no candidates returned';
+  if (c.finishReason === 'MAX_TOKENS') return 'hit maxOutputTokens before writing anything';
+  if (c.finishReason && c.finishReason !== 'STOP') return `finishReason ${c.finishReason}`;
+  return 'empty candidate';
 }
 
 // Parses a JSON object out of a model reply that may be fenced or padded.
