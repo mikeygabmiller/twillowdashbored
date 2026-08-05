@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Matins — a daily Catholic devotional</title>
+<meta name="description" content="Matins: the day&#39;s Mass readings, a short reflection, a saint, a traditional prayer. One email, every morning.">
+<link rel="canonical" href="https://mikeygabmiller.github.io/matins/">
+<meta property="og:title" content="Matins — a daily Catholic devotional">
+<meta property="og:description" content="Matins: the day&#39;s Mass readings, a short reflection, a saint, a traditional prayer. One email, every morning.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://mikeygabmiller.github.io/matins/">
+<meta name="twitter:card" content="summary">
+<link rel="icon" href="https://mikeygabmiller.github.io/matins/mark.svg" type="image/svg+xml">
+<style>
+  :root { --accent:#3E6B4B; --tint:#EDF2ED; --paper:#FBF7EF; --paper-alt:#F4EEE2; --ink:#241F1A; --ink-soft:#5C5449; --rule:#DDD3C2; }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper-alt);color:var(--ink);font-family:'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, 'Times New Roman', serif;line-height:1.7;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:660px;margin:0 auto;padding:28px 18px 64px}
+  .sheet{background:var(--paper);border:1px solid var(--rule);border-radius:12px;padding:34px 32px 30px}
+  header.brand{display:flex;align-items:center;gap:11px;margin-bottom:26px}
+  header.brand a{display:flex;align-items:center;gap:11px;text-decoration:none;color:var(--ink)}
+  .wordmark{font-size:22px;letter-spacing:.14em;text-transform:uppercase}
+  .eyebrow{font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft)}
+  h1{font-weight:400;font-size:clamp(26px,5vw,34px);line-height:1.25;margin:.35em 0 .5em}
+  .daybar{font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:13px;color:var(--ink-soft);display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .dot{width:10px;height:10px;border-radius:50%;background:var(--accent);display:inline-block}
+  hr{border:0;border-top:1px solid var(--rule);margin:22px 0}
+  h2{font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--accent);font-weight:600;margin:32px 0 10px}
+  p{font-size:17.5px;margin:0 0 15px}
+  a{color:var(--accent)}
+  .readings{width:100%;border-collapse:collapse;margin-bottom:10px}
+  .readings th{font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);text-align:left;font-weight:500;padding:0 14px 6px 0;white-space:nowrap;vertical-align:top}
+  .readings td{padding:0 0 6px 0;font-size:16.5px}
+  blockquote{margin:0;border-left:3px solid var(--accent);padding-left:16px;font-style:italic;font-size:19px}
+  .cite{font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-style:normal;font-size:12px;color:var(--ink-soft)}
+  .action{background:var(--tint);border-radius:8px;padding:15px 17px;margin-top:6px}
+  .action .label{font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);font-weight:600;margin-bottom:5px}
+  .action p{font-size:16.5px;margin:0}
+  .prayer{white-space:pre-line}
+  .note{font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:13px;color:var(--ink-soft);margin:-6px 0 12px}
+  footer{font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:13px;color:var(--ink-soft);margin-top:34px;padding-top:18px;border-top:1px solid var(--rule);line-height:1.75}
+  ul.archive{list-style:none;margin:0;padding:0}
+  ul.archive li{border-bottom:1px solid var(--rule);padding:14px 0;display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+  ul.archive time{font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:12px;color:var(--ink-soft);min-width:104px}
+  ul.archive a{text-decoration:none;font-size:18px}
+  ul.archive a:hover{text-decoration:underline}
+  .swatch{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+  form.signup{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0 6px}
+  form.signup input{flex:1 1 240px;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:16px;padding:12px 14px;border:1px solid var(--rule);border-radius:8px;background:#fff;color:var(--ink)}
+  form.signup button{font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:15px;padding:12px 22px;border:0;border-radius:8px;background:var(--accent);color:#fff;cursor:pointer}
+  .msg{font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:14px;margin-top:10px}
+  @media (max-width:520px){ .sheet{padding:24px 20px} }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+  <div class="sheet">
+    <header class="brand">
+      <a href="https://mikeygabmiller.github.io/matins/"><svg width="30" height="30" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Matins mark">
+  <path d="M20 7c6.6 0 12 5.4 12 12v14H8V19C8 12.4 13.4 7 20 7z" fill="#3E6B4B" fill-opacity="0.12"/>
+  <path d="M20 7c6.6 0 12 5.4 12 12v14H8V19C8 12.4 13.4 7 20 7z" stroke="#3E6B4B" stroke-width="1.6" stroke-linejoin="round"/>
+  <path d="M12 33V21.5a8 8 0 0 1 16 0V33" stroke="#3E6B4B" stroke-width="1.2" stroke-opacity="0.55"/>
+  <circle cx="20" cy="21.5" r="4.2" fill="#3E6B4B" fill-opacity="0.9"/>
+  <path d="M4 33h32" stroke="#3E6B4B" stroke-width="1.6" stroke-linecap="round"/>
+</svg><span class="wordmark">Matins</span></a>
+    </header>
+    <div class="eyebrow">A daily Catholic devotional</div>
+      <h1>The liturgical day, in your inbox before work.</h1>
+      <p>Every morning: today's Mass readings with a link to the USCCB, a short reflection tied to ordinary working life, the saint the Church is keeping today and one thing to do about it, a traditional prayer, and one straight answer to one real question about the faith.</p>
+      <p>Free. One email a day. Unsubscribe in one click, whenever you want.</p>
+      <form class="signup" method="POST" action="https://matins.mikeysdetailingsnohomish.workers.dev/subscribe">
+        <input type="email" name="email" required placeholder="you@example.com" aria-label="Email address">
+        <button type="submit">Send me the morning issue</button>
+      </form>
+      <div class="msg">We send a confirmation link first — nothing arrives until you click it.</div>
+      <hr>
+      <p><a href="https://mikeygabmiller.github.io/matins/archive/">Read past issues &rarr;</a></p>
+    <footer>
+      <a href="https://mikeygabmiller.github.io/matins/archive/">Archive</a> ·
+      <a href="https://mikeygabmiller.github.io/matins/">Subscribe</a><br>
+      Made by a young Catholic in Snohomish County, Washington.
+    </footer>
+  </div>
+</div>
+</body>
+</html>
