@@ -68,14 +68,22 @@ export async function sendIssue({ issue, cfg, store, recipients, fetchImpl, dryR
   return result;
 }
 
-export async function sendOne({ cfg, to, subject, html, text, fetchImpl }) {
+export async function sendOne({ cfg, to, subject, html, text, headers, fetchImpl }) {
   const f = fetchImpl || globalThis.fetch;
   if (!cfg.resendKey) return { ok: false, error: 'RESEND_API_KEY is not set' };
   try {
     const res = await f('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${cfg.resendKey}` },
-      body: JSON.stringify({ from: cfg.fromEmail, to: [to], subject, html, text, ...(cfg.replyTo ? { reply_to: cfg.replyTo } : {}) }),
+      body: JSON.stringify({
+        from: cfg.fromEmail,
+        to: [to],
+        subject,
+        html,
+        text,
+        ...(cfg.replyTo ? { reply_to: cfg.replyTo } : {}),
+        ...(headers ? { headers } : {}),
+      }),
     });
     const body = await res.text();
     return res.ok ? { ok: true } : { ok: false, error: `resend ${res.status}: ${body.slice(0, 200)}` };

@@ -50,6 +50,10 @@ export async function subscribe({ store, cfg, rawEmail, fetchImpl }) {
     return { ok: false, status: 502, message: 'We could not send the confirmation email. Try again in a minute.', error: res.error };
   }
 
+  // A failure that has since been fixed is worse than no diagnostic at all: it
+  // sits in /admin/status looking current and sends you hunting a solved
+  // problem. A send that works clears it.
+  await store.del('diag:lastEmailError').catch(() => {});
   return { ok: true, status: 200, message: 'Check your inbox — click the link and you are in.', state: 'pending' };
 }
 

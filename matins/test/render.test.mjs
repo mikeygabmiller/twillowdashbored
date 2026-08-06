@@ -298,3 +298,14 @@ test('a value pasted with its quotes still on it is cleaned up', async () => {
   assert.equal(c.adminToken, 'abc123', 'a secret pasted with quotes would never match');
   assert.equal(c.fromEmail, 'Matins <x@y.dev>', 'an unquoted value is left exactly alone');
 });
+
+test('a binding name with a trailing space still works, and is reported', async () => {
+  const { config: cfgFn } = await import('../src/config.js');
+  const c = cfgFn({ 'ADMIN_TOKEN ': 'abc123', 'RESEND_API_KEY ': 're_x', LLM_API_KEY: 'k' });
+  assert.equal(c.adminToken, 'abc123', 'a stray space must not cost an evening twice');
+  assert.equal(c.resendKey, 're_x');
+  assert.deepEqual(c.bindingNameWarnings, ['ADMIN_TOKEN ', 'RESEND_API_KEY '], 'but it is never fixed silently');
+  // A correctly named binding always beats a malformed twin.
+  assert.equal(cfgFn({ ADMIN_TOKEN: 'right', 'ADMIN_TOKEN ': 'wrong' }).adminToken, 'right');
+  assert.deepEqual(cfgFn({ ADMIN_TOKEN: 'right' }).bindingNameWarnings, []);
+});

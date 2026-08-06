@@ -70,6 +70,10 @@
         <input id="token" type="password" placeholder="not needed for Diagnose" spellcheck="false" autocomplete="off">
       </div>
     </div>
+    <div style="margin-top:14px">
+      <label for="me">Your email — for “Send it to me”</label>
+      <input id="me" type="email" placeholder="you@example.com" spellcheck="false" autocomplete="email">
+    </div>
     <p class="note">Leave the token blank to start — <b>Diagnose</b> works without one, and tells you whether the Worker can even see your secrets.</p>
   </div>
 
@@ -84,12 +88,13 @@
 
   <div class="card">
     <h2>Step 2 · Once Diagnose is clean</h2>
-    <p class="step">These need the token. Check the model name before anything else — a wrong one fails every generation.</p>
+    <p class="step">These need the token. Check the model name before anything else — a wrong one fails every generation. <b>Send it to me now</b> mails one copy to the address above and records nothing: no KV write, no publish, and the 5am send is still free to run.</p>
     <div class="btns">
       <button data-act="status">Status</button>
       <button data-act="models">Which models the key can reach</button>
       <button data-act="preview">Preview today (JSON)</button>
       <button data-act="previewHtml">Preview today (email, new tab)</button>
+      <button class="go" data-act="sendMe">Send it to me now</button>
     </div>
   </div>
 
@@ -116,9 +121,10 @@ const KEY = 'matins-console-v1';
 const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
 if (saved.base) $('base').value = saved.base;
 if (saved.token) $('token').value = saved.token;
-for (const id of ['base', 'token']) {
+if (saved.me) $('me').value = saved.me;
+for (const id of ['base', 'token', 'me']) {
   $(id).addEventListener('input', () => {
-    localStorage.setItem(KEY, JSON.stringify({ base: $('base').value.trim(), token: $('token').value }));
+    localStorage.setItem(KEY, JSON.stringify({ base: $('base').value.trim(), token: $('token').value, me: $('me').value.trim() }));
   });
 }
 
@@ -142,6 +148,12 @@ function verdict(html, kind = '') {
 // Turns the Worker's own diagnosis into one plain sentence at the top, so the
 // answer is not buried in JSON.
 function readDiagnosis(data) {
+  // The Worker already worked out which of the four cases this is; repeating
+  // the reasoning here would only let the two drift apart.
+  if (data.error === 'unauthorized') {
+    const warn = data.warning ? `<br><br>${data.warning}` : '';
+    return [`<b>The token does not match.</b>${data.hint || ''}${warn}`, 'err'];
+  }
   if (data.error !== 'admin is not configured') {
     return ['<b>Admin is configured.</b>Your token is being read. Move on to Step 2.', 'ok'];
   }
@@ -183,12 +195,14 @@ async function call({ path, method = 'GET', useToken = true }) {
     setStatus('Could not reach the Worker.', 'err');
     show(
       String(err && err.message) +
-        '\n\nUsually one of:\n' +
-        '  • the Worker URL is wrong or the Worker is not deployed\n' +
-        '  • you are offline\n' +
-        '  • the deployed build is older than 2026-08-06·matins-11, which is the\n' +
-        '    first one that lets a page like this read admin responses.\n' +
-        '    Check "What build is live?" — that one works on any build.'
+        '\n\nThe browser could not read a reply. That is almost always one of:\n\n' +
+        '  1. THE DEPLOYED BUILD IS TOO OLD FOR THIS BUTTON.\n' +
+        '     Press "What build is live?" — it works on every build. If the\n' +
+        '     number is behind, the route you just called does not exist yet,\n' +
+        '     and an old build answers that with a 404 the browser hides.\n' +
+        '     Deploy the newest version, then try again.\n\n' +
+        '  2. The Worker URL is wrong, or nothing is deployed at it.\n\n' +
+        '  3. You are offline.'
     );
   } finally {
     document.querySelectorAll('button').forEach((b) => (b.disabled = false));
@@ -200,9 +214,11 @@ const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/
 const ACTIONS = {
   version: () => call({ path: '/api/version', useToken: false }),
 
-  // The 503 body is the diagnosis, so no token is wanted here even if one is set.
+  // Sends the token only if there is one. Without it the 503 body diagnoses the
+  // bindings; with it, a 401 body diagnoses the mismatch instead. Either way
+  // this is the button that answers "why will it not let me in".
   diagnose: async () => {
-    const r = await call({ path: '/admin/status', useToken: false });
+    const r = await call({ path: '/admin/status', useToken: !!token() });
     if (!r) return;
     const [html, kind] = readDiagnosis(r.data || {});
     verdict(html, kind);
@@ -221,6 +237,12 @@ const ACTIONS = {
     window.open(url, '_blank', 'noopener');
     setStatus('Opened in a new tab.', 'ok');
     verdict('<b>Heads up.</b>That link carries your token in the URL. Close the tab when you are done, and do not paste the address anywhere.', '');
+  },
+
+  sendMe: () => {
+    const to = $('me').value.trim();
+    if (!to) { setStatus('Fill in your email address first.', 'err'); return; }
+    return call({ path: `/admin/send-me?date=${today()}&to=${encodeURIComponent(to)}`, method: 'POST' });
   },
 
   dryRun: () => call({ path: `/admin/run?date=${today()}&force=1&send=0`, method: 'POST' }),
