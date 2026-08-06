@@ -43,10 +43,26 @@ async function putFile({ cfg, path, content, message, onlyIfMissing = false, fet
   return { ok: true, path };
 }
 
-export async function publishIssue({ issue, index, cfg, fetchImpl }) {
+// Yesterday's page was written before today's existed, so its "next" link is
+// missing. Re-rendering the one issue immediately before this one closes the
+// chain, and costs a single extra PUT. `loadIssue` is optional: without it the
+// site is still correct, just missing that one link.
+async function previousPage({ issue, index, cfg, loadIssue }) {
+  if (!loadIssue) return null;
+  const i = index.findIndex((e) => e.date === issue.date);
+  const prev = i >= 0 ? index[i + 1] : null;
+  if (!prev) return null;
+  const prevIssue = await loadIssue(prev.date).catch(() => null);
+  if (!prevIssue) return null;
+  return { path: `${prev.date}/index.html`, content: renderIssuePage(prevIssue, { cfg, index }) };
+}
+
+export async function publishIssue({ issue, index, cfg, fetchImpl, loadIssue }) {
   if (!cfg.githubToken) return { ok: false, published: [], errors: ['GITHUB_TOKEN is not set'] };
+  const prev = await previousPage({ issue, index, cfg, loadIssue });
   const files = [
-    { path: `${issue.date}/index.html`, content: renderIssuePage(issue, { cfg }) },
+    { path: `${issue.date}/index.html`, content: renderIssuePage(issue, { cfg, index }) },
+    ...(prev ? [prev] : []),
     { path: 'archive/index.html', content: renderArchivePage(index, { cfg }) },
     { path: 'today/index.html', content: renderTodayRedirect(issue.date, { cfg }) },
     { path: `issues/${issue.date}.json`, content: JSON.stringify(issue, null, 2) },

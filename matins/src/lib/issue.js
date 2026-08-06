@@ -55,7 +55,10 @@ export async function buildIssue({ date, cfg, store, dryRun = false, seedBadBloc
 
   const keep = (name, res, check) => {
     if (!res?.ok) return null;
-    checks.push({ block: name, pass: check.pass, reason: check.reason });
+    // `craft` is a style note, not a safety verdict: the block ships either
+    // way. It is reported so the admin preview shows which tired phrase the
+    // model could not shake, which is the only way to tune the prompts.
+    checks.push({ block: name, pass: check.pass, reason: check.reason, craft: res.craft?.length ? res.craft : undefined });
     if (check.pass) return res.value;
     dropped.push({ section: name, reason: check.reason });
     return null;
@@ -98,7 +101,12 @@ export async function buildIssue({ date, cfg, store, dryRun = false, seedBadBloc
     },
     verseOfDay: verse ? { ref: verse.ref, text: verse.text || null, translation: verse.translation || null } : null,
     reflection,
-    saintStory,
+    // The name is romcal's, not the model's — it heads the section, so it has
+    // to be the one the Church uses today, and it never goes through safety
+    // because nothing generated it.
+    saintStory: saintStory
+      ? { ...saintStory, name: day.saint?.name || null, isOptional: !!day.saint?.isOptional }
+      : null,
     prayer: { id: p.id, title: p.title, text: p.text, note: p.note },
     consider: { id: q.id, question: q.question, answer: q.answer, citation: q.citation || null },
     headline: headline || fallbackHeadline(day),

@@ -45,6 +45,14 @@ renderers can be exercised with no key and no network.
    temperature 0 against a strict rubric. A flagged block is dropped and the
    rest of the issue still sends. The check **fails closed**: if the checker
    itself errors, the block is dropped.
+
+   Separately, `src/lib/generate.js` checks **craft**: devotional prose pulls
+   hard toward the same dozen dead phrases, so a block that trips one is handed
+   back to the model with the fault named, up to three tries. Craft is not
+   safety and does not fail closed — if the model cannot shake the phrase, the
+   last attempt still ships, because losing the whole reflection over "at the
+   end of the day" is the worse trade. What tripped is reported in
+   `safetyReport.blocks[].craft`, which is how you tune the prompts.
 3. **No copyrighted scripture or Catechism text.** Readings appear as
    references plus a link to the USCCB. The only scripture text that can ever
    appear is a single Douay-Rheims verse. Catechism references appear as bare
@@ -205,9 +213,39 @@ blank for the provider default, or set it if the API 404s on that model name.
 
 Cream paper, dark ink, a serif for headings, generous line-height — and the
 accent colour is the **liturgical colour of the day**, so the look moves through
-the church year (green, violet, white/gold, red, rose). The wordmark is an arch
-with the sun rising behind it, in that day's colour: a doorway at dawn, which is
-what matins is. `src/render/brand.js` has the SVG.
+the church year (green, violet, white/gold, red, rose). It appears as a band
+across the top of every issue, as the section labels, and as the wordmark: an
+arch with the sun rising behind it, a doorway at dawn, which is what matins is.
+`src/render/brand.js` has the SVG, `src/render/theme.js` the palette.
+
+Rules the renderers hold to, both surfaces:
+
+- **A rule between sections, never inside one.** The hairlines are the only
+  thing separating Reflection from the saint from the Prayer, and they are what
+  make the issue scannable rather than one long column.
+- **About 66 characters to the line.** That is what the gutters are for. Do not
+  widen the sheet without narrowing something else.
+- **Prayers keep their line breaks.** `src/content/prayers.js` stores the
+  received wording already lineated — one breath per line, blank line between
+  stanzas — and `src/render/prayer.js` turns that into stanzas both renderers
+  lay out. A prayer is said, not skimmed. Only the line breaks are ours: never
+  edit the words or the punctuation of a traditional text.
+- **The saint section is headed by the name the Church uses today**, taken from
+  romcal (`day.saint.name`), not from anything a model wrote.
+
+Where they differ:
+
+- **The web page honours `prefers-color-scheme`** — this is read before dawn —
+  and prints cleanly. Every colour in `theme.js` has a dark value; the accents
+  are lightened there because the light-mode green and violet fall below
+  readable contrast on a near-black page.
+- **Email stays light.** Dark-mode support across mail clients is uneven enough
+  that a half-working palette is worse than none: Gmail ignores the media query
+  and inverts on its own. `color-scheme: light` and be done.
+- **Issue pages carry the reader onward** (previous / next / today / archive)
+  so a shared permalink is not a dead end. Previous and next come from the
+  archive index, and each publish also rewrites the *preceding* day's page so
+  it gains the "next" link it could not have had when it was written.
 
 ## Assumptions worth knowing
 

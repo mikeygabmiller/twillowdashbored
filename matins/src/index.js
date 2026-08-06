@@ -64,7 +64,7 @@ export default {
             { status: 404 }
           );
         }
-        return html(renderIssuePage(issue, { cfg: localCfg }));
+        return html(renderIssuePage(issue, { cfg: localCfg, index: await store.getJson(ISSUE_INDEX_KEY, []) }));
       }
       if (path === '/archive') {
         return html(renderArchivePage(await store.getJson(ISSUE_INDEX_KEY, []), { cfg: localCfg }));
@@ -192,7 +192,7 @@ async function runDaily({ cfg, store, date, force, send }) {
   const issue = await buildIssue({ date, cfg, store });
   const index = await saveIssue(store, issue);
 
-  const published = await publishIssue({ issue, index, cfg });
+  const published = await publishIssue({ issue, index, cfg, loadIssue: (d) => store.getJson(`issue:${d}`) });
   if (!published.ok) console.error('publish failed', published.errors.join('; '));
 
   let delivery = { skipped: 'sending paused' };

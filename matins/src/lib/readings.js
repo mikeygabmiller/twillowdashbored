@@ -11,6 +11,18 @@ export function usccbLinkFor(dateStr) {
   return `https://bible.usccb.org/bible/readings/${m}${d}${y.slice(2)}.cfm`;
 }
 
+// The upstream references come through in lectionary shorthand — "Numbers
+// 13:1-2, 25--14:1" — which is correct but reads like a typo on a phone. This
+// only touches punctuation: an en dash for a verse range, an em dash for the
+// "--" that means "through". No number, book, or letter is ever changed.
+export function normalizeRef(ref) {
+  return String(ref)
+    .replace(/\s+/g, ' ')
+    .replace(/\s*--+\s*/g, '—')
+    .replace(/(\d)\s*-\s*(\d)/g, '$1–$2')
+    .trim();
+}
+
 export async function getReadings(dateStr, cfg, { fetchImpl } = {}) {
   const [y, m, d] = dateStr.split('-');
   const url = `${cfg.readingsApiBase}/readings/${y}/${m}-${d}.json`;
@@ -21,7 +33,7 @@ export async function getReadings(dateStr, cfg, { fetchImpl } = {}) {
     return { ...fallback, error: res.error };
   }
   const r = res.data?.readings || {};
-  const clean = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+  const clean = (v) => (typeof v === 'string' && v.trim() ? normalizeRef(v) : null);
   const out = {
     firstRef: clean(r.firstReading),
     psalmRef: clean(r.psalm),

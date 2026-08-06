@@ -23,7 +23,7 @@ test('preview builds a complete issue from real calendar + readings', async () =
   assert.equal(issue.liturgicalDay.season, 'Ordinary Time');
   assert.equal(issue.liturgicalDay.color, 'green');
   assert.match(issue.liturgicalDay.feastOrSaint, /Ordinary Time/);
-  assert.equal(issue.readings.gospelRef, 'Matthew 15:21-28');
+  assert.equal(issue.readings.gospelRef, 'Matthew 15:21–28', 'verse ranges are normalised to an en dash');
   assert.equal(issue.readings.usccbLink, 'https://bible.usccb.org/bible/readings/080526.cfm');
   assert.equal(issue.verseOfDay.translation, 'Douay-Rheims');
   assert.ok(issue.reflection && issue.saintStory && issue.prayer.text && issue.consider.answer);
