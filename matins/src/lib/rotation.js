@@ -71,3 +71,27 @@ export async function pickQa(store, { bank, date, tags }) {
   const chosen = pick(bank, { recent, cooldown: ROTATION_COOLDOWN.qa, tags, seed: `qa:${date}` });
   return { chosen, commit: () => store.putJson('rot:qa', [chosen.id, ...recent.filter((i) => i !== chosen.id)].slice(0, 120)) };
 }
+
+// Several questions in one issue. Each pick sees the ones already chosen today
+// as recently used, so a single issue can never ask the same thing twice, and
+// they are all remembered together when the issue actually ships.
+export async function pickQaSet(store, { bank, date, tags, count = 1 }) {
+  const recent = await store.getJson('rot:qa', []);
+  const chosen = [];
+  for (let i = 0; i < Math.min(count, bank.length); i++) {
+    const taken = chosen.map((q) => q.id);
+    const next = pick(bank, {
+      recent: [...taken, ...recent],
+      cooldown: ROTATION_COOLDOWN.qa + taken.length,
+      tags,
+      seed: `qa:${date}:${i}`,
+    });
+    if (!next || taken.includes(next.id)) break;
+    chosen.push(next);
+  }
+  const ids = chosen.map((q) => q.id);
+  return {
+    chosen,
+    commit: () => store.putJson('rot:qa', [...ids, ...recent.filter((i) => !ids.includes(i))].slice(0, 200)),
+  };
+}

@@ -146,6 +146,20 @@ function stubText({ system, prompt }) {
         : { pass: true, reason: 'No doctrinal, factual, or citation problems found.' }
     );
   }
+  // The judge compares drafts; offline there is only ever one worth having.
+  if (/There are \d+ drafts/.test(prompt)) {
+    return JSON.stringify({ choice: 1, reason: 'offline preview: no comparison made' });
+  }
+  if (/THE PASSAGES, IN FULL/.test(prompt)) {
+    const part = (name) => ({
+      summary: `[offline preview] This stands in for two or three sentences saying what actually happens in the ${name}, written from the Douay-Rheims text the model is given.`,
+      calledTo: `[offline preview] Do the one concrete thing the ${name} asks of you before you eat tonight.`,
+    });
+    const out = {};
+    if (/^EPISTLE —/m.test(prompt) || /\nEPISTLE —/.test(prompt)) out.epistle = part('epistle');
+    if (/GOSPEL —/.test(prompt)) out.gospel = part('Gospel');
+    return JSON.stringify(out);
+  }
   const kind = /HEADLINE/.test(prompt) ? 'headline' : /SAINT/.test(prompt) ? 'saint' : 'reflection';
   if (kind === 'headline') return '[offline preview] A quiet start to an ordinary weekday';
   if (kind === 'saint') {

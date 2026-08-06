@@ -103,6 +103,77 @@ Return the reflection text only. No title, no preamble, no quotation marks aroun
   return res.ok ? { ...res, form: shape.id } : res;
 }
 
+// The day's two readings, retold. This is the ONE block permitted to say what
+// happens in a passage, and only because it is handed the passage: the actual
+// Douay-Rheims text (public domain) is in the prompt, so the retelling is
+// grounded in the words rather than in the model's memory of them. Without
+// that text this block is not generated at all — see issue.js.
+export async function generateReadingSummary({ cfg, day, epistle, gospel, fetchImpl }) {
+  const source = (label, passage) =>
+    passage?.text ? `${label} — ${passage.ref}\n"""\n${passage.text}\n"""` : null;
+  const passages = [source('EPISTLE', epistle), source('GOSPEL', gospel)].filter(Boolean);
+  if (!passages.length) return { ok: false, skipped: true, error: 'no Douay-Rheims passage text to work from' };
+
+  const prompt = `ABSOLUTE RULES — a violation means the block is thrown away:
+1. Retell ONLY what is in the passages printed below. Every person, action, place and outcome you mention must be findable in that text. Add no detail from memory, no matter how well known.
+2. Do NOT quote. Retell in your own plain words. You may echo at most three consecutive words from the passage.
+3. No citations of any kind, and no Catechism.
+4. Where you say what the reading asks of a reader, keep to what the Church actually holds. Do not invent an obligation the Church does not place on people, and do not soften one it does.
+5. Nothing contrary to Catholic faith or morals.
+
+${voicePrompt()}
+
+TODAY
+${factSheet(day, null)}
+
+THE PASSAGES, IN FULL
+${passages.join('\n\n')}
+
+TASK — WHAT IS BEING READ, AND WHAT IT ASKS
+For each passage given above, write two things:
+
+  "summary": two or three sentences saying what actually happens, or what is
+  actually being argued. Concrete. Name the people in it. If it is a letter,
+  say what its writer is pressing on the people he is writing to. Do not
+  editorialise and do not moralise — this is the account, not the application.
+
+  "calledTo": ONE sentence, beginning with a verb, saying what a man is called
+  to do about it today. Not a feeling, not "reflect on" or "consider" — an act
+  he could tell you at bedtime whether or not he did. It must follow from THIS
+  passage rather than being general good advice.
+
+Return only JSON, with only the keys for passages you were actually given:
+{"epistle": {"summary": "...", "calledTo": "..."}, "gospel": {"summary": "...", "calledTo": "..."}}`;
+
+  return produce({
+    name: 'readingSummary',
+    cfg,
+    count: DRAFTS.readingSummary,
+    fetchImpl,
+    make: async ({ temperature, note }) => {
+      const raw = await llmText({ cfg, system: `${SYSTEM} Return only JSON.`, prompt: prompt + note, maxTokens: 900, temperature, fetchImpl });
+      const obj = parseJsonReply(raw);
+      const part = (key, passage) => {
+        if (!passage?.text) return null;
+        const summary = stripWrapping(String(obj?.[key]?.summary || ''));
+        const calledTo = stripWrapping(String(obj?.[key]?.calledTo || ''));
+        if (!summary || !calledTo) throw new Error(`${key} summary is missing a field`);
+        if (calledTo.split(/\s+/).length > 32) throw new Error(`${key} calledTo is not one sentence`);
+        return { ref: passage.ref, summary, calledTo };
+      };
+      const value = { epistle: part('epistle', epistle), gospel: part('gospel', gospel) };
+      const all = [value.epistle, value.gospel].filter(Boolean);
+      if (!all.length) throw new Error('no usable reading summary');
+      const text = all.map((p) => `${p.summary}\n${p.calledTo}`).join('\n\n');
+      return {
+        value,
+        text,
+        craft: [...craft(text), ...all.flatMap((p) => vagueAction(p.calledTo))],
+      };
+    },
+  });
+}
+
 export async function generateSaintStory({ cfg, day, fetchImpl }) {
   if (!day.saint) return { ok: false, skipped: true, error: 'no saint or feast with martyrology data today' };
   const s = day.saint;
@@ -159,7 +230,15 @@ Return only JSON: {"life": "...", "oneActionToday": "..."}`;
   });
 }
 
-export async function generateHeadline({ cfg, day, reflection, fetchImpl }) {
+export async function generateHeadline({ cfg, day, reflection, readingSummary, fetchImpl }) {
+  // What today actually contains, so the line can be about the content rather
+  // than about the date. A subject line drawn from the day in the abstract is
+  // the reason most devotional email goes unopened.
+  const contents = [
+    readingSummary?.gospel?.summary ? `Gospel: ${readingSummary.gospel.summary}` : null,
+    readingSummary?.epistle?.summary ? `Epistle: ${readingSummary.epistle.summary}` : null,
+    readingSummary?.gospel?.calledTo ? `Today it asks: ${readingSummary.gospel.calledTo}` : null,
+  ].filter(Boolean);
   const prompt = `${HARD_RULES}
 
 ${voicePrompt()}
@@ -167,12 +246,19 @@ ${voicePrompt()}
 TODAY'S GROUNDED FACTS
 ${factSheet(day, null)}
 
+${contents.length ? `WHAT IS ACTUALLY IN TODAY'S ISSUE\n${contents.join('\n')}\n` : ''}
 ${reflection ? `TODAY'S REFLECTION (for tone only — do not summarise it mechanically)\n${reflection}\n` : ''}
 HEADLINES THAT WORKED, FOR OTHER DAYS
 ${HEADLINE_EXEMPLARS.map((h) => `- ${h}`).join('\n')}
 
 TASK — HEADLINE
-Write ONE line, at most nine words, to sit at the top of the email and in the inbox preview. Concrete and quiet. Not a slogan — nothing that could go on a poster. No colon-and-subtitle construction. All lower case except proper names, and no full stop. Do not name the feast; it is printed directly underneath. Lifting a striking phrase out of the reflection is the best move available to you.
+Write ONE line, at most nine words. It is both the top of the email and the subject line in a crowded inbox, so it has to earn the open.
+
+Make it about what is IN today — the specific thing that happens in the Gospel, or the specific thing the day asks of a man — never about the date and never about the feast in the abstract. The feast name is printed directly underneath, so naming it here wastes the line.
+
+Compelling means concrete and slightly unresolved: the half of a sentence that makes a man want the other half. It does not mean loud. No slogans, nothing that could go on a poster, no colon-and-subtitle, no question mark, no promise. If the line would work equally well on any other day of the year, it has failed.
+
+All lower case except proper names, and no full stop. Lifting a striking phrase out of the readings or the reflection is the best move available to you.
 
 Return the line only.`;
 

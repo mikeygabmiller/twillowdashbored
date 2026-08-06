@@ -14,6 +14,7 @@
 
 import { theme, SERIF, SANS, escapeHtml, longDate } from './theme.js';
 import { stanzas, stanzasToText } from './prayer.js';
+import { considerList, readingsOf } from './compat.js';
 import { wordmarkText } from './brand.js';
 import { FOOTER_LINE } from '../config.js';
 
@@ -24,7 +25,10 @@ export function renderEmail(issue, { cfg, unsubscribeUrl, permalink }) {
   const url = permalink || `${cfg.siteUrl}/${issue.date}/`;
   const unsub = unsubscribeUrl || `${cfg.siteUrl}/`;
   return {
-    subject: `${issue.headline} — ${issue.liturgicalDay.feastOrSaint}`,
+    // The headline alone. Appending the feast used to push the interesting
+    // half of the line past where a phone truncates it, and the feast is
+    // already the first thing in the preview line underneath.
+    subject: sentenceCase(issue.headline),
     preheader: preheader(issue),
     html: html(issue, { cfg, t, url, unsub }),
     text: text(issue, { cfg, url, unsub }),
@@ -39,6 +43,13 @@ function preheader(issue) {
   if (issue.readings?.gospelRef) bits.push(issue.readings.gospelRef);
   bits.push(issue.prayer.title);
   return bits.join(' · ');
+}
+
+// Headlines are written lower case, which is right on the page and reads like
+// a mistake in a subject line. Only the first letter moves.
+function sentenceCase(s) {
+  const line = String(s || '').trim();
+  return line ? line[0].toUpperCase() + line.slice(1) : line;
 }
 
 // `first` skips the divider so the header rule isn't doubled.
@@ -81,33 +92,40 @@ function html(issue, { cfg, t, url, unsub }) {
   const r = issue.readings;
   const rows = [];
 
-  // Readings — references and the USCCB link only. Never the text.
-  const readingLine = (label, ref) =>
-    ref
-      ? `<tr>
-          <td style="font-family:${SANS};font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:${t.inkSoft};padding:0 16px 8px 0;white-space:nowrap;vertical-align:baseline;font-weight:600;">${label}</td>
-          <td style="font-family:${SERIF};font-size:16.5px;line-height:1.45;color:${t.ink};padding:0 0 8px 0;vertical-align:baseline;">${escapeHtml(ref)}</td>
-        </tr>`
-      : '';
-  const readingRows = [
-    readingLine('First', r.firstRef),
-    readingLine('Psalm', r.psalmRef),
-    readingLine('Second', r.secondRef),
-    readingLine('Gospel', r.gospelRef),
-  ].join('');
-  const usccb = `<a href="${escapeHtml(r.usccbLink)}" style="font-family:${SANS};font-size:14px;color:${t.accent};text-decoration:underline;font-weight:600;">Read the readings at the USCCB &rarr;</a>`;
-  rows.push(
-    section(
-      t,
-      'Today at Mass',
-      readingRows
-        ? `<table role="presentation" cellpadding="0" cellspacing="0" border="0">${readingRows}</table>
-           <div style="height:14px;line-height:14px;">&nbsp;</div>
-           ${usccb}`
-        : usccb,
-      { first: true }
-    )
-  );
+  // Two readings — the epistle and the Gospel — each with what happens in it
+  // and what it asks. The scripture TEXT is never reproduced: the summary is
+  // written from it, in other words. See lib/issue.js.
+  const reading = (p) => {
+    if (!p?.ref) return '';
+    return `<table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin-bottom:20px;">
+      <tr><td>
+        <div style="font-family:${SANS};font-size:11px;letter-spacing:0.12em;text-transform:uppercase;color:${t.inkSoft};font-weight:700;">${escapeHtml(p.label)}</div>
+        <div style="height:4px;line-height:4px;">&nbsp;</div>
+        <div style="font-family:${SERIF};font-size:18px;line-height:1.35;color:${t.ink};">${escapeHtml(p.ref)}</div>
+        ${p.summary
+          ? `<div style="height:9px;line-height:9px;">&nbsp;</div>
+             <p style="margin:0;font-family:${SERIF};font-size:16.5px;line-height:1.65;color:${t.ink};">${escapeHtml(p.summary)}</p>`
+          : ''}
+        ${p.calledTo
+          ? `<div style="height:11px;line-height:11px;">&nbsp;</div>
+             <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%">
+               <tr>
+                 <td width="3" style="width:3px;background:${t.accent};font-size:1px;line-height:1px;">&nbsp;</td>
+                 <td style="padding:1px 0 1px 14px;">
+                   <div style="font-family:${SANS};font-size:10.5px;letter-spacing:0.13em;text-transform:uppercase;color:${t.accent};font-weight:700;">You are called to</div>
+                   <div style="height:4px;line-height:4px;">&nbsp;</div>
+                   <div style="font-family:${SERIF};font-size:16.5px;line-height:1.6;color:${t.ink};">${escapeHtml(p.calledTo)}</div>
+                 </td>
+               </tr>
+             </table>`
+          : ''}
+      </td></tr>
+    </table>`;
+  };
+  const usccb = `<a href="${escapeHtml(r.usccbLink)}" style="font-family:${SANS};font-size:14px;color:${t.accent};text-decoration:underline;font-weight:600;">Read them in full at the USCCB &rarr;</a>`;
+  const shown = readingsOf(issue);
+  const readingBlocks = `${reading(shown.epistle)}${reading(shown.gospel)}`;
+  rows.push(section(t, 'Today at Mass', `${readingBlocks}${usccb}`, { first: true }));
 
   if (issue.verseOfDay?.ref) {
     const v = issue.verseOfDay;
@@ -162,16 +180,27 @@ function html(issue, { cfg, t, url, unsub }) {
     )
   );
 
-  rows.push(
-    section(
-      t,
-      'Consider',
-      `<div style="font-family:${SERIF};font-size:20px;line-height:1.4;color:${t.ink};">${escapeHtml(issue.consider.question)}</div>
-       <div style="height:12px;line-height:12px;">&nbsp;</div>
-       ${para(t, issue.consider.answer, { size: 16.5, last: true })}
-       ${issue.consider.citation ? `<div style="height:12px;line-height:12px;">&nbsp;</div><div style="font-family:${SANS};font-size:12px;color:${t.inkSoft};">${escapeHtml(issue.consider.citation)}</div>` : ''}`
-    )
-  );
+  // Three questions now. Separated by space rather than by rules, so they read
+  // as one section rather than three.
+  const questions = considerList(issue);
+  if (questions.length) {
+    rows.push(
+      section(
+        t,
+        'Why we believe what we do',
+        questions
+          .map(
+            (q, i) => `<div style="${i ? 'margin-top:26px;' : ''}">
+              <div style="font-family:${SERIF};font-size:19px;line-height:1.4;color:${t.ink};">${escapeHtml(q.question)}</div>
+              <div style="height:10px;line-height:10px;">&nbsp;</div>
+              ${para(t, q.answer, { size: 16.5, last: true })}
+              ${q.citation ? `<div style="height:10px;line-height:10px;">&nbsp;</div><div style="font-family:${SANS};font-size:12px;color:${t.inkSoft};">${escapeHtml(q.citation)}</div>` : ''}
+            </div>`
+          )
+          .join('')
+      )
+    );
+  }
 
   return `<!doctype html>
 <html lang="en"><head>
@@ -235,11 +264,15 @@ function text(issue, { cfg, url, unsub }) {
     '',
     heading('Today at Mass'),
   ];
-  if (r.firstRef) out.push(`  First   ${r.firstRef}`);
-  if (r.psalmRef) out.push(`  Psalm   ${r.psalmRef}`);
-  if (r.secondRef) out.push(`  Second  ${r.secondRef}`);
-  if (r.gospelRef) out.push(`  Gospel  ${r.gospelRef}`);
-  out.push('', `  ${r.usccbLink}`, '');
+  const shown = readingsOf(issue);
+  for (const p of [shown.epistle, shown.gospel]) {
+    if (!p?.ref) continue;
+    out.push(`  ${p.label.toUpperCase()} — ${p.ref}`);
+    if (p.summary) out.push(...wrapParas(p.summary, '  '));
+    if (p.calledTo) out.push('', ...wrap(`You are called to: ${p.calledTo}`, COLS, '  '));
+    out.push('');
+  }
+  out.push(`  ${r.usccbLink}`, '');
 
   if (issue.verseOfDay?.ref) {
     out.push(heading('Verse of the day'));
@@ -264,8 +297,16 @@ function text(issue, { cfg, url, unsub }) {
     stanzasToText(issue.prayer.text, { indent: '    ' }),
     ''
   );
-  out.push(heading('Consider'), ...wrap(issue.consider.question, COLS, '  '), '', ...wrapParas(issue.consider.answer));
-  if (issue.consider.citation) out.push('', `  ${issue.consider.citation}`);
+  const questions = considerList(issue);
+  if (questions.length) {
+    out.push(heading('Why we believe what we do'));
+    for (const q of questions) {
+      out.push(...wrap(q.question, COLS, '  '), '', ...wrapParas(q.answer));
+      if (q.citation) out.push('', `  ${q.citation}`);
+      out.push('');
+    }
+    out.pop();
+  }
   out.push(
     '',
     '─'.repeat(COLS),

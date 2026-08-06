@@ -1,0 +1,6 @@
+{
+  "reference": "fixture passage",
+  "translation_id": "dra",
+  "translation_name": "Douay-Rheims 1899 American Edition",
+  "text": "[fixture] Stand-in passage text used only by the test suite and by `npm run preview --offline`. It exists so the reading-summary path can be exercised without depending on anyone's uptime. It is deliberately not scripture: nothing here is ever shown to a reader, and the real path fetches the Douay-Rheims, which is public domain."
+}

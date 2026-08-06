@@ -11,7 +11,9 @@ const fixtures = resolve(here, 'fixtures');
 
 const ROUTES = [
   [/\/readings\/2026\/08-05\.json$/, 'readings-2026-08-05.json'],
-  [/bible-api[^?]*Matthew%2015%3A21/i, 'dra-matthew-15-21.json'],
+  [/bible-api[^?]*Matthew%2015%3A21\?/i, 'dra-matthew-15-21.json'],
+  // Any other bible-api request is a full passage fetch (lib/scripture.js).
+  [/bible-api/i, 'dra-passage.json'],
 ];
 
 export function fixtureFetch({ fail = [] } = {}) {
