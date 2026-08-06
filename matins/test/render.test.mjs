@@ -13,6 +13,10 @@ import { stanzas, stanzasToText } from '../src/render/prayer.js';
 import { normalizeRef } from '../src/lib/readings.js';
 import { generateHeadline, generateReflection } from '../src/lib/generate.js';
 import { PRAYERS } from '../src/content/prayers.js';
+import { FORMS } from '../src/content/forms.js';
+import { DRAFTS } from '../src/config.js';
+import { makeStore } from '../src/lib/store.js';
+import { pickForm, recentOpenings, rememberOpening, openingOf } from '../src/lib/rotation.js';
 
 const cfg = config({ LLM_PROVIDER: 'stub', SITE_URL: 'https://example.test/matins' });
 
@@ -162,56 +166,124 @@ test('stanzas split on blank lines and survive a round trip to text', () => {
   assert.deepEqual(stanzas(''), []);
 });
 
-// --- craft -----------------------------------------------------------------
+// --- drafting, judging, and craft -------------------------------------------
 
-// A fake provider that hands back a scripted sequence of replies, so the
-// retry-on-a-dead-phrase behaviour can be exercised for real.
-function scripted(replies) {
-  const seen = [];
+// A fake provider. It answers generation calls from a scripted list and judge
+// calls from a scripted verdict, and counts each kind separately, so the
+// draft-and-compare behaviour can be exercised for real.
+function provider({ drafts = [], judge = { choice: 1, reason: 'more concrete' } } = {}) {
+  const gen = [];
+  const judged = [];
   const fetchImpl = async (_url, init) => {
-    seen.push(JSON.parse(init.body).messages[0].content);
-    const text = replies[Math.min(seen.length - 1, replies.length - 1)];
+    const content = JSON.parse(init.body).messages[0].content;
+    const isJudge = /There are \d+ drafts/.test(content);
+    (isJudge ? judged : gen).push(content);
+    const text = isJudge
+      ? typeof judge === 'string' ? judge : JSON.stringify(judge)
+      : drafts[Math.min(gen.length - 1, drafts.length - 1)];
     return new Response(JSON.stringify({ content: [{ type: 'text', text }] }), { status: 200 });
   };
-  return { fetchImpl, seen };
+  return { fetchImpl, gen, judged };
 }
 
 const genCfg = config({ LLM_PROVIDER: 'anthropic', LLM_API_KEY: 'test', SITE_URL: 'https://example.test' });
 const DAY = { date: '2026-08-05', season: 'Ordinary Time', rank: 'weekday', colorName: 'green', feastOrSaint: 'A Wednesday' };
 
-test('a headline in title case is sent back, and the second try is kept', async () => {
-  const { fetchImpl, seen } = scripted(['The Woman Who Would Not Stop', 'the woman who would not stop']);
-  const res = await generateHeadline({ cfg: genCfg, day: DAY, reflection: null, fetchImpl });
+const CLEAN_A =
+  'A woman asks twice and is put off twice. Most of us go quiet after the first no. She does not, and it turns out that is what faith looks like from outside. Ask again today.';
+const CLEAN_B =
+  'The second refusal is the one that stops people. You have a thing you stopped asking for about a year ago. Nobody decided to stop; it just went quiet. Today is the day to say it out loud again.';
+
+test('more than one draft is written, and the judge decides between them', async () => {
+  const p = provider({ drafts: [CLEAN_A, CLEAN_B], judge: { choice: 2, reason: 'the second earns its turn' } });
+  const res = await generateReflection({ cfg: genCfg, day: DAY, readings: null, form: FORMS[0], fetchImpl: p.fetchImpl });
   assert.equal(res.ok, true);
-  assert.equal(res.value, 'the woman who would not stop');
-  assert.equal(seen.length, 2, 'it should have argued once');
-  assert.match(seen[1], /REJECTED for title case/);
+  assert.equal(res.value, CLEAN_B, 'the judge picked the second draft');
+  assert.equal(res.judge, 'the second earns its turn');
+  assert.equal(p.gen.length, DRAFTS.reflection);
+  assert.equal(p.judged.length, 1);
 });
 
-test('a reflection that will not drop a dead phrase still ships, and says so', async () => {
-  const stale =
-    'At the end of the day, the work is the work. There are mornings when the alarm is an enemy. You put the boots on anyway. That counts for more than it feels like.';
-  const { fetchImpl, seen } = scripted([stale]);
-  const res = await generateReflection({ cfg: genCfg, day: DAY, readings: null, fetchImpl });
+test('a judge that cannot answer still ships a draft', async () => {
+  const p = provider({ drafts: [CLEAN_A, CLEAN_B], judge: 'not json at all' });
+  const res = await generateReflection({ cfg: genCfg, day: DAY, readings: null, form: FORMS[0], fetchImpl: p.fetchImpl });
+  assert.equal(res.ok, true, 'craft failing soft is the whole point — unlike safety');
+  assert.equal(res.value, CLEAN_A);
+  assert.equal(res.judge, null);
+});
+
+test('a whole round of tired drafts is sent back with the fault named', async () => {
+  const stale = 'At the end of the day, the work is the work. There are mornings when the alarm is an enemy. You put the boots on anyway. That counts for more than it feels like.';
+  const p = provider({ drafts: [stale] });
+  const res = await generateReflection({ cfg: genCfg, day: DAY, readings: null, form: FORMS[0], fetchImpl: p.fetchImpl });
   assert.equal(res.ok, true, 'a tired phrase is not worth losing the section over');
-  assert.equal(res.value, stale);
   assert.deepEqual(res.craft, ['"at the end of the day"']);
-  assert.equal(seen.length, 3, 'it should have tried three times first');
+  assert.equal(p.gen.length, DRAFTS.reflection * 2, 'a second round was written');
+  assert.match(p.gen[DRAFTS.reflection], /REJECTED for "at the end of the day"/);
 });
 
 test('a structurally unusable block is dropped, not shipped', async () => {
-  const { fetchImpl } = scripted(['too short']);
-  const res = await generateReflection({ cfg: genCfg, day: DAY, readings: null, fetchImpl });
+  const p = provider({ drafts: ['too short'] });
+  const res = await generateReflection({ cfg: genCfg, day: DAY, readings: null, form: FORMS[0], fetchImpl: p.fetchImpl });
   assert.equal(res.ok, false);
   assert.match(res.error, /too short/);
+  assert.equal(p.judged.length, 0, 'nothing to judge');
 });
 
-test('clean prose is accepted on the first try', async () => {
-  const good =
-    'A woman asks twice and is put off twice. Most of us go quiet after the first no. She does not, and it turns out that is what faith looks like from the outside. Ask again today.';
-  const { fetchImpl, seen } = scripted([good]);
-  const res = await generateReflection({ cfg: genCfg, day: DAY, readings: null, fetchImpl });
+test('the reflection prompt carries the form, its exemplar, and the ground already covered', async () => {
+  const form = FORMS.find((f) => f.id === 'cost');
+  const p = provider({ drafts: [CLEAN_A] });
+  await generateReflection({
+    cfg: genCfg, day: DAY, readings: null, form,
+    avoidOpenings: ['There is a particular kind of tired'],
+    fetchImpl: p.fetchImpl,
+  });
+  const prompt = p.gen[0];
+  assert.ok(prompt.includes(form.brief), 'the form brief is in the prompt');
+  assert.ok(prompt.includes(form.exemplar), 'the exemplar is in the prompt');
+  assert.ok(prompt.includes('There is a particular kind of tired'), 'recent openings are ruled out');
+  assert.ok(prompt.includes('WHO IS SPEAKING'), 'the voice is in the prompt');
+});
+
+test('a headline that reads like a poster is sent back', async () => {
+  const p = provider({ drafts: ['The Woman Who Would Not Stop', 'a small refusal, repeated'] });
+  const res = await generateHeadline({ cfg: genCfg, day: DAY, reflection: null, fetchImpl: p.fetchImpl });
   assert.equal(res.ok, true);
+  assert.equal(res.value, 'a small refusal, repeated');
   assert.deepEqual(res.craft, []);
-  assert.equal(seen.length, 1);
+});
+
+test('forms rotate rather than repeating', async () => {
+  const store = makeStore(null);
+  const seen = [];
+  for (const date of ['2026-08-01', '2026-08-02', '2026-08-03', '2026-08-04', '2026-08-05']) {
+    const picked = await pickForm(store, { forms: FORMS, date, tags: [] });
+    await picked.commit();
+    seen.push(picked.chosen.id);
+  }
+  assert.equal(new Set(seen).size, seen.length, `a form repeated inside its cooldown: ${seen.join(', ')}`);
+  // Deterministic: the same date and state give the same form back.
+  const again = await pickForm(makeStore(null), { forms: FORMS, date: '2026-08-01', tags: [] });
+  assert.equal(again.chosen.id, seen[0]);
+});
+
+test('openings are remembered so tomorrow cannot reuse them', async () => {
+  const store = makeStore(null);
+  assert.equal(openingOf('There is a particular kind of tired that arrives at the end.'), 'There is a particular kind of tired that');
+  await rememberOpening(store, 'There is a particular kind of tired that arrives.');
+  await rememberOpening(store, 'Nobody warns you that the hard part is not the start.');
+  const recent = await recentOpenings(store);
+  assert.equal(recent.length, 2);
+  assert.equal(recent[0], 'Nobody warns you that the hard part is', 'most recent first');
+});
+
+test('every form carries an exemplar that obeys the house rules', () => {
+  for (const f of FORMS) {
+    assert.ok(f.brief && f.exemplar, `${f.id} is missing a brief or an exemplar`);
+    assert.ok(!/!/.test(f.exemplar), `${f.id}'s exemplar has an exclamation mark`);
+    assert.ok(!/["“]/.test(f.exemplar), `${f.id}'s exemplar quotes something`);
+    assert.ok(!/\b\d+:\d+\b/.test(f.exemplar), `${f.id}'s exemplar cites a verse`);
+    const words = f.exemplar.split(/\s+/).length;
+    assert.ok(words >= 40 && words <= 130, `${f.id}'s exemplar is ${words} words`);
+  }
 });

@@ -10,7 +10,8 @@ import { generateReflection, generateSaintStory, generateHeadline } from './gene
 import { checkBlock } from './safety.js';
 import { PRAYERS } from '../content/prayers.js';
 import { QA_BANK } from '../content/qa.js';
-import { pickPrayer, pickQa } from './rotation.js';
+import { FORMS } from '../content/forms.js';
+import { pickPrayer, pickQa, pickForm, recentOpenings, rememberOpening } from './rotation.js';
 
 // The block that proves the safety pass works. `preview --seed-bad-block` (or
 // buildIssue({ seedBadBlock: true })) swaps this in for the real reflection;
@@ -32,9 +33,19 @@ export async function buildIssue({ date, cfg, store, dryRun = false, seedBadBloc
   if (verse?.error) degraded.push({ section: 'verseOfDay', reason: verse.error });
 
   // Generation. Reflection first because the headline is written against it.
+  // The form is rotated the same way the prayers are — a model asked only for
+  // a length writes the same paragraph every day.
+  const formPick = await pickForm(store, { forms: FORMS, date, tags: [day.season?.toLowerCase(), day.rank?.toLowerCase()] });
   const reflectionRes = seedBadBlock
     ? { ok: true, value: SEEDED_BAD_REFLECTION }
-    : await generateReflection({ cfg, day, readings, fetchImpl });
+    : await generateReflection({
+        cfg,
+        day,
+        readings,
+        form: formPick.chosen,
+        avoidOpenings: await recentOpenings(store),
+        fetchImpl,
+      });
   if (!reflectionRes.ok) degraded.push({ section: 'reflection', reason: reflectionRes.error });
 
   const [saintRes, headlineRes] = await Promise.all([
@@ -58,7 +69,17 @@ export async function buildIssue({ date, cfg, store, dryRun = false, seedBadBloc
     // `craft` is a style note, not a safety verdict: the block ships either
     // way. It is reported so the admin preview shows which tired phrase the
     // model could not shake, which is the only way to tune the prompts.
-    checks.push({ block: name, pass: check.pass, reason: check.reason, craft: res.craft?.length ? res.craft : undefined });
+    checks.push({
+      block: name,
+      pass: check.pass,
+      reason: check.reason,
+      craft: res.craft?.length ? res.craft : undefined,
+      // How the block was arrived at: how many drafts were written, and what
+      // decided between them. This is the record you read when the writing
+      // starts drifting.
+      drafts: res.drafts,
+      judge: res.judge || undefined,
+    });
     if (check.pass) return res.value;
     dropped.push({ section: name, reason: check.reason });
     return null;
@@ -75,6 +96,12 @@ export async function buildIssue({ date, cfg, store, dryRun = false, seedBadBloc
   if (!dryRun) {
     await prayerPick.commit();
     await qaPick.commit();
+    // Only remember the form and the opening if the reflection actually
+    // survived — a dropped block used neither.
+    if (reflection) {
+      await formPick.commit();
+      await rememberOpening(store, reflection);
+    }
   }
 
   const p = prayerPick.chosen;
@@ -116,6 +143,7 @@ export async function buildIssue({ date, cfg, store, dryRun = false, seedBadBloc
       checkedAt: new Date().toISOString(),
       provider: cfg.llmProvider,
       model: cfg.llmModel || null,
+      reflectionForm: formPick.chosen.id,
       blocks: checks,
       dropped,
       degraded,

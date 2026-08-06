@@ -19,7 +19,12 @@ export const DEFAULTS = {
 };
 
 // How many recent issues a prayer / Q&A must sit out before it can come back.
-export const ROTATION_COOLDOWN = { prayer: 10, qa: 14 };
+export const ROTATION_COOLDOWN = { prayer: 10, qa: 14, form: 4 };
+
+// How many drafts a generated block gets before a judge picks between them.
+// One draft is a coin flip on tone; two and a comparison is most of the way to
+// consistent. Cheap enough at one issue a day — see lib/judge.js.
+export const DRAFTS = { reflection: 2, saintStory: 2, headline: 3 };
 
 // Model defaults per provider. Deliberately small + cheap; this is short-form
 // devotional prose and a rubric check, not reasoning work.

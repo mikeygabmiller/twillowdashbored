@@ -46,13 +46,8 @@ renderers can be exercised with no key and no network.
    rest of the issue still sends. The check **fails closed**: if the checker
    itself errors, the block is dropped.
 
-   Separately, `src/lib/generate.js` checks **craft**: devotional prose pulls
-   hard toward the same dozen dead phrases, so a block that trips one is handed
-   back to the model with the fault named, up to three tries. Craft is not
-   safety and does not fail closed — if the model cannot shake the phrase, the
-   last attempt still ships, because losing the whole reflection over "at the
-   end of the day" is the worse trade. What tripped is reported in
-   `safetyReport.blocks[].craft`, which is how you tune the prompts.
+   Separately, the generator judges **craft** — see below. Craft is not safety
+   and does **not** fail closed.
 3. **No copyrighted scripture or Catechism text.** Readings appear as
    references plus a link to the USCCB. The only scripture text that can ever
    appear is a single Douay-Rheims verse. Catechism references appear as bare
@@ -208,6 +203,72 @@ an empty candidate, which the safety pass would read as "checker failed" and
 fail closed on, dropping every generated block. `thinkingConfig.thinkingBudget`
 is therefore set to 0; none of this work needs deliberation. Leave `LLM_MODEL`
 blank for the provider default, or set it if the API 404s on that model name.
+
+## How the writing is kept good
+
+Orthodoxy is `safety.js`. Everything here is about the other problem: that the
+prose be worth reading on an ordinary Tuesday, not just on Easter. Four things
+do that work, in descending order of how much they matter.
+
+**1. Exemplars.** Every block is shown a worked example in the house voice
+(`src/content/forms.js`). Few-shot holds register better than any quantity of
+adjectives in an instruction. **The exemplars are the product** — if the writing
+drifts, fix them before touching anything in `lib/`.
+
+**2. A named shape, rotated.** "Four to six sentences" is a length, and a model
+given only a length writes the same paragraph every day: observation, gentle
+pivot, uplift. `FORMS` names six shapes — the objection, one scene, the hard
+saying, the plain fact, the long middle, the cost — and `pickForm` rotates them
+through the same cooldown machinery as the prayers. Which one a date gets is
+deterministic, so a preview shows what that date would really receive.
+
+**3. Drafts and a judge.** Each block is written more than once at spread
+temperatures and the drafts are compared (`src/lib/judge.js`, counts in
+`DRAFTS`). One draft is a coin flip on tone. The judge is a comparison, not a
+score — models are unreliable at absolute quality ratings and much better at
+"which of these two, and why", and a comparison needs no recalibration as models
+change. It **fails soft**: an unreachable or incoherent judge means the first
+draft ships.
+
+**4. Tripwires.** A short list of phrases that mark writing as machine-made
+("at the end of the day", "in our daily lives", an exclamation mark), plus
+throat-clearing openers and title-case headlines. A whole round tripping one is
+sent back with the fault named. If the model still cannot shake it, the best
+draft **ships anyway** — losing the entire reflection over a tired phrase is the
+worse trade. What tripped is recorded in `safetyReport.blocks[].craft`.
+
+Recent opening sentences are kept in `rot:openings` and fed back as ground
+already covered, so the first line does not converge.
+
+`npm run preview` prints the whole record: which form, how many drafts, what the
+judge said, and anything that tripped.
+
+**The voice lives in one file.** `src/content/voice.js` holds who is speaking,
+who is listening, and the style rules. A change of editorial direction is an
+edit to that file plus the exemplars — not a rewrite of the generator.
+
+### Stories
+
+There is a real tension here, and it is worth stating plainly rather than
+discovering later. Rule 1 says the model may assert nothing that is not in its
+grounded facts. For a saint, those facts are a name, a rank, and one or two
+dates. **That is not enough material to build a scene from**, which is why the
+saint block tends toward the general.
+
+The options, and what each actually costs:
+
+- **A hand-written saint fact bank** — the architecturally correct answer, and
+  exactly how `prayers.js` and `qa.js` already work: human-written, pre-vetted,
+  hardcoded. Costs writing time; costs no safety.
+- **Retelling the day's Gospel scene** — the highest reader value, and the only
+  option that requires *relaxing* rule 2. It would need a narrative source the
+  app trusts, not the model's memory.
+- **Ordinary anonymous people** — technically free, but invented people
+  presented as real is a line worth deciding on deliberately.
+
+`direction.html` puts these to the owner as a decision rather than changing the
+rule quietly. Until that is settled, the exemplars deliberately narrate no
+reading.
 
 ## Design
 
