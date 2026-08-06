@@ -200,10 +200,13 @@ export default {
       // copy of the same markup — see scripts/build-site.mjs.)
       if (path === '/') return html(renderSignupPage({ cfg, subscribeEndpoint: `${cfg.workerUrl}/subscribe` }));
 
-      return new Response('Not found', { status: 404 });
+      // CORS even on the miss: without it a browser reports a 404 as an
+      // opaque network failure, which sends you looking for an outage instead
+      // of a route that does not exist on the build you have deployed.
+      return json({ error: 'not found', path, build: BUILD }, { status: 404, headers: cors() });
     } catch (err) {
       console.error('fetch error', err?.stack || err);
-      return json({ error: 'unexpected error' }, { status: 500 });
+      return json({ error: 'unexpected error' }, { status: 500, headers: cors() });
     }
   },
 

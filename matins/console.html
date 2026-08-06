@@ -195,12 +195,14 @@ async function call({ path, method = 'GET', useToken = true }) {
     setStatus('Could not reach the Worker.', 'err');
     show(
       String(err && err.message) +
-        '\n\nUsually one of:\n' +
-        '  • the Worker URL is wrong or the Worker is not deployed\n' +
-        '  • you are offline\n' +
-        '  • the deployed build is older than 2026-08-06·matins-11, which is the\n' +
-        '    first one that lets a page like this read admin responses.\n' +
-        '    Check "What build is live?" — that one works on any build.'
+        '\n\nThe browser could not read a reply. That is almost always one of:\n\n' +
+        '  1. THE DEPLOYED BUILD IS TOO OLD FOR THIS BUTTON.\n' +
+        '     Press "What build is live?" — it works on every build. If the\n' +
+        '     number is behind, the route you just called does not exist yet,\n' +
+        '     and an old build answers that with a 404 the browser hides.\n' +
+        '     Deploy the newest version, then try again.\n\n' +
+        '  2. The Worker URL is wrong, or nothing is deployed at it.\n\n' +
+        '  3. You are offline.'
     );
   } finally {
     document.querySelectorAll('button').forEach((b) => (b.disabled = false));
