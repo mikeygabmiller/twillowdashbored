@@ -90,8 +90,25 @@ export default {
         // and no token configured at all. Saying which costs nothing — that the
         // secret is unset is not a secret — and saves a blind hunt.
         if (!cfg.adminToken) {
+          // Reached only while the Worker is unconfigured, and it reports names
+          // and booleans — never a value. Which OTHER secrets arrive is the
+          // whole diagnosis: none means they went to a different Worker or to
+          // the build-time settings; some means this one name is wrong.
           return json(
-            { error: 'admin is not configured', hint: 'The ADMIN_TOKEN secret is not set on this Worker. Add it under Settings → Variables and Secrets, as a Secret (a plain-text Variable is wiped by the next deploy).' },
+            {
+              error: 'admin is not configured',
+              secretsReachingThisWorker: {
+                ADMIN_TOKEN: false,
+                RESEND_API_KEY: !!cfg.resendKey,
+                LLM_API_KEY: !!cfg.llmApiKey,
+                TOKEN_SECRET: !!cfg.tokenSecret,
+                GITHUB_TOKEN: !!cfg.githubToken,
+              },
+              hint:
+                'If the others are false too, the secrets are not on this Worker at all — check you are editing "matins" (not "texting"), and that you used the Worker\'s own Settings → Variables and Secrets rather than Settings → Build, whose variables exist only during the build. If the others are true, only the ADMIN_TOKEN name is wrong: it is case-sensitive and must not have spaces around it.',
+              worker: cfg.appName,
+              build: BUILD,
+            },
             { status: 503 }
           );
         }
