@@ -94,23 +94,7 @@ export default {
           // and booleans — never a value. Which OTHER secrets arrive is the
           // whole diagnosis: none means they went to a different Worker or to
           // the build-time settings; some means this one name is wrong.
-          return json(
-            {
-              error: 'admin is not configured',
-              secretsReachingThisWorker: {
-                ADMIN_TOKEN: false,
-                RESEND_API_KEY: !!cfg.resendKey,
-                LLM_API_KEY: !!cfg.llmApiKey,
-                TOKEN_SECRET: !!cfg.tokenSecret,
-                GITHUB_TOKEN: !!cfg.githubToken,
-              },
-              hint:
-                'If the others are false too, the secrets are not on this Worker at all — check you are editing "matins" (not "texting"), and that you used the Worker\'s own Settings → Variables and Secrets rather than Settings → Build, whose variables exist only during the build. If the others are true, only the ADMIN_TOKEN name is wrong: it is case-sensitive and must not have spaces around it.',
-              worker: cfg.appName,
-              build: BUILD,
-            },
-            { status: 503 }
-          );
+          return json({ error: 'admin is not configured', ...bindingReport(env), build: BUILD }, { status: 503 });
         }
         if (!adminAuthorized(request, url, cfg)) {
           return json({ error: 'unauthorized', hint: 'ADMIN_TOKEN is set but does not match. Check for a trailing space, and prefer letters and digits only — a token with +, &, # or % is mangled by the query string.' }, { status: 401 });
@@ -212,6 +196,50 @@ async function runDaily({ cfg, store, date, force, send }) {
     publishErrors: published.errors,
     delivery,
   };
+}
+
+// Why a secret "that is definitely set" is not here.
+//
+// Booleans per expected name could not tell the three real causes apart: a
+// mistyped name, a value that never reached the running version, and looking
+// at a different Worker. The names of the bindings this Worker actually
+// received tell all three apart at a glance, and a name is not a secret — no
+// value is read, and none of these fields can contain one.
+const EXPECTED_SECRETS = ['ADMIN_TOKEN', 'RESEND_API_KEY', 'LLM_API_KEY', 'TOKEN_SECRET', 'GITHUB_TOKEN'];
+
+// Case, spaces, hyphens and stray underscores all look identical in a
+// dashboard table and are the usual culprits.
+const squash = (s) => String(s).toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+function bindingReport(env) {
+  const present = Object.keys(env || {}).sort();
+  const presentSquashed = new Map(present.map((k) => [squash(k), k]));
+  const missing = EXPECTED_SECRETS.filter((k) => !present.includes(k));
+
+  // A name that is nearly right is the single most likely explanation, and the
+  // one a boolean can never surface.
+  const lookalikes = {};
+  for (const want of missing) {
+    const near = presentSquashed.get(squash(want));
+    if (near && near !== want) lookalikes[want] = `this Worker has "${near}" instead — the name must match exactly`;
+  }
+
+  return {
+    worker: env?.APP_NAME || 'unknown',
+    bindingsThisWorkerReceived: present,
+    missing,
+    lookalikes: Object.keys(lookalikes).length ? lookalikes : undefined,
+    hint: diagnose({ present, missing, lookalikes }),
+  };
+}
+
+function diagnose({ present, missing, lookalikes }) {
+  if (!missing.length) return 'Every expected secret is here. If admin still fails, ADMIN_TOKEN is set to an empty string.';
+  if (Object.keys(lookalikes).length) return 'A name is wrong, not a value. See "lookalikes" — rename the binding to match exactly, then deploy.';
+  if (missing.length === EXPECTED_SECRETS.length) {
+    return 'No expected secret reached this Worker. Either this is the wrong Worker (check you are in "matins", not "texting"), or the values went to Settings → Build, whose variables only exist while the build runs, rather than the Worker\'s own Settings → Variables and Secrets.';
+  }
+  return `Some secrets arrive and ${missing.join(' and ')} do not, so the names are reaching the right Worker but these values are not on the version that is actually serving. In the dashboard, editing Variables and Secrets stages a NEW version — it is not live until you deploy it, and any redeploy in between (a push that triggers Workers Builds) publishes a version built from the last deployed bindings, silently leaving the staged ones behind. Fix: Deployments → deploy the newest version, or set them with "wrangler secret put ${missing[0]}", which applies to the live Worker immediately. Then re-check this URL. Bindings actually received: ${present.join(', ') || 'none'}.`;
 }
 
 function readOnlyStore(store) {

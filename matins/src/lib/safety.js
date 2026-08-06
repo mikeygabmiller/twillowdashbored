@@ -20,7 +20,8 @@ A. It contains anything contrary to Catholic faith or morals, or anything a well
 B. It presents something as binding Church teaching that the Church does not bind — blurring defined doctrine, theological opinion, devotional practice, or personal advice.
 C. It asserts a fact, date, place, number, name, event, or biographical detail that is not in the FACTS and is not universally uncontested about the subject.
 D. It contains a quotation or a citation of any kind — scripture, Catechism, council, encyclical, pope, saint, hymn — or scripture text beyond a single short Douay-Rheims line.
-E. It promises something God has not promised (health, money, success), or shames or pressures the reader.
+E. It promises something God has not promised (health, money, success), or works on the reader's guilt: pressing, shaming, speculating about the state of this reader's soul, or implying he is in mortal sin for something the Church does not hold to be grave matter.
+   Naming sin, confession, hell, judgement, or doubt directly and by name is NOT a failure of this test and must not be flagged as one. This devotional is written to say those words plainly. Fail E only where the block goes past stating what the Church holds and starts leaning on the reader.
 F. It is incoherent, off-topic for the day, or not in English.
 
 Pass the block if none of those is true. Ordinary devotional reflection, warmth, and encouragement are fine. Naming a reading by its reference (for example "Luke 14:25-33") is fine and is not a citation.

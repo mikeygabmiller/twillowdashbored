@@ -287,3 +287,14 @@ test('every form carries an exemplar that obeys the house rules', () => {
     assert.ok(words >= 40 && words <= 130, `${f.id}'s exemplar is ${words} words`);
   }
 });
+
+// --- configuration diagnostics ----------------------------------------------
+
+test('a value pasted with its quotes still on it is cleaned up', async () => {
+  const { config: cfgFn } = await import('../src/config.js');
+  const c = cfgFn({ LLM_MODEL: '"3.5"', REPLY_TO: "'a@b.com'", FROM_EMAIL: 'Matins <x@y.dev>', ADMIN_TOKEN: '"abc123"' });
+  assert.equal(c.llmModel, '3.5');
+  assert.equal(c.replyTo, 'a@b.com');
+  assert.equal(c.adminToken, 'abc123', 'a secret pasted with quotes would never match');
+  assert.equal(c.fromEmail, 'Matins <x@y.dev>', 'an unquoted value is left exactly alone');
+});

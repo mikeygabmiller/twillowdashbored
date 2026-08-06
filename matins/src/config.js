@@ -38,7 +38,22 @@ export const MODEL_DEFAULTS = {
 
 export const TEMPERATURE = { generate: 0.3, safety: 0 };
 
-export function config(env = {}) {
+// The dashboard's value box takes a raw string, so a value pasted with the
+// quotes still around it arrives as part of the value: LLM_MODEL becomes
+// `"3.5"` rather than `3.5`, and a Reply-To header goes out malformed. Nothing
+// legitimate here is wrapped in matching quotes, so stripping them is safe and
+// saves a genuinely baffling afternoon.
+function unquote(v) {
+  if (typeof v !== 'string') return v;
+  const t = v.trim();
+  return t.length > 1 && ((t.startsWith('"') && t.endsWith('"')) || (t.startsWith("'") && t.endsWith("'")))
+    ? t.slice(1, -1).trim()
+    : t;
+}
+
+export function config(rawEnv = {}) {
+  const env = {};
+  for (const key of Object.keys(rawEnv)) env[key] = unquote(rawEnv[key]);
   const get = (k) => (env[k] === undefined || env[k] === '' ? DEFAULTS[k] : env[k]);
   const provider = String(get('LLM_PROVIDER')).toLowerCase();
   return {
