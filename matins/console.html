@@ -142,6 +142,12 @@ function verdict(html, kind = '') {
 // Turns the Worker's own diagnosis into one plain sentence at the top, so the
 // answer is not buried in JSON.
 function readDiagnosis(data) {
+  // The Worker already worked out which of the four cases this is; repeating
+  // the reasoning here would only let the two drift apart.
+  if (data.error === 'unauthorized') {
+    const warn = data.warning ? `<br><br>${data.warning}` : '';
+    return [`<b>The token does not match.</b>${data.hint || ''}${warn}`, 'err'];
+  }
   if (data.error !== 'admin is not configured') {
     return ['<b>Admin is configured.</b>Your token is being read. Move on to Step 2.', 'ok'];
   }
@@ -200,9 +206,11 @@ const today = () => new Date().toLocaleDateString('en-CA', { timeZone: 'America/
 const ACTIONS = {
   version: () => call({ path: '/api/version', useToken: false }),
 
-  // The 503 body is the diagnosis, so no token is wanted here even if one is set.
+  // Sends the token only if there is one. Without it the 503 body diagnoses the
+  // bindings; with it, a 401 body diagnoses the mismatch instead. Either way
+  // this is the button that answers "why will it not let me in".
   diagnose: async () => {
-    const r = await call({ path: '/admin/status', useToken: false });
+    const r = await call({ path: '/admin/status', useToken: !!token() });
     if (!r) return;
     const [html, kind] = readDiagnosis(r.data || {});
     verdict(html, kind);

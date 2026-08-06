@@ -97,7 +97,7 @@ export default {
           return json({ error: 'admin is not configured', ...bindingReport(env), build: BUILD }, { status: 503, headers: cors() });
         }
         if (!adminAuthorized(request, url, cfg)) {
-          return json({ error: 'unauthorized', hint: 'ADMIN_TOKEN is set but does not match. Check for a trailing space, and prefer letters and digits only — a token with +, &, # or % is mangled by the query string.' }, { status: 401, headers: cors() });
+          return json({ error: 'unauthorized', ...mismatchReport(request, url, cfg, env) }, { status: 401, headers: cors() });
         }
 
         // Dry run in production: builds and renders, sends and marks nothing.
@@ -243,6 +243,53 @@ function diagnose({ present, missing, lookalikes }) {
     return 'No expected secret reached this Worker. Either this is the wrong Worker (check you are in "matins", not "texting"), or the values went to Settings → Build, whose variables only exist while the build runs, rather than the Worker\'s own Settings → Variables and Secrets.';
   }
   return `Some secrets arrive and ${missing.join(' and ')} do not, so the names are reaching the right Worker but these values are not on the version that is actually serving. In the dashboard, editing Variables and Secrets stages a NEW version — it is not live until you deploy it, and any redeploy in between (a push that triggers Workers Builds) publishes a version built from the last deployed bindings, silently leaving the staged ones behind. Fix: Deployments → deploy the newest version, or set them with "wrangler secret put ${missing[0]}", which applies to the live Worker immediately. Then re-check this URL. Bindings actually received: ${present.join(', ') || 'none'}.`;
+}
+
+// Why a token "that is definitely right" does not match.
+//
+// Nothing here reveals the stored token. It reports comparative facts only —
+// whether the two are the same length, where the supplied one came from, and
+// whether more than one binding could be supplying it. One bit about length is
+// worth an evening, and it is the bit that separates "you are comparing
+// against a different value entirely" from "one character is wrong".
+function mismatchReport(request, url, cfg, env) {
+  const header = bearer(request);
+  const query = request.method === 'GET' ? url.searchParams.get('token') : null;
+  const supplied = header ?? query ?? '';
+
+  // Two bindings whose names differ only by whitespace both look like
+  // ADMIN_TOKEN in the dashboard. The exactly-named one wins, and it is not
+  // necessarily the row that was just edited.
+  const adminTokenBindings = Object.keys(env || {}).filter((k) => k.trim() === 'ADMIN_TOKEN');
+
+  const report = {
+    suppliedVia: header ? 'Authorization header' : query ? 'token query parameter' : 'nothing was supplied',
+    lengthsMatch: supplied.length === cfg.adminToken.length,
+    adminTokenBindings,
+    // Short tokens travel in URLs and this route can email every subscriber.
+    weakStoredToken: cfg.adminToken.length < 16 || undefined,
+  };
+
+  if (!supplied) {
+    report.hint =
+      'No token arrived. A POST must carry it as an Authorization: Bearer header — the query parameter is accepted on GET only, deliberately, because that is the form that ends up in logs.';
+  } else if (adminTokenBindings.length > 1) {
+    report.hint = `There is more than one ADMIN_TOKEN binding on this Worker (${adminTokenBindings
+      .map((k) => JSON.stringify(k))
+      .join(' and ')}). The exactly-named one wins, and it is probably holding an older value than the row you just edited. Delete every one of them, then add a single ADMIN_TOKEN.`;
+  } else if (!report.lengthsMatch) {
+    report.hint =
+      'The token you sent and the one stored are different lengths, so this is not a typo — the Worker is comparing against a different value than the one you think you set. Most likely the stored value was never replaced, or it was edited on a version that is not the one serving. Delete ADMIN_TOKEN, add it again, deploy, and try once more.';
+  } else {
+    report.hint =
+      'Same length, different content. That is a character-level difference: a capital I against a lowercase l, a zero against an O, or an invisible character carried in on a paste. Retype both by hand rather than pasting.';
+  }
+
+  if (report.weakStoredToken) {
+    report.warning =
+      'The stored token is under 16 characters. This route can rebuild the site and email every confirmed subscriber, and the token travels in URLs on GET. Use a long random string of letters and digits.';
+  }
+  return report;
 }
 
 function readOnlyStore(store) {
