@@ -5,12 +5,12 @@ import { config } from './config.js';
 import { buildIssue } from './lib/issue.js';
 import { makeStore, saveIssue, ISSUE_INDEX_KEY } from './lib/store.js';
 import { publishIssue } from './lib/publish.js';
-import { sendIssue } from './lib/send.js';
+import { sendIssue, sendOne } from './lib/send.js';
 import { subscribe, confirm, unsubscribe, activeSubscribers, subscriberCounts } from './lib/subscribers.js';
 import { renderNotice, renderSignupPage, renderIssuePage, renderArchivePage } from './render/web.js';
 import { renderEmail } from './render/email.js';
 import { json, html } from './lib/http.js';
-import { safeEqualString } from './lib/tokens.js';
+import { safeEqualString, makeToken, normalizeEmail } from './lib/tokens.js';
 import { listModels } from './lib/llm.js';
 import { isValidDate } from './lib/calendar.js';
 import { BUILD } from './build.js';
@@ -107,6 +107,58 @@ export default {
           const issue = await buildIssue({ date, cfg, store: readOnlyStore(store), dryRun: true, seedBadBlock: url.searchParams.get('seedBad') === '1' });
           if (url.searchParams.get('format') === 'html') return html(renderEmail(issue, { cfg }).html);
           return json(issue, { headers: cors() });
+        }
+
+        // One issue, to one address, on demand. Deliberately touches nothing:
+        // no KV write, no publish, no `sent:<date>` lock, and the rotation is
+        // read through a store that throws writes away — so firing this at
+        // noon cannot change which prayer the real 5am send uses, and cannot
+        // make the cron think it has already run. Send it as often as you like.
+        //
+        // POST only. It sends mail, so it must not be reachable by a URL in a
+        // browser history, a chat message, or a request log.
+        if (path === '/admin/send-me' && request.method === 'POST') {
+          const date = url.searchParams.get('date') || todayIn(cfg.sendTz);
+          if (!isValidDate(date)) return json({ error: 'bad date' }, { status: 400, headers: cors() });
+          const to = normalizeEmail(url.searchParams.get('to'));
+          if (!to) return json({ error: 'a valid ?to= address is required' }, { status: 400, headers: cors() });
+
+          const issue = await buildIssue({ date, cfg, store: readOnlyStore(store), dryRun: true });
+          // A real token, so the unsubscribe link in the test copy is the same
+          // live link a subscriber would get rather than a dead one.
+          const token = await makeToken({ secret: cfg.tokenSecret, purpose: 'unsub', email: to });
+          const unsubscribeUrl = `${cfg.workerUrl}/unsubscribe?t=${encodeURIComponent(token)}`;
+          const rendered = renderEmail(issue, { cfg, unsubscribeUrl, permalink: `${cfg.siteUrl}/${issue.date}/` });
+          const sent = await sendOne({
+            cfg,
+            to,
+            subject: rendered.subject,
+            html: rendered.html,
+            text: rendered.text,
+            headers: {
+              'List-Unsubscribe': `<${unsubscribeUrl}>`,
+              'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+            },
+          });
+          return json(
+            {
+              ...sent,
+              to,
+              date,
+              subject: rendered.subject,
+              headline: issue.headline,
+              status: issue.status,
+              // The whole point of firing this by hand is judging the writing.
+              writing: {
+                form: issue.safetyReport.reflectionForm,
+                blocks: issue.safetyReport.blocks,
+                dropped: issue.safetyReport.dropped,
+                degraded: issue.safetyReport.degraded,
+              },
+              note: 'Nothing was recorded. No KV write, no publish, and the daily send is still free to run.',
+            },
+            { status: sent.ok ? 200 : 502, headers: cors() }
+          );
         }
 
         if (path === '/admin/run' && request.method === 'POST') {

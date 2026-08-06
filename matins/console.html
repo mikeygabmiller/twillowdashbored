@@ -70,6 +70,10 @@
         <input id="token" type="password" placeholder="not needed for Diagnose" spellcheck="false" autocomplete="off">
       </div>
     </div>
+    <div style="margin-top:14px">
+      <label for="me">Your email — for “Send it to me”</label>
+      <input id="me" type="email" placeholder="you@example.com" spellcheck="false" autocomplete="email">
+    </div>
     <p class="note">Leave the token blank to start — <b>Diagnose</b> works without one, and tells you whether the Worker can even see your secrets.</p>
   </div>
 
@@ -84,12 +88,13 @@
 
   <div class="card">
     <h2>Step 2 · Once Diagnose is clean</h2>
-    <p class="step">These need the token. Check the model name before anything else — a wrong one fails every generation.</p>
+    <p class="step">These need the token. Check the model name before anything else — a wrong one fails every generation. <b>Send it to me now</b> mails one copy to the address above and records nothing: no KV write, no publish, and the 5am send is still free to run.</p>
     <div class="btns">
       <button data-act="status">Status</button>
       <button data-act="models">Which models the key can reach</button>
       <button data-act="preview">Preview today (JSON)</button>
       <button data-act="previewHtml">Preview today (email, new tab)</button>
+      <button class="go" data-act="sendMe">Send it to me now</button>
     </div>
   </div>
 
@@ -116,9 +121,10 @@ const KEY = 'matins-console-v1';
 const saved = JSON.parse(localStorage.getItem(KEY) || '{}');
 if (saved.base) $('base').value = saved.base;
 if (saved.token) $('token').value = saved.token;
-for (const id of ['base', 'token']) {
+if (saved.me) $('me').value = saved.me;
+for (const id of ['base', 'token', 'me']) {
   $(id).addEventListener('input', () => {
-    localStorage.setItem(KEY, JSON.stringify({ base: $('base').value.trim(), token: $('token').value }));
+    localStorage.setItem(KEY, JSON.stringify({ base: $('base').value.trim(), token: $('token').value, me: $('me').value.trim() }));
   });
 }
 
@@ -229,6 +235,12 @@ const ACTIONS = {
     window.open(url, '_blank', 'noopener');
     setStatus('Opened in a new tab.', 'ok');
     verdict('<b>Heads up.</b>That link carries your token in the URL. Close the tab when you are done, and do not paste the address anywhere.', '');
+  },
+
+  sendMe: () => {
+    const to = $('me').value.trim();
+    if (!to) { setStatus('Fill in your email address first.', 'err'); return; }
+    return call({ path: `/admin/send-me?date=${today()}&to=${encodeURIComponent(to)}`, method: 'POST' });
   },
 
   dryRun: () => call({ path: `/admin/run?date=${today()}&force=1&send=0`, method: 'POST' }),
