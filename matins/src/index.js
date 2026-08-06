@@ -94,29 +94,29 @@ export default {
           // and booleans — never a value. Which OTHER secrets arrive is the
           // whole diagnosis: none means they went to a different Worker or to
           // the build-time settings; some means this one name is wrong.
-          return json({ error: 'admin is not configured', ...bindingReport(env), build: BUILD }, { status: 503 });
+          return json({ error: 'admin is not configured', ...bindingReport(env), build: BUILD }, { status: 503, headers: cors() });
         }
         if (!adminAuthorized(request, url, cfg)) {
-          return json({ error: 'unauthorized', hint: 'ADMIN_TOKEN is set but does not match. Check for a trailing space, and prefer letters and digits only — a token with +, &, # or % is mangled by the query string.' }, { status: 401 });
+          return json({ error: 'unauthorized', hint: 'ADMIN_TOKEN is set but does not match. Check for a trailing space, and prefer letters and digits only — a token with +, &, # or % is mangled by the query string.' }, { status: 401, headers: cors() });
         }
 
         // Dry run in production: builds and renders, sends and marks nothing.
         if (path === '/admin/preview') {
           const date = url.searchParams.get('date') || todayIn(cfg.sendTz);
-          if (!isValidDate(date)) return json({ error: 'bad date' }, { status: 400 });
+          if (!isValidDate(date)) return json({ error: 'bad date' }, { status: 400, headers: cors() });
           const issue = await buildIssue({ date, cfg, store: readOnlyStore(store), dryRun: true, seedBadBlock: url.searchParams.get('seedBad') === '1' });
           if (url.searchParams.get('format') === 'html') return html(renderEmail(issue, { cfg }).html);
-          return json(issue);
+          return json(issue, { headers: cors() });
         }
 
         if (path === '/admin/run' && request.method === 'POST') {
           const date = url.searchParams.get('date') || todayIn(cfg.sendTz);
           const force = url.searchParams.get('force') === '1';
-          return json(await runDaily({ cfg, store, date, force, send: url.searchParams.get('send') !== '0' }));
+          return json(await runDaily({ cfg, store, date, force, send: url.searchParams.get('send') !== '0' }), { headers: cors() });
         }
 
         // Which models this key can actually reach. Names change; look, don't guess.
-        if (path === '/admin/models') return json(await listModels({ cfg }));
+        if (path === '/admin/models') return json(await listModels({ cfg }), { headers: cors() });
 
         if (path === '/admin/status') {
           const date = todayIn(cfg.sendTz);
@@ -137,7 +137,7 @@ export default {
               GITHUB_TOKEN: !!cfg.githubToken,
             },
             lastEmailError: await store.getJson('diag:lastEmailError'),
-          });
+          }, { headers: cors() });
         }
       }
 
