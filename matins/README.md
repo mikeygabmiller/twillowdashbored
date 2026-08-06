@@ -45,6 +45,9 @@ renderers can be exercised with no key and no network.
    temperature 0 against a strict rubric. A flagged block is dropped and the
    rest of the issue still sends. The check **fails closed**: if the checker
    itself errors, the block is dropped.
+
+   Separately, the generator judges **craft** — see below. Craft is not safety
+   and does **not** fail closed.
 3. **No copyrighted scripture or Catechism text.** Readings appear as
    references plus a link to the USCCB. The only scripture text that can ever
    appear is a single Douay-Rheims verse. Catechism references appear as bare
@@ -201,13 +204,109 @@ fail closed on, dropping every generated block. `thinkingConfig.thinkingBudget`
 is therefore set to 0; none of this work needs deliberation. Leave `LLM_MODEL`
 blank for the provider default, or set it if the API 404s on that model name.
 
+## How the writing is kept good
+
+Orthodoxy is `safety.js`. Everything here is about the other problem: that the
+prose be worth reading on an ordinary Tuesday, not just on Easter. Four things
+do that work, in descending order of how much they matter.
+
+**1. Exemplars.** Every block is shown a worked example in the house voice
+(`src/content/forms.js`). Few-shot holds register better than any quantity of
+adjectives in an instruction. **The exemplars are the product** — if the writing
+drifts, fix them before touching anything in `lib/`.
+
+**2. A named shape, rotated.** "Four to six sentences" is a length, and a model
+given only a length writes the same paragraph every day: observation, gentle
+pivot, uplift. `FORMS` names six shapes — the objection, one scene, the hard
+saying, the plain fact, the long middle, the cost — and `pickForm` rotates them
+through the same cooldown machinery as the prayers. Which one a date gets is
+deterministic, so a preview shows what that date would really receive.
+
+**3. Drafts and a judge.** Each block is written more than once at spread
+temperatures and the drafts are compared (`src/lib/judge.js`, counts in
+`DRAFTS`). One draft is a coin flip on tone. The judge is a comparison, not a
+score — models are unreliable at absolute quality ratings and much better at
+"which of these two, and why", and a comparison needs no recalibration as models
+change. It **fails soft**: an unreachable or incoherent judge means the first
+draft ships.
+
+**4. Tripwires.** A short list of phrases that mark writing as machine-made
+("at the end of the day", "in our daily lives", an exclamation mark), plus
+throat-clearing openers and title-case headlines. A whole round tripping one is
+sent back with the fault named. If the model still cannot shake it, the best
+draft **ships anyway** — losing the entire reflection over a tired phrase is the
+worse trade. What tripped is recorded in `safetyReport.blocks[].craft`.
+
+Recent opening sentences are kept in `rot:openings` and fed back as ground
+already covered, so the first line does not converge.
+
+`npm run preview` prints the whole record: which form, how many drafts, what the
+judge said, and anything that tripped.
+
+**The voice lives in one file.** `src/content/voice.js` holds who is speaking,
+who is listening, and the style rules. A change of editorial direction is an
+edit to that file plus the exemplars — not a rewrite of the generator.
+
+### Stories
+
+There is a real tension here, and it is worth stating plainly rather than
+discovering later. Rule 1 says the model may assert nothing that is not in its
+grounded facts. For a saint, those facts are a name, a rank, and one or two
+dates. **That is not enough material to build a scene from**, which is why the
+saint block tends toward the general.
+
+The options, and what each actually costs:
+
+- **A hand-written saint fact bank** — the architecturally correct answer, and
+  exactly how `prayers.js` and `qa.js` already work: human-written, pre-vetted,
+  hardcoded. Costs writing time; costs no safety.
+- **Retelling the day's Gospel scene** — the highest reader value, and the only
+  option that requires *relaxing* rule 2. It would need a narrative source the
+  app trusts, not the model's memory.
+- **Ordinary anonymous people** — technically free, but invented people
+  presented as real is a line worth deciding on deliberately.
+
+`direction.html` puts these to the owner as a decision rather than changing the
+rule quietly. Until that is settled, the exemplars deliberately narrate no
+reading.
+
 ## Design
 
 Cream paper, dark ink, a serif for headings, generous line-height — and the
 accent colour is the **liturgical colour of the day**, so the look moves through
-the church year (green, violet, white/gold, red, rose). The wordmark is an arch
-with the sun rising behind it, in that day's colour: a doorway at dawn, which is
-what matins is. `src/render/brand.js` has the SVG.
+the church year (green, violet, white/gold, red, rose). It appears as a band
+across the top of every issue, as the section labels, and as the wordmark: an
+arch with the sun rising behind it, a doorway at dawn, which is what matins is.
+`src/render/brand.js` has the SVG, `src/render/theme.js` the palette.
+
+Rules the renderers hold to, both surfaces:
+
+- **A rule between sections, never inside one.** The hairlines are the only
+  thing separating Reflection from the saint from the Prayer, and they are what
+  make the issue scannable rather than one long column.
+- **About 66 characters to the line.** That is what the gutters are for. Do not
+  widen the sheet without narrowing something else.
+- **Prayers keep their line breaks.** `src/content/prayers.js` stores the
+  received wording already lineated — one breath per line, blank line between
+  stanzas — and `src/render/prayer.js` turns that into stanzas both renderers
+  lay out. A prayer is said, not skimmed. Only the line breaks are ours: never
+  edit the words or the punctuation of a traditional text.
+- **The saint section is headed by the name the Church uses today**, taken from
+  romcal (`day.saint.name`), not from anything a model wrote.
+
+Where they differ:
+
+- **The web page honours `prefers-color-scheme`** — this is read before dawn —
+  and prints cleanly. Every colour in `theme.js` has a dark value; the accents
+  are lightened there because the light-mode green and violet fall below
+  readable contrast on a near-black page.
+- **Email stays light.** Dark-mode support across mail clients is uneven enough
+  that a half-working palette is worse than none: Gmail ignores the media query
+  and inverts on its own. `color-scheme: light` and be done.
+- **Issue pages carry the reader onward** (previous / next / today / archive)
+  so a shared permalink is not a dead end. Previous and next come from the
+  archive index, and each publish also rewrites the *preceding* day's page so
+  it gains the "next" link it could not have had when it was written.
 
 ## Assumptions worth knowing
 

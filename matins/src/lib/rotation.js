@@ -36,6 +36,36 @@ export async function pickPrayer(store, { prayers, date, tags }) {
   return { chosen, commit: () => store.putJson('rot:prayer', [chosen.id, ...recent.filter((i) => i !== chosen.id)].slice(0, 60)) };
 }
 
+// Which shape today's reflection takes. Same machinery as the prayers: a model
+// asked only for a length writes the same paragraph every day, so the shape is
+// rotated out from under it.
+export async function pickForm(store, { forms, date, tags }) {
+  const recent = await store.getJson('rot:form', []);
+  const chosen = pick(forms, { recent, cooldown: ROTATION_COOLDOWN.form, tags, seed: `form:${date}` });
+  return { chosen, commit: () => store.putJson('rot:form', [chosen.id, ...recent.filter((i) => i !== chosen.id)].slice(0, 40)) };
+}
+
+// The opening sentence is where repetition shows first — every Tuesday starts
+// with an alarm going off. Recent openings are fed back into the prompt as
+// ground already covered.
+const OPENINGS_KEY = 'rot:openings';
+const OPENINGS_KEPT = 24;
+
+export function openingOf(text) {
+  return String(text || '').trim().split(/\s+/).slice(0, 8).join(' ');
+}
+
+export async function recentOpenings(store) {
+  return store.getJson(OPENINGS_KEY, []);
+}
+
+export async function rememberOpening(store, text) {
+  const opening = openingOf(text);
+  if (!opening) return;
+  const recent = await store.getJson(OPENINGS_KEY, []);
+  await store.putJson(OPENINGS_KEY, [opening, ...recent.filter((o) => o !== opening)].slice(0, OPENINGS_KEPT));
+}
+
 export async function pickQa(store, { bank, date, tags }) {
   const recent = await store.getJson('rot:qa', []);
   const chosen = pick(bank, { recent, cooldown: ROTATION_COOLDOWN.qa, tags, seed: `qa:${date}` });

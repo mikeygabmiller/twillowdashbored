@@ -96,6 +96,15 @@ for (const [name, present] of [
   console.log(`  ${present ? '✓' : '·'} ${name}${present ? '' : ' — omitted'}`);
 }
 
+console.log(`\nWRITING  (form: ${issue.safetyReport.reflectionForm})`);
+for (const b of issue.safetyReport.blocks) {
+  const bits = [b.drafts ? `${b.drafts} draft${b.drafts === 1 ? '' : 's'}` : null, b.judge ? `judge: ${b.judge}` : null]
+    .filter(Boolean)
+    .join(' · ');
+  console.log(`  ${b.block}${bits ? ` — ${bits}` : ''}`);
+  if (b.craft?.length) console.log(`    tired: ${b.craft.join(', ')}`);
+}
+
 console.log(`\nSAFETY  (${issue.safetyReport.provider})`);
 for (const b of issue.safetyReport.blocks) {
   console.log(`  ${b.pass ? 'PASS' : 'DROP'}  ${b.block} — ${b.reason}`);

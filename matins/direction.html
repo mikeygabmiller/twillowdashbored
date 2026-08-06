@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Matins — direction</title>
+<style>
+  :root{
+    --paper:#FBF7EF; --paper-alt:#F1EBDE; --card:#fff;
+    --ink:#241F1A; --ink-soft:#5C5449; --rule:#DDD3C2;
+    --accent:#3E6B4B; --accent-soft:#EDF2ED; --warn:#8C5A1F;
+    --serif:'Iowan Old Style','Palatino Linotype',Palatino,'Book Antiqua',Georgia,serif;
+    --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#17140F; --paper-alt:#0E0C09; --card:#1D1A15;
+      --ink:#EFE7DA; --ink-soft:#A99E8C; --rule:#332E27;
+      --accent:#82B891; --accent-soft:#1A241C; --warn:#D8A45E;
+    }
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+  @media (prefers-reduced-motion: reduce){ html{scroll-behavior:auto} *{transition:none!important} }
+  body{margin:0;background:var(--paper-alt);color:var(--ink);font-family:var(--serif);line-height:1.65}
+  .wrap{max-width:760px;margin:0 auto;padding:0 20px 140px}
+
+  header.top{padding:52px 0 30px;border-bottom:1px solid var(--rule);margin-bottom:8px}
+  .kicker{font-family:var(--sans);font-size:11.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);font-weight:700}
+  h1{font-weight:400;font-size:clamp(30px,6vw,42px);line-height:1.15;margin:.35em 0 .4em;max-width:18ch;text-wrap:balance}
+  .standfirst{font-size:18px;color:var(--ink-soft);margin:0;max-width:56ch}
+  .standfirst strong{color:var(--ink);font-weight:400}
+
+  section{padding:38px 0 8px;border-bottom:1px solid var(--rule)}
+  .sec-head{display:flex;gap:14px;align-items:baseline;margin-bottom:6px}
+  .sec-num{font-family:var(--mono);font-size:12px;color:var(--accent);font-weight:700;flex:none;padding-top:5px}
+  h2{font-size:25px;font-weight:400;margin:0;line-height:1.25;text-wrap:balance}
+  .sec-why{font-family:var(--sans);font-size:13.5px;color:var(--ink-soft);margin:0 0 4px 32px;max-width:60ch}
+
+  .q{margin:30px 0 0 32px}
+  @media (max-width:600px){ .q,.sec-why{margin-left:0} }
+  .q > .ask{font-size:19px;margin:0 0 4px;line-height:1.4;text-wrap:balance}
+  .q > .hint{font-family:var(--sans);font-size:13px;color:var(--ink-soft);margin:0 0 14px;max-width:58ch}
+  .q.answered > .ask::after{content:'✓';color:var(--accent);font-size:15px;margin-left:9px;vertical-align:2px}
+
+  .opts{display:grid;gap:8px;margin:0}
+  .opt{display:flex;gap:12px;align-items:flex-start;padding:13px 15px;border:1px solid var(--rule);border-radius:10px;
+       background:var(--card);cursor:pointer;transition:border-color .12s,background .12s}
+  .opt:hover{border-color:var(--accent)}
+  .opt:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+  .opt:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
+  .opt input{margin:5px 0 0;accent-color:var(--accent);flex:none;width:16px;height:16px}
+  .opt .lab{font-size:16.5px;line-height:1.45}
+  .opt .sub{display:block;font-family:var(--sans);font-size:13px;color:var(--ink-soft);margin-top:3px;line-height:1.55}
+
+  .scale{margin-top:6px}
+  .scale-ends{display:flex;justify-content:space-between;gap:16px;font-family:var(--sans);font-size:13px;color:var(--ink-soft);margin-bottom:2px}
+  .scale-ends span{max-width:44%}
+  .scale-ends span:last-child{text-align:right}
+  input[type=range]{width:100%;accent-color:var(--accent);height:26px}
+  .scale-val{font-family:var(--sans);font-size:13px;color:var(--accent);font-weight:600;text-align:center;margin-top:-2px}
+
+  textarea{width:100%;font-family:var(--serif);font-size:16.5px;line-height:1.6;padding:13px 15px;border:1px solid var(--rule);
+           border-radius:10px;background:var(--card);color:var(--ink);resize:vertical;min-height:88px}
+  textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+
+  .flag{border-left:3px solid var(--warn);padding:2px 0 2px 16px;margin:22px 0 0 32px;max-width:60ch}
+  .flag .t{font-family:var(--sans);font-size:11.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--warn);font-weight:700}
+  .flag p{font-family:var(--sans);font-size:14px;color:var(--ink-soft);margin:6px 0 0;line-height:1.6}
+  @media (max-width:600px){ .flag{margin-left:0} }
+
+  .bar{position:sticky;bottom:0;background:var(--paper);border-top:1px solid var(--rule);padding:14px 20px;
+       display:flex;gap:14px;align-items:center;flex-wrap:wrap;z-index:5}
+  .bar .count{font-family:var(--sans);font-size:13.5px;color:var(--ink-soft);flex:1;min-width:150px}
+  .bar .count b{color:var(--ink);font-weight:600}
+  button{font-family:var(--sans);font-size:14.5px;font-weight:600;padding:11px 20px;border-radius:9px;cursor:pointer;
+         border:1px solid var(--rule);background:var(--card);color:var(--ink)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:var(--paper)}
+  button:hover{filter:brightness(1.06)}
+  button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  dialog{border:1px solid var(--rule);border-radius:14px;background:var(--card);color:var(--ink);
+         max-width:min(760px,92vw);width:100%;padding:0}
+  dialog::backdrop{background:rgba(20,16,12,.55)}
+  .dlg-head{padding:20px 24px 12px;border-bottom:1px solid var(--rule)}
+  .dlg-head h3{margin:0;font-size:20px;font-weight:400}
+  .dlg-head p{font-family:var(--sans);font-size:13.5px;color:var(--ink-soft);margin:6px 0 0}
+  #out{font-family:var(--mono);font-size:12.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;
+       margin:0;padding:20px 24px;max-height:52vh;overflow:auto;background:var(--paper-alt)}
+  .dlg-foot{padding:14px 24px;display:flex;gap:10px;justify-content:flex-end;border-top:1px solid var(--rule);flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <div class="kicker">Matins · editorial direction</div>
+  <h1>Fifteen decisions only you can make.</h1>
+  <p class="standfirst">The plumbing is finished and the calendar is right. What is not settled is what this thing <strong>sounds like</strong> and <strong>who it is for</strong>. Nothing below asks you something the code already answers. Answer what you have a view on and skip the rest — <strong>partial answers are useful</strong>. At the bottom you get a brief to hand back.</p>
+</header>
+
+<main id="form"></main>
+
+</div>
+
+<div class="bar">
+  <div class="count" id="count">0 of 15 answered</div>
+  <button type="button" id="clear">Clear</button>
+  <button type="button" class="primary" id="done">Build the brief</button>
+</div>
+
+<dialog id="dlg">
+  <div class="dlg-head">
+    <h3>Direction brief</h3>
+    <p>Paste this back into the session. Anything you skipped is listed as still open.</p>
+  </div>
+  <pre id="out"></pre>
+  <div class="dlg-foot">
+    <button type="button" id="download">Download .md</button>
+    <button type="button" class="primary" id="copy">Copy</button>
+    <button type="button" id="close">Close</button>
+  </div>
+</dialog>
+
+<script>
+const SECTIONS = [
+  {
+    title: 'Who is talking',
+    why: 'Right now the reflection comes from nobody in particular. That is the single biggest thing holding the writing at "competent".',
+    questions: [
+      { id: 'speaker', ask: 'Whose voice is the reflection in?', type: 'one',
+        hint: 'The footer already says a young Catholic in Snohomish County made it. The prose does not currently sound like anybody.',
+        options: [
+          ['house', 'A house voice — no person behind it', 'Safest. Also the easiest to ignore.'],
+          ['older', 'An older Catholic who works for a living', 'What the code assumes today: someone unimpressed by his own piety.'],
+          ['you', 'You, plainly, in the first person', 'Says "I" and admits things. Highest ceiling, highest exposure.'],
+          ['peer', 'Someone the same age as the reader, in it with them', 'Fellow-traveller rather than elder.'],
+        ] },
+      { id: 'admits', ask: 'Can the voice admit it struggles?', type: 'one',
+        hint: 'Whether the writer is allowed to be someone who also skips prayer and loses his temper.',
+        options: [
+          ['never', 'No — keep the writer out of it entirely', ''],
+          ['glancing', 'Glancingly, without making it the subject', ''],
+          ['openly', 'Yes, openly, including specific failures', 'This is where trust comes from, and where it can be lost.'],
+        ] },
+      { id: 'gender', ask: 'Is this pitched at men specifically?', type: 'one',
+        hint: 'Worth deciding on purpose: the current prompts reach for truck cabs, job sites, and "grown men". Prayer notes do too.',
+        options: [
+          ['men', 'Yes — men, and it should stop pretending otherwise', ''],
+          ['both', 'No — the trade imagery is an accident and should be widened', 'Nurses and teachers are already named in the brief.'],
+          ['tilt', 'Tilt male, but never exclude', ''],
+        ] },
+    ],
+  },
+  {
+    title: 'How hard it pushes',
+    why: 'A devotional for tired people can console them or ask something of them. Both are legitimate; doing both at once produces mush.',
+    questions: [
+      { id: 'push', ask: 'Where should a normal weekday sit?', type: 'scale',
+        hint: 'Not the extremes — where the ordinary green Tuesday lands.',
+        ends: ['Consolation. They are already carrying enough.', 'Challenge. Name the thing they are avoiding.'] },
+      { id: 'sin', ask: 'How directly does it talk about sin, confession, and doubt?', type: 'one',
+        options: [
+          ['rare', 'Rarely — this is a morning devotional, not an examination', ''],
+          ['plain', 'Plainly when the day raises it, without dwelling', ''],
+          ['often', 'Often and by name — most people have nobody saying it to them', ''],
+        ] },
+      { id: 'action', ask: 'Is "one thing today" the point of the email, or a garnish?', type: 'one',
+        hint: 'It currently sits inside the saint block and disappears when there is no saint.',
+        options: [
+          ['garnish', 'A garnish. The reflection is the product.', ''],
+          ['equal', 'Equal partner with the reflection', ''],
+          ['point', 'The point. Everything else sets it up.', 'Would argue for moving it up and giving it every day, saint or not.'],
+        ] },
+    ],
+  },
+  {
+    title: 'Stories',
+    why: 'You asked for stories. The honest constraint is that the app forbids the model from asserting anything not in its fact sheet, and the fact sheet for a saint is currently a name, a rank, and two dates. That is not enough to build a scene from. This section decides how to fix that.',
+    questions: [
+      { id: 'story_source', ask: 'Where do the stories come from?', type: 'many',
+        hint: 'Pick every one you want. Each has a different cost, listed.',
+        options: [
+          ['bank', 'A hand-written saint fact bank', 'Cost: real writing time, a few hours per fifty saints. Benefit: real scenes, zero fabrication risk. This is the architecturally correct answer, and matches how prayers and Q&A already work.'],
+          ['scripture', 'Retelling the day’s Gospel scene', 'Cost: requires relaxing the rule against retelling readings, and a source for the narrative. Highest reader value, highest doctrinal care.'],
+          ['ordinary', 'Ordinary anonymous people — a man at a job site, a nurse on nights', 'Cost: none technically. Risk: invented people presented as real. Would need to read as illustration, never as testimony.'],
+          ['yours', 'Your own life, named as yours', 'Cost: you have to write them. Nothing else builds loyalty as fast.'],
+          ['history', 'Church history beyond the day’s saint', 'Cost: another fact bank.'],
+        ] },
+      { id: 'story_weight', ask: 'How much of a typical issue should be narrative?', type: 'scale',
+        ends: ['Little. It is a devotional, not a magazine.', 'Most of it. Story is how it gets read at all.'] },
+      { id: 'bank_effort', ask: 'Would you actually write a saint fact bank, or should it be seeded for you?', type: 'one',
+        hint: 'Straight question about your time, because it changes what gets built next.',
+        options: [
+          ['me', 'I will write it — give me the format and I will fill it', ''],
+          ['seed', 'Seed it with the fifty most common saints, I will correct it', 'Every entry would still need your eye before it ships.'],
+          ['skip', 'Skip it — find another way to get stories', ''],
+        ] },
+    ],
+  },
+  {
+    title: 'Shape of the issue',
+    why: 'Six sections every day is a fixed format. Whether that is right depends on how long you think someone actually has.',
+    questions: [
+      { id: 'length', ask: 'How long should the whole thing take to read?', type: 'one',
+        options: [
+          ['90', 'Ninety seconds. It has to survive a real morning.', 'Would mean cutting a section or shortening every one.'],
+          ['3', 'Three minutes, as now', ''],
+          ['5', 'Five or more — people who want depth will make time', ''],
+          ['vary', 'Vary it: short on weekdays, long on Sundays and feasts', ''],
+        ] },
+      { id: 'differentiate', ask: 'Should Sundays and solemnities look and feel different?', type: 'one',
+        hint: 'Today they differ only in accent colour and the words in them.',
+        options: [
+          ['same', 'No — sameness is the discipline', ''],
+          ['light', 'Slightly: a longer reflection, a marked header', ''],
+          ['strong', 'Strongly — a different, bigger issue', ''],
+        ] },
+      { id: 'register', ask: 'The prayers are in thee/thou English. Is that the identity or a mismatch?', type: 'one',
+        hint: 'Real tension: traditional register against an audience the brief describes as young and working.',
+        options: [
+          ['keep', 'Keep it. The old words are the point.', ''],
+          ['keep_gloss', 'Keep it, but gloss the hard ones in the note above the prayer', ''],
+          ['modern', 'Move to contemporary English', ''],
+          ['mix', 'Mix — traditional for the ancient prayers, modern for the rest', ''],
+        ] },
+    ],
+  },
+  {
+    title: 'What it is for',
+    why: 'Two questions that change everything downstream and have no technical answer.',
+    questions: [
+      { id: 'scale', ask: 'Who is this actually for, honestly?', type: 'one',
+        options: [
+          ['friends', 'Forty people I know. If it stays that size, good.', 'Changes the voice completely — you can write to them.'],
+          ['parish', 'A parish or two. Hundreds.', ''],
+          ['many', 'As many as will have it. Thousands.', 'Means a verified sending domain, and a voice that survives strangers.'],
+          ['unsure', 'I genuinely do not know yet', ''],
+        ] },
+      { id: 'bad_day', ask: 'On a day when the writing is weak, what would you rather send?', type: 'one',
+        hint: 'This one is a live engineering decision, not a hypothetical. It sets what the safety and craft passes do when they are unhappy.',
+        options: [
+          ['short', 'A shorter, honest issue with a section missing', 'What the code does now.'],
+          ['full', 'A full-length issue that is merely fine', ''],
+          ['nothing', 'Nothing. Skip the day.', 'Would need a way to tell subscribers why.'],
+        ] },
+      { id: 'keep', ask: 'What would make someone still be reading this in a year?', type: 'text',
+        hint: 'One or two sentences, in your own words. This is the most useful box on the page.' },
+      { id: 'wrong', ask: 'Anything above where the choices missed the point?', type: 'text',
+        hint: 'Optional. Say what I got wrong about what you are building.' },
+    ],
+  },
+];
+
+const KEY = 'matins-direction-v1';
+const state = JSON.parse(localStorage.getItem(KEY) || '{}');
+const TOTAL = SECTIONS.flatMap(s => s.questions).filter(q => q.id !== 'wrong').length;
+
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function render() {
+  let n = 0;
+  document.getElementById('form').innerHTML = SECTIONS.map((sec, si) => `
+    <section>
+      <div class="sec-head"><span class="sec-num">${String(si + 1).padStart(2, '0')}</span><h2>${esc(sec.title)}</h2></div>
+      <p class="sec-why">${esc(sec.why)}</p>
+      ${sec.questions.map(q => {
+        n++;
+        const v = state[q.id];
+        const answered = q.type === 'many' ? Array.isArray(v) && v.length : v !== undefined && v !== '';
+        let body = '';
+        if (q.type === 'one' || q.type === 'many') {
+          const kind = q.type === 'one' ? 'radio' : 'checkbox';
+          body = `<div class="opts">${q.options.map(([val, lab, sub]) => {
+            const on = q.type === 'many' ? (Array.isArray(v) && v.includes(val)) : v === val;
+            return `<label class="opt"><input type="${kind}" name="${q.id}" value="${esc(val)}"${on ? ' checked' : ''}>
+              <span class="lab">${esc(lab)}${sub ? `<span class="sub">${esc(sub)}</span>` : ''}</span></label>`;
+          }).join('')}</div>`;
+        } else if (q.type === 'scale') {
+          const val = v === undefined ? 3 : v;
+          body = `<div class="scale">
+            <div class="scale-ends"><span>${esc(q.ends[0])}</span><span>${esc(q.ends[1])}</span></div>
+            <input type="range" min="1" max="5" step="1" name="${q.id}" value="${val}" aria-label="${esc(q.ask)}">
+            <div class="scale-val" data-for="${q.id}">${v === undefined ? 'not answered' : scaleWord(val)}</div>
+          </div>`;
+        } else {
+          body = `<textarea name="${q.id}" placeholder="Type here…">${esc(v || '')}</textarea>`;
+        }
+        return `<div class="q${answered ? ' answered' : ''}" data-q="${q.id}">
+          <p class="ask">${esc(q.ask)}</p>
+          ${q.hint ? `<p class="hint">${esc(q.hint)}</p>` : ''}
+          ${body}
+        </div>`;
+      }).join('')}
+      ${si === 2 ? `<div class="flag"><div class="t">Worth knowing before you answer</div>
+        <p>Every story option except the fact bank asks the app to relax a rule it currently holds absolutely: nothing is asserted that is not in the grounded facts. That rule is why this thing can send itself unattended. Relaxing it is a real decision with a real cost, not a setting — so it is a question rather than something quietly changed.</p></div>` : ''}
+    </section>`).join('');
+  updateCount();
+}
+
+function scaleWord(v) {
+  return ['strongly the first', 'lean first', 'balanced', 'lean second', 'strongly the second'][v - 1];
+}
+
+function updateCount() {
+  const done = SECTIONS.flatMap(s => s.questions).filter(q => {
+    if (q.id === 'wrong') return false;
+    const v = state[q.id];
+    return q.type === 'many' ? Array.isArray(v) && v.length : v !== undefined && v !== '';
+  }).length;
+  document.getElementById('count').innerHTML = `<b>${done}</b> of ${TOTAL} answered`;
+}
+
+document.getElementById('form').addEventListener('input', (e) => {
+  const el = e.target;
+  const q = SECTIONS.flatMap(s => s.questions).find(x => x.id === el.name);
+  if (!q) return;
+  if (q.type === 'many') {
+    const checked = [...document.querySelectorAll(`input[name="${q.id}"]:checked`)].map(i => i.value);
+    state[q.id] = checked;
+  } else if (q.type === 'scale') {
+    state[q.id] = Number(el.value);
+    const out = document.querySelector(`.scale-val[data-for="${q.id}"]`);
+    if (out) out.textContent = scaleWord(Number(el.value));
+  } else {
+    state[q.id] = el.value;
+  }
+  localStorage.setItem(KEY, JSON.stringify(state));
+  const box = el.closest('.q');
+  const v = state[q.id];
+  box.classList.toggle('answered', q.type === 'many' ? v.length > 0 : v !== undefined && v !== '');
+  updateCount();
+});
+
+function brief() {
+  const lines = ['# Matins — direction brief', '', `Answered ${new Date().toISOString().slice(0, 10)}.`, ''];
+  const open = [];
+  for (const sec of SECTIONS) {
+    const answered = sec.questions.filter(q => {
+      const v = state[q.id];
+      return q.type === 'many' ? Array.isArray(v) && v.length : v !== undefined && v !== '';
+    });
+    for (const q of sec.questions) {
+      const v = state[q.id];
+      const has = q.type === 'many' ? Array.isArray(v) && v.length : v !== undefined && v !== '';
+      if (!has) { if (q.id !== 'wrong') open.push(q.ask); continue; }
+    }
+    if (!answered.length) continue;
+    lines.push(`## ${sec.title}`, '');
+    for (const q of answered) {
+      const v = state[q.id];
+      let out;
+      if (q.type === 'one') out = q.options.find(o => o[0] === v)?.[1] || v;
+      else if (q.type === 'many') out = v.map(id => q.options.find(o => o[0] === id)?.[1] || id).map(s => `\n  - ${s}`).join('');
+      else if (q.type === 'scale') out = `${scaleWord(v)} (${v}/5) — [${q.ends[0]}] vs [${q.ends[1]}]`;
+      else out = v;
+      lines.push(`**${q.ask}**`, out, '');
+    }
+  }
+  if (open.length) {
+    lines.push('## Still open', '', ...open.map(o => `- ${o}`), '');
+  }
+  return lines.join('\n');
+}
+
+const dlg = document.getElementById('dlg');
+document.getElementById('done').onclick = () => { document.getElementById('out').textContent = brief(); dlg.showModal(); };
+document.getElementById('close').onclick = () => dlg.close();
+document.getElementById('copy').onclick = async (e) => {
+  try { await navigator.clipboard.writeText(brief()); e.target.textContent = 'Copied'; }
+  catch { const r = document.createRange(); r.selectNode(document.getElementById('out')); getSelection().removeAllRanges(); getSelection().addRange(r); e.target.textContent = 'Select and copy'; }
+  setTimeout(() => { e.target.textContent = 'Copy'; }, 1800);
+};
+document.getElementById('download').onclick = () => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([brief()], { type: 'text/markdown' }));
+  a.download = 'matins-direction.md';
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+document.getElementById('clear').onclick = () => {
+  if (!confirm('Clear every answer on this page?')) return;
+  for (const k of Object.keys(state)) delete state[k];
+  localStorage.removeItem(KEY);
+  render();
+};
+
+render();
+</script>
+</body>
+</html>
