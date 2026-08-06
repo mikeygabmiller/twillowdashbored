@@ -51,9 +51,30 @@ function unquote(v) {
     : t;
 }
 
-export function config(rawEnv = {}) {
+// A binding name with a space on the end of it — "ADMIN_TOKEN " — is invisible
+// in the dashboard table and matches nothing, so the secret is set, looks set,
+// and does not exist as far as the code is concerned. Nobody has ever wanted a
+// space there. Names are trimmed on the way in so this cannot cost an evening
+// twice, and the names that needed it are reported by /admin/status rather
+// than fixed silently.
+function normaliseNames(rawEnv) {
   const env = {};
-  for (const key of Object.keys(rawEnv)) env[key] = unquote(rawEnv[key]);
+  const needTrimming = [];
+  // Exact names first, so a correct binding always beats a malformed twin.
+  for (const key of Object.keys(rawEnv)) {
+    if (key === key.trim()) env[key] = unquote(rawEnv[key]);
+  }
+  for (const key of Object.keys(rawEnv)) {
+    const clean = key.trim();
+    if (clean === key) continue;
+    needTrimming.push(key);
+    if (env[clean] === undefined) env[clean] = unquote(rawEnv[key]);
+  }
+  return { env, needTrimming };
+}
+
+export function config(rawEnv = {}) {
+  const { env, needTrimming } = normaliseNames(rawEnv);
   const get = (k) => (env[k] === undefined || env[k] === '' ? DEFAULTS[k] : env[k]);
   const provider = String(get('LLM_PROVIDER')).toLowerCase();
   return {
@@ -78,6 +99,9 @@ export function config(rawEnv = {}) {
     tokenSecret: env.TOKEN_SECRET || '',
     adminToken: env.ADMIN_TOKEN || '',
     sendPaused: String(get('SEND_PAUSED')) === '1',
+    // Binding names that arrived with stray whitespace and had to be
+    // trimmed to be usable. Empty is the healthy case.
+    bindingNameWarnings: needTrimming,
     // Worker origin, used for confirm/unsubscribe links in email.
     workerUrl: String(env.WORKER_URL || get('SITE_URL')).replace(/\/+$/, ''),
   };

@@ -136,6 +136,9 @@ export default {
               TOKEN_SECRET: !!cfg.tokenSecret,
               GITHUB_TOKEN: !!cfg.githubToken,
             },
+            // Non-empty means a binding name had stray whitespace and was
+            // trimmed to make it work. Fix the name; do not rely on this.
+            bindingNameWarnings: cfg.bindingNameWarnings,
             lastEmailError: await store.getJson('diag:lastEmailError'),
           }, { headers: cors() });
         }
