@@ -74,7 +74,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-04·ai-keyboard';
+const BUILD = '2026-08-07·html-alerts';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -524,9 +524,15 @@ async function handleInboundSms(request) {
   // Work out what he actually needs to decide, so the alert asks him a question
   // he can answer in four words. Best-effort — a failure just means a plainer email.
   const ask = await assistAsk(inThread, alertCfg).catch(() => null);
-  await notifyMikey(`📱 New ${numMedia > 0 ? 'photo/text' : 'text'} from ${from}`,
-    assistAlertBody(alertCfg, fromNorm, inThread.name || from,
-      `${inThread.name || from} texted:\n"${text || (numMedia > 0 ? '[photo]' : '')}"`, ask, draft));
+  const who = inThread.name || from;
+  // Their actual words go in the subject, so the phone's notification banner —
+  // which is all he sees half the time — already says what was asked.
+  const gist = String(text || '').replace(/\s+/g, ' ').trim();
+  const subject = gist
+    ? `📱 ${who}: "${gist.length > 64 ? gist.slice(0, 63).trimEnd() + '…' : gist}"`
+    : `📱 ${who} sent a photo`;
+  await notifyMikey(subject,
+    assistAlertBody(alertCfg, { phone: fromNorm, who, msg: text, ask, draft, media: numMedia }));
   // Watch for "so Saturday at 10 then?" and raise a one-tap job card if so.
   await maybeDetectJob(fromNorm);
   // No auto-reply to the customer — Mikey replies personally from the dashboard.
@@ -898,7 +904,123 @@ function assistAskBlock(ask, compact) {
   return lines.join('\n') + '\n';
 }
 
-function assistAlertBody(cfg, phone, who, core, ask, draft) {
+// The alert as an actual email: the customer's words huge and first, the reply
+// I'd send in a card under them, and one-tap YES/NO buttons. See the mail kit
+// (mailShell/mailCard/mailBtn) further down for the shared styling.
+//
+// Two lines in here are load-bearing rather than decorative and must stay
+// VISIBLE text: the cut marker at the very top (his mail client quotes the whole
+// email below it, so slicing there leaves exactly what he typed) and the [ref:…]
+// line at the bottom (it's what routes his reply back to this customer). Gmail
+// renders the HTML part when replying, so anything hidden there is lost.
+function assistAlertHtml(cfg, o) {
+  const { phone, who, msg, note, ask, offer, byEmail, quickOk, media } = o;
+  const B = [];
+  B.push(`<div style="font:400 11px/1.5 ${MAILF};color:#94a3b8;margin:0 0 10px;">${htmlEsc(ASSIST_CUT)}</div>`);
+  if (note) {
+    B.push(mailCard(
+      mailLabel('Practice — not a real customer', MAILC.purple) +
+      `<div style="font:400 14px/1.5 ${MAILF};color:${MAILC.ink};">${mailLines(note)}</div>`,
+      { bg: MAILC.purpleBg, border: '#ddd6fe', edge: MAILC.purple }));
+  }
+  // THE MESSAGE. Everything else on the screen is smaller than this on purpose —
+  // one glance from the lock screen should be enough to know what was said.
+  B.push(mailCard(
+    mailLabel(media && !msg ? `${who} sent a photo` : `${who} texted`, MAILC.amberInk) +
+    // A photo with no words gets the count instead of an empty pair of quotes.
+    (msg
+      ? mailShout(msg)
+      : `<div style="font-family:${MAILF};font-size:22px;line-height:1.35;font-weight:800;color:${MAILC.ink};">📷 ${media || 'No message'}${media ? ` photo${media === 1 ? '' : 's'}, no message` : ''}</div>`) +
+    (media ? `<div style="font:600 13px/1.5 ${MAILF};color:${MAILC.amberInk};margin-top:10px;">Open the dashboard to see ${media === 1 ? 'it' : 'them'}.</div>` : ''),
+    { bg: MAILC.amberBg, border: '#fde68a', edge: MAILC.amber, pad: '18px' }));
+
+  // The written-out reply, with the two answers as buttons. The buttons are just
+  // mailto: links that pre-fill YES/NO and the ref — the same reply he'd type by
+  // hand, so they ride the exact same path with no new trust in the client.
+  if (offer) {
+    let inner = mailLabel("Here's what I'd send back", MAILC.greenInk) +
+      `<div style="font:600 17px/1.5 ${MAILF};color:${MAILC.ink};background:${MAILC.card};border:1px solid #bbf7d0;border-radius:12px;padding:14px;">${mailLines(offer)}</div>`;
+    if (byEmail && assistMailto('')) {
+      inner += `<div style="height:14px;line-height:14px;">&nbsp;</div>` +
+        mailBtn(assistMailto('YES', phone), '✅  Send it', MAILC.green) +
+        `<div style="height:8px;line-height:8px;">&nbsp;</div>` +
+        mailBtn(assistMailto('NO', phone), '✋  No — drop it', MAILC.card, { fg: MAILC.ink, border: MAILC.line }) +
+        `<div style="font:400 13px/1.6 ${MAILF};color:${MAILC.mute};margin-top:12px;">Buttons not working? Just hit <b>Reply</b> and type <b>YES</b> or <b>NO</b>.</div>`;
+    } else {
+      inner += `<div style="font:400 14px/1.6 ${MAILF};color:${MAILC.mute};margin-top:12px;">Reply <b>YES</b> and it goes out as written. Reply <b>NO</b> and I'll drop it.</div>`;
+    }
+    B.push(mailCard(inner, { bg: MAILC.greenBg, border: '#bbf7d0', edge: MAILC.green }));
+  }
+
+  // What I need from you — or, on a complaint, why I'm deliberately not offering
+  // a one-word answer.
+  if (ask && ask.kind === 'escalate') {
+    B.push(mailCard(
+      mailLabel('Handle this one yourself', MAILC.redInk) +
+      `<div style="font:600 16px/1.5 ${MAILF};color:${MAILC.ink};">${mailLines(ask.ask || 'This needs a careful, personal reply.')}</div>` +
+      `<div style="font:400 14px/1.6 ${MAILF};color:${MAILC.mute};margin-top:8px;">No quick answer on this one on purpose — open the dashboard and write it yourself.</div>`,
+      { bg: MAILC.redBg, border: '#fecaca', edge: MAILC.red }));
+  } else if (ask && ask.kind === 'chitchat') {
+    B.push(mailCard(
+      mailLabel('Nothing needed', MAILC.greenInk) +
+      `<div style="font:400 15px/1.6 ${MAILF};color:${MAILC.ink};">${mailLines(ask.ask || 'Just a friendly note — no answer required.')}</div>`,
+      { bg: MAILC.greenBg, border: '#bbf7d0', edge: MAILC.green }));
+  } else if (ask && (ask.ask || ask.examples.length)) {
+    let inner = mailLabel(offer ? "Not what you'd say?" : 'What I need from you', MAILC.blue);
+    if (ask.ask) inner += `<div style="font:600 16px/1.5 ${MAILF};color:${MAILC.ink};">${mailLines(ask.ask)}</div>`;
+    if (ask.examples.length) {
+      inner += `<div style="font:400 13px/1.6 ${MAILF};color:${MAILC.mute};margin:12px 0 8px;">${byEmail && assistMailto('') ? 'Tap one, or reply with your own words:' : 'Reply with something like:'}</div>`;
+      for (const e of ask.examples) {
+        inner += (byEmail && assistMailto('')
+          ? mailBtn(assistMailto(e, phone), htmlEsc(e), MAILC.card, { fg: MAILC.ink, border: '#bfdbfe' })
+          : `<div style="font:600 15px/1.5 ${MAILF};color:${MAILC.ink};background:${MAILC.card};border:1px solid #bfdbfe;border-radius:10px;padding:10px 14px;">${htmlEsc(e)}</div>`) +
+          `<div style="height:8px;line-height:8px;">&nbsp;</div>`;
+      }
+    }
+    B.push(mailCard(inner, { bg: MAILC.blueBg, border: '#bfdbfe', edge: MAILC.blue }));
+  }
+
+  // How this works, kept last and quiet — he only needs it the first few times.
+  const tips = [];
+  if (quickOk && byEmail) {
+    tips.push(offer
+      ? `Hit <b>Reply</b>: <b>YES</b> sends it, <b>NO</b> drops it — or tell me what to say instead (&ldquo;375, thursday&rdquo;) and I'll rewrite it in your voice. Free — no text message used.`
+      : `Hit <b>Reply</b> with just the facts and I'll write it out in your voice and send it to ${htmlEsc(who)}. Free — no text message used.`);
+  }
+  if (quickOk && cfg.assistSms !== false) {
+    tips.push(`${byEmail && tips.length ? 'Or text' : 'Text'} <b>${htmlEsc(ENV.TWILIO_FROM || 'your business number')}</b> the same thing.`);
+  }
+  if (quickOk && tips.length) {
+    tips.push(`Also: &ldquo;send: your exact words&rdquo; skips the rewriting · &ldquo;draft: …&rdquo; holds it in the dashboard · &ldquo;who&rdquo; lists everyone waiting · &ldquo;cancel&rdquo; pulls one back.`);
+    tips.push(`You'll always get the finished wording back before it goes out.`);
+  }
+  const base = publicBase();
+  let footInner = '';
+  if (base) footInner += mailBtn(base, 'Open the dashboard', MAILC.ink) + `<div style="height:14px;line-height:14px;">&nbsp;</div>`;
+  if (tips.length) {
+    footInner += tips.map((t) => `<div style="font:400 13px/1.6 ${MAILF};color:${MAILC.mute};margin:0 0 8px;">${t}</div>`).join('');
+  }
+  if (footInner) B.push(mailCard(footInner, { bg: MAILC.card }));
+  // The routing line. Small, but it has to survive into his reply.
+  if (byEmail) B.push(`<div style="font:400 11px/1.5 ${MAILF};color:#94a3b8;padding:0 4px 8px;">[ref:${htmlEsc(phone)}]</div>`);
+  return mailShell(msg || who, B.join(''));
+}
+
+// A mailto: link that pre-fills a reply to an alert — the button version of
+// typing YES. Returns '' when there's no alert mailbox to answer to, which also
+// makes it the "can I offer buttons at all?" test.
+function assistMailto(text, phone) {
+  const to = emailAddr(ENV.ALERT_EMAIL || '');
+  if (!to || !/@/.test(to)) return '';
+  if (!phone) return to;   // probe form: assistMailto('') just asks "is this on?"
+  const body = `${text}\n\n[ref:${phone}]`;
+  return `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent('Re: your customer')}&body=${encodeURIComponent(body)}`;
+}
+
+function assistAlertBody(cfg, opts) {
+  const { phone, who, msg = '', ask, draft, note = '', media = 0 } = opts;
+  const quoted = `${who} texted:\n"${msg || (media ? '[photo]' : '')}"`;
+  const core = note ? `${note}\n\n${quoted}` : quoted;
   const byEmail = cfg.assistEmail !== false;
   // A complaint should never come with a one-word answer box next to it.
   const quickOk = !(ask && (ask.kind === 'escalate' || ask.kind === 'chitchat'));
@@ -924,14 +1046,22 @@ function assistAlertBody(cfg, phone, who, core, ask, draft) {
     foot.push(`You'll always get the finished wording back before it goes out.`);
   }
   const body = `${core}\n${draftBlock}${block}`.trimEnd();
-  if (!foot.length) return block ? body : core;
+  // The HTML is what he'll actually see; the text is the fallback every mail
+  // client keeps around, and it's also what goes out over SMS if email fails, so
+  // it stays exactly as readable as it was before there was an HTML part at all.
+  const html = assistAlertHtml(cfg, { phone, who, msg, note, ask, offer, byEmail, quickOk, media });
+  let text;
+  if (!foot.length) text = block ? body : core;
   // Only invite a reply when replies are actually processed. With email answering
   // off, the marker and ref are left out entirely — otherwise he'd hit reply and
   // nothing would ever happen. The ref is also what makes a reply routable, and
   // requiring it is what stops ordinary mail being read as a command.
-  if (!byEmail) return `${body}\n\n${foot.join('\n')}`;
-  foot.push(`[ref:${phone}]`);
-  return `${ASSIST_CUT}\n${body}\n\n${foot.join('\n')}`;
+  else if (!byEmail) text = `${body}\n\n${foot.join('\n')}`;
+  else {
+    foot.push(`[ref:${phone}]`);
+    text = `${ASSIST_CUT}\n${body}\n\n${foot.join('\n')}`;
+  }
+  return { text, html };
 }
 
 // Strip the quoted original out of a reply so only what he actually typed is
@@ -950,6 +1080,10 @@ function assistStripQuoted(raw) {
   if (cuts.length) s = s.slice(0, Math.min(...cuts));
   // Drop a trailing signature block ("-- \nMikey").
   s = s.replace(/\n--\s*\n[\s\S]*$/, '');
+  // The ref rides along in the body when he answered by tapping a button (the
+  // mailto pre-fills "YES\n\n[ref:…]"), and it's routing, not words — leaving it
+  // in would stop a bare "YES" looking like a bare YES.
+  s = s.replace(/\[ref:[^\]]*\]/g, '');
   return s.trim();
 }
 
@@ -1053,10 +1187,10 @@ async function apiAssistPractice(request) {
   await saveThread(thread);
   await updateIndexEntry(thread);
 
-  const core = `🧪 THIS IS A PRACTICE MESSAGE — ${sc.name} is not a real customer.\nNothing you reply here will ever be sent to anyone.\n\n${sc.name} texted:\n"${sc.body}"`;
-  const body = assistAlertBody(cfg, PRACTICE_PHONE, sc.name, core, ask, draft);
-  const sent = await notifyMikey(`🧪 Practice · New text from ${sc.name}`, body);
-  return json({ ok: !!sent, scenario: sc.id, ask, emailed: !!sent, previewBody: body });
+  const note = `🧪 THIS IS A PRACTICE MESSAGE — ${sc.name} is not a real customer.\nNothing you reply here will ever be sent to anyone.`;
+  const body = assistAlertBody(cfg, { phone: PRACTICE_PHONE, who: sc.name, msg: sc.body, ask, draft, note });
+  const sent = await notifyMikey(`🧪 Practice · ${sc.name}: "${String(sc.body).slice(0, 52)}${String(sc.body).length > 52 ? '…' : ''}"`, body);
+  return json({ ok: !!sent, scenario: sc.id, ask, emailed: !!sent, previewBody: body.text, previewHtml: body.html });
 }
 
 // The Gmail script that feeds this. Deliberately reads his SENT mail rather than
@@ -7505,23 +7639,31 @@ async function geminiGenerate(prompt, opts = {}) {
 // configured we email it (free) instead of paying Twilio to text ourselves.
 // SMS is the automatic fallback when email isn't set up or the send fails, so
 // an alert always lands somewhere. Returns true if any channel succeeded.
+// `body` is either a plain string or { text, html } from a caller that built its
+// own layout (the customer alerts do). Anything that stays a string still gets a
+// readable HTML email — alertHtml() lays the text out — and the text version is
+// what goes over SMS when email is off or fails, so no alert ever depends on the
+// HTML existing.
 async function notifyMikey(subject, body) {
+  const text = typeof body === 'string' ? body : String((body && body.text) || '');
+  const html = (body && typeof body === 'object' && body.html) || '';
   // Ring the phone too. Web push is free, instant, and doesn't wait on email or
   // Twilio — but it's a bonus channel, never the only one, so failures are silent.
   pushNotify().catch(() => {});
   if (ENV.RESEND_API_KEY && ENV.ALERT_EMAIL) {
-    try { await sendEmail(subject, body); return true; }
+    try { await sendEmail(subject, text, html); return true; }
     catch { /* fall through to SMS so the alert still reaches Mikey */ }
   }
-  try { await sendSms(ENV.MIKEY_PHONE, body, { skipOptOut: true }); return true; }
+  try { await sendSms(ENV.MIKEY_PHONE, text, { skipOptOut: true }); return true; }
   catch { return false; }
 }
 
-// Send an alert email via Resend (https://resend.com). Plain text is plenty for
-// a phone notification. ALERT_FROM must be a Resend-verified sender; until a
-// domain is verified, Resend only allows onboarding@resend.dev -> your own
-// account email, which is exactly the single-recipient case here.
-async function sendEmail(subject, text) {
+// Send an alert email via Resend (https://resend.com). Both parts go out: the
+// HTML is what he sees, the text is the fallback every client keeps and the only
+// thing a watch or a screen reader may show. ALERT_FROM must be a Resend-verified
+// sender; until a domain is verified, Resend only allows onboarding@resend.dev ->
+// your own account email, which is exactly the single-recipient case here.
+async function sendEmail(subject, text, html) {
   const to = ENV.ALERT_EMAIL;
   const from = ENV.ALERT_FROM || 'Mikeys Dashboard <onboarding@resend.dev>';
   if (!to) throw new Error('ALERT_EMAIL not set');
@@ -7531,10 +7673,151 @@ async function sendEmail(subject, text) {
       'Authorization': `Bearer ${ENV.RESEND_API_KEY}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ from, to: [to], subject, text }),
+    body: JSON.stringify({ from, to: [to], subject, text, html: html || alertHtml(subject, text) }),
   });
   if (!res.ok) throw new Error(`Resend ${res.status}: ${(await res.text()).slice(0, 300)}`);
   return res.json();
+}
+
+// ===========================================================================
+// The mail kit — how every alert email is put together
+// ===========================================================================
+// These emails are read on a phone, one-handed, usually while he's holding a
+// pressure washer. So: one column, big type, the thing that matters loudest, and
+// everything styled inline (Gmail strips <style> blocks). Colours are declared
+// explicitly and the document opts out of automatic dark-mode inversion, because
+// an inverted "here's what I'd send" card is unreadable.
+const MAILC = {
+  bg: '#eef1f5', card: '#ffffff', line: '#e2e8f0', ink: '#0f172a', mute: '#64748b',
+  amber: '#f59e0b', amberBg: '#fffbeb', amberInk: '#92400e',
+  green: '#16a34a', greenBg: '#f0fdf4', greenInk: '#166534',
+  red: '#dc2626', redBg: '#fef2f2', redInk: '#991b1b',
+  blue: '#2563eb', blueBg: '#eff6ff',
+  purple: '#7c3aed', purpleBg: '#f5f3ff',
+};
+const MAILF = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif";
+
+function htmlEsc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+// A run of prose, line breaks kept.
+function mailLines(s) { return htmlEsc(s).replace(/\r?\n/g, '<br>'); }
+
+// The outer document. `preheader` is the grey line Gmail shows next to the
+// subject in the inbox list — putting the customer's actual words there means he
+// can often answer without opening anything.
+function mailShell(preheader, inner) {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
+    `<meta name="viewport" content="width=device-width,initial-scale=1">` +
+    `<meta name="color-scheme" content="light only"><meta name="supported-color-schemes" content="light only">` +
+    `</head><body style="margin:0;padding:0;background:${MAILC.bg};-webkit-text-size-adjust:100%;">` +
+    `<div style="display:none;font-size:1px;color:${MAILC.bg};line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;">${htmlEsc(String(preheader || '').replace(/\s+/g, ' ').slice(0, 180))}</div>` +
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:${MAILC.bg};width:100%;">` +
+    `<tr><td align="center" style="padding:14px 10px 26px;">` +
+    `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="width:100%;max-width:600px;">` +
+    `<tr><td style="font-family:${MAILF};color:${MAILC.ink};">${inner}</td></tr>` +
+    `</table></td></tr></table></body></html>`;
+}
+
+// One rounded panel, with an optional coloured spine down the left edge.
+function mailCard(inner, opts = {}) {
+  const bg = opts.bg || MAILC.card;
+  const border = opts.border || MAILC.line;
+  const edge = opts.edge ? `border-left:6px solid ${opts.edge};` : '';
+  return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;">` +
+    `<tr><td style="background:${bg};border:1px solid ${border};${edge}border-radius:14px;padding:${opts.pad || '16px'};">${inner}</td></tr>` +
+    `</table><div style="height:12px;line-height:12px;font-size:12px;">&nbsp;</div>`;
+}
+
+// The small uppercase caption above a card's contents.
+function mailLabel(text, color) {
+  return `<div style="font:700 12px/1.4 ${MAILF};letter-spacing:.08em;text-transform:uppercase;color:${color};margin:0 0 10px;">${htmlEsc(text)}</div>`;
+}
+
+// The loud one: what the customer actually said. Runs of blank lines are
+// collapsed — people pad texts with them, and at this size the gaps would push
+// the second half of the message off the screen.
+function mailShout(text) {
+  return `<div style="font-family:${MAILF};font-size:25px;line-height:1.32;font-weight:800;color:${MAILC.ink};margin:0;">&ldquo;${mailLines(String(text).replace(/\n{2,}/g, '\n').trim())}&rdquo;</div>`;
+}
+
+// Body copy for a plain-text alert. Almost every alert in here is written as
+// "Phone: +1360…" lines, so those get the label quietened and the value bolded —
+// which is most of the difference between a wall of text and something skimmable
+// at arm's length.
+function mailBody(text, color) {
+  const rows = String(text).split('\n').map((ln) => {
+    const kv = ln.match(/^ {0,4}([A-Za-z][A-Za-z /'-]{1,18}):\s*(\S.*)$/);
+    if (kv) return `<div style="margin:0 0 5px;"><span style="color:${MAILC.mute};">${htmlEsc(kv[1])}:</span> <b style="color:${MAILC.ink};">${htmlEsc(kv[2])}</b></div>`;
+    const t = htmlEsc(ln.replace(/^ {2,}/, ''));
+    return `<div style="margin:0 0 5px;">${t || '&nbsp;'}</div>`;
+  }).join('');
+  return `<div style="font:400 15px/1.55 ${MAILF};color:${color};">${rows}</div>`;
+}
+
+// Full-width tap target. Thumb-sized on purpose — these get pressed on a phone.
+function mailBtn(href, label, bg, opts = {}) {
+  const fg = opts.fg || '#ffffff';
+  const border = opts.border || bg;
+  return `<a href="${htmlEsc(href)}" style="display:block;box-sizing:border-box;width:100%;background:${bg};color:${fg};border:1px solid ${border};border-radius:12px;padding:14px 16px;font:700 16px/1.2 ${MAILF};text-align:center;text-decoration:none;">${label}</a>`;
+}
+
+// Every other alert — failed texts, voicemails, bookings, the weekly recap — is
+// written as plain text and always will be, because it also has to work as an
+// SMS. Rather than rewrite them all, this lays that text out: the opening line
+// leads, anything the sender put in quotes becomes the loud block, and each
+// "📱 HEADER"-style line starts a new section. Text stays the source of truth,
+// so an alert that's never seen this function still looks right.
+function alertHtml(subject, text) {
+  const src = String(text || '').replace(/\r\n/g, '\n');
+  const blocks = [];
+  let lead = true;
+  let refLine = '';
+  let cut = false;
+  for (const para of src.split(/\n{2,}/)) {
+    let p = para.trim();
+    if (!p) continue;
+    if (p.startsWith(ASSIST_CUT)) { cut = true; p = p.slice(ASSIST_CUT.length).trim(); if (!p) continue; }
+    // Keep the routing line out of the flow; it goes back at the bottom.
+    p = p.replace(/^\[ref:[^\]]*\]$/gm, (m) => { refLine = m; return ''; }).trim();
+    if (!p) continue;
+    // A paragraph that is nothing but a quoted string is the message itself.
+    const q = p.match(/^"([\s\S]+)"$/);
+    if (q) {
+      blocks.push(mailCard(mailShout(q[1]), { bg: MAILC.amberBg, border: '#fde68a', edge: MAILC.amber, pad: '18px' }));
+      lead = false;
+      continue;
+    }
+    // "💡 SOMETHING" / "⚠️ Heads up" — an emoji-led first line is a heading.
+    const lines = p.split('\n');
+    const head = lines[0].match(/^([^\x00-\x7F]\S{0,3})\s+(\S[\s\S]*)$/);
+    if (head && lines.length > 1) {
+      blocks.push(mailCard(
+        `<div style="font:700 15px/1.4 ${MAILF};color:${MAILC.ink};margin:0 0 8px;">${htmlEsc(head[1])} ${htmlEsc(head[2])}</div>` +
+        mailBody(lines.slice(1).join('\n'), MAILC.mute)));
+      lead = false;
+      continue;
+    }
+    blocks.push(lead
+      ? mailCard(`<div style="font:600 18px/1.55 ${MAILF};color:${MAILC.ink};">${mailLines(p)}</div>`)
+      : mailCard(mailBody(p, MAILC.mute)));
+    lead = false;
+  }
+  if (!blocks.length) blocks.push(mailCard(`<div style="font:600 18px/1.55 ${MAILF};color:${MAILC.ink};">${mailLines(src) || htmlEsc(subject)}</div>`));
+  const base = publicBase();
+  if (base) blocks.push(mailCard(mailBtn(base, 'Open the dashboard', MAILC.ink)));
+  // The cut marker has to be the first thing in the email and the ref the last,
+  // or a reply to this alert stops routing (see assistAlertHtml). An alert that
+  // isn't part of the reply loop gets its subject repeated as a caption instead,
+  // so the page still says what it is once the subject line scrolls away.
+  const top = cut
+    ? `<div style="font:400 11px/1.5 ${MAILF};color:#94a3b8;margin:0 0 10px;">${htmlEsc(ASSIST_CUT)}</div>`
+    : `<div style="font:700 13px/1.4 ${MAILF};color:${MAILC.mute};margin:0 0 12px;padding:0 4px;">${htmlEsc(subject)}</div>`;
+  const bottom = refLine ? `<div style="font:400 11px/1.5 ${MAILF};color:#94a3b8;padding:0 4px 8px;">${htmlEsc(refLine)}</div>` : '';
+  // The inbox preview line is the alert's own words — never the plumbing.
+  const peek = src.replace(ASSIST_CUT, '').replace(/\[ref:[^\]]*\]/g, '').trim();
+  return mailShell(peek, top + blocks.join('') + bottom);
 }
 
 // ===========================================================================
