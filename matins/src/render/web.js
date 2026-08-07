@@ -183,6 +183,15 @@ export function renderIssuePage(issue, { cfg, index = [] }) {
     <div class="daybar"><span class="dot"></span><span>${escapeHtml(d.feastOrSaint)} &middot; ${escapeHtml(d.season)} &middot; ${escapeHtml(t.label)}${d.isHolyDayOfObligation ? ' &middot; <span class="hdo">Holy day of obligation</span>' : ''}</span></div>
     <hr>`);
 
+  // The verse comes first: one line before anything asks anything of him.
+  if (issue.verseOfDay?.ref) {
+    const v = issue.verseOfDay;
+    parts.push(`<h2>Verse of the day</h2>
+      ${v.text
+        ? `<blockquote><p>${escapeHtml(v.text)}</p><div class="cite">${escapeHtml(v.ref)} &middot; ${escapeHtml(v.translation || 'Douay-Rheims')}</div></blockquote>`
+        : `<p>${escapeHtml(v.ref)}</p>`}`);
+  }
+
   const shown = readingsOf(issue);
   const reading = (p) =>
     p?.ref
@@ -197,16 +206,8 @@ export function renderIssuePage(issue, { cfg, index = [] }) {
     ${reading(shown.epistle)}${reading(shown.gospel)}
     <p class="usccb"><a href="${escapeHtml(r.usccbLink)}">Read them in full at the USCCB &rarr;</a></p>`);
 
-  if (issue.verseOfDay?.ref) {
-    const v = issue.verseOfDay;
-    parts.push(`<h2>Verse of the day</h2>
-      ${v.text
-        ? `<blockquote><p>${escapeHtml(v.text)}</p><div class="cite">${escapeHtml(v.ref)} &middot; ${escapeHtml(v.translation || 'Douay-Rheims')}</div></blockquote>`
-        : `<p>${escapeHtml(v.ref)}</p>`}`);
-  }
-
   if (issue.reflection)
-    parts.push(`<h2>Reflection</h2>${paragraphs(issue.reflection)}${issue.reflectionCloser ? `<p class=\"closer\">${escapeHtml(issue.reflectionCloser)}</p>` : ''}`);
+    parts.push(`<h2>Reflection</h2>${paragraphs(issue.reflection)}`);
 
   if (issue.saintStory) {
     parts.push(`<h2>${escapeHtml(issue.saintStory.name || 'Saint of the day')}</h2>

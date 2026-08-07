@@ -11,7 +11,6 @@ import { checkBlock } from './safety.js';
 import { PRAYERS } from '../content/prayers.js';
 import { QA_BANK } from '../content/qa.js';
 import { FORMS } from '../content/forms.js';
-import { reflectionFor } from '../content/reflections.js';
 import { QA_PER_ISSUE } from '../config.js';
 import { pickPrayer, pickQaSet, pickForm, recentOpenings, rememberOpening } from './rotation.js';
 
@@ -51,23 +50,17 @@ export async function buildIssue({ date, cfg, store, dryRun = false, seedBadBloc
   // a length writes the same paragraph every day.
   const formPick = await pickForm(store, { forms: FORMS, date, tags: [day.season?.toLowerCase(), day.rank?.toLowerCase()] });
 
-  // A hand-written reflection for today's Gospel beats a generated one every
-  // time, so the bank is checked first and the model is not asked at all when
-  // it hits. Pre-vetted, like the prayers and the Q&A, so it skips the safety
-  // pass — which makes a human reading it the only gate it gets.
-  const written = seedBadBlock ? null : reflectionFor(readings.gospelRef);
   const reflectionRes = seedBadBlock
     ? { ok: true, value: SEEDED_BAD_REFLECTION }
-    : written
-      ? { ok: true, value: `${written.body}\n\n${written.turn}`, fromBank: written.id, closer: written.closer }
-      : await generateReflection({
-          cfg,
-          day,
-          readings,
-          form: formPick.chosen,
-          avoidOpenings: await recentOpenings(store),
-          fetchImpl,
-        });
+    : await generateReflection({
+        cfg,
+        day,
+        readings,
+        form: formPick.chosen,
+        gospelPassage,
+        avoidOpenings: await recentOpenings(store),
+        fetchImpl,
+      });
   if (!reflectionRes.ok) degraded.push({ section: 'reflection', reason: reflectionRes.error });
 
   // The summary is generated before the headline, because the headline is
@@ -92,9 +85,7 @@ export async function buildIssue({ date, cfg, store, dryRun = false, seedBadBloc
   const facts = factsFor(day, readings);
   const checks = [];
   const [reflectionCheck, saintCheck, headlineCheck, summaryCheck] = await Promise.all([
-    reflectionRes.ok && !reflectionRes.fromBank
-      ? checkBlock({ cfg, name: 'reflection', text: reflectionRes.value, facts, fetchImpl })
-      : null,
+    reflectionRes.ok ? checkBlock({ cfg, name: 'reflection', text: reflectionRes.value, facts, fetchImpl }) : null,
     saintRes.ok ? checkBlock({ cfg, name: 'saintStory', text: `${saintRes.value.life}\n\nOne thing today: ${saintRes.value.oneActionToday}`, facts, fetchImpl }) : null,
     headlineRes.ok ? checkBlock({ cfg, name: 'headline', text: headlineRes.value, facts, fetchImpl }) : null,
     // The passage text goes in as FACTS: that is what makes 'asserts something
@@ -112,15 +103,6 @@ export async function buildIssue({ date, cfg, store, dryRun = false, seedBadBloc
 
   const keep = (name, res, check) => {
     if (!res?.ok) return null;
-    // Hand-written: nothing generated it, so there is no verdict to read.
-    if (res.fromBank) {
-      checks.push({
-        block: name,
-        pass: true,
-        reason: `hand-written (${res.fromBank}) — skips the safety pass, like the prayers`,
-      });
-      return res.value;
-    }
     // `craft` is a style note, not a safety verdict: the block ships either
     // way. It is reported so the admin preview shows which tired phrase the
     // model could not shake, which is the only way to tune the prompts.
@@ -193,8 +175,6 @@ export async function buildIssue({ date, cfg, store, dryRun = false, seedBadBloc
     },
     verseOfDay: verse ? { ref: verse.ref, text: verse.text || null, translation: verse.translation || null } : null,
     reflection,
-    reflectionCloser: reflectionRes.closer || null,
-    reflectionSource: reflectionRes.fromBank ? 'bank' : 'generated',
     // The name is romcal's, not the model's — it heads the section, so it has
     // to be the one the Church uses today, and it never goes through safety
     // because nothing generated it.

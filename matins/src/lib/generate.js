@@ -31,6 +31,23 @@ import { voicePrompt } from '../content/voice.js';
 import { FORMS, SAINT_EXEMPLAR, HEADLINE_EXEMPLARS } from '../content/forms.js';
 import { DRAFTS, TEMPERATURE } from '../config.js';
 
+// Rule 2 has two forms. The reflection may now retell what happens in the
+// Gospel — the owner asked for it — but ONLY when the Douay-Rheims text has
+// actually been fetched and is sitting in the prompt. Retelling from a model's
+// memory of a passage is the exact failure the grounding rules exist to stop,
+// so no text means no retelling, and the strict rule comes back.
+function hardRules({ mayRetell = false } = {}) {
+  const two = mayRetell
+    ? `2. You may say what happens in the Gospel, but ONLY from the Douay-Rheims text printed below. Every person, action and outcome you mention must be findable in it. Add nothing from memory, however well known. Do not quote: retell in your own words, echoing at most three consecutive words.`
+    : `2. Quote no scripture. Do not retell or paraphrase what happens in a reading. You may name a reading by its reference and say what it is about in the broadest terms, nothing more.`;
+  return `ABSOLUTE RULES — a violation means the block is thrown away:
+1. Use ONLY the facts given to you below. Do not add dates, places, numbers, names, miracles, quotations, or biographical details that are not in the facts.
+${two}
+3. Quote no Catechism, council, encyclical, pope, or saint. No citations of any kind.
+4. Do not present your own reflection as the teaching of the Church. Where you touch on doctrine, keep to what the Church actually holds, and keep opinion plainly marked as one way of seeing it.
+5. Nothing contrary to Catholic faith or morals.`;
+}
+
 const HARD_RULES = `ABSOLUTE RULES — a violation means the block is thrown away:
 1. Use ONLY the facts given to you below. Do not add dates, places, numbers, names, miracles, quotations, or biographical details that are not in the facts.
 2. Quote no scripture. Do not retell or paraphrase what happens in a reading. You may name a reading by its reference and say what it is about in the broadest terms, nothing more.
@@ -64,9 +81,13 @@ function avoidBlock(openings) {
     .join('\n')}`;
 }
 
-export async function generateReflection({ cfg, day, readings, form, avoidOpenings = [], fetchImpl }) {
+export async function generateReflection({ cfg, day, readings, form, gospelPassage, avoidOpenings = [], fetchImpl }) {
   const shape = form || FORMS[0];
-  const prompt = `${HARD_RULES}
+  const passage = gospelPassage?.text
+    ? `\nTODAY'S GOSPEL, IN FULL (Douay-Rheims). This is the only account you may retell, and it is never printed to the reader:\n"""\n${gospelPassage.text}\n"""\n`
+    : '';
+  const prompt = `${hardRules({ mayRetell: !!gospelPassage?.text })}
+${passage}
 
 ${voicePrompt()}
 
@@ -83,7 +104,9 @@ ${shape.exemplar}
 """
 
 TASK — REFLECTION
-Write 4 to 6 sentences for today, in the form above. Anchor it in the celebration, and in what the Church is putting in front of people today if readings are listed — but you may only name a reading, never retell it. Tie it to ordinary working life: patience with people, honest dealing, doing work well when nobody is checking, carrying a hard day.${avoidBlock(avoidOpenings)}
+Write 4 to 6 sentences for today, in the form above, and then close by turning to the reader as the voice instructions describe.
+
+Anchor it in what is actually in front of people today${gospelPassage?.text ? ' — you have the Gospel above and may retell what happens in it, within rule 2' : ', naming a reading by its reference only'}. Where it touches ordinary life, keep the images ordinary: patience with someone difficult, honest dealing, work done well when nobody is checking, a hard day carried without comment.${avoidBlock(avoidOpenings)}
 
 Return the reflection text only. No title, no preamble, no quotation marks around it.`;
 
@@ -349,6 +372,9 @@ const TELLS = [
   [/\bdear (?:friend|reader)\b/i, 'addressing the reader as "friend"'],
   [/\bbrothers and sisters\b/i, 'addressing the readership as a group'],
   [/\bmay we all\b/i, '"may we all"'],
+  // Added by the owner, blueprint.html 2026-08-07.
+  [/\blean in\b/i, '"lean in"'],
+  [/\bon fire for the Lord\b/i, '"on fire for the Lord"'],
   [/!/, 'an exclamation mark'],
 ];
 

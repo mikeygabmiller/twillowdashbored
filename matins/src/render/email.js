@@ -125,9 +125,11 @@ function html(issue, { cfg, t, url, unsub }) {
   const usccb = `<a href="${escapeHtml(r.usccbLink)}" style="font-family:${SANS};font-size:14px;color:${t.accent};text-decoration:underline;font-weight:600;">Read them in full at the USCCB &rarr;</a>`;
   const shown = readingsOf(issue);
   const readingBlocks = `${reading(shown.epistle)}${reading(shown.gospel)}`;
-  rows.push(section(t, 'Today at Mass', `${readingBlocks}${usccb}`, { first: true }));
-
-  if (issue.verseOfDay?.ref) {
+  // The verse comes first: one line before anything asks anything of him.
+  // `first` only suppresses the divider, so it moves to whatever is actually
+  // at the top on a day the verse could not be fetched.
+  const hasVerse = !!issue.verseOfDay?.ref;
+  if (hasVerse) {
     const v = issue.verseOfDay;
     rows.push(
       section(
@@ -143,19 +145,16 @@ function html(issue, { cfg, t, url, unsub }) {
                  </td>
                </tr>
              </table>`
-          : `<div style="font-family:${SERIF};font-size:19px;color:${t.ink};">${escapeHtml(v.ref)}</div>`
+          : `<div style="font-family:${SERIF};font-size:19px;color:${t.ink};">${escapeHtml(v.ref)}</div>`,
+        { first: true }
       )
     );
   }
 
+  rows.push(section(t, 'Today at Mass', `${readingBlocks}${usccb}`, { first: !hasVerse }));
+
   if (issue.reflection) {
-    // The closing line is a prayer, not a summary, so it is set apart from the
-    // prose rather than reading as its last sentence.
-    const closer = issue.reflectionCloser
-      ? `<div style="height:6px;line-height:6px;">&nbsp;</div>
-         <div style="font-family:${SERIF};font-size:17px;line-height:1.55;color:${t.accent};font-style:italic;">${escapeHtml(issue.reflectionCloser)}</div>`
-      : '';
-    rows.push(section(t, 'Reflection', `${para(t, issue.reflection, { last: true })}${closer}`));
+    rows.push(section(t, 'Reflection', para(t, issue.reflection, { last: true })));
   }
 
   if (issue.saintStory) {
@@ -270,8 +269,17 @@ function text(issue, { cfg, url, unsub }) {
     ...wrap(issue.headline, COLS),
     ...wrap(`${d.feastOrSaint} · ${d.season}${d.isHolyDayOfObligation ? ' · Holy day of obligation' : ''}`, COLS),
     '',
-    heading('Today at Mass'),
   ];
+
+  // The verse leads here too — the plain-text part is a real reading surface,
+  // not a fallback nobody sees.
+  if (issue.verseOfDay?.ref) {
+    out.push(heading('Verse of the day'));
+    if (issue.verseOfDay.text) out.push(...wrap(`"${issue.verseOfDay.text}"`, COLS, '  '));
+    out.push(`  ${issue.verseOfDay.ref}${issue.verseOfDay.text ? ` · ${issue.verseOfDay.translation}` : ''}`, '');
+  }
+
+  out.push(heading('Today at Mass'));
   const shown = readingsOf(issue);
   for (const p of [shown.epistle, shown.gospel]) {
     if (!p?.ref) continue;
@@ -282,11 +290,6 @@ function text(issue, { cfg, url, unsub }) {
   }
   out.push(`  ${r.usccbLink}`, '');
 
-  if (issue.verseOfDay?.ref) {
-    out.push(heading('Verse of the day'));
-    if (issue.verseOfDay.text) out.push(...wrap(`"${issue.verseOfDay.text}"`, COLS, '  '));
-    out.push(`  ${issue.verseOfDay.ref}${issue.verseOfDay.text ? ` · ${issue.verseOfDay.translation}` : ''}`, '');
-  }
   if (issue.reflection) out.push(heading('Reflection'), ...wrapParas(issue.reflection), '');
   if (issue.saintStory) {
     out.push(

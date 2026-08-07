@@ -340,8 +340,9 @@ test('every reflection in the bank is complete and in the house voice', () => {
   }
 });
 
-test('a bank reflection ships without going through the safety pass', async () => {
-  // 2026-08-05 is Matthew 15:21-28 in the fixtures — the Canaanite woman.
+test('the bank no longer overrides a generated reflection', async () => {
+  // The owner chose generated-always, so 2026-08-05 — a Gospel that IS in the
+  // bank — must still come back generated.
   const { buildIssue } = await import('../src/lib/issue.js');
   const { readOnly } = await import('../src/lib/store.js');
   const { fixtureFetch } = await import('./fixture-fetch.mjs');
@@ -352,15 +353,25 @@ test('a bank reflection ships without going through the safety pass', async () =
     dryRun: true,
     fetchImpl: fixtureFetch(),
   });
-  assert.equal(issue.reflectionSource, 'bank');
-  assert.ok(issue.reflection.includes('She asks, and gets silence.'));
-  assert.equal(issue.reflectionCloser, 'Lord, teach me to keep asking.');
+  assert.ok(reflectionFor(issue.readings.gospelRef), 'this Gospel is in the bank');
+  assert.ok(!issue.reflection.includes('She asks, and gets silence.'), 'and the bank did not win');
   const verdict = issue.safetyReport.blocks.find((b) => b.block === 'reflection');
   assert.equal(verdict.pass, true);
-  assert.match(verdict.reason, /hand-written/);
-  // And it reaches both surfaces, closing line included.
-  const cfg2 = config({ LLM_PROVIDER: 'stub', SITE_URL: 'https://example.test' });
-  for (const surface of [renderEmail(issue, { cfg: cfg2 }).html, renderIssuePage(issue, { cfg: cfg2 })]) {
-    assert.ok(surface.includes('Lord, teach me to keep asking.'));
-  }
+  assert.ok(verdict.drafts >= 1, 'it went through the generator and the safety pass');
+});
+
+test('the reflection may retell the Gospel only when the passage is in hand', async () => {
+  const seen = [];
+  const fetchImpl = async (_u, init) => {
+    seen.push(JSON.parse(init.body).messages[0].content);
+    return new Response(JSON.stringify({ content: [{ type: 'text', text: CLEAN_A }] }), { status: 200 });
+  };
+  const withText = { ref: 'Matthew 15:21-28', text: 'And behold a woman of Canaan came out of those coasts and cried out.' };
+  await generateReflection({ cfg: genCfg, day: DAY, readings: null, form: FORMS[0], gospelPassage: withText, fetchImpl });
+  assert.match(seen[0], /You may say what happens in the Gospel/);
+  assert.ok(seen[0].includes(withText.text), 'and the text it may retell is in the prompt');
+
+  seen.length = 0;
+  await generateReflection({ cfg: genCfg, day: DAY, readings: null, form: FORMS[0], fetchImpl });
+  assert.match(seen[0], /Do not retell or paraphrase what happens in a reading/, 'no text, no retelling');
 });

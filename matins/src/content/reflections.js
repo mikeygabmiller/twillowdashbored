@@ -1,3 +1,11 @@
+// SOURCE MATERIAL FOR THE EXEMPLARS. Not used at runtime.
+//
+// The owner chose "generated always — keep the bank as exemplars only"
+// (blueprint.html, 2026-08-07), so nothing here overrides a generated
+// reflection any more. It stays because it is the raw material the exemplars
+// in content/forms.js were cut from, and because the decision is reversible:
+// re-import reflectionFor() in lib/issue.js and the bank takes over again.
+//
 // Hand-written reflections, keyed by GOSPEL PASSAGE rather than by date.
 //
 // Why by passage: the lectionary brings the same Gospels back round, on
