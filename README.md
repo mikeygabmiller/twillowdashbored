@@ -101,6 +101,20 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   marker deliberately withheld so a one-word reply can't fire an AI message at an
   angry customer.
 
+  **The alerts are real HTML emails.** Their words come first and loudest — the
+  customer's message in big bold type at the top of the email, in the subject line,
+  and in the inbox preview line, so the notification banner alone usually tells you
+  what was asked. Under it: the drafted reply in a card with **one-tap Send it /
+  No — drop it** buttons (they're `mailto:` links that compose the same `yes`/`no`
+  reply you'd type, so nothing new is trusted), the example answers as tappable
+  chips, and a dashboard button. Every other alert — voicemails, failed texts,
+  bookings, the weekly recap — is laid out by the same kit from its plain text, so
+  they all read the same way. The plain-text part goes out alongside the HTML and is
+  what's used when an alert falls back to SMS, so nothing depends on the HTML
+  rendering. Two lines in it are load-bearing rather than decorative — the cut
+  marker at the very top and `[ref:…]` at the bottom — and `test/alertmail.test.js`
+  guards them.
+
   **Gmail hookup (one time, ~2 min):** menu → *Answer by email* → **Copy the Gmail
   setup script** → paste into a new project at script.google.com → add a 1-minute
   time-driven trigger on `mikeyAssistSync`. The script reads your **Sent** mail for
