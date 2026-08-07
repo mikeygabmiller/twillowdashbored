@@ -250,6 +250,47 @@
   .air-acts .btn{flex:1;font-size:12.5px;padding:8px 6px;display:inline-flex;align-items:center;justify-content:center;gap:5px}
   .air-acts .btn.accent{flex:1.5}
   .air-acts .btn svg{width:15px;height:15px}
+  /* ---- Auto-polish: a one-line "ready" bar + the review sheet it opens ----
+     Polish runs on its own as you type, but it never takes the screen: all it
+     does is drop this slim pill above the composer. The full before/after only
+     opens when you tap it, so on a phone the conversation stays visible. */
+  .polish-bar{display:none;align-items:center;gap:8px;margin:6px 12px 0;padding:8px 11px;border-radius:999px;cursor:pointer;
+    background:linear-gradient(135deg,var(--panel3),var(--panel2));border:1px solid var(--line);border-left:3px solid var(--purple);animation:pop .18s ease}
+  .polish-bar.show{display:flex}
+  .polish-bar .pb-ic{color:var(--purple);display:flex;flex:none}
+  .polish-bar .pb-ic svg{width:15px;height:15px}
+  .polish-bar .pb-t{flex:1;min-width:0;font-size:12.5px;font-weight:650;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .polish-bar .pb-cta{flex:none;font-size:11.5px;font-weight:800;color:var(--purple);white-space:nowrap}
+  .polish-bar .pb-x{flex:none;background:none;border:0;color:var(--muted2);cursor:pointer;display:flex;padding:2px}
+  .pp-scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:70;opacity:0;pointer-events:none;transition:opacity .2s}
+  .pp-scrim.show{opacity:1;pointer-events:auto}
+  .pp-sheet{position:fixed;left:0;right:0;bottom:0;z-index:71;background:var(--panel3);border-top:1px solid var(--line);
+    border-radius:20px 20px 0 0;max-height:88vh;display:flex;flex-direction:column;padding-bottom:var(--safe-bottom);
+    transform:translateY(101%);transition:transform .26s cubic-bezier(.4,0,.2,1);box-shadow:0 -10px 44px rgba(0,0,0,.55)}
+  .pp-sheet.show{transform:translateY(0)}
+  .pp-hd{display:flex;align-items:center;gap:8px;padding:12px 16px 10px;border-bottom:1px solid var(--line);flex:0 0 auto}
+  .pp-hd .pp-t{font-size:15px;font-weight:750;display:flex;align-items:center;gap:7px}
+  .pp-hd .pp-t svg{width:17px;height:17px;color:var(--purple)}
+  .pp-hd .pp-x{margin-left:auto;background:transparent;border:0;color:var(--muted2);cursor:pointer;display:flex;padding:4px;border-radius:8px}
+  .pp-body{overflow:auto;padding:12px 16px 4px}
+  .pp-lbl{font-size:10.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:var(--muted2);margin-bottom:5px}
+  .pp-orig{background:rgba(127,127,127,.08);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:13px;line-height:1.45;
+    color:var(--muted);white-space:pre-wrap;word-wrap:break-word;max-height:22vh;overflow:auto;margin-bottom:12px}
+  .pp-sheet textarea{width:100%;background:var(--panel);border:1px solid var(--purple);border-radius:11px;color:var(--text);
+    font:inherit;font-size:14.5px;line-height:1.5;padding:10px 11px;resize:none;min-height:76px;max-height:34vh;overflow:auto}
+  .pp-note{font-size:11.5px;color:var(--muted2);margin-top:7px}
+  .pp-acts{display:flex;gap:7px;padding:11px 16px 10px;flex:0 0 auto}
+  .pp-acts .btn{flex:1;justify-content:center;font-size:13px;padding:11px 6px;display:inline-flex;align-items:center;gap:6px}
+  .pp-acts .btn.accent{flex:1.6}
+  .pp-acts .btn svg{width:15px;height:15px}
+  .pp-foot{display:flex;align-items:center;gap:9px;padding:0 16px 14px;font-size:12px;color:var(--muted2);flex:0 0 auto}
+  .pp-foot .sw{margin-left:auto}
+  @media(min-width:781px){
+    .pp-sheet{left:50%;right:auto;bottom:auto;top:50%;width:min(560px,92vw);border:1px solid var(--line);border-radius:16px;
+      transform:translate(-50%,-46%) scale(.97);opacity:0;pointer-events:none;transition:opacity .18s,transform .18s}
+    .pp-sheet.show{transform:translate(-50%,-50%) scale(1);opacity:1;pointer-events:auto}
+    .pp-sheet .sheet-handle{display:none}
+  }
   /* skeleton loading rows */
   .skel-row{display:flex;gap:13px;padding:13px 16px;border-bottom:1px solid var(--line2)}
   .skel-av{width:46px;height:46px;border-radius:50%;flex:none}
@@ -2289,6 +2330,7 @@
     <div class="date-banner" id="dateBanner" style="display:none"></div>
     <div class="ai-review" id="suggestBox" style="display:none"></div>
     <div class="ai-review" id="aiReview" style="display:none"></div>
+    <div class="polish-bar" id="polishBar"></div>
 
     <div class="composer" id="composer" style="display:none">
       <div class="ctools">
@@ -2459,6 +2501,29 @@
   <div class="guide-body" id="guideBody"></div>
 </div>
 
+<!-- ============ Polish review (opened from the "polished text is ready" bar) ============ -->
+<div class="pp-scrim" id="polishScrim"></div>
+<div class="pp-sheet" id="polishSheet">
+  <div class="sheet-handle"></div>
+  <div class="pp-hd">
+    <span class="pp-t"><span class="ic-inline" data-ic="wand" data-ic-size="17"></span> Polished version</span>
+    <button class="pp-x" id="polishClose" data-ic="x" aria-label="Close"></button>
+  </div>
+  <div class="pp-body">
+    <div class="pp-lbl">You wrote</div>
+    <div class="pp-orig" id="polishOrig"></div>
+    <div class="pp-lbl">Polished — edit anything before you use it</div>
+    <textarea id="polishText" rows="3"></textarea>
+    <div class="pp-note" id="polishNote"></div>
+  </div>
+  <div class="pp-acts">
+    <button class="btn accent ic-btn" id="polishUse" data-ic="check" data-ic-label="Use this"></button>
+    <button class="btn ic-btn" id="polishRedo" data-ic="refresh-cw" data-ic-label="Redo"></button>
+    <button class="btn" id="polishKeep">Keep mine</button>
+  </div>
+  <div class="pp-foot"><span>Polish as you type</span><span class="sw" id="polishAutoSw"></span></div>
+</div>
+
 <!-- ============ AI command bar ============ -->
 <div class="setup-overlay" id="aiCmdOverlay" style="display:none">
   <div class="setup-box" id="aiCmdBox">
@@ -2619,7 +2684,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-04·ai-keyboard";
+  var APP_BUILD="2026-08-07·auto-polish";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -3018,6 +3083,7 @@
     preset:"crimson", accent:["#ff2e43","#c81e30"],
     radius:"md", density:"comfy", textScale:100, font:"system", bg:"solid",
     mode:"simple", locked:false, tourSeen:false, listStyle:"compact",
+    autoPolish:true,   // polish drafts as you type (the "ready" bar over the composer)
     navV:2, tabsOrder:["home","messages","pipeline","money","more"], tabsHidden:[],
     mblocks:["hero","log","alerts","pulse","brain","today"], mblocksHidden:[],
     mkpis:["net","you","costs","savings","avg","jobs","margin","owed","best"],
@@ -4878,7 +4944,7 @@
     // reset any in-thread find when moving to a different conversation
     state.threadFind="";state.findIdx=0;var fb=el("findBar");if(fb)fb.style.display="none";var fi=el("findInput");if(fi)fi.value="";
     state.lastAiText=null;
-    hideAiReview();pkHide();pkLoadStyle(false);
+    hideAiReview();resetPolish();pkHide();pkLoadStyle(false);
     var sbx=el("suggestBox");if(sbx){sbx.style.display="none";sbx.innerHTML=""}
     var dbx=el("dateBanner");if(dbx){dbx.style.display="none";dbx.innerHTML=""}
     el("emptyState").style.display="none";renderMain();
@@ -5855,7 +5921,7 @@
       {act:"reqdate",ic:"calendar-days",  t:"Request a date from Mikey", s:"Emails Mikey for his next open date", accent:true},
       {act:"pay",    ic:"receipt",         t:"Send a payment request", s:"Texts a link with the breakdown and every way to pay", accent:true},
       {act:"draft",  ic:"sparkles",       t:"AI draft a reply", s:"Let the AI suggest a full reply to send"},
-      {act:"polish", ic:"wand",           t:"Polish my text", s:"Fix spelling & grammar, keep your wording"},
+      {act:"polish", ic:"wand",           t:"Polish my text now", s:"Don't wait — review the polished version right away"},
       {act:"tpl",    ic:"zap",            t:"Quick replies", s:"Insert one of your saved replies"},
       {act:"sched",  ic:"calendar-clock", t:"Schedule send", s:"Write now, send automatically later"},
       {act:"rem",    ic:"bell",           t:"Appointment reminder", s:"Get a private nudge before an appointment"}
@@ -5866,8 +5932,20 @@
       h+='<div class="ts-row'+(r.accent?" accent":"")+'" data-act="'+r.act+'"><span class="ts-ic">'+ic(r.ic,19)+'</span>'+
          '<span class="ts-txt"><b>'+esc(r.t)+'</b><span>'+esc(r.s)+'</span></span></div>';
     });
+    // Auto-polish lives here too, as a switch — same place you'd look for the
+    // polish tool, so it's easy to find and easy to turn off.
+    h+='<div class="ts-row" id="tsAutoPolish"><span class="ts-ic">'+ic("sparkles",19)+'</span>'+
+       '<span class="ts-txt"><b>Polish as you type</b><span>Runs quietly in the background</span></span>'+
+       '<span class="sw'+(autoPolishOn()?" on":"")+'" id="tsAutoPolishSw" style="margin-left:auto"></span></div>';
     sheet.innerHTML=h;
-    Array.prototype.forEach.call(sheet.querySelectorAll(".ts-row"),function(row){
+    var apRow=sheet.querySelector("#tsAutoPolish");
+    if(apRow)apRow.onclick=function(e){
+      if(e){e.stopPropagation()}
+      setAutoPolish(!autoPolishOn());
+      var sw=sheet.querySelector("#tsAutoPolishSw");if(sw)sw.classList.toggle("on",autoPolishOn());
+      toast(autoPolishOn()?"Polish as you type is on":"Polish as you type is off");
+    };
+    Array.prototype.forEach.call(sheet.querySelectorAll(".ts-row[data-act]"),function(row){
       row.onclick=function(e){
         if(e){e.stopPropagation()}
         var act=row.getAttribute("data-act");
@@ -6159,19 +6237,167 @@
     }).catch(function(){toast("Network error",{bad:true})})
     .then(function(){var bb=el("draftBtn");bb.disabled=false;bb.innerHTML=ic("sparkles",21)});
   }
+  // =========================================================================
+  // AUTO-POLISH
+  // -------------------------------------------------------------------------
+  // Polish used to be a button you had to remember to press. Now it just runs:
+  // stop typing for a beat and the polished version is fetched in the
+  // background. Nothing is ever swapped into the box behind your back and
+  // nothing covers the screen — all you get is a one-line bar above the
+  // composer ("Polished version ready"). Tap it and the review sheet slides up
+  // where you can confirm, edit, redo, or keep your own wording.
+  //
+  // Cost control (every run is a Gemini call, and the predictive keyboard is
+  // already spending some of that budget): only fires on a real pause, only for
+  // text worth polishing, at most once every few seconds, one at a time, and
+  // every result is cached by the exact text so the same draft is never sent
+  // twice.
+  // =========================================================================
+  var POLISH_IDLE=1600;      // ms of "you stopped typing" before we polish
+  var POLISH_COOLDOWN=4000;  // ms minimum between two automatic runs
+  var POLISH_MIN=15;         // don't bother with "ok", "on my way", etc.
+  var polish={timer:null,busy:false,open:false,src:"",out:"",same:false,at:0};
+  var polishCache={};        // exact draft text -> polished text ("" = nothing to suggest)
+  var polishDeclined={};     // exact draft text -> true (you said "keep mine")
+  function autoPolishOn(){return UI.autoPolish!==false}
+  function curDraft(){var i=el("msgInput");return i?(i.value||"").trim():""}
+  function polishWorthIt(text){
+    return !!(state.thread&&text.length>=POLISH_MIN&&text.split(/\s+/).length>=3);
+  }
+  function prunePolishCache(){
+    var k=Object.keys(polishCache);if(k.length>60)k.slice(0,30).forEach(function(x){delete polishCache[x]});
+  }
+  // Called on every keystroke. Debounces, and re-offers instantly from cache.
+  function schedulePolish(){
+    if(polish.timer){clearTimeout(polish.timer);polish.timer=null}
+    var text=curDraft();
+    if(polish.src&&text!==polish.src&&!polish.open)hidePolishBar(); // the suggestion is stale now
+    if(!state.thread||!autoPolishOn()||polish.open)return;
+    if(!polishWorthIt(text)||polishDeclined[text])return;
+    if(polishCache[text]!==undefined){offerPolish(text,state.thread.phone);return}
+    if(polish.busy)return; // the in-flight run reschedules itself when it lands
+    var wait=Math.max(POLISH_IDLE,POLISH_COOLDOWN-(Date.now()-polish.at));
+    polish.timer=setTimeout(function(){
+      if(curDraft()!==text||!state.thread)return schedulePolish();
+      requestPolish(text,state.thread.phone,false);
+    },wait);
+  }
+  // One polish run. manual=true means you pressed the Polish tool, so it opens
+  // the sheet even when there was nothing to change, and surfaces errors.
+  function requestPolish(text,forPhone,manual){
+    polish.busy=true;polish.at=Date.now();
+    return post("/api/ai/draft",{phone:forPhone,text:text}).then(function(d){
+      if(d&&d.ok&&d.draft){
+        var out=d.draft.trim();
+        polishCache[text]=(out===text)?"":out;prunePolishCache();
+        if(manual){
+          if(curDraft()!==text||!state.thread||state.thread.phone!==forPhone)return;
+          polish.src=text;polish.out=out;polish.same=(out===text);openPolishSheet();
+        } else offerPolish(text,forPhone);
+      } else {
+        polishCache[text]="";  // remember the miss so auto-polish can't hammer a failing API
+        if(manual)toast("Polish failed: "+((d&&d.error)||"error"),{bad:true});
+      }
+    }).catch(function(){
+      polishCache[text]="";
+      if(manual)toast("Network error",{bad:true});
+    }).then(function(){
+      polish.busy=false;
+      var bb=el("polishBtn");if(bb){bb.disabled=false;bb.innerHTML=ic("wand",21)}
+      if(!polish.open)schedulePolish(); // the draft may have moved on while we waited
+    });
+  }
+  // Show the ready-bar — but only if the polished text still matches what's in
+  // the box and you're still in the same conversation.
+  function offerPolish(src,forPhone){
+    if(!state.thread||state.thread.phone!==forPhone)return;
+    if(curDraft()!==src||polishDeclined[src])return;
+    var out=polishCache[src];if(!out)return;
+    polish.src=src;polish.out=out;polish.same=false;
+    if(polish.open){renderPolishSheet();return}
+    showPolishBar();
+  }
+  function showPolishBar(){
+    var bar=el("polishBar");if(!bar)return;
+    bar.innerHTML='<span class="pb-ic">'+ic("wand",15)+'</span>'+
+      '<span class="pb-t">Polished version ready</span>'+
+      '<span class="pb-cta">Review</span>'+
+      '<button class="pb-x" aria-label="Dismiss">'+ic("x",15)+'</button>';
+    bar.onclick=function(){openPolishSheet()};
+    bar.querySelector(".pb-x").onclick=function(e){e.stopPropagation();polishKeepMine()};
+    bar.classList.add("show");
+  }
+  function hidePolishBar(){var bar=el("polishBar");if(bar){bar.classList.remove("show");bar.innerHTML=""}}
+  function openPolishSheet(){
+    if(!polish.src)return;
+    polish.open=true;hidePolishBar();renderPolishSheet();
+    el("polishScrim").classList.add("show");el("polishSheet").classList.add("show");
+    if(typeof vibrate==="function")vibrate(6);
+  }
+  function renderPolishSheet(){
+    el("polishOrig").textContent=polish.src;
+    var ta=el("polishText");ta.disabled=false;ta.value=polish.out||polish.src;
+    el("polishNote").textContent=polish.same?"Looks good already — no changes needed.":"Same meaning, cleaned up to read clearly. Edit anything before you use it.";
+    var sw=el("polishAutoSw");if(sw)sw.classList.toggle("on",autoPolishOn());
+    setTimeout(function(){ta.style.height="auto";ta.style.height=Math.min(ta.scrollHeight+2,Math.round(window.innerHeight*.34))+"px"},0);
+  }
+  // keepBar=true means "close for now" (the X / tapping outside) — the bar comes
+  // back so the suggestion isn't lost.
+  function closePolishSheet(keepBar){
+    polish.open=false;
+    el("polishScrim").classList.remove("show");el("polishSheet").classList.remove("show");
+    if(keepBar&&polish.out&&curDraft()===polish.src)showPolishBar();
+  }
+  function polishUse(){
+    var v=(el("polishText").value||"").trim();
+    if(!v){toast("Nothing to use — type or edit the text first",{bad:true});return}
+    var inp=el("msgInput");inp.value=v;autoGrow();updateCount();
+    if(typeof stashDraft==="function")stashDraft(state.phone);
+    polishCache[v]="";polishDeclined[v]=true; // never turn around and re-polish what it just wrote
+    polish.src="";polish.out="";
+    closePolishSheet(false);hidePolishBar();
+    if(typeof vibrate==="function")vibrate(8);
+    inp.focus();
+  }
+  function polishRedo(){
+    var src=polish.src;if(!src||!state.thread||polish.busy)return;
+    delete polishCache[src];
+    var ta=el("polishText");ta.disabled=true;ta.value="Rewriting…";
+    requestPolish(src,state.thread.phone,true).then(function(){
+      var t2=el("polishText");if(t2)t2.disabled=false;
+      if(polish.open)renderPolishSheet();
+    });
+  }
+  function polishKeepMine(){
+    if(polish.src)polishDeclined[polish.src]=true;
+    polish.src="";polish.out="";
+    closePolishSheet(false);hidePolishBar();
+  }
+  // Wipe everything on send / switching conversations, so a suggestion can
+  // never leak from one customer's draft into another's.
+  function resetPolish(){
+    if(polish.timer){clearTimeout(polish.timer);polish.timer=null}
+    polish.src="";polish.out="";polish.same=false;
+    if(polish.open)closePolishSheet(false);
+    hidePolishBar();
+  }
+  function setAutoPolish(on){
+    UI.autoPolish=!!on;saveUI();
+    if(typeof vibrate==="function")vibrate(6);
+    if(on){schedulePolish();return}
+    // Turning it off stops future runs, but never yanks a review you're reading.
+    if(polish.timer){clearTimeout(polish.timer);polish.timer=null}
+    if(!polish.open){polish.src="";polish.out="";hidePolishBar()}
+  }
+  // The Polish tool still works on demand — it just opens the same sheet, and
+  // reuses the polish that's already waiting instead of paying for another call.
   function aiPolish(){
     var t=state.thread;if(!t)return;
-    var text=el("msgInput").value.trim();
+    var text=curDraft();
     if(!text){toast("Type a reply first — polish cleans up what you wrote",{bad:true});return}
-    var b=el("polishBtn");b.disabled=true;b.innerHTML='<span class="spin"></span>';
-    post("/api/ai/draft",{phone:t.phone,text:text}).then(function(d){
-      if(d&&d.ok&&d.draft){
-        var changed=d.draft.trim()!==text;
-        showAiReview({title:"Polished",text:d.draft,note:changed?"Same meaning — cleaned up and reworded to read clearly.":"Looks good already — no changes needed.",
-          onAccept:function(){var inp=el("msgInput");inp.value=d.draft;autoGrow();updateCount();inp.focus()},onRegen:aiPolish});
-      } else toast("Polish failed: "+((d&&d.error)||"error"),{bad:true});
-    }).catch(function(){toast("Network error",{bad:true})})
-    .then(function(){var bb=el("polishBtn");if(bb){bb.disabled=false;bb.innerHTML=ic("wand",21)}});
+    if(polishCache[text]){polish.src=text;polish.out=polishCache[text];polish.same=false;openPolishSheet();return}
+    var b=el("polishBtn");if(b){b.disabled=true;b.innerHTML='<span class="spin"></span>'}
+    requestPolish(text,t.phone,true);
   }
   // ---- "Write it for me": type what you want to say, AI writes it in your voice ----
   var WRITE_SUGGESTIONS=["Offer a couple time slots","Ask for their address","Let them know I'm running a little late","Confirm the appointment","Politely let them know I'm booked"];
@@ -6238,7 +6464,7 @@
     recBase=el("msgInput").value.trim();
     rec.onresult=function(e){
       var said="";for(var i=0;i<e.results.length;i++){said+=e.results[i][0].transcript}
-      el("msgInput").value=(recBase?recBase+" ":"")+said;autoGrow();updateCount();
+      el("msgInput").value=(recBase?recBase+" ":"")+said;autoGrow();updateCount();schedulePolish();
     };
     rec.onend=function(){recOn=false;el("micBtn").classList.remove("rec");recBase=el("msgInput").value.trim()};
     rec.onerror=function(ev){recOn=false;el("micBtn").classList.remove("rec");
@@ -6315,7 +6541,7 @@
       state.thread.messages.push({id:tempId,dir:"out",body:body,ts:Date.now(),kind:"manual",status:"sending",by:payload.by});
       renderThread();
     }
-    inp.value="";clearDraft(forPhone);autoGrow();updateCount();hideAiReview();PK.asked="";pkOnType();
+    inp.value="";clearDraft(forPhone);autoGrow();updateCount();hideAiReview();resetPolish();PK.asked="";pkOnType();
     noteSent(forPhone,body);
     pendingSends[tempId]={payload:payload,forPhone:forPhone,body:body,
       timer:setTimeout(function(){dispatchSend(tempId)},UNDO_MS)};
@@ -6629,7 +6855,7 @@
     el("details").classList.remove("open");el("sheetScrim").classList.remove("show");
     el("emptyState").style.display="flex";el("chatHead").style.display="none";el("composer").style.display="none";el("schedBanner").style.display="none";el("fuBanner").style.display="none";el("remindBanner").style.display="none";pkHide();
     el("coachPanel").style.display="none";el("coachPanel")._phone=null;el("teamIdentityBar").style.display="none";
-    hideAiReview();
+    hideAiReview();resetPolish();
     el("messages").innerHTML="";
     setNavActive(tab);
     el("scroll").scrollTop=0;
@@ -6860,7 +7086,17 @@
   el("dtRename").onclick=function(){var v=prompt("Contact name:",state.thread.name||"");if(v!==null)saveMeta({name:v.trim()})};
   el("dtArchive").onclick=function(){var t=state.thread;doArchiveToggle(t);closeDetails();if(!t.archived){document.body.classList.remove("viewing");state.phone=null}};
 
-  el("msgInput").addEventListener("input",function(){updateCount();autoGrow();stashDraft(state.phone);pkOnType()});
+  el("msgInput").addEventListener("input",function(){updateCount();autoGrow();stashDraft(state.phone);pkOnType();schedulePolish()});
+  el("polishScrim").onclick=function(){closePolishSheet(true)};
+  el("polishClose").onclick=function(){closePolishSheet(true)};
+  el("polishUse").onclick=polishUse;
+  el("polishRedo").onclick=polishRedo;
+  el("polishKeep").onclick=polishKeepMine;
+  el("polishAutoSw").onclick=function(){setAutoPolish(!autoPolishOn());el("polishAutoSw").classList.toggle("on",autoPolishOn())};
+  el("polishText").addEventListener("keydown",function(e){
+    if(e.key==="Escape"){e.preventDefault();closePolishSheet(true)}
+    else if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)){e.preventDefault();polishUse()}
+  });
   // Predictive keyboard: Tab (or → at the very end) takes the AI's completion,
   // Esc waves it off. Registered ahead of the Enter handler and only ever acts
   // when a ghost is actually showing, so sending is untouched.
