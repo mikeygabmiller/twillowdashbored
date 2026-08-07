@@ -170,8 +170,17 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   send*, this answers *what's my next word*. Rebuilt twice a day, with a
   **Relearn how I text** button and an on/off switch in the menu; the local half
   keeps working even with no AI key configured.
-- **AI helpers (optional, Gemini):** conversation summary, draft/polish a reply,
-  and an inbox triage briefing.
+- **Auto-polish:** you don't press anything. Stop typing for a beat and your draft
+  is polished in the background — but nothing is ever swapped into the box behind
+  your back and nothing covers the screen. A slim **"Polished version ready"** bar
+  appears above the message box; tap it and a sheet slides up with what you wrote,
+  the polished version in an editable box, and **Use this / Redo / Keep mine**. It
+  only runs on a real pause, only on text long enough to be worth it, at most once
+  every few seconds, and every result is cached so the same draft is never sent
+  twice. **Tools → Polish as you type** switches it off (the Polish tool still
+  works on demand), and **Tools → Polish my text now** skips the wait.
+- **AI helpers (optional, Gemini):** conversation summary, draft a reply, and an
+  inbox triage briefing.
 - **Editable quick-reply templates**, contact rename, pin, and archive.
 - **Free-tier friendly:** adaptive polling that backs off and pauses when idle/hidden.
 
