@@ -52,7 +52,9 @@ renderers can be exercised with no key and no network.
    references plus a link to the USCCB. The only scripture text that can ever
    appear is a single Douay-Rheims verse. Catechism references appear as bare
    citations in the pre-vetted Q&A bank, never as quoted text.
-4. **Prayers and Q&A are never generated.** `src/content/prayers.js` (15
+4. **Prayers and Q&A are never generated.** Three questions go out a day now
+   rather than one — "why we believe what we do" is what the owner said would
+   keep a reader after a year. `src/content/prayers.js` (15
    traditional, public domain) and `src/content/qa.js` (20 pre-written, orthodox)
    are hardcoded and chosen by rotation. They are pre-vetted and skip the safety
    pass by design.
@@ -246,6 +248,29 @@ judge said, and anything that tripped.
 **The voice lives in one file.** `src/content/voice.js` holds who is speaking,
 who is listening, and the style rules. A change of editorial direction is an
 edit to that file plus the exemplars — not a rewrite of the generator.
+
+### The readings, and why the retelling is allowed
+
+The issue carries two readings — the **epistle** and the **Gospel** — each with
+its reference, two or three sentences on what actually happens, and one thing
+the reader is called to do about it. The psalm and the fourth reference are
+dropped: three minutes does not stretch to four references nobody reads.
+
+This is the one block permitted to say what happens in a passage, and only
+because it is handed the passage. `lib/scripture.js` fetches the full
+**Douay-Rheims** text — public domain, and verified to be Douay-Rheims before
+use — and that text goes into the prompt *and* into the facts the safety pass
+judges against, so "asserts something not in the facts" becomes a real test of
+a retelling rather than a formality.
+
+**No passage text is ever printed to a reader.** It exists only as grounding.
+If the fetch fails there is no summary: the reference stands on its own, as it
+always did.
+
+`pickEpistle()` chooses which reading is the epistle — the second on a Sunday,
+the first on a weekday, when either is actually a letter. When neither is, the
+reading still appears, labelled honestly as the first reading rather than
+mislabelled.
 
 ### Stories
 

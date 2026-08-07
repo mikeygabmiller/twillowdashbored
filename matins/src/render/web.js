@@ -10,6 +10,7 @@
 
 import { theme, SERIF, SANS, escapeHtml, longDate } from './theme.js';
 import { stanzas } from './prayer.js';
+import { considerList, readingsOf } from './compat.js';
 import { markSvg } from './brand.js';
 import { FOOTER_LINE } from '../config.js';
 
@@ -80,6 +81,18 @@ ${canonical ? `<meta property="og:url" content="${escapeHtml(canonical)}">` : ''
   .readings th{font-family:${SANS};font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft);text-align:left;font-weight:600;padding:0 18px 8px 0;white-space:nowrap;vertical-align:baseline}
   .readings td{padding:0 0 8px 0;font-size:16.5px;line-height:1.45;vertical-align:baseline}
   .usccb{font-family:${SANS};font-size:14.5px;font-weight:600}
+  /* Two readings, each with what happens in it and what it asks. */
+  .reading{margin:0 0 24px;max-width:38em}
+  .reading-label{font-family:${SANS};font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-soft);font-weight:700}
+  .reading-ref{font-size:19px;line-height:1.35;margin:3px 0 0}
+  .reading-summary{font-size:17px;line-height:1.68;margin:9px 0 0}
+  .called{border-left:3px solid var(--accent);padding:1px 0 1px 15px;margin:13px 0 0}
+  .called .label{font-family:${SANS};font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--accent);font-weight:700}
+  .called p{font-size:16.5px;line-height:1.6;margin:4px 0 0}
+  /* Three questions read as one section, separated by space not by rules. */
+  .closer{color:var(--accent);font-style:italic;font-size:17px;max-width:38em}
+  .qa{max-width:38em}
+  .qa + .qa{margin-top:28px}
   blockquote{margin:0;border-left:3px solid var(--accent);padding-left:18px;font-style:italic}
   blockquote p{font-size:19.5px;line-height:1.62;margin-bottom:10px}
   .cite{font-family:${SANS};font-style:normal;font-size:12px;color:var(--ink-soft)}
@@ -170,12 +183,7 @@ export function renderIssuePage(issue, { cfg, index = [] }) {
     <div class="daybar"><span class="dot"></span><span>${escapeHtml(d.feastOrSaint)} &middot; ${escapeHtml(d.season)} &middot; ${escapeHtml(t.label)}${d.isHolyDayOfObligation ? ' &middot; <span class="hdo">Holy day of obligation</span>' : ''}</span></div>
     <hr>`);
 
-  const row = (label, ref) => (ref ? `<tr><th scope="row">${label}</th><td>${escapeHtml(ref)}</td></tr>` : '');
-  const rows = [row('First', r.firstRef), row('Psalm', r.psalmRef), row('Second', r.secondRef), row('Gospel', r.gospelRef)].join('');
-  parts.push(`<h2>Today at Mass</h2>
-    ${rows ? `<table class="readings">${rows}</table>` : ''}
-    <p class="usccb"><a href="${escapeHtml(r.usccbLink)}">Read the readings at the USCCB &rarr;</a></p>`);
-
+  // The verse comes first: one line before anything asks anything of him.
   if (issue.verseOfDay?.ref) {
     const v = issue.verseOfDay;
     parts.push(`<h2>Verse of the day</h2>
@@ -184,7 +192,22 @@ export function renderIssuePage(issue, { cfg, index = [] }) {
         : `<p>${escapeHtml(v.ref)}</p>`}`);
   }
 
-  if (issue.reflection) parts.push(`<h2>Reflection</h2>${paragraphs(issue.reflection)}`);
+  const shown = readingsOf(issue);
+  const reading = (p) =>
+    p?.ref
+      ? `<div class="reading">
+          <div class="reading-label">${escapeHtml(p.label)}</div>
+          <p class="reading-ref">${escapeHtml(p.ref)}</p>
+          ${p.summary ? `<p class="reading-summary">${escapeHtml(p.summary)}</p>` : ''}
+          ${p.calledTo ? `<div class="called"><div class="label">You are called to</div><p>${escapeHtml(p.calledTo)}</p></div>` : ''}
+        </div>`
+      : '';
+  parts.push(`<h2>Today at Mass</h2>
+    ${reading(shown.epistle)}${reading(shown.gospel)}
+    <p class="usccb"><a href="${escapeHtml(r.usccbLink)}">Read them in full at the USCCB &rarr;</a></p>`);
+
+  if (issue.reflection)
+    parts.push(`<h2>Reflection</h2>${paragraphs(issue.reflection)}`);
 
   if (issue.saintStory) {
     parts.push(`<h2>${escapeHtml(issue.saintStory.name || 'Saint of the day')}</h2>
@@ -198,10 +221,18 @@ export function renderIssuePage(issue, { cfg, index = [] }) {
     <div class="note">${escapeHtml(issue.prayer.note)}</div>
     ${prayerLines(issue.prayer.text)}`);
 
-  parts.push(`<h2>Consider</h2>
-    <p class="question">${escapeHtml(issue.consider.question)}</p>
-    ${paragraphs(issue.consider.answer)}
-    ${issue.consider.citation ? `<div class="cite">${escapeHtml(issue.consider.citation)}</div>` : ''}`);
+  const questions = considerList(issue);
+  if (questions.length) {
+    parts.push(`<h2>Why we believe what we do</h2>${questions
+      .map(
+        (q) => `<div class="qa">
+          <p class="question">${escapeHtml(q.question)}</p>
+          ${paragraphs(q.answer)}
+          ${q.citation ? `<div class="cite">${escapeHtml(q.citation)}</div>` : ''}
+        </div>`
+      )
+      .join('')}`);
+  }
 
   return shell({
     title: `${issue.headline} · ${cfg.appName}`,

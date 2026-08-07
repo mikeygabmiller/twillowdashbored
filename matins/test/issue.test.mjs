@@ -26,7 +26,10 @@ test('preview builds a complete issue from real calendar + readings', async () =
   assert.equal(issue.readings.gospelRef, 'Matthew 15:21–28', 'verse ranges are normalised to an en dash');
   assert.equal(issue.readings.usccbLink, 'https://bible.usccb.org/bible/readings/080526.cfm');
   assert.equal(issue.verseOfDay.translation, 'Douay-Rheims');
-  assert.ok(issue.reflection && issue.saintStory && issue.prayer.text && issue.consider.answer);
+  assert.ok(issue.reflection && issue.saintStory && issue.prayer.text);
+  assert.equal(issue.consider.length, 3, 'three questions go out a day');
+  assert.equal(new Set(issue.consider.map((q) => q.id)).size, 3, 'and never the same one twice');
+  assert.ok(issue.consider.every((q) => q.question && q.answer));
   assert.equal(issue.status, 'ok');
 });
 
@@ -39,7 +42,7 @@ test('the safety pass drops a bad block and the rest of the issue survives', asy
   assert.ok(verdict.reason.length > 10);
   assert.equal(issue.safetyReport.dropped[0].section, 'reflection');
   // Everything else still ships.
-  assert.ok(issue.saintStory && issue.prayer.text && issue.consider.answer && issue.headline);
+  assert.ok(issue.saintStory && issue.prayer.text && issue.consider.length && issue.headline);
   const email = renderEmail(issue, { cfg });
   assert.ok(!email.html.includes('SEEDED_BAD_BLOCK'));
   assert.ok(!email.text.includes(SEEDED_BAD_REFLECTION));

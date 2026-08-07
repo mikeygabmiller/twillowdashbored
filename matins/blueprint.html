@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Matins — blueprint</title>
+<style>
+  :root{
+    --paper:#FBF7EF; --paper-alt:#F1EBDE; --card:#fff;
+    --ink:#241F1A; --ink-soft:#5C5449; --rule:#DDD3C2;
+    --accent:#3E6B4B; --accent-soft:#EDF2ED; --warn:#8C5A1F; --prior:#7A6A48;
+    --serif:'Iowan Old Style','Palatino Linotype',Palatino,'Book Antiqua',Georgia,serif;
+    --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --paper:#17140F; --paper-alt:#0E0C09; --card:#1D1A15;
+      --ink:#EFE7DA; --ink-soft:#A99E8C; --rule:#332E27;
+      --accent:#82B891; --accent-soft:#1A241C; --warn:#D8A45E; --prior:#C9B27E;
+    }
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}
+  @media (prefers-reduced-motion: reduce){ html{scroll-behavior:auto} *{transition:none!important} }
+  body{margin:0;background:var(--paper-alt);color:var(--ink);font-family:var(--serif);line-height:1.65}
+
+  .shell{display:grid;grid-template-columns:210px minmax(0,1fr);gap:40px;max-width:1080px;margin:0 auto;padding:0 20px}
+  @media (max-width:900px){ .shell{grid-template-columns:1fr;gap:0} aside{display:none} }
+
+  aside{position:sticky;top:0;align-self:start;height:100vh;overflow-y:auto;padding:34px 0 40px}
+  aside .railtitle{font-family:var(--sans);font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft);font-weight:700;margin-bottom:12px}
+  aside a{display:block;font-family:var(--sans);font-size:13px;color:var(--ink-soft);text-decoration:none;padding:6px 0 6px 12px;border-left:2px solid var(--rule);line-height:1.4}
+  aside a:hover{color:var(--ink);border-left-color:var(--accent)}
+  aside a .n{font-family:var(--mono);font-size:10.5px;color:var(--accent);margin-right:6px}
+  aside a.full{border-left-color:var(--accent);color:var(--ink)}
+  aside a .cnt{float:right;font-family:var(--mono);font-size:10.5px;opacity:.75}
+
+  main{padding-bottom:150px;min-width:0}
+  header.top{padding:46px 0 30px;border-bottom:1px solid var(--rule)}
+  .kicker{font-family:var(--sans);font-size:11.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--accent);font-weight:700}
+  h1{font-weight:400;font-size:clamp(29px,5.5vw,40px);line-height:1.14;margin:.35em 0 .45em;max-width:20ch;text-wrap:balance}
+  .standfirst{font-size:17.5px;color:var(--ink-soft);margin:0 0 14px;max-width:58ch}
+  .standfirst strong{color:var(--ink);font-weight:400}
+  .legend{font-family:var(--sans);font-size:13px;color:var(--ink-soft);max-width:58ch;margin:0}
+  .legend b{color:var(--prior)}
+
+  section{padding:40px 0 10px;border-bottom:1px solid var(--rule);scroll-margin-top:14px}
+  .sec-head{display:flex;gap:14px;align-items:baseline}
+  .sec-num{font-family:var(--mono);font-size:12px;color:var(--accent);font-weight:700;flex:none;padding-top:6px}
+  h2{font-size:26px;font-weight:400;margin:0;line-height:1.24;text-wrap:balance}
+  .sec-why{font-family:var(--sans);font-size:13.5px;color:var(--ink-soft);margin:7px 0 0 34px;max-width:62ch;line-height:1.65}
+  @media (max-width:600px){ .sec-why{margin-left:0} }
+
+  .q{margin:32px 0 0 34px;max-width:64ch}
+  @media (max-width:600px){ .q{margin-left:0} }
+  .ask{font-size:19.5px;margin:0 0 5px;line-height:1.38;text-wrap:balance}
+  .hint{font-family:var(--sans);font-size:13px;color:var(--ink-soft);margin:0 0 14px;line-height:1.6}
+  .q.answered > .ask::after{content:'✓';color:var(--accent);font-size:15px;margin-left:9px;vertical-align:2px}
+  .priorflag{display:inline-block;font-family:var(--sans);font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;
+             color:var(--prior);border:1px solid var(--prior);border-radius:999px;padding:2px 8px;margin:0 0 9px;font-weight:700}
+
+  .opts{display:grid;gap:8px}
+  .opt{display:flex;gap:12px;align-items:flex-start;padding:13px 15px;border:1px solid var(--rule);border-radius:10px;
+       background:var(--card);cursor:pointer;transition:border-color .12s,background .12s}
+  .opt:hover{border-color:var(--accent)}
+  .opt:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+  .opt:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
+  .opt input{margin:5px 0 0;accent-color:var(--accent);flex:none;width:16px;height:16px}
+  .lab{font-size:16.5px;line-height:1.45}
+  .sub{display:block;font-family:var(--sans);font-size:13px;color:var(--ink-soft);margin-top:3px;line-height:1.55}
+
+  .ab{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  @media (max-width:720px){ .ab{grid-template-columns:1fr} }
+  .abcard{border:1px solid var(--rule);border-radius:11px;background:var(--card);padding:16px 17px;cursor:pointer;transition:border-color .12s,background .12s}
+  .abcard:hover{border-color:var(--accent)}
+  .abcard:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+  .abcard .tag{display:flex;align-items:center;gap:9px;font-family:var(--sans);font-size:11px;letter-spacing:.13em;
+               text-transform:uppercase;color:var(--accent);font-weight:700;margin-bottom:9px}
+  .abcard .tag input{accent-color:var(--accent);width:15px;height:15px;margin:0}
+  .abcard p{font-size:16px;line-height:1.62;margin:0}
+  .abnote{margin-top:9px}
+
+  .chips{display:flex;flex-wrap:wrap;gap:7px}
+  .chip{font-family:var(--sans);font-size:13.5px;padding:7px 13px;border:1px solid var(--rule);border-radius:999px;
+        background:var(--card);cursor:pointer;user-select:none;transition:border-color .12s,background .12s}
+  .chip:hover{border-color:var(--accent)}
+  .chip:has(input:checked){border-color:var(--accent);background:var(--accent-soft);color:var(--accent);font-weight:600}
+  .chip input{position:absolute;opacity:0;pointer-events:none}
+  .chip:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
+
+  .scale-ends{display:flex;justify-content:space-between;gap:16px;font-family:var(--sans);font-size:13px;color:var(--ink-soft);margin-bottom:2px}
+  .scale-ends span{max-width:44%}
+  .scale-ends span:last-child{text-align:right}
+  input[type=range]{width:100%;accent-color:var(--accent);height:26px}
+  .scale-val{font-family:var(--sans);font-size:13px;color:var(--accent);font-weight:600;text-align:center}
+
+  textarea{width:100%;font-family:var(--serif);font-size:16.5px;line-height:1.6;padding:13px 15px;border:1px solid var(--rule);
+           border-radius:10px;background:var(--card);color:var(--ink);resize:vertical;min-height:86px}
+  textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px;border-color:var(--accent)}
+
+  .flag{border-left:3px solid var(--warn);padding:2px 0 2px 16px;margin:26px 0 0 34px;max-width:62ch}
+  .flag .t{font-family:var(--sans);font-size:11px;letter-spacing:.13em;text-transform:uppercase;color:var(--warn);font-weight:700}
+  .flag p{font-family:var(--sans);font-size:14px;color:var(--ink-soft);margin:6px 0 0;line-height:1.62}
+  @media (max-width:600px){ .flag{margin-left:0} }
+
+  .bar{position:fixed;left:0;right:0;bottom:0;background:var(--paper);border-top:1px solid var(--rule);padding:13px 20px;
+       display:flex;gap:12px;align-items:center;flex-wrap:wrap;z-index:9}
+  .bar .count{font-family:var(--sans);font-size:13.5px;color:var(--ink-soft);flex:1;min-width:140px}
+  .bar .count b{color:var(--ink);font-weight:600}
+  .track{height:4px;background:var(--rule);border-radius:4px;overflow:hidden;width:100%;margin-top:6px;max-width:280px}
+  .track i{display:block;height:100%;background:var(--accent);width:0;transition:width .2s}
+  button{font-family:var(--sans);font-size:14.5px;font-weight:600;padding:11px 19px;border-radius:9px;cursor:pointer;
+         border:1px solid var(--rule);background:var(--card);color:var(--ink)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:var(--paper)}
+  button:hover{filter:brightness(1.06)}
+  button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  dialog{border:1px solid var(--rule);border-radius:14px;background:var(--card);color:var(--ink);max-width:min(820px,93vw);width:100%;padding:0}
+  dialog::backdrop{background:rgba(20,16,12,.6)}
+  .dlg-head{padding:20px 24px 13px;border-bottom:1px solid var(--rule)}
+  .dlg-head h3{margin:0;font-size:20px;font-weight:400}
+  .dlg-head p{font-family:var(--sans);font-size:13.5px;color:var(--ink-soft);margin:6px 0 0}
+  #out{font-family:var(--mono);font-size:12.5px;line-height:1.55;white-space:pre-wrap;word-break:break-word;
+       margin:0;padding:20px 24px;max-height:54vh;overflow:auto;background:var(--paper-alt)}
+  .dlg-foot{padding:14px 24px;display:flex;gap:10px;justify-content:flex-end;border-top:1px solid var(--rule);flex-wrap:wrap}
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside><div class="railtitle">Sections</div><nav id="rail"></nav></aside>
+  <main>
+    <header class="top">
+      <div class="kicker">Matins · full blueprint</div>
+      <h1>Everything I would otherwise have to guess.</h1>
+      <p class="standfirst">Long on purpose. Every question here changes something specific in the code — the voice file, the prompts, the palette, the send schedule. <strong>Skip anything you have no view on</strong>; a blank is a real answer and gets reported as one. Nothing is lost if you close the tab.</p>
+      <p class="legend">Questions you have already answered are prefilled and marked <b>ANSWERED BEFORE</b>. Leave them or change your mind — both are useful.</p>
+    </header>
+    <div id="form"></div>
+  </main>
+</div>
+
+<div class="bar">
+  <div class="count"><span id="count">0 answered</span><span class="track"><i id="track"></i></span></div>
+  <button type="button" id="clear">Clear all</button>
+  <button type="button" class="primary" id="done">Build the brief</button>
+</div>
+
+<dialog id="dlg">
+  <div class="dlg-head">
+    <h3>Matins blueprint</h3>
+    <p>Paste this back into the session. Unanswered questions are listed at the end so nothing gets silently assumed.</p>
+  </div>
+  <pre id="out"></pre>
+  <div class="dlg-foot">
+    <button type="button" id="download">Download .md</button>
+    <button type="button" class="primary" id="copy">Copy</button>
+    <button type="button" id="close">Close</button>
+  </div>
+</dialog>
+
+<script>
+// Each question carries `affects` — the file its answer actually changes. That
+// is in the exported brief too, so the next session knows where to start.
+const SECTIONS = [
+  {
+    id: 'reader',
+    title: 'The one reader',
+    why: 'Every prompt in the app names a single person and writes to him. The sharper that person is, the less the writing drifts toward nobody in particular.',
+    questions: [
+      { id: 'age', ask: 'How old is the man you are picturing?', type: 'one', affects: 'content/voice.js',
+        options: [['18-24','18 to 24 — early trade, college, still forming habits',''],
+                  ['25-34','25 to 34 — young family, mortgage, shift work','The current default.'],
+                  ['35-49','35 to 49 — mid-career, teenagers, tired differently',''],
+                  ['mixed','Deliberately spread — do not aim at an age','Costs you concreteness; the writing gets more general.']] },
+      { id: 'life', ask: 'What is true of him?', type: 'many', affects: 'content/voice.js',
+        hint: 'Pick every one you want the writing to assume it can reference without explaining.',
+        options: [['trade','Works with his hands',''],['shift','Works nights or rotating shifts',''],
+                  ['kids','Has young children',''],['married','Married',''],['single','Single, and not by choice',''],
+                  ['commute','Drives a long way to work',''],['office','Works at a desk',''],
+                  ['alone','Lives alone',''],['recovery','In recovery from something','Changes what "one thing today" can safely ask.']] },
+      { id: 'practice', ask: 'Where is he with the faith?', type: 'scale', affects: 'content/voice.js',
+        ends: ['Hanging on. Mass most Sundays, not much else.', 'Serious. Daily Mass when he can, confession monthly.'] },
+      { id: 'catechesis', ask: 'How much does he already know?', type: 'one', affects: 'content/qa.js',
+        hint: 'This sets whether a term like "transubstantiation" gets used bare or gets a clause after it.',
+        options: [['thin','Thin — Catholic school a long time ago, most of it gone','Terms get explained the first time, every time.'],
+                  ['ordinary','Ordinary — knows the shape, not the vocabulary','Explain the hard words, assume the easy ones.'],
+                  ['solid','Solid — reads, listens to things, knows the arguments','Can go straight at contested questions.']] },
+      { id: 'gender', ask: 'Is this written for men?', type: 'one', affects: 'content/voice.js', prior: 'men',
+        options: [['men','Yes — men, and it should stop pretending otherwise',''],
+                  ['tilt','Tilt male, never exclude',''],
+                  ['both','No — widen the imagery deliberately','']] },
+      { id: 'notreader', ask: 'Who is this NOT for?', type: 'text', affects: 'content/voice.js',
+        hint: 'Naming the reader you are happy to lose is often sharper than naming the one you want. One or two lines.' },
+    ],
+  },
+  {
+    id: 'voice',
+    title: 'Voice — by example, not adjective',
+    why: 'Adjectives like "warm" or "plain" do almost nothing to a model. Picking between two real pieces of prose does. Each pair below says the same thing two ways; choose the one closer to what Matins should sound like.',
+    questions: [
+      { id: 'ab_texture', ask: 'Which is closer?', type: 'ab', affects: 'content/forms.js exemplars',
+        a: 'The wind was against them most of the night. He came in the fourth watch, walking on the water. They thought he was a ghost and cried out. In a bad stretch, help arriving very often looks like one more thing going wrong.',
+        b: 'They had been rowing for hours against a wind that would not let up, tired in the way that makes a man short with the people he loves. When he finally came to them across the water they did not see rescue. They saw a ghost. Be gentle with yourself about that.',
+        labels: ['Spare. Short sentences, no cushioning.', 'Fuller. More room, more sympathy.'] },
+      { id: 'ab_person', ask: 'And this pair?', type: 'ab', affects: 'content/voice.js',
+        a: 'You have someone you have not told the truth to, because you already know what it will cost you.',
+        b: 'Most men have someone they have not told the truth to, because the cost is already worked out and it is too high.',
+        labels: ['Straight at him. "You."', 'Observed from a step back. "Most men."'] },
+      { id: 'ab_sin', ask: 'And this one?', type: 'ab', affects: 'content/voice.js',
+        a: 'If you have not been to confession since Easter, that is the thing to fix this week. Not the reading. Not the resolution. Confession.',
+        b: 'It may have been a while since confession. There is no hurry and no shame in it, but there is grace waiting whenever you are ready to go.',
+        labels: ['Blunt. Names it and sets a deadline.', 'Gentle. Opens a door, does not push.'] },
+      { id: 'ab_imagery', ask: 'Last pair.', type: 'ab', affects: 'content/voice.js',
+        a: 'The sign of the cross before the engine turns over. A Hail Mary on the way into the yard.',
+        b: 'The sign of the cross before you start the day. A Hail Mary on the way in.',
+        labels: ['Specific trade imagery — trucks, yards, tools.', 'Everyday and neutral — works for any job.'] },
+      { id: 'formality', ask: 'How formal should the prose be?', type: 'scale', affects: 'content/voice.js',
+        ends: ['How a man talks in a truck cab.', 'How a good homily is written down.'] },
+      { id: 'humour', ask: 'Is dryness or humour ever allowed?', type: 'one', affects: 'content/voice.js',
+        options: [['never','No. It undercuts the thing.',''],
+                  ['dry','Dry understatement, rarely, never as a joke',''],
+                  ['warm','Yes — a bit of humour makes it human','']] },
+      { id: 'never_words', ask: 'Tick every phrase that must never appear.', type: 'chips', affects: 'lib/generate.js TELLS',
+        hint: 'These go straight into the automatic tripwires. The first eleven are already banned; add or confirm.',
+        options: ['journey','season of life','hustle and bustle','in our daily lives','at the end of the day','God has a plan',
+                  'let us','dear friend','brothers and sisters','take a moment to','as Catholics, we','blessed','my brother',
+                  'radical','encounter','authentic','intentional','lean in','do life','on fire for the Lord','doing life together',
+                  'God is good, all the time','simply put','in a world that','now more than ever'] },
+      { id: 'yes_words', ask: 'And any words that DO belong here.', type: 'text', affects: 'content/voice.js',
+        hint: 'Words, images, or turns of phrase that sound like you. Even three or four helps.' },
+      { id: 'voice_model', ask: 'Is there a writer, priest, or podcast whose register is close?', type: 'text', affects: 'content/voice.js',
+        hint: 'Not to imitate — to calibrate. A name saves a hundred adjectives.' },
+    ],
+  },
+  {
+    id: 'reflection',
+    title: 'The reflection',
+    why: 'The longest block, the one you said the whole thing lives or dies on, and the one with the most dials.',
+    questions: [
+      { id: 'refl_len', ask: 'How long should a reflection be?', type: 'one', affects: 'lib/generate.js',
+        options: [['short','Three or four sentences. Ruthless.',''],
+                  ['mid','Four to six sentences — current',''],
+                  ['long','Three short paragraphs, like the hand-written bank','Roughly doubles the reading time.'],
+                  ['vary','Vary by day — short on weekdays, long on Sundays','']] },
+      { id: 'refl_open', ask: 'How should a reflection open?', type: 'many', affects: 'lib/generate.js',
+        hint: 'Pick every opening you want in rotation.',
+        options: [['scene','Inside a concrete moment from working life',''],
+                  ['fact','A flat statement of fact about the day',''],
+                  ['objection','The reasonable objection a reader would raise',''],
+                  ['passage','Straight into what happens in the Gospel',''],
+                  ['question','A question — one, never stacked','']] },
+      { id: 'refl_end', ask: 'How should it end?', type: 'one', affects: 'content/voice.js',
+        options: [['hold','A plain statement to hold, no instruction','Current.'],
+                  ['turn','A turn toward the reader — "reflect today on…"','What the devotional you sent me does.'],
+                  ['prayer','One line of prayer','What the hand-written bank does.'],
+                  ['both','The turn and then the prayer line','Longest, and the most complete.']] },
+      { id: 'refl_source', ask: 'Where should reflections come from, in the long run?', type: 'one', affects: 'content/reflections.js',
+        options: [['bank','Hand-written bank only. Never generated.','Needs roughly 200 entries to cover a year of Gospels. Big job, best result.'],
+                  ['bank_first','Bank when it has one, generated otherwise','What the code does now.'],
+                  ['generated','Generated always — keep the bank as exemplars only','']] },
+      { id: 'bank_who', ask: 'Who writes the bank?', type: 'one', affects: 'content/reflections.js',
+        options: [['me','I write them. Give me the file and the format.',''],
+                  ['seed_review','Seeded for me, and I read every one before it ships','What the six existing ones assume.'],
+                  ['seed_trust','Seeded, and I spot-check rather than read every one','Says plainly that some will go out unread.']] },
+      { id: 'refl_scripture', ask: 'May a reflection say what happens in the Gospel?', type: 'one', affects: 'lib/generate.js HARD_RULES',
+        hint: 'It currently may not — only the separate reading summary does, grounded in the Douay-Rheims text.',
+        options: [['no','No. Keep retelling in the readings block only.','Current.'],
+                  ['yes_grounded','Yes, but only from the fetched Douay-Rheims text',''],
+                  ['yes','Yes, freely','Removes the grounding rule for this block. Say so knowingly.']] },
+      { id: 'refl_you', ask: 'How hard may it point at the reader?', type: 'scale', affects: 'content/voice.js',
+        ends: ['Never says "you". Observes and leaves it there.', 'Names what he is avoiding, directly.'] },
+      { id: 'refl_feeling', ask: 'May it tell the reader what he is feeling?', type: 'one', affects: 'content/voice.js',
+        options: [['never','No — it does not know','Current rule.'],
+                  ['hedged','Only hedged: "you may find…"',''],
+                  ['yes','Yes, if it is likely to be true','']] },
+    ],
+  },
+  {
+    id: 'doctrine',
+    title: 'Doctrine and the hard edges',
+    why: 'The safety pass enforces orthodoxy. It cannot decide how much weight the hard things get, or how contested questions are handled. That is an editorial call and it is yours.',
+    questions: [
+      { id: 'sin', ask: 'How directly does it name sin, hell, judgement, confession?', type: 'one', affects: 'content/voice.js + lib/safety.js', prior: 'often',
+        options: [['rare','Rarely. It is a morning devotional.',''],
+                  ['plain','Plainly when the day raises it',''],
+                  ['often','Often and by name','Current. The rubric was loosened to allow it.']] },
+      { id: 'contested', ask: 'When something is disputed among faithful Catholics, what does it do?', type: 'one', affects: 'lib/safety.js',
+        hint: 'Liturgy, politics, private revelation, how strictly to read a moral norm.',
+        options: [['avoid','Avoid it. Stick to what the Church binds.','Safest, and quietly the most boring.'],
+                  ['name','Name that it is disputed, give both, take no side',''],
+                  ['side','Take a side and say it is one side','Highest risk, highest trust.']] },
+      { id: 'tradition', ask: 'Where does it sit liturgically?', type: 'scale', affects: 'content/prayers.js + qa.js',
+        ends: ['Ordinary form, mainstream parish, nothing pointed.', 'Traditional — Latin, older devotions, the older calendar.'] },
+      { id: 'devotions', ask: 'Which devotions belong in it?', type: 'many', affects: 'content/prayers.js',
+        options: [['rosary','The Rosary',''],['adoration','Adoration',''],['divine-mercy','Divine Mercy',''],
+                  ['brown-scapular','The brown scapular',''],['first-fridays','First Fridays',''],
+                  ['fasting','Fasting and mortification',''],['indulgences','Indulgences','Needs care to state accurately.'],
+                  ['none','Keep devotions out of it entirely','']] },
+      { id: 'mary', ask: 'How much Marian content?', type: 'scale', affects: 'content/prayers.js',
+        ends: ['Present, not prominent.', 'A Marian thread through most issues.'] },
+      { id: 'review', ask: 'Who reviews hand-written content before it ships?', type: 'one', affects: 'README + process',
+        hint: 'Real question. Prayers, Q&A and reflections skip the safety pass because nothing generated them.',
+        options: [['me','Just me',''],
+                  ['priest','A priest or deacon I can ask','Worth setting up before this grows.'],
+                  ['nobody','Nobody yet, and I know that','']] },
+    ],
+  },
+  {
+    id: 'sections',
+    title: 'What is in an issue',
+    why: 'Six blocks today: readings, verse, reflection, saint, prayer, three questions. Nothing about that is fixed.',
+    questions: [
+      { id: 'keep_blocks', ask: 'Which blocks earn their place?', type: 'many', affects: 'lib/issue.js',
+        hint: 'Tick every one you would keep if you had to cut the issue in half.',
+        options: [['readings','Epistle and Gospel, summarised',''],['verse','Verse of the day',''],
+                  ['reflection','Reflection',''],['saint','The saint, and one thing to do',''],
+                  ['prayer','A traditional prayer',''],['qa','Three questions on the faith','']] },
+      { id: 'add_blocks', ask: 'Anything missing you want added?', type: 'many', affects: 'lib/issue.js',
+        options: [['patron','Who is patron of what — a line a day','You named this as a thing that would keep you reading.'],
+                  ['examen','A short examen for the evening',''],
+                  ['latin','A Latin phrase with its English',''],
+                  ['history','A piece of Church history unconnected to the day',''],
+                  ['word','One word from the tradition, defined properly',''],
+                  ['fast','What the Church asks of you today — fast, feast, obligation',''],
+                  ['nothing','Nothing. Six is already too many.','']] },
+      { id: 'order', ask: 'What should come first, under the headline?', type: 'one', affects: 'render/email.js',
+        options: [['readings','The readings — that is the day',''],
+                  ['reflection','The reflection — that is the hook',''],
+                  ['verse','The verse — one line before anything asks anything of him',''],
+                  ['action','The one thing to do today, right at the top','']] },
+      { id: 'action_place', ask: 'Where does "one thing today" belong?', type: 'one', affects: 'lib/issue.js', prior: 'own',
+        hint: 'It currently lives inside the saint block, so it disappears on days with no saint.',
+        options: [['saint','Leave it in the saint block',''],
+                  ['own','Its own block, every day, saint or not',''],
+                  ['both','Both — one from the readings, one from the saint','']] },
+      { id: 'qa_count', ask: 'Three questions a day is right?', type: 'one', affects: 'config.js QA_PER_ISSUE',
+        options: [['1','One. Three is a lot to take in before work.',''],
+                  ['3','Three — current',''],
+                  ['5','Five, and make them shorter',''],
+                  ['vary','One on weekdays, more on Sundays','']] },
+      { id: 'qa_topics', ask: 'What should the questions be about?', type: 'many', affects: 'content/qa.js',
+        options: [['sacraments','The sacraments — what they do and why',''],
+                  ['objections','Objections a Protestant or an atheist would raise',''],
+                  ['morals','Moral questions with real teeth',''],
+                  ['practice','Practical practice — fasting, obligation, confession',''],
+                  ['mary_saints','Mary and the saints',''],
+                  ['lastthings','Death, judgement, heaven, hell',''],
+                  ['history','Why the Church does what it does, historically','']] },
+      { id: 'time', ask: 'How long should the whole issue take to read?', type: 'one', affects: 'lib/issue.js', prior: '3',
+        options: [['90','Ninety seconds',''],['3','Three minutes — current',''],['5','Five or more',''],['vary','Vary by day','']] },
+      { id: 'cut', ask: 'If one block had to go tomorrow, which and why?', type: 'text', affects: 'lib/issue.js' },
+    ],
+  },
+  {
+    id: 'design',
+    title: 'Design and typography',
+    why: 'The look is currently cream paper, dark ink, a serif, and the liturgical colour of the day as the accent. All of that is a choice and all of it can change.',
+    questions: [
+      { id: 'accent', ask: 'What drives the colour?', type: 'one', affects: 'render/theme.js',
+        options: [['liturgical','The liturgical colour of the day','Current. Green, violet, white, red, rose.'],
+                  ['fixed','One fixed brand colour all year','More consistent, less alive.'],
+                  ['season','One colour per season, not per day',''],
+                  ['mono','No colour. Black, white, and paper.','']] },
+      { id: 'palette_feel', ask: 'What should the paper feel like?', type: 'one', affects: 'render/theme.js',
+        options: [['cream','Warm cream — a missal, a paperback','Current.'],
+                  ['white','Clean white — modern, plainer',''],
+                  ['dark','Dark by default, for anybody reading before dawn',''],
+                  ['stone','Cool grey-stone — quieter, more austere','']] },
+      { id: 'type', ask: 'What should the body text be set in?', type: 'one', affects: 'render/theme.js',
+        options: [['serif','A serif — current. Reads like a book.',''],
+                  ['sans','A sans — reads like a phone',''],
+                  ['mixed','Serif for scripture and prayers, sans for everything else','']] },
+      { id: 'density', ask: 'How much room should it have?', type: 'scale', affects: 'render/*.js',
+        ends: ['Tight. More on screen, less scrolling.', 'Airy. Lots of white space, one thing at a time.'] },
+      { id: 'imagery', ask: 'Should there be any imagery?', type: 'one', affects: 'render/email.js',
+        hint: 'There is none today — no photos, no icons, no art. That is why the email is fast and never breaks.',
+        options: [['none','None. Type only.','Current.'],
+                  ['mark','The wordmark only',''],
+                  ['sacred','Sacred art — a detail, matched to the day','Needs public-domain sources and a lot of care.'],
+                  ['ornament','Rules, drop caps, printed ornament — no pictures','']] },
+      { id: 'wordmark', ask: 'The name and the mark — settled or open?', type: 'one', affects: 'render/brand.js',
+        hint: 'It is currently "Matins" with an arch and a rising sun.',
+        options: [['keep','Keep both',''],['name','Keep the name, rework the mark',''],
+                  ['mark_ok','Keep the mark, change the name',''],['open','Both open','']] },
+      { id: 'newname', ask: 'If the name is open, what else have you considered?', type: 'text', affects: 'wrangler.toml APP_NAME' },
+      { id: 'web_purpose', ask: 'What is the website actually for?', type: 'one', affects: 'render/web.js',
+        options: [['archive','An archive. The email is the product.','Current.'],
+                  ['front','The front door — where people find and subscribe',''],
+                  ['equal','Equal to the email — people should read it there too',''],
+                  ['none','Barely matters. Could go away.','']] },
+      { id: 'print', ask: 'Does anyone print this?', type: 'one', affects: 'render/web.js',
+        options: [['no','No',''],['maybe','Maybe — a parish might, one day','There is a print stylesheet already.'],
+                  ['yes','Yes, and it should be designed for paper too','']] },
+    ],
+  },
+  {
+    id: 'rhythm',
+    title: 'Rhythm and the church year',
+    why: 'It sends at 5am Pacific, every day, and every day looks the same. Neither is required.',
+    questions: [
+      { id: 'days', ask: 'Which days does it send?', type: 'one', affects: 'wrangler.toml crons',
+        options: [['daily','Every day','Current.'],['weekdays','Weekdays only',''],
+                  ['sundays','Sundays and holy days only',''],['weekday_sunday','Every day, but Sunday is a bigger issue','']] },
+      { id: 'hour', ask: 'Is 5am right?', type: 'one', affects: 'wrangler.toml SEND_HOUR',
+        options: [['5','Yes — before the alarm, waiting when he wakes',''],
+                  ['earlier','Earlier — 4am, for the early trades',''],
+                  ['later','Later — 6 or 7',''],
+                  ['evening','Evening instead. This is a night devotional.','']] },
+      { id: 'seasons', ask: 'How different should Lent and Advent feel?', type: 'scale', affects: 'render/theme.js + content/forms.js',
+        ends: ['Only the colour changes.', 'A different issue — different length, different tone, different asks.'] },
+      { id: 'sunday', ask: 'Should Sundays and solemnities be a bigger issue?', type: 'one', affects: 'lib/issue.js', prior: 'strong',
+        options: [['same','No — sameness is the discipline',''],
+                  ['light','Slightly longer, marked header',''],
+                  ['strong','Strongly — a different, bigger issue','']] },
+      { id: 'triduum', ask: 'Does anything special happen in the Triduum?', type: 'one', affects: 'lib/issue.js',
+        hint: 'Good Friday getting the same six-block issue as an ordinary Tuesday is a real editorial decision, whether it is made or not.',
+        options: [['same','Same as any day',''],
+                  ['stripped','Stripped back — almost nothing but the day itself',''],
+                  ['nothing','Nothing sends. Silence is the point.',''],
+                  ['special','Something written specially, by hand, once, and reused every year','']] },
+      { id: 'streak', ask: 'What happens when a reader misses a week?', type: 'one', affects: 'render/web.js',
+        options: [['nothing','Nothing. No streaks, no guilt, no catch-up.',''],
+                  ['catchup','A quiet link to what he missed',''],
+                  ['digest','A weekend digest of the week','']] },
+    ],
+  },
+  {
+    id: 'future',
+    title: 'What this is for',
+    why: 'The answers here decide whether the next work is craft or infrastructure.',
+    questions: [
+      { id: 'scale', ask: 'Honestly, who is this for?', type: 'one', affects: 'everything', prior: 'friends',
+        options: [['friends','Forty people I know',''],['parish','A parish or two — hundreds',''],
+                  ['many','As many as will have it — thousands',''],['unsure','I do not know yet','']] },
+      { id: 'grow', ask: 'Do you want it to grow?', type: 'scale', affects: 'render/web.js',
+        ends: ['No. Small and good is the whole point.', 'Yes. Build for it.'] },
+      { id: 'money', ask: 'Will money ever be involved?', type: 'one', affects: 'everything',
+        hint: 'Changes the copyright position, the sender domain, and how careful the doctrine review has to be.',
+        options: [['never','Never. Free forever, no donations.',''],
+                  ['donate','A donation link, eventually',''],
+                  ['paid','A paid tier one day',''],
+                  ['unsure','Have not thought about it','']] },
+      { id: 'author', ask: 'Do you want your name on it?', type: 'one', affects: 'config.js FOOTER_LINE',
+        hint: 'The footer says "a young Catholic in Snohomish County" — true, and anonymous.',
+        options: [['anon','Keep it anonymous',''],['first','First name only',''],
+                  ['full','Full name — stand behind it',''],['parish','Name a parish or group instead','']] },
+      { id: 'ai', ask: 'Should readers be told a model helps write it?', type: 'one', affects: 'render/web.js',
+        hint: 'Not a legal question. A trust one, and it gets harder to answer later than now.',
+        options: [['no','No',''],
+                  ['footer','A line on the website, not in the email',''],
+                  ['open','Openly, on both — with how the checks work','The most defensible if it is ever noticed.'],
+                  ['stop','Stop using one. Everything hand-written.','']] },
+      { id: 'bad_day', ask: 'On a day when the writing is weak, what goes out?', type: 'one', affects: 'lib/issue.js', prior: 'short',
+        options: [['short','A shorter issue with a section missing','Current.'],
+                  ['full','A full-length issue that is merely fine',''],
+                  ['nothing','Nothing. Skip the day.','']] },
+      { id: 'fail', ask: 'What would make you shut it down?', type: 'text', affects: 'everything',
+        hint: 'Worth knowing now. It tells me what to protect hardest.' },
+      { id: 'year', ask: 'A year from now, what does a reader say about it?', type: 'text', affects: 'everything',
+        hint: 'One sentence, in his words rather than yours. This is the most useful box on the page.' },
+      { id: 'anything', ask: 'Anything I have not asked that matters?', type: 'text', affects: 'everything' },
+    ],
+  },
+];
+
+const KEY = 'matins-blueprint-v1';
+const ALL = SECTIONS.flatMap((s) => s.questions);
+const OPTIONAL = new Set(['anything', 'newname']);
+const COUNTED = ALL.filter((q) => !OPTIONAL.has(q.id));
+
+const state = JSON.parse(localStorage.getItem(KEY) || 'null') || seedFromPrior();
+function seedFromPrior() {
+  const s = {};
+  for (const q of ALL) if (q.prior !== undefined) s[q.id] = q.prior;
+  return s;
+}
+
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const scaleWord = (v) => ['strongly the first', 'lean first', 'balanced', 'lean second', 'strongly the second'][v - 1];
+
+function isAnswered(q) {
+  const v = state[q.id];
+  if (q.type === 'many' || q.type === 'chips') return Array.isArray(v) && v.length > 0;
+  return v !== undefined && v !== '';
+}
+
+function body(q) {
+  const v = state[q.id];
+  if (q.type === 'one' || q.type === 'many') {
+    const kind = q.type === 'one' ? 'radio' : 'checkbox';
+    return '<div class="opts">' + q.options.map(([val, lab, sub]) => {
+      const on = q.type === 'many' ? (Array.isArray(v) && v.includes(val)) : v === val;
+      return `<label class="opt"><input type="${kind}" name="${q.id}" value="${esc(val)}"${on ? ' checked' : ''}>
+        <span class="lab">${esc(lab)}${sub ? `<span class="sub">${esc(sub)}</span>` : ''}</span></label>`;
+    }).join('') + '</div>';
+  }
+  if (q.type === 'chips') {
+    return '<div class="chips">' + q.options.map((val) => {
+      const on = Array.isArray(v) && v.includes(val);
+      return `<label class="chip"><input type="checkbox" name="${q.id}" value="${esc(val)}"${on ? ' checked' : ''}>${esc(val)}</label>`;
+    }).join('') + '</div>';
+  }
+  if (q.type === 'ab') {
+    const card = (side, textVal, label) => `<label class="abcard">
+        <span class="tag"><input type="radio" name="${q.id}" value="${side}"${v === side ? ' checked' : ''}>${side.toUpperCase()}</span>
+        <p>${esc(textVal)}</p>
+        <span class="sub abnote">${esc(label)}</span>
+      </label>`;
+    return `<div class="ab">${card('a', q.a, q.labels[0])}${card('b', q.b, q.labels[1])}</div>
+      <div class="opts" style="margin-top:8px">
+        <label class="opt"><input type="radio" name="${q.id}" value="neither"${v === 'neither' ? ' checked' : ''}>
+          <span class="lab">Neither — both are wrong for this<span class="sub">Say what is missing in the last box of the section.</span></span></label>
+      </div>`;
+  }
+  if (q.type === 'scale') {
+    const val = v === undefined ? 3 : v;
+    return `<div class="scale-ends"><span>${esc(q.ends[0])}</span><span>${esc(q.ends[1])}</span></div>
+      <input type="range" min="1" max="5" step="1" name="${q.id}" value="${val}" aria-label="${esc(q.ask)}">
+      <div class="scale-val" data-for="${q.id}">${v === undefined ? 'not answered' : scaleWord(val)}</div>`;
+  }
+  return `<textarea name="${q.id}" placeholder="Type here…">${esc(v || '')}</textarea>`;
+}
+
+function render() {
+  document.getElementById('form').innerHTML = SECTIONS.map((sec, si) => `
+    <section id="sec-${sec.id}">
+      <div class="sec-head"><span class="sec-num">${String(si + 1).padStart(2, '0')}</span><h2>${esc(sec.title)}</h2></div>
+      <p class="sec-why">${esc(sec.why)}</p>
+      ${sec.questions.map((q) => `<div class="q${isAnswered(q) ? ' answered' : ''}" data-q="${q.id}">
+        ${q.prior !== undefined ? '<div class="priorflag">Answered before</div>' : ''}
+        <p class="ask">${esc(q.ask)}</p>
+        ${q.hint ? `<p class="hint">${esc(q.hint)}</p>` : ''}
+        ${body(q)}
+      </div>`).join('')}
+      ${sec.id === 'voice' ? `<div class="flag"><div class="t">Why four pairs and not four adjectives</div>
+        <p>Asking a model for "warm but plain" gets you the average of every devotional ever written. Handing it two passages and saying "this one, not that one" is the single most effective thing you can do to the writing, and these four choices go straight into the exemplars the generator imitates.</p></div>` : ''}
+    </section>`).join('');
+  document.getElementById('rail').innerHTML = SECTIONS.map((sec, si) => {
+    const total = sec.questions.filter((q) => !OPTIONAL.has(q.id)).length;
+    const done = sec.questions.filter((q) => !OPTIONAL.has(q.id) && isAnswered(q)).length;
+    return `<a href="#sec-${sec.id}" class="${done === total ? 'full' : ''}"><span class="n">${String(si + 1).padStart(2, '0')}</span>${esc(sec.title)}<span class="cnt">${done}/${total}</span></a>`;
+  }).join('');
+  tally();
+}
+
+function tally() {
+  const done = COUNTED.filter(isAnswered).length;
+  document.getElementById('count').innerHTML = `<b>${done}</b> of ${COUNTED.length} answered`;
+  document.getElementById('track').style.width = `${Math.round((done / COUNTED.length) * 100)}%`;
+}
+
+document.getElementById('form').addEventListener('input', (e) => {
+  const el = e.target;
+  const q = ALL.find((x) => x.id === el.name);
+  if (!q) return;
+  if (q.type === 'many' || q.type === 'chips') {
+    state[q.id] = [...document.querySelectorAll(`input[name="${q.id}"]:checked`)].map((i) => i.value);
+  } else if (q.type === 'scale') {
+    state[q.id] = Number(el.value);
+    const out = document.querySelector(`.scale-val[data-for="${q.id}"]`);
+    if (out) out.textContent = scaleWord(Number(el.value));
+  } else {
+    state[q.id] = el.value;
+  }
+  localStorage.setItem(KEY, JSON.stringify(state));
+  el.closest('.q').classList.toggle('answered', isAnswered(q));
+  tally();
+  render_rail_counts();
+});
+
+function render_rail_counts() {
+  document.querySelectorAll('#rail a').forEach((a, i) => {
+    const sec = SECTIONS[i];
+    const list = sec.questions.filter((q) => !OPTIONAL.has(q.id));
+    const done = list.filter(isAnswered).length;
+    a.querySelector('.cnt').textContent = `${done}/${list.length}`;
+    a.classList.toggle('full', done === list.length);
+  });
+}
+
+function answerText(q) {
+  const v = state[q.id];
+  if (q.type === 'one') return q.options.find((o) => o[0] === v)?.[1] || v;
+  if (q.type === 'ab') {
+    if (v === 'neither') return 'Neither';
+    const which = v === 'a' ? q.labels[0] : q.labels[1];
+    const excerpt = v === 'a' ? q.a : q.b;
+    return `${v.toUpperCase()} — ${which}\n  > ${excerpt}`;
+  }
+  if (q.type === 'many') return v.map((id) => q.options.find((o) => o[0] === id)?.[1] || id).map((s) => `\n  - ${s}`).join('');
+  if (q.type === 'chips') return v.map((s) => `\n  - ${s}`).join('');
+  if (q.type === 'scale') return `${scaleWord(v)} (${v}/5)\n  [1] ${q.ends[0]}\n  [5] ${q.ends[1]}`;
+  return v;
+}
+
+function brief() {
+  const lines = ['# Matins — blueprint', '', `Filled in ${new Date().toISOString().slice(0, 10)}.`,
+    `${COUNTED.filter(isAnswered).length} of ${COUNTED.length} answered.`, ''];
+  const open = [];
+  for (const sec of SECTIONS) {
+    const answered = sec.questions.filter(isAnswered);
+    for (const q of sec.questions) if (!isAnswered(q) && !OPTIONAL.has(q.id)) open.push(`${sec.title} — ${q.ask}`);
+    if (!answered.length) continue;
+    lines.push(`## ${sec.title}`, '');
+    for (const q of answered) {
+      lines.push(`**${q.ask}**`, answerText(q));
+      if (q.affects) lines.push(`_changes: ${q.affects}_`);
+      lines.push('');
+    }
+  }
+  if (open.length) lines.push('## Left unanswered — do not assume', '', ...open.map((o) => `- ${o}`), '');
+  return lines.join(String.fromCharCode(10));
+}
+
+const dlg = document.getElementById('dlg');
+document.getElementById('done').onclick = () => { document.getElementById('out').textContent = brief(); dlg.showModal(); };
+document.getElementById('close').onclick = () => dlg.close();
+document.getElementById('copy').onclick = async (e) => {
+  try { await navigator.clipboard.writeText(brief()); e.target.textContent = 'Copied'; }
+  catch {
+    const r = document.createRange(); r.selectNode(document.getElementById('out'));
+    getSelection().removeAllRanges(); getSelection().addRange(r);
+    e.target.textContent = 'Select and copy';
+  }
+  setTimeout(() => { e.target.textContent = 'Copy'; }, 1800);
+};
+document.getElementById('download').onclick = () => {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([brief()], { type: 'text/markdown' }));
+  a.download = 'matins-blueprint.md';
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+document.getElementById('clear').onclick = () => {
+  if (!confirm('Clear every answer, including the ones carried over from last time?')) return;
+  for (const k of Object.keys(state)) delete state[k];
+  localStorage.removeItem(KEY);
+  render();
+};
+
+render();
+</script>
+</body>
+</html>

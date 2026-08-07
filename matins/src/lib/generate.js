@@ -31,6 +31,23 @@ import { voicePrompt } from '../content/voice.js';
 import { FORMS, SAINT_EXEMPLAR, HEADLINE_EXEMPLARS } from '../content/forms.js';
 import { DRAFTS, TEMPERATURE } from '../config.js';
 
+// Rule 2 has two forms. The reflection may now retell what happens in the
+// Gospel — the owner asked for it — but ONLY when the Douay-Rheims text has
+// actually been fetched and is sitting in the prompt. Retelling from a model's
+// memory of a passage is the exact failure the grounding rules exist to stop,
+// so no text means no retelling, and the strict rule comes back.
+function hardRules({ mayRetell = false } = {}) {
+  const two = mayRetell
+    ? `2. You may say what happens in the Gospel, but ONLY from the Douay-Rheims text printed below. Every person, action and outcome you mention must be findable in it. Add nothing from memory, however well known. Do not quote: retell in your own words, echoing at most three consecutive words.`
+    : `2. Quote no scripture. Do not retell or paraphrase what happens in a reading. You may name a reading by its reference and say what it is about in the broadest terms, nothing more.`;
+  return `ABSOLUTE RULES — a violation means the block is thrown away:
+1. Use ONLY the facts given to you below. Do not add dates, places, numbers, names, miracles, quotations, or biographical details that are not in the facts.
+${two}
+3. Quote no Catechism, council, encyclical, pope, or saint. No citations of any kind.
+4. Do not present your own reflection as the teaching of the Church. Where you touch on doctrine, keep to what the Church actually holds, and keep opinion plainly marked as one way of seeing it.
+5. Nothing contrary to Catholic faith or morals.`;
+}
+
 const HARD_RULES = `ABSOLUTE RULES — a violation means the block is thrown away:
 1. Use ONLY the facts given to you below. Do not add dates, places, numbers, names, miracles, quotations, or biographical details that are not in the facts.
 2. Quote no scripture. Do not retell or paraphrase what happens in a reading. You may name a reading by its reference and say what it is about in the broadest terms, nothing more.
@@ -64,9 +81,13 @@ function avoidBlock(openings) {
     .join('\n')}`;
 }
 
-export async function generateReflection({ cfg, day, readings, form, avoidOpenings = [], fetchImpl }) {
+export async function generateReflection({ cfg, day, readings, form, gospelPassage, avoidOpenings = [], fetchImpl }) {
   const shape = form || FORMS[0];
-  const prompt = `${HARD_RULES}
+  const passage = gospelPassage?.text
+    ? `\nTODAY'S GOSPEL, IN FULL (Douay-Rheims). This is the only account you may retell, and it is never printed to the reader:\n"""\n${gospelPassage.text}\n"""\n`
+    : '';
+  const prompt = `${hardRules({ mayRetell: !!gospelPassage?.text })}
+${passage}
 
 ${voicePrompt()}
 
@@ -83,7 +104,9 @@ ${shape.exemplar}
 """
 
 TASK — REFLECTION
-Write 4 to 6 sentences for today, in the form above. Anchor it in the celebration, and in what the Church is putting in front of people today if readings are listed — but you may only name a reading, never retell it. Tie it to ordinary working life: patience with people, honest dealing, doing work well when nobody is checking, carrying a hard day.${avoidBlock(avoidOpenings)}
+Write 4 to 6 sentences for today, in the form above, and then close by turning to the reader as the voice instructions describe.
+
+Anchor it in what is actually in front of people today${gospelPassage?.text ? ' — you have the Gospel above and may retell what happens in it, within rule 2' : ', naming a reading by its reference only'}. Where it touches ordinary life, keep the images ordinary: patience with someone difficult, honest dealing, work done well when nobody is checking, a hard day carried without comment.${avoidBlock(avoidOpenings)}
 
 Return the reflection text only. No title, no preamble, no quotation marks around it.`;
 
@@ -101,6 +124,77 @@ Return the reflection text only. No title, no preamble, no quotation marks aroun
     },
   });
   return res.ok ? { ...res, form: shape.id } : res;
+}
+
+// The day's two readings, retold. This is the ONE block permitted to say what
+// happens in a passage, and only because it is handed the passage: the actual
+// Douay-Rheims text (public domain) is in the prompt, so the retelling is
+// grounded in the words rather than in the model's memory of them. Without
+// that text this block is not generated at all — see issue.js.
+export async function generateReadingSummary({ cfg, day, epistle, gospel, fetchImpl }) {
+  const source = (label, passage) =>
+    passage?.text ? `${label} — ${passage.ref}\n"""\n${passage.text}\n"""` : null;
+  const passages = [source('EPISTLE', epistle), source('GOSPEL', gospel)].filter(Boolean);
+  if (!passages.length) return { ok: false, skipped: true, error: 'no Douay-Rheims passage text to work from' };
+
+  const prompt = `ABSOLUTE RULES — a violation means the block is thrown away:
+1. Retell ONLY what is in the passages printed below. Every person, action, place and outcome you mention must be findable in that text. Add no detail from memory, no matter how well known.
+2. Do NOT quote. Retell in your own plain words. You may echo at most three consecutive words from the passage.
+3. No citations of any kind, and no Catechism.
+4. Where you say what the reading asks of a reader, keep to what the Church actually holds. Do not invent an obligation the Church does not place on people, and do not soften one it does.
+5. Nothing contrary to Catholic faith or morals.
+
+${voicePrompt()}
+
+TODAY
+${factSheet(day, null)}
+
+THE PASSAGES, IN FULL
+${passages.join('\n\n')}
+
+TASK — WHAT IS BEING READ, AND WHAT IT ASKS
+For each passage given above, write two things:
+
+  "summary": two or three sentences saying what actually happens, or what is
+  actually being argued. Concrete. Name the people in it. If it is a letter,
+  say what its writer is pressing on the people he is writing to. Do not
+  editorialise and do not moralise — this is the account, not the application.
+
+  "calledTo": ONE sentence, beginning with a verb, saying what a man is called
+  to do about it today. Not a feeling, not "reflect on" or "consider" — an act
+  he could tell you at bedtime whether or not he did. It must follow from THIS
+  passage rather than being general good advice.
+
+Return only JSON, with only the keys for passages you were actually given:
+{"epistle": {"summary": "...", "calledTo": "..."}, "gospel": {"summary": "...", "calledTo": "..."}}`;
+
+  return produce({
+    name: 'readingSummary',
+    cfg,
+    count: DRAFTS.readingSummary,
+    fetchImpl,
+    make: async ({ temperature, note }) => {
+      const raw = await llmText({ cfg, system: `${SYSTEM} Return only JSON.`, prompt: prompt + note, maxTokens: 900, temperature, fetchImpl });
+      const obj = parseJsonReply(raw);
+      const part = (key, passage) => {
+        if (!passage?.text) return null;
+        const summary = stripWrapping(String(obj?.[key]?.summary || ''));
+        const calledTo = stripWrapping(String(obj?.[key]?.calledTo || ''));
+        if (!summary || !calledTo) throw new Error(`${key} summary is missing a field`);
+        if (calledTo.split(/\s+/).length > 32) throw new Error(`${key} calledTo is not one sentence`);
+        return { ref: passage.ref, summary, calledTo };
+      };
+      const value = { epistle: part('epistle', epistle), gospel: part('gospel', gospel) };
+      const all = [value.epistle, value.gospel].filter(Boolean);
+      if (!all.length) throw new Error('no usable reading summary');
+      const text = all.map((p) => `${p.summary}\n${p.calledTo}`).join('\n\n');
+      return {
+        value,
+        text,
+        craft: [...craft(text), ...all.flatMap((p) => vagueAction(p.calledTo))],
+      };
+    },
+  });
 }
 
 export async function generateSaintStory({ cfg, day, fetchImpl }) {
@@ -159,7 +253,15 @@ Return only JSON: {"life": "...", "oneActionToday": "..."}`;
   });
 }
 
-export async function generateHeadline({ cfg, day, reflection, fetchImpl }) {
+export async function generateHeadline({ cfg, day, reflection, readingSummary, fetchImpl }) {
+  // What today actually contains, so the line can be about the content rather
+  // than about the date. A subject line drawn from the day in the abstract is
+  // the reason most devotional email goes unopened.
+  const contents = [
+    readingSummary?.gospel?.summary ? `Gospel: ${readingSummary.gospel.summary}` : null,
+    readingSummary?.epistle?.summary ? `Epistle: ${readingSummary.epistle.summary}` : null,
+    readingSummary?.gospel?.calledTo ? `Today it asks: ${readingSummary.gospel.calledTo}` : null,
+  ].filter(Boolean);
   const prompt = `${HARD_RULES}
 
 ${voicePrompt()}
@@ -167,12 +269,19 @@ ${voicePrompt()}
 TODAY'S GROUNDED FACTS
 ${factSheet(day, null)}
 
+${contents.length ? `WHAT IS ACTUALLY IN TODAY'S ISSUE\n${contents.join('\n')}\n` : ''}
 ${reflection ? `TODAY'S REFLECTION (for tone only — do not summarise it mechanically)\n${reflection}\n` : ''}
 HEADLINES THAT WORKED, FOR OTHER DAYS
 ${HEADLINE_EXEMPLARS.map((h) => `- ${h}`).join('\n')}
 
 TASK — HEADLINE
-Write ONE line, at most nine words, to sit at the top of the email and in the inbox preview. Concrete and quiet. Not a slogan — nothing that could go on a poster. No colon-and-subtitle construction. All lower case except proper names, and no full stop. Do not name the feast; it is printed directly underneath. Lifting a striking phrase out of the reflection is the best move available to you.
+Write ONE line, at most nine words. It is both the top of the email and the subject line in a crowded inbox, so it has to earn the open.
+
+Make it about what is IN today — the specific thing that happens in the Gospel, or the specific thing the day asks of a man — never about the date and never about the feast in the abstract. The feast name is printed directly underneath, so naming it here wastes the line.
+
+Compelling means concrete and slightly unresolved: the half of a sentence that makes a man want the other half. It does not mean loud. No slogans, nothing that could go on a poster, no colon-and-subtitle, no question mark, no promise. If the line would work equally well on any other day of the year, it has failed.
+
+All lower case except proper names, and no full stop. Lifting a striking phrase out of the readings or the reflection is the best move available to you.
 
 Return the line only.`;
 
@@ -263,6 +372,9 @@ const TELLS = [
   [/\bdear (?:friend|reader)\b/i, 'addressing the reader as "friend"'],
   [/\bbrothers and sisters\b/i, 'addressing the readership as a group'],
   [/\bmay we all\b/i, '"may we all"'],
+  // Added by the owner, blueprint.html 2026-08-07.
+  [/\blean in\b/i, '"lean in"'],
+  [/\bon fire for the Lord\b/i, '"on fire for the Lord"'],
   [/!/, 'an exclamation mark'],
 ];
 

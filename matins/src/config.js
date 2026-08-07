@@ -19,12 +19,18 @@ export const DEFAULTS = {
 };
 
 // How many recent issues a prayer / Q&A must sit out before it can come back.
-export const ROTATION_COOLDOWN = { prayer: 10, qa: 14, form: 4 };
+// Three questions go out a day now, so the Q&A cooldown is counted in entries
+// rather than issues: 24 means the last eight days' worth cannot come back.
+export const ROTATION_COOLDOWN = { prayer: 10, qa: 24, form: 4 };
+
+// How many Q&A go in an issue. "Why we believe what we do" is the thing the
+// owner said would keep a reader after a year, so it gets more than one slot.
+export const QA_PER_ISSUE = 3;
 
 // How many drafts a generated block gets before a judge picks between them.
 // One draft is a coin flip on tone; two and a comparison is most of the way to
 // consistent. Cheap enough at one issue a day — see lib/judge.js.
-export const DRAFTS = { reflection: 2, saintStory: 2, headline: 3 };
+export const DRAFTS = { reflection: 2, saintStory: 2, headline: 3, readingSummary: 2 };
 
 // Model defaults per provider. Deliberately small + cheap; this is short-form
 // devotional prose and a rubric check, not reasoning work.

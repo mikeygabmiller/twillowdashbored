@@ -5,13 +5,14 @@
 
 import { getLiturgicalDay } from './calendar.js';
 import { getReadings } from './readings.js';
-import { getVerseOfDay } from './scripture.js';
-import { generateReflection, generateSaintStory, generateHeadline } from './generate.js';
+import { getVerseOfDay, getPassage, pickEpistle } from './scripture.js';
+import { generateReflection, generateSaintStory, generateHeadline, generateReadingSummary } from './generate.js';
 import { checkBlock } from './safety.js';
 import { PRAYERS } from '../content/prayers.js';
 import { QA_BANK } from '../content/qa.js';
 import { FORMS } from '../content/forms.js';
-import { pickPrayer, pickQa, pickForm, recentOpenings, rememberOpening } from './rotation.js';
+import { QA_PER_ISSUE } from '../config.js';
+import { pickPrayer, pickQaSet, pickForm, recentOpenings, rememberOpening } from './rotation.js';
 
 // The block that proves the safety pass works. `preview --seed-bad-block` (or
 // buildIssue({ seedBadBlock: true })) swaps this in for the real reflection;
@@ -32,10 +33,23 @@ export async function buildIssue({ date, cfg, store, dryRun = false, seedBadBloc
   const verse = await getVerseOfDay(readings.gospelRef, cfg, { fetchImpl });
   if (verse?.error) degraded.push({ section: 'verseOfDay', reason: verse.error });
 
+  // The two readings the issue actually carries, and their Douay-Rheims text.
+  // The text is never printed — it is the grounding that lets the summary say
+  // what happens without the model working from memory. No text, no summary.
+  const epistlePick = pickEpistle(readings);
+  const [epistlePassage, gospelPassage] = await Promise.all([
+    epistlePick ? getPassage(epistlePick.ref, cfg, { fetchImpl }) : null,
+    readings.gospelRef ? getPassage(readings.gospelRef, cfg, { fetchImpl }) : null,
+  ]);
+  for (const [name, p] of [['epistleText', epistlePassage], ['gospelText', gospelPassage]]) {
+    if (p?.error) degraded.push({ section: name, reason: p.error });
+  }
+
   // Generation. Reflection first because the headline is written against it.
   // The form is rotated the same way the prayers are — a model asked only for
   // a length writes the same paragraph every day.
   const formPick = await pickForm(store, { forms: FORMS, date, tags: [day.season?.toLowerCase(), day.rank?.toLowerCase()] });
+
   const reflectionRes = seedBadBlock
     ? { ok: true, value: SEEDED_BAD_REFLECTION }
     : await generateReflection({
@@ -43,25 +57,48 @@ export async function buildIssue({ date, cfg, store, dryRun = false, seedBadBloc
         day,
         readings,
         form: formPick.chosen,
+        gospelPassage,
         avoidOpenings: await recentOpenings(store),
         fetchImpl,
       });
   if (!reflectionRes.ok) degraded.push({ section: 'reflection', reason: reflectionRes.error });
 
-  const [saintRes, headlineRes] = await Promise.all([
+  // The summary is generated before the headline, because the headline is
+  // written against what today actually contains rather than against the date.
+  const [saintRes, summaryRes] = await Promise.all([
     generateSaintStory({ cfg, day, fetchImpl }),
-    generateHeadline({ cfg, day, reflection: reflectionRes.ok ? reflectionRes.value : null, fetchImpl }),
+    generateReadingSummary({ cfg, day, epistle: epistlePassage, gospel: gospelPassage, fetchImpl }),
   ]);
   if (!saintRes.ok && !saintRes.skipped) degraded.push({ section: 'saintStory', reason: saintRes.error });
+  if (!summaryRes.ok && !summaryRes.skipped) degraded.push({ section: 'readingSummary', reason: summaryRes.error });
+
+  const headlineRes = await generateHeadline({
+    cfg,
+    day,
+    reflection: reflectionRes.ok ? reflectionRes.value : null,
+    readingSummary: summaryRes.ok ? summaryRes.value : null,
+    fetchImpl,
+  });
   if (!headlineRes.ok) degraded.push({ section: 'headline', reason: headlineRes.error });
 
   // Safety. Prayers and the Q&A bank are pre-vetted and skip it by design.
   const facts = factsFor(day, readings);
   const checks = [];
-  const [reflectionCheck, saintCheck, headlineCheck] = await Promise.all([
+  const [reflectionCheck, saintCheck, headlineCheck, summaryCheck] = await Promise.all([
     reflectionRes.ok ? checkBlock({ cfg, name: 'reflection', text: reflectionRes.value, facts, fetchImpl }) : null,
     saintRes.ok ? checkBlock({ cfg, name: 'saintStory', text: `${saintRes.value.life}\n\nOne thing today: ${saintRes.value.oneActionToday}`, facts, fetchImpl }) : null,
     headlineRes.ok ? checkBlock({ cfg, name: 'headline', text: headlineRes.value, facts, fetchImpl }) : null,
+    // The passage text goes in as FACTS: that is what makes 'asserts something
+    // not in the facts' a real test for a retelling rather than a formality.
+    summaryRes.ok
+      ? checkBlock({
+          cfg,
+          name: 'readingSummary',
+          text: summaryText(summaryRes.value),
+          facts: `${facts}\n${passageFacts(epistlePassage, gospelPassage)}`,
+          fetchImpl,
+        })
+      : null,
   ]);
 
   const keep = (name, res, check) => {
@@ -88,11 +125,12 @@ export async function buildIssue({ date, cfg, store, dryRun = false, seedBadBloc
   const reflection = keep('reflection', reflectionRes, reflectionCheck);
   const saintStory = keep('saintStory', saintRes, saintCheck);
   const headline = keep('headline', headlineRes, headlineCheck);
+  const readingSummary = keep('readingSummary', summaryRes, summaryCheck);
 
   // Hardcoded banks, chosen by rotation.
   const tags = [day.season?.toLowerCase(), 'daily', 'work'].filter(Boolean);
   const prayerPick = await pickPrayer(store, { prayers: PRAYERS, date, tags });
-  const qaPick = await pickQa(store, { bank: QA_BANK, date, tags: [day.season?.toLowerCase()] });
+  const qaPick = await pickQaSet(store, { bank: QA_BANK, date, tags: [day.season?.toLowerCase()], count: QA_PER_ISSUE });
   if (!dryRun) {
     await prayerPick.commit();
     await qaPick.commit();
@@ -105,7 +143,7 @@ export async function buildIssue({ date, cfg, store, dryRun = false, seedBadBloc
   }
 
   const p = prayerPick.chosen;
-  const q = qaPick.chosen;
+  const questions = qaPick.chosen;
 
   const issue = {
     date,
@@ -125,6 +163,15 @@ export async function buildIssue({ date, cfg, store, dryRun = false, seedBadBloc
       gospelRef: readings.gospelRef,
       usccbLink: readings.usccbLink,
       unavailable: !!readings.degraded,
+      // The two the issue actually carries. `summary` and `calledTo` are only
+      // here when the Douay-Rheims text came back and the retelling cleared
+      // safety; otherwise the reference stands on its own, as it always did.
+      epistle: epistlePick
+        ? { ref: epistlePick.ref, label: epistlePick.label, ...(readingSummary?.epistle || {}) }
+        : null,
+      gospel: readings.gospelRef
+        ? { ref: readings.gospelRef, label: 'Gospel', ...(readingSummary?.gospel || {}) }
+        : null,
     },
     verseOfDay: verse ? { ref: verse.ref, text: verse.text || null, translation: verse.translation || null } : null,
     reflection,
@@ -135,7 +182,7 @@ export async function buildIssue({ date, cfg, store, dryRun = false, seedBadBloc
       ? { ...saintStory, name: day.saint?.name || null, isOptional: !!day.saint?.isOptional }
       : null,
     prayer: { id: p.id, title: p.title, text: p.text, note: p.note },
-    consider: { id: q.id, question: q.question, answer: q.answer, citation: q.citation || null },
+    consider: questions.map((q) => ({ id: q.id, question: q.question, answer: q.answer, citation: q.citation || null })),
     headline: headline || fallbackHeadline(day),
     headlineGenerated: !!headline,
     status: dropped.length || degraded.length ? 'partial' : 'ok',
@@ -152,6 +199,25 @@ export async function buildIssue({ date, cfg, store, dryRun = false, seedBadBloc
   };
 
   return issue;
+}
+
+// What the safety pass reads when it judges the retelling. Flattened so a
+// dropped verdict costs both halves rather than leaving one unchecked.
+function summaryText(summary) {
+  return [summary?.epistle, summary?.gospel]
+    .filter(Boolean)
+    .map((p) => `${p.ref}\n${p.summary}\nCalled to: ${p.calledTo}`)
+    .join('\n\n');
+}
+
+// The Douay-Rheims text is public domain, is never printed to a reader, and is
+// handed to the checker only so "asserts something not in the facts" has real
+// facts to test against.
+function passageFacts(epistle, gospel) {
+  return [epistle, gospel]
+    .filter((p) => p?.text)
+    .map((p) => `Full Douay-Rheims text of ${p.ref}:\n${p.text}`)
+    .join('\n\n');
 }
 
 function fallbackHeadline(day) {
