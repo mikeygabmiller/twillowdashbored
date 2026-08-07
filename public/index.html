@@ -439,6 +439,8 @@
   .ts-row .ts-ic{width:34px;height:34px;flex:0 0 auto;border-radius:9px;background:var(--panel2);display:flex;align-items:center;justify-content:center;color:var(--muted)}
   .ts-row .ts-ic svg{width:19px;height:19px}
   .ts-row .ts-txt{display:flex;flex-direction:column;min-width:0}
+  .ts-row.ts-sw .ts-txt{flex:1}
+  .ts-row.ts-sw .sw{margin-left:auto}
   .ts-row .ts-txt b{font-size:14px;font-weight:650;color:var(--text)}
   .ts-row .ts-txt span{font-size:11.5px;color:var(--muted2)}
   .ts-row.accent .ts-ic{background:var(--accent-soft);color:var(--accent-text)}
@@ -2808,6 +2810,7 @@
     "bell":'<path d="M10.268 21a2 2 0 0 0 3.464 0"/><path d="M3.262 15.326A1 1 0 0 0 4 17h16a1 1 0 0 0 .74-1.673C19.41 13.956 18 12.499 18 8A6 6 0 0 0 6 8c0 4.499-1.41 5.956-2.738 7.326"/>',
     "sparkles":'<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/>',
     "wand":'<path d="M15 4V2"/><path d="M15 16v-2"/><path d="M8 9h2"/><path d="M20 9h2"/><path d="M17.8 11.8 19 13"/><path d="M15 9h.01"/><path d="M17.8 6.2 19 5"/><path d="m3 21 9-9"/><path d="M12.2 6.2 11 5"/>',
+    "keyboard":'<rect width="20" height="16" x="2" y="4" rx="2"/><path d="M6 8h.01"/><path d="M10 8h.01"/><path d="M14 8h.01"/><path d="M18 8h.01"/><path d="M8 12h.01"/><path d="M12 12h.01"/><path d="M16 12h.01"/><path d="M7 16h10"/>',
     "mic":'<path d="M12 19v3"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><rect x="9" y="2" width="6" height="13" rx="3"/>',
     "pencil":'<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',
     "archive":'<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
@@ -4681,6 +4684,17 @@
   // Applied after any config change. Deliberately does NOT re-render the playbook
   // textareas (that would fight the cursor while typing) — they save on blur and
   // keep their own DOM state.
+  function predictOn(){return !(state.config&&state.config.predictive===false)}
+  // Turning the word chips off should feel instant — the strip goes away on the
+  // tap, and the save catches up. afterConfig() re-reads the saved value, so a
+  // failed save corrects itself on the next config load.
+  function setPredictive(on){
+    if(state.config)state.config.predictive=!!on;
+    PK.off=!on;
+    if(typeof vibrate==="function")vibrate(6);
+    if(PK.off)pkHide();else if(state.thread)pkOnType();
+    return saveConfig({predictive:!!on});
+  }
   function afterConfig(){
     PK.off=!!(state.config&&state.config.predictive===false);
     if(PK.off)pkHide();
@@ -4835,7 +4849,7 @@
     el("cfgScreen").onclick=function(){saveConfig({callScreening:!(c.callScreening!==false)})};
     el("cfgMct").onclick=function(){saveConfig({missedCallTextback:!(c.missedCallTextback!==false)})};
     el("cfgMctText").onchange=function(){saveConfig({missedCallText:el("cfgMctText").value})};
-    el("cfgPredict").onclick=function(){saveConfig({predictive:!(c.predictive!==false)})};
+    el("cfgPredict").onclick=function(){setPredictive(!predictOn())};
     el("cfgPredictTrain").onclick=function(){
       var b=el("cfgPredictTrain");b.disabled=true;b.innerHTML='<span class="spin"></span> Learning\u2026';
       pkLoadStyle(true).then(function(m){
@@ -5927,16 +5941,21 @@
       {act:"rem",    ic:"bell",           t:"Appointment reminder", s:"Get a private nudge before an appointment"}
     ];
     if(SR)rows.push({act:"mic",ic:"mic",t:"Dictate",s:"Talk instead of type"});
-    var h='<div class="ts-hd">Tools</div>';
+    // The two things that type alongside you go at the TOP, as switches. The
+    // sheet opens scrolled to the top, so "turn that off" is always one tap from
+    // the Tools button instead of a scroll to the bottom of ten actions.
+    var h='<div class="ts-hd">Typing help</div>'+
+      '<div class="ts-row ts-sw" id="tsAutoPolish"><span class="ts-ic">'+ic("wand",19)+'</span>'+
+      '<span class="ts-txt"><b>Polish as you type</b><span>Offers a cleaned-up version when you pause</span></span>'+
+      '<span class="sw'+(autoPolishOn()?" on":"")+'" id="tsAutoPolishSw"></span></div>'+
+      '<div class="ts-row ts-sw" id="tsPredict"><span class="ts-ic">'+ic("keyboard",19)+'</span>'+
+      '<span class="ts-txt"><b>Next-word suggestions</b><span>The word chips above the message box</span></span>'+
+      '<span class="sw'+(predictOn()?" on":"")+'" id="tsPredictSw"></span></div>'+
+      '<div class="ts-hd">Tools</div>';
     rows.forEach(function(r){
       h+='<div class="ts-row'+(r.accent?" accent":"")+'" data-act="'+r.act+'"><span class="ts-ic">'+ic(r.ic,19)+'</span>'+
          '<span class="ts-txt"><b>'+esc(r.t)+'</b><span>'+esc(r.s)+'</span></span></div>';
     });
-    // Auto-polish lives here too, as a switch — same place you'd look for the
-    // polish tool, so it's easy to find and easy to turn off.
-    h+='<div class="ts-row" id="tsAutoPolish"><span class="ts-ic">'+ic("sparkles",19)+'</span>'+
-       '<span class="ts-txt"><b>Polish as you type</b><span>Runs quietly in the background</span></span>'+
-       '<span class="sw'+(autoPolishOn()?" on":"")+'" id="tsAutoPolishSw" style="margin-left:auto"></span></div>';
     sheet.innerHTML=h;
     var apRow=sheet.querySelector("#tsAutoPolish");
     if(apRow)apRow.onclick=function(e){
@@ -5944,6 +5963,13 @@
       setAutoPolish(!autoPolishOn());
       var sw=sheet.querySelector("#tsAutoPolishSw");if(sw)sw.classList.toggle("on",autoPolishOn());
       toast(autoPolishOn()?"Polish as you type is on":"Polish as you type is off");
+    };
+    var pkRow=sheet.querySelector("#tsPredict");
+    if(pkRow)pkRow.onclick=function(e){
+      if(e){e.stopPropagation()}
+      setPredictive(!predictOn());
+      var sw=sheet.querySelector("#tsPredictSw");if(sw)sw.classList.toggle("on",predictOn());
+      toast(predictOn()?"Next-word suggestions are on":"Next-word suggestions are off");
     };
     Array.prototype.forEach.call(sheet.querySelectorAll(".ts-row[data-act]"),function(row){
       row.onclick=function(e){
