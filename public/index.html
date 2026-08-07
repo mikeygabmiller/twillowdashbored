@@ -697,6 +697,23 @@
   .prow .pr-nm{font-weight:700;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .prow .pr-sub{font-size:11.5px;color:var(--muted2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .prow .pr-r{flex:none;text-align:right}
+  /* Promises you made — his own words, then what happens about them. */
+  .pm-list{display:flex;flex-direction:column;gap:9px}
+  .pm-item{background:var(--panel2);border:1px solid var(--line2);border-radius:13px;padding:11px}
+  .pm-item.due{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent) inset}
+  .pm-top{display:flex;align-items:center;gap:11px;cursor:pointer}
+  .pm-top .pr-av{width:36px;height:36px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:800;color:#fff}
+  .pm-top .pr-b{flex:1;min-width:0}
+  .pm-top .pr-nm{font-weight:700;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pm-top .pr-sub{font-size:11.5px;color:var(--muted2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pm-due{color:var(--accent-text);font-weight:800}
+  .pm-q{margin:9px 0 0;font-size:14px;line-height:1.45;font-weight:650}
+  .pm-what{margin-top:6px;font-size:12px;color:var(--muted2);display:flex;align-items:center;gap:5px}
+  .pm-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .pm-acts .btn{font-size:12px;padding:7px 9px;display:inline-flex;align-items:center;gap:5px;text-decoration:none}
+  .pm-foot{margin-top:11px}
+  .pm-foot .btn{width:100%;justify-content:center;display:inline-flex;align-items:center;gap:6px}
+  .pm-msg{color:var(--muted2);font-size:12px;margin-top:7px;min-height:1px}
   .prow .pr-amt{font-size:13.5px;font-weight:850;letter-spacing:-.01em;font-variant-numeric:tabular-nums}
   .prow .pr-tag{font-size:10px;font-weight:800;padding:3px 8px;border-radius:999px;white-space:nowrap}
   .pr-tag.due{color:#fbbf24;background:rgba(251,191,36,.14)}
@@ -2686,7 +2703,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-07·auto-polish";
+  var APP_BUILD="2026-08-07·promises";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -3223,6 +3240,7 @@
     ["rebook","Rebook radar","refresh-cw"],
     ["sla","Response health","activity"],
     ["tasks","To-do list","check-circle"],
+    ["promises","Promises you made","bell"],
     ["trend","Revenue trend","bar-chart"],
     ["funnel","Lead pipeline","clipboard-list"],
     ["vip","Top customers","trophy"],
@@ -3854,6 +3872,10 @@
       items.push({t:t,sub:((t.fu&&t.fu.reason)||"Follow-up ready"),sig:'<span class="nd-sig fu'+((t.fu&&t.fu.urgency==="high")?" high":"")+'">'+ic("list-checks",12)+'Follow-up</span>'});});
     (reminders||[]).forEach(function(t){if(seen[t.phone])return;seen[t.phone]=1;
       items.push({t:t,sub:(t.reminderNote||"Reminder set for today"),sig:'<span class="nd-sig rem">'+ic("bell",12)+'Reminder</span>'});});
+    // A promise whose time has come outranks nothing and gets forgotten by
+    // everything, so it joins the same one list as the rest.
+    prOpen().filter(function(p){return p.due}).forEach(function(p){if(seen[p.phone])return;seen[p.phone]=1;
+      items.push({t:prThreadFor(p),sub:('You said: "'+(p.quote||"")+'"'),sig:'<span class="nd-sig rem">'+ic("bell",12)+'Promised</span>'});});
     if(!items.length){
       return '<div class="needs ok"><span class="nd-ok">'+ic("check-circle",26)+'</span>'+
         '<div><div class="nd-ok-t">You\'re all caught up</div><div class="nd-ok-s">Nobody\'s waiting and nothing\'s due right now. Nice work.</div></div></div>';
@@ -3913,6 +3935,7 @@
     W.funnel='<div data-hwidget="funnel">'+homeFunnelWidget(active)+'</div>';
     W.weather='<div data-hwidget="weather">'+homeWeatherWidget()+'</div>';
     W.tasks='<div data-hwidget="tasks">'+homeTasksWidget()+'</div>';
+    W.promises='<div data-hwidget="promises">'+homePromisesWidget()+'</div>';
     // Job Day suite: the morning brief, and the one-time push-notification nudge.
     W.brief='<div data-hwidget="brief">'+homeBriefWidget()+'</div>';
     var order=(UI&&UI.hwidgets)?UI.hwidgets.slice():defaultUI().hwidgets.slice();
@@ -3934,6 +3957,7 @@
     Array.prototype.forEach.call(box.querySelectorAll("[data-open-money]"),function(c){c.onclick=function(){openMoney()}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-open-analytics]"),function(c){c.onclick=function(){openAnalytics()}});
     wireHomeWidgets(box);
+    wirePromises(box);
     wireAiCenter();
     wireJdHome(box);
     // Home repaints on its own whenever a fetch lands; put the suggestions back
@@ -4138,6 +4162,114 @@
       '<div class="tk-txt" data-tk-toggle="'+i+'">'+esc(x.text)+'</div><button class="tk-del" data-tk-del="'+i+'" aria-label="Delete">'+ic("x",15)+'</button></div>';}).join("");
     if(!rows)rows='<div class="wc-empty">'+ic("plus",15)+' Add your first to-do — jobs to book, supplies to grab, calls to make.</div>';
     return '<div class="wcard">'+head+'<div class="tk-add"><input id="tkInput" placeholder="Add a to-do…" autocomplete="off" maxlength="120"><button id="tkAdd" aria-label="Add">'+ic("plus",18)+'</button></div><div class="tk-list">'+rows+'</div></div>';
+  }
+  // ===== Promises you made ==================================================
+  // "I'll get back to you Monday" is the easiest thing in this business to mean
+  // and forget. The server reads every text he sends for one, sets a reminder and
+  // emails him a calendar invite; this is where the open ones live in the app.
+  var PR={list:[],loaded:false,fetching:false,scanning:false};
+  function prLoad(force){
+    if(PR.fetching||(PR.loaded&&!force))return;
+    PR.fetching=true;
+    api("/api/promises").then(function(d){
+      PR.fetching=false;
+      if(d&&d.ok){PR.list=d.promises||[];PR.loaded=true;if(state.tab==="home")renderHome()}
+    }).catch(function(){PR.fetching=false});
+  }
+  function prOpen(){
+    return (PR.list||[]).filter(function(p){return p.status==="open"})
+      .sort(function(a,b){return (a.dueAt||0)-(b.dueAt||0)});
+  }
+  function prThreadFor(p){
+    var t=(state.threads||[]).filter(function(x){return x.phone===p.phone})[0];
+    return t||{phone:p.phone,name:p.name||""};
+  }
+  // Run the catch-up scan. Shared by the Home widget and the settings screen, so
+  // the button can live wherever he goes looking for it.
+  function promScanNow(btn,msgEl){
+    if(PR.scanning)return;
+    PR.scanning=true;
+    var orig=btn?btn.innerHTML:"";
+    if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span> Reading your messages…'}
+    if(msgEl)msgEl.textContent="";
+    post("/api/promises/scan",{}).then(function(d){
+      PR.scanning=false;
+      if(btn){btn.disabled=false;btn.innerHTML=orig}
+      if(!d||!d.ok){
+        var why=(d&&d.error==="ai_not_configured")?"The AI key isn't set up on the server":"Couldn't run the scan";
+        if(msgEl)msgEl.textContent=why;
+        return toast(why,{bad:true});
+      }
+      PR.list=d.promises||[];PR.loaded=true;
+      var n=(d.scan&&d.scan.found)||0;
+      var line=n?("Found "+n+" promise"+(n===1?"":"s")+" — check your email for the calendar invite"+(n===1?"":"s")):
+        ("Nothing outstanding in your last "+((d.scan&&d.scan.depth)||3)+" messages per conversation");
+      if(msgEl)msgEl.textContent=line;
+      toast(line,{bad:!n});
+      if(state.tab==="home")renderHome();
+    }).catch(function(){
+      PR.scanning=false;
+      if(btn){btn.disabled=false;btn.innerHTML=orig}
+      if(msgEl)msgEl.textContent="Network error";
+      toast("Network error",{bad:true});
+    });
+  }
+  function homePromisesWidget(){
+    prLoad();
+    var open=prOpen();
+    var dueN=open.filter(function(p){return p.due}).length;
+    var head='<div class="wc-h"><span class="wc-ic">'+ic("bell",18)+'</span><span class="wc-t">Promises you made</span>'+
+      (open.length?'<span class="wc-badge">'+(dueN?dueN+" due now":open.length+" open")+'</span>':"")+'</div>';
+    if(!open.length){
+      return '<div class="wcard">'+head+
+        '<div class="wc-empty">'+ic("check-circle",15)+' Nothing outstanding. When you tell someone you’ll get back to them, it lands here with a calendar invite.</div>'+
+        '<div class="pm-foot"><button class="btn" id="prScan">'+ic("search",14)+' Scan my recent messages</button></div>'+
+        '<div class="pm-msg" id="prScanMsg"></div></div>';
+    }
+    var rows=open.slice(0,5).map(function(p){
+      var t=prThreadFor(p);
+      return '<div class="pm-item'+(p.due?" due":"")+'">'+
+        '<div class="pm-top" data-open="'+esc(p.phone)+'">'+
+          '<div class="pr-av" style="background:'+colorFor(p.phone)+'">'+esc(initials(t))+'</div>'+
+          '<div class="pr-b"><div class="pr-nm">'+esc(displayName(t))+'</div>'+
+          '<div class="pr-sub">'+(p.due?'<span class="pm-due">Due now</span> · ':"")+esc(p.whenLabel||"")+'</div></div>'+
+        '</div>'+
+        '<div class="pm-q">“'+esc(p.quote||"")+'”</div>'+
+        (p.what?'<div class="pm-what">'+ic("chevron-right",12)+' '+esc(p.what)+'</div>':"")+
+        '<div class="pm-acts">'+
+          '<a class="btn sm" href="/api/promise.ics?id='+encodeURIComponent(p.id)+'">'+ic("calendar-days",13)+' Add to calendar</a>'+
+          '<a class="btn sm" href="'+esc(p.gcal||"#")+'" target="_blank" rel="noopener">Google</a>'+
+          '<button class="btn sm" data-pr-act="done" data-pr="'+esc(p.id)+'">'+ic("check",13)+' Done</button>'+
+          '<button class="btn sm" data-pr-act="snooze" data-pr="'+esc(p.id)+'">Later</button>'+
+          '<button class="btn sm" data-pr-act="dismiss" data-pr="'+esc(p.id)+'">Not a promise</button>'+
+        '</div></div>';
+    }).join("");
+    return '<div class="wcard">'+head+
+      '<p class="hint" style="margin:-4px 0 11px">You said you’d come back to these people. Tap the name to open the conversation.</p>'+
+      '<div class="pm-list">'+rows+'</div>'+
+      (open.length>5?'<div class="home-more" data-more="messages">'+(open.length-5)+' more</div>':"")+
+      '<div class="pm-foot"><button class="btn" id="prScan">'+ic("search",14)+' Scan my recent messages</button></div>'+
+      '<div class="pm-msg" id="prScanMsg"></div></div>';
+  }
+  // Home actions on a promise. Every one of them is a reminder-only change —
+  // nothing here can text the customer.
+  function wirePromises(box){
+    var sc=box.querySelector("#prScan");
+    if(sc)sc.onclick=function(){vibrate(6);promScanNow(sc,box.querySelector("#prScanMsg"))};
+    Array.prototype.forEach.call(box.querySelectorAll("[data-pr-act]"),function(b){
+      b.onclick=function(ev){
+        ev.stopPropagation();
+        var id=b.getAttribute("data-pr"),act=b.getAttribute("data-pr-act");
+        var payload={action:act,id:id};
+        if(act==="snooze")payload.hours=24;
+        b.disabled=true;
+        post("/api/promise",payload).then(function(d){
+          if(d&&d.ok){PR.list=d.promises||[];PR.loaded=true;renderHome();
+            toast(act==="done"?"Nice — marked done":act==="snooze"?"Pushed to tomorrow":"Cleared")}
+          else{b.disabled=false;toast("Couldn’t update that",{bad:true})}
+        }).catch(function(){b.disabled=false;toast("Network error",{bad:true})});
+      };
+    });
   }
   function dstrOf(d){var p=function(x){return (x<10?"0":"")+x};return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())}
   // Wire up the interactive widgets after Home renders.
@@ -4826,6 +4958,11 @@
       '<div class="fu-row"><span class="lbl2">Answer by text <span style="color:var(--muted2);font-weight:400">· same thing, uses a text</span></span><span class="sw'+(c.assistSms!==false?" on":"")+'" id="cfgAssist"></span></div>'+
       '<div class="fu-row"><span class="lbl2">Hold before sending</span><span style="display:flex;align-items:center;gap:6px"><input type="number" id="cfgAssistDelay" min="0" max="600" value="'+(c.assistDelaySec==null?60:c.assistDelaySec)+'"><span style="color:var(--muted2)">sec</span></span></div>'+
       '<div class="hint">Text your own business number the same thing when email is awkward. Use <b>@name</b> to pick someone, <b>send:</b> for your exact words, <b>draft:</b> to hold it here, <b>who</b> to see who\'s waiting, <b>cancel</b> to pull one back. Either way you get the finished wording back before it goes out, and every fact comes from you — the AI only does the wording.</div>'+
+      '<div class="fu-row"><span class="lbl2">Catch my promises <span style="color:var(--muted2);font-weight:400">· \u201cI\u2019ll get back to you Monday\u201d</span></span><span class="sw'+((c.promise&&c.promise.enabled===false)?"":" on")+'" id="cfgProm"></span></div>'+
+      '<div class="fu-row"><span class="lbl2">Email me + a calendar invite</span><span class="sw'+((c.promise&&c.promise.emailEach===false)?"":" on")+'" id="cfgPromMail"></span></div>'+
+      '<div class="fu-row"><span class="lbl2">If I didn\'t say when, remind me in</span><span style="display:flex;align-items:center;gap:6px"><input type="number" id="cfgPromHours" min="1" max="168" value="'+(((c.promise||{}).defaultHours)||24)+'"><span style="color:var(--muted2)">hrs</span></span></div>'+
+      '<div class="fu-col"><span class="lbl2">Look back through what I\'ve already sent</span><span style="display:flex;align-items:center;gap:6px"><button id="cfgPromScan" class="btn" style="white-space:nowrap">'+ic("search",14)+' Scan my last <span id="cfgPromDepthLbl">'+(((c.promise||{}).scanDepth)||3)+'</span> messages</button><input type="number" id="cfgPromDepth" min="1" max="10" value="'+(((c.promise||{}).scanDepth)||3)+'" style="width:64px"></span><span id="cfgPromScanMsg" style="color:var(--muted2);font-size:12px"></span></div>'+
+      '<div class="hint">Every text <b>you</b> send is read for a promise to come back to someone \u2014 \u201cI\u2019ll check and let you know\u201d, \u201cI\u2019ll get you a price tonight\u201d. When it finds one you get an email with a <b>calendar invite attached</b>, it shows up on Home, and you get a nudge at the time you promised. Nothing is ever texted to the customer. The scan reads back over the last few messages of every open conversation and picks up the ones you made before \u2014 the ones most likely already forgotten.</div>'+
       '<div class="fu-col"><span class="lbl2">Voicemails</span><button id="cfgVmRecover" class="btn" style="white-space:nowrap;align-self:flex-start">'+ic("mic",14)+' Recover past voicemails</button></div>'+
       '<div class="hint">Pulls your recent voicemails from Twilio into the right conversations so you can play them right here. Safe to run anytime.</div>'+
       '<div class="fu-col"><span class="lbl2">Block a number</span><span style="display:flex;gap:6px"><input type="text" id="cfgBlockNum" placeholder="+1425…" style="flex:1"><button id="cfgBlockBtn" class="btn" style="white-space:nowrap">Block</button></span></div>'+
@@ -4861,6 +4998,11 @@
     el("cfgAssistDelay").onchange=function(){saveConfig({assistDelaySec:+el("cfgAssistDelay").value})};
     el("cfgAssistEmail").onclick=function(){saveConfig({assistEmail:!(c.assistEmail!==false)})};
     el("cfgAssistEmailDelay").onchange=function(){saveConfig({assistEmailDelaySec:+el("cfgAssistEmailDelay").value})};
+    el("cfgProm").onclick=function(){saveConfig({promise:{enabled:!((c.promise||{}).enabled!==false)}})};
+    el("cfgPromMail").onclick=function(){saveConfig({promise:{emailEach:!((c.promise||{}).emailEach!==false)}})};
+    el("cfgPromHours").onchange=function(){saveConfig({promise:{defaultHours:+el("cfgPromHours").value}})};
+    el("cfgPromDepth").onchange=function(){var v=+el("cfgPromDepth").value;var l=el("cfgPromDepthLbl");if(l)l.textContent=String(v);saveConfig({promise:{scanDepth:v}})};
+    el("cfgPromScan").onclick=function(){promScanNow(el("cfgPromScan"),el("cfgPromScanMsg"))};
     el("cfgAssistScript").onclick=function(){copyAssistScript()};
     el("cfgAssistPractice").onclick=function(){sendPractice(el("cfgAssistPractice"))};
     el("cfgVoiceOpen").onclick=function(){openTrainAI()};

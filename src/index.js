@@ -74,7 +74,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-07·auto-polish';
+const BUILD = '2026-08-07·promises';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -106,6 +106,8 @@ async function runCron() {
   await seedPlaybookIfNeeded();
   await dispatchDueScheduled();
   await dispatchDueReminders();
+  // "I'll get back to you Monday" — nudge him when the time he promised arrives.
+  await dispatchDuePromises().catch(() => {});
   await evaluateFollowups();
   await moneyCron().catch(() => {}); // money reminders must never break the SMS cron
   // One KV write a day: snapshot the KPIs that cannot be reconstructed later.
@@ -280,6 +282,11 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/day/state')      return apiDayState(request);
   if (request.method === 'GET'  && pathname === '/api/detections')     return apiDetections();
   if (request.method === 'POST' && pathname === '/api/detection')      return apiDetectionAction(request);
+  // Promises he made to customers ("I'll get back to you Monday").
+  if (request.method === 'GET'  && pathname === '/api/promises')       return apiPromises();
+  if (request.method === 'POST' && pathname === '/api/promise')        return apiPromiseAction(request);
+  if (request.method === 'POST' && pathname === '/api/promises/scan')  return apiPromiseScan(request);
+  if (request.method === 'GET'  && pathname === '/api/promise.ics')    return apiPromiseIcs(url);
   if (request.method === 'POST' && pathname === '/api/day/job')        return apiDayJob(request);
   if (request.method === 'POST' && pathname === '/api/day/remove')     return apiDayRemove(request);
   if (request.method === 'POST' && pathname === '/api/day/order')      return apiDayOrder(request);
@@ -1616,8 +1623,12 @@ async function apiSend(request) {
   // rewrote, so the way he opens a conversation cold was never learned until the
   // next full rebuild. Now every message he writes goes in as he sends it.
   else if (voiceUsable(msg)) { try { await recordVoiceSample(body, 'sent'); } catch { /* non-fatal */ } }
-  // Mikey's own "see you Saturday at 10" counts as setting a date too.
-  await maybeDetectJob(phone);
+  // Two readings of the text he just sent: "see you Saturday at 10" is a job, and
+  // "I'll get back to you Monday" is a promise that becomes a reminder with a
+  // calendar invite. Both are best-effort, both gate on a free regex before any
+  // AI call, and they touch different KV docs — so they run side by side rather
+  // than making him wait through two round trips before his message is confirmed.
+  await Promise.all([maybeDetectJob(phone), maybePromise(phone)]);
   return json({ ok: true, thread });
 }
 
@@ -5273,6 +5284,7 @@ async function apiSaveConfig(request) {
   if (Array.isArray(data.team)) next.team = sanitizeTeam(data.team);
   if (data.playbook && typeof data.playbook === 'object') next.playbook = sanitizePlaybook(data.playbook, next.playbook);
   if (data.detect && typeof data.detect === 'object') next.detect = sanitizeDetect(data.detect, next.detect);
+  if (data.promise && typeof data.promise === 'object') next.promise = sanitizePromiseCfg(data.promise, next.promise);
   await kv().put('config', JSON.stringify(next));
   CFG_CACHE = next;
   return json({ ok: true, config: next });
@@ -6148,6 +6160,7 @@ function defaultConfig() {
     briefHour: 6,            // local hour the brief fires (4–11)
     playbook: defaultPlaybook(), // the business "brain" that trains every AI output
     detect: detDefaults(),   // auto-detecting appointments out of text conversations
+    promise: promDefaults(), // catching "I'll get back to you Monday" and reminding him
   };
 }
 
@@ -7644,17 +7657,23 @@ async function geminiGenerate(prompt, opts = {}) {
 // readable HTML email — alertHtml() lays the text out — and the text version is
 // what goes over SMS when email is off or fails, so no alert ever depends on the
 // HTML existing.
+// `attachments` (Resend's shape: { filename, content: base64 }) ride the email
+// only — the promise reminders use it for a calendar invite. `sms` overrides what
+// the fallback text says, because a text message can't carry an attachment and
+// shouldn't point at one.
 async function notifyMikey(subject, body) {
   const text = typeof body === 'string' ? body : String((body && body.text) || '');
   const html = (body && typeof body === 'object' && body.html) || '';
+  const attachments = (body && typeof body === 'object' && body.attachments) || null;
+  const smsText = (body && typeof body === 'object' && body.sms) || text;
   // Ring the phone too. Web push is free, instant, and doesn't wait on email or
   // Twilio — but it's a bonus channel, never the only one, so failures are silent.
   pushNotify().catch(() => {});
   if (ENV.RESEND_API_KEY && ENV.ALERT_EMAIL) {
-    try { await sendEmail(subject, text, html); return true; }
+    try { await sendEmail(subject, text, html, attachments); return true; }
     catch { /* fall through to SMS so the alert still reaches Mikey */ }
   }
-  try { await sendSms(ENV.MIKEY_PHONE, text, { skipOptOut: true }); return true; }
+  try { await sendSms(ENV.MIKEY_PHONE, smsText, { skipOptOut: true }); return true; }
   catch { return false; }
 }
 
@@ -7663,17 +7682,19 @@ async function notifyMikey(subject, body) {
 // thing a watch or a screen reader may show. ALERT_FROM must be a Resend-verified
 // sender; until a domain is verified, Resend only allows onboarding@resend.dev ->
 // your own account email, which is exactly the single-recipient case here.
-async function sendEmail(subject, text, html) {
+async function sendEmail(subject, text, html, attachments) {
   const to = ENV.ALERT_EMAIL;
   const from = ENV.ALERT_FROM || 'Mikeys Dashboard <onboarding@resend.dev>';
   if (!to) throw new Error('ALERT_EMAIL not set');
+  const payload = { from, to: [to], subject, text, html: html || alertHtml(subject, text) };
+  if (attachments && attachments.length) payload.attachments = attachments.slice(0, 10);
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${ENV.RESEND_API_KEY}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ from, to: [to], subject, text, html: html || alertHtml(subject, text) }),
+    body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error(`Resend ${res.status}: ${(await res.text()).slice(0, 300)}`);
   return res.json();
@@ -7955,6 +7976,7 @@ async function dispatchDueScheduled(now = Date.now()) {
     const thread = await loadThread(entry.phone);
     const due = (thread.scheduled || []).filter((s) => s.sendAt <= now);
     if (!due.length) continue;
+    let mine = false;   // did any of this thread's due items carry his own words?
     // Reserve the due items FIRST — remove them and persist BEFORE sending. KV is
     // eventually consistent and the cron runs every minute, so if we sent first and
     // saved after, an overlapping/next run could read the stale queue and text the
@@ -7973,7 +7995,7 @@ async function dispatchDueScheduled(now = Date.now()) {
         const m = { id: genId(), dir: 'out', body: s.body, ts: Date.now(), kind, status: 'sent', sid: (r && r.sid) || undefined };
         if (s.src === 'manual') m.src = 'manual';
         thread.messages.push(m);
-        if (voiceUsable(m)) learn.push(s.body);
+        if (voiceUsable(m)) { learn.push(s.body); mine = true; }
         sent++;
       } catch (err) {
         // Left unmarked on purpose: a text that never reached the customer stays out
@@ -7984,6 +8006,11 @@ async function dispatchDueScheduled(now = Date.now()) {
     }
     await saveThread(thread);
     await updateIndexEntry(thread);
+    // A queued text is still him talking — an assist reply he approved by email,
+    // or one he wrote and held for later — so it gets read for a promise too.
+    // Templated booking reminders are excluded by the same voiceUsable() test
+    // that keeps them out of the voice corpus: nothing there is his to promise.
+    if (mine) await maybePromise(thread.phone).catch(() => {});
   }
   // Batched, so a tick that flushes ten of his texts still costs one KV write.
   if (learn.length) { try { await addVoiceSamples(learn, 'sent'); } catch { /* non-fatal */ } }
@@ -10311,4 +10338,548 @@ async function detConfirmDraft(rec, cfg, kind) {
     if (clean.length < 15 || !/[a-z]{3}/i.test(clean) || /^[[{]/.test(clean)) return tpl;
     return clean;
   } catch { return tpl; }
+}
+
+// ===========================================================================
+// Kept promises  ("I'll get back to you Monday")
+// ===========================================================================
+// The most expensive thing this business loses isn't a lead that never wrote in
+// — it's the one Mikey personally told he'd follow up with, and then didn't. It
+// happens mid-job, with wet hands, and the promise lives nowhere but in a text
+// he sent two days ago.
+//
+// So: every text HE sends is read for a promise to come back to someone. When
+// one is found, three things happen at once — a record he can see in the app, an
+// email with a real calendar invite attached so the reminder lives in the
+// calendar he actually looks at, and a nudge at the promised time.
+//
+// Design rules, learned from the appointment detector next door:
+//   - a free regex kills every message with no promise-shaped words in it BEFORE
+//     any AI call, so the common case costs nothing;
+//   - nothing is ever texted to a customer from here — a promise only ever
+//     produces a reminder to Mikey;
+//   - the whole feature is one KV doc (`promises`), so the minute cron checks
+//     every promise with a single read and writes only when one comes due.
+// ===========================================================================
+const PROM_KEY = 'promises';
+async function loadPromises() { return (await kv().get(PROM_KEY, { type: 'json' })) || []; }
+// ⚠ KV WRITE — rewrites the whole list. Called on a detection or an action,
+// and at most once per cron tick (batched), never inside a per-thread loop.
+async function savePromises(list) {
+  const keep = list
+    .slice()
+    .sort((a, b) => (b.madeAt || 0) - (a.madeAt || 0))
+    // Closed promises are kept for a week so "you already handled this" is
+    // visible in the app, then dropped — this doc must never grow forever.
+    .filter((p) => p.status === 'open' || (Date.now() - (p.closedAt || p.madeAt || 0)) < 7 * 86400000)
+    .slice(0, 80);
+  await kv().put(PROM_KEY, JSON.stringify(keep));
+  return keep;
+}
+
+function promDefaults() {
+  return {
+    enabled: true,       // master switch for promise detection
+    emailEach: true,     // email + calendar invite the moment a promise is made
+    defaultHours: 24,    // when he promised no time ("I'll let you know"), how long to give it
+    scanDepth: 3,        // how many recent messages a catch-up scan reads per conversation
+  };
+}
+function promCfg(cfg) { return Object.assign(promDefaults(), (cfg && cfg.promise) || {}); }
+function sanitizePromiseCfg(input, current) {
+  const d = Object.assign(promDefaults(), current || {});
+  if (typeof input.enabled === 'boolean') d.enabled = input.enabled;
+  if (typeof input.emailEach === 'boolean') d.emailEach = input.emailEach;
+  if (input.defaultHours != null && !isNaN(+input.defaultHours)) d.defaultHours = Math.max(1, Math.min(168, Math.round(+input.defaultHours)));
+  if (input.scanDepth != null && !isNaN(+input.scanDepth)) d.scanDepth = Math.max(1, Math.min(10, Math.round(+input.scanDepth)));
+  return d;
+}
+
+// The free gate. Two halves have to BOTH appear: him committing ("I'll", "let me")
+// and the coming-back-to-you verb. That keeps "I'll be there at 9" (an
+// appointment, which the job detector already owns) out of here, while catching
+// the real thing in all the ways he actually types it.
+const PROM_ME_RE = /\b(i'?l+|i will|imma|gon+a|gunna|i am going to|i'?m going to|let me|gimme|give me)\b/i;
+const PROM_ACT_RE = /\b(follow(?:ing)? up|follow back|get back|getting back|circle back|touch base|keep (?:you|ya) posted|keep in touch|let (?:you|ya) know|reach out|check (?:on|with|in|back|that|it|my|the)|look into|look at (?:my|the|it)|see what i can do|figure (?:it|that) out|find out|confirm|double ?check|update (?:you|ya)|call (?:you|ya)|text (?:you|ya)|shoot (?:you|ya) a|send (?:you|ya) (?:a|the|over)|work on (?:it|that|getting)|price (?:it|that) out|put (?:you|ya) down)\b/i;
+function promLooksLikePromise(text) {
+  const t = String(text || '');
+  if (t.length < 6) return false;
+  if (!PROM_ME_RE.test(t)) return false;
+  return PROM_ACT_RE.test(t);
+}
+
+// Ask the AI what was promised and by when. Returns null for anything that isn't
+// a real commitment, so the expensive half of this feature is also the rare half.
+async function promAskAi(thread, msgs, target, cfg) {
+  const tz = cfg.tz || 'America/Los_Angeles';
+  const now = Date.now();
+  const dow = new Date(now).toLocaleDateString('en-US', { timeZone: tz, weekday: 'long' });
+  const convo = msgs.map((m) =>
+    `[${localDateStr(m.ts, tz)} ${localTimeHm(m.ts, tz)}] ${m.dir === 'in' ? 'CUSTOMER' : 'MIKEY'}: ${jdStr(m.body, 400)}`).join('\n');
+  const prompt =
+    `You read text conversations for a mobile car-detailing business owner (Mikey) and find the ` +
+    `promises HE made to get back to a customer, so he can be reminded.\n` +
+    `RIGHT NOW it is ${dow}, ${localDateStr(now, tz)}, ${localTimeHm(now, tz)} Pacific. ` +
+    `Resolve every relative time ("tonight", "tomorrow", "Monday", "in a couple hours") against that.\n\n` +
+    `CONVERSATION (most recent last):\n${convo}\n\n` +
+    `THE MESSAGE TO JUDGE is Mikey's: "${jdStr(target.body, 400)}"\n\n` +
+    `Reply with ONLY this JSON:\n` +
+    `{"promise":true|false,\n` +
+    ` "what":"what he owes them, in under 12 words, written to him ('send Desiree the Ram quote')",\n` +
+    ` "date":"YYYY-MM-DD or empty if he named no day","time":"HH:MM 24-hour or empty if he named no time",\n` +
+    ` "vague":true if he committed but named no time at all ("I'll let you know"),\n` +
+    ` "quote":"his exact words that made the promise, verbatim, max 120 chars",\n` +
+    ` "confidence":0.0-1.0}\n\n` +
+    `RULES:\n` +
+    `- A promise is Mikey owing the customer a FUTURE message or answer: a price he'll work out, ` +
+    `an availability he'll check, a call he'll make, news he'll pass on.\n` +
+    `- "promise":false for: an appointment time already agreed (that is not a promise to follow up), ` +
+    `"I'll see you Saturday", "I'll be there at 9", "I'll text you when I'm on my way" about a job ` +
+    `that is already booked, pleasantries ("let me know if you need anything"), ` +
+    `anything the CUSTOMER said, and anything he has already answered later in this conversation.\n` +
+    `- Only fill date/time with what he actually said. Never invent one.\n` +
+    `- Below 0.55 confidence, answer "promise":false.`;
+  let o;
+  try { o = JSON.parse(await geminiGenerate(prompt, { json: true, temperature: 0.1, maxTokens: 400 })); }
+  catch { return null; }
+  if (!o || o.promise !== true) return null;
+  if (Number(o.confidence || 0) < 0.55) return null;
+  const what = jdStr(o.what, 120);
+  const quote = jdStr(o.quote, 160) || jdStr(target.body, 160);
+  const dueAt = promDueAt(o, cfg, target.ts || now);
+  if (!dueAt) return null;
+  return { what, quote, dueAt, vague: !!o.vague, confidence: Number(o.confidence) || 0 };
+}
+
+// Turn what he said into a moment to be reminded at.
+//   "Monday at 9"      -> that
+//   "Monday"           -> that morning at 9
+//   "I'll let you know" -> defaultHours later, pulled into working hours
+// Anything that lands in the past or absurdly far out is treated as no date at
+// all rather than trusted — a reminder at the wrong time is worse than a default.
+function promDueAt(o, cfg, madeAt) {
+  const pc = promCfg(cfg);
+  const now = Date.now();
+  const date = jdStr(o && o.date, 12);
+  const time = jdStr(o && o.time, 6);
+  if (jdIsDate(date)) {
+    const slot = /^\d{1,2}:\d{2}$/.test(time) ? time.padStart(5, '0') : '09:00';
+    const at = bkLaEpoch(date, slot);
+    if (at && !isNaN(at) && at > now - 3600000 && at < now + 400 * 86400000) return at;
+  }
+  return promWorkHours((madeAt || now) + pc.defaultHours * 3600000, cfg);
+}
+
+// Nudge a reminder into a time he'd actually act on it: before 8am local becomes
+// 8am, after 7pm becomes 8am the next morning. A 2am buzz gets ignored, and an
+// ignored reminder is the same as no reminder.
+function promWorkHours(at, cfg) {
+  const tz = (cfg && cfg.tz) || 'America/Los_Angeles';
+  const hm = localTimeHm(at, tz);
+  const hour = Number(String(hm).slice(0, 2));
+  if (hour >= 8 && hour < 19) return at;
+  const day = localDateStr(hour >= 19 ? at + 86400000 : at, tz);
+  const moved = bkLaEpoch(day, '08:00');
+  return (moved && !isNaN(moved)) ? moved : at;
+}
+
+// ---------------------------------------------------------------------------
+// The calendar invite
+// ---------------------------------------------------------------------------
+// A reminder that lives only in this app is a reminder he has to remember to
+// come looking for. So every promise ships as a real .ics file — one tap on the
+// phone and it's in the calendar he already checks — plus a Google Calendar link
+// for when tapping the attachment is more work than tapping a button.
+function icsEscape(s) {
+  return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/([,;])/g, '\\$1');
+}
+function icsStamp(ms) { return new Date(ms).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, ''); }
+
+// One VEVENT, 15 minutes long, with an alarm at the start. METHOD:PUBLISH on
+// purpose: an invite (METHOD:REQUEST) from a sender that isn't his own calendar
+// address gets treated as someone else's meeting, which is not what this is.
+function promIcs(rec) {
+  const start = rec.dueAt;
+  const uid = `promise-${rec.id}@mikeys-dashboard`;
+  const title = `Follow up with ${rec.name || rec.phone}`;
+  const base = publicBase();
+  const desc = [
+    rec.what ? `You owe them: ${rec.what}` : '',
+    rec.quote ? `You said: "${rec.quote}"` : '',
+    base ? `Open the conversation: ${base}/?c=${rec.phone}` : '',
+  ].filter(Boolean).join('\n');
+  return [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Mikeys Dashboard//Promises//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    `UID:${uid}`,
+    `DTSTAMP:${icsStamp(Date.now())}`,
+    `DTSTART:${icsStamp(start)}`,
+    `DTEND:${icsStamp(start + 15 * 60000)}`,
+    `SUMMARY:${icsEscape(title)}`,
+    `DESCRIPTION:${icsEscape(desc)}`,
+    'BEGIN:VALARM',
+    'TRIGGER:PT0M',
+    'ACTION:DISPLAY',
+    `DESCRIPTION:${icsEscape(title)}`,
+    'END:VALARM',
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ].join('\r\n');
+}
+
+// "Add to Google Calendar" — the one-tap path on a phone.
+function promGcalUrl(rec) {
+  const base = publicBase();
+  const p = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: `Follow up with ${rec.name || rec.phone}`,
+    dates: `${icsStamp(rec.dueAt)}/${icsStamp(rec.dueAt + 15 * 60000)}`,
+    details: [
+      rec.what ? `You owe them: ${rec.what}` : '',
+      rec.quote ? `You said: "${rec.quote}"` : '',
+      base ? `${base}/?c=${rec.phone}` : '',
+    ].filter(Boolean).join('\n'),
+  });
+  return `https://calendar.google.com/calendar/render?${p.toString()}`;
+}
+
+// base64 for the .ics attachment. Worker runtime has btoa, but it is byte-wise —
+// the quote can carry an emoji or a curly apostrophe, so encode UTF-8 first.
+function b64(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = '';
+  for (const b of bytes) bin += String.fromCharCode(b);
+  return btoa(bin);
+}
+function promIcsAttachment(rec) {
+  return { filename: `follow-up-${(rec.name || rec.phone).replace(/[^A-Za-z0-9]+/g, '-').slice(0, 30) || 'customer'}.ics`, content: b64(promIcs(rec)) };
+}
+
+function promWhenLabel(at, cfg) {
+  const tz = (cfg && cfg.tz) || 'America/Los_Angeles';
+  try {
+    return new Date(at).toLocaleString('en-US', {
+      timeZone: tz, weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit',
+    });
+  } catch { return new Date(at).toISOString().slice(0, 16).replace('T', ' '); }
+}
+
+// The "you just promised something" email. Same mail kit as the customer alerts,
+// so it reads like the rest of them: his own words loudest, then what happens
+// next, then the buttons.
+function promMadeEmail(rec, cfg) {
+  const when = promWhenLabel(rec.dueAt, cfg);
+  const base = publicBase();
+  const text =
+    `You told ${rec.name || rec.phone}:\n"${rec.quote}"\n\n` +
+    (rec.what ? `So you owe them: ${rec.what}\n\n` : '') +
+    `⏰ I'll remind you ${when}, and there's a calendar invite attached so it's in your calendar too.\n\n` +
+    (base ? `Open the conversation: ${base}/?c=${rec.phone}\n` : '') +
+    `Nothing was sent to them — this is just for you.`;
+  const B = [];
+  B.push(mailCard(
+    mailLabel(`You told ${rec.name || rec.phone}`, MAILC.amberInk) + mailShout(rec.quote),
+    { bg: MAILC.amberBg, border: '#fde68a', edge: MAILC.amber, pad: '18px' }));
+  let plan = mailLabel('So you owe them', MAILC.blue);
+  if (rec.what) plan += `<div style="font:600 17px/1.5 ${MAILF};color:${MAILC.ink};">${mailLines(rec.what)}</div>`;
+  plan += `<div style="font:400 15px/1.6 ${MAILF};color:${MAILC.mute};margin-top:10px;">⏰ I'll nudge you <b>${htmlEsc(when)}</b>${rec.vague ? ' (you didn\'t say when, so that\'s my default)' : ''}.</div>` +
+    `<div style="height:14px;line-height:14px;">&nbsp;</div>` +
+    mailBtn(promGcalUrl(rec), '📅  Add to Google Calendar', MAILC.blue) +
+    `<div style="font:400 13px/1.6 ${MAILF};color:${MAILC.mute};margin-top:10px;">Not on Google? The <b>.ics</b> attached to this email adds it to any calendar.</div>`;
+  B.push(mailCard(plan, { bg: MAILC.blueBg, border: '#bfdbfe', edge: MAILC.blue }));
+  if (base) B.push(mailCard(mailBtn(`${base}/?c=${rec.phone}`, 'Open the conversation', MAILC.ink) +
+    `<div style="font:400 13px/1.6 ${MAILF};color:${MAILC.mute};margin-top:12px;">Nothing was sent to ${htmlEsc(rec.name || rec.phone)} — this one is just for you.</div>`));
+  return { text, html: mailShell(rec.quote, B.join('')) };
+}
+
+// The nudge itself, when the promised time arrives.
+function promDueEmail(rec, cfg) {
+  const base = publicBase();
+  const ago = humanAgo(Date.now() - (rec.madeAt || Date.now()));
+  const text =
+    `You said this to ${rec.name || rec.phone} ${ago} ago:\n"${rec.quote}"\n\n` +
+    (rec.what ? `You owe them: ${rec.what}\n\n` : '') +
+    (base ? `Open the conversation and answer them: ${base}/?c=${rec.phone}\n` : '');
+  const B = [];
+  B.push(mailCard(
+    mailLabel(`You promised ${rec.name || rec.phone} — ${ago} ago`, MAILC.amberInk) + mailShout(rec.quote),
+    { bg: MAILC.amberBg, border: '#fde68a', edge: MAILC.amber, pad: '18px' }));
+  if (rec.what) {
+    B.push(mailCard(mailLabel('What you owe them', MAILC.blue) +
+      `<div style="font:600 17px/1.5 ${MAILF};color:${MAILC.ink};">${mailLines(rec.what)}</div>`,
+      { bg: MAILC.blueBg, border: '#bfdbfe', edge: MAILC.blue }));
+  }
+  if (base) B.push(mailCard(mailBtn(`${base}/?c=${rec.phone}`, 'Open the conversation', MAILC.ink)));
+  return { text, html: mailShell(rec.quote, B.join('')) };
+}
+
+// ---------------------------------------------------------------------------
+// Raising, keeping and clearing promises
+// ---------------------------------------------------------------------------
+function promBlank(phone) {
+  return {
+    id: genId(), phone, name: '', quote: '', what: '', dueAt: 0, vague: false,
+    madeAt: Date.now(), msgId: '', status: 'open', notified: false, notifiedAt: 0,
+    source: 'live', confidence: 0, closedAt: 0, closedBy: '',
+  };
+}
+
+// A promise he restates ("actually I'll call you tonight") should move the one
+// reminder, not stack a second one on the same conversation. Anything already
+// closed is left alone so re-opening is always his call.
+function promOpenFor(list, phone) {
+  return list.filter((p) => p.phone === phone && p.status === 'open')
+    .sort((a, b) => (b.madeAt || 0) - (a.madeAt || 0))[0] || null;
+}
+
+async function promRaise(thread, found, cfg, source, target) {
+  const list = await loadPromises();
+  const existing = promOpenFor(list, thread.phone);
+  // The same message coming back through a second path (a scan after the live
+  // hook already caught it) must never create a duplicate.
+  if (existing && target && existing.msgId && existing.msgId === (target.id || '')) return null;
+  const rec = existing || promBlank(thread.phone);
+  rec.name = thread.name || rec.name;
+  rec.quote = found.quote;
+  rec.what = found.what;
+  rec.dueAt = found.dueAt;
+  rec.vague = !!found.vague;
+  rec.confidence = found.confidence;
+  rec.madeAt = (target && target.ts) || Date.now();
+  rec.msgId = (target && target.id) || '';
+  rec.source = source;
+  rec.status = 'open';
+  rec.notified = false;
+  rec.notifiedAt = 0;
+  if (!existing) list.push(rec);
+  await savePromises(list);
+  return rec;
+}
+
+// Runs after a text HE sent lands. Best-effort throughout: a promise is a bonus,
+// and it must never break sending a message.
+async function maybePromise(phone) {
+  try {
+    if (envFlag('PROMISE_DISABLED')) return null;    // no-KV-write kill switch
+    if (!ENV.GEMINI_API_KEY) return null;
+    const cfg = await loadConfig();
+    const pc = promCfg(cfg);
+    if (!pc.enabled) return null;
+    const thread = await loadThread(phone);
+    if (isPracticePhone(thread.phone)) return null;  // the fake customer promises nothing
+    const msgs = (thread.messages || []).filter((m) => m.body);
+    const target = msgs.filter((m) => m.dir === 'out').slice(-1)[0];
+    if (!target || !promLooksLikePromise(target.body)) return null;
+    const list = await loadPromises();
+    const open = promOpenFor(list, thread.phone);
+    if (open && open.msgId && open.msgId === (target.id || '')) return null;   // already tracked
+    const found = await promAskAi(thread, msgs.slice(-6), target, cfg);
+    if (!found) return null;
+    const rec = await promRaise(thread, found, cfg, 'live', target);
+    if (rec && pc.emailEach) await promNotifyMade(rec, cfg);
+    return rec;
+  } catch { return null; }
+}
+
+// The email + calendar invite that goes out the moment a promise is made.
+async function promNotifyMade(rec, cfg) {
+  const mail = promMadeEmail(rec, cfg);
+  const when = promWhenLabel(rec.dueAt, cfg);
+  await notifyMikey(`📌 You told ${rec.name || rec.phone} you'd follow up — ${when}`, {
+    text: mail.text,
+    html: mail.html,
+    attachments: [promIcsAttachment(rec)],
+    // The SMS fallback can't carry an attachment, so it says so rather than
+    // pointing at a calendar invite that isn't there.
+    sms: `You told ${rec.name || rec.phone}: "${rec.quote}"\n\nI'll remind you ${when}.`,
+  }).catch(() => {});
+}
+
+// Cron step. One KV read; one write only on a tick where something actually
+// changed. Two things happen here: promises that came due get their nudge, and
+// promises he has visibly already kept get closed without ever bothering him.
+async function dispatchDuePromises(now = Date.now()) {
+  const list = await loadPromises();
+  if (!list.some((p) => p.status === 'open')) return 0;
+  const index = await loadIndex();
+  const cfg = await loadConfig();
+  let dirty = false, fired = 0;
+  for (const p of list) {
+    if (p.status !== 'open') continue;
+    // Already kept it? He texted them again more than ten minutes after the
+    // promise — that gap is what separates "came back to them" from the rest of
+    // the same burst of typing. Closed silently: a nudge for something already
+    // done is exactly the noise that makes people stop reading reminders.
+    const e = index.find((x) => x.phone === p.phone);
+    if (e && e.lastDir === 'out' && (e.lastTs || 0) > (p.madeAt || 0) + 600000) {
+      p.status = 'done'; p.closedAt = now; p.closedBy = 'texted-again'; dirty = true;
+      continue;
+    }
+    if (p.notified || !(p.dueAt > 0) || p.dueAt > now) continue;
+    p.notified = true; p.notifiedAt = now; dirty = true; fired++;
+    const mail = promDueEmail(p, cfg);
+    notifyMikey(`⏰ You said you'd get back to ${p.name || p.phone}`, {
+      text: mail.text, html: mail.html,
+      sms: `You told ${p.name || p.phone} you'd follow up: "${p.quote}"${p.what ? '\n\n' + p.what : ''}`,
+    }).catch(() => {});
+    pushNotify().catch(() => {});
+  }
+  if (dirty) await savePromises(list);
+  return fired;
+}
+
+// ---------------------------------------------------------------------------
+// The catch-up scan — "did I promise anyone anything and forget?"
+// ---------------------------------------------------------------------------
+// The live hook only sees messages sent from now on, and promises made before
+// this feature existed are exactly the ones most likely to have been dropped. So
+// this reads back over the last few messages of each open conversation and finds
+// them. Deliberately bounded: it reads at most `depth` messages per conversation
+// (3 by default — the last exchange), makes at most one AI call per conversation,
+// and stops after `max` of them, so a scan is a known small cost, not a surprise.
+async function promScan(opts = {}) {
+  const cfg = await loadConfig();
+  const pc = promCfg(cfg);
+  const depth = Math.max(1, Math.min(10, Math.round(+opts.depth || pc.scanDepth)));
+  const maxAi = Math.max(1, Math.min(40, Math.round(+opts.max || 12)));
+  const out = { scanned: 0, looked: 0, found: [], asked: 0, depth, limited: false };
+  if (!ENV.GEMINI_API_KEY) { out.error = 'ai_not_configured'; return out; }
+  const index = (await loadIndex())
+    .filter((e) => !e.archived && e.phone && !isPracticePhone(e.phone))
+    .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+  const list = await loadPromises();
+  const now = Date.now();
+  const raised = [];
+  for (const e of index) {
+    if (out.asked >= maxAi) { out.limited = true; break; }
+    if (promOpenFor(list, e.phone)) continue;             // already tracked
+    out.scanned++;
+    const thread = await loadThread(e.phone);
+    const msgs = (thread.messages || []).filter((m) => m.body);
+    const recent = msgs.slice(-depth);
+    // Newest first: the most recent promise is the one that still stands.
+    const candidates = recent.filter((m) => m.dir === 'out' && promLooksLikePromise(m.body)).reverse();
+    if (!candidates.length) continue;
+    const target = candidates[0];
+    // Already kept? He wrote to them again well after saying it.
+    const later = msgs.filter((m) => m.dir === 'out' && (m.ts || 0) > (target.ts || 0) + 600000);
+    if (later.length) continue;
+    out.looked++;
+    out.asked++;
+    const found = await promAskAi(thread, msgs.slice(-Math.max(depth, 6)), target, cfg).catch(() => null);
+    if (!found) continue;
+    // A promise dug out of history is usually already overdue; that is the point,
+    // so a past due time is pulled to the next working hour instead of dropped.
+    if (found.dueAt < now) found.dueAt = promWorkHours(now + 60000, cfg);
+    const rec = await promRaise(thread, found, cfg, 'scan', target);
+    if (rec) { raised.push(rec); out.found.push(rec); list.push(rec); }
+  }
+  if (raised.length) await promNotifyScan(raised, cfg);
+  return out;
+}
+
+// One email for the whole scan, with a calendar invite attached for each promise
+// it turned up — a scan that found four things must not mean four emails.
+async function promNotifyScan(recs, cfg) {
+  const lines = recs.map((r, i) =>
+    `${i + 1}. ${r.name || r.phone} — ${promWhenLabel(r.dueAt, cfg)}\n   You said: "${r.quote}"${r.what ? `\n   You owe them: ${r.what}` : ''}`);
+  const base = publicBase();
+  const text =
+    `I read back through your recent messages and found ${recs.length} promise${recs.length === 1 ? '' : 's'} you made:\n\n` +
+    lines.join('\n\n') + '\n\n' +
+    `Each one has a calendar invite attached, and I'll nudge you at the time.\n` +
+    (base ? `\nOpen the dashboard: ${base}\n` : '');
+  const B = [];
+  B.push(mailCard(
+    mailLabel('Found in your recent messages', MAILC.amberInk) +
+    `<div style="font-family:${MAILF};font-size:22px;line-height:1.35;font-weight:800;color:${MAILC.ink};">${recs.length} promise${recs.length === 1 ? '' : 's'} you made and haven't come back to</div>`,
+    { bg: MAILC.amberBg, border: '#fde68a', edge: MAILC.amber, pad: '18px' }));
+  for (const r of recs) {
+    B.push(mailCard(
+      mailLabel(`${r.name || r.phone} · ${promWhenLabel(r.dueAt, cfg)}`, MAILC.blue) +
+      mailShout(r.quote) +
+      (r.what ? `<div style="font:600 15px/1.5 ${MAILF};color:${MAILC.mute};margin-top:10px;">You owe them: ${htmlEsc(r.what)}</div>` : '') +
+      `<div style="height:14px;line-height:14px;">&nbsp;</div>` +
+      mailBtn(promGcalUrl(r), '📅  Add to Google Calendar', MAILC.blue) +
+      (base ? `<div style="height:8px;line-height:8px;">&nbsp;</div>` + mailBtn(`${base}/?c=${r.phone}`, 'Open the conversation', MAILC.card, { fg: MAILC.ink, border: MAILC.line }) : ''),
+      { bg: MAILC.blueBg, border: '#bfdbfe', edge: MAILC.blue }));
+  }
+  await notifyMikey(`📌 ${recs.length} promise${recs.length === 1 ? '' : 's'} you haven't kept yet`, {
+    text, html: mailShell(text, B.join('')),
+    attachments: recs.slice(0, 8).map(promIcsAttachment),
+    sms: `I found ${recs.length} promise${recs.length === 1 ? '' : 's'} you made and haven't come back to: ` +
+      recs.map((r) => r.name || r.phone).join(', ') + '. Open the dashboard to see them.',
+  }).catch(() => {});
+}
+
+// ---------------------------------------------------------------------------
+// API
+// ---------------------------------------------------------------------------
+async function apiPromises() {
+  const list = await loadPromises();
+  const cfg = await loadConfig();
+  const now = Date.now();
+  const promises = list.map((p) => Object.assign({}, p, {
+    whenLabel: promWhenLabel(p.dueAt, cfg),
+    due: p.status === 'open' && p.dueAt <= now,
+    gcal: promGcalUrl(p),
+  }));
+  return json({ ok: true, promises, config: promCfg(cfg) });
+}
+
+async function apiPromiseAction(request) {
+  const d = await readJson(request);
+  const action = String(d.action || '');
+  const list = await loadPromises();
+  const rec = list.filter((p) => p.id === d.id)[0];
+  if (!rec) return json({ ok: false, error: 'not_found' }, 404);
+  const now = Date.now();
+  if (action === 'done' || action === 'dismiss') {
+    rec.status = action === 'done' ? 'done' : 'dismissed';
+    rec.closedAt = now;
+    rec.closedBy = 'you';
+  } else if (action === 'reopen') {
+    rec.status = 'open'; rec.closedAt = 0; rec.closedBy = ''; rec.notified = false;
+  } else if (action === 'snooze') {
+    const hours = Math.max(1, Math.min(720, Math.round(+d.hours || 24)));
+    rec.dueAt = promWorkHours(now + hours * 3600000, await loadConfig());
+    rec.notified = false; rec.status = 'open';
+  } else if (action === 'at') {
+    const at = Number(d.at);
+    if (!at || isNaN(at)) return json({ ok: false, error: 'bad_time' }, 422);
+    rec.dueAt = at; rec.notified = false; rec.status = 'open';
+  } else {
+    return json({ ok: false, error: 'bad_action' }, 422);
+  }
+  await savePromises(list);
+  return apiPromises();
+}
+
+async function apiPromiseScan(request) {
+  const d = await readJson(request);
+  const out = await promScan(d || {});
+  const listed = await apiPromises();
+  const body = await listed.json();
+  return json(Object.assign({ ok: !out.error, error: out.error }, body, {
+    scan: { scanned: out.scanned, looked: out.looked, asked: out.asked, found: out.found.length, limited: out.limited, depth: out.depth },
+  }));
+}
+
+// The .ics for one promise, so the dashboard can offer the same one-tap
+// "add to my calendar" the email does.
+async function apiPromiseIcs(url) {
+  const id = String(url.searchParams.get('id') || '');
+  const rec = (await loadPromises()).filter((p) => p.id === id)[0];
+  if (!rec) return json({ ok: false, error: 'not_found' }, 404);
+  return new Response(promIcs(rec), {
+    headers: {
+      'Content-Type': 'text/calendar; charset=utf-8',
+      'Content-Disposition': `attachment; filename="follow-up-${(rec.name || rec.phone).replace(/[^A-Za-z0-9]+/g, '-').slice(0, 30) || 'customer'}.ics"`,
+      'Cache-Control': 'no-store',
+    },
+  });
 }

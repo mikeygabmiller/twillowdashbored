@@ -36,6 +36,32 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   verdict is cached per message (one small AI call, at most, per customer text), and
   when in doubt it errs toward reminding you. The reason shows on the conversation's
   follow-up panel ("No reply needed — …").
+- **Kept promises — "I'll get back to you Monday":** the easiest money in this
+  business to lose is a customer you personally told you'd follow up with, and
+  then didn't. So every text **you** send is read for a promise to come back to
+  someone ("I'll check and let you know", "let me price it out and text you
+  tonight"). When one is found you get an **email with a real calendar invite
+  attached** (.ics, plus a one-tap *Add to Google Calendar* button), the promise
+  shows up on Home under **Promises you made**, and you get a **nudge at the time
+  you promised** — pulled into working hours, so nothing buzzes at 3am. If you
+  named a day it uses that day; if you just said "I'll let you know", it gives it
+  24 hours (configurable). **Nothing is ever texted to the customer** — a promise
+  only ever produces a reminder for you. One tap each to mark it **Done**, push it
+  to **Later**, or say **Not a promise**; and it closes itself silently if you
+  text them again more than ten minutes after making it, so you're never nudged
+  about something you already did.
+  - **Scan what you've already sent:** *Home → Promises you made → Scan my recent
+    messages* (also in the menu) reads back over the **last 3 messages** of every
+    open conversation — the depth is yours to set, 1–10 — and finds the promises
+    you made before this existed, which are exactly the ones most likely already
+    forgotten. One email for the whole scan with a calendar invite attached for
+    each. Deliberately bounded: one AI call per conversation at most, and it stops
+    after 12, so a scan is a known small cost rather than a surprise.
+  - Costs almost nothing to run: a free regex kills every message with no
+    promise-shaped words in it before any AI call, and the whole feature lives in
+    one KV doc, so the minute cron checks every promise with a single read.
+    Toggles (and the "if I didn't say when" gap) live in the menu; `PROMISE_DISABLED=1`
+    is the no-KV-write kill switch.
 - **Appointment auto-detect:** you never have to write a job down. Every message
   is read as it arrives; when you and a customer land on a day and time in a
   normal conversation, it shows up on the **Jobs** board as a **one-tap card**
