@@ -90,6 +90,7 @@ ${canonical ? `<meta property="og:url" content="${escapeHtml(canonical)}">` : ''
   .called .label{font-family:${SANS};font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--accent);font-weight:700}
   .called p{font-size:16.5px;line-height:1.6;margin:4px 0 0}
   /* Three questions read as one section, separated by space not by rules. */
+  .closer{color:var(--accent);font-style:italic;font-size:17px;max-width:38em}
   .qa{max-width:38em}
   .qa + .qa{margin-top:28px}
   blockquote{margin:0;border-left:3px solid var(--accent);padding-left:18px;font-style:italic}
@@ -204,7 +205,8 @@ export function renderIssuePage(issue, { cfg, index = [] }) {
         : `<p>${escapeHtml(v.ref)}</p>`}`);
   }
 
-  if (issue.reflection) parts.push(`<h2>Reflection</h2>${paragraphs(issue.reflection)}`);
+  if (issue.reflection)
+    parts.push(`<h2>Reflection</h2>${paragraphs(issue.reflection)}${issue.reflectionCloser ? `<p class=\"closer\">${escapeHtml(issue.reflectionCloser)}</p>` : ''}`);
 
   if (issue.saintStory) {
     parts.push(`<h2>${escapeHtml(issue.saintStory.name || 'Saint of the day')}</h2>

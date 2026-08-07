@@ -148,7 +148,15 @@ function html(issue, { cfg, t, url, unsub }) {
     );
   }
 
-  if (issue.reflection) rows.push(section(t, 'Reflection', para(t, issue.reflection, { last: true })));
+  if (issue.reflection) {
+    // The closing line is a prayer, not a summary, so it is set apart from the
+    // prose rather than reading as its last sentence.
+    const closer = issue.reflectionCloser
+      ? `<div style="height:6px;line-height:6px;">&nbsp;</div>
+         <div style="font-family:${SERIF};font-size:17px;line-height:1.55;color:${t.accent};font-style:italic;">${escapeHtml(issue.reflectionCloser)}</div>`
+      : '';
+    rows.push(section(t, 'Reflection', `${para(t, issue.reflection, { last: true })}${closer}`));
+  }
 
   if (issue.saintStory) {
     rows.push(

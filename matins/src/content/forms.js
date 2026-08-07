@@ -67,6 +67,23 @@ export const FORMS = [
   },
 ];
 
+// A common devotional shape, and a good one: go at the same passage from a few
+// angles rather than making one point and decorating it. Each angle has to be
+// a different observation, not the same thought reworded — that is the whole
+// discipline of the form and the only thing that makes it worth using.
+FORMS.push({
+  id: 'three-angles',
+  name: 'Three angles',
+  tags: ['feast', 'daily', 'ordinary time'],
+  brief:
+    'Take one thing about today and look at it three times, from three genuinely different positions — who is present and why, what it cost somebody, what it is quietly saying about God. One sentence or two per angle. Do not announce that you are doing this, do not number them, and do not resolve them into a single tidy point at the end.',
+  exemplar: `Only three of them go up the mountain, and they are the same three he will want beside him later, on a much worse night. What they see is not a different man. It is the one they have been following for months with the covering off for a few minutes.
+
+The two standing with him had both met God on a mountain themselves, and neither had seen this. Everything they spent their lives pointing toward is in front of them now with a face.
+
+Then the three of them go down on the ground, and it is not the fear of men expecting punishment. It is what happens to anybody who ends up standing in front of what does not begin or end. He tells them to get up and stop being afraid. He does not tell them to stop being amazed.`,
+});
+
 export const FORM_BY_ID = Object.fromEntries(FORMS.map((f) => [f.id, f]));
 
 // The saint block is narrative, so it gets an exemplar of its own rather than a

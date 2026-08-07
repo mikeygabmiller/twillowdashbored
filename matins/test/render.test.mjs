@@ -17,6 +17,7 @@ import { FORMS } from '../src/content/forms.js';
 import { DRAFTS } from '../src/config.js';
 import { makeStore } from '../src/lib/store.js';
 import { pickForm, recentOpenings, rememberOpening, openingOf } from '../src/lib/rotation.js';
+import { REFLECTIONS, reflectionFor, passageKey } from '../src/content/reflections.js';
 
 const cfg = config({ LLM_PROVIDER: 'stub', SITE_URL: 'https://example.test/matins' });
 
@@ -284,7 +285,8 @@ test('every form carries an exemplar that obeys the house rules', () => {
     assert.ok(!/["“]/.test(f.exemplar), `${f.id}'s exemplar quotes something`);
     assert.ok(!/\b\d+:\d+\b/.test(f.exemplar), `${f.id}'s exemplar cites a verse`);
     const words = f.exemplar.split(/\s+/).length;
-    assert.ok(words >= 40 && words <= 130, `${f.id}'s exemplar is ${words} words`);
+    // A three-angle exemplar is legitimately longer than a single-point one.
+    assert.ok(words >= 40 && words <= 165, `${f.id}'s exemplar is ${words} words`);
   }
 });
 
@@ -308,4 +310,57 @@ test('a binding name with a trailing space still works, and is reported', async 
   // A correctly named binding always beats a malformed twin.
   assert.equal(cfgFn({ ADMIN_TOKEN: 'right', 'ADMIN_TOKEN ': 'wrong' }).adminToken, 'right');
   assert.deepEqual(cfgFn({ ADMIN_TOKEN: 'right' }).bindingNameWarnings, []);
+});
+
+// --- the hand-written reflection bank ---------------------------------------
+
+test('a hand-written reflection is matched by passage, not by date', () => {
+  // The lectionary writes the same reading differently from year to year.
+  assert.equal(reflectionFor('Matthew 15:21-28')?.id, 'canaanite-woman');
+  assert.equal(reflectionFor('Matthew 15:21–28')?.id, 'canaanite-woman', 'an en dash is the same passage');
+  assert.equal(reflectionFor('Matthew 15:21-31')?.id, 'canaanite-woman', 'a longer cut is the same passage');
+  assert.equal(reflectionFor('Matthew 16:21-28'), null, 'a different chapter is not');
+  assert.equal(reflectionFor(null), null);
+});
+
+test('every reflection in the bank is complete and in the house voice', () => {
+  assert.equal(new Set(REFLECTIONS.map((r) => r.id)).size, REFLECTIONS.length, 'ids are unique');
+  for (const r of REFLECTIONS) {
+    assert.ok(r.id && r.gospel && r.body && r.turn && r.closer, `${r.id} is missing a field`);
+    assert.ok(passageKey(r.gospel), `${r.id} has an unparseable gospel reference`);
+    // Nothing generated these, so they never see the safety pass. The tells
+    // below are the only automatic check they get.
+    assert.ok(!/!/.test(r.body + r.turn + r.closer), `${r.id} has an exclamation mark`);
+    assert.ok(!/\bI\b/.test(r.body), `${r.id} speaks in the first person`);
+    assert.ok(!/\blet us\b/i.test(r.body), `${r.id} says "let us"`);
+    assert.ok(!/["“]/.test(r.body), `${r.id} quotes something`);
+    const words = r.body.split(/\s+/).length;
+    assert.ok(words >= 80 && words <= 260, `${r.id} is ${words} words`);
+    assert.ok(r.body.includes('\n\n'), `${r.id} should be more than one paragraph`);
+  }
+});
+
+test('a bank reflection ships without going through the safety pass', async () => {
+  // 2026-08-05 is Matthew 15:21-28 in the fixtures — the Canaanite woman.
+  const { buildIssue } = await import('../src/lib/issue.js');
+  const { readOnly } = await import('../src/lib/store.js');
+  const { fixtureFetch } = await import('./fixture-fetch.mjs');
+  const issue = await buildIssue({
+    date: '2026-08-05',
+    cfg: config({ LLM_PROVIDER: 'stub', SITE_URL: 'https://example.test' }),
+    store: readOnly(makeStore(null)),
+    dryRun: true,
+    fetchImpl: fixtureFetch(),
+  });
+  assert.equal(issue.reflectionSource, 'bank');
+  assert.ok(issue.reflection.includes('She asks, and gets silence.'));
+  assert.equal(issue.reflectionCloser, 'Lord, teach me to keep asking.');
+  const verdict = issue.safetyReport.blocks.find((b) => b.block === 'reflection');
+  assert.equal(verdict.pass, true);
+  assert.match(verdict.reason, /hand-written/);
+  // And it reaches both surfaces, closing line included.
+  const cfg2 = config({ LLM_PROVIDER: 'stub', SITE_URL: 'https://example.test' });
+  for (const surface of [renderEmail(issue, { cfg: cfg2 }).html, renderIssuePage(issue, { cfg: cfg2 })]) {
+    assert.ok(surface.includes('Lord, teach me to keep asking.'));
+  }
 });
