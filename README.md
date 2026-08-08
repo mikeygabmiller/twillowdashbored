@@ -365,6 +365,34 @@ everything using the key, also set a daily cap in **Google Cloud Console → API
 ## Website quote form
 Point the form's submit URL to: `https://texting.mikeysdetailingsnohomish.workers.dev/submit`
 
+## Quote history (Analytics → Quotes)
+Every QQC submission that reaches `/submit` (or `/qqc-text`) is now also appended
+to a **quote log**, so you can see what came in over time instead of digging
+through Web3Forms emails. Open **Analytics → Quotes**: KPI tiles (quotes sent,
+total quoted, average quote, how many booked a time), a quotes-per-month bar
+chart carrying each month's dollar total, and the full list — over a 3 / 6 /
+12-month window, plus **Export CSV**.
+
+Why it's a separate log: a quote used to be recorded only in the customer's
+thread notes, and only when those notes were still empty — so a repeat
+customer's second quote left no trace anywhere but email. Storage mirrors the
+money tracker (`quotes:m:YYYY-MM`, one doc per month), so a new quote costs a
+single KV write and a year of history is 12 small reads.
+
+**One-time backfill.** Quotes from before this log exist only as Web3Forms
+emails. `docs/qqc-backfill-2026.json` reconstructs 2026-05-08 → 2026-08-08 (25
+real quotes, $6,954 — tests and double-fires already stripped) from those
+subject lines. Import it once, signed in to the dashboard:
+
+```
+curl -X POST https://texting.mikeysdetailingsnohomish.workers.dev/api/quotes/import \
+     -H 'Content-Type: application/json' --data @docs/qqc-backfill-2026.json
+```
+
+Re-running it is safe — the same phone + total inside 10 minutes is skipped as a
+duplicate. Backfilled rows carry the date, name and amount only; vehicle,
+condition and services lived in the email body and are left blank.
+
 ## Spam-call screening
 Inbound calls are gated before they ever forward to your phone, so robocall
 auto-dialers stop flooding your voicemail:
@@ -388,6 +416,7 @@ Dashboard API: `/api/health` `/api/threads` `/api/thread` `/api/send` `/api/meta
 `/api/schedule` `/api/unschedule` `/api/call` `/api/read` `/api/insights`
 `/api/alert-test` `/api/templates` `/api/migrate`
 `/api/followups` `/api/followup` `/api/config` `/api/block`
+Quotes: `/api/quotes` `/api/quotes/export` `/api/quotes/import`
 Website analytics: `/api/analytics` (pixel) `/api/webstats` `/api/webstats/status`
 `/api/webstats/connect` `/api/webstats/disconnect` `/api/webstats/ai`
 AI (Gemini): `/api/ai/summary` `/api/ai/draft` `/api/ai/triage` `/api/ai/agent`
