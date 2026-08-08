@@ -2703,7 +2703,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-07·promises";
+  var APP_BUILD="2026-08-08·autoreply-alert";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4943,6 +4943,8 @@
       '<div class="fu-row"><span class="lbl2">Missed-call text-back <span style="color:var(--muted2);font-weight:400">· never lose a missed call</span></span><span class="sw'+(c.missedCallTextback!==false?" on":"")+'" id="cfgMct"></span></div>'+
       '<div class="fu-col"><input type="text" id="cfgMctText" placeholder="Sorry I missed your call! Text me here and I\'ll get right back to you." value="'+esc(c.missedCallText||"")+'"></div>'+
       '<div class="hint">When a call goes unanswered, the caller instantly gets a friendly text so the lead turns into a conversation you can answer from anywhere. Leave the message blank to use the default.</div>'+
+      '<div class="fu-row"><span class="lbl2">Tell me when the auto-reply sends <span style="color:var(--muted2);font-weight:400">· quote form</span></span><span class="sw'+(c.autoReplyAlert!==false?" on":"")+'" id="cfgArAlert"></span></div>'+
+      '<div class="hint">A quote from your site alerts you right away, but the customer\'s reply is held about 3½ minutes so it reads like you texting back, not a bot. This texts you the moment it actually reaches them — with their name and number — so you know they\'ve heard from you and can take the conversation from there. If it fails to send, you get told that instead.</div>'+
       '<div class="fu-row"><span class="lbl2">AI keyboard <span style="color:var(--muted2);font-weight:400">· suggests your next word</span></span><span class="sw'+(c.predictive!==false?" on":"")+'" id="cfgPredict"></span></div>'+
       '<div class="fu-col"><button id="cfgPredictTrain" class="btn" style="white-space:nowrap;align-self:flex-start">'+ic("sparkles",14)+' Relearn how I text</button></div>'+
       '<div class="hint">'+(PK.style&&PK.style.n?('Learned from <b>'+PK.style.n+'</b> of your texts. '):"")+
@@ -4986,6 +4988,7 @@
     el("cfgScreen").onclick=function(){saveConfig({callScreening:!(c.callScreening!==false)})};
     el("cfgMct").onclick=function(){saveConfig({missedCallTextback:!(c.missedCallTextback!==false)})};
     el("cfgMctText").onchange=function(){saveConfig({missedCallText:el("cfgMctText").value})};
+    el("cfgArAlert").onclick=function(){saveConfig({autoReplyAlert:!(c.autoReplyAlert!==false)})};
     el("cfgPredict").onclick=function(){setPredictive(!predictOn())};
     el("cfgPredictTrain").onclick=function(){
       var b=el("cfgPredictTrain");b.disabled=true;b.innerHTML='<span class="spin"></span> Learning\u2026';

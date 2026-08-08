@@ -74,7 +74,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-07·promises';
+const BUILD = '2026-08-08·autoreply-alert';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -392,9 +392,11 @@ async function handleSubmit(request) {
   // Queue the first reach-out (if they consented) instead of sending it now. The
   // scheduled-send cron delivers it ~3.5 min later and records it in the thread;
   // until then it shows as "scheduled to send" so Mikey can cancel and reply himself.
+  // `alertOnSend` makes the cron text him the moment it actually lands, so the 3.5
+  // minutes of silence after the lead alert isn't a mystery — see dispatchDueScheduled.
   let clientSms = 'skipped';
   if (consent) {
-    thread.scheduled.push({ id: genId(), body: clientMsg, sendAt: Date.now() + FIRST_REACHOUT_DELAY_MS });
+    thread.scheduled.push({ id: genId(), body: clientMsg, sendAt: Date.now() + FIRST_REACHOUT_DELAY_MS, alertOnSend: true });
     thread.scheduled.sort((a, b) => a.sendAt - b.sendAt);
     clientSms = 'scheduled';
   }
@@ -414,8 +416,9 @@ async function handleSubmit(request) {
 //   2. ~3.5 min later, text the customer the first reach-out — but only when they
 //      consented (Make's filter: smsConsent != "false") and the phone is a valid +1.
 // Improvements over Make: the delayed text goes through the reserve-then-send cron
-// (at-most-once, opt-out aware, delivery-tracked), and the lead is recorded in the
-// dashboard. Accepts JSON or form-encoded bodies. No new secrets needed.
+// (at-most-once, opt-out aware, delivery-tracked), the lead is recorded in the
+// dashboard, and Mikey gets a second text confirming the reach-out actually landed
+// (`alertOnSend`). Accepts JSON or form-encoded bodies. No new secrets needed.
 async function handleQqcText(request) {
   let body = {};
   try {
@@ -468,7 +471,7 @@ async function handleQqcText(request) {
   if (detail && !thread.notes) thread.notes = `QQC quote (${new Date().toLocaleDateString()}):\n${detail}`;
   let clientSms = 'skipped';
   if (consent) {
-    thread.scheduled.push({ id: genId(), body: clientMsg, sendAt: Date.now() + 210000 }); // 3.5 min, like Make's Sleep
+    thread.scheduled.push({ id: genId(), body: clientMsg, sendAt: Date.now() + 210000, alertOnSend: true }); // 3.5 min, like Make's Sleep
     thread.scheduled.sort((a, b) => a.sendAt - b.sendAt);
     clientSms = 'scheduled';
   }
@@ -580,9 +583,11 @@ const ASSIST_HELP =
   '• "draft: ..." to write it but hold it in the dashboard.\n' +
   '• "who" = who\'s waiting. "cancel" = pull back the last one.';
 
-// Text Mikey back on his cell. Always SMS (not notifyMikey, which prefers email)
-// — he's mid-text-conversation with the dashboard, so the answer has to land in
-// the same place he's typing.
+// Text Mikey on his cell. Always SMS (not notifyMikey, which prefers email) —
+// used for the two things that have to arrive as a text or not at all: an answer
+// in the assist loop, where he's mid-text-conversation with the dashboard and the
+// reply has to land where he's typing; and the auto-reply confirmation, which he
+// asked for as a text precisely so it buzzes his phone instead of an inbox.
 async function ownerSay(msg) {
   try { await sendSms(ENV.MIKEY_PHONE, msg, { skipOptOut: true }); } catch { /* best effort */ }
 }
@@ -5273,6 +5278,7 @@ async function apiSaveConfig(request) {
   if (typeof data.callScreening === 'boolean') next.callScreening = data.callScreening;
   if (typeof data.missedCallTextback === 'boolean') next.missedCallTextback = data.missedCallTextback;
   if (typeof data.missedCallText === 'string') next.missedCallText = data.missedCallText.slice(0, 320);
+  if (typeof data.autoReplyAlert === 'boolean') next.autoReplyAlert = data.autoReplyAlert;
   if (typeof data.predictive === 'boolean') next.predictive = data.predictive;
   if (typeof data.assistSms === 'boolean') next.assistSms = data.assistSms;
   if (data.assistDelaySec != null && !isNaN(+data.assistDelaySec)) next.assistDelaySec = Math.max(0, Math.min(600, Math.round(+data.assistDelaySec)));
@@ -6143,6 +6149,11 @@ function defaultConfig() {
     emailToken: '',          // shared secret for the /email-in ingest (generated in-app)
     missedCallTextback: true,// auto-text a caller we missed so the lead becomes a text thread
     missedCallText: '',      // custom missed-call text (blank = the friendly default)
+    autoReplyAlert: true,    // text Mikey the moment the quote-form auto-reply actually
+                             // reaches the customer. The "NEW QUOTE" alert fires on
+                             // submission; this one fires ~3.5 min later when the text
+                             // really goes out, so he knows the customer has heard from
+                             // him and can take over the conversation.
     predictive: true,        // predictive keyboard: next-word chips + inline AI completion
                              // above the compose box, learned from the texts he's sent
     assistSms: true,         // text your own business number the bare facts ("375, thursday
@@ -7967,16 +7978,30 @@ async function setOptOut(phone, on) {
 // ===========================================================================
 // Scheduled-send dispatch (cron every minute — see wrangler.toml [triggers])
 // ===========================================================================
+// Who a confirmation text is about. The number rides along with the name because
+// the whole point is that he can act on it from the lock screen — tap to call, or
+// open the thread — without going and looking the customer up first.
+function threadWho(thread) {
+  const name = (thread && thread.name) ? String(thread.name).trim() : '';
+  const phone = (thread && thread.phone) || '';
+  return name ? `${name} (${phone})` : (phone || 'a customer');
+}
+
 async function dispatchDueScheduled(now = Date.now()) {
   const index = await loadIndex();
   let sent = 0;
   const learn = []; // his own queued texts that went out — one corpus write at the end
+  // Items queued with alertOnSend (the quote-form auto-reply) earn Mikey a text the
+  // moment they actually reach the customer. Read the switch once per tick rather
+  // than per item — most ticks send nothing at all.
+  const alertOn = (await loadConfig()).autoReplyAlert !== false;
   for (const entry of index) {
     if (!entry.scheduledCount) continue;
     const thread = await loadThread(entry.phone);
     const due = (thread.scheduled || []).filter((s) => s.sendAt <= now);
     if (!due.length) continue;
     let mine = false;   // did any of this thread's due items carry his own words?
+    const tell = [];    // confirmations owed to Mikey once this thread is saved
     // Reserve the due items FIRST — remove them and persist BEFORE sending. KV is
     // eventually consistent and the cron runs every minute, so if we sent first and
     // saved after, an overlapping/next run could read the stale queue and text the
@@ -7996,16 +8021,23 @@ async function dispatchDueScheduled(now = Date.now()) {
         if (s.src === 'manual') m.src = 'manual';
         thread.messages.push(m);
         if (voiceUsable(m)) { learn.push(s.body); mine = true; }
+        if (s.alertOnSend && alertOn) tell.push(`✅ Auto-reply sent — ${threadWho(thread)}. The quote text from your site just went out to them.`);
         sent++;
       } catch (err) {
         // Left unmarked on purpose: a text that never reached the customer stays out
         // of the voice corpus, so a rebuild can't mine a failed send.
         thread.messages.push({ id: genId(), dir: 'out', body: s.body, ts: Date.now(), kind, error: String(err.message || err) });
-        notifyMikey('⚠️ Scheduled text failed', `A scheduled message to ${thread.name || thread.phone} did not send: ${String(err.message || err)}`).catch(() => {});
+        // A failed auto-reply is the one he most needs in the same place as the
+        // success — silence would otherwise read as "it went out fine".
+        if (s.alertOnSend && alertOn) tell.push(`⚠️ Auto-reply did NOT send — ${threadWho(thread)}. ${String(err.message || err)}. They haven't heard from you — reach out yourself.`);
+        else notifyMikey('⚠️ Scheduled text failed', `A scheduled message to ${thread.name || thread.phone} did not send: ${String(err.message || err)}`).catch(() => {});
       }
     }
     await saveThread(thread);
     await updateIndexEntry(thread);
+    // After the save, so a Twilio hiccup on the confirmation can't cost us the
+    // record of a customer text that already went out.
+    for (const msg of tell) await ownerSay(msg);
     // A queued text is still him talking — an assist reply he approved by email,
     // or one he wrote and held for later — so it gets read for a promise too.
     // Templated booking reminders are excluded by the same voiceUsable() test
