@@ -172,8 +172,12 @@ texting Mikey — costs money).
 
 `config` (KV) holds the non-secret settings/brain: `followupsEnabled, autopilot, reviewUrl,
 rebookDays, quietStart/End, tz, callScreening, missedCallTextback, missedCallText,
-blockedNumbers[], optedOut[], emailToken, teamMode, team[], playbook{about,services,area,
-booking,tone,faqs,rules}`. The **playbook** grounds every AI output.
+autoReplyAlert, blockedNumbers[], optedOut[], emailToken, teamMode, team[],
+playbook{about,services,area,booking,tone,faqs,rules}`. The **playbook** grounds every
+AI output. `autoReplyAlert` (default on) texts Mikey when the quote-form auto-reply
+actually reaches the customer ~3.5 min after they submit — see `dispatchDueScheduled`,
+which acts on the `alertOnSend` flag both `/submit` and `/qqc-text` put on the queued
+reach-out.
 
 ---
 
