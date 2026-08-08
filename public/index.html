@@ -1291,6 +1291,34 @@
   .gr-nav button{flex:1 0 auto;min-width:72px;background:none;border:none;color:var(--muted2);font-size:10.5px;font-weight:700;padding:9px 8px 11px;display:flex;flex-direction:column;gap:3px;align-items:center;user-select:none;-webkit-user-select:none}
   .gr-nav button .e{display:flex;line-height:1}.gr-nav button .e svg{width:20px;height:20px}
   .gr-nav button.active{color:var(--accent-text)}
+
+  /* ---- Analytics → Quotes (the QQC quote log over time) ---- */
+  .qv-ranges{display:flex;gap:7px;margin-bottom:14px}
+  .qv-range{flex:1;padding:8px 10px;border-radius:999px;border:1px solid var(--line2);background:var(--panel);color:var(--muted);font-size:12.5px;font-weight:750;cursor:pointer;user-select:none}
+  .qv-range.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  /* One measure per chart: bar height is the month's quote COUNT. The dollar
+     total sits underneath as a text label, never as a second axis. */
+  .qv-chart{display:flex;align-items:flex-end;gap:2px;padding:12px 10px 10px;background:var(--panel);border:1px solid var(--line);border-radius:14px}
+  .qv-col{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:5px}
+  .qv-n{font-size:12.5px;font-weight:800;color:var(--text);font-variant-numeric:tabular-nums;line-height:1}
+  .qv-track{width:100%;height:96px;display:flex;align-items:flex-end;justify-content:center}
+  .qv-bar{width:74%;max-width:34px;background:var(--accent);border-radius:4px 4px 0 0;min-height:3px}
+  .qv-bar.zero{background:var(--line2)}
+  .qv-m{font-size:11px;font-weight:750;color:var(--muted);line-height:1}
+  .qv-v{font-size:10.5px;color:var(--muted2);font-variant-numeric:tabular-nums;line-height:1;white-space:nowrap}
+  .qv-csv{float:right;font-size:11.5px;font-weight:750;color:var(--accent-text);text-decoration:none}
+  .qv-list{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .qv-row{display:flex;align-items:center;gap:11px;padding:11px 13px;border-bottom:1px solid var(--line2)}
+  .qv-row:last-child{border-bottom:none}
+  .qv-date{flex:none;width:54px;font-size:11.5px;font-weight:750;color:var(--muted2);font-variant-numeric:tabular-nums}
+  .qv-who{flex:1;min-width:0}
+  .qv-who b{display:block;font-size:14px;font-weight:750;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .qv-who small{display:block;font-size:11.5px;color:var(--muted2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .qv-who .qv-svc{color:var(--muted)}
+  .qv-tag{font-size:10px;font-weight:800;color:#fff;background:var(--accent);border-radius:999px;padding:2px 7px;vertical-align:1px}
+  .qv-amt{flex:none;font-size:15px;font-weight:850;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .qv-empty{padding:26px 16px;text-align:center;color:var(--muted2);font-size:13px;background:var(--panel);border:1px solid var(--line);border-radius:14px}
+
   /* Grow hub landing hero */
   .gr-hero{background:linear-gradient(135deg,var(--accent),var(--accent-dark));color:#fff;border-radius:18px;padding:18px;margin-bottom:6px;box-shadow:0 12px 28px var(--accent-soft)}
   .gr-hero h2{margin:0;font-size:21px;letter-spacing:-.02em}
@@ -1885,6 +1913,7 @@
   <div class="gr-body" id="grBody"></div>
   <nav class="gr-nav gr-nav-2" id="grNav">
     <button data-gv="overview" class="active"><span class="e" data-ic="activity" data-ic-size="20"></span>Overview</button>
+    <button data-gv="quotes"><span class="e" data-ic="clipboard-list" data-ic-size="20"></span>Quotes</button>
     <button data-gv="analytics"><span class="e" data-ic="bar-chart" data-ic-size="20"></span>Website</button>
   </nav>
 </div>
@@ -4531,8 +4560,9 @@
   // Reuses the former Grow shell (#growApp / grBody / grNav).
   // ============================================================
   var GROW={view:"overview",wired:false,
-    web:{range:"7d",data:null,loading:false,err:"",settings:false,status:null,ai:"",aiRange:"",aiLoading:false,savingGa:false,savingCl:false}};
-  var GROW_VIEWS={overview:["Analytics","Business overview · Mikey's Mobile Detailing"],analytics:["Analytics","Your website, decoded — live"]};
+    web:{range:"7d",data:null,loading:false,err:"",settings:false,status:null,ai:"",aiRange:"",aiLoading:false,savingGa:false,savingCl:false},
+    quotes:{months:6,data:null,loading:false,err:""}};
+  var GROW_VIEWS={overview:["Analytics","Business overview · Mikey's Mobile Detailing"],quotes:["Quotes","Every QQC quote, over time"],analytics:["Analytics","Your website, decoded — live"]};
   function openAnalytics(){
     el("growApp").classList.add("show");
     if(!GROW.wired){growWire();GROW.wired=true;}
@@ -4545,7 +4575,7 @@
   function growWire(){
     el("grBack").onclick=closeAnalytics;
     Array.prototype.forEach.call(el("grNav").querySelectorAll("[data-gv]"),function(b){b.onclick=function(){vibrate(6);growSet(b.getAttribute("data-gv"))}});
-    el("grRefresh").onclick=function(){vibrate(6);if(GROW.view==="analytics"){growLoadWeb(true)}else{refreshThreads();fetchInsights();api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.entries=d.entries||[];MO.today=d.today;MO.week=d.week;MO.allTime=d.allTime}growRender()});}toast("Refreshed")};
+    el("grRefresh").onclick=function(){vibrate(6);if(GROW.view==="analytics"){growLoadWeb(true)}else if(GROW.view==="quotes"){GROW.quotes.data=null;growLoadQuotes()}else{refreshThreads();fetchInsights();api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.entries=d.entries||[];MO.today=d.today;MO.week=d.week;MO.allTime=d.allTime}growRender()});}toast("Refreshed")};
   }
   function growRender(){
     var meta=GROW_VIEWS[GROW.view]||GROW_VIEWS.overview;
@@ -4553,7 +4583,114 @@
     el("grRefresh").style.visibility="visible";
     var b=el("grBody");
     if(GROW.view==="analytics")return growAnalytics(b);
+    if(GROW.view==="quotes")return growQuotes(b);
     return growOverview(b);
+  }
+
+  // ============================================================
+  // Analytics → Quotes — every QQC quote the form has sent in.
+  // The form posts each quote to /submit, which now also appends it to a
+  // month-bucketed log; /api/quotes returns that log plus per-month rollups.
+  // One measure per chart: the bars are how MANY quotes came in that month,
+  // and the month's dollar total rides along as a direct label (never a
+  // second y-axis). The full list underneath doubles as the table view.
+  // ============================================================
+  var QV_RANGES=[[3,"3 months"],[6,"6 months"],[12,"12 months"]];
+  function growLoadQuotes(){
+    if(GROW.quotes.loading)return;
+    GROW.quotes.loading=true;GROW.quotes.err="";growRender();
+    api("/api/quotes?months="+GROW.quotes.months).then(function(d){
+      GROW.quotes.loading=false;
+      if(d&&d.ok){GROW.quotes.data=d}else{GROW.quotes.err=(d&&d.error)||"Couldn't load"}
+      if(el("growApp").classList.contains("show")&&GROW.view==="quotes")growRender();
+    }).catch(function(){GROW.quotes.loading=false;GROW.quotes.err="Network error";
+      if(el("growApp").classList.contains("show")&&GROW.view==="quotes")growRender();});
+  }
+  function qvMonthLabel(m){
+    if(!m||m.length<7)return String(m||"");
+    return new Date(+m.slice(0,4),+m.slice(5,7)-1,1).toLocaleDateString("en-US",{month:"short"});
+  }
+  function qvDayLabel(d){
+    if(!d||d.length<10)return String(d||"");
+    return new Date(+d.slice(0,4),+d.slice(5,7)-1,+d.slice(8,10)).toLocaleDateString("en-US",{month:"short",day:"numeric"});
+  }
+  function growQuotes(box){
+    box=box||el("grBody");
+    var Q=GROW.quotes;
+    if(!Q.data&&!Q.loading&&!Q.err){growLoadQuotes();return}
+
+    var html='<div class="ins">';
+    html+='<div class="qv-ranges">';
+    QV_RANGES.forEach(function(r){
+      html+='<button class="qv-range'+(Q.months===r[0]?" on":"")+'" data-qvr="'+r[0]+'">'+r[1]+'</button>';
+    });
+    html+='</div>';
+
+    if(Q.loading&&!Q.data){box.innerHTML=html+'<div class="qv-empty">Loading quotes…</div></div>';return}
+    if(Q.err&&!Q.data){
+      box.innerHTML=html+'<div class="qv-empty">'+esc(Q.err)+'</div></div>';
+      qvWire(box);return;
+    }
+
+    var d=Q.data,s=d.summary||{},months=d.months||[],entries=d.entries||[];
+
+    html+='<div class="an-lbl">'+ic("clipboard-list",15)+'Last '+Q.months+' months</div>';
+    html+='<div class="stat-grid">'+
+      '<div class="stat"><div class="v">'+(s.count||0)+'</div><div class="k">Quotes sent</div></div>'+
+      '<div class="stat"><div class="v">'+fmtMoney(s.value||0)+'</div><div class="k">Total quoted</div></div>'+
+      '<div class="stat"><div class="v">'+fmtMoney(s.avg||0)+'</div><div class="k">Average quote</div></div>'+
+      '<div class="stat"><div class="v">'+(s.booked||0)+'</div><div class="k">Booked a time</div></div>'+
+    '</div>';
+
+    // Month-by-month bars — count is the height, the dollar total is a label.
+    var peak=1;
+    months.forEach(function(m){if((m.count||0)>peak)peak=m.count});
+    html+='<div class="an-lbl">'+ic("bar-chart",15)+'Quotes per month</div>';
+    html+='<div class="qv-chart">';
+    months.forEach(function(m){
+      var h=Math.round((m.count||0)/peak*100);
+      html+='<div class="qv-col" title="'+esc(m.month)+' · '+(m.count||0)+' quotes · '+fmtMoney(m.value||0)+'">'+
+        '<div class="qv-n">'+(m.count||0)+'</div>'+
+        '<div class="qv-track"><div class="qv-bar'+(m.count?"":" zero")+'" style="height:'+Math.max(h,m.count?4:0)+'%"></div></div>'+
+        '<div class="qv-m">'+esc(qvMonthLabel(m.month))+'</div>'+
+        '<div class="qv-v">'+(m.value?fmtMoney(m.value):"—")+'</div>'+
+      '</div>';
+    });
+    html+='</div>';
+
+    html+='<div class="an-lbl">'+ic("list-checks",15)+'Every quote'+
+      (entries.length?' <a class="qv-csv" href="/api/quotes/export?months='+Q.months+'">Export CSV</a>':'')+'</div>';
+    if(!entries.length){
+      html+='<div class="qv-empty">No quotes logged yet in this window. Every new QQC submission lands here automatically.</div>';
+    }else{
+      html+='<div class="qv-list">';
+      entries.forEach(function(e){
+        var sub=[e.vehicle,e.condition].filter(Boolean).join(" · ");
+        html+='<div class="qv-row">'+
+          '<div class="qv-date">'+esc(qvDayLabel(e.date))+'</div>'+
+          '<div class="qv-who">'+
+            '<b>'+esc(e.name||"—")+(e.type==="booking"?' <span class="qv-tag">Booked</span>':'')+'</b>'+
+            (sub?'<small>'+esc(sub)+'</small>':'')+
+            (e.services?'<small class="qv-svc">'+esc(e.services)+'</small>':'')+
+          '</div>'+
+          '<div class="qv-amt">'+(e.total?fmtMoney(e.total):"—")+'</div>'+
+        '</div>';
+      });
+      html+='</div>';
+    }
+
+    html+='</div>';
+    box.innerHTML=html;
+    qvWire(box);
+  }
+  function qvWire(box){
+    Array.prototype.forEach.call(box.querySelectorAll("[data-qvr]"),function(b){
+      b.onclick=function(){
+        var n=parseInt(b.getAttribute("data-qvr"),10);
+        if(n===GROW.quotes.months)return;
+        vibrate(6);GROW.quotes.months=n;GROW.quotes.data=null;growLoadQuotes();
+      };
+    });
   }
   // ---- Website analytics — the all-in-one command center ----
   // GA4 + Microsoft Clarity + the first-party pixel + live job money, merged
