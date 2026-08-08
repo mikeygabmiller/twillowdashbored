@@ -8,7 +8,7 @@
     "deploy": "wrangler deploy",
     "dev": "wrangler dev",
     "tail": "wrangler tail",
-    "test": "node test/hold.test.js && node test/detect.test.js && node test/pay.test.js && node test/ai.test.js && node test/compose.test.js && node test/thread.test.js && node test/inbox.test.js && node test/money.test.js && node test/quickreply.test.js && node test/replycheck.test.js && node test/autoreply.test.js && node test/alertmail.test.js && node test/promise.test.js && node test/geogrid.test.js && node test/geogrid.ui.test.js && node test/snapshot.test.js",
+    "test": "node test/hold.test.js && node test/detect.test.js && node test/pay.test.js && node test/ai.test.js && node test/compose.test.js && node test/thread.test.js && node test/inbox.test.js && node test/money.test.js && node test/quickreply.test.js && node test/replycheck.test.js && node test/autoreply.test.js && node test/quotes.test.js && node test/alertmail.test.js && node test/promise.test.js && node test/geogrid.test.js && node test/geogrid.ui.test.js && node test/snapshot.test.js",
     "test:unit": "node test/hold.test.js",
     "test:ui": "node test/detect.ui.test.js && node test/pay.ui.test.js && node test/nav.ui.test.js && node test/search.ui.test.js && node test/tabs.ui.test.js && node test/snapshot.ui.test.js",
     "test:all": "npm test && npm run test:ui"

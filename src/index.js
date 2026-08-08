@@ -658,6 +658,10 @@ async function apiQuotesImport(request) {
     // Accept a plain "YYYY-MM-DD" (or a full ISO stamp) as well as an epoch ms.
     const q = Object.assign({}, raw);
     if (!q.ts && q.date) q.ts = Date.parse(String(q.date).length === 10 ? q.date + 'T12:00:00Z' : q.date);
+    // An imported row is historical by definition. normalizeQuote falls back to
+    // "now" when there's no timestamp — right for a live submission, wrong here:
+    // it would file an undated row under today and invent a date that never was.
+    if (!(Number(q.ts) > 0)) { skipped++; continue; }
     const entry = normalizeQuote(q, cfg.tz);
     if (!entry) { skipped++; continue; }
     const month = entry.date.slice(0, 7);
