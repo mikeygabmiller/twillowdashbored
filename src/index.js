@@ -74,7 +74,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-08·autoreply-alert';
+const BUILD = '2026-08-08·quotes-view';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -237,6 +237,11 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/ai/analyze')  return apiAiAnalyze(request);
   if (request.method === 'POST' && pathname === '/api/ai/agent')    return apiAiAgent(request);
   if (request.method === 'POST' && pathname === '/api/ai/generate') return apiAiGenerate(request);
+
+  // QQC quote log (Analytics → Quotes) — every quote the form has sent in.
+  if (request.method === 'GET'  && pathname === '/api/quotes')        return apiQuotes(url);
+  if (request.method === 'GET'  && pathname === '/api/quotes/export') return apiQuotesExport(url);
+  if (request.method === 'POST' && pathname === '/api/quotes/import') return apiQuotesImport(request);
 
   // Website analytics (Grow hub) — rollup of the /px pixel data.
   if (request.method === 'GET'  && pathname === '/api/analytics')   return apiAnalytics(url);
@@ -402,6 +407,10 @@ async function handleSubmit(request) {
   }
   await saveThread(thread);
   await updateIndexEntry(thread);
+  await logQuote({
+    name, phone: clientPhone, email, location, total, vehicle, condition,
+    services: serviceList, notes, type: body.type, appointment: body.appointment,
+  });
 
   const ok = mikeyAlert;
   return cors(json({ ok, clientSms, mikeyAlert }, ok ? 200 : 207));
@@ -477,7 +486,202 @@ async function handleQqcText(request) {
   }
   await saveThread(thread);
   await updateIndexEntry(thread);
+  await logQuote({
+    name, phone: clientPhone, email, location, total: body.total, vehicle,
+    condition, services, notes, type: body.type, appointment: body.appointment,
+  });
   return cors(json({ ok: !!mikeyAlert, clientSms, mikeyAlert }, mikeyAlert ? 200 : 207));
+}
+
+// ===========================================================================
+// QQC quote log  (Analytics → Quotes)
+// ---------------------------------------------------------------------------
+// Every quote the Quick-Quote Concierge posts to /submit or /qqc-text is
+// appended here, so the dashboard can show what came in over time. The lead
+// itself still lives on its conversation thread; this is the flat history a
+// thread can't be. Thread notes only ever keep a customer's FIRST quote
+// (`if (detail && !thread.notes)` above), so before this log a repeat quote
+// left no trace anywhere but Mikey's email.
+//
+// Storage mirrors the money tracker — one doc per month, so a year of history
+// is 12 small reads and a new quote costs a single write:
+//   quotes:m:YYYY-MM — { entries: [ { id, ts, date, name, phone, total, … } ] }
+// ===========================================================================
+const quotesKey = (m) => 'quotes:m:' + m;
+
+async function loadQuoteMonth(m) {
+  return (await kv().get(quotesKey(m), { type: 'json' })) || { entries: [] };
+}
+// ⚠ KV WRITE — one per submitted quote, plus the one-time backfill import.
+// Never called from a loop over threads.
+async function saveQuoteMonth(m, doc) {
+  await kv().put(quotesKey(m), JSON.stringify(doc));
+}
+
+// Shape + trim one quote for the log. Returns null when it isn't usable.
+function normalizeQuote(q, tz) {
+  if (!q) return null;
+  const ts = Number(q.ts) > 0 ? Number(q.ts) : Date.now();
+  const name = String(q.name || '').trim();
+  if (!name) return null;
+  const total = Math.round(Number(q.total) || 0);
+  return {
+    id: q.id || genId(),
+    ts,
+    date: localDateStr(ts, tz),
+    name,
+    phone: q.phone ? String(q.phone) : '',
+    total: total > 0 ? total : 0,
+    vehicle: String(q.vehicle || '').trim(),
+    condition: String(q.condition || '').trim(),
+    services: Array.isArray(q.services) ? q.services.join(', ') : String(q.services || '').trim(),
+    location: String(q.location || '').trim(),
+    email: String(q.email || '').trim(),
+    notes: String(q.notes || '').trim(),
+    // A QQC booking posts to the same endpoint with type:'booking' — worth
+    // separating, since a booked slot is a much warmer lead than a bare quote.
+    type: q.type === 'booking' ? 'booking' : 'quote',
+    appointment: String(q.appointment || '').trim(),
+  };
+}
+
+// Append one quote to its month. Never throws: losing a log line must not cost
+// Mikey the lead alert or the customer their auto-text.
+async function logQuote(q) {
+  try {
+    const cfg = await loadConfig();
+    const entry = normalizeQuote(q, cfg.tz);
+    if (!entry) return;
+    const month = entry.date.slice(0, 7);
+    const doc = await loadQuoteMonth(month);
+    // Same phone + same total within 10 minutes is the form double-firing (it
+    // posts here and to Web3Forms in parallel) or a customer re-tapping submit.
+    const dupe = (doc.entries || []).some(
+      (e) => e.phone === entry.phone && e.total === entry.total && Math.abs(e.ts - entry.ts) < 600000,
+    );
+    if (dupe) return;
+    doc.entries.push(entry);
+    await saveQuoteMonth(month, doc);
+  } catch { /* best effort — the submission itself already succeeded */ }
+}
+
+// The N months ending with the current one, newest first.
+async function quoteWindow(months, tz) {
+  let m = localDateStr(Date.now(), tz).slice(0, 7);
+  const keys = [];
+  for (let i = 0; i < months; i++) { keys.push(m); m = prevMonthKey(m); }
+  const docs = await Promise.all(keys.map(loadQuoteMonth));
+  return keys.map((month, i) => ({ month, entries: (docs[i] && docs[i].entries) || [] }));
+}
+
+function quoteMonthsParam(url) {
+  const n = parseInt(url.searchParams.get('months') || '6', 10);
+  if (!(n >= 1)) return 6;
+  return Math.min(n, 24);
+}
+
+// GET /api/quotes?months=6 — everything the Quotes view draws: per-month
+// rollups (oldest → newest, so it plots left to right) and the flat list.
+async function apiQuotes(url) {
+  const cfg = await loadConfig();
+  const win = await quoteWindow(quoteMonthsParam(url), cfg.tz);
+  const entries = [];
+  const months = win.map((m) => {
+    let value = 0, priced = 0;
+    m.entries.forEach((e) => { value += e.total || 0; if (e.total > 0) priced++; entries.push(e); });
+    return {
+      month: m.month,
+      count: m.entries.length,
+      value,
+      // Averaged over PRICED quotes only — a booking can come in with no total,
+      // and counting it as a $0 quote would drag the average down.
+      avg: priced ? Math.round(value / priced) : 0,
+      booked: m.entries.filter((e) => e.type === 'booking').length,
+    };
+  }).reverse();
+  entries.sort((a, b) => b.ts - a.ts);
+  const value = entries.reduce((s, e) => s + (e.total || 0), 0);
+  const priced = entries.filter((e) => e.total > 0).length;
+  return json({
+    ok: true,
+    today: localDateStr(Date.now(), cfg.tz),
+    months,
+    entries,
+    summary: {
+      count: entries.length,
+      value,
+      avg: priced ? Math.round(value / priced) : 0,
+      booked: entries.filter((e) => e.type === 'booking').length,
+      best: entries.reduce((b, e) => ((e.total || 0) > b ? e.total : b), 0),
+    },
+  });
+}
+
+// GET /api/quotes/export — the same window as a spreadsheet.
+async function apiQuotesExport(url) {
+  const cfg = await loadConfig();
+  const win = await quoteWindow(quoteMonthsParam(url), cfg.tz);
+  const rows = [['date', 'time', 'name', 'phone', 'quote', 'type', 'vehicle', 'condition', 'services', 'location', 'appointment']];
+  const all = [];
+  win.forEach((m) => m.entries.forEach((e) => all.push(e)));
+  all.sort((a, b) => b.ts - a.ts);
+  all.forEach((e) => rows.push([
+    e.date,
+    new Date(e.ts).toLocaleTimeString('en-US', { timeZone: cfg.tz || 'America/Los_Angeles', hour: 'numeric', minute: '2-digit' }),
+    e.name, e.phone, e.total, e.type, e.vehicle, e.condition, e.services, e.location, e.appointment,
+  ]));
+  const csv = rows.map((r) => r.map((c) => {
+    const s = String(c == null ? '' : c);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }).join(',')).join('\n');
+  return cors(new Response(csv, {
+    headers: { 'Content-Type': 'text/csv', 'Content-Disposition': 'attachment; filename="qqc-quotes.csv"' },
+  }));
+}
+
+// POST /api/quotes/import  { entries: [ { ts|date, name, total, … } ], replace? }
+// One-time backfill of the quotes that predate this log (they only ever existed
+// as Web3Forms emails). Idempotent by default — the same phone + total inside
+// 10 minutes is skipped — so re-running an import can't double a month.
+async function apiQuotesImport(request) {
+  let body;
+  try { body = await request.json(); } catch { return json({ ok: false, error: 'bad_json' }, 400); }
+  const list = Array.isArray(body && body.entries) ? body.entries : null;
+  if (!list) return json({ ok: false, error: 'entries_required' }, 422);
+  if (list.length > 2000) return json({ ok: false, error: 'too_many' }, 413);
+
+  const cfg = await loadConfig();
+  // Group by month so an import of N quotes costs one write per month, not N.
+  const byMonth = new Map();
+  let skipped = 0;
+  for (const raw of list) {
+    // Accept a plain "YYYY-MM-DD" (or a full ISO stamp) as well as an epoch ms.
+    const q = Object.assign({}, raw);
+    if (!q.ts && q.date) q.ts = Date.parse(String(q.date).length === 10 ? q.date + 'T12:00:00Z' : q.date);
+    // An imported row is historical by definition. normalizeQuote falls back to
+    // "now" when there's no timestamp — right for a live submission, wrong here:
+    // it would file an undated row under today and invent a date that never was.
+    if (!(Number(q.ts) > 0)) { skipped++; continue; }
+    const entry = normalizeQuote(q, cfg.tz);
+    if (!entry) { skipped++; continue; }
+    const month = entry.date.slice(0, 7);
+    if (!byMonth.has(month)) byMonth.set(month, await loadQuoteMonth(month));
+    const doc = byMonth.get(month);
+    if (body.replace === true && !doc._cleared) { doc.entries = []; doc._cleared = true; }
+    const dupe = doc.entries.some(
+      (e) => e.phone === entry.phone && e.total === entry.total && Math.abs(e.ts - entry.ts) < 600000,
+    );
+    if (dupe) { skipped++; continue; }
+    doc.entries.push(entry);
+  }
+  let added = 0;
+  for (const [month, doc] of byMonth) {
+    delete doc._cleared;
+    doc.entries.sort((a, b) => a.ts - b.ts);
+    added += doc.entries.length;
+    await saveQuoteMonth(month, doc);
+  }
+  return json({ ok: true, months: byMonth.size, stored: added, skipped });
 }
 
 async function handleInboundSms(request) {
