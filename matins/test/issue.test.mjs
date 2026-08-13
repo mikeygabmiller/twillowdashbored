@@ -83,6 +83,55 @@ test('no copyrighted scripture or Catechism text reaches either surface', async 
   assert.ok(surfaces.includes('bible.usccb.org'));
 });
 
+// The production failure of 6–13 August 2026, in one test. Gemini reasoned
+// inside the output budget, both prose blocks came back cut off, and because a
+// truncated candidate was returned as if it were finished the issue reported
+// two unrelated-looking faults — an incoherent reflection and an unparseable
+// saint story — for eight days without either naming the cause.
+test('truncated generation is dropped, and says it was truncated', async () => {
+  const truncated = async (url) => {
+    if (!/generativelanguage/.test(String(url))) return fixtureFetch()(url);
+    return new Response(
+      JSON.stringify({
+        candidates: [{ content: { parts: [{ text: 'The shop stayed open all winter and he never once' }] }, finishReason: 'MAX_TOKENS' }],
+      }),
+      { status: 200 }
+    );
+  };
+  const geminiCfg = config({ LLM_PROVIDER: 'gemini', LLM_API_KEY: 'k', SITE_URL: 'https://example.test/matins' });
+  const issue = await build({ cfg: geminiCfg, fetchImpl: truncated });
+
+  assert.equal(issue.reflection, null);
+  assert.equal(issue.saintStory, null);
+  const reasons = issue.safetyReport.degraded.map((d) => `${d.section}: ${d.reason}`).join('\n');
+  assert.match(reasons, /reflection: .*truncated/, 'the reason names truncation, not incoherence');
+  assert.match(reasons, /saintStory: .*truncated/, 'the reason names truncation, not a parse failure');
+  // A fragment must never reach a reader, on either surface.
+  assert.equal(issue.headlineGenerated, false, 'the fallback headline is the day itself');
+  assert.ok(!renderEmail(issue, { cfg: geminiCfg }).html.includes('never once'));
+  // And the rest of the issue still ships.
+  assert.ok(issue.prayer.text && issue.consider.answer && issue.readings.usccbLink);
+});
+
+test('the thinking budget reaches the model when configured', async () => {
+  const bodies = [];
+  const seen = async (url, init) => {
+    if (!/generativelanguage/.test(String(url))) return fixtureFetch()(url);
+    bodies.push(JSON.parse(init.body));
+    return new Response(
+      JSON.stringify({ candidates: [{ content: { parts: [{ text: 'x' }] }, finishReason: 'STOP' }] }),
+      { status: 200 }
+    );
+  };
+  const geminiCfg = config({ LLM_PROVIDER: 'gemini', LLM_API_KEY: 'k', GEMINI_THINKING_BUDGET: '0' });
+  await build({ cfg: geminiCfg, fetchImpl: seen });
+  assert.ok(bodies.length > 0);
+  for (const b of bodies) {
+    assert.deepEqual(b.generationConfig.thinkingConfig, { thinkingBudget: 0 });
+    assert.ok(b.generationConfig.maxOutputTokens >= 3072);
+  }
+});
+
 test('rotation never repeats inside the cooldown window', () => {
   const recent = PRAYERS.slice(0, 10).map((p) => p.id);
   const chosen = pick(PRAYERS, { recent, cooldown: 10, seed: 'x' });

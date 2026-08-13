@@ -76,6 +76,53 @@ test('a publish failure is reported, not thrown', async () => {
   assert.match(res.errors[0], /write 401/);
 });
 
+// 2026-08-10 published a page and an archive entry with no issues/*.json
+// behind it: one call in the middle of fourteen lost a race and nothing tried
+// again. A 409 is GitHub saying the branch head moved, which is exactly what
+// thirteen other writes in the same second would cause.
+test('a transient failure is retried rather than left as a hole in the site', async () => {
+  let attempts = 0;
+  const writes = [];
+  const fetchImpl = async (url, init = {}) => {
+    const path = decodeURIComponent(String(url).split('/contents/')[1].split('?')[0]);
+    if (!init.method || init.method === 'GET') return new Response('not found', { status: 404 });
+    if (path === 'issues/2026-08-05.json' && attempts++ < 2) {
+      return new Response('is at least conflicting', { status: 409 });
+    }
+    writes.push(path);
+    return new Response('{}', { status: 200 });
+  };
+  const res = await publishIssue({ issue, index: [], cfg, fetchImpl });
+  assert.equal(res.ok, true, res.errors.join('; '));
+  assert.equal(attempts, 3, 'two 409s, then the write landed on the third attempt');
+  assert.ok(writes.includes('issues/2026-08-05.json'), 'the JSON archive is not left behind');
+});
+
+test('a permanent failure is not retried', async () => {
+  let puts = 0;
+  const fetchImpl = async (url, init = {}) => {
+    if (!init.method || init.method === 'GET') return new Response('not found', { status: 404 });
+    puts += 1;
+    return new Response('bad credentials', { status: 401 });
+  };
+  const res = await publishIssue({ issue, index: [], cfg, fetchImpl });
+  assert.equal(res.ok, false);
+  assert.equal(puts, 7, 'one attempt per file, no retries on a 401');
+});
+
+// The email is the promise; the site is the archive. A DNS failure reaching
+// GitHub used to throw straight out of publishIssue and take the send with it.
+test('a thrown network error is caught and reported, never propagated', async () => {
+  const fetchImpl = async () => {
+    throw new TypeError('network connection lost');
+  };
+  const res = await publishIssue({ issue, index: [], cfg, fetchImpl });
+  assert.equal(res.ok, false);
+  assert.equal(res.errors.length, 7);
+  assert.match(res.errors[0], /network: network connection lost/);
+  assert.match(res.errors[0], /after 3 attempts/);
+});
+
 test('no GitHub token means no publish, and no crash', async () => {
   const res = await publishIssue({ issue, index: [], cfg: config({}), fetchImpl: async () => new Response('', { status: 200 }) });
   assert.equal(res.ok, false);

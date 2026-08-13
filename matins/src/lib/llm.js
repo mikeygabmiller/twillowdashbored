@@ -36,44 +36,85 @@ export async function llmText({ cfg, system, prompt, maxTokens = 700, temperatur
     const data = JSON.parse(body);
     const text = (data.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('').trim();
     if (!text) throw new LlmError('anthropic returned no text');
+    // A block that ran out of room is a fragment, not an answer. See below.
+    if (data.stop_reason === 'max_tokens') {
+      throw new LlmError(`anthropic truncated: hit max_tokens after ${text.length} characters`);
+    }
     return text;
   }
 
   if (provider === 'gemini') {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.llmModel)}:generateContent`;
-    const res = await f(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-goog-api-key': cfg.llmApiKey },
-      body: JSON.stringify({
-        systemInstruction: { parts: [{ text: system }] },
-        contents: [{ role: 'user', parts: [{ text: prompt }] }],
-        generationConfig: geminiGenerationConfig({ cfg, temperature, maxTokens }),
-      }),
-    });
-    const body = await res.text();
-    if (!res.ok) throw new LlmError(`gemini ${res.status}: ${body.slice(0, 300)}`);
-    const data = JSON.parse(body);
-    const text = (data.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('').trim();
+    const data = await geminiGenerate({ cfg, system, prompt, temperature, maxTokens, f });
+    const candidate = data.candidates?.[0];
+    const text = (candidate?.content?.parts || []).map((p) => p.text || '').join('').trim();
     if (!text) throw new LlmError(`gemini returned no text (${describeEmptyGemini(data)})`);
+    // THE ONE THAT COST EIGHT ISSUES. A candidate that stopped because it ran
+    // out of room is a fragment: a reflection that ends mid-sentence, a JSON
+    // object with no closing brace. Returning it as if the model had finished
+    // pushes the failure downstream, where it looks like bad writing or a bad
+    // parse rather than a budget that was too small — the reflection reached
+    // the safety judge and was correctly failed for incoherence, and the saint
+    // story died in parseJsonReply, every single day, for the same reason.
+    // Raising it here means produce() retries, and a persistent failure names
+    // its actual cause.
+    if (candidate?.finishReason === 'MAX_TOKENS') {
+      throw new LlmError(`gemini truncated: hit maxOutputTokens after ${text.length} characters`);
+    }
+    if (candidate?.finishReason && candidate.finishReason !== 'STOP') {
+      throw new LlmError(`gemini stopped early: finishReason ${candidate.finishReason}`);
+    }
     return text;
   }
 
   throw new LlmError(`unknown LLM_PROVIDER: ${provider}`);
 }
 
+// Sending thinkingConfig is the fix for the truncation above, and it is also
+// the field most likely to be renamed or dropped between model generations —
+// where an unrecognised field is a 400 and every block of the issue is lost.
+// So the request is tried once as configured, and a 400 that names the field is
+// retried without it rather than taken as the day's answer.
+async function geminiGenerate({ cfg, system, prompt, temperature, maxTokens, f }) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(cfg.llmModel)}:generateContent`;
+  const send = async (generationConfig) => {
+    const res = await f(url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-goog-api-key': cfg.llmApiKey },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: system }] },
+        contents: [{ role: 'user', parts: [{ text: prompt }] }],
+        generationConfig,
+      }),
+    });
+    return { status: res.status, body: await res.text() };
+  };
+
+  const generationConfig = geminiGenerationConfig({ cfg, temperature, maxTokens });
+  let { status, body } = await send(generationConfig);
+
+  if (status === 400 && generationConfig.thinkingConfig && /thinking/i.test(body)) {
+    console.warn(`gemini rejected thinkingConfig, retrying without it: ${body.slice(0, 200)}`);
+    const { thinkingConfig, ...rest } = generationConfig;
+    ({ status, body } = await send(rest));
+  }
+
+  if (status !== 200) throw new LlmError(`gemini ${status}: ${body.slice(0, 300)}`);
+  return JSON.parse(body);
+}
+
 // Recent Gemini models reason before answering, and those tokens are drawn
-// from maxOutputTokens. Every call here asks for something short — a nine-word
-// headline, a two-field JSON verdict — so without headroom the model can spend
-// the whole budget thinking and return an empty candidate. safety.js reads an
-// empty reply as "the checker failed" and fails closed on it, so that quirk
-// alone could drop every generated block while the issue still sent.
+// from maxOutputTokens. Headroom alone was tried first and was not enough: a
+// 1024 floor sized as slack for a nine-word headline is not a budget a full
+// reasoning pass can share with a six-sentence reflection, and the result was
+// eight consecutive issues whose reflection and saint story were truncated
+// rather than absent — the failure mode the floor was meant to prevent, one
+// step further along.
 //
-// Headroom is the fix that survives a model generation: it costs nothing when
-// unused and does not depend on a field name. The field that *disables*
-// thinking has been renamed across generations, so it is sent only when
-// GEMINI_THINKING_BUDGET is set deliberately — an unrecognised field is a 400,
-// which would cause the very failure this is guarding against.
-const GEMINI_MIN_OUTPUT_TOKENS = 1024;
+// Two things now hold this closed. GEMINI_THINKING_BUDGET = "0" turns the
+// reasoning off for work that needs none, and this floor is large enough that
+// even if a future model ignores the budget, both the thinking and the answer
+// fit. Unused output tokens cost nothing.
+const GEMINI_MIN_OUTPUT_TOKENS = 3072;
 
 function geminiGenerationConfig({ cfg, temperature, maxTokens }) {
   const generationConfig = { temperature, maxOutputTokens: Math.max(maxTokens, GEMINI_MIN_OUTPUT_TOKENS) };

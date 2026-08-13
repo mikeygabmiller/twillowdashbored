@@ -9,7 +9,10 @@ import { sendIssue, sendOne } from './lib/send.js';
 import { subscribe, confirm, unsubscribe, activeSubscribers, subscriberCounts } from './lib/subscribers.js';
 import { renderNotice, renderSignupPage, renderIssuePage, renderArchivePage } from './render/web.js';
 import { renderEmail } from './render/email.js';
+import { escapeHtml } from './render/theme.js';
 import { json, html } from './lib/http.js';
+import { takeToken, clientIp } from './lib/ratelimit.js';
+import { SIGNUP_LIMITS } from './config.js';
 import { safeEqualString, makeToken, normalizeEmail } from './lib/tokens.js';
 import { listModels } from './lib/llm.js';
 import { isValidDate } from './lib/calendar.js';
@@ -28,6 +31,19 @@ export default {
       if (path === '/api/version') return json({ build: BUILD, app: cfg.appName }, { headers: cors() });
 
       if (path === '/subscribe' && request.method === 'POST') {
+        // This route makes the Worker send mail to an address chosen by
+        // whoever called it. The ceiling comes before anything else happens.
+        const gate = await takeToken(store, {
+          bucket: 'sub',
+          id: clientIp(request),
+          limit: SIGNUP_LIMITS.perIpPerHour,
+        });
+        if (!gate.allowed) {
+          const message = 'That is a lot of signups from one place. Try again in a little while.';
+          const headers = { ...cors(), 'retry-after': String(gate.retryAfter ?? 3600) };
+          if (wantsJson(request)) return json({ ok: false, message }, { status: 429, headers });
+          return html(renderNotice({ cfg, title: 'Slow down a moment', message }), { status: 429, headers });
+        }
         const email = await readEmail(request);
         const res = await subscribe({ store, cfg, rawEmail: email });
         if (wantsJson(request)) return json({ ok: res.ok, message: res.message }, { status: res.status, headers: cors() });
@@ -86,18 +102,29 @@ export default {
 
       // --- admin (ADMIN_TOKEN) --------------------------------------------
       if (path.startsWith('/admin/')) {
+        // The diagnostics below answer an unauthenticated caller: which binding
+        // names this Worker received, and whether a supplied token is the right
+        // length. No value is ever revealed and the reasoning holds — but the
+        // questions are only worth answering while the Worker is being wired
+        // up, and this route can rebuild the site and mail every subscriber.
+        // So they need ADMIN_DIAGNOSTICS = "1" and an explicit ?debug=1: on
+        // deliberately, for an afternoon, then off.
+        const diagnose = cfg.adminDiagnostics && url.searchParams.get('debug') === '1';
+
         // "Unauthorized" conflates two very different problems: a wrong token,
         // and no token configured at all. Saying which costs nothing — that the
         // secret is unset is not a secret — and saves a blind hunt.
         if (!cfg.adminToken) {
-          // Reached only while the Worker is unconfigured, and it reports names
-          // and booleans — never a value. Which OTHER secrets arrive is the
-          // whole diagnosis: none means they went to a different Worker or to
-          // the build-time settings; some means this one name is wrong.
-          return json({ error: 'admin is not configured', ...bindingReport(env), build: BUILD }, { status: 503, headers: cors() });
+          return json(
+            { error: 'admin is not configured', ...(diagnose ? bindingReport(env) : {}), build: BUILD },
+            { status: 503, headers: cors() }
+          );
         }
         if (!adminAuthorized(request, url, cfg)) {
-          return json({ error: 'unauthorized', ...mismatchReport(request, url, cfg, env) }, { status: 401, headers: cors() });
+          return json(
+            { error: 'unauthorized', ...(diagnose ? mismatchReport(request, url, cfg, env) : {}) },
+            { status: 401, headers: cors() }
+          );
         }
 
         // Dry run in production: builds and renders, sends and marks nothing.
@@ -192,6 +219,16 @@ export default {
             // trimmed to make it work. Fix the name; do not rely on this.
             bindingNameWarnings: cfg.bindingNameWarnings,
             lastEmailError: await store.getJson('diag:lastEmailError'),
+            // The last publish, whether or not it worked. A page written
+            // without its issues/*.json behind it is invisible from the site.
+            lastPublish: await store.getJson('diag:lastPublish'),
+            // Whether anyone would be told if tomorrow went out thin.
+            alertEmail: cfg.alertEmail || null,
+            // Empty until a reflection survives: both are committed only when
+            // one does, so they are also the fastest check that generation is
+            // actually working.
+            formsSeen: (await store.getJson('rot:form', [])).length,
+            openingsRemembered: (await store.getJson('rot:openings', [])).length,
           }, { headers: cors() });
         }
       }
@@ -234,8 +271,20 @@ async function runDaily({ cfg, store, date, force, send }) {
   const issue = await buildIssue({ date, cfg, store });
   const index = await saveIssue(store, issue);
 
-  const published = await publishIssue({ issue, index, cfg, loadIssue: (d) => store.getJson(`issue:${d}`) });
+  // Belt and braces around the promise that publishing never stops a send:
+  // putFile already catches its own network errors, and this catches anything
+  // else in here — a renderer throwing on a shape it did not expect.
+  let published = { ok: false, published: [], errors: [] };
+  try {
+    published = await publishIssue({ issue, index, cfg, loadIssue: (d) => store.getJson(`issue:${d}`) });
+  } catch (err) {
+    published = { ok: false, published: [], errors: [`publish threw: ${String(err?.message || err)}`] };
+  }
   if (!published.ok) console.error('publish failed', published.errors.join('; '));
+  // A cron's console output is not somewhere anyone passes by. /admin/status is.
+  await store
+    .putJson('diag:lastPublish', { at: new Date().toISOString(), date, ok: published.ok, errors: published.errors })
+    .catch(() => {});
 
   let delivery = { skipped: 'sending paused' };
   if (send && !cfg.sendPaused) {
@@ -244,7 +293,7 @@ async function runDaily({ cfg, store, date, force, send }) {
     if (delivery.errors.length) console.error('send errors', delivery.errors.join('; '));
   }
 
-  return {
+  const result = {
     date,
     status: issue.status,
     headline: issue.headline,
@@ -254,6 +303,64 @@ async function runDaily({ cfg, store, date, force, send }) {
     publishErrors: published.errors,
     delivery,
   };
+
+  await alertIfThin({ cfg, issue, result });
+  return result;
+}
+
+// Degrading quietly is how this app kept eight consecutive mornings while the
+// reflection and the saint story never once made it into an issue: every
+// failure was recorded faithfully in safetyReport and then waited for somebody
+// to go and read it. A dropped block should cost thirty seconds of attention on
+// the morning it happens.
+//
+// It never throws. An alert that can break the run it is reporting on is worse
+// than no alert.
+async function alertIfThin({ cfg, issue, result }) {
+  const { dropped = [], degraded = [] } = issue.safetyReport;
+  const problems = [...dropped, ...degraded];
+  if (!problems.length && !result.publishErrors.length) return;
+  if (!cfg.alertEmail) return;
+
+  const lines = [
+    `${cfg.appName} — ${issue.date} went out incomplete.`,
+    '',
+    `Headline: ${issue.headline}${issue.headlineGenerated ? '' : '  (fallback — the model did not produce one)'}`,
+    `Status:   ${issue.status}`,
+    `Sent to:  ${result.delivery?.sent ?? 0} subscriber(s)`,
+    '',
+  ];
+  if (dropped.length) {
+    lines.push('DROPPED — written, then refused by the safety pass:');
+    for (const d of dropped) lines.push(`  · ${d.section}: ${d.reason}`);
+    lines.push('');
+  }
+  if (degraded.length) {
+    lines.push('DEGRADED — never produced at all:');
+    for (const d of degraded) lines.push(`  · ${d.section}: ${d.reason}`);
+    lines.push('');
+  }
+  if (result.publishErrors.length) {
+    lines.push('PUBLISH ERRORS:');
+    for (const e of result.publishErrors) lines.push(`  · ${e}`);
+    lines.push('');
+  }
+  lines.push(`Read it: ${cfg.siteUrl}/${issue.date}/`);
+  lines.push(`Rebuild: POST ${cfg.workerUrl}/admin/run?date=${issue.date}&force=1&send=0`);
+
+  const text = lines.join('\n');
+  try {
+    const res = await sendOne({
+      cfg,
+      to: cfg.alertEmail,
+      subject: `[${cfg.appName}] ${issue.date} incomplete — ${problems.map((p) => p.section).join(', ') || 'publish failed'}`,
+      html: `<pre style="font:14px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;">${escapeHtml(text)}</pre>`,
+      text,
+    });
+    if (!res.ok) console.error('alert email failed', res.error);
+  } catch (err) {
+    console.error('alert email threw', String(err?.message || err));
+  }
 }
 
 // Why a secret "that is definitely set" is not here.
