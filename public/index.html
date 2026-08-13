@@ -1369,6 +1369,8 @@
   .mo-hero .mh-lbl{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.09em;opacity:.9}
   .mo-hero .mh-v{font-size:clamp(38px,12vw,52px);font-weight:850;letter-spacing:-.035em;line-height:1.02;font-variant-numeric:tabular-nums;text-shadow:0 2px 14px rgba(0,0,0,.14)}
   .mo-hero .mh-sub{font-size:12.5px;opacity:.92;margin-top:3px;font-weight:600}
+  .mo-hero .mh-v#heroBal{cursor:pointer;display:inline-block}
+  .mo-hero .mh-v#heroBal:active{transform:scale(.98)}
   .mo-hero .mh-edit{position:absolute;top:14px;right:14px;background:rgba(255,255,255,.18);border:none;color:#fff;width:32px;height:32px;border-radius:10px;display:flex;align-items:center;justify-content:center;cursor:pointer;backdrop-filter:blur(4px)}
   .mo-hero .mh-edit:active{transform:scale(.9)}
   .mo-hero .mh-spark{position:absolute;right:16px;bottom:64px;width:112px;height:38px;opacity:.9;pointer-events:none}
@@ -2732,7 +2734,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-08·quotes-view";
+  var APP_BUILD="2026-08-13·balance-correct";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -9181,7 +9183,12 @@
     var s=MO.summary||{},at=MO.allTime||{},hero=(MO.cfg&&MO.cfg.hero)||{};
     var start=+(hero.startingBalance||0);
     switch(key){
-      case "balance":{var v=(at.net||0)+start;return{label:"Balance",value:fmtMoney(v),neg:v<0}}
+      case "balance":{var v=(at.net||0)+start;var bsub="";
+        if(hero.balanceSetTo!=null&&hero.balanceSetAt){
+          var since=Math.round((v-(+hero.balanceSetTo))*100)/100;
+          bsub="set to "+fmtMoney(hero.balanceSetTo)+" · "+fmtTime(hero.balanceSetAt)+(Math.abs(since)>=0.01?" · "+(since>0?"+":"−")+fmtMoney(Math.abs(since))+" since":"");
+        } else if(start) bsub=fmtMoney(start)+" starting + "+fmtMoney(at.net||0)+" earned";
+        return{label:"Balance",value:fmtMoney(v),neg:v<0,sub:bsub}}
       case "monthNet":return{label:"Net this month",value:fmtMoney(s.net||0),neg:(s.net||0)<0};
       case "takeHome":{var rate=+((MO.cfg&&MO.cfg.taxRate)||0),n=s.net||0,res=n>0?n*rate/100:0,th=n-res;
         return{label:"Take-home",value:fmtMoney(th),neg:th<0,sub:rate?"after "+rate+"% set aside":"set a tax %"}}
@@ -9239,7 +9246,7 @@
       '<button class="mh-edit" id="heroEdit" aria-label="Customize headline">'+ic("sliders",16)+'</button>'+
       spark+
       '<div class="mh-top"><span class="mh-lbl">'+esc(title)+'</span></div>'+
-      '<div class="mh-v">'+esc(pm.value)+'</div>'+
+      '<div class="mh-v"'+(hero.primary==="balance"?' id="heroBal" role="button" tabindex="0" title="Tap to correct the balance"':'')+'>'+esc(pm.value)+'</div>'+
       (pm.sub?'<div class="mh-sub">'+esc(pm.sub)+'</div>':'');
     // signature allocation bar — Costs / You / Savings, always visible, tappable.
     // Every dollar of income is silently sorted into the three buckets.
@@ -9311,6 +9318,7 @@
     applyMoneyBlocks(box);
     moWireRows(box);
     el("heroEdit").onclick=function(ev){ev.stopPropagation();openHeroSheet()};
+    var hbal=el("heroBal");if(hbal)hbal.onclick=function(ev){ev.stopPropagation();openBalanceSheet()};
     var ha=el("heroAlloc");if(ha)ha.onclick=openSplitSheet;
     var sb=el("moSplitBtn");if(sb)sb.onclick=openSplitSheet;
     var bb=el("moBrainBtn");if(bb)bb.onclick=openBrainSheet;
@@ -9864,6 +9872,52 @@
     var o=withNone?'<option value="">— none —</option>':"";
     return o+HERO_METRIC_LIST.map(function(m){return '<option value="'+m[0]+'"'+(sel===m[0]?" selected":"")+'>'+m[1]+'</option>'}).join("");
   }
+  // ---- "That's not what I've actually got": correct the balance without
+  //      touching a single entry. The server counts the ledger and stores the
+  //      difference as the starting balance, so the headline lands on the real
+  //      number and then keeps moving with every job and expense from there. ----
+  function openBalanceSheet(){
+    var hero=Object.assign({startingBalance:0,balanceSetTo:null,balanceSetAt:0},(MO.cfg&&MO.cfg.hero)||{});
+    var at=MO.allTime||{},net=at.net||0,cur=net+(+hero.startingBalance||0);
+    var corrected=(hero.balanceSetTo!=null&&hero.balanceSetAt);
+    var h='<div class="sh-hd"><span class="e">'+ic("wallet",21)+'</span><b>Correct the balance</b><button class="sh-x" id="bsX">'+ic("x",20)+'</button></div><div class="sh-body">'+
+      '<div style="font-size:12.5px;color:var(--muted2);padding:2px 2px 10px;line-height:1.55">Type what you’ve <b>actually</b> got right now. Nothing in your history changes — no job, expense or pay-out is touched. The app just adjusts the gap between the ledger and real life, then the balance keeps moving from there.</div>'+
+      '<div class="mo-f-lbl">Money I actually have right now</div>'+
+      '<input class="mo-in" id="bsAmt" type="text" inputmode="decimal" placeholder="e.g. 5000" value="'+(cur?esc(String(Math.round(cur*100)/100)):"")+'">'+
+      '<div class="mo-f-lbl" style="margin-top:12px">The maths</div>'+
+      '<div id="bsMath" style="font-size:12.5px;color:var(--muted2);padding:2px 2px 4px;line-height:1.6"></div>'+
+      '<button class="mo-save" id="bsSave">Set the balance</button>'+
+      (corrected?'<button class="mo-delbtn" id="bsClear">Remove correction (back to '+esc(fmtMoney(net))+')</button>':'')+
+      '</div>';
+    var sh=el("moSheet");sh.innerHTML=h;el("moScrim").classList.add("show");sh.classList.add("show");
+    var draw=function(){
+      var want=parseFloat(String(el("bsAmt").value).replace(/[^0-9.\-]/g,""));
+      if(isNaN(want)){el("bsMath").innerHTML="Your logged history nets <b>"+esc(fmtMoney(net))+"</b> all-time.";return}
+      var adj=Math.round((want-net)*100)/100;
+      el("bsMath").innerHTML="Logged history nets <b>"+esc(fmtMoney(net))+"</b> all-time.<br>"+
+        (adj>=0?"Add":"Subtract")+" <b>"+esc(fmtMoney(Math.abs(adj)))+"</b> as money you already had"+(adj<0?" (a negative starting balance)":"")+
+        " → balance reads <b>"+esc(fmtMoney(want))+"</b>.";
+    };
+    draw();el("bsAmt").addEventListener("input",draw);
+    el("bsX").onclick=closeMoSheet;
+    el("bsSave").onclick=function(){
+      var want=parseFloat(String(el("bsAmt").value).replace(/[^0-9.\-]/g,""));
+      if(isNaN(want))return toast("Enter what you actually have",{bad:true});
+      var b=el("bsSave");b.disabled=true;
+      post("/api/money/balance",{balance:want}).then(function(d){
+        if(d&&d.ok){MO.cfg=d.config;closeMoSheet();toast("Balance set to "+fmtMoney(d.balance));vibrate(10);loadMoney()}
+        else{b.disabled=false;toast("Couldn't set the balance",{bad:true})}
+      }).catch(function(){b.disabled=false;toast("Couldn't set the balance",{bad:true})});
+    };
+    var bc=el("bsClear");if(bc)bc.onclick=function(){
+      bc.disabled=true;
+      post("/api/money/balance",{clear:true}).then(function(d){
+        if(d&&d.ok){MO.cfg=d.config;closeMoSheet();toast("Correction removed");loadMoney()}
+        else{bc.disabled=false;toast("Couldn't remove it",{bad:true})}
+      }).catch(function(){bc.disabled=false;toast("Couldn't remove it",{bad:true})});
+    };
+  }
+
   function openHeroSheet(){
     var hero=Object.assign({primary:"balance",stats:["monthIn","monthOut","topCat"],startingBalance:0,title:""},(MO.cfg&&MO.cfg.hero)||{});
     var st=hero.stats||[];
@@ -9871,6 +9925,7 @@
       '<div class="mo-f-lbl">Big number up top</div><select class="mo-in" id="hsPrimary">'+heroOpts(hero.primary,false)+'</select>'+
       '<div class="mo-f-lbl">Custom label (optional)</div><input class="mo-in" id="hsTitle" maxlength="40" placeholder="e.g. In the bank" value="'+esc(hero.title||"")+'">'+
       '<div class="mo-f-lbl">Starting balance — money you already had</div><input class="mo-in" id="hsStart" type="text" inputmode="decimal" placeholder="e.g. 500" value="'+(hero.startingBalance?esc(String(hero.startingBalance)):"")+'">'+
+      '<button class="mo-delbtn" id="hsFix" style="margin-top:8px">Balance wrong? Set it to what I actually have</button>'+
       '<div class="mo-f-lbl">Tax set-aside % — reserves a slice of profit so you always see your real take-home (0 = off)</div><input class="mo-in" id="hsTax" type="text" inputmode="decimal" placeholder="e.g. 25" value="'+(((MO.cfg&&MO.cfg.taxRate)||0)?esc(String(MO.cfg.taxRate)):"")+'">'+
       '<div style="font-size:11.5px;color:var(--muted2);padding:8px 2px 2px;line-height:1.5">The month’s numbers live in the tap-to-open <b>Pulse</b> card and the <b>Report</b> tab.</div>'+
       '<button class="mo-save" id="hsSave">Save headline</button>'+
@@ -9878,6 +9933,7 @@
       '</div>';
     var sh=el("moSheet");sh.innerHTML=h;el("moScrim").classList.add("show");sh.classList.add("show");
     el("hsX").onclick=closeMoSheet;
+    el("hsFix").onclick=openBalanceSheet;
     el("hsSave").onclick=function(){
       var start=parseFloat(String(el("hsStart").value).replace(/[^0-9.\-]/g,""))||0;
       var tax=Math.max(0,Math.min(60,parseFloat(String(el("hsTax").value).replace(/[^0-9.]/g,""))||0));
