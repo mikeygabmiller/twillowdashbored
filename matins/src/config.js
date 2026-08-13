@@ -16,6 +16,21 @@ export const DEFAULTS = {
   SITE_REPO: 'mikeygabmiller/matins',
   SITE_BRANCH: 'main',
   SEND_PAUSED: '1',
+  ALERT_EMAIL: '',
+  ADMIN_DIAGNOSTICS: '0',
+};
+
+// Signup is an unauthenticated route that causes mail to be sent, which makes
+// it a way to point this Worker at somebody else's inbox. The ceilings are
+// deliberately generous for a real person and useless for a script. KV is
+// eventually consistent, so these are approximate under a burst from many
+// colos at once — approximate is the difference between a nuisance and a
+// burned sending domain.
+export const SIGNUP_LIMITS = {
+  perIpPerHour: 5,
+  // How long a pending address waits before another confirmation is sent to
+  // it. Stops one address being mailed repeatedly by resubmitting the form.
+  resendCooldownSeconds: 15 * 60,
 };
 
 // How many recent issues a prayer / Q&A must sit out before it can come back.
@@ -99,6 +114,9 @@ export function config(rawEnv = {}) {
     tokenSecret: env.TOKEN_SECRET || '',
     adminToken: env.ADMIN_TOKEN || '',
     sendPaused: String(get('SEND_PAUSED')) === '1',
+    alertEmail: get('ALERT_EMAIL'),
+    // Unauthenticated binding/token diagnostics. Off unless deliberately on.
+    adminDiagnostics: String(get('ADMIN_DIAGNOSTICS')) === '1',
     // Binding names that arrived with stray whitespace and had to be
     // trimmed to be usable. Empty is the healthy case.
     bindingNameWarnings: needTrimming,

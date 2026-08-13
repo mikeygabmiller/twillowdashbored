@@ -168,6 +168,11 @@ a phone browser, which cannot set headers. That puts the token in URLs and
 request logs — `POST /admin/run`, the only route that builds and sends, never
 accepts it. Rotate `ADMIN_TOKEN` whenever you want; nothing else depends on it.
 
+`GET /admin/status` also reports the last publish (`diag:lastPublish`), whether
+an alert address is configured, and how many forms and openings the rotation has
+actually recorded — the fastest way to tell that generation is working without
+reading an issue.
+
 Confirm and unsubscribe links are HMAC-SHA256 tokens over `purpose:email`, so a
 link cannot be forged, guessed, or reused for the other purpose.
 
@@ -178,31 +183,90 @@ link cannot be forged, guessed, or reused for the other purpose.
 | readings API down / no entry for the date | references are dropped, the USCCB link is still built from the date, everything else sends |
 | Douay-Rheims lookup down, or returns a non-DR translation | the verse reference stays, the text is dropped |
 | LLM call fails | that block is omitted; a missing headline falls back to the day's own name from romcal |
+| LLM reply is cut off mid-answer | treated as a failure, not an answer — the draft is retried, and a block that keeps truncating is dropped with `truncated` in its reason |
 | safety pass flags a block | the block is dropped, the reason is logged to `safetyReport`, the issue sends |
 | safety pass itself errors | the block is dropped (fail closed) |
-| GitHub publish fails | logged; the email still goes out |
+| GitHub write hits a 409/429/5xx or a network error | retried twice with backoff, then reported; the email still goes out |
+| GitHub publish fails anyway | recorded to `diag:lastPublish`, shown in `/admin/status`; the email still goes out |
+| anything above actually happens | if `ALERT_EMAIL` is set, you get a mail that morning naming what was lost |
 
 Only the liturgical calendar can stop an issue, and it is computed offline.
 
-`npm test` covers each of these, including the seeded bad block.
+`npm test` covers each of these, including the seeded bad block and the
+truncation that caused the 6–13 August outage.
+
+**Degrading is not the same as being told.** Every failure above was already
+recorded faithfully in `safetyReport` before any of this existed, and that is
+exactly how the first eight issues went out without a reflection or a saint
+story while nobody noticed: the record was written and nothing read it. If you
+add a new fallback, give it a way to speak up too.
 
 ## Config
 
 `wrangler.toml` `[vars]`: `APP_NAME`, `SEND_HOUR`, `SEND_TZ`, `LLM_PROVIDER`
-(`anthropic` | `gemini` | `stub`), `LLM_MODEL`, `FROM_EMAIL`, `REPLY_TO`,
-`SITE_URL`, `CALENDAR_LOCALE`, `READINGS_API_BASE`, `DR_API_BASE`, `SITE_REPO`,
-`SITE_BRANCH`, `SEND_PAUSED`.
+(`anthropic` | `gemini` | `stub`), `LLM_MODEL`, `GEMINI_THINKING_BUDGET`,
+`FROM_EMAIL`, `REPLY_TO`, `ALERT_EMAIL`, `SITE_URL`, `CALENDAR_LOCALE`,
+`READINGS_API_BASE`, `DR_API_BASE`, `SITE_REPO`, `SITE_BRANCH`, `SEND_PAUSED`,
+`ADMIN_DIAGNOSTICS`.
 
 Set `DR_API_BASE` to an empty string to print references only and never any
 verse text at all.
 
-**On Gemini:** the 2.5 models reason before answering and those tokens come out
-of `maxOutputTokens`. The calls here are short — a nine-word headline, a
-two-field JSON verdict — so thinking could consume the whole budget and return
-an empty candidate, which the safety pass would read as "checker failed" and
-fail closed on, dropping every generated block. `thinkingConfig.thinkingBudget`
-is therefore set to 0; none of this work needs deliberation. Leave `LLM_MODEL`
-blank for the provider default, or set it if the API 404s on that model name.
+**`ALERT_EMAIL` is the one to set first.** It is not a subscriber and never goes
+on the list — it is the address that gets told when an issue goes out
+incomplete, naming every dropped and degraded block. Leave it empty and the app
+goes back to failing silently, which is the failure mode that actually hurt it.
+
+**`ADMIN_DIAGNOSTICS` ships off.** With it on *and* `?debug=1` on the request,
+an unauthenticated `/admin/*` error explains itself: which binding names reached
+this Worker, whether a supplied token is even the right length. That is worth an
+evening while the Worker is being wired up and worth nothing afterwards, and the
+route it guards can rebuild the site and mail every subscriber. Turn it on,
+diagnose, turn it off. No value is ever revealed either way.
+
+### Signup ceilings
+
+`POST /subscribe` is unauthenticated and causes mail to be sent to an address
+the caller picks, which makes it a way to point this Worker at somebody else's
+inbox. Two ceilings, for two different abuses (`src/lib/ratelimit.js`,
+`SIGNUP_LIMITS` in `src/config.js`):
+
+- **One source, many addresses** — 5 signups per IP per hour, a fixed KV window.
+- **Many sources, one address** — a pending address is not re-mailed for 15
+  minutes, however many times the form is submitted. The reader sees the same
+  "check your inbox" either way, which is true.
+
+Neither is exact: KV is eventually consistent and a burst across colos can
+overshoot. They exist to stop a script, not to be an accounting system. A
+limiter that cannot reach KV **allows** the signup — breaking signup is worse
+than the abuse.
+
+**On Gemini — read this before changing any of it.** These models reason before
+answering and those tokens come out of `maxOutputTokens`. The first attempt at
+handling that was headroom alone: a 1024-token floor on every call, and no
+thinking field, on the reasoning that an unrecognised field name is a 400 and a
+400 loses the whole issue.
+
+That was wrong, and it cost the first eight issues their reflection and their
+saint story. 1024 is enough slack for a nine-word headline and not enough for a
+reasoning pass *plus* six sentences, so the model thought, started writing, and
+ran out — returning a reflection that stopped mid-sentence and a saint story
+whose JSON had no closing brace. Both looked like different problems. Neither
+was.
+
+Three things hold it closed now, and all three matter:
+
+- `GEMINI_THINKING_BUDGET = "0"` — set in `wrangler.toml`. None of this work
+  needs deliberation.
+- The floor is 3072, so even a model that ignores the budget has room for both.
+- **`llm.js` throws on `finishReason: MAX_TOKENS` whether or not it got text.**
+  This is the one that matters. A truncated candidate returned as though it were
+  finished is how a config problem spends eight days impersonating bad writing.
+
+If the API ever does reject `thinkingConfig`, the call retries once without it
+rather than failing — so the original worry is handled without giving up the
+fix. Leave `LLM_MODEL` blank for the provider default, or set it if the API 404s
+on that model name.
 
 ## How the writing is kept good
 
@@ -239,6 +303,17 @@ worse trade. What tripped is recorded in `safetyReport.blocks[].craft`.
 
 Recent opening sentences are kept in `rot:openings` and fed back as ground
 already covered, so the first line does not converge.
+
+**Two of those four have never actually run.** `buildIssue` commits the form
+rotation and remembers the opening only `if (reflection)` — correct, since a
+dropped block used neither — and no reflection survived between 6 and 13 August
+2026. So `rot:form` and `rot:openings` were empty that whole time: the form
+cooldown never engaged (the shape was pure date-hash) and the anti-convergence
+list never held an entry. Both start cold. Give the first week after a
+generation fix some slack on variety, and check
+`/admin/status` → `formsSeen` / `openingsRemembered` are climbing before
+concluding anything about the prompts. Zero on both means generation is still
+broken, whatever else the issue looks like.
 
 `npm run preview` prints the whole record: which form, how many drafts, what the
 judge said, and anything that tripped.

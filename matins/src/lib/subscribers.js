@@ -8,7 +8,7 @@
 import { makeToken, readToken, normalizeEmail } from './tokens.js';
 import { sendOne } from './send.js';
 import { theme, SERIF, SANS, escapeHtml } from '../render/theme.js';
-import { FOOTER_LINE } from '../config.js';
+import { FOOTER_LINE, SIGNUP_LIMITS } from '../config.js';
 
 const key = (email) => `sub:${email}`;
 
@@ -23,6 +23,15 @@ export async function subscribe({ store, cfg, rawEmail, fetchImpl }) {
   const existing = await getSubscriber(store, email);
   if (existing?.status === 'active') {
     return { ok: true, status: 200, message: "You're already subscribed — tomorrow's issue is on its way.", state: 'active' };
+  }
+
+  // Resubmitting the form must not re-mail the address. Without this, one
+  // address can be sent a confirmation as often as somebody cares to press the
+  // button, from anywhere, which no per-IP ceiling can see. The reply is the
+  // same either way — the reader is told to check their inbox, which is true,
+  // because a confirmation is already sitting in it.
+  if (existing?.status === 'pending' && withinCooldown(existing.lastRequestedAt)) {
+    return { ok: true, status: 200, message: 'Check your inbox — click the link and you are in.', state: 'pending', resent: false };
   }
 
   const now = new Date().toISOString();
@@ -54,7 +63,14 @@ export async function subscribe({ store, cfg, rawEmail, fetchImpl }) {
   // sits in /admin/status looking current and sends you hunting a solved
   // problem. A send that works clears it.
   await store.del('diag:lastEmailError').catch(() => {});
-  return { ok: true, status: 200, message: 'Check your inbox — click the link and you are in.', state: 'pending' };
+  return { ok: true, status: 200, message: 'Check your inbox — click the link and you are in.', state: 'pending', resent: true };
+}
+
+function withinCooldown(lastRequestedAt) {
+  if (!lastRequestedAt) return false;
+  const then = Date.parse(lastRequestedAt);
+  if (Number.isNaN(then)) return false;
+  return Date.now() - then < SIGNUP_LIMITS.resendCooldownSeconds * 1000;
 }
 
 export async function confirm({ store, cfg, token }) {

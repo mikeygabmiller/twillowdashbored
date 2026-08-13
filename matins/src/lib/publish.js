@@ -12,7 +12,35 @@ import { theme } from '../render/theme.js';
 
 const API = 'https://api.github.com';
 
+// Fourteen calls run per publish and any one of them can lose a race with
+// GitHub (409 when the branch head moved under us) or a bad minute (5xx, 429).
+// Unretried, that is how the site ends up internally inconsistent — the day
+// 2026-08-10 was published as a page and an archive entry with no issues/*.json
+// behind it. Two retries with backoff cover every failure of that shape; a 401,
+// a 404 on the repo, or a malformed request will not improve on a second look.
+const RETRIES = 2;
+const BACKOFF_MS = [300, 900];
+
+const retryable = (status) => status === 409 || status === 429 || status >= 500;
+
 async function putFile({ cfg, path, content, message, onlyIfMissing = false, fetchImpl }) {
+  let last = { ok: false, path, error: 'not attempted' };
+  for (let attempt = 0; attempt <= RETRIES; attempt++) {
+    if (attempt) await sleep(BACKOFF_MS[attempt - 1]);
+    // A thrown fetch — DNS, TLS, a dropped connection — used to escape all the
+    // way out of runDaily and take the send with it. The site is the archive;
+    // the email is the promise. Nothing in here may stop the email.
+    try {
+      last = await putFileOnce({ cfg, path, content, message, onlyIfMissing, fetchImpl });
+    } catch (err) {
+      last = { ok: false, path, error: `network: ${String(err?.message || err)}`, retryable: true };
+    }
+    if (last.ok || !last.retryable) return last;
+  }
+  return { ...last, error: `${last.error} (after ${RETRIES + 1} attempts)` };
+}
+
+async function putFileOnce({ cfg, path, content, message, onlyIfMissing = false, fetchImpl }) {
   const f = fetchImpl || globalThis.fetch;
   const url = `${API}/repos/${cfg.siteRepo}/contents/${path.split('/').map(encodeURIComponent).join('/')}`;
   const headers = {
@@ -31,7 +59,7 @@ async function putFile({ cfg, path, content, message, onlyIfMissing = false, fet
     if (onlyIfMissing) return { ok: true, path, skipped: 'already exists' };
     sha = (await head.json()).sha;
   } else if (head.status !== 404) {
-    return { ok: false, path, error: `read ${head.status}: ${(await head.text()).slice(0, 160)}` };
+    return { ok: false, path, error: `read ${head.status}: ${(await head.text()).slice(0, 160)}`, retryable: retryable(head.status) };
   }
 
   const res = await f(url, {
@@ -39,9 +67,11 @@ async function putFile({ cfg, path, content, message, onlyIfMissing = false, fet
     headers,
     body: JSON.stringify({ message, content: base64(content), branch: cfg.siteBranch, ...(sha ? { sha } : {}) }),
   });
-  if (!res.ok) return { ok: false, path, error: `write ${res.status}: ${(await res.text()).slice(0, 160)}` };
+  if (!res.ok) return { ok: false, path, error: `write ${res.status}: ${(await res.text()).slice(0, 160)}`, retryable: retryable(res.status) };
   return { ok: true, path };
 }
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // Yesterday's page was written before today's existed, so its "next" link is
 // missing. Re-rendering the one issue immediately before this one closes the

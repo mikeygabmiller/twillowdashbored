@@ -22,6 +22,22 @@ LLM_PROVIDER = "gemini"
 # names go stale — GET /admin/models lists what your key can actually reach.
 # If the API 404s on the default, put a current name here.
 LLM_MODEL = ""
+# Gemini reasons before answering and those tokens come out of the same output
+# budget as the answer. None of this work needs deliberation — a six-sentence
+# reflection, a nine-word headline, a two-field verdict — and leaving it on cost
+# eight issues their reflection and saint story, truncated mid-sentence. "0"
+# turns it off. Blank sends no thinking field at all (the pre-2026-08 behaviour,
+# and the bug). Only set it blank if the API rejects the field outright — and it
+# now retries without it by itself if that happens.
+GEMINI_THINKING_BUDGET = "0"
+# Where to send the "today's issue went out thin" alert. Leave empty for none.
+# Nothing else reads it; it is not a subscriber and never goes on the list.
+ALERT_EMAIL = ""
+# "1" lets an UNAUTHENTICATED /admin/* error report which binding names reached
+# this Worker and whether a supplied token is the right length. That is worth an
+# evening while the Worker is being wired up and worth nothing afterwards, so it
+# ships off. Turn it on, diagnose, turn it off — it also needs ?debug=1.
+ADMIN_DIAGNOSTICS = "0"
 # Resend's shared sender needs no DNS and delivers ONLY to your own Resend
 # account address — right for a first look, useless for real subscribers.
 # Verify a domain in Resend and change this before anyone else signs up.
