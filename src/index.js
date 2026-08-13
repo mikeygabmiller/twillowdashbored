@@ -74,7 +74,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-08·quotes-view';
+const BUILD = '2026-08-13·balance-correct';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -280,6 +280,7 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/money/config')   return apiMoneyGetConfig();
   if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/money/receipt') return apiMoneyReceipt(request, url);
   if (request.method === 'POST' && pathname === '/api/money/config')   return apiMoneySaveConfig(request);
+  if (request.method === 'POST' && pathname === '/api/money/balance')  return apiMoneySetBalance(request);
 
   // ---- Job Day suite (see the JOB DAY SUITE block near the bottom of this file) ----
   // Today's Run
@@ -5581,8 +5582,15 @@ function defaultMoneyConfig() {
 // The Log-screen headline. Defaults to the running balance (all money you have
 // now) up top, with this month's income, spend and top spending category below —
 // every slot is swappable from the in-app customizer.
+//
+// startingBalance is the offset between the ledger and real life: balance =
+// all-time net + startingBalance. It can be typed in by hand, or — far easier —
+// set by "correct the balance" (POST /api/money/balance), which counts what the
+// ledger says and solves for the offset that lands on the number actually in
+// pocket. balanceSetTo/balanceSetAt remember that correction so the headline can
+// say what it was set to and how much has come in since. No entry is touched.
 function defaultHero() {
-  return { primary: 'balance', stats: ['monthIn', 'monthOut', 'topCat'], startingBalance: 0, title: '' };
+  return { primary: 'balance', stats: ['monthIn', 'monthOut', 'topCat'], startingBalance: 0, title: '', balanceSetTo: null, balanceSetAt: 0 };
 }
 const HERO_METRICS = ['balance', 'monthNet', 'takeHome', 'taxReserve', 'youBucket', 'costsBucket', 'savingsBucket', 'mineBucket', 'taxBucket', 'bizBucket', 'monthIn', 'monthOut', 'monthJobs', 'monthAvg', 'topCat', 'monthPersonal', 'allIn', 'allOut'];
 function sanitizeHero(h, prev) {
@@ -5590,7 +5598,13 @@ function sanitizeHero(h, prev) {
   if (h && typeof h === 'object') {
     if (HERO_METRICS.includes(h.primary)) out.primary = h.primary;
     if (Array.isArray(h.stats)) out.stats = h.stats.filter((x) => HERO_METRICS.includes(x)).slice(0, 3);
-    if (h.startingBalance != null && !isNaN(+h.startingBalance)) out.startingBalance = money2(h.startingBalance);
+    if (h.startingBalance != null && !isNaN(+h.startingBalance)) {
+      const next = money2(h.startingBalance);
+      // Typing the offset by hand supersedes any earlier correction, so the
+      // headline stops claiming a "set to" number that no longer holds.
+      if (next !== out.startingBalance) { out.balanceSetTo = null; out.balanceSetAt = 0; }
+      out.startingBalance = next;
+    }
     if (typeof h.title === 'string') out.title = h.title.slice(0, 40);
   }
   return out;
@@ -6184,6 +6198,31 @@ async function apiMoneySaveConfig(request) {
   }
   await kv().put(MONEY_CFG_KEY, JSON.stringify(next));
   return json({ ok: true, config: next });
+}
+
+// "The balance is wrong — I've actually got $5,000." Rather than inventing an
+// entry (which would poison income, margins, averages and every report), this
+// solves for the starting-balance offset that makes the headline land on the
+// real number: offset = actual − what the ledger nets all-time. History is read,
+// never written; from here the balance moves with every job and expense again.
+// { balance: 5000 } sets it, { clear: true } drops the correction entirely.
+async function apiMoneySetBalance(request) {
+  const data = await readJson(request);
+  const cfg = await loadMoneyConfig();
+  const hero = Object.assign(defaultHero(), cfg.hero || {});
+  const at = await allTimeSummary();
+  if (data.clear) {
+    hero.startingBalance = 0; hero.balanceSetTo = null; hero.balanceSetAt = 0;
+  } else {
+    if (data.balance == null || isNaN(+data.balance)) return json({ ok: false, error: 'Enter the amount you actually have.' }, 400);
+    const target = money2(data.balance);
+    hero.startingBalance = money2(target - at.net);
+    hero.balanceSetTo = target;
+    hero.balanceSetAt = Date.now();
+  }
+  const next = Object.assign({}, cfg, { hero });
+  await kv().put(MONEY_CFG_KEY, JSON.stringify(next));
+  return json({ ok: true, config: next, ledgerNet: at.net, adjustment: hero.startingBalance, balance: money2(at.net + hero.startingBalance) });
 }
 
 // ---- money cron -------------------------------------------------------------
