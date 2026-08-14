@@ -130,9 +130,25 @@ The copy committed in `site/` is built for
 
 ### 5. Deploy
 
+Merging to `main` deploys it. `.github/workflows/deploy-matins.yml` runs the
+test suite, deploys, and then **reads the build fingerprint back off the live
+URL** — a deploy that reports success while the live Worker still serves the old
+build fails the job rather than passing quietly. It needs one repository secret,
+`CLOUDFLARE_API_TOKEN` (Cloudflare → My Profile → API Tokens → "Edit Cloudflare
+Workers"), and until that is set the job fails loudly and Matins stays on
+whatever was last deployed by hand.
+
+This matters because Matins is a *second* Worker in this repo. Cloudflare Workers
+Builds is wired to the `texting` Worker at the root, not to this one, so for
+Matins "merged" and "live" were never the same thing — `matins-15` shipped by
+hand and nothing checked. Anything that has to be remembered eventually is not.
+
+By hand, if you need to:
+
 ```bash
+cd matins
 npx wrangler deploy
-curl https://matins.<your-subdomain>.workers.dev/api/version
+curl https://matins.<your-subdomain>.workers.dev/api/version   # must match src/build.js
 ```
 
 Bump `BUILD` in `src/build.js` on every deploy so `/api/version` tells you what
@@ -212,10 +228,19 @@ add a new fallback, give it a way to speak up too.
 Set `DR_API_BASE` to an empty string to print references only and never any
 verse text at all.
 
-**`ALERT_EMAIL` is the one to set first.** It is not a subscriber and never goes
-on the list — it is the address that gets told when an issue goes out
-incomplete, naming every dropped and degraded block. Leave it empty and the app
-goes back to failing silently, which is the failure mode that actually hurt it.
+**`ALERT_EMAIL` is the one to set first, and it is a secret, not a var.** It is
+the address that gets told when an issue goes out incomplete, naming every
+dropped and degraded block. It is not a subscriber and never goes on the list.
+
+```bash
+npx wrangler secret put ALERT_EMAIL
+```
+
+A plain `[vars]` entry would be rewritten from `wrangler.toml` on every deploy,
+so an address set in the dashboard would be silently wiped by the next one — the
+alerting would go quiet with nobody touching it, which is precisely the class of
+failure it exists to catch. A secret survives deploys and stays out of the repo.
+Unset means no alerts.
 
 **`ADMIN_DIAGNOSTICS` ships off.** With it on *and* `?debug=1` on the request,
 an unauthenticated `/admin/*` error explains itself: which binding names reached
