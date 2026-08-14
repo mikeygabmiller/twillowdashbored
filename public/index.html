@@ -546,6 +546,81 @@
   .quote-banner .qb-txt b{color:#f8eed0;font-weight:650}
   .quote-banner .qb-go{background:#4a3a12;border:1px solid #6b551d;color:#fdf6e3;border-radius:8px;
     padding:6px 11px;font-size:11.5px;font-weight:700;flex:none}
+  /* ---- "Leaving now" — the next stop, on Home and in the conversation ----
+     The address is the one thing he needs before he pulls out of the driveway,
+     and it used to mean scrolling a conversation to find it. Big tap target,
+     everything else secondary. */
+  .next-card{--nx-bg:linear-gradient(160deg,#1a1410,#141416 62%);--nx-bd:#46331f;--nx-ac:#f0a35e;
+    --nx-ti:var(--text);--nx-su:var(--muted);--nx-when:#ffd7ab;
+    --nx-ab:#2a1c10;--nx-ad:#5c3f22;--nx-af:#ffe9d2;
+    --nx-gb:#231a24;--nx-gd:#4a3557;--nx-gf:#e6d5f0;--nx-ga:#c99bea;
+    --nx-cb:#22232a;--nx-cd:#35363f;--nx-wb:#2a1a1c;--nx-wd:#4d2229;--nx-wf:#f0c9ce;
+    background:var(--nx-bg);border:1px solid var(--nx-bd);
+    border-radius:18px;padding:15px 15px 13px;margin-bottom:12px}
+  .next-card .nx-h{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;
+    letter-spacing:.1em;text-transform:uppercase;color:var(--nx-ac);margin-bottom:10px}
+  .next-card .nx-h .nx-when{margin-left:auto;letter-spacing:0;text-transform:none;font-size:12px;
+    font-weight:700;color:var(--nx-when)}
+  .next-card .nx-who{font-size:19px;font-weight:800;letter-spacing:-.02em;color:var(--nx-ti);line-height:1.15}
+  .next-card .nx-what{font-size:12.5px;color:var(--nx-su);margin-top:3px}
+  .next-card .nx-addr{display:flex;align-items:center;gap:11px;width:100%;margin-top:12px;
+    background:var(--nx-ab);border:1px solid var(--nx-ad);border-radius:13px;padding:13px 14px;
+    text-align:left;color:var(--nx-af);font-size:15px;font-weight:700;line-height:1.3}
+  .next-card .nx-addr .nx-ai{color:var(--nx-ac);flex:none;display:flex}
+  .next-card .nx-addr .nx-at{flex:1;min-width:0}
+  .next-card .nx-addr .nx-go{flex:none;font-size:11px;font-weight:800;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--nx-ac)}
+  .next-card .nx-addr.guess{background:var(--nx-gb);border-color:var(--nx-gd);border-style:dashed;color:var(--nx-gf)}
+  .next-card .nx-addr.guess .nx-ai,.next-card .nx-addr.guess .nx-go{color:var(--nx-ga)}
+  .next-card .nx-none{margin-top:12px;background:var(--nx-cb);border:1px dashed var(--nx-cd);
+    border-radius:13px;padding:13px 14px;color:var(--nx-su);font-size:13px;line-height:1.4}
+  .next-card .nx-save{display:block;width:100%;margin-top:7px;background:var(--nx-gb);
+    border:1px solid var(--nx-gd);color:var(--nx-gf);border-radius:10px;padding:9px;font-size:12px;font-weight:700}
+  .next-card .nx-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .next-card .nx-chip{display:inline-flex;align-items:center;gap:5px;background:var(--nx-cb);
+    border:1px solid var(--nx-cd);border-radius:8px;padding:5px 9px;font-size:11.5px;
+    color:var(--nx-su);font-weight:600}
+  .next-card .nx-chip b{color:var(--nx-ti);font-weight:700}
+  .next-card .nx-chip.warn{background:var(--nx-wb);border-color:var(--nx-wd);color:var(--nx-wf)}
+  .next-card .nx-acts{display:flex;gap:7px;margin-top:11px}
+  .next-card .nx-acts button{flex:1;background:var(--nx-cb);border:1px solid var(--nx-cd);
+    color:var(--nx-ti);border-radius:10px;padding:9px;font-size:12.5px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;gap:6px}
+  /* Daylight. He works outdoors, so this one has to hold up in bright sun as
+     well as it does at 6am — the card goes to paper, the accent stays warm. */
+  @media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .next-card{
+    --nx-bg:linear-gradient(160deg,#fff5e9,#fffdfb 62%);--nx-bd:#ecd5b8;--nx-ac:#b4670f;
+    --nx-when:#8a5312;--nx-ab:#fdefdd;--nx-ad:#e2bc92;--nx-af:#75430f;
+    --nx-gb:#f7f1fc;--nx-gd:#d8c5e9;--nx-gf:#57376f;--nx-ga:#8354ad;
+    --nx-cb:#f4f6f8;--nx-cd:#d7dbe2;--nx-wb:#fdecee;--nx-wd:#f0c4ca;--nx-wf:#9c2436}}
+  :root[data-theme="light"] .next-card{
+    --nx-bg:linear-gradient(160deg,#fff5e9,#fffdfb 62%);--nx-bd:#ecd5b8;--nx-ac:#b4670f;
+    --nx-when:#8a5312;--nx-ab:#fdefdd;--nx-ad:#e2bc92;--nx-af:#75430f;
+    --nx-gb:#f7f1fc;--nx-gd:#d8c5e9;--nx-gf:#57376f;--nx-ga:#8354ad;
+    --nx-cb:#f4f6f8;--nx-cd:#d7dbe2;--nx-wb:#fdecee;--nx-wd:#f0c4ca;--nx-wf:#9c2436}
+  /* The same facts, compacted, at the top of that customer's conversation. */
+  .job-banner{--jb-bg:#1c1610;--jb-bd:#46331f;--jb-ac:#f0a35e;--jb-fg:#f0dcc6;--jb-ti:#ffe9d2;
+    --jb-gb:#4a3218;--jb-gd:#6b4a24;
+    margin:8px 14px 0;padding:10px 13px;background:var(--jb-bg);border:1px solid var(--jb-bd);
+    border-radius:13px;display:flex;align-items:center;gap:10px;color:var(--jb-fg);font-size:13px}
+  .job-banner .jb-ic{color:var(--jb-ac);flex:none;display:flex}
+  .job-banner .jb-txt{flex:1;min-width:0;line-height:1.35}
+  .job-banner .jb-txt b{color:var(--jb-ti);font-weight:650;display:block}
+  .job-banner .jb-sub{display:block;font-size:11px;opacity:.8;margin-top:1px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .job-banner .jb-go{background:var(--jb-gb);border:1px solid var(--jb-gd);color:var(--jb-ti);
+    border-radius:8px;padding:6px 11px;font-size:11.5px;font-weight:700;flex:none}
+  .job-banner.guess{--jb-bg:#1e1824;--jb-bd:#4a3557;--jb-ac:#c99bea;--jb-fg:#e6d5f0;--jb-ti:#f0e6f8;
+    --jb-gb:#2f2440;--jb-gd:#4a3557}
+  @media (prefers-color-scheme:light){
+    :root:not([data-theme="dark"]) .job-banner{--jb-bg:#fff5e9;--jb-bd:#ecd5b8;--jb-ac:#b4670f;
+      --jb-fg:#6b4a24;--jb-ti:#4a300f;--jb-gb:#fdefdd;--jb-gd:#e2bc92}
+    :root:not([data-theme="dark"]) .job-banner.guess{--jb-bg:#f7f1fc;--jb-bd:#d8c5e9;--jb-ac:#8354ad;
+      --jb-fg:#57376f;--jb-ti:#432a5c;--jb-gb:#f0e6f8;--jb-gd:#d8c5e9}}
+  :root[data-theme="light"] .job-banner{--jb-bg:#fff5e9;--jb-bd:#ecd5b8;--jb-ac:#b4670f;
+    --jb-fg:#6b4a24;--jb-ti:#4a300f;--jb-gb:#fdefdd;--jb-gd:#e2bc92}
+  :root[data-theme="light"] .job-banner.guess{--jb-bg:#f7f1fc;--jb-bd:#d8c5e9;--jb-ac:#8354ad;
+    --jb-fg:#57376f;--jb-ti:#432a5c;--jb-gb:#f0e6f8;--jb-gd:#d8c5e9}
   /* Won the job, never logged the money. */
   .logjob-banner{margin:8px 14px 0;padding:10px 13px;background:#132218;border:1px solid #244d33;border-radius:13px;
     display:flex;align-items:center;gap:10px;color:#c8e6d3;font-size:13px}
@@ -2366,6 +2441,7 @@
       <button id="findNext" data-ic="chevron-down" aria-label="Next match"></button>
       <button id="findClose" data-ic="x" aria-label="Close find"></button>
     </div>
+    <div class="job-banner" id="jobBanner" style="display:none"></div>
     <div class="hold-banner" id="holdBanner" style="display:none"></div>
     <div class="optout-banner" id="optOutBanner" style="display:none"></div>
     <div class="logjob-banner" id="logJobBanner" style="display:none"></div>
@@ -2734,7 +2810,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-13·balance-correct";
+  var APP_BUILD="2026-08-14·leaving-now";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -2839,6 +2915,9 @@
     "route":'<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>',
     "navigation":'<polygon points="3 11 22 2 13 21 11 13 3 11"/>',
     "map-pin":'<path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/>',
+    "key":'<circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 8.8-8.8"/><path d="m17 6 2.5 2.5"/><path d="m20 3 1.5 1.5"/>',
+    "droplet":'<path d="M12 2.7 6.9 8a7.2 7.2 0 1 0 10.2 0Z"/>',
+    "alert-triangle":'<path d="M10.3 3.7 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.7a2 2 0 0 0-3.4 0Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/>',
     "camera":'<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3Z"/><circle cx="12" cy="13" r="3"/>',
     "share":'<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/>',
     "play":'<polygon points="6 3 20 12 6 21 6 3"/>',
@@ -3978,6 +4057,7 @@
     order=order.filter(function(k){return ["aicenter","needs","waiting","followups","reminders"].indexOf(k)<0});
     var dateLine=new Date().toLocaleDateString([],{weekday:"long",month:"long",day:"numeric"});
     var h='<div class="home"><div class="home-head"><div class="hh-greet">'+greeting()+', Mikey</div><div class="hh-sub">'+esc(dateLine)+'</div></div>';
+    h+=homeNextWidget();          // where you're going — always first, never hidden
     h+=W.aicenter;
     h+=homePushWidget();          // one-time "turn on notifications" nudge
     h+=homeNeeds(waiting,fu,reminders);
@@ -3988,6 +4068,7 @@
     Array.prototype.forEach.call(box.querySelectorAll("[data-more]"),function(c){c.onclick=function(){setTab(c.getAttribute("data-more"))}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-open-money]"),function(c){c.onclick=function(){openMoney()}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-open-analytics]"),function(c){c.onclick=function(){openAnalytics()}});
+    wireNext(box);
     wireHomeWidgets(box);
     wirePromises(box);
     wireAiCenter();
@@ -3996,6 +4077,101 @@
     // if the search box is still focused, or they vanish a beat after opening.
     if(state.searchFocus)renderFeatureHits();
   }
+  // ===== "Leaving now" — the next stop =======================================
+  // The single most-asked question of the day is "where am I going," and the
+  // answer used to be buried in a conversation. This is always the first thing
+  // on Home, it isn't toggleable, and it reads the day board rather than any
+  // new store. Fetched once per Home visit, never on the poll loop.
+  var NEXT={day:null,fetching:false,at:0};
+  function loadNext(force){
+    if(NEXT.fetching)return;
+    if(!force&&NEXT.day&&Date.now()-NEXT.at<120000)return;
+    NEXT.fetching=true;
+    api("/api/day").then(function(d){
+      NEXT.fetching=false;
+      if(d&&d.ok){NEXT.day=d;NEXT.at=Date.now();if(state.tab==="home")renderHome()}
+    }).catch(function(){NEXT.fetching=false});
+  }
+  // The stop he's headed to: the first one not finished or skipped.
+  function nextStop(){
+    var d=NEXT.day;if(!d||!d.jobs)return null;
+    for(var i=0;i<d.jobs.length;i++){
+      var j=d.jobs[i];
+      if(j.state!=="done"&&j.state!=="skipped")return j;
+    }
+    return null;
+  }
+  function homeNextWidget(){
+    if(!NEXT.day){loadNext();return ""}
+    var j=nextStop();
+    if(!j)return "";
+    var t=jd12(j.slot),when=j.slot?(t[0]+" "+t[1]):"Today";
+    if(j.state==="enroute")when="On my way";
+    else if(j.state==="onsite")when="You're there";
+    var addr=j.address||j.addressGuess||"";
+    var guess=!j.address&&!!j.addressGuess;
+    var what=[j.service,j.vehicle,j.price?fmtMoney(j.price):""].filter(Boolean).join(" · ");
+    var h='<div class="next-card"><div class="nx-h">'+ic("navigation",14)+'Next stop'+
+      '<span class="nx-when">'+esc(when)+'</span></div>'+
+      '<div class="nx-who">'+esc(j.name||"Job")+'</div>'+
+      (what?'<div class="nx-what">'+esc(what)+'</div>':'');
+    if(addr){
+      h+='<button class="nx-addr'+(guess?' guess':'')+'" data-nav="'+esc(j.mapQuery||addr)+'">'+
+        '<span class="nx-ai">'+ic(guess?"help":"map-pin",19)+'</span>'+
+        '<span class="nx-at">'+esc(addr)+(j.city?', '+esc(j.city):'')+'</span>'+
+        '<span class="nx-go">Go</span></button>';
+      if(guess)h+='<button class="nx-save" data-save-addr="'+esc(addr)+'" data-save-phone="'+esc(j.phone||"")+'">'+
+        ic("check",13)+' Found this in your texts — save it to their garage</button>';
+    }else{
+      h+='<div class="nx-none">No address on file, and nothing address-shaped in your texts with them. Open the conversation and add it once — you\'ll never look for it again.</div>';
+    }
+    var chips=[];
+    if(j.gate)chips.push('<span class="nx-chip">'+ic("key",12)+'Gate <b>'+esc(j.gate)+'</b></span>');
+    if(j.parking)chips.push('<span class="nx-chip">'+ic("car",12)+esc(j.parking)+'</span>');
+    if(j.water===false)chips.push('<span class="nx-chip warn">'+ic("droplet",12)+'No water</span>');
+    if(j.power===false)chips.push('<span class="nx-chip warn">'+ic("zap",12)+'No power</span>');
+    if(j.avoid)chips.push('<span class="nx-chip warn">'+ic("alert-triangle",12)+esc(j.avoid)+'</span>');
+    if(chips.length)h+='<div class="nx-chips">'+chips.join("")+'</div>';
+    h+='<div class="nx-acts">'+
+      (j.phone?'<button data-next-open="'+esc(j.phone)+'">'+ic("message-square",15)+'Text</button>':'')+
+      (j.phone?'<button data-next-call="'+esc(j.phone)+'">'+ic("phone",15)+'Call</button>':'')+
+      '<button data-next-run="1">'+ic("route",15)+'My day</button></div>';
+    return h+'</div>';
+  }
+  function wireNext(box){
+    Array.prototype.forEach.call(box.querySelectorAll("[data-nav]"),function(b){
+      b.onclick=function(){vibrate(8);jdNavigate(b.getAttribute("data-nav"))}});
+    Array.prototype.forEach.call(box.querySelectorAll("[data-next-open]"),function(b){
+      b.onclick=function(){openThread(b.getAttribute("data-next-open"))}});
+    Array.prototype.forEach.call(box.querySelectorAll("[data-next-call]"),function(b){
+      b.onclick=function(){
+        if(!confirm("Call them?\nYour cell rings first — answer it to connect."))return;
+        post("/api/call",{phone:b.getAttribute("data-next-call")}).then(function(d){
+          toast(d&&d.ok?"Calling your phone — answer to connect":"Call failed",{bad:!(d&&d.ok)})});
+      }});
+    Array.prototype.forEach.call(box.querySelectorAll("[data-next-run]"),function(b){
+      b.onclick=function(){vibrate(6);openJobs("run")}});
+    Array.prototype.forEach.call(box.querySelectorAll("[data-save-addr]"),function(b){
+      b.onclick=function(){
+        b.disabled=true;b.textContent="Saving…";
+        saveGarageAddress(b.getAttribute("data-save-phone"),b.getAttribute("data-save-addr"),function(ok){
+          if(ok){toast("Saved to their garage");loadNext(true)}
+          else{b.disabled=false;b.textContent="Couldn't save — tap to retry"}
+        });
+      }});
+  }
+  // Merge an address into the garage without clobbering the vehicles, gate code
+  // and notes already in there — /api/meta replaces the whole garage doc, so the
+  // current one has to come back first.
+  function saveGarageAddress(phone,address,then){
+    if(!phone)return then(false);
+    api("/api/garage?phone="+encodeURIComponent(phone)).then(function(d){
+      var g=(d&&d.ok&&d.garage)||{vehicles:[]};
+      g.address=address;
+      return post("/api/meta",{phone:phone,garage:g});
+    }).then(function(r){then(!!(r&&r.ok))}).catch(function(){then(false)});
+  }
+
   // Job Day pieces that live on Home: the brief card and the push nudge.
   function wireJdHome(box){
     var r=box.querySelector("#brRefresh");if(r)r.onclick=function(){vibrate(6);toast("Refreshing your brief…");loadBrief(true)};
@@ -5589,6 +5765,40 @@
       else toast((d&&d.error)==="recipient_opted_out"?"They've opted out (texted STOP)":"Couldn't resend",{bad:true});
     });
   }
+  // The address strip at the top of a conversation. Three states: a saved
+  // address (tap to navigate), a guess pulled out of the texts (tap to save),
+  // or nothing at all — in which case it stays out of the way entirely.
+  function renderJobBanner(t){
+    var b=el("jobBanner"),g=t.garage||{},addr=g.address||"",guess=addr?"":(t.addressGuess||"");
+    var appt=t.appointmentAt||0,soon=appt&&appt>Date.now()-6*3600000;
+    if(!addr&&!guess){b.style.display="none";return}
+    b.style.display="flex";
+    b.className="job-banner"+(addr?"":" guess");
+    var when=soon?new Date(appt).toLocaleDateString([],{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):"";
+    var sub=[when,g.gate?"Gate "+g.gate:"",g.parking||"",garageVehicleLine(g)].filter(Boolean).join(" · ");
+    if(addr){
+      b.innerHTML='<span class="jb-ic">'+ic("map-pin",15)+'</span><div class="jb-txt"><b>'+esc(addr)+(g.city?", "+esc(g.city):"")+'</b>'+
+        (sub?'<span class="jb-sub">'+esc(sub)+'</span>':'')+'</div><button class="jb-go">Go</button>';
+      b.querySelector(".jb-go").onclick=function(){
+        vibrate(8);jdNavigate([addr,g.city,g.city?"WA":""].filter(Boolean).join(", "))};
+    }else{
+      b.innerHTML='<span class="jb-ic">'+ic("help",15)+'</span><div class="jb-txt"><b>'+esc(guess)+'</b>'+
+        '<span class="jb-sub">Found in your texts — is this where they are?</span></div><button class="jb-go">Save it</button>';
+      b.querySelector(".jb-go").onclick=function(){
+        var btn=this;btn.disabled=true;btn.textContent="Saving…";
+        saveGarageAddress(t.phone,guess,function(ok){
+          if(!ok){btn.disabled=false;btn.textContent="Retry";toast("Couldn't save that",{bad:true});return}
+          t.garage=t.garage||{vehicles:[]};t.garage.address=guess;t.addressGuess="";
+          toast("Saved — it's on your run board now");renderJobBanner(t);loadNext(true);
+        });
+      };
+    }
+  }
+  function garageVehicleLine(g){
+    var v=(g&&g.vehicles&&g.vehicles[0])||null;
+    return v?[v.year,v.color,v.make,v.model].filter(Boolean).join(" "):"";
+  }
+
   function renderThread(){
     var t=state.thread;if(!t)return;
     el("chatHead").style.display="flex";el("composer").style.display="block";
@@ -5597,6 +5807,12 @@
     el("hNum").textContent=prettyPhone(t.phone);
     el("hPin").innerHTML=ic("pin",14);el("hPin").style.display=t.pinned?"inline-block":"none";
     var dnt=isDnt(t.phone);el("hDnt").innerHTML=dnt?ic("ban",10)+'Do not text':'';el("hDnt").style.display=dnt?"inline-flex":"none";
+
+    // Where this one lives — right under their name, so the address is never
+    // something you scroll for. Shown once there's a job booked with them, or
+    // whenever an address is on file; the dashed version is a guess read out of
+    // the conversation that hasn't been saved yet.
+    renderJobBanner(t);
 
     // "You told me to leave this one alone." Shows the reason back in Mikey's own
     // words so a quiet conversation never looks like the app forgot about it.
@@ -7056,7 +7272,7 @@
     navDrop("thread");
     state.tab=tab;state.phone=null;document.body.classList.remove("viewing");
     el("details").classList.remove("open");el("sheetScrim").classList.remove("show");
-    el("emptyState").style.display="flex";el("chatHead").style.display="none";el("composer").style.display="none";el("schedBanner").style.display="none";el("fuBanner").style.display="none";el("remindBanner").style.display="none";pkHide();
+    el("emptyState").style.display="flex";el("chatHead").style.display="none";el("composer").style.display="none";el("schedBanner").style.display="none";el("fuBanner").style.display="none";el("remindBanner").style.display="none";el("jobBanner").style.display="none";pkHide();
     el("coachPanel").style.display="none";el("coachPanel")._phone=null;el("teamIdentityBar").style.display="none";
     hideAiReview();resetPolish();
     el("messages").innerHTML="";
