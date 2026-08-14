@@ -210,6 +210,68 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
 - **Editable quick-reply templates**, contact rename, pin, and archive.
 - **Free-tier friendly:** adaptive polling that backs off and pauses when idle/hidden.
 
+## Money on the table (Home → the customers going quiet)
+The cheapest job in this business comes from somebody who already knows you, and
+four kinds of quiet were invisible: a **quote nobody answered**, a **customer
+overdue for another detail**, a **lead who asked for a price and never booked**,
+and a **maintenance plan whose cycle has come round**. All four now land on one
+Home card with the total dollars attached, and a sheet that works the list one
+person at a time — each row shows the text already written, and one tap opens
+that conversation with it in the box. **Later** puts someone back for 30 days;
+**Not interested** marks the lead lost so it stops being a lead.
+
+Drafts are fixed templates, never AI: these go to people who are already
+lukewarm, and a model that invents a price or a day on a rebook text does real
+damage. Everything is derived at read time from the thread index and the money
+ledger — no new store, no writes, and the only thing ever written is the skip
+list, and only when Mikey taps a button.
+
+> Replaces the old **Rebook radar** widget, which never showed anything: it
+> filtered client-side for a last job 45+ days ago while reading only the
+> *current month's* ledger, so the condition was very nearly unsatisfiable.
+
+## Maintenance plans (conversation → Tools → Put them on a plan)
+A plan says "this person gets detailed every N weeks" — 4 weeks through 6
+months. When the cycle comes round they move to the top of *Money on the table*
+with a rebook text ready. **Nothing is texted and nothing is booked by it**; it
+is a promise to remind Mikey, not a subscription the customer signed. The clock
+runs from the **last job actually done** (not from when the plan was created, so
+setting one up on an old customer doesn't hide them for six weeks), it asks once
+per cycle, and it goes quiet on its own the moment they book. Lives on the
+thread and is mirrored onto the index, so "who is due" costs no extra reads.
+
+## The customer's own page — `/c/<token>`
+Most of what gets texted at a detailer is admin: what do you charge, when are
+you free, can we move it, what did you do last time. This is one permanent link
+per customer that answers all of it. It knows who they are, so nothing has to be
+typed twice: their vehicle and address are already on it, they can **book a time
+from real availability**, **move or cancel**, and see **every detail you've done
+for them**. Send it from *conversation → Tools → Send their booking link*.
+
+The token is the identity — long, unguessable, per-customer, and deliberately
+non-expiring, because a link that dies is a link that produces a text asking for
+a new one. It exposes only that customer's own data and can only act on that
+customer's own bookings. Booking through it drives the **same** public
+`/api/availability` + `/api/book` endpoints the website uses, so a time booked
+here and a time booked on the website can never disagree about what's free, and
+it lands as **pending** for Mikey to confirm exactly like a website booking. A
+customer cancelling pulls the reminders that job still had queued (so nobody
+gets "see you tomorrow!" for a job that isn't happening) and emails Mikey.
+
+## Are you charging enough? (Money → pricing)
+Every quote sent, against every job actually paid. A quote counts as **won**
+when that phone paid for a job within 60 days of it, which lets the website
+quote log — which tracks no verdict of its own — be scored alongside the texted
+quote builder, which does. Then the only question that matters: does the win
+rate fall as the price rises? If it doesn't, the price is too low.
+
+Shows overall win rate, average quoted vs average won, win rate across three
+price bands (terciles, so it works at any price point), a per-service
+breakdown, and plain-English advice. The advice is deliberately conservative:
+it stays quiet under ~10 quotes, and it never proposes a number it can't
+justify from the win rate it just measured. **No AI** — this is arithmetic, and
+arithmetic shouldn't cost a token or be able to hallucinate a price.
+
 ## The Job Day suite (Jobs tab)
 Ten features that turn the dashboard from "where the texting happens" into the
 app the day actually runs on. All of it lives under the new **Jobs** tab
@@ -410,7 +472,8 @@ drives everything.
 
 ## Endpoints (reference)
 Public: `/submit` `/sms` `/call` `/call-screen` `/voicemail` `/voicemail-done`
-`/t/<token>` (live ETA page) `/p/<token>` (pay page) `/api/track/state`
+`/t/<token>` (live ETA page) `/p/<token>` (pay page) `/c/<token>` (the customer's
+own page) `/api/track/state` `/api/cust/state` `/api/cust/action`
 Auth: `/api/login` `/api/logout`
 Dashboard API: `/api/health` `/api/threads` `/api/thread` `/api/send` `/api/meta`
 `/api/schedule` `/api/unschedule` `/api/call` `/api/read` `/api/insights`
@@ -427,4 +490,6 @@ Job Day suite: `/api/day` `/api/day/state` `/api/day/job` `/api/day/remove`
 `/api/push/peek` · `/api/quote/config` `/api/quote` `/api/quote/action` ·
 `/api/pay` `/api/pay/config` `/api/pay/request` `/api/pay/action` ·
 `/api/garage` · `/api/blast/candidates` `/api/blast/send` ·
+Money on the table: `/api/cold` `/api/cold/action` · Plans: `/api/plan` ·
+Customer page: `/api/cust/link` · Pricing: `/api/pricing` ·
 `/api/photos` `/api/photos/img` `/api/photos/delete` · `/api/brief`

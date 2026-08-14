@@ -74,7 +74,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-14·leaving-now';
+const BUILD = '2026-08-14·money-table';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -175,6 +175,10 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname.startsWith('/t/'))      return trackPage(pathname.slice(3).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40));
   if (request.method === 'GET'  && pathname.startsWith('/p/'))      return payPage(pathname.slice(3).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40));
   if (request.method === 'GET'  && pathname === '/api/track/state') return apiTrackState(url);
+  // /c/<token> — the customer's own page: what's booked, book a time, what I've done
+  if (request.method === 'GET'  && pathname.startsWith('/c/'))      return custPage(pathname.slice(3).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80));
+  if (request.method === 'GET'  && pathname === '/api/cust/state')  return apiCustState(url);
+  if (request.method === 'POST' && pathname === '/api/cust/action') return apiCustAction(request, url);
 
   if (request.method === 'GET'  && pathname === '/api/version')    return json({ ok: true, build: BUILD });
   if (request.method === 'POST' && pathname === '/api/login')      return apiLogin(request);
@@ -317,6 +321,19 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/pay/action')     return apiPayAction(request);
   // Customer garage
   if (request.method === 'GET'  && pathname === '/api/garage')         return apiGarage(url);
+
+  // Money on the table — quotes gone quiet, customers due again, leads that never booked
+  if (request.method === 'GET'  && pathname === '/api/cold')           return apiCold();
+  if (request.method === 'POST' && pathname === '/api/cold/action')    return apiColdAction(request);
+
+  // Pricing — what you charge vs what actually gets accepted
+  if (request.method === 'GET'  && pathname === '/api/pricing')        return apiPricing(url);
+
+  // The customer's own link — minted once per customer, then reused forever
+  if (request.method === 'POST' && pathname === '/api/cust/link')      return apiCustLink(request);
+
+  // Maintenance plans — the every-N-weeks rhythm behind a rebook
+  if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/plan') return apiPlan(request, url);
   // Neighborhood blast
   if (request.method === 'GET'  && pathname === '/api/blast/candidates') return apiBlastCandidates(url);
   if (request.method === 'POST' && pathname === '/api/blast/send')     return apiBlastSend(request);
@@ -1894,6 +1911,7 @@ async function apiMeta(request) {
   if (typeof data.assignedTo === 'string') thread.assignedTo = data.assignedTo.slice(0, 24);
   // Customer garage (vehicles + access notes). Sent whole; sanitized on the way in.
   if ('garage' in data) thread.garage = data.garage ? sanitizeGarage(data.garage) : null;
+  if ('plan' in data) thread.plan = data.plan ? sanitizePlan(data.plan) : null;
   if ('appointmentAt' in data) {
     const a = Number(data.appointmentAt);
     thread.appointmentAt = (data.appointmentAt == null || !a) ? null : a;
@@ -6356,6 +6374,8 @@ function blankThread(phone) {
     garage: null,      // customer garage: { vehicles[], address, city, zip, gate,
                        // parking, water, power, prefs, avoid } — see sanitizeGarage
     quote: null,       // most recent quote sent: { id, total, service, at }
+    plan: null,        // maintenance plan: { every, startedAt, lastJobAt, service,
+                       // price, askedAt, paused, note } — see sanitizePlan
     messages: [],      // { id, dir:'in'|'out', body, ts, kind, error? }
     suggested: null,   // proactive pre-drafted reply awaiting Mikey: { text, ts, forTs }
     dateRequest: null, // texter asked Mikey for an available date: { at, by }
@@ -6635,6 +6655,14 @@ function buildIndexSummary(thread, cfg) {
     // Booked time (the day board finds the day's jobs from here without loading
     // every thread) plus the garage headline for the customer roster.
     appointmentAt: thread.appointmentAt || null,
+    // A maintenance plan, mirrored whole so "who is due" can be answered from
+    // the index alone — null for almost everyone, so it costs nothing.
+    plan: thread.plan ? {
+      every: thread.plan.every, paused: !!thread.plan.paused,
+      askedAt: thread.plan.askedAt || 0, startedAt: thread.plan.startedAt || 0,
+      lastJobAt: thread.plan.lastJobAt || 0,
+      service: thread.plan.service || '', price: thread.plan.price || 0,
+    } : null,
     hasGarage: !!(thread.garage && ((thread.garage.vehicles || []).length || thread.garage.address)),
     vehicleLabel: garageVehicleLabel(thread.garage),
     city: (thread.garage && thread.garage.city) || '',
@@ -8548,7 +8576,11 @@ async function apiBook(request) {
   const cfg = await loadBookingConfig();
   const service = String(b.service || ''), size = String(b.size || '');
   const date = String(b.date || ''), slot = String(b.slot || '');
-  const name = String(b.name || '').trim(), phone = normalizePhone(b.phone);
+  const name = String(b.name || '').trim();
+  // Booked from a customer's own link: the token IS the identity, so the phone
+  // comes from the token rather than from anything the page posted.
+  const viaLink = b.fromLink ? await custResolve(String(b.fromLink).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80)) : null;
+  const phone = viaLink ? viaLink.phone : normalizePhone(b.phone);
   const address = String(b.address || '').trim(), city = String(b.city || '').trim();
   const svc = bkSvc(cfg, service);
   if (!svc) return cors(json({ ok: false, error: 'bad_service' }, 422));
@@ -9999,11 +10031,769 @@ async function apiGarage(url) {
   return json({ ok: true, customers: rows.slice(0, 200) });
 }
 
+// ===========================================================================
+// 6b · MONEY ON THE TABLE — the customers going quiet
+// ===========================================================================
+// A detailing business loses far more to people who already said yes once than
+// to people who never called. Three kinds of quiet, all of them winnable, all
+// of them invisible until now: a quote nobody answered, a customer overdue for
+// another detail, and someone who asked for a price and never booked.
+//
+// Everything here is derived at read time from the index and the money ledger —
+// no new store, no writes, no AI. The only thing written is a skip list, and
+// only when Mikey taps "not now" on somebody.
+const COLD_SKIP_KEY = 'cold:skip';
+const COLD_KINDS = ['plan', 'quote', 'rebook', 'never'];
+
+async function loadColdSkip() { return (await kv().get(COLD_SKIP_KEY, { type: 'json' })) || {}; }
+async function saveColdSkip(d) { await kv().put(COLD_SKIP_KEY, JSON.stringify(d)); }
+
+function coldMonths(days) { return Math.max(6, Math.min(24, Math.ceil(days / 30) + 6)); }
+
+// The text he'd have written himself. Fixed templates on purpose: these go to
+// people who are already lukewarm, and an AI that invents a price or a date on
+// a rebook text does real damage. {first} is the only thing filled in.
+function coldDraft(kind, row, cfg) {
+  const first = jdFirst(row.name) || 'there';
+  if (kind === 'plan') return planDraft(row);
+  if (kind === 'quote') {
+    const what = row.service ? `that ${row.service} quote` : 'that quote I sent over';
+    return `Hey ${first}, Mikey here — just circling back on ${what}. Still want me to get you on the schedule?`;
+  }
+  if (kind === 'rebook') {
+    const veh = row.vehicle ? ` on your ${row.vehicle}` : '';
+    const when = row.months >= 2 ? `It's been about ${row.months} months since I was out${veh}.` :
+      `It's been a little while since I was out${veh}.`;
+    return `Hey ${first}, Mikey here. ${when} Want me to get you back on the schedule?`;
+  }
+  return `Hey ${first}, Mikey here — you reached out a while back about a detail and I don't think we ever locked in a time. Still interested? Happy to get you a price.`;
+}
+
+// The whole list, grouped, most-winnable first. One index read plus the money
+// ledger; the same read the garage roster already does.
+async function buildCold(cfg) {
+  const now = Date.now();
+  const DAY = 86400000;
+  const rebookDays = Math.max(14, Math.min(365, Number(cfg.rebookDays) || 90));
+  const index = await loadIndex();
+  const spendMap = await moneySpendMap(cfg, coldMonths(rebookDays));
+  const skip = await loadColdSkip();
+
+  // What a job is worth on average, so "asked and never booked" can be counted
+  // as money rather than as a name. Falls back to nothing when there's no history.
+  const all = Object.values(spendMap);
+  const jobsTotal = all.reduce((s, v) => s + v.total, 0);
+  const jobsCount = all.reduce((s, v) => s + v.jobs, 0);
+  const avgTicket = jobsCount ? jdMoney(jobsTotal / jobsCount) : 0;
+
+  const groups = { plan: [], quote: [], rebook: [], never: [] };
+  for (const t of index) {
+    if (t.archived || t.optedOut) continue;
+    if (skip[t.phone] && skip[t.phone] > now) continue;
+    // Anyone with a booked job ahead of them is not going cold.
+    if (t.appointmentAt && t.appointmentAt > now - 6 * 3600000) continue;
+    if (t.heldUntil && t.heldUntil > now) continue;
+
+    const sp = spendMap[t.phone];
+    const lastJobTs = sp && sp.lastDate ? Date.parse(sp.lastDate + 'T12:00:00Z') : 0;
+    const base = {
+      phone: t.phone, name: t.name || '', vehicle: t.vehicleLabel || '', city: t.city || '',
+      lastTs: t.lastTs || 0, status: t.status || '', jobs: sp ? sp.jobs : 0,
+      lifetime: sp ? sp.total : 0,
+    };
+
+    // 0. On a plan and the cycle has come round. Ranked above everything else:
+    //    they already agreed to a rhythm, so this is the closest thing to money
+    //    that has already said yes.
+    if (t.plan) {
+      const pd = planDue(t.plan, lastJobTs, now);
+      if (pd && pd.due) {
+        groups.plan.push(Object.assign({}, base, {
+          kind: 'plan', every: t.plan.every,
+          days: Math.floor((now - pd.anchor) / DAY),
+          value: t.plan.price || (sp && sp.jobs ? jdMoney(sp.total / sp.jobs) : avgTicket),
+          at: pd.dueAt,
+        }));
+      }
+      continue;   // someone on a plan is never also "going cold"
+    }
+
+    // 1. A quote that was sent and never answered. The most winnable money there
+    //    is — they asked for a price and got one.
+    if (t.quoteAt && t.status !== 'won' && t.status !== 'lost') {
+      // Under three days isn't "gone quiet", it's a customer thinking about it.
+      // Either way they're in the quote pipeline, so they never fall through to
+      // being counted as a lead who never got a price.
+      if (now - t.quoteAt >= 3 * DAY) {
+        groups.quote.push(Object.assign({}, base, {
+          kind: 'quote', days: Math.floor((now - t.quoteAt) / DAY),
+          value: t.quoteTotal || avgTicket, at: t.quoteAt, service: '',
+        }));
+      }
+      continue;
+    }
+
+    // 2. Detailed before, and due again. Past ~18 months they've moved on, and
+    //    chasing them reads as spam rather than service.
+    if (lastJobTs) {
+      const days = Math.floor((now - lastJobTs) / DAY);
+      if (days >= rebookDays && days <= 540) {
+        groups.rebook.push(Object.assign({}, base, {
+          kind: 'rebook', days, months: Math.round(days / 30),
+          value: sp.jobs ? jdMoney(sp.total / sp.jobs) : avgTicket, at: lastJobTs,
+        }));
+      }
+      continue;
+    }
+
+    // 3. Asked once, never booked, never paid. Cold after ten days of silence.
+    const quiet = now - (t.lastTs || 0);
+    if (quiet >= 10 * DAY && quiet <= 400 * DAY && t.status !== 'lost' && t.status !== 'won') {
+      groups.never.push(Object.assign({}, base, {
+        kind: 'never', days: Math.floor(quiet / DAY), value: avgTicket, at: t.lastTs || 0,
+      }));
+    }
+  }
+
+  // Oldest first inside each group: the one that has been sitting longest is the
+  // one most likely to be gone tomorrow.
+  for (const k of COLD_KINDS) {
+    groups[k].sort((a, b) => b.days - a.days);
+    groups[k] = groups[k].slice(0, 60);
+    for (const r of groups[k]) r.draft = coldDraft(k, r, cfg);
+  }
+  const value = COLD_KINDS.reduce((s, k) => s + groups[k].reduce((n, r) => n + (r.value || 0), 0), 0);
+  const counts = { total: 0 };
+  for (const k of COLD_KINDS) { counts[k] = groups[k].length; counts.total += groups[k].length; }
+  return { groups, avgTicket, rebookDays, counts, value: jdMoney(value) };
+}
+
+// ===========================================================================
+// 6c · MAINTENANCE PLANS — turning one-time customers into a schedule
+// ===========================================================================
+// The cheapest job in this business is the one from somebody who already knows
+// you. A plan says "this person gets detailed every N weeks"; when the clock
+// comes round, it puts a drafted rebook text in front of Mikey. It never texts
+// on its own and it never books anything — same rule as everywhere else here.
+//
+// Lives on the thread (thread.plan) so it travels with the conversation and
+// costs no extra read. Due-ness is derived, not stored, so a plan can't rot.
+const PLAN_EVERY = [14, 21, 28, 42, 56, 84, 112, 168];   // 2 wks … 6 months
+
+function sanitizePlan(p) {
+  if (!p || typeof p !== 'object') return null;
+  const every = PLAN_EVERY.includes(Number(p.every)) ? Number(p.every) : 42;
+  return {
+    every,
+    startedAt: Number(p.startedAt) || Date.now(),
+    // The clock runs from the last job actually done, not from when the plan was
+    // created — otherwise setting one up on an old customer hides them for weeks.
+    lastJobAt: Number(p.lastJobAt) || 0,
+    service: jdStr(p.service, 40),
+    price: jdMoney(p.price),
+    // When Mikey last got asked about this one, so it nags once per cycle.
+    askedAt: Number(p.askedAt) || 0,
+    paused: !!p.paused,
+    note: jdStr(p.note, 200),
+  };
+}
+
+// When is this plan next due, and is it due now? Pure — the caller supplies the
+// last job date it already has, so this never reads.
+function planDue(plan, lastJobTs, now) {
+  if (!plan || plan.paused) return null;
+  const anchor = Math.max(plan.lastJobAt || 0, lastJobTs || 0, plan.startedAt || 0);
+  const dueAt = anchor + plan.every * 86400000;
+  // One ask per cycle: once he's been shown this, it stays quiet until the next
+  // window opens or the customer actually books.
+  const asked = plan.askedAt && plan.askedAt > anchor;
+  return { dueAt, due: now >= dueAt && !asked, anchor, asked: !!asked };
+}
+
+async function apiPlan(request, url) {
+  if (request.method === 'GET') {
+    const phone = normalizePhone(url.searchParams.get('phone'));
+    if (phone) {
+      const t = await loadThread(phone);
+      return json({ ok: true, phone, plan: t.plan || null, every: PLAN_EVERY });
+    }
+    return json(Object.assign({ ok: true, every: PLAN_EVERY }, await buildPlans()));
+  }
+  const d = await readJson(request);
+  const phone = normalizePhone(d.phone);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  const t = await loadThread(phone);
+  const action = jdStr(d.action, 12);
+
+  if (action === 'off') t.plan = null;
+  else if (action === 'asked') {
+    if (!t.plan) return json({ ok: false, error: 'no_plan' }, 404);
+    t.plan.askedAt = Date.now();
+  } else {
+    const prev = t.plan || {};
+    t.plan = sanitizePlan(Object.assign({}, prev, d.plan || {}, {
+      startedAt: prev.startedAt || Date.now(),
+    }));
+  }
+  await saveThread(t);
+  await updateIndexEntry(t);
+  return json({ ok: true, phone, plan: t.plan || null });
+}
+
+// Everyone on a plan, soonest-due first. Index-only: the plan is mirrored there,
+// so this is one index read plus the ledger — no per-customer thread loads.
+async function buildPlans(cfg, spendMap) {
+  cfg = cfg || await loadConfig();
+  const now = Date.now();
+  const index = await loadIndex();
+  const spend = spendMap || await moneySpendMap(cfg, 24);
+  const rows = [];
+  for (const t of index) {
+    if (!t.plan || t.archived) continue;
+    const sp = spend[t.phone];
+    const lastJobTs = sp && sp.lastDate ? Date.parse(sp.lastDate + 'T12:00:00Z') : 0;
+    const d = planDue(t.plan, lastJobTs, now);
+    const booked = !!(t.appointmentAt && t.appointmentAt > now);
+    rows.push({
+      phone: t.phone, name: t.name || '', vehicle: t.vehicleLabel || '',
+      every: t.plan.every, paused: !!t.plan.paused, service: t.plan.service || '',
+      price: t.plan.price || 0,
+      lastJobAt: lastJobTs, dueAt: d ? d.dueAt : 0, due: !!(d && d.due && !booked),
+      booked, jobs: sp ? sp.jobs : 0, lifetime: sp ? sp.total : 0,
+    });
+  }
+  rows.sort((a, b) => (b.due - a.due) || (a.dueAt - b.dueAt));
+  for (const r of rows) r.draft = planDraft(r);
+  return { plans: rows, dueCount: rows.filter((r) => r.due).length };
+}
+
+function planDraft(row) {
+  const first = jdFirst(row.name) || 'there';
+  const veh = row.vehicle ? ` your ${row.vehicle}` : ' your vehicle';
+  const wk = Math.round(row.every / 7);
+  return `Hey ${first}, Mikey here — you're due for${veh} (you're on the every-${wk}-week plan). ` +
+    `Want me to get you back on the schedule this week?`;
+}
+
+// ===========================================================================
+// 6d · THE CUSTOMER'S OWN PAGE — /c/<token>
+// ===========================================================================
+// Most of the texting in this business isn't conversation, it's admin: what do
+// you charge, when are you free, can we move it, what did you do last time.
+// This is one permanent link per customer that answers all of it without a
+// single text. It knows who they are, so nothing has to be typed twice.
+//
+// The token is the identity, so it is long, unguessable and per-customer — and
+// deliberately never expires, because a link that dies is a link that produces
+// a text asking for a new link. It exposes only that customer's own data.
+const CUST_TOK_KEY = (t) => 'cust:' + t;
+const CUST_PHONE_KEY = (p) => 'custfor:' + p;
+
+async function custTokenFor(phone) {
+  phone = normalizePhone(phone);
+  if (!phone) return '';
+  const existing = await kv().get(CUST_PHONE_KEY(phone));
+  if (existing) return existing;
+  const token = jdToken() + jdToken();          // 2× the trip-token entropy
+  await kv().put(CUST_TOK_KEY(token), JSON.stringify({ phone, createdAt: Date.now() }));
+  await kv().put(CUST_PHONE_KEY(phone), token);
+  return token;
+}
+async function custResolve(token) {
+  if (!token || token.length < 12) return null;
+  const rec = await kv().get(CUST_TOK_KEY(token), { type: 'json' });
+  return rec && rec.phone ? rec : null;
+}
+function custUrl(token) { return `${publicBase()}/c/${token}`; }
+
+// Everything that customer is allowed to see about themselves.
+async function custState(phone) {
+  const cfg = await loadConfig();
+  const bcfg = await loadBookingConfig();
+  const now = Date.now();
+  const t = await loadThread(phone);
+  const g = t.garage || {};
+  const bookings = (await loadBookings()).filter((b) => b.phone === phone);
+  const upcoming = bookings
+    .filter((b) => (b.apptAt || 0) > now && b.status !== 'cancelled' && b.status !== 'declined')
+    .sort((a, b) => a.apptAt - b.apptAt)[0] || null;
+  const spend = await moneySpendFor(phone, cfg);
+  const history = bookings
+    .filter((b) => b.status === 'done')
+    .sort((a, b) => (b.apptAt || 0) - (a.apptAt || 0))
+    .slice(0, 6)
+    .map((b) => ({ date: b.date, service: b.serviceName || '', vehicle: b.vehicle || '', price: b.estimate || 0 }));
+  return {
+    name: t.name || '', first: jdFirst(t.name),
+    vehicle: garageVehicleLabel(g), address: g.address || '', city: g.city || '',
+    plan: t.plan && !t.plan.paused ? { every: t.plan.every } : null,
+    upcoming: upcoming ? {
+      id: upcoming.id, date: upcoming.date, slot: upcoming.slot, dateLabel: upcoming.dateLabel || bkNiceDate(upcoming.date),
+      service: upcoming.serviceName || '', price: upcoming.estimate || 0, status: upcoming.status,
+    } : null,
+    history, jobs: spend.jobs, lifetime: spend.total, needsAddress: !(g.address && g.city),
+    services: (bcfg.services || []).filter((s) => s.enabled !== false)
+      .map((s) => ({ id: s.id, name: s.name, price: s.price, duration: s.duration })),
+    sizes: bcfg.sizes || [],
+    biz: (bcfg.bizName || "Mikey's Mobile Detailing"),
+    phoneMikey: ENV.TWILIO_FROM || '',
+  };
+}
+
+async function apiCustState(url) {
+  const rec = await custResolve(url.searchParams.get('t') || '');
+  if (!rec) return cors(json({ ok: false, error: 'bad_token' }, 404));
+  return cors(json(Object.assign({ ok: true }, await custState(rec.phone))));
+}
+
+// The customer acting on their own booking. Cancelling is real — that's the
+// point of handing them the link — but it always tells Mikey, and it pulls the
+// reminders the job still had queued so nobody gets "see you tomorrow!" for a
+// job that isn't happening.
+async function apiCustAction(request, url) {
+  const rec = await custResolve(url.searchParams.get('t') || '');
+  if (!rec) return cors(json({ ok: false, error: 'bad_token' }, 404));
+  let d; try { d = await request.json(); } catch { return cors(json({ ok: false, error: 'bad_json' }, 400)); }
+  const action = jdStr(d.action, 12);
+  const all = await loadBookings();
+  const bk = all.find((x) => x.id === jdStr(d.id, 40) && x.phone === rec.phone);
+  if (!bk) return cors(json({ ok: false, error: 'not_found' }, 404));
+
+  if (action !== 'cancel') return cors(json({ ok: false, error: 'bad_action' }, 422));
+  if (bk.status === 'cancelled') return cors(json(Object.assign({ ok: true }, await custState(rec.phone))));
+  bk.status = 'cancelled'; bk.cancelledBy = 'customer'; bk.cancelledAt = Date.now();
+  const t = await loadThread(rec.phone);
+  const note = jdStr(d.note, 200);
+  if (bkPurgeScheduled(t, bk.id) > 0 || t.appointmentAt) {
+    if (t.appointmentAt && Math.abs(t.appointmentAt - bk.apptAt) < 3600000) t.appointmentAt = null;
+    await saveThread(t); await updateIndexEntry(t);
+  }
+  await saveBookings(all);
+  await notifyMikey(
+    `❌ ${t.name || rec.phone} cancelled their own booking`,
+    [`${bk.serviceName || 'Job'} · ${bk.dateLabel || bk.date} at ${bkFmt12(bk.slot)}`,
+      note ? `They said: ${note}` : null,
+      `Cancelled from their booking link — the slot is open again and their reminders are pulled.`]
+      .filter(Boolean).join('\n'),
+  );
+  return cors(json(Object.assign({ ok: true, cancelled: true }, await custState(rec.phone))));
+}
+
+// Hand Mikey the link to send. Generated once and reused forever after.
+async function apiCustLink(request) {
+  const d = await readJson(request);
+  const phone = normalizePhone(d.phone);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  const token = await custTokenFor(phone);
+  const url = custUrl(token);
+  if (d.text) {
+    const t = await loadThread(phone);
+    const first = jdFirst(t.name) || 'there';
+    const body = jdStr(d.body, 600) ||
+      `Hey ${first}, here's your own booking link — check what's coming up, book a time or move one, and see what I've done before. Save it, it doesn't expire: ${url}`;
+    try {
+      await sendSms(phone, body);
+      await appendMessage(phone, { dir: 'out', body, kind: 'link', status: 'sent' }, { name: t.name });
+    } catch (e) { return json({ ok: false, error: String(e.message || e), url }, 502); }
+    return json({ ok: true, url, texted: true });
+  }
+  return json({ ok: true, url, texted: false });
+}
+
+function htmlResponse(body, status = 200) {
+  return new Response(body, { status,
+    headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
+}
+
+// The page itself. Server-rendered identity (so it says their name before a
+// single request lands), then it drives the SAME public booking endpoints the
+// website already uses — /api/availability and /api/book — so a time booked
+// here and a time booked on the website can never disagree about what's free.
+async function custPage(token) {
+  const rec = await custResolve(token);
+  if (!rec) {
+    return htmlResponse(custShell(`<div class="pad"><h1>Link not found</h1>
+      <p class="sub">This link isn't valid any more. Text Mikey and he'll send you a new one.</p></div>`, ''), 404);
+  }
+  const s = await custState(rec.phone);
+  const hi = s.first ? `Hi ${jdEsc(s.first)}` : 'Your detailing';
+  const tel = String(s.phoneMikey || '').replace(/[^0-9+]/g, '');
+
+  let up = '';
+  if (s.upcoming) {
+    const u = s.upcoming;
+    up = `<div class="card next"><div class="lbl">You're booked</div>
+      <div class="big">${jdEsc(u.dateLabel)}</div>
+      <div class="sub">${jdEsc(bkFmt12(u.slot))}${u.service ? ' · ' + jdEsc(u.service) : ''}${u.price ? ' · $' + u.price : ''}</div>
+      ${u.status === 'pending' ? '<div class="pill warn">Waiting on Mikey to confirm</div>' : '<div class="pill ok">Confirmed</div>'}
+      <div class="row"><button class="btn ghost" id="moveBtn">Need a different time</button>
+      <button class="btn ghost danger" id="cancelBtn">Cancel</button></div></div>`;
+  } else {
+    up = `<div class="card"><div class="lbl">Nothing on the books</div>
+      <div class="sub">Pick a time below whenever you're ready — it comes straight to me.</div></div>`;
+  }
+
+  const yours = [s.vehicle, s.address ? s.address + (s.city ? ', ' + s.city : '') : ''].filter(Boolean);
+  const mine = yours.length
+    ? `<div class="card"><div class="lbl">What I've got on file</div>
+       ${yours.map((v) => `<div class="line">${jdEsc(v)}</div>`).join('')}
+       ${s.plan ? `<div class="pill ok">On a plan — every ${Math.round(s.plan.every / 7)} weeks</div>` : ''}
+       <div class="sub tiny">Wrong? Text me and I'll fix it.</div></div>` : '';
+
+  const hist = s.history.length
+    ? `<div class="card"><div class="lbl">What I've done for you</div>
+       ${s.history.map((h) => `<div class="hrow"><span>${jdEsc(bkNiceDate(h.date))}</span>
+         <span class="hs">${jdEsc(h.service || 'Detail')}</span>${h.price ? `<b>$${h.price}</b>` : ''}</div>`).join('')}
+       ${s.jobs > 1 ? `<div class="sub tiny">${s.jobs} details with me so far. Thank you — really.</div>` : ''}</div>`
+    : '';
+
+  const inner = `<div class="pad">
+    <h1>${hi}</h1>
+    <p class="sub">Everything about your detailing in one place. Save this link — it doesn't expire.</p>
+    ${up}${mine}
+    <div class="card" id="bookCard"><div class="lbl">Book a time</div>
+      <div id="bookBody"><button class="btn" id="startBook">Pick a day</button></div></div>
+    ${hist}
+    <div class="card contact"><div class="lbl">Need me?</div>
+      ${tel ? `<a class="btn ghost" href="sms:${jdEsc(tel)}">Text Mikey</a>
+      <a class="btn ghost" href="tel:${jdEsc(tel)}">Call Mikey</a>` : '<div class="sub">Text me any time.</div>'}</div>
+    <div class="foot">${jdEsc(s.biz)}</div>
+  </div>`;
+  return htmlResponse(custShell(inner, token));
+}
+
+function custShell(inner, token) {
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0c"><title>Your detailing</title>
+<link rel="icon" href="/favicon.svg"><style>
+*{box-sizing:border-box}html,body{margin:0;min-height:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+background:radial-gradient(1200px 600px at 50% -10%,#1d1f27,#0a0a0c 60%);color:#f2f4f8;padding:0 0 40px}
+.pad{max-width:460px;margin:0 auto;padding:26px 18px}
+h1{font-size:28px;letter-spacing:-.03em;margin:0 0 6px}
+.sub{color:#9aa3b2;font-size:14px;margin:0 0 18px;line-height:1.5}
+.sub.tiny{font-size:12px;margin:10px 0 0}
+.card{background:#121216;border:1px solid #26293a55;border-radius:18px;padding:16px 15px;margin-bottom:12px}
+.card.next{background:linear-gradient(160deg,#1a1218,#121216 60%);border-color:#4d222955}
+.lbl{font-size:10.5px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:#6b7280;margin-bottom:8px}
+.big{font-size:22px;font-weight:800;letter-spacing:-.02em}
+.line{font-size:15px;font-weight:600;padding:3px 0}
+.pill{display:inline-block;font-size:11px;font-weight:800;border-radius:999px;padding:5px 11px;margin-top:10px}
+.pill.ok{color:#22c55e;background:rgba(34,197,94,.13)}
+.pill.warn{color:#f5b842;background:rgba(245,184,66,.13)}
+.row{display:flex;gap:8px;margin-top:13px;flex-wrap:wrap}
+.btn{flex:1;min-width:130px;display:block;text-align:center;background:#ff2e43;border:1px solid #ff2e43;color:#fff;
+  border-radius:12px;padding:13px 14px;font-size:14.5px;font-weight:700;text-decoration:none;cursor:pointer;font-family:inherit}
+.btn.ghost{background:#1a1b21;border-color:#2a2d36;color:#f2f4f8}
+.btn.ghost.danger{color:#ff8a93}
+.btn:disabled{opacity:.5}
+.hrow{display:flex;gap:10px;align-items:baseline;padding:8px 0;border-bottom:1px solid #23252d;font-size:14px}
+.hrow:last-of-type{border-bottom:none}
+.hrow .hs{flex:1;color:#9aa3b2;font-size:13px}
+.contact{display:flex;flex-direction:column;gap:8px}
+.contact .btn{flex:none}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:7px;margin-top:4px}
+.grid button{background:#1a1b21;border:1px solid #2a2d36;color:#f2f4f8;border-radius:11px;padding:11px 6px;
+  font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
+.grid button.on{background:#ff2e43;border-color:#ff2e43;color:#fff}
+.fld{width:100%;background:#1a1b21;border:1px solid #2a2d36;color:#f2f4f8;border-radius:11px;
+  padding:12px;font-size:15px;margin-top:7px;font-family:inherit}
+.note{color:#9aa3b2;font-size:13px;margin:10px 0 0;line-height:1.5}
+.foot{text-align:center;color:#6b7280;font-size:12px;margin-top:22px}
+@media (prefers-color-scheme:light){
+  body{background:radial-gradient(1200px 600px at 50% -10%,#fff,#eef0f3 60%);color:#161820}
+  .card{background:#fff;border-color:#d7dbe2}
+  .card.next{background:linear-gradient(160deg,#fff4f5,#fff 60%);border-color:#f0c4ca}
+  .sub,.hrow .hs,.note{color:#5a626f}.lbl,.foot{color:#8a93a1}
+  .btn.ghost{background:#f4f6f8;border-color:#d7dbe2;color:#161820}
+  .btn.ghost.danger{color:#c81e30}
+  .grid button{background:#f4f6f8;border-color:#d7dbe2;color:#161820}
+  .grid button.on{background:#c81e30;border-color:#c81e30;color:#fff}
+  .fld{background:#f4f6f8;border-color:#d7dbe2;color:#161820}
+  .hrow{border-bottom-color:#e3e6eb}}
+</style></head><body>${inner}
+<script>
+var TOK=${JSON.stringify(token || '')};
+var S=null,pick={date:"",slot:"",service:"",size:""};
+function $(i){return document.getElementById(i)}
+function api(p,o){return fetch(p,o).then(function(r){return r.json()})}
+function load(then){api("/api/cust/state?t="+encodeURIComponent(TOK)).then(function(d){if(d&&d.ok){S=d;if(then)then(d)}})}
+load();
+function days(){
+  var out=[],d=new Date();
+  for(var i=1;i<=14;i++){
+    var x=new Date(d.getFullYear(),d.getMonth(),d.getDate()+i);
+    out.push({v:x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0")+"-"+String(x.getDate()).padStart(2,"0"),
+      l:x.toLocaleDateString([],{weekday:"short"})+" "+(x.getMonth()+1)+"/"+x.getDate()});
+  }
+  return out;
+}
+function startBook(){
+  if(!S)return;
+  pick.service=(S.services[0]||{}).id||"full";
+  pick.size=(S.sizes[0]||{}).id||"suv";
+  // Only asked when it isn't already on file, which for a repeat customer is never.
+  var addr=S.needsAddress
+    ? '<div class="lbl" style="margin-top:14px">Where are you?</div>'+
+      '<input class="fld" id="addrIn" placeholder="Street address" value="'+esc(S.address||"")+'">'+
+      '<input class="fld" id="cityIn" placeholder="City" value="'+esc(S.city||"")+'">'
+    : '';
+  var h='<div class="lbl" style="margin-top:4px">What day works?</div><div class="grid" id="dayGrid">'+
+    days().map(function(d){return '<button data-d="'+d.v+'">'+d.l+'</button>'}).join("")+'</div>'+
+    '<div id="slotWrap"></div>'+addr+'<div id="bookNote" class="note"></div>';
+  $("bookBody").innerHTML=h;
+  Array.prototype.forEach.call($("dayGrid").querySelectorAll("[data-d]"),function(b){
+    b.onclick=function(){
+      pick.date=b.getAttribute("data-d");pick.slot="";
+      Array.prototype.forEach.call($("dayGrid").querySelectorAll("[data-d]"),function(x){x.classList.toggle("on",x===b)});
+      $("slotWrap").innerHTML='<div class="note">Checking what\\'s open…</div>';
+      api("/api/availability?date="+pick.date+"&service="+encodeURIComponent(pick.service)+"&size="+encodeURIComponent(pick.size))
+        .then(function(d){
+          var s=(d&&d.slots)||[];
+          if(!s.length){$("slotWrap").innerHTML='<div class="note">Nothing open that day — try another.</div>';return}
+          $("slotWrap").innerHTML='<div class="lbl" style="margin-top:14px">What time?</div><div class="grid" id="slotGrid">'+
+            s.map(function(x){return '<button data-s="'+x+'">'+fmt12(x)+'</button>'}).join("")+'</div>'+
+            '<button class="btn" id="doBook" style="margin-top:13px" disabled>Request this time</button>';
+          Array.prototype.forEach.call($("slotGrid").querySelectorAll("[data-s]"),function(sb){
+            sb.onclick=function(){
+              pick.slot=sb.getAttribute("data-s");
+              Array.prototype.forEach.call($("slotGrid").querySelectorAll("[data-s]"),function(x){x.classList.toggle("on",x===sb)});
+              $("doBook").disabled=false;
+            }});
+          $("doBook").onclick=submit;
+        });
+    }});
+}
+function fmt12(hm){var p=hm.split(":"),h=+p[0],ap=h>=12?"PM":"AM";h=h%12||12;return h+":"+p[1]+" "+ap}
+function esc(v){return String(v==null?"":v).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c]})}
+function submit(){
+  var b=$("doBook");b.disabled=true;b.textContent="Sending…";
+  var ai=$("addrIn"),ci=$("cityIn");
+  var address=ai?ai.value.trim():S.address, city=ci?ci.value.trim():S.city;
+  if(!address||!city){b.disabled=false;b.textContent="Request this time";
+    $("bookNote").textContent="I need the address to come out to.";return}
+  api("/api/book",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({
+    service:pick.service,size:pick.size,date:pick.date,slot:pick.slot,
+    name:S.name,address:address,city:city,vehicle:S.vehicle,fromLink:TOK
+  })}).then(function(d){
+    if(d&&d.ok){$("bookBody").innerHTML='<div class="big">Sent to Mikey</div>'+
+      '<div class="note">He\\'ll confirm shortly and you\\'ll get a text. Nothing else needed from you.</div>'}
+    else{b.disabled=false;b.textContent="Request this time";
+      $("bookNote").textContent=d&&d.error==="slot_taken"?"Someone just took that one — pick another time.":"That didn't go through. Try again, or text me."}
+  }).catch(function(){b.disabled=false;b.textContent="Request this time"});
+}
+document.addEventListener("click",function(e){
+  if(e.target.id==="startBook"){startBook();return}
+  if(e.target.id==="moveBtn"){startBook();$("bookCard").scrollIntoView({behavior:"smooth"});return}
+  if(e.target.id==="cancelBtn"){
+    if(!S||!S.upcoming)return;
+    if(!confirm("Cancel your "+S.upcoming.dateLabel+" appointment?"))return;
+    e.target.disabled=true;e.target.textContent="Cancelling…";
+    api("/api/cust/action?t="+encodeURIComponent(TOK),{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({action:"cancel",id:S.upcoming.id})}).then(function(d){
+        if(d&&d.ok)location.reload();
+        else{e.target.disabled=false;e.target.textContent="Cancel"}
+      });
+  }
+});
+</script></body></html>`;
+}
+
+// ===========================================================================
+// 6e · PRICING — what you charge vs what actually gets accepted
+// ===========================================================================
+// "Am I leaving money on the table" is answerable from data already here: every
+// quote sent, and every job paid. A quote counts as won when that phone paid for
+// a job within 60 days of it. Then the only question that matters is whether the
+// win rate falls as the price rises — and if it doesn't, the price is too low.
+//
+// Two sources, deliberately merged: the texted quote builder (which tracks
+// accept/decline itself) and the website quote log (which doesn't, so it's
+// joined against the money ledger). No AI — this is arithmetic, and arithmetic
+// shouldn't cost a token or be able to hallucinate a number.
+const PRICE_WIN_DAYS = 60;
+
+function priceBandsFor(quotes) {
+  if (!quotes.length) return [];
+  const sorted = quotes.map((q) => q.total).filter((n) => n > 0).sort((a, b) => a - b);
+  if (sorted.length < 6) return [];
+  // Terciles rather than fixed dollar bands, so this works whether he's a
+  // $120 maintenance shop or a $900 correction shop.
+  const at = (f) => sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * f))];
+  const cuts = [at(1 / 3), at(2 / 3)];
+  const defs = [
+    { label: `Under $${cuts[0]}`, lo: 0, hi: cuts[0] },
+    { label: `$${cuts[0]}–${cuts[1]}`, lo: cuts[0], hi: cuts[1] },
+    { label: `Over $${cuts[1]}`, lo: cuts[1], hi: Infinity },
+  ];
+  return defs.map((d) => {
+    // `>= lo` on the open-ended top band, not `> lo`: a quote sitting exactly on
+    // the boundary belongs in it, and `>` silently dropped one from the totals.
+    const inBand = quotes.filter((q) => q.total > 0 && q.total >= d.lo && (d.hi === Infinity || q.total < d.hi));
+    const won = inBand.filter((q) => q.won);
+    return {
+      label: d.label, lo: d.lo, hi: d.hi === Infinity ? 0 : d.hi,
+      quotes: inBand.length, won: won.length,
+      winRate: inBand.length ? Math.round(won.length / inBand.length * 100) : 0,
+      avgQuoted: inBand.length ? jdMoney(inBand.reduce((s, q) => s + q.total, 0) / inBand.length) : 0,
+    };
+  }).filter((b) => b.quotes > 0);
+}
+
+function priceGroup(rows, key) {
+  const by = {};
+  for (const q of rows) {
+    const k = (q[key] || '').trim() || 'Other';
+    (by[k] = by[k] || []).push(q);
+  }
+  return Object.keys(by).map((name) => {
+    const list = by[name];
+    const won = list.filter((q) => q.won);
+    const priced = list.filter((q) => q.total > 0);
+    return {
+      name, quotes: list.length, won: won.length,
+      winRate: list.length ? Math.round(won.length / list.length * 100) : 0,
+      avgQuoted: priced.length ? jdMoney(priced.reduce((s, q) => s + q.total, 0) / priced.length) : 0,
+      avgWon: won.length ? jdMoney(won.reduce((s, q) => s + q.total, 0) / won.length) : 0,
+    };
+  }).filter((g) => g.quotes >= 2).sort((a, b) => b.quotes - a.quotes).slice(0, 8);
+}
+
+// Plain-English, and deliberately conservative: it only speaks when there's
+// enough history to mean something, and it never proposes a number it can't
+// justify from the win rate it just measured.
+function priceAdvice(overall, bands, services) {
+  const out = [];
+  if (overall.quotes < 8) {
+    out.push(`Only ${overall.quotes} quote${overall.quotes === 1 ? '' : 's'} on record so far — send a few more and this gets useful. It needs about 10 to say anything worth acting on.`);
+    return out;
+  }
+  if (overall.winRate >= 75) {
+    const bump = Math.max(10, Math.round(overall.avgQuoted * 0.1 / 5) * 5);
+    out.push(`You're winning ${overall.winRate}% of everything you quote. That is high enough to mean your prices are under the market — try adding about $${bump} to your next ten quotes and watch whether the win rate actually moves.`);
+  } else if (overall.winRate <= 35) {
+    out.push(`You're winning ${overall.winRate}% of what you quote. Before dropping prices, check how fast you're answering — a slow reply loses more jobs than a high number does.`);
+  }
+  const top = bands[bands.length - 1], bottom = bands[0];
+  if (bands.length >= 2 && top && bottom && top.quotes >= 3 && bottom.quotes >= 3) {
+    if (top.winRate >= bottom.winRate - 8) {
+      out.push(`Your expensive quotes (${top.label}) close at ${top.winRate}% — about the same as your cheap ones at ${bottom.winRate}%. Price isn't what's losing you jobs, so charging less isn't what will win them.`);
+    } else if (bottom.winRate - top.winRate >= 25) {
+      out.push(`Win rate drops from ${bottom.winRate}% on ${bottom.label.toLowerCase()} quotes to ${top.winRate}% on ${top.label.toLowerCase()} ones. That's a real ceiling — above about $${top.lo} people start shopping around.`);
+    }
+  }
+  const strong = services.filter((s) => s.quotes >= 4 && s.winRate >= 80)
+    .sort((a, b) => b.winRate - a.winRate)[0];
+  if (strong) {
+    const bump = Math.max(10, Math.round(strong.avgWon * 0.12 / 5) * 5);
+    out.push(`${strong.name}: ${strong.won} of ${strong.quotes} accepted (${strong.winRate}%) at about $${Math.round(strong.avgWon)}. Almost nobody says no to that one — it can carry $${bump} more.`);
+  }
+  const weak = services.filter((s) => s.quotes >= 4 && s.winRate <= 30)
+    .sort((a, b) => a.winRate - b.winRate)[0];
+  if (weak) {
+    out.push(`${weak.name} only lands ${weak.winRate}% of the time across ${weak.quotes} quotes. Worth asking whether it's priced wrong or just explained badly.`);
+  }
+  if (!out.length) out.push(`Win rate is ${overall.winRate}% at an average of $${Math.round(overall.avgQuoted)}. Nothing here says you're priced wrong — keep quoting and check back in a month.`);
+  return out;
+}
+
+async function buildPricing(months) {
+  const cfg = await loadConfig();
+  months = Math.max(3, Math.min(24, Number(months) || 12));
+
+  // Every job payment, by phone, so a quote can be checked against real money.
+  const paid = {};
+  let m = localDateStr(Date.now(), cfg.tz).slice(0, 7);
+  for (let i = 0; i < months + 2; i++) {
+    const doc = await loadMonth(m);
+    for (const e of (doc.entries || [])) {
+      if (e.type !== 'job' || !e.phone) continue;
+      (paid[e.phone] = paid[e.phone] || []).push(e.ts || Date.parse(e.date + 'T12:00:00Z'));
+    }
+    m = prevMonthKey(m);
+  }
+  const wonAfter = (phone, ts) => !!(paid[phone] || [])
+    .some((p) => p >= ts - 2 * 86400000 && p <= ts + PRICE_WIN_DAYS * 86400000);
+
+  const rows = [];
+  // 1. Texted quotes — these carry their own verdict, which beats any inference.
+  for (const q of await loadQuotes()) {
+    const ts = q.sentAt || q.createdAt || 0;
+    if (!ts) continue;
+    rows.push({
+      ts, total: Math.round(q.total || 0), service: q.serviceName || '', size: q.sizeLabel || '',
+      won: q.status === 'accepted' || (q.status !== 'declined' && wonAfter(q.phone, ts)),
+      src: 'text',
+    });
+  }
+  // 2. Website quotes — no verdict, so it's inferred from whether they paid.
+  for (const { entries } of await quoteWindow(months, cfg.tz)) {
+    for (const e of entries) {
+      if (!e.total) continue;
+      rows.push({
+        ts: e.ts, total: e.total, service: (e.services || '').split(',')[0].trim(), size: '',
+        vehicle: e.vehicle || '', won: e.type === 'booking' || wonAfter(e.phone, e.ts), src: 'web',
+      });
+    }
+  }
+  rows.sort((a, b) => b.ts - a.ts);
+
+  const priced = rows.filter((r) => r.total > 0);
+  const won = rows.filter((r) => r.won);
+  const wonPriced = priced.filter((r) => r.won);
+  const overall = {
+    quotes: rows.length, won: won.length,
+    winRate: rows.length ? Math.round(won.length / rows.length * 100) : 0,
+    avgQuoted: priced.length ? jdMoney(priced.reduce((s, r) => s + r.total, 0) / priced.length) : 0,
+    avgWon: wonPriced.length ? jdMoney(wonPriced.reduce((s, r) => s + r.total, 0) / wonPriced.length) : 0,
+    lost: jdMoney(priced.filter((r) => !r.won).reduce((s, r) => s + r.total, 0)),
+  };
+  const bands = priceBandsFor(priced);
+  const services = priceGroup(rows, 'service');
+  return { months, overall, bands, services, advice: priceAdvice(overall, bands, services) };
+}
+
+async function apiPricing(url) {
+  return json(Object.assign({ ok: true }, await buildPricing(url.searchParams.get('months'))));
+}
+
+async function apiCold() {
+  const cfg = await loadConfig();
+  return json(Object.assign({ ok: true }, await buildCold(cfg)));
+}
+
+// "Not now" (back in 30 days), "not ever" (marks the lead lost so it stops being
+// a lead at all), or "clear" to undo a skip.
+async function apiColdAction(request) {
+  const d = await readJson(request);
+  const phone = normalizePhone(d.phone);
+  const action = jdStr(d.action, 12);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  const skip = await loadColdSkip();
+  if (action === 'later') {
+    const days = Math.max(1, Math.min(365, Number(d.days) || 30));
+    skip[phone] = Date.now() + days * 86400000;
+  } else if (action === 'never') {
+    skip[phone] = Date.now() + 3650 * 86400000;
+    const t = await loadThread(phone);
+    if (t.status !== 'lost') { t.status = 'lost'; t.statusAt = Date.now(); await saveThread(t); await updateIndexEntry(t); }
+  } else if (action === 'clear') {
+    delete skip[phone];
+  } else return json({ ok: false, error: 'bad_action' }, 422);
+  // Expired entries are dropped on every write, so the doc can't grow forever.
+  const now = Date.now();
+  for (const k of Object.keys(skip)) if (skip[k] < now) delete skip[k];
+  await saveColdSkip(skip);
+  const cfg = await loadConfig();
+  return json(Object.assign({ ok: true }, await buildCold(cfg)));
+}
+
 // Lifetime spend per phone, from the money ledger (last 18 months of docs).
-async function moneySpendMap(cfg) {
+async function moneySpendMap(cfg, months = 18) {
   let m = localDateStr(Date.now(), cfg.tz).slice(0, 7);
   const map = {};
-  for (let i = 0; i < 18; i++) {
+  for (let i = 0; i < months; i++) {
     const doc = await loadMonth(m);
     for (const e of (doc.entries || [])) {
       if (e.type !== 'job' || !e.phone) continue;
