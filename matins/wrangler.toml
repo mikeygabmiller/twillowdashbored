@@ -30,9 +30,13 @@ LLM_MODEL = ""
 # and the bug). Only set it blank if the API rejects the field outright — and it
 # now retries without it by itself if that happens.
 GEMINI_THINKING_BUDGET = "0"
-# Where to send the "today's issue went out thin" alert. Leave empty for none.
-# Nothing else reads it; it is not a subscriber and never goes on the list.
-ALERT_EMAIL = ""
+# ALERT_EMAIL — where the "today's issue went out thin" mail goes. Deliberately
+# NOT a var here: a plain var declared in this file is rewritten on every
+# `wrangler deploy`, so an address set in the dashboard would be wiped by the
+# next deploy and the alerting would go quiet without anyone touching it. Set it
+# as a secret instead, which survives deploys and keeps the address out of the
+# repo: `npx wrangler secret put ALERT_EMAIL`. Unset means no alerts, which is
+# how eight issues went out incomplete without anyone being told.
 # "1" lets an UNAUTHENTICATED /admin/* error report which binding names reached
 # this Worker and whether a supplied token is the right length. That is worth an
 # evening while the Worker is being wired up and worth nothing afterwards, so it

@@ -1,0 +1,107 @@
+# Deploys the Matins Worker.
+#
+# Matins is a second, independent Worker living in matins/. It shares nothing
+# with the `texting` Worker at the repo root — different wrangler.toml, different
+# KV, different cron — and Cloudflare Workers Builds is wired to that one, not
+# this one. So Matins has always been deployed by hand, which means "merged" and
+# "live" have never been the same thing for it.
+#
+# That gap is the same shape as the bug that cost the first eight issues their
+# reflection: a step that quietly did not happen, with nothing watching. This
+# closes it. Merge to main, and the version that is live is the version on main.
+#
+# ONE-TIME SETUP — until this is done the workflow fails loudly on purpose:
+#   Repo → Settings → Secrets and variables → Actions → New repository secret
+#     CLOUDFLARE_API_TOKEN   Cloudflare dashboard → My Profile → API Tokens →
+#                            Create Token → "Edit Cloudflare Workers" template.
+#                            Scope it to this account and nothing else.
+#   Optional, only if the token can see more than one account:
+#     CLOUDFLARE_ACCOUNT_ID  Workers & Pages → Account details.
+#
+# The Worker's own secrets (LLM_API_KEY, RESEND_API_KEY, TOKEN_SECRET,
+# GITHUB_TOKEN, ADMIN_TOKEN, ALERT_EMAIL) are NOT touched by a deploy. They live
+# on the Worker and survive this. Set them once with `wrangler secret put`, or in
+# the dashboard under Settings → Variables and Secrets.
+
+name: Deploy Matins
+
+on:
+  push:
+    branches: [main]
+    # Only when Matins itself changed. A commit that touches the SMS dashboard
+    # must never redeploy the devotional, and vice versa.
+    paths:
+      - 'matins/**'
+      - '.github/workflows/deploy-matins.yml'
+  # Deploy without a commit — for rolling forward after fixing a secret.
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-matins
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: matins
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: matins/package-lock.json
+
+      - run: npm ci
+
+      # The suite is fast, offline, and covers the truncation that took eight
+      # issues down. A red suite must not reach subscribers.
+      - name: Test
+        run: npm test
+
+      - name: Check the deploy token is present
+        env:
+          TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN is not set on this repository."
+            echo "Add it under Settings → Secrets and variables → Actions."
+            echo "Until then Matins stays on whatever version was last deployed by hand."
+            exit 1
+          fi
+
+      - name: Deploy
+        run: npx wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      # "Never trust 'I pushed it'" — DEPLOY.md, about the other Worker, after
+      # this exact mistake. A deploy that reports success while the live URL
+      # serves the old build is the failure worth catching, so the build
+      # fingerprint in the source has to come back from the live origin.
+      - name: Verify the live Worker is actually serving this build
+        run: |
+          expected=$(grep -oE "BUILD = '[^']+'" src/build.js | cut -d"'" -f2)
+          url=$(grep -oE 'WORKER_URL = "[^"]+"' wrangler.toml | cut -d'"' -f2)
+          echo "expecting build '$expected' at $url"
+
+          live=""
+          for attempt in 1 2 3 4 5; do
+            body=$(curl -fsS --max-time 20 "$url/api/version" || true)
+            live=$(printf '%s' "$body" | grep -oE '"build"[[:space:]]*:[[:space:]]*"[^"]+"' | cut -d'"' -f4)
+            if [ "$live" = "$expected" ]; then
+              echo "::notice::Matins $expected is live at $url"
+              exit 0
+            fi
+            echo "attempt $attempt: live reports '${live:-unreachable}', waiting..."
+            sleep 6
+          done
+
+          echo "::error::Deploy reported success but $url/api/version still says '${live:-unreachable}', not '$expected'."
+          echo "The live URL is the only source of truth. Check Cloudflare → Workers & Pages → matins → Deployments."
+          exit 1
