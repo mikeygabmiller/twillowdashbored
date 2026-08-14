@@ -74,7 +74,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-13·balance-correct';
+const BUILD = '2026-08-14·leaving-now';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -1800,6 +1800,13 @@ async function openThreadForRead(phone) {
   if (thread.status && !thread.statusAt) { thread.statusAt = Date.now(); changed = true; }
   if (await ensureLiveSuggestion(thread, cfg, Date.now())) changed = true;
   if (changed) { await saveThread(thread); await updateIndexEntry(thread); }
+  // Attached after the save on purpose: a guess read out of the conversation is
+  // shown, never stored. It becomes real only when he taps save on it, which
+  // writes it to the garage through /api/meta like anything else.
+  if (!(thread.garage && thread.garage.address)) {
+    const found = findAddressInThread(thread);
+    if (found) thread.addressGuess = found.text;
+  }
   return thread;
 }
 
@@ -9046,6 +9053,13 @@ async function buildDay(date) {
       { id: m.id, at: m.slot ? bkLaEpoch(date, m.slot) : 0 }));
   }
 
+  // Where the job actually is. A job booked over text arrives carrying nothing
+  // but a phone number, so the address, gate code and vehicle have to come from
+  // that customer's garage — or, when he never filled one in, from the words of
+  // the conversation itself. Doing it here is what puts the address on the run
+  // board and in the brief instead of ten minutes of scrolling before he leaves.
+  await attachPlace(jobs);
+
   // Attach the run state, then order: Mikey's manual order wins, else by time.
   for (const j of jobs) {
     const r = doc.state[j.id] || {};
@@ -9053,7 +9067,7 @@ async function buildDay(date) {
     j.enrouteAt = r.enrouteAt || 0; j.startedAt = r.startedAt || 0; j.doneAt = r.doneAt || 0;
     j.runNote = r.note || ''; j.trackToken = r.trackToken || '';
     j.paidAmount = r.paid || 0; j.photos = r.photos || 0;
-    j.mapQuery = [j.address, j.city, j.city ? 'WA' : ''].filter(Boolean).join(', ');
+    j.mapQuery = [j.address || j.addressGuess, j.city, j.city ? 'WA' : ''].filter(Boolean).join(', ');
   }
   const pos = (id) => { const i = doc.order.indexOf(id); return i < 0 ? 9999 : i; };
   jobs.sort((a, b) => (pos(a.id) - pos(b.id)) || (a.at - b.at) || String(a.slot).localeCompare(String(b.slot)));
@@ -9073,6 +9087,36 @@ async function buildDay(date) {
     services: bcfg ? (bcfg.services || []).map((s) => ({ id: s.id, name: s.name })) : [],
   };
 }
+// One thread read per customer on the board — at his volume that's a handful of
+// reads a day, and only when the day is actually opened. Threads are cached by
+// phone so two stops for the same person don't pay twice. Nothing is written:
+// a guessed address stays a guess until he taps save.
+async function attachPlace(jobs) {
+  const seen = new Map();
+  for (const j of jobs) {
+    j.gate = j.gate || ''; j.parking = j.parking || '';
+    j.prefs = j.prefs || ''; j.avoid = j.avoid || '';
+    j.water = null; j.power = null;
+    j.addressGuess = ''; j.placeFrom = j.address ? 'booking' : '';
+    if (!j.phone) continue;
+    let t = seen.get(j.phone);
+    if (!t) { t = await loadThread(j.phone); seen.set(j.phone, t); }
+    const g = t.garage || {};
+    if (!j.address && g.address) { j.address = g.address; j.placeFrom = 'garage'; }
+    if (!j.city && g.city) j.city = g.city;
+    if (!j.vehicle) j.vehicle = garageVehicleLabel(g);
+    if (!j.name && t.name) j.name = t.name;
+    j.gate = g.gate || ''; j.parking = g.parking || '';
+    j.prefs = g.prefs || ''; j.avoid = g.avoid || '';
+    j.water = g.water === undefined ? null : g.water;
+    j.power = g.power === undefined ? null : g.power;
+    if (!j.address) {
+      const found = findAddressInThread(t);
+      if (found) { j.addressGuess = found.text; j.placeFrom = 'text'; }
+    }
+  }
+}
+
 function localTimeHm(ts, tz) {
   try {
     const s = new Date(ts).toLocaleTimeString('en-GB', { timeZone: tz || 'America/Los_Angeles', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
@@ -9877,6 +9921,36 @@ function garageVehicleLabel(g) {
   const v = (g && g.vehicles && g.vehicles[0]) || null;
   if (!v) return '';
   return [v.year, v.color, v.make, v.model].filter(Boolean).join(' ').slice(0, 48);
+}
+
+// A street address written in the middle of a normal text. Anchored on the
+// house number and closed by a street suffix, which is what keeps "$150 for 2
+// cars" and "be there in 20 minutes" out of it — a bare number is never enough.
+// Free: pure regex over messages already in memory, no AI call, no extra read.
+const ADDR_RE = new RegExp(
+  '\\b\\d{1,6}\\s+' +                                   // house number
+  '(?:[NSEW]\\.?\\s+)?' +                               // optional N/S/E/W prefix
+  '[A-Za-z0-9][A-Za-z0-9.\'-]*(?:\\s+[A-Za-z0-9.\'-]+){0,4}?\\s+' +  // street name
+  '(?:st|street|ave|avenue|rd|road|dr|drive|ln|lane|way|ct|court|pl|place|' +
+  'blvd|boulevard|ter|terrace|cir|circle|hwy|highway|pkwy|parkway|loop|trl|trail)\\b\\.?' +
+  '(?:\\s+(?:NE|NW|SE|SW|N|S|E|W)\\b\\.?)?' +                         // trailing quadrant
+  '(?:\\s*(?:#|apt\\.?|unit|ste\\.?|suite)\\s*[A-Za-z0-9-]{1,8})?',   // optional unit
+  'i');
+
+// Newest first, and the customer's own words beat Mikey's — he's the one who
+// knows where he lives. Bounded to the last 40 messages so a long thread costs
+// the same as a short one.
+function findAddressInThread(thread) {
+  const msgs = (thread.messages || []).slice(-40);
+  for (const dir of ['in', 'out']) {
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const m = msgs[i];
+      if (m.dir !== dir || !m.body) continue;
+      const hit = String(m.body).match(ADDR_RE);
+      if (hit) return { text: hit[0].trim().slice(0, 140), ts: m.ts || 0, from: dir };
+    }
+  }
+  return null;
 }
 
 function sanitizeGarage(g) {
