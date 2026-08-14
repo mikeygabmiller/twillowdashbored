@@ -793,6 +793,86 @@
   .prow .pr-tag{font-size:10px;font-weight:800;padding:3px 8px;border-radius:999px;white-space:nowrap}
   .pr-tag.due{color:#fbbf24;background:rgba(251,191,36,.14)}
   .pr-tag.vip{color:var(--accent-text);background:var(--accent-soft)}
+  /* ---- Money on the table: the three kinds of quiet ---- */
+  .pr-tag.quote{color:#f5b842;background:rgba(245,184,66,.15)}
+  .pr-tag.rebook{color:#4ade80;background:rgba(74,222,128,.14)}
+  .pr-tag.never{color:#9aa3b2;background:rgba(154,163,178,.14)}
+  .cold-tabs{display:flex;gap:6px;overflow-x:auto;margin:12px 0 4px;padding-bottom:2px;-webkit-overflow-scrolling:touch}
+  .cold-tabs button{flex:none;background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+    border-radius:999px;padding:7px 13px;font-size:12.5px;font-weight:700;white-space:nowrap}
+  .cold-tabs button.on{background:var(--accent-soft);border-color:transparent;color:var(--accent-text)}
+  .cold-list{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+  .cold-row{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:12px}
+  .cold-row .cr-top{display:flex;align-items:center;gap:10px}
+  /* .pr-tag's base sizing lives under .prow, so it has to be restated here or
+     the pill renders as plain highlighted text. */
+  .cold-row .pr-tag{font-size:10px;font-weight:800;padding:3px 8px;border-radius:999px;
+    white-space:nowrap;flex:none}
+  .cold-row .cr-b{flex:1;min-width:0}
+  .cold-row .cr-nm{font-weight:700;font-size:14.5px;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cold-row .cr-why{font-size:11.5px;color:var(--muted);margin-top:1px}
+  .cold-row .cr-draft{margin-top:10px;background:var(--bg);border:1px solid var(--line2);border-radius:11px;
+    padding:10px 11px;font-size:13px;line-height:1.45;color:var(--text)}
+  .cold-row .cr-acts{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}
+  .cold-row .cr-acts button{flex:1;min-width:92px;background:var(--panel3);border:1px solid var(--line);
+    color:var(--muted);border-radius:9px;padding:8px;font-size:12px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;gap:5px}
+  .cold-row .cr-acts button.pri{flex:2 1 100%;background:var(--accent-soft);border-color:transparent;color:var(--accent-text)}
+  .cold-row .cr-acts button:disabled{opacity:.5}
+  .pr-tag.plan{color:#7dd3fc;background:rgba(125,211,252,.15)}
+  /* ---- maintenance plan sheet ---- */
+  .plan-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:14px 0 4px}
+  .plan-grid button{background:var(--panel2);border:1px solid var(--line);color:var(--text);
+    border-radius:11px;padding:12px 8px;font-size:13px;font-weight:700}
+  .plan-grid button.on{background:var(--accent-soft);border-color:transparent;color:var(--accent-text)}
+  .plan-lbl{display:block;font-size:11.5px;font-weight:700;color:var(--muted);margin:14px 0 5px}
+  .plan-lbl span{font-weight:500;color:var(--muted2);margin-left:5px}
+  .plan-in{width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);
+    border-radius:11px;padding:11px 12px;font-size:15px;font-family:inherit}
+  .plan-in:focus{outline:none;border-color:var(--accent)}
+  .plan-state{margin-top:14px;display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted)}
+  .plan-acts{margin-top:16px}
+  .plan-acts2{display:flex;gap:7px;margin-top:8px}
+  .link-box{margin-top:14px;background:var(--panel2);border:1px solid var(--line);border-radius:11px;
+    padding:12px;font-size:12.5px;word-break:break-all;color:var(--muted);font-family:ui-monospace,Menlo,monospace}
+  .plan-acts2 button{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+    border-radius:10px;padding:10px;font-size:12.5px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;gap:6px}
+  /* A plan on the conversation, next to the address strip. */
+  /* ---- Are you charging enough? (Money) ---- */
+  .pri-empty{color:var(--muted2);font-size:12.5px;line-height:1.55;padding:2px 2px 12px}
+  .pri-card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px}
+  .pri-kpis{display:flex;gap:8px}
+  .pri-kpis .pk{flex:1;background:var(--panel2);border-radius:12px;padding:10px 8px;text-align:center}
+  .pri-kpis .pk .v{font-size:19px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  .pri-kpis .pk .l{font-size:10.5px;color:var(--muted2);margin-top:2px}
+  .pri-lbl{font-size:10.5px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--muted2);margin:16px 0 9px}
+  .pri-bands{display:flex;gap:8px;align-items:flex-end}
+  .pri-bands .pb{flex:1;text-align:center}
+  .pri-bands .pb-bar{height:72px;display:flex;align-items:flex-end;justify-content:center;
+    background:var(--panel2);border-radius:9px;overflow:hidden}
+  .pri-bands .pb-bar span{display:block;width:100%;background:linear-gradient(180deg,var(--accent),var(--accent-dark));border-radius:9px 9px 0 0}
+  .pri-bands .pb-v{font-size:13px;font-weight:800;margin-top:6px;font-variant-numeric:tabular-nums}
+  .pri-bands .pb-l{font-size:10.5px;color:var(--muted);margin-top:1px;line-height:1.3}
+  .pri-bands .pb-n{font-size:10px;color:var(--muted2);margin-top:1px;font-variant-numeric:tabular-nums}
+  .pri-svc{display:flex;flex-direction:column;gap:7px}
+  .pri-svc .ps{display:flex;align-items:center;gap:8px;font-size:12.5px}
+  .pri-svc .ps-n{flex:0 0 34%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text)}
+  .pri-svc .ps-b{flex:1;height:6px;background:var(--panel2);border-radius:99px;overflow:hidden}
+  .pri-svc .ps-b i{display:block;height:100%;background:var(--accent);border-radius:99px}
+  .pri-svc .ps-r{flex:none;width:34px;text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+  .pri-svc .ps-a{flex:none;width:46px;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums}
+  .pri-advice{margin-top:16px;display:flex;flex-direction:column;gap:9px}
+  .pri-advice .pa{display:flex;gap:8px;align-items:flex-start;background:var(--panel2);
+    border-radius:11px;padding:11px 12px;font-size:13px;line-height:1.5;color:var(--text)}
+  .pri-advice .pa svg{flex:none;margin-top:2px;color:var(--gold)}
+  .pri-foot{margin-top:12px;font-size:12px;color:var(--muted);line-height:1.5;cursor:pointer;
+    border-top:1px solid var(--line2);padding-top:11px}
+  .pri-foot b{color:var(--accent-text)}
+  .plan-chip{margin:8px 14px 0;display:inline-flex;align-items:center;gap:6px;background:rgba(125,211,252,.12);
+    border:1px solid rgba(125,211,252,.28);color:#7dd3fc;border-radius:999px;padding:5px 11px;
+    font-size:11.5px;font-weight:700}
 
   /* Quick actions */
   .qa-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
@@ -2442,6 +2522,7 @@
       <button id="findClose" data-ic="x" aria-label="Close find"></button>
     </div>
     <div class="job-banner" id="jobBanner" style="display:none"></div>
+    <div id="planChipWrap"></div>
     <div class="hold-banner" id="holdBanner" style="display:none"></div>
     <div class="optout-banner" id="optOutBanner" style="display:none"></div>
     <div class="logjob-banner" id="logJobBanner" style="display:none"></div>
@@ -2810,7 +2891,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-14·leaving-now";
+  var APP_BUILD="2026-08-14·money-table";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -3207,7 +3288,7 @@
     ["crimson","Crimson","#ff2e43","#c81e30"],["ocean","Ocean","#2f9bff","#1d5fd8"],
     ["mint","Mint","#22c55e","#15803d"],["grape","Grape","#a855f7","#7e22ce"],
     ["sunset","Sunset","#f97316","#c2410c"],["gold","Gold","#eab308","#a16207"]];
-  var UI_MBLOCKS=[["hero","Balance headline","wallet"],["log","Log buttons","plus"],["alerts","Owed & reminders","alert"],["pulse","Month pulse","activity"],["brain","Brain & Buckets","sparkles"],["today","Today's list","list-checks"]];
+  var UI_MBLOCKS=[["hero","Balance headline","wallet"],["log","Log buttons","plus"],["alerts","Owed & reminders","alert"],["pulse","Month pulse","activity"],["brain","Brain & Buckets","sparkles"],["today","Today's list","list-checks"],["pricing","Are you charging enough?","trending-up"]];
   var UI_MKPIS=[["net","Net profit"],["you","Yours"],["costs","Costs"],["savings","Savings"],["avg","Avg ticket"],["jobs","Jobs"],["margin","Margin %"],["owed","Owed to you"],["best","Top service"]];
   function defaultUI(){return{
     preset:"crimson", accent:["#ff2e43","#c81e30"],
@@ -3215,7 +3296,7 @@
     mode:"simple", locked:false, tourSeen:false, listStyle:"compact",
     autoPolish:true,   // polish drafts as you type (the "ready" bar over the composer)
     navV:2, tabsOrder:["home","messages","pipeline","money","more"], tabsHidden:[],
-    mblocks:["hero","log","alerts","pulse","brain","today"], mblocksHidden:[],
+    mblocks:["hero","log","alerts","pulse","brain","today","pricing"], mblocksHidden:[],
     mkpis:["net","you","costs","savings","avg","jobs","margin","owed","best"],
     // Phase 2/3
     hwidgets:["brief","money","quickactions","schedule","goal","rebook","sla","tasks","trend","funnel","vip","weather","stats"], hwidgetsHidden:["trend","funnel","vip","weather","stats"],
@@ -3347,7 +3428,7 @@
     ["quickactions","Quick actions","sparkles"],
     ["schedule","Today’s schedule","calendar-days"],
     ["goal","Revenue goal","target"],
-    ["rebook","Rebook radar","refresh-cw"],
+    ["rebook","Money on the table","refresh-cw"],
     ["sla","Response health","activity"],
     ["tasks","To-do list","check-circle"],
     ["promises","Promises you made","bell"],
@@ -4089,7 +4170,7 @@
     NEXT.fetching=true;
     api("/api/day").then(function(d){
       NEXT.fetching=false;
-      if(d&&d.ok){NEXT.day=d;NEXT.at=Date.now();if(state.tab==="home")renderHome()}
+      if(d&&d.ok&&d.jobs){NEXT.day=d;NEXT.at=Date.now();if(state.tab==="home")renderHome()}
     }).catch(function(){NEXT.fetching=false});
   }
   // The stop he's headed to: the first one not finished or skipped.
@@ -4246,20 +4327,116 @@
   }
   // Rebook radar — detailing recurs; find customers whose last logged job was 45+
   // days ago with nothing newer. These are due for a rebook nudge (recurring $).
+  // ---- Money on the table ---------------------------------------------------
+  // Was "Rebook radar", and it never showed anything: it filtered for a last job
+  // 45+ days ago while reading only the CURRENT month's ledger, so the condition
+  // was very nearly unsatisfiable. It's server-side now, across the whole
+  // history, and it counts two more kinds of quiet than a rebook — a quote that
+  // was never answered, and someone who asked for a price and never booked.
+  var COLD={data:null,fetching:false,at:0,group:"all"};
+  function loadCold(force){
+    if(COLD.fetching)return;
+    if(!force&&COLD.data&&Date.now()-COLD.at<180000)return;
+    COLD.fetching=true;
+    api("/api/cold").then(function(d){
+      COLD.fetching=false;
+      // Shape-check, not just ok-check: a rolling deploy can answer ok from an
+      // older Worker that has never heard of this endpoint, and a missing
+      // `counts` used to take the whole Home screen down with it.
+      if(d&&d.ok&&d.counts&&d.groups){COLD.data=d;COLD.at=Date.now();if(state.tab==="home")renderHome()}
+    }).catch(function(){COLD.fetching=false});
+  }
+  var COLD_TAG={plan:"Plan",quote:"Quote",rebook:"Due",never:"Lead"};
+  function coldRows(g){
+    var d=COLD.data;if(!d||!d.groups)return [];
+    var ks=(g&&g!=="all")?[g]:["plan","quote","rebook","never"];
+    var out=[];ks.forEach(function(k){(d.groups[k]||[]).forEach(function(r){out.push(r)})});
+    return out;
+  }
   function homeRebookWidget(){
-    var s=MO.summary;if(!s&&!MO._homeFetch){MO._homeFetch=1;api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.today=d.today;MO.entries=d.entries||[];MO.cfg=d.config;MO.owed=d.owed||[];MO.week=d.week;MO.allTime=d.allTime;if(state.tab==="home")renderHome()}}).catch(function(){});}
-    var byPhone={};
-    (MO.entries||[]).forEach(function(e){if(e.type!=="job"||!e.phone)return;var k=e.phone;var ts=e.ts||Date.parse((e.date||"")+"T12:00:00");if(!byPhone[k]||ts>byPhone[k].ts)byPhone[k]={ts:ts,name:e.name||"",amount:e.amount};});
-    var now=Date.now(),DAY=86400000;var due=[];
-    Object.keys(byPhone).forEach(function(k){var v=byPhone[k];var days=Math.floor((now-v.ts)/DAY);if(days>=45&&days<=400)due.push({phone:k,name:v.name,days:days,amount:v.amount});});
-    due.sort(function(a,b){return b.days-a.days});
-    var head='<div class="wc-h"><span class="wc-ic">'+ic("refresh-cw",18)+'</span><span class="wc-t">Rebook radar</span><span class="wc-badge">'+due.length+'</span></div>';
-    if(!due.length)return "";
-    var rows=due.slice(0,5).map(function(d){var nm=d.name||prettyPhone(d.phone);
-      return '<div class="prow" data-open="'+esc(d.phone)+'"><div class="pr-av" style="background:'+colorFor(d.phone)+'">'+esc((nm[0]||"#").toUpperCase())+'</div>'+
-        '<div class="pr-b"><div class="pr-nm">'+esc(nm)+'</div><div class="pr-sub">Last detail '+d.days+' days ago · '+fmtMoney(d.amount)+'</div></div>'+
-        '<span class="pr-tag due">Due</span></div>';}).join("");
-    return '<div class="wcard">'+head+'<p class="hint" style="margin:-4px 0 11px">Customers overdue for another detail — tap to send a rebook text.</p><div class="plist">'+rows+'</div></div>';
+    if(!COLD.data||!COLD.data.counts){loadCold();return ""}
+    var d=COLD.data,n=d.counts.total||0;
+    if(!n)return "";
+    var head='<div class="wc-h"><span class="wc-ic">'+ic("refresh-cw",18)+'</span>'+
+      '<span class="wc-t">Money on the table</span><span class="wc-badge">'+n+'</span></div>';
+    var rows=coldRows("all").slice(0,4).map(function(r){
+      var nm=r.name||prettyPhone(r.phone);
+      return '<div class="prow" data-cold-open="'+esc(r.phone)+'"><div class="pr-av" style="background:'+colorFor(r.phone)+'">'+
+        esc((nm[0]||"#").toUpperCase())+'</div>'+
+        '<div class="pr-b"><div class="pr-nm">'+esc(nm)+'</div><div class="pr-sub">'+esc(coldWhy(r))+'</div></div>'+
+        '<span class="pr-tag '+r.kind+'">'+COLD_TAG[r.kind]+'</span></div>';
+    }).join("");
+    return '<div class="wcard">'+head+
+      '<p class="hint" style="margin:-4px 0 11px">About <b>'+fmtMoney(d.value)+'</b> sitting with people who already know who you are.</p>'+
+      '<div class="plist">'+rows+'</div>'+
+      '<button class="jd-btn" id="coldAll" style="margin-top:10px">'+ic("list-checks",16)+' Work the list ('+n+')</button></div>';
+  }
+  function coldWhy(r){
+    if(r.kind==="plan")return "Due on their every-"+Math.round(r.every/7)+"-week plan · "+fmtMoney(r.value);
+    if(r.kind==="quote")return fmtMoney(r.value)+" quoted "+r.days+" days ago — no answer";
+    if(r.kind==="rebook")return "Last detail "+(r.months>=2?r.months+" months":r.days+" days")+" ago · "+fmtMoney(r.value);
+    return "Asked "+r.days+" days ago, never booked";
+  }
+  // The full list as a sheet rather than a tab — one more tab is one more place
+  // that never gets opened.
+  function coldSheet(){
+    var d=COLD.data;if(!d||!d.counts)return;
+    var tabs=[["all","All ("+d.counts.total+")"],["plan","On a plan ("+d.counts.plan+")"],
+      ["quote","Quotes ("+d.counts.quote+")"],["rebook","Due ("+d.counts.rebook+")"],
+      ["never","Leads ("+d.counts.never+")"]];
+    var rows=coldRows(COLD.group);
+    var h='<div class="jd-sh-title">Money on the table</div>'+
+      '<div class="jd-sh-sub">'+fmtMoney(d.value)+' across '+d.counts.total+' people. Each one opens with the text already written — you read it, change it if you want, and send.</div>'+
+      '<div class="cold-tabs">'+tabs.map(function(t){
+        return '<button class="'+(COLD.group===t[0]?"on":"")+'" data-cold-tab="'+t[0]+'">'+esc(t[1])+'</button>'}).join("")+'</div>';
+    if(!rows.length){
+      h+='<div class="jd-empty"><b>Nothing here</b>Nobody in this group has gone quiet. That is the good version of an empty list.</div>';
+    }else{
+      h+='<div class="cold-list">'+rows.map(function(r){
+        var nm=r.name||prettyPhone(r.phone);
+        return '<div class="cold-row" data-cold-phone="'+esc(r.phone)+'">'+
+          '<div class="cr-top"><div class="pr-av" style="background:'+colorFor(r.phone)+'">'+esc((nm[0]||"#").toUpperCase())+'</div>'+
+          '<div class="cr-b"><div class="cr-nm">'+esc(nm)+'</div><div class="cr-why">'+esc(coldWhy(r))+'</div></div>'+
+          '<span class="pr-tag '+r.kind+'">'+COLD_TAG[r.kind]+'</span></div>'+
+          '<div class="cr-draft">'+esc(r.draft)+'</div>'+
+          '<div class="cr-acts"><button class="pri" data-cold-send="'+esc(r.phone)+'">'+ic("send",15)+' Open with this text</button>'+
+          '<button data-cold-later="'+esc(r.phone)+'">Later</button>'+
+          '<button data-cold-never="'+esc(r.phone)+'">Not interested</button></div></div>';
+      }).join("")+'</div>';
+    }
+    var s=jdSheetOpen(h);
+    Array.prototype.forEach.call(s.querySelectorAll("[data-cold-tab]"),function(b){
+      b.onclick=function(){COLD.group=b.getAttribute("data-cold-tab");jdSheetClose();coldSheet()}});
+    Array.prototype.forEach.call(s.querySelectorAll("[data-cold-send]"),function(b){
+      b.onclick=function(){
+        var ph=b.getAttribute("data-cold-send");
+        var row=coldRows("all").filter(function(r){return r.phone===ph})[0];
+        if(row)seedDraft(ph,row.draft);
+        // Showing him the plan text IS the reminder — it goes quiet for this
+        // cycle whether or not he ends up sending it.
+        if(row&&row.kind==="plan")post("/api/plan",{phone:ph,action:"asked"}).then(function(){loadCold(true)}).catch(function(){});
+        jdSheetClose();closeJobs();setTab("messages");openThread(ph);
+      }});
+    var act=function(sel,action,msg){
+      Array.prototype.forEach.call(s.querySelectorAll(sel),function(b){
+        b.onclick=function(){
+          var ph=b.getAttribute(b.getAttributeNames().filter(function(a){return a.indexOf("data-cold-")===0})[0]);
+          b.disabled=true;
+          post("/api/cold/action",{phone:ph,action:action}).then(function(d){
+            if(d&&d.ok&&d.counts&&d.groups){COLD.data=d;COLD.at=Date.now();toast(msg);jdSheetClose();coldSheet();
+              if(state.tab==="home")renderHome()}
+            else{b.disabled=false;toast("Couldn't do that",{bad:true})}
+          }).catch(function(){b.disabled=false});
+        }});
+    };
+    act("[data-cold-later]","later","Back in 30 days");
+    act("[data-cold-never]","never","Marked lost — off the list");
+  }
+  // Put the text in the box before the conversation opens, so it's there waiting
+  // rather than something else to type.
+  function seedDraft(phone,text){
+    if(!phone||!text)return;
+    drafts[phone]=text;saveDrafts();
   }
   // 30-day revenue trend — daily gross as a bar sparkline, plus this-week vs
   // last-week delta. Uses the loaded month entries (best-effort window).
@@ -4484,6 +4661,18 @@
   function wireHomeWidgets(box){
     // Weather: kick off the fetch lazily the first time the widget is on screen.
     if(box.querySelector('[data-hwidget="weather"]'))wxLoad();
+    // Money on the table: open the whole list, or jump straight into one person
+    // with the text already in the box.
+    var ca=box.querySelector("#coldAll");
+    if(ca)ca.onclick=function(){vibrate(6);COLD.group="all";coldSheet()};
+    Array.prototype.forEach.call(box.querySelectorAll("[data-cold-open]"),function(c){
+      c.onclick=function(){
+        var ph=c.getAttribute("data-cold-open");
+        var row=coldRows("all").filter(function(r){return r.phone===ph})[0];
+        if(row)seedDraft(ph,row.draft);
+        setTab("messages");openThread(ph);
+      };
+    });
     // Revenue goal editor.
     var ge=box.querySelector("[data-goal-edit]");
     if(ge)ge.onclick=function(){
@@ -5794,6 +5983,18 @@
       };
     }
   }
+  // A plan is worth saying out loud in the conversation: it's the difference
+  // between "a customer" and "a customer with a next time".
+  function renderPlanChip(t){
+    var w=el("planChipWrap");if(!w)return;
+    var p=t.plan;
+    if(!p){w.innerHTML="";return}
+    var wk=Math.round(p.every/7);
+    w.innerHTML='<span class="plan-chip" id="planChip">'+ic("refresh-cw",12)+
+      (p.paused?"Plan paused":"Every "+wk+" weeks")+'</span>';
+    var c=w.querySelector("#planChip");
+    if(c)c.onclick=function(){planSheet()};
+  }
   function garageVehicleLine(g){
     var v=(g&&g.vehicles&&g.vehicles[0])||null;
     return v?[v.year,v.color,v.make,v.model].filter(Boolean).join(" "):"";
@@ -5813,6 +6014,7 @@
     // whenever an address is on file; the dashed version is a guess read out of
     // the conversation that hasn't been saved yet.
     renderJobBanner(t);
+    renderPlanChip(t);
 
     // "You told me to leave this one alone." Shows the reason back in Mikey's own
     // words so a quiet conversation never looks like the app forgot about it.
@@ -6327,6 +6529,8 @@
       {act:"write",  ic:"pencil",         t:"Write a reply for me", s:"Tell it what to say — it writes it in your voice", accent:true},
       {act:"reqdate",ic:"calendar-days",  t:"Request a date from Mikey", s:"Emails Mikey for his next open date", accent:true},
       {act:"pay",    ic:"receipt",         t:"Send a payment request", s:"Texts a link with the breakdown and every way to pay", accent:true},
+      {act:"plan",   ic:"refresh-cw",      t:"Put them on a plan", s:"Every few weeks, on a rhythm — you get reminded, they get asked", accent:true},
+      {act:"link",   ic:"share",           t:"Send their booking link", s:"Their own page — book, move, cancel, see past jobs. No texting you", accent:true},
       {act:"draft",  ic:"sparkles",       t:"AI draft a reply", s:"Let the AI suggest a full reply to send"},
       {act:"polish", ic:"wand",           t:"Polish my text now", s:"Don't wait — review the polished version right away"},
       {act:"tpl",    ic:"zap",            t:"Quick replies", s:"Insert one of your saved replies"},
@@ -6371,6 +6575,8 @@
         sheet.style.display="none";
         var map={write:"writeBtn",draft:"draftBtn",polish:"polishBtn",tpl:"tplBtn",sched:"schedBtn",rem:"remBtn",mic:"micBtn"};
         if(act==="reqdate"){requestDate();return}
+        if(act==="plan"){planSheet();return}
+        if(act==="link"){custLinkSheet();return}
         if(act==="pay"){
           var t=state.thread||{};
           openPayRequest({name:displayName(t)||t.name||"",phone:t.phone||""});
@@ -6383,6 +6589,104 @@
       };
     });
   }
+  // ---- Maintenance plan: the every-N-weeks rhythm behind a rebook -----------
+  // A plan is a promise to remind YOU, not a subscription the customer signed.
+  // Nothing is booked and nothing is texted by it — when the cycle comes round
+  // they show up at the top of Money on the table with the text already written.
+  var PLAN_EVERY=[[28,"Every 4 weeks"],[42,"Every 6 weeks"],[56,"Every 8 weeks"],
+    [84,"Every 3 months"],[112,"Every 4 months"],[168,"Every 6 months"]];
+  function planSheet(){
+    var t=state.thread;if(!t)return;
+    api("/api/plan?phone="+encodeURIComponent(t.phone)).then(function(d){
+      var p=(d&&d.ok&&d.plan)||null;
+      var every=p?p.every:42;
+      var first=firstNameOf(t)||"them";
+      var h='<div class="jd-sh-title">'+(p?"Maintenance plan":"Put "+esc(first)+" on a plan")+'</div>'+
+        '<div class="jd-sh-sub">'+(p
+          ? 'When the cycle comes round, '+esc(first)+' moves to the top of <b>Money on the table</b> with a rebook text ready to send. Nothing is ever texted or booked automatically.'
+          : 'Pick a rhythm. You\'ll get reminded when '+esc(first)+' is due — with the text already written. Nothing is texted or booked without you.')+'</div>'+
+        '<div class="plan-grid">'+PLAN_EVERY.map(function(e){
+          return '<button class="'+(every===e[0]?"on":"")+'" data-plan-every="'+e[0]+'">'+esc(e[1])+'</button>'}).join("")+'</div>'+
+        '<label class="plan-lbl">What they usually get <span>optional</span></label>'+
+        '<input class="plan-in" id="planService" placeholder="Full detail" value="'+esc(p?p.service:"")+'">'+
+        '<label class="plan-lbl">Usual price <span>optional — used to total up what\'s due</span></label>'+
+        '<input class="plan-in" id="planPrice" inputmode="decimal" placeholder="'+esc(String(220))+'" value="'+(p&&p.price?esc(String(p.price)):"")+'">';
+      if(p){
+        h+='<div class="plan-state">'+ic(p.paused?"clock":"check",15)+
+          (p.paused?' Paused — no reminders until you turn it back on':' Active — you\'ll be reminded when they\'re due')+'</div>';
+      }
+      h+='<div class="plan-acts"><button class="jd-btn pri" id="planSave">'+ic("check",17)+' '+(p?"Save plan":"Start the plan")+'</button></div>';
+      if(p){
+        h+='<div class="plan-acts2"><button id="planPause">'+ic(p.paused?"play":"clock",15)+' '+(p.paused?"Resume":"Pause")+'</button>'+
+          '<button id="planOff">'+ic("x",15)+' Take them off</button></div>';
+      }
+      var s=jdSheetOpen(h);
+      var sel=every;
+      Array.prototype.forEach.call(s.querySelectorAll("[data-plan-every]"),function(b){
+        b.onclick=function(){
+          sel=+b.getAttribute("data-plan-every");
+          Array.prototype.forEach.call(s.querySelectorAll("[data-plan-every]"),function(x){
+            x.classList.toggle("on",+x.getAttribute("data-plan-every")===sel)});
+        }});
+      var savePlan=function(extra,msg){
+        var body={phone:t.phone,plan:Object.assign({
+          every:sel,
+          service:s.querySelector("#planService").value.trim(),
+          price:Math.round(+String(s.querySelector("#planPrice").value).replace(/[^0-9.]/g,"")||0),
+          paused:p?!!p.paused:false
+        },extra||{})};
+        post("/api/plan",body).then(function(r){
+          if(!(r&&r.ok))return toast("Couldn't save the plan",{bad:true});
+          jdSheetClose();toast(msg||"Plan saved");loadCold(true);
+          if(state.phone===t.phone){t.plan=r.plan;renderThread()}
+        }).catch(function(){toast("Network error",{bad:true})});
+      };
+      s.querySelector("#planSave").onclick=function(){savePlan(null,p?"Plan saved":"On the plan — I'll remind you")};
+      var pp=s.querySelector("#planPause");
+      if(pp)pp.onclick=function(){savePlan({paused:!p.paused},p.paused?"Plan resumed":"Plan paused")};
+      var po=s.querySelector("#planOff");
+      if(po)po.onclick=function(){
+        post("/api/plan",{phone:t.phone,action:"off"}).then(function(r){
+          if(!(r&&r.ok))return toast("Couldn't do that",{bad:true});
+          jdSheetClose();toast("Taken off the plan");loadCold(true);
+          if(state.phone===t.phone){t.plan=null;renderThread()}
+        });
+      };
+    }).catch(function(){toast("Couldn't load the plan",{bad:true})});
+  }
+
+  // ---- The customer's own link ---------------------------------------------
+  // One permanent page per customer. Most of what gets texted at Mikey is admin
+  // — when are you free, can we move it, what did you do last time — and this
+  // answers all of it without him typing.
+  function custLinkSheet(){
+    var t=state.thread;if(!t)return;
+    var first=firstNameOf(t)||"them";
+    post("/api/cust/link",{phone:t.phone}).then(function(d){
+      if(!(d&&d.ok))return toast("Couldn't make the link",{bad:true});
+      var h='<div class="jd-sh-title">'+esc(first)+'\u2019s booking link</div>'+
+        '<div class="jd-sh-sub">Their own page: what\u2019s coming up, book a time from your real availability, move or cancel, and every detail you\u2019ve done for them. It never expires, so they only ever need this one link.</div>'+
+        '<div class="link-box" id="custLinkBox">'+esc(d.url)+'</div>'+
+        '<div class="plan-acts"><button class="jd-btn pri" id="linkText">'+ic("send",17)+' Text it to '+esc(first)+'</button></div>'+
+        '<div class="plan-acts2"><button id="linkCopy">'+ic("share",15)+' Copy link</button></div>';
+      var sh=jdSheetOpen(h);
+      sh.querySelector("#linkCopy").onclick=function(){
+        var b=this;
+        (navigator.clipboard?navigator.clipboard.writeText(d.url):Promise.reject())
+          .then(function(){b.textContent="Copied"}).catch(function(){
+            var r=document.createRange();r.selectNode(sh.querySelector("#custLinkBox"));
+            var sel=getSelection();sel.removeAllRanges();sel.addRange(r);b.textContent="Select and copy";});
+      };
+      sh.querySelector("#linkText").onclick=function(){
+        var b=this;b.disabled=true;b.textContent="Sending\u2026";
+        post("/api/cust/link",{phone:t.phone,text:true}).then(function(r){
+          if(r&&r.ok&&r.texted){jdSheetClose();toast("Link sent");openThread(t.phone)}
+          else{b.disabled=false;b.textContent="Text it to "+first;toast("Couldn\u2019t send that",{bad:true})}
+        }).catch(function(){b.disabled=false;toast("Network error",{bad:true})});
+      };
+    }).catch(function(){toast("Network error",{bad:true})});
+  }
+
   // ---- Request a date: emails Mikey and flags the thread so the texter sees it's pending ----
   function requestDate(){
     var t=state.thread;if(!t)return;
@@ -7272,7 +7576,7 @@
     navDrop("thread");
     state.tab=tab;state.phone=null;document.body.classList.remove("viewing");
     el("details").classList.remove("open");el("sheetScrim").classList.remove("show");
-    el("emptyState").style.display="flex";el("chatHead").style.display="none";el("composer").style.display="none";el("schedBanner").style.display="none";el("fuBanner").style.display="none";el("remindBanner").style.display="none";el("jobBanner").style.display="none";pkHide();
+    el("emptyState").style.display="flex";el("chatHead").style.display="none";el("composer").style.display="none";el("schedBanner").style.display="none";el("fuBanner").style.display="none";el("remindBanner").style.display="none";el("jobBanner").style.display="none";el("planChipWrap").innerHTML="";pkHide();
     el("coachPanel").style.display="none";el("coachPanel")._phone=null;el("teamIdentityBar").style.display="none";
     hideAiReview();resetPolish();
     el("messages").innerHTML="";
@@ -9443,6 +9747,8 @@
   function applyMoneyBlocks(box){
     try{
       var order=(UI&&UI.mblocks)||["hero","log","alerts","pulse","brain","today"];
+      // Newly-shipped blocks appear for anyone with an older saved layout.
+      UI_MBLOCKS.forEach(function(b){if(order.indexOf(b[0])<0)order.push(b[0])});
       var hidden=(UI&&UI.mblocksHidden)||[];
       order.forEach(function(k){var b=box.querySelector('[data-mblock="'+k+'"]');if(b)box.appendChild(b)});
       Array.prototype.forEach.call(box.querySelectorAll("[data-mblock]"),function(b){
@@ -9530,8 +9836,10 @@
     if(!todays.length)h+='<div style="color:var(--muted2);font-size:12.5px;padding:2px 2px 10px;line-height:1.5">Nothing logged today — tap <b style="color:var(--accent-text)">Log a detail</b>. Amount, done.</div>';
     todays.forEach(function(e){h+=moEntryRow(e,true)});
     h+='</div>';
+    h+='<div data-mblock="pricing">'+moPricingBlock()+'</div>';
     box.innerHTML=h;
     applyMoneyBlocks(box);
+    wirePricing(box);
     moWireRows(box);
     el("heroEdit").onclick=function(ev){ev.stopPropagation();openHeroSheet()};
     var hbal=el("heroBal");if(hbal)hbal.onclick=function(ev){ev.stopPropagation();openBalanceSheet()};
@@ -9555,6 +9863,62 @@
     Array.prototype.forEach.call(box.querySelectorAll("[data-mo]"),function(b){b.onclick=function(){vibrate(6);var k=b.getAttribute("data-mo");moBump(k);openMoSheet(k,null,null)}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-nlog]"),function(b){b.onclick=function(){var ph2=b.getAttribute("data-nlog");var t=threadByPhone(ph2);openMoSheet("job",{phone:ph2,name:t?displayName(t):prettyPhone(ph2)},null)}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-ndis]"),function(b){b.onclick=function(){var ph2=b.getAttribute("data-ndis");postMoCfg({dismissNudge:ph2}).then(function(){MO.nudges=(MO.nudges||[]).filter(function(x){return x.phone!==ph2});refreshMoBadge();if(MO.open)moRender()})}});
+  }
+
+  // ---- Are you charging enough? --------------------------------------------
+  // Every quote sent, against every job actually paid. The question "am I
+  // leaving money on the table" has a real answer in here, and it's arithmetic
+  // rather than an opinion: if the win rate doesn't fall as the price rises,
+  // the price is too low.
+  var PRICING={data:null,fetching:false};
+  function loadPricing(){
+    if(PRICING.fetching||PRICING.data)return;
+    PRICING.fetching=true;
+    api("/api/pricing?months=12").then(function(d){
+      PRICING.fetching=false;
+      if(d&&d.ok&&d.overall&&d.bands&&d.advice){PRICING.data=d;if(MO.open&&MO.view==="log")moRender()}
+    }).catch(function(){PRICING.fetching=false});
+  }
+  function moPricingBlock(){
+    if(!PRICING.data||!PRICING.data.overall){loadPricing();
+      return '<div class="mo-sec-h">Are you charging enough?</div>'+
+        '<div class="pri-empty"><span class="spin"></span> Reading your quotes…</div>';}
+    var d=PRICING.data,o=d.overall;
+    if(!o.quotes)return '<div class="mo-sec-h">Are you charging enough?</div>'+
+      '<div class="pri-empty">No quotes on record yet. Once you\'ve sent a few, this compares what you charge against what actually gets accepted.</div>';
+    var h='<div class="mo-sec-h">Are you charging enough?</div><div class="pri-card">'+
+      '<div class="pri-kpis">'+
+      '<div class="pk"><div class="v">'+o.winRate+'%</div><div class="l">of quotes won</div></div>'+
+      '<div class="pk"><div class="v">'+fmtMoney(o.avgQuoted)+'</div><div class="l">avg quoted</div></div>'+
+      '<div class="pk"><div class="v">'+fmtMoney(o.avgWon)+'</div><div class="l">avg won</div></div>'+
+      '</div>';
+    if(d.bands.length>1){
+      // Scaled 0–100, not to the tallest bar: these are percentages, and
+      // normalising to the max makes 91% and 64% look nearly identical.
+      h+='<div class="pri-lbl">Win rate as the price goes up</div><div class="pri-bands">'+
+        d.bands.map(function(b){
+          return '<div class="pb"><div class="pb-bar"><span style="height:'+Math.max(5,Math.round(b.winRate))+'%"></span></div>'+
+            '<div class="pb-v">'+b.winRate+'%</div><div class="pb-l">'+esc(b.label)+'</div>'+
+            '<div class="pb-n">'+b.won+'/'+b.quotes+'</div></div>';
+        }).join("")+'</div>';
+    }
+    if(d.services.length){
+      h+='<div class="pri-lbl">By service</div><div class="pri-svc">'+
+        d.services.slice(0,5).map(function(sv){
+          return '<div class="ps"><span class="ps-n">'+esc(sv.name)+'</span>'+
+            '<span class="ps-b"><i style="width:'+Math.max(3,sv.winRate)+'%"></i></span>'+
+            '<span class="ps-r">'+sv.winRate+'%</span>'+
+            '<span class="ps-a">'+(sv.avgWon?fmtMoney(sv.avgWon):"—")+'</span></div>';
+        }).join("")+'</div>';
+    }
+    h+='<div class="pri-advice">'+d.advice.map(function(a){
+      return '<div class="pa">'+ic("lightbulb",14)+'<span>'+esc(a)+'</span></div>'}).join("")+'</div>';
+    if(o.lost)h+='<div class="pri-foot">'+fmtMoney(o.lost)+' of quotes never turned into a job. Some of those are still winnable — they\'re on <b>Money on the table</b>.</div>';
+    return h+'</div>';
+  }
+  function wirePricing(box){
+    var f=box.querySelector(".pri-foot");
+    if(f)f.onclick=function(){closeMoney();setTab("home");COLD.group="quote";loadCold(true);setTimeout(function(){if(COLD.data)coldSheet()},400)};
   }
 
   // Shared entry row (Today list + History). Tap = edit, trash = delete.
