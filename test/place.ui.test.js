@@ -76,11 +76,17 @@ section('The next stop is the first thing on Home');
 await page.locator('.navitem[data-tab="home"]').click();
 await page.waitForTimeout(900);
 ok('the card is on screen', await page.locator('.next-card').isVisible());
-ok('it is above the AI command center',
+// "First" independent of which blocks follow it. This used to compare against
+// the AI command center, which Simple mode doesn't render at all — so the
+// assertion measured the layout of one mode rather than the rule it meant.
+ok('nothing on Home comes before it',
   await page.evaluate(() => {
-    const c = document.querySelector('.next-card'), a = document.querySelector('.ai-center');
-    if (!c || !a) return false;
-    return c.getBoundingClientRect().top < a.getBoundingClientRect().top;
+    const c = document.querySelector('.next-card');
+    if (!c) return false;
+    const after = document.querySelectorAll('.home [data-hwidget], .home .needs, .home .ai-center');
+    if (!after.length) return false;
+    const top = c.getBoundingClientRect().top;
+    return Array.from(after).every((n) => n.getBoundingClientRect().top >= top);
   }));
 ok('visible without scrolling',
   await page.evaluate(() => {

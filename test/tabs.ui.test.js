@@ -1,10 +1,12 @@
-// The five-tab structure. Six bottom-nav buttons was one over what a thumb
-// comfortably reaches, and two of them only looked like tabs — Money and
-// Analytics opened overlays without ever lighting their own pill.
+// The bottom-nav structure. Every button here has to be a real destination that
+// lights its own pill and hands it back on close — the old bar had buttons that
+// only looked like tabs, opening overlays while the pill stayed somewhere else.
 //
-// Now: Today · Chats · Pipeline · Money · More. Leads, Quotes, the Run, Pay and
-// the Garage are stages of one job, so they share the Pipeline board; the
-// Chats sub-lists are chips on one filter row instead of separate destinations.
+// Now: Today · Chats · Pipeline · Money · Stats · More. Leads, Quotes, the Run,
+// Pay and the Garage are stages of one job, so they share the Pipeline board;
+// the Chats sub-lists are chips on one filter row instead of destinations.
+// Stats earns a slot because checking the website is one of the three things
+// this dashboard is opened for, and it used to be three taps deep in More.
 import { chromium } from 'playwright-core';
 import fs from 'fs';
 
@@ -51,11 +53,11 @@ const visibleTabs = () => page.$$eval('.navitem', (ns) => ns
     .filter((c) => c.nodeType === 3).map((c) => c.textContent).join('').trim()));
 const activeTab = () => page.$eval('.navitem.active', (n) => n.getAttribute('data-tab')).catch(() => null);
 
-section('Five destinations, all real');
+section('Six destinations, all real');
 const tabs = await visibleTabs();
-ok('exactly five tabs', tabs.length === 5, tabs);
-ok('they are Today/Chats/Pipeline/Money/More',
-  JSON.stringify(tabs) === JSON.stringify(['Today', 'Chats', 'Pipeline', 'Money', 'More']), tabs);
+ok('exactly six tabs', tabs.length === 6, tabs);
+ok('they are Today/Chats/Pipeline/Money/Stats/More',
+  JSON.stringify(tabs) === JSON.stringify(['Today', 'Chats', 'Pipeline', 'Money', 'Stats', 'More']), tabs);
 
 section('The nav bar says where you actually are');
 ok('starts on Today', (await activeTab()) === 'home');
@@ -71,6 +73,20 @@ ok('Money lights its own pill', (await activeTab()) === 'money');
 await page.locator('#moBack').click();
 await page.waitForTimeout(500);
 ok('and hands it back too', (await activeTab()) === 'home');
+
+// Stats is the shortcut that replaces More → Analytics → Website. It has to
+// land on the website numbers, not the business overview, or it is just the
+// old three-tap trip with a nicer entrance.
+section('Stats opens the website, not the overview');
+await page.locator('.navitem[data-tab="stats"]').click();
+await page.waitForTimeout(700);
+ok('Stats lights its own pill', (await activeTab()) === 'stats');
+ok('lands on the website view', await page.$eval('#grTitle', (n) => n.textContent.trim()) === 'Website');
+ok('and the segment bar agrees',
+  await page.$eval('#grNav [data-gv].active', (n) => n.getAttribute('data-gv')) === 'analytics');
+await page.locator('#grBack').click();
+await page.waitForTimeout(500);
+ok('and hands the pill back', (await activeTab()) === 'home');
 
 section('Pipeline is one flow, lead to garage');
 await page.locator('.navitem[data-tab="pipeline"]').click();
@@ -137,6 +153,40 @@ await page.waitForTimeout(400);
 await page.locator('#mrBody .mr-row', { hasText: 'Settings' }).first().click();
 await page.waitForTimeout(500);
 ok('accent picker still populated second time', (await page.locator('#mrBody #accentRow *').count()) > 0);
+
+// Simple mode used to be a label: it set a variable nothing read, so the switch
+// promising "just the essentials" changed nothing on screen. These assertions
+// exist so it can never quietly go back to being decorative.
+section('Simple mode actually trims Home');
+// The previous section left More open on its Settings view; back out of both
+// before touching the nav, or the overlay swallows the click.
+await page.locator('#mrBack').click();
+await page.waitForTimeout(400);
+await page.locator('#mrBack').click();
+await page.waitForTimeout(400);
+await page.locator('.navitem[data-tab="home"]').click();
+await page.waitForTimeout(600);
+const widgetKeys = () => page.$$eval('#scroll [data-hwidget]', (ns) => ns.map((n) => n.getAttribute('data-hwidget')));
+const simpleWidgets = await widgetKeys();
+ok('Home is down to the essentials',
+  JSON.stringify(simpleWidgets) === JSON.stringify(['brief', 'money', 'quickactions']), simpleWidgets);
+ok('the ask-anything box is a Pro surface', (await page.locator('.ai-center').count()) === 0);
+ok('and Home says what trimmed it', (await page.locator('#homeModeBtn').count()) === 1);
+
+// The way back has to be on the trimmed screen itself, not buried in settings.
+// Home repaints itself whenever a poll lands, so a Playwright click can lose
+// the node between resolving it and pressing it. Click it synchronously.
+await page.$eval('#homeModeBtn', (n) => n.click());
+await page.waitForTimeout(700);
+const proWidgets = await widgetKeys();
+ok('one tap restores the full layout', proWidgets.length > simpleWidgets.length, proWidgets);
+ok('the AI center is back', (await page.locator('.ai-center').count()) === 1);
+// Home repaints itself whenever a poll lands, so a Playwright click can lose
+// the node between resolving it and pressing it. Click it synchronously.
+await page.$eval('#homeModeBtn', (n) => n.click());
+await page.waitForTimeout(700);
+ok('and it toggles back to simple',
+  JSON.stringify(await widgetKeys()) === JSON.stringify(['brief', 'money', 'quickactions']));
 
 console.log('\nJS errors:', errs.length ? errs.join('\n  ') : 'none');
 if (errs.length) fail += errs.length;
