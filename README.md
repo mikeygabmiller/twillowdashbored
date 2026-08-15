@@ -19,6 +19,16 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   STOP still shows up — flagged **Do not text** — so you learn that before you type.
   A conversation with nothing in it offers your own saved openers as chips, which
   makes the first text to a new customer three taps and no typing.
+- **Swipe left on a conversation for "who is this again?"** Going down a list of
+  twenty means asking that twenty times, and answering it used to mean opening the
+  thread — which marks it read and loses your place. A left swipe pops a summary
+  instead: the one line that matters (*Booked Thu, Aug 21 · 2:00 PM — in 3 days*,
+  *Waiting on your reply — you quoted $240, no answer*, *They texted STOP*), then
+  where they are, what they drive, the open quote, the plan they're on, anything
+  queued to send, where the lead came from, and their own last words. Arrows step
+  to the next person without closing, so you can flick through the whole list.
+  Swipe **right** still archives. Everything shown comes off the list row already
+  in memory — **no network call, and peeking never marks a conversation read.**
 - **PIN / password login** (set the `DASHBOARD_PASSWORD` secret).
 - **Lead pipeline:** mark each conversation **New / Active / Won / Lost**, add custom
   **tags**, and filter the list by status, unread, or scheduled.

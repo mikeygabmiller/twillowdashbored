@@ -74,7 +74,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-15·new-message';
+const BUILD = '2026-08-15·swipe-peek';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -6666,6 +6666,10 @@ function buildIndexSummary(thread, cfg) {
     hasGarage: !!(thread.garage && ((thread.garage.vehicles || []).length || thread.garage.address)),
     vehicleLabel: garageVehicleLabel(thread.garage),
     city: (thread.garage && thread.garage.city) || '',
+    // The street line too, not just the city. The swipe-left peek has to answer
+    // "where is this one" from the list row alone — reading the thread itself
+    // would mark it read, which is exactly what peeking is meant to avoid.
+    address: (thread.garage && thread.garage.address) || '',
     // A standing instruction Mikey gave in his own words ("doing her car in
     // August"). Mirrored here so the board and the AI advisor can both see WHY
     // someone is quiet without loading every thread.
