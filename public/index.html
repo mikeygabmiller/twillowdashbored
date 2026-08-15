@@ -180,9 +180,12 @@
   /* ---------- Bottom nav ---------- */
   .bottomnav{position:absolute;left:0;right:0;bottom:0;height:calc(var(--nav-h) + var(--safe-bottom));padding-bottom:var(--safe-bottom);
     display:flex;background:rgba(18,18,22,.92);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line2);z-index:20}
-  .navitem{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:none;background:none;color:var(--muted2);font-size:10.5px;font-weight:600;position:relative;padding-top:6px}
+  /* min-width:0 lets six items share a narrow phone without the labels wrapping
+     to two lines and shoving the icons up. */
+  .navitem{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:none;background:none;color:var(--muted2);font-size:10.5px;font-weight:600;position:relative;padding-top:6px;white-space:nowrap}
   .navitem .ic{line-height:0;transition:transform .15s;display:flex}
   .navitem .ic svg{width:23px;height:23px}
+  @media (max-width:379px){.navitem{font-size:9.5px}.navitem .ic svg{width:21px;height:21px}}
   .navitem.active{color:var(--accent-text)}
   .navitem.active .ic{transform:translateY(-1px) scale(1.06)}
   .navitem .ndot{position:absolute;top:5px;left:calc(50% + 7px);min-width:16px;height:16px;border-radius:9px;background:var(--accent);color:#fff;font-size:9px;font-weight:700;display:none;align-items:center;justify-content:center;padding:0 4px}
@@ -706,6 +709,15 @@
   .home-more{text-align:center;color:var(--accent-text);font-weight:700;font-size:13px;padding:9px;cursor:pointer}
   .home-strip{display:flex;flex-wrap:wrap;gap:7px;margin-top:24px;justify-content:center}
   .home-strip span{font-size:11.5px;font-weight:700;color:var(--muted);background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:5px 12px}
+  /* The Simple/Pro switch, parked at the end of Home so a trimmed screen always
+     shows what trimmed it and how to undo it. */
+  .home-mode{display:flex;align-items:center;justify-content:center;gap:7px;width:100%;
+    appearance:none;background:none;border:none;border-top:1px solid var(--line2);
+    margin-top:20px;padding:16px 8px 4px;color:var(--muted2);font:inherit;font-size:12px;
+    font-weight:600;cursor:pointer;text-align:center;line-height:1.45}
+  .home-mode b{color:var(--accent-text);font-weight:800}
+  .home-mode svg{width:13px;height:13px;flex:0 0 auto;opacity:.8}
+  .home-mode:active{opacity:.6}
 
   /* ========== Pro dashboard widgets (customizable Home) ========== */
   .wcard{background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:15px 16px;margin-top:12px;box-shadow:0 6px 18px rgba(0,0,0,.12)}
@@ -1975,6 +1987,9 @@
   .cz-card{background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:15px 16px;margin-bottom:12px;box-shadow:var(--mo-elev)}
   .cz-card h3{margin:0 0 3px;font-size:15px;font-weight:800;letter-spacing:-.01em}
   .cz-card .hint{font-size:12px;color:var(--muted);margin:0 0 12px;line-height:1.5}
+  .cz-btn{appearance:none;border:1px solid var(--line);background:var(--panel2);color:var(--text);
+    font:inherit;font-size:13px;font-weight:700;padding:9px 14px;border-radius:11px;cursor:pointer;width:100%}
+  .cz-btn:active{transform:scale(.985)}
   .cz-row{display:flex;align-items:center;gap:12px;padding:9px 0;border-top:1px solid var(--line2)}
   .cz-row:first-of-type{border-top:none}
   .cz-row .lb{flex:1;min-width:0;font-size:13.5px;font-weight:600}
@@ -2485,6 +2500,7 @@
       <button class="navitem" data-tab="messages"><span class="ic" data-ic="message-square"></span><span class="ndot" id="navUnread"></span>Chats</button>
       <button class="navitem" data-tab="pipeline"><span class="ic" data-ic="route"></span><span class="ndot" id="navJobs"></span>Pipeline</button>
       <button class="navitem" data-tab="money"><span class="ic" data-ic="dollar"></span><span class="ndot" id="navMoney"></span>Money</button>
+      <button class="navitem" data-tab="stats"><span class="ic" data-ic="bar-chart"></span><span class="ndot" id="navStats"></span>Stats</button>
       <button class="navitem" data-tab="more"><span class="ic" data-ic="menu"></span><span class="ndot" id="navMore"></span>More</button>
     </nav>
   </aside>
@@ -2891,7 +2907,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-14·money-table";
+  var APP_BUILD="2026-08-15·simple-mode";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -3279,27 +3295,56 @@
   // to any saved business data — this is pure presentation + arrangement.
   // ==========================================================================
   var UI_KEY="mkd-ui";
-  // Five task-based destinations. Leads, Quotes and the Run are stages of one
-  // job — lead → quote → booked → paid — so they live together under Pipeline
-  // instead of being four separate features. Analytics is a weekly review, not
-  // a daily action, so it moved to More (and search reaches it instantly).
-  var UI_TABLIST=[["home","Today","home"],["messages","Chats","message-square"],["pipeline","Pipeline","route"],["money","Money","dollar"],["more","More","menu"]];
+  // Task-based destinations. Leads, Quotes and the Run are stages of one job —
+  // lead → quote → booked → paid — so they live together under Pipeline
+  // instead of being four separate features.
+  // Stats joins the bar: checking the website is one of the three things this
+  // dashboard gets opened for (the others being texting customers and logging
+  // money) and it was a three-tap trip through More to reach. Nothing was
+  // removed to make room — hide whatever you don't use in Customize → Tabs, and
+  // the bar re-splits evenly over whatever is left.
+  var UI_TABLIST=[["home","Today","home"],["messages","Chats","message-square"],["pipeline","Pipeline","route"],["money","Money","dollar"],["stats","Stats","bar-chart"],["more","More","menu"]];
   var UI_PRESETS=[ // id, name, accent, accentDark
     ["crimson","Crimson","#ff2e43","#c81e30"],["ocean","Ocean","#2f9bff","#1d5fd8"],
     ["mint","Mint","#22c55e","#15803d"],["grape","Grape","#a855f7","#7e22ce"],
     ["sunset","Sunset","#f97316","#c2410c"],["gold","Gold","#eab308","#a16207"]];
   var UI_MBLOCKS=[["hero","Balance headline","wallet"],["log","Log buttons","plus"],["alerts","Owed & reminders","alert"],["pulse","Month pulse","activity"],["brain","Brain & Buckets","sparkles"],["today","Today's list","list-checks"],["pricing","Are you charging enough?","trending-up"]];
   var UI_MKPIS=[["net","Net profit"],["you","Yours"],["costs","Costs"],["savings","Savings"],["avg","Avg ticket"],["jobs","Jobs"],["margin","Margin %"],["owed","Owed to you"],["best","Top service"]];
+  // Every block that can appear on Home. Declared before the saved layout is
+  // read, because the migration below compares against it.
+  var UI_HWIDGETS=[
+    ["brief","Today at a glance","sun"],
+    ["money","Today’s money","dollar"],
+    ["quickactions","Quick actions","sparkles"],
+    ["schedule","Today’s schedule","calendar-days"],
+    ["goal","Revenue goal","target"],
+    ["rebook","Money on the table","refresh-cw"],
+    ["sla","Response health","activity"],
+    ["tasks","To-do list","check-circle"],
+    ["promises","Promises you made","bell"],
+    ["trend","Revenue trend","bar-chart"],
+    ["funnel","Lead pipeline","clipboard-list"],
+    ["vip","Top customers","trophy"],
+    ["weather","Weather planner","cloud-sun"],
+    ["stats","Quick stats","bar-chart"]
+  ];
+  // What Home keeps in Simple mode. The rundown of who's waiting and the next
+  // stop are above this and always render; these are the rest of the screen.
+  // Deliberately short: a summary, the money, and the buttons that start work.
+  var SIMPLE_HWIDGETS=["brief","money","quickactions"];
   function defaultUI(){return{
     preset:"crimson", accent:["#ff2e43","#c81e30"],
     radius:"md", density:"comfy", textScale:100, font:"system", bg:"solid",
     mode:"simple", locked:false, tourSeen:false, listStyle:"compact",
     autoPolish:true,   // polish drafts as you type (the "ready" bar over the composer)
-    navV:2, tabsOrder:["home","messages","pipeline","money","more"], tabsHidden:[],
+    navV:3, tabsOrder:["home","messages","pipeline","money","stats","more"], tabsHidden:[],
     mblocks:["hero","log","alerts","pulse","brain","today","pricing"], mblocksHidden:[],
     mkpis:["net","you","costs","savings","avg","jobs","margin","owed","best"],
     // Phase 2/3
-    hwidgets:["brief","money","quickactions","schedule","goal","rebook","sla","tasks","trend","funnel","vip","weather","stats"], hwidgetsHidden:["trend","funnel","vip","weather","stats"],
+    // A fresh Home is three blocks, not eleven. Everything else ships off and
+    // is one tap away in Customize → Home — earn the space, don't assume it.
+    hwidgets:["brief","money","quickactions","schedule","goal","rebook","sla","tasks","promises","trend","funnel","vip","weather","stats"],
+    hwidgetsHidden:["schedule","goal","rebook","sla","tasks","promises","trend","funnel","vip","weather","stats"],
     rowFields:["time","preview","status","tags","unread"],
     stageLabels:{}, stageColors:{}
   };}
@@ -3307,13 +3352,25 @@
   var STAGE_DEF={new:["New","#3b82f6"],active:["Active","#22c55e"],won:["Won","#a855f7"],lost:["Lost","#8a93a3"]};
   function stageMeta(key){var d=STAGE_DEF[key]||["",""];var lbl=(UI.stageLabels&&UI.stageLabels[key])||d[0];var col=(UI.stageColors&&UI.stageColors[key])||d[1];return{label:lbl,color:col};}
   function rowHas(f){return (UI.rowFields||["time","preview","status","tags","unread"]).indexOf(f)>=0;}
-  // Anyone who used the app before the five-tab rework has the old six-tab
-  // order saved locally, naming tabs that no longer exist ("leads", "jobs",
-  // "analytics"). Their saved order can't express the new structure, so the
-  // nav settings — and only those — go back to default. Colours, widgets and
-  // everything else they customised are kept.
+  // Saved nav settings from an older build name tabs that no longer exist
+  // ("leads", "jobs", "analytics") or can't express a slot that has since been
+  // added, so the nav settings — and only those — go back to default. Colours,
+  // widgets and everything else customised are kept.
+  // navV3 puts Stats in the bar: checking the website was a three-tap trip
+  // through More, and it is one of the three things this app gets opened for.
   function migrateUI(u){
-    if(u.navV!==2){var d=defaultUI();u.navV=2;u.tabsOrder=d.tabsOrder.slice();u.tabsHidden=[]}
+    if(u.navV!==3){var d=defaultUI();u.navV=3;u.tabsOrder=d.tabsOrder.slice();u.tabsHidden=d.tabsHidden.slice()}
+    // Widgets shipped after this layout was saved were being switched ON for
+    // everyone: the render appended any unknown widget to the order and only
+    // ever consulted the saved hidden list, which of course couldn't mention a
+    // widget that didn't exist yet. So every release quietly grew the Home
+    // screen. New widgets are opt-in now — they go straight to hidden, and the
+    // owner turns on the ones they want in Customize → Home.
+    if(!Array.isArray(u.hwidgets))u.hwidgets=defaultUI().hwidgets.slice();
+    if(!Array.isArray(u.hwidgetsHidden))u.hwidgetsHidden=defaultUI().hwidgetsHidden.slice();
+    UI_HWIDGETS.forEach(function(w){
+      if(u.hwidgets.indexOf(w[0])<0){u.hwidgets.push(w[0]);u.hwidgetsHidden.push(w[0]);}
+    });
     return u;
   }
   var UI=(function(){try{return migrateUI(Object.assign(defaultUI(),JSON.parse(localStorage.getItem(UI_KEY)||"{}")))}catch(e){return defaultUI()}})();
@@ -3422,24 +3479,18 @@
     if(CZ.tab==="money")return czMoney(p);
     if(CZ.tab==="safe")return czSafe(p);
   }
-  var UI_HWIDGETS=[
-    ["brief","Today at a glance","sun"],
-    ["money","Today’s money","dollar"],
-    ["quickactions","Quick actions","sparkles"],
-    ["schedule","Today’s schedule","calendar-days"],
-    ["goal","Revenue goal","target"],
-    ["rebook","Money on the table","refresh-cw"],
-    ["sla","Response health","activity"],
-    ["tasks","To-do list","check-circle"],
-    ["promises","Promises you made","bell"],
-    ["trend","Revenue trend","bar-chart"],
-    ["funnel","Lead pipeline","clipboard-list"],
-    ["vip","Top customers","trophy"],
-    ["weather","Weather planner","cloud-sun"],
-    ["stats","Quick stats","bar-chart"]
-  ];
   function czHome(p){
     p.innerHTML="";
+    // Simple mode overrides this list. Say so, rather than letting the eye
+    // toggles look broken — and put the way out right here next to them.
+    if(UI.mode!=="pro"){
+      var s=document.createElement("div");s.className="cz-card";
+      s.innerHTML='<h3 class="cz-h-ic">'+ic("check-circle",15)+' Simple mode is on</h3>'+
+        '<p class="hint">Home is showing what\'s waiting, today\'s money and the quick buttons. The list below is saved but not being used yet.</p>';
+      var b=document.createElement("button");b.className="cz-btn";b.textContent="Turn on Pro mode";
+      b.onclick=function(){UI.mode="pro";saveUI();czRender();if(state.tab==="home")renderHome();vibrate(6)};
+      s.appendChild(b);p.appendChild(s);
+    }
     var c=document.createElement("div");c.className="cz-card";
     c.innerHTML='<h3>Home widgets</h3><p class="hint">Drag to reorder, tap the eye to hide. Your Home screen shows these top to bottom.</p>';
     c.appendChild(czList(UI_HWIDGETS,UI.hwidgets,UI.hwidgetsHidden,function(){saveUI();if(state.tab==="home")renderHome();}));
@@ -3559,7 +3610,7 @@
   function czSafe(p){
     p.innerHTML="";
     var c=document.createElement("div");c.className="cz-card";c.innerHTML='<h3>Keep it easy</h3><p class="hint">Guardrails so it stays simple and never gets messy.</p>';
-    [["mode","Pro mode","Show every advanced option. Off = just the essentials.",UI.mode==="pro",function(on){UI.mode=on?"pro":"simple";saveUI();czRender()}],
+    [["mode","Pro mode","On: your full Home layout, every widget you've turned on. Off: Home is just what's waiting, today's money, and the quick buttons. Nothing is deleted either way.",UI.mode==="pro",function(on){UI.mode=on?"pro":"simple";saveUI();czRender();if(state.tab==="home")renderHome();}],
      ["locked","Lock customizing","Stops anything changing by accident.",UI.locked,function(on){UI.locked=on;saveUI();czRender()}]
     ].forEach(function(t){
       var row=document.createElement("div");row.className="cz-row";
@@ -3938,12 +3989,12 @@
     {id:"mhistory",t:"Money history",g:"Money",ic:"clock",k:"past months previous earlier entries",run:function(){openMoney();moSetView("history")}},
     {id:"owed",t:"Owed to you",g:"Money",ic:"alert",k:"unpaid outstanding debt chase overdue",run:function(){openMoney()}},
     // — insight
-    {id:"analytics",t:"Analytics",g:"Insights",ic:"bar-chart",k:"stats numbers reports overview business",run:function(){openAnalytics()}},
-    {id:"website",t:"Website analytics",g:"Insights",ic:"activity",k:"traffic visitors ga4 clarity seo google site",run:function(){openAnalytics();growSet("analytics")}},
-    {id:"quotes",t:"Quotes over time",g:"Insights",ic:"clipboard-list",k:"qqc quote form submissions leads history value average month",run:function(){openAnalytics();growSet("quotes")}},
-    {id:"customers",t:"Who your customers are",g:"Insights",ic:"users",k:"repeat churn slipping loyal segments",run:function(){openAnalytics();growSet("customers")}},
-    {id:"profit",t:"Profit per job",g:"Insights",ic:"dollar",k:"margin worth value service profitability",run:function(){openAnalytics();growSet("profit")}},
-    {id:"map",t:"Map & rankings",g:"Insights",ic:"pin",k:"geogrid local rank area territory places",run:function(){openAnalytics();growSet("map")}},
+    {id:"analytics",t:"Analytics",g:"Insights",ic:"bar-chart",k:"stats numbers reports overview business",run:function(){openAnalytics("overview")}},
+    {id:"website",t:"Website analytics",g:"Insights",ic:"activity",k:"traffic visitors ga4 clarity seo google site stats",run:function(){openAnalytics("analytics")}},
+    {id:"quotes",t:"Quotes over time",g:"Insights",ic:"clipboard-list",k:"qqc quote form submissions leads history value average month",run:function(){openAnalytics("quotes")}},
+    {id:"customers",t:"Who your customers are",g:"Insights",ic:"users",k:"repeat churn slipping loyal segments",run:function(){openAnalytics("customers")}},
+    {id:"profit",t:"Profit per job",g:"Insights",ic:"dollar",k:"margin worth value service profitability",run:function(){openAnalytics("profit")}},
+    {id:"map",t:"Map & rankings",g:"Insights",ic:"pin",k:"geogrid local rank area territory places",run:function(){openAnalytics("map")}},
     // — AI
     {id:"aicmd",t:"Command AI",g:"AI",ic:"sparkles",k:"ask assistant agent do it for me chat gpt",run:function(){openAiCmd()}},
     {id:"trainai",t:"Train AI",g:"AI",ic:"sparkles",k:"teach voice tone style learn writing sound like me",run:function(){openTrainAI()}},
@@ -4131,20 +4182,38 @@
     // Job Day suite: the morning brief, and the one-time push-notification nudge.
     W.brief='<div data-hwidget="brief">'+homeBriefWidget()+'</div>';
     var order=(UI&&UI.hwidgets)?UI.hwidgets.slice():defaultUI().hwidgets.slice();
-    // Make newly-shipped widgets appear for users with an older saved layout.
+    // Anything shipped since this layout was saved is unknown to it. It stays
+    // off until it's asked for — see migrateUI. Appending it visible here is
+    // what let every release add another card to somebody else's Home.
     UI_HWIDGETS.forEach(function(w){if(order.indexOf(w[0])<0)order.push(w[0])});
     var hidden=(UI&&UI.hwidgetsHidden)||[];
-    // The AI center and the Needs rundown are core — always on, always first, never toggleable.
+    // The Needs rundown is core — always on, always first, never toggleable.
     order=order.filter(function(k){return ["aicenter","needs","waiting","followups","reminders"].indexOf(k)<0});
+    // Simple mode is a real switch now, not a label. It used to set a variable
+    // that nothing read, so the setting promising "just the essentials" changed
+    // nothing at all. It now renders the three blocks this dashboard is opened
+    // for — what's waiting, today's money, and the buttons that start a job —
+    // and leaves the saved layout untouched underneath, so Pro puts it all back.
+    var simple=(UI&&UI.mode!=="pro");
+    if(simple)hidden=UI_HWIDGETS.map(function(w){return w[0]}).filter(function(k){return SIMPLE_HWIDGETS.indexOf(k)<0});
     var dateLine=new Date().toLocaleDateString([],{weekday:"long",month:"long",day:"numeric"});
     var h='<div class="home"><div class="home-head"><div class="hh-greet">'+greeting()+', Mikey</div><div class="hh-sub">'+esc(dateLine)+'</div></div>';
     h+=homeNextWidget();          // where you're going — always first, never hidden
-    h+=W.aicenter;
+    if(!simple)h+=W.aicenter;     // the ask-anything box is a Pro surface; search still reaches the AI in Simple
     h+=homePushWidget();          // one-time "turn on notifications" nudge
     h+=homeNeeds(waiting,fu,reminders);
     order.forEach(function(k){if(hidden.indexOf(k)<0)h+=(W[k]||"")});
+    // The way out, at the bottom of the short screen rather than buried in
+    // settings. A trimmed Home should never leave you wondering where a widget
+    // went, or hunting for the switch that brings it back.
+    h+=simple
+      ? '<button class="home-mode" id="homeModeBtn">'+ic("sliders",13)+' Simple mode — showing the essentials. <b>Show everything</b></button>'
+      : '<button class="home-mode" id="homeModeBtn">'+ic("sliders",13)+' Showing your full layout. <b>Switch to simple</b></button>';
     h+='</div>';
     box.innerHTML=h;
+    var hm=el("homeModeBtn");
+    if(hm)hm.onclick=function(){UI.mode=simple?"pro":"simple";saveUI();vibrate(6);renderHome();
+      toast(simple?"Showing everything — trim it any time in Customize → Home":"Simple — Home trimmed to the essentials");};
     Array.prototype.forEach.call(box.querySelectorAll("[data-open]"),function(c){c.onclick=function(){openThread(c.getAttribute("data-open"))}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-more]"),function(c){c.onclick=function(){setTab(c.getAttribute("data-more"))}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-open-money]"),function(c){c.onclick=function(){openMoney()}});
@@ -7926,6 +7995,7 @@
       var tb=b.getAttribute("data-tab");
       if(tb==="money")return openMoney();
       if(tb==="pipeline")return openJobs();
+      if(tb==="stats")return openAnalytics("analytics");
       if(tb==="more")return openMore();
       setTab(tb);
     };
@@ -7943,7 +8013,7 @@
     if(navBack())e.preventDefault();
   });
   el("czBack").onclick=closeCustomize;
-  el("czMode").onclick=function(){UI.mode=UI.mode==="pro"?"simple":"pro";saveUI();czRender();vibrate(6)};
+  el("czMode").onclick=function(){UI.mode=UI.mode==="pro"?"simple":"pro";saveUI();czRender();if(state.tab==="home")renderHome();toast(UI.mode==="pro"?"Pro — your full Home is back":"Simple — Home trimmed to the essentials");vibrate(6)};
 
   // The hamburger and the avatar both reach More — the menu it used to open is
   // that screen now, and every row in it is wired from MORE_MENU, not here.
@@ -7984,23 +8054,41 @@
                sample:null,matchedName:"",preview:null,previewing:false,previewErr:"",
                // spend guard: pending switch positions + the last refusal
                guardFree:null,guardIds:null,budgetErr:""}}};
-  var GROW_VIEWS={overview:["Analytics","Business overview · Mikey's Mobile Detailing"],
+  // Each view names itself. Six of these used to be titled "Analytics", so the
+  // header said the same thing everywhere and the only way to tell which screen
+  // you were on was to read the chart.
+  var GROW_VIEWS={overview:["Overview","Business overview · Mikey's Mobile Detailing"],
     quotes:["Quotes","Every QQC quote, over time"],
-    customers:["Analytics","Who your customers are — and who's slipping away"],
-    profit:["Analytics","What each job is really worth"],
-    pulse:["Analytics","Where the month lands, and what just changed"],
-    analytics:["Analytics","Your website, decoded — live"],
-    map:["Analytics","Your map — where the work and the rankings are"]};
-  function openAnalytics(){
+    customers:["Customers","Who your customers are — and who's slipping away"],
+    profit:["Profit","What each job is really worth"],
+    pulse:["Pulse","Where the month lands, and what just changed"],
+    analytics:["Website","Your website, decoded — live"],
+    map:["Map","Where the work and the rankings are"]};
+  // view is optional: the Stats tab opens straight onto the website numbers,
+  // which is what "check my stats" means day to day. Everything else lands on
+  // the overview as before.
+  function openAnalytics(view){
+    if(view)GROW.view=view;
     el("growApp").classList.add("show");
+    setNavActive("stats");
     navOpen("analytics",closeAnalytics);
     if(!GROW.wired){growWire();GROW.wired=true;}
     if(!MO.summary&&!MO._homeFetch){MO._homeFetch=1;api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.today=d.today;MO.entries=d.entries||[];MO.cfg=d.config;MO.owed=d.owed||[];MO.week=d.week;MO.allTime=d.allTime;if(el("growApp").classList.contains("show"))growRender();}}).catch(function(){});}
     if(!state.insights)fetchInsights();
+    growSyncNav();
     growRender();
   }
-  function closeAnalytics(){navDrop("analytics");el("growApp").classList.remove("show");}
-  function growSet(v){GROW.view=v;Array.prototype.forEach.call(el("grNav").querySelectorAll("[data-gv]"),function(b){b.classList.toggle("active",b.getAttribute("data-gv")===v)});growRender();el("grBody").scrollTop=0;}
+  function closeAnalytics(){navDrop("analytics");el("growApp").classList.remove("show");setNavActive(state.tab);}
+  // Light the segment that's actually showing. Opening straight onto a view
+  // (the Stats tab does) skips growSet, so the bar has to be synced on open too
+  // or it points at the overview while the website numbers are on screen.
+  function growSyncNav(){
+    var nv=el("grNav");if(!nv)return;
+    Array.prototype.forEach.call(nv.querySelectorAll("[data-gv]"),function(b){b.classList.toggle("active",b.getAttribute("data-gv")===GROW.view)});
+    var on=nv.querySelector("[data-gv].active");
+    if(on&&on.scrollIntoView)try{on.scrollIntoView({block:"nearest",inline:"center"})}catch(e){}
+  }
+  function growSet(v){GROW.view=v;growSyncNav();growRender();el("grBody").scrollTop=0;}
   function growWire(){
     el("grBack").onclick=closeAnalytics;
     // Flag real overflow so the edge fade (and the scroll hint it gives) only
