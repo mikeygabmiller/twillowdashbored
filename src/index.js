@@ -74,7 +74,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-15·swipe-hint';
+const BUILD = '2026-08-15·peek-recap';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -232,6 +232,7 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/templates')  return apiGetTemplates();
   if (request.method === 'POST' && pathname === '/api/templates')  return apiSaveTemplates(request);
   if (request.method === 'POST' && pathname === '/api/ai/summary') return apiAiSummary(request);
+  if (request.method === 'POST' && pathname === '/api/ai/recap')   return apiAiRecap(request);
   if (request.method === 'POST' && pathname === '/api/ai/draft')   return apiAiDraft(request);
   if (request.method === 'POST' && pathname === '/api/ai/triage')  return apiAiTriage();
   if (request.method === 'POST' && pathname === '/api/ai/coach')   return apiAiCoach(request);
@@ -5010,6 +5011,88 @@ function replyCheckFor(thread) {
   return (rc && rc.forTs === last.ts) ? rc : null;
 }
 
+// ===========================================================================
+// Conversation recap — "what happened here, in one line"
+// ---------------------------------------------------------------------------
+// The swipe-left peek can show WHAT IS TRUE of a customer (booked Thursday,
+// quoted $240) straight off the index row, but not what actually HAPPENED
+// between the two of you. That's the part you're really trying to remember:
+// "he asked about ceramic, you said you'd price it Thursday".
+//
+// Cached against the last message's timestamp, exactly like replyCheck: a new
+// message in either direction invalidates it, so a stale recap can't outlive
+// the conversation it describes. One AI call per conversation per new message,
+// and only when something actually asks for it.
+// ===========================================================================
+function recapFor(thread) {
+  const msgs = thread.messages || [];
+  const last = msgs[msgs.length - 1];
+  if (!last) return null;
+  const r = thread.recap;
+  return (r && r.forTs === last.ts && r.text) ? r : null;
+}
+
+async function ensureRecap(thread, cfg) {
+  const msgs = thread.messages || [];
+  const last = msgs[msgs.length - 1];
+  if (!last) return false;                 // nothing has happened yet
+  if (recapFor(thread)) return false;      // already summarised this exact state
+  if (!ENV.GEMINI_API_KEY) return false;   // no key — the card falls back to the last message
+
+  const who = (thread.name || '').trim().split(/\s+/)[0] || 'they';
+  const prompt =
+    businessContext(cfg) +
+    `You are reminding Mikey (mobile car detailer) what happened with one customer, ` +
+    `so he can place them at a glance while scrolling his texts.\n\n` +
+    `Write ONE short sentence — 14 words maximum — saying what happened and where it ` +
+    `stands. Write it the way you'd remind a friend, e.g.:\n` +
+    `  "asked about ceramic on his truck, you said you'd price it Thursday"\n` +
+    `  "job finished, he Venmo'd you $180"\n` +
+    `  "wanted a Saturday slot, you offered Tuesday, no answer since"\n\n` +
+    `Rules:\n` +
+    `- Past tense. What HAPPENED, not what to do next.\n` +
+    `- Concrete beats vague: name the vehicle, the service, the dollar amount when they're known.\n` +
+    `- Say who did what. Call the customer "${who}" or "he"/"she"/"they"; call Mikey "you".\n` +
+    `- No greeting, no "the customer", no advice, no quotation marks, no trailing period needed.\n` +
+    `- If they only just reached out and nothing has been settled, say that plainly.\n\n` +
+    `Return ONLY JSON: {"recap":"..."}\n\n` +
+    `Conversation:\n${transcript(thread)}`;
+
+  let text = '';
+  try {
+    const raw = await geminiGenerate(prompt, { json: true, maxTokens: 200 });
+    try { text = String(JSON.parse(raw).recap || '').trim(); }
+    catch { text = String(raw || '').trim(); }
+  } catch {
+    return false;                          // AI unreachable — leave it uncached and try again later
+  }
+  text = text.replace(/^["'\s]+|["'\s]+$/g, '').slice(0, 160);
+  if (!text) return false;
+  thread.recap = { forTs: last.ts, at: Date.now(), text };
+  return true;
+}
+
+// POST /api/ai/recap {phone} — used by the conversation peek.
+// Deliberately loads the thread with loadThread() rather than
+// openThreadForRead(): the latter clears `unread`, and looking at a summary must
+// never count as having read the conversation.
+async function apiAiRecap(request) {
+  const data = await readJson(request);
+  const phone = normalizePhone(data.phone);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  const thread = await loadThread(phone);
+  if (!(thread.messages || []).length) return json({ ok: true, recap: '' });
+  const cached = recapFor(thread);
+  if (cached) return json({ ok: true, recap: cached.text, cached: true });
+  const cfg = await loadConfig();
+  if (await ensureRecap(thread, cfg)) {
+    await saveThread(thread);
+    await updateIndexEntry(thread);
+    return json({ ok: true, recap: (thread.recap || {}).text || '' });
+  }
+  return json({ ok: true, recap: '', error: ENV.GEMINI_API_KEY ? 'ai_failed' : 'ai_not_configured' });
+}
+
 // Sync read used by the (sync) follow-up planner and the index builder.
 // Un-judged threads default to "yes" — identical to the old behavior.
 function replyOwed(thread) {
@@ -6691,6 +6774,11 @@ function buildIndexSummary(thread, cfg) {
     // or "sent a photo" without loading every thread body.
     hasVoicemail: (thread.messages || []).some((m) => m.kind === 'voicemail'),
     hasMedia: (thread.messages || []).some((m) => Array.isArray(m.media) && m.media.length),
+    // One-line "what happened", mirrored so the peek renders it instantly and
+    // only pays for an AI call the first time a conversation reaches a new
+    // state. Goes empty the moment a new message lands, which is what makes the
+    // front end ask for a fresh one — see recapFor().
+    recap: (recapFor(thread) || {}).text || '',
     lastBody: last ? preview(last.body) : '',
     lastDir: last ? last.dir : '',
     lastTs: last ? last.ts : (thread.updatedAt || Date.now()),

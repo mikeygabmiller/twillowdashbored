@@ -2393,6 +2393,12 @@
   .pk-head.bad{border-left-color:#f87171}
   .pk-head b{display:block;font-size:15.5px;font-weight:800;line-height:1.35}
   .pk-head span{display:block;font-size:12.5px;color:var(--muted2);margin-top:3px}
+  .pk-recap{background:var(--panel2);border-radius:15px;padding:12px 13px;margin-bottom:14px}
+  .pk-recap .rh{display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:800;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--muted2);margin-bottom:6px}
+  .pk-recap .rb{font-size:14.5px;line-height:1.5}
+  .pk-recap.loading .rb{color:var(--muted2);animation:pkpulse 1.3s ease-in-out infinite}
+  @keyframes pkpulse{0%,100%{opacity:.45}50%{opacity:.9}}
   .pk-facts{display:flex;flex-direction:column;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:15px;overflow:hidden;margin-bottom:14px}
   .pk-fact{display:flex;align-items:flex-start;gap:11px;background:var(--panel);padding:11px 13px}
   .pk-fact .fi{flex:none;color:var(--muted2);display:flex;margin-top:1px}
@@ -2975,7 +2981,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-15·swipe-hint";
+  var APP_BUILD="2026-08-15·peek-recap";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -5695,6 +5701,25 @@
     if(t.source)f.push(["route","Came from",(PK_SRC[t.source]||t.source)+(t.firstTs?" · "+peekRel(t.firstTs):"")]);
     return f;
   }
+  // The AI one-liner: what actually happened between the two of you, which is
+  // the part the index row can't know. Keyed by phone AND the last message's
+  // timestamp, so a new text in either direction retires the old line instead
+  // of leaving a stale story on the card. Values may be "" — that means asked
+  // and got nothing, which is a real answer and stops it asking again.
+  var RECAP={},RECAP_BUSY={};
+  function recapKey(t){return t.phone+"|"+(t.lastTs||0)}
+  function recapFetch(phone,key){
+    if(RECAP_BUSY[key])return;
+    RECAP_BUSY[key]=true;
+    var done=function(text){
+      RECAP_BUSY[key]=false;RECAP[key]={text:text||""};
+      var e=threadByPhone(phone);if(e&&text)e.recap=text;
+      if(PEEK.phone===phone)peekRender();
+    };
+    post("/api/ai/recap",{phone:phone})
+      .then(function(d){done(d&&d.ok?d.recap:"")})
+      .catch(function(){done("")});
+  }
   function peekOrder(){
     var o=(state.listOrder||[]).filter(function(p){return !!threadByPhone(p)});
     if(o.indexOf(PEEK.phone)<0&&PEEK.phone)o=[PEEK.phone].concat(o);
@@ -5735,6 +5760,14 @@
 
     h+='<div class="pk-head '+hd.tone+'"><b>'+esc(hd.t)+'</b>'+(hd.s?'<span>'+esc(hd.s)+'</span>':'')+'</div>';
 
+    // The story, under the status. Nothing is rendered once we've asked and come
+    // back empty — the "they said last" block below already covers that case.
+    var rk=recapKey(t),rec=t.recap||((RECAP[rk]||{}).text)||"",asked=!!t.recap||RECAP.hasOwnProperty(rk);
+    if(t.lastBody&&(rec||!asked)){   // nothing said yet → nothing to recap, and nothing to spin on
+      h+='<div class="pk-recap'+(rec?"":" loading")+'"><div class="rh">'+ic("sparkles",12)+' What happened</div>'+
+         '<div class="rb">'+esc(rec||"Reading the conversation…")+'</div></div>';
+    }
+
     if(facts.length){
       h+='<div class="pk-facts">';
       facts.forEach(function(f){
@@ -5757,6 +5790,7 @@
     if(order.length>1&&at>=0)h+='<div class="pk-count">'+(at+1)+' of '+order.length+' · swipe down or tap outside to close</div>';
 
     card.innerHTML=h;hydrateIcons(card);
+    if(!rec&&!asked&&t.lastBody)recapFetch(t.phone,rk);
     card.querySelector("#pkOpen").onclick=function(){jdSheetClose();setTab("messages");openThread(PEEK.phone)};
     var step=function(id,to){
       var b=card.querySelector(id);if(!b||b.disabled)return;

@@ -40,6 +40,7 @@ page.on('pageerror', (e) => errs.push('PAGEERROR: ' + e.message));
 page.on('console', (m) => { if (m.type() === 'error' && !/favicon|manifest|sw\.js|fetching the script/.test(m.text())) errs.push('CONSOLE: ' + m.text()); });
 
 const threadHits = [];
+const recapCalls = [];
 await page.route('**/*', async (route) => {
   const u = new URL(route.request().url()); const path = u.pathname;
   const json = (o) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(o) });
@@ -56,6 +57,16 @@ await page.route('**/*', async (route) => {
     return json(out);
   }
   if (path === '/api/thread') { threadHits.push(u.searchParams.get('phone')); return json({ ok: true, thread: {} }); }
+  if (path === '/api/ai/recap') {
+    let body = {}; try { body = JSON.parse(route.request().postData() || '{}'); } catch (_) {}
+    recapCalls.push(body.phone);
+    const canned = {
+      '+14255551234': "asked about ceramic on his Tahoe, you said you'd price it Thursday",
+      '+14255557777': '',                              // AI came back empty for her
+    };
+    return json({ ok: true, recap: Object.prototype.hasOwnProperty.call(canned, body.phone)
+      ? canned[body.phone] : 'they reached out, nothing settled yet' });
+  }
   if (path === '/api/money') return json({ ok: true, month: '2026-08', today: '2026-08-15', entries: [], nudges: [], owed: [], summary: {}, config: {} });
   if (path === '/api/day') return json({ ok: true, date: '2026-08-15', jobs: [], manual: [], order: [], summary: { total: 0, done: 0, remaining: 0, booked: 0, earned: 0, hours: 0 } });
   if (path === '/api/detections') return json({ ok: true, detections: [], config: { enabled: true } });
@@ -140,6 +151,14 @@ ok('their own last words', /yeah thursday works for me/.test(txt));
 ok('unread count is on show', /2 unread/.test(txt));
 ok('photos flagged', /Sent photos/.test(txt));
 
+section('"What happened" — the part the list row cannot know');
+await page.waitForTimeout(350);
+txt = await peekText();
+ok('it asked for a recap', recapCalls.includes('+14255551234'), recapCalls);
+ok('and shows it', /asked about ceramic on his Tahoe/.test(txt), txt);
+ok('under its own heading', /WHAT HAPPENED/i.test(txt));
+ok('the spinner is gone once it lands', await page.locator('#pkCard .pk-recap.loading').count() === 0);
+
 section('Peeking must not mark anything read');
 ok('no thread was fetched', threadHits.length === 0, threadHits);
 ok('the unread badge survived', await page.locator('.conv .unread-pill').first().innerText() === '2');
@@ -153,6 +172,10 @@ ok('her headline is that she is waiting', /Waiting on your reply/.test(txt), txt
 ok('…and it carries the quote she is waiting on', /\$240, no answer/.test(txt), txt.split('\n').slice(0, 6));
 ok('the quote is a fact row too', /Open quote/.test(txt));
 ok('position is shown', /2 of 3/.test(txt));
+await page.waitForTimeout(350);
+ok('an empty recap renders nothing rather than an empty box',
+  await page.locator('#pkCard .pk-recap').count() === 0);
+ok('…and it does not spin forever', await page.locator('#pkCard .pk-recap.loading').count() === 0);
 await page.locator('#pkNext').click();
 await page.waitForTimeout(300);
 txt = await peekText();
@@ -162,6 +185,11 @@ ok('next is disabled at the end', await page.locator('#pkNext').isDisabled());
 await page.locator('#pkPrev').click();
 await page.waitForTimeout(300);
 ok('back goes back', /Rita Cole/.test(await peekText()));
+const callsBefore = recapCalls.length;
+await page.locator('#pkPrev').click();
+await page.waitForTimeout(400);
+ok('stepping back to Dale reuses the recap', /asked about ceramic/.test(await peekText()));
+ok('…without paying for a second AI call', recapCalls.length === callsBefore, recapCalls);
 
 section('Easy to close');
 await page.locator('#jdScrim').click({ position: { x: 10, y: 10 } });
