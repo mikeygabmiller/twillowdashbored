@@ -30,6 +30,15 @@
     --safe-bottom:env(safe-area-inset-bottom,0px);
     --nav-h:60px;
     --scroll-thumb:#2c2f38; --scroll-thumb-h:#3a3e49; --tag-bg:#23252d; --tag-line:#30333d; --tag-ink:#aab2c0;
+    /* Depth. A dark UI reads as flat paper unless surfaces catch a little light
+       at the top edge and drop a real shadow underneath — the first line of each
+       of these is that catch-light, not a shadow. --sheen is the same idea as a
+       gradient so a card is fractionally brighter where it meets the eye. */
+    --elev-1:0 1px 0 rgba(255,255,255,.045),0 2px 6px rgba(0,0,0,.34),0 14px 30px -16px rgba(0,0,0,.62);
+    --elev-2:0 1px 0 rgba(255,255,255,.06),0 4px 14px rgba(0,0,0,.42),0 26px 52px -22px rgba(0,0,0,.72);
+    --sheen:linear-gradient(180deg,rgba(255,255,255,.05),rgba(255,255,255,0) 46%);
+    --sheen-2:linear-gradient(180deg,rgba(255,255,255,.035),rgba(255,255,255,0) 60%);
+    --ring:rgba(255,255,255,.07);
   }
   /* Light theme — neutral tokens re-map; accent tokens stay JS-driven (applyAccent
      recomputes --accent-text/-soft for the active theme). Applies when the OS asks
@@ -40,12 +49,25 @@
       --bg:#eef0f3; --panel:#ffffff; --panel2:#f4f6f8; --panel3:#e7eaef;
       --line:#d7dbe2; --line2:#e6e9ee; --text:#161820; --muted:#5a626f; --muted2:#8a93a1;
       --scroll-thumb:#c7ccd5; --scroll-thumb-h:#b0b6c1; --tag-bg:#eef0f3; --tag-line:#d7dbe2; --tag-ink:#4a5160;
+      /* On white, depth comes from the shadow alone — a catch-light on a white
+         card is invisible, and the same sheen that lifts a dark card dirties a
+         light one. Shadows go cool rather than grey so they read as daylight. */
+      --elev-1:0 1px 2px rgba(20,22,30,.055),0 10px 24px -14px rgba(20,22,30,.26);
+      --elev-2:0 2px 6px rgba(20,22,30,.075),0 22px 46px -20px rgba(20,22,30,.32);
+      --sheen:linear-gradient(180deg,rgba(255,255,255,.75),rgba(255,255,255,0) 52%);
+      --sheen-2:none;
+      --ring:rgba(20,22,30,.055);
     }
   }
   :root[data-theme="light"]{
     --bg:#eef0f3; --panel:#ffffff; --panel2:#f4f6f8; --panel3:#e7eaef;
     --line:#d7dbe2; --line2:#e6e9ee; --text:#161820; --muted:#5a626f; --muted2:#8a93a1;
     --scroll-thumb:#c7ccd5; --scroll-thumb-h:#b0b6c1; --tag-bg:#eef0f3; --tag-line:#d7dbe2; --tag-ink:#4a5160;
+    --elev-1:0 1px 2px rgba(20,22,30,.055),0 10px 24px -14px rgba(20,22,30,.26);
+    --elev-2:0 2px 6px rgba(20,22,30,.075),0 22px 46px -20px rgba(20,22,30,.32);
+    --sheen:linear-gradient(180deg,rgba(255,255,255,.75),rgba(255,255,255,0) 52%);
+    --sheen-2:none;
+    --ring:rgba(20,22,30,.055);
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{height:100%;margin:0}
@@ -151,9 +173,14 @@
   .conv .unread-pill{position:relative;z-index:1}   /* stays above the fade */
   .conv{display:flex;gap:13px;padding:13px 16px;border-bottom:1px solid var(--line2);cursor:pointer;position:relative;background:var(--panel);transition:background .12s;will-change:transform}
   .conv:hover{background:var(--panel2)}
+  .conv:active{background:var(--panel3)}
   .conv.active{background:var(--panel2);box-shadow:inset 3px 0 0 var(--accent)}
+  /* The avatar is the only colour in a long grey list, so it gets a real shadow
+     and a hairline to lift it off the row rather than sitting flat in it. */
   .avatar{width:46px;height:46px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;
-    font-weight:700;color:#fff;font-size:16px;position:relative}
+    font-weight:750;color:#fff;font-size:16px;position:relative;letter-spacing:-.01em;
+    box-shadow:0 3px 10px rgba(0,0,0,.34),inset 0 1px 0 rgba(255,255,255,.16)}
+  :root[data-theme="light"] .avatar{box-shadow:0 3px 10px rgba(20,22,30,.16),inset 0 1px 0 rgba(255,255,255,.25)}
   .avatar .pdot{position:absolute;right:-1px;bottom:-1px;width:14px;height:14px;border-radius:50%;border:2.5px solid var(--panel);background:var(--gold);display:flex;align-items:center;justify-content:center;font-size:7px}
   .conv .body{flex:1;min-width:0}
   .conv .row1{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
@@ -577,6 +604,12 @@
     border-radius:18px;padding:15px 15px 13px;margin-bottom:12px}
   .next-card .nx-h{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:800;
     letter-spacing:.1em;text-transform:uppercase;color:var(--nx-ac);margin-bottom:10px}
+  /* A slow breathing dot instead of a static icon — the one thing on this screen
+     that is happening right now should be the one thing that moves. Stops
+     entirely under prefers-reduced-motion via the global rule. */
+  .next-card .nx-h .nx-live{width:7px;height:7px;border-radius:50%;flex:none;background:var(--nx-ac);
+    box-shadow:0 0 0 4px color-mix(in srgb,var(--nx-ac) 20%,transparent);animation:nxLive 2.6s ease-in-out infinite}
+  @keyframes nxLive{0%,100%{opacity:1}50%{opacity:.32}}
   .next-card .nx-h .nx-when{margin-left:auto;letter-spacing:0;text-transform:none;font-size:12px;
     font-weight:700;color:var(--nx-when)}
   .next-card .nx-who{font-size:19px;font-weight:800;letter-spacing:-.02em;color:var(--nx-ti);line-height:1.15}
@@ -735,11 +768,16 @@
   .home-mode:active{opacity:.6}
 
   /* ========== Pro dashboard widgets (customizable Home) ========== */
-  .wcard{background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:15px 16px;margin-top:12px;box-shadow:0 6px 18px rgba(0,0,0,.12)}
-  :root[data-theme="light"] .wcard{box-shadow:0 4px 14px rgba(20,30,60,.05)}
-  .wc-h{display:flex;align-items:center;gap:9px;margin-bottom:12px}
-  .wc-h .wc-ic{display:flex;color:var(--accent-text)}
-  .wc-h .wc-t{font-size:14.5px;font-weight:800;letter-spacing:-.01em;flex:1;min-width:0}
+  .wcard{background-color:var(--panel);background-image:var(--sheen);border:1px solid var(--line2);
+    border-radius:18px;padding:16px 17px;margin-top:13px;box-shadow:var(--elev-1)}
+  .wc-h{display:flex;align-items:center;gap:10px;margin-bottom:13px}
+  /* The icon sits in its own tinted well instead of floating loose next to the
+     title — it gives every card the same anchor point and a bit of colour. */
+  .wc-h .wc-ic{display:flex;align-items:center;justify-content:center;flex:none;
+    width:30px;height:30px;border-radius:9px;color:var(--accent-text);
+    background:var(--accent-soft);box-shadow:inset 0 1px 0 var(--ring)}
+  .wc-h .wc-ic svg{width:17px;height:17px}
+  .wc-h .wc-t{font-size:15px;font-weight:800;letter-spacing:-.015em;flex:1;min-width:0}
   .wc-h .wc-a{font-size:12px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);border:0;border-radius:10px;padding:5px 10px;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
   .wc-h .wc-a:active{transform:scale(.95)}
   .wc-h .wc-badge{font-size:11px;font-weight:800;color:var(--muted2);font-variant-numeric:tabular-nums}
@@ -783,9 +821,13 @@
 
   /* KPI / stat tiles + SLA */
   .kpi-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
-  .kpi{background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:11px 12px}
-  .kpi .k-v{font-size:19px;font-weight:850;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
-  .kpi .k-l{font-size:10.5px;color:var(--muted2);font-weight:700;margin-top:2px}
+  .kpi{background-color:var(--panel2);background-image:var(--sheen-2);border:1px solid var(--line2);
+    border-radius:13px;padding:12px 13px;box-shadow:inset 0 1px 0 var(--ring)}
+  /* Numbers get the tighter tracking and tabular figures; labels go quiet and
+     tracked wide, so a tile reads as one number rather than two lines of text. */
+  .kpi .k-v{font-size:20px;font-weight:850;letter-spacing:-.03em;font-variant-numeric:tabular-nums;line-height:1.1}
+  .kpi .k-l{font-size:10px;color:var(--muted2);font-weight:700;margin-top:3px;
+    text-transform:uppercase;letter-spacing:.055em}
   .kpi.good .k-v{color:#34d399}.kpi.warn .k-v{color:#fbbf24}.kpi.bad .k-v{color:#fb7185}
   .sla-gauge{height:8px;border-radius:6px;background:var(--panel3);overflow:hidden;margin:2px 0 13px}
   .sla-gauge .sg-fill{height:100%;border-radius:6px;transition:width .6s}
@@ -902,11 +944,18 @@
     font-size:11.5px;font-weight:700}
 
   /* Quick actions */
-  .qa-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:9px}
-  .qa-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;background:var(--panel2);border:1px solid var(--line2);border-radius:13px;padding:14px 6px;cursor:pointer;transition:border-color .14s,transform .08s,background .14s;color:var(--text)}
-  .qa-btn:hover{border-color:var(--accent);background:var(--panel3)}
-  .qa-btn:active{transform:scale(.96)}
-  .qa-btn .qa-ic{display:flex;color:var(--accent-text)}
+  .qa-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .qa-btn{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;
+    background-color:var(--panel2);background-image:var(--sheen-2);border:1px solid var(--line2);
+    border-radius:15px;padding:15px 6px;cursor:pointer;color:var(--text);
+    box-shadow:inset 0 1px 0 var(--ring);
+    transition:border-color .16s,transform .09s cubic-bezier(.3,1.4,.5,1),background-color .16s,box-shadow .16s}
+  .qa-btn:hover{border-color:color-mix(in srgb,var(--accent) 55%,var(--line));background-color:var(--panel3)}
+  .qa-btn:active{transform:scale(.955);box-shadow:inset 0 2px 6px rgba(0,0,0,.22)}
+  /* The icon carries the colour; a soft glow behind it keeps the row from
+     looking like six grey squares. */
+  .qa-btn .qa-ic{display:flex;color:var(--accent-text);
+    filter:drop-shadow(0 2px 8px color-mix(in srgb,var(--accent) 40%,transparent))}
   .qa-btn .qa-l{font-size:11.5px;font-weight:700;text-align:center;line-height:1.2}
 
   /* Weather planner */
@@ -1526,11 +1575,12 @@
   :root{
     --mo-good:#20c46b; --mo-good-d:#159a52; --mo-warn:#f5b23d; --mo-bad:#f2564b;
     --mo-tax:#f5b23d; --mo-biz:#5b8bff; --mo-mine:#20c46b;
-    --mo-ink:var(--text); --mo-elev:0 1px 0 rgba(255,255,255,.03),0 10px 30px -18px rgba(0,0,0,.7);
+    /* Money had its own elevation before there was a shared one. It points at
+       the global token now so Home and Money sit at the same height instead of
+       drifting apart every time one of them is touched. */
+    --mo-ink:var(--text); --mo-elev:var(--elev-1);
     --mo-r:18px;
   }
-  :root:not([data-theme="dark"]){ --mo-elev:0 1px 2px rgba(20,22,30,.05),0 14px 34px -22px rgba(20,22,30,.30); }
-  :root[data-theme="light"]{ --mo-elev:0 1px 2px rgba(20,22,30,.05),0 14px 34px -22px rgba(20,22,30,.30); }
 
   /* ---- shell polish ---- */
   .mo-body{padding-top:12px}
@@ -2072,14 +2122,21 @@
   /* Bottom nav: theme-aware surface + a crisp active indicator bar. */
   .bottomnav{background:color-mix(in srgb,var(--panel) 90%,transparent)}
   .navitem{padding-top:8px;transition:color .15s}
-  .navitem::after{content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);width:0;height:3px;border-radius:0 0 4px 4px;background:var(--accent);transition:width .2s ease}
+  .navitem::after{content:"";position:absolute;top:0;left:50%;transform:translateX(-50%);width:0;height:3px;border-radius:0 0 4px 4px;background:var(--accent);transition:width .2s ease;
+    box-shadow:0 0 12px 1px var(--accent)}
   .navitem.active::after{width:24px}
-  .navitem.active .ic{transform:translateY(-1px) scale(1.08)}
+  .navitem.active .ic{transform:translateY(-1px) scale(1.08);
+    filter:drop-shadow(0 3px 9px color-mix(in srgb,var(--accent) 55%,transparent))}
+  .navitem .ic{transition:transform .18s cubic-bezier(.3,1.5,.5,1),filter .18s}
 
-  /* Home header + AI hero. */
-  .home-head{padding:16px 2px 4px}
-  .hh-greet{font-size:26px}
-  .hh-sub{font-size:13.5px;color:var(--muted2);font-weight:600}
+  /* Home header + AI hero. The greeting is the only place the app gets to have
+     a voice, so it's given real display size and tight tracking. The date sits
+     above it as a quiet tracked eyebrow rather than a second line of body copy. */
+  .home-head{padding:18px 2px 6px}
+  .hh-greet{font-size:31px;font-weight:850;letter-spacing:-.035em;line-height:1.08}
+  .hh-sub{font-size:11px;color:var(--muted2);font-weight:800;text-transform:uppercase;
+    letter-spacing:.09em;margin-bottom:5px;order:-1}
+  .home-head{display:flex;flex-direction:column}
   .ai-center{margin-top:16px;padding:16px 16px 15px;box-shadow:0 12px 32px -16px var(--accent-soft)}
   .aic-title{font-size:15.5px}
   .aic-chips button{font-weight:650}
@@ -2087,8 +2144,14 @@
   .aic-try svg{opacity:.8}
 
   /* "Needs your attention" — the always-on at-a-glance rundown. */
-  .needs{margin-top:16px;background:var(--panel);border:1px solid var(--line2);border-radius:18px;padding:5px 7px 8px;box-shadow:var(--mo-elev)}
-  .needs.ok{display:flex;align-items:center;gap:14px;padding:16px 18px;background:linear-gradient(135deg,color-mix(in srgb,var(--green) 14%,var(--panel)),var(--panel));border-color:color-mix(in srgb,var(--green) 26%,var(--line2))}
+  /* This is the one card that should look like it outranks the others, so it
+     sits a step higher than a .wcard rather than level with them. */
+  .needs{margin-top:16px;background-color:var(--panel);background-image:var(--sheen);
+    border:1px solid var(--line2);border-radius:20px;padding:5px 7px 8px;box-shadow:var(--elev-2)}
+  .needs.ok{display:flex;align-items:center;gap:14px;padding:18px 18px;background-image:none;
+    background:linear-gradient(135deg,color-mix(in srgb,var(--green) 15%,var(--panel)),var(--panel) 62%);
+    border-color:color-mix(in srgb,var(--green) 28%,var(--line2))}
+  .needs.ok .nd-ok{filter:drop-shadow(0 3px 10px color-mix(in srgb,var(--green) 45%,transparent))}
   .needs .nd-ok{display:flex;flex:none;color:var(--green)}
   .needs .nd-ok-t{font-size:16px;font-weight:800;letter-spacing:-.01em}
   .needs .nd-ok-s{font-size:12.5px;color:var(--muted);margin-top:2px}
@@ -2981,7 +3044,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-15·peek-recap";
+  var APP_BUILD="2026-08-15·carbon";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -3311,7 +3374,14 @@
   function displayName(t){return t.name&&t.name.trim()?t.name:prettyPhone(t.phone)}
   function firstNameOf(t){var n=(t.name||"").trim().split(/\s+/)[0];return n||prettyPhone(t.phone)}
   function initials(t){var n=displayName(t).trim();var p=n.replace(/[^a-zA-Z ]/g,"").split(/\s+/).filter(Boolean);if(!p.length)return"#";return(p[0][0]+(p[1]?p[1][0]:"")).toUpperCase()}
-  function colorFor(phone){var h=0;for(var i=0;i<phone.length;i++)h=phone.charCodeAt(i)+((h<<5)-h);var hue=Math.abs(h)%360;return"hsl("+hue+",42%,44%)"}
+  // Avatar fill. A flat hsl(…,42%,44%) made every initial look like the same
+  // muddy grey-blue disc; two stops with a hue shift give each person a chip of
+  // real colour that still sits back behind the name.
+  function colorFor(phone){
+    var h=0;for(var i=0;i<phone.length;i++)h=phone.charCodeAt(i)+((h<<5)-h);
+    var hue=Math.abs(h)%360, hue2=(hue+26)%360;
+    return"linear-gradient(140deg,hsl("+hue+",58%,52%),hsl("+hue2+",56%,38%))";
+  }
   function fmtTime(ts){if(!ts)return"";var d=new Date(ts),n=new Date();if(d.toDateString()===n.toDateString())return d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});var diff=(n-d)/86400000;if(diff<7)return d.toLocaleDateString([],{weekday:"short"});return d.toLocaleDateString([],{month:"short",day:"numeric"})}
   function fmtFull(ts){return new Date(ts).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}
 
@@ -4335,7 +4405,7 @@
     var addr=j.address||j.addressGuess||"";
     var guess=!j.address&&!!j.addressGuess;
     var what=[j.service,j.vehicle,j.price?fmtMoney(j.price):""].filter(Boolean).join(" · ");
-    var h='<div class="next-card"><div class="nx-h">'+ic("navigation",14)+'Next stop'+
+    var h='<div class="next-card"><div class="nx-h"><span class="nx-live"></span>Next stop'+
       '<span class="nx-when">'+esc(when)+'</span></div>'+
       '<div class="nx-who">'+esc(j.name||"Job")+'</div>'+
       (what?'<div class="nx-what">'+esc(what)+'</div>':'');
