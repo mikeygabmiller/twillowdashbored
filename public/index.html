@@ -2343,6 +2343,24 @@
   .jd-sh-title{font-size:19px;font-weight:800;letter-spacing:-.02em;margin-bottom:3px}
   .jd-sh-sub{font-size:12.5px;color:var(--muted2);margin-bottom:16px;line-height:1.5}
 
+  /* ---- New message: pick a person instead of recalling a phone number ---- */
+  .np-search{display:flex;align-items:center;gap:8px;background:var(--panel2);border:1px solid var(--line);
+    border-radius:14px;padding:0 12px;margin:12px 0 10px}
+  .np-search .np-sic{flex:none;color:var(--muted2);display:flex}
+  .np-search input{flex:1;background:none;border:0;outline:none;color:var(--text);font-size:16px;font-family:inherit;padding:13px 0}
+  .np-list{max-height:46vh;overflow-y:auto;-webkit-overflow-scrolling:touch;margin:0 -4px;padding:0 4px}
+  .np-hd{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2);margin:10px 2px 6px}
+  .np-row{display:flex;align-items:center;gap:11px;padding:9px 8px;border-radius:13px;cursor:pointer;transition:background .12s}
+  .np-row:active{background:var(--panel2)}
+  .np-av{flex:none;width:38px;height:38px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+    color:#fff;font-size:13px;font-weight:800}
+  .np-av-new{background:linear-gradient(135deg,var(--accent),var(--accent-dark))}
+  .np-txt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+  .np-txt b{font-size:15px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .np-txt span{font-size:12.5px;color:var(--muted2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .np-dnt{flex:none;display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:700;color:#f87171}
+  .np-none{padding:22px 6px;text-align:center;font-size:13px;color:var(--muted2);line-height:1.6}
+
   /* ---- snapshot picker: tick exactly what Claude gets ---- */
   .snap-row{display:flex;align-items:center;gap:12px;background:var(--panel2);border:1px solid var(--line);
     border-radius:14px;padding:11px 13px;margin-bottom:8px;cursor:pointer;transition:border-color .13s,background .13s}
@@ -2510,7 +2528,8 @@
     <div class="empty" id="emptyState">
       <div class="big" data-ic="message-square" data-ic-size="48"></div>
       <div>Select a conversation</div>
-      <div class="sub">or tap the pencil to start a new one.</div>
+      <div class="sub">or start a new one.</div>
+      <button class="btn accent ic-btn" id="emptyNew" data-ic="pencil" data-ic-label="New message"></button>
     </div>
 
     <div class="chat-head" id="chatHead" style="display:none">
@@ -2907,7 +2926,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-15·simple-mode";
+  var APP_BUILD="2026-08-15·new-message";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4952,7 +4971,9 @@
       var msg={messages:["No conversations","message-square","New texts from customers show up here."],
         scheduled:["Nothing scheduled","calendar-clock","Schedule a send from any conversation and it lands here."],
         archived:["Archive is empty","archive","Swipe a conversation to archive it."]}[mode]||["Nothing here","message-square",""];
-      box.innerHTML=head+'<div class="emptyview"><div class="big">'+ic(msg[1],46)+'</div><div>'+esc(msg[0])+'</div><div class="sub">'+esc(msg[2])+'</div></div>';
+      box.innerHTML=head+'<div class="emptyview"><div class="big">'+ic(msg[1],46)+'</div><div>'+esc(msg[0])+'</div><div class="sub">'+esc(msg[2])+'</div>'+
+        ((mode==="messages"&&!state.search)?'<button class="btn accent ic-btn" id="evNew">'+ic("pencil",15)+'<span>New message</span></button>':'')+'</div>';
+      var ev=el("evNew");if(ev)ev.onclick=newConversation;
       wireSummary();
       return;
     }
@@ -7344,10 +7365,69 @@
     if(!confirm("Call "+displayName(state.thread)+"?\nYour cell rings first — answer it, and we'll connect you to the customer."))return;
     post("/api/call",{phone:state.phone}).then(function(d){toast(d&&d.ok?"Calling your phone — answer to connect":"Call failed: "+((d&&d.error)||"error"),{bad:!(d&&d.ok)})});
   }
+  // ---- New message: pick a person, don't recall a phone number ----
+  // Starting a text used to be a browser prompt() asking for ten digits, which
+  // meant you had to already know the number by heart — so in practice the text
+  // got sent from his own phone instead. Now it's the move every phone already
+  // teaches: search a name, tap it. Typing a number still works, it just isn't
+  // the only way in.
+  var NP={q:""};
   function newConversation(){
-    var raw=prompt("Customer phone number:");if(!raw)return;var p=digitsToE164(raw);
-    if(!p){toast("That's not a valid US number",{bad:true});return}
-    openThread(p);setTimeout(function(){el("msgInput").focus()},50);
+    NP.q="";
+    var sh=jdSheetOpen(
+      '<div class="jd-sh-title">New message</div>'+
+      '<div class="np-search"><span class="np-sic">'+ic("search",16)+'</span>'+
+      '<input id="npQ" type="text" placeholder="Name or phone number" autocomplete="off" autocorrect="off" spellcheck="false" /></div>'+
+      '<div class="np-list" id="npList"></div>');
+    var q=sh.querySelector("#npQ");
+    q.oninput=function(){NP.q=q.value;npRender()};
+    q.onkeydown=function(e){
+      if(e.key!=="Enter")return;
+      e.preventDefault();
+      var first=sh.querySelector(".np-row");if(first)first.click();
+    };
+    npRender();
+    setTimeout(function(){try{q.focus()}catch(e){}},90);
+  }
+  // Name match first, digits second — and a typed-in number he's never texted
+  // gets offered as its own row rather than silently finding nothing.
+  function npMatches(){
+    var raw=(NP.q||"").trim();
+    var digits=raw.replace(/\D/g,"");
+    var s=raw.toLowerCase();
+    var list=(state.threads||[]).slice().sort(function(a,b){return (b.lastTs||0)-(a.lastTs||0)});
+    if(!raw)return {rows:list.slice(0,12),newPhone:null,heading:"Recent"};
+    var rows=list.filter(function(t){
+      if((displayName(t)+" "+(t.name||"")).toLowerCase().indexOf(s)>=0)return true;
+      return digits.length>=3&&String(t.phone||"").replace(/\D/g,"").indexOf(digits)>=0;
+    }).slice(0,25);
+    var e164=digits.length>=10?digitsToE164(raw):null;
+    var known=e164&&rows.some(function(t){return t.phone===e164});
+    return {rows:rows,newPhone:(e164&&!known)?e164:null,heading:"People you've texted"};
+  }
+  function npRender(){
+    var box=el("npList");if(!box)return;
+    var m=npMatches(),h="";
+    if(m.newPhone)
+      h+='<div class="np-row" data-np="'+esc(m.newPhone)+'"><span class="np-av np-av-new">'+ic("plus",17)+'</span>'+
+         '<span class="np-txt"><b>Text '+esc(prettyPhone(m.newPhone))+'</b><span>Someone new</span></span></div>';
+    if(m.rows.length)h+='<div class="np-hd">'+esc(m.heading)+'</div>';
+    m.rows.forEach(function(t){
+      var sub=t.name?prettyPhone(t.phone):(t.lastBody||"No messages yet");
+      h+='<div class="np-row" data-np="'+esc(t.phone)+'">'+
+         '<span class="np-av" style="background:'+colorFor(t.phone)+'">'+esc(initials(t))+'</span>'+
+         '<span class="np-txt"><b>'+esc(displayName(t))+'</b><span>'+esc(sub)+'</span></span>'+
+         (t.optedOut?'<span class="np-dnt">'+ic("ban",11)+'Do not text</span>':'')+'</div>';
+    });
+    if(!h)h='<div class="np-none">No one by that name.<br>Type a 10-digit number to text someone new.</div>';
+    box.innerHTML=h;hydrateIcons(box);
+    Array.prototype.forEach.call(box.querySelectorAll(".np-row"),function(r){
+      r.onclick=function(){
+        var p=r.getAttribute("data-np");if(!p)return;
+        vibrate(6);jdSheetClose();setTab("messages");openThread(p);
+        setTimeout(function(){var i=el("msgInput");if(i&&!i.disabled)i.focus()},280);
+      };
+    });
   }
 
   // ---- templates & schedule ----
@@ -7374,18 +7454,26 @@
     [/\b(thanks|thank you|appreciate|great|awesome)\b/i,   /thank|appreciate|welcome/i],
     [/\b(cancel|reschedule|move|postpone|rain)\b/i,        /reschedul|cancel|move|rain/i]
   ];
+  // A conversation with nothing in it is the hardest one to start: blank box,
+  // nothing to react to. These pick out whichever of his saved replies read like
+  // an opening line, so the first text is a tap instead of a blank page.
+  var QR_OPENER=/intro|hello|\bhi\b|\bhey\b|quote|price|new|first|reach/i;
   function renderQuickReplies(t){
     var box=el("qReply");if(!box)return;
     var msgs=(t.messages||[]);
     var lastIn=null;
     for(var i=msgs.length-1;i>=0;i--){if(msgs[i].dir==="in"){lastIn=msgs[i];break}}
-    // Only offer these when the ball is actually in Mikey's court.
-    if(!lastIn||(msgs[msgs.length-1]||{}).dir!=="in"||isDnt(t.phone)){box.style.display="none";box.innerHTML="";return}
-    var body=String(lastIn.body||"");
+    // Offer these when the ball is in Mikey's court — either they spoke last, or
+    // the conversation hasn't started yet and somebody has to say something.
+    var fresh=!msgs.length;
+    var theirTurn=lastIn&&(msgs[msgs.length-1]||{}).dir==="in";
+    if(isDnt(t.phone)||(!fresh&&!theirTurn)){box.style.display="none";box.innerHTML="";return}
+    var body=fresh?"":String(lastIn.body||"");
     var tpls=state.templates||[];
     var scored=tpls.map(function(tp,idx){
       var score=0;
-      QR_CUES.forEach(function(c){if(c[0].test(body)&&(c[1].test(tp[0])||c[1].test(tp[1])))score+=2});
+      if(fresh){if(QR_OPENER.test(tp[0])||QR_OPENER.test(tp[1]))score+=2}
+      else QR_CUES.forEach(function(c){if(c[0].test(body)&&(c[1].test(tp[0])||c[1].test(tp[1])))score+=2});
       return {tp:tp,score:score,idx:idx};
     }).sort(function(a,b){return b.score-a.score||a.idx-b.idx});
     var pick=scored.filter(function(x){return x.score>0}).slice(0,3);
@@ -7849,6 +7937,7 @@
   });
 
   el("fab").onclick=newConversation;
+  el("emptyNew").onclick=newConversation;
   el("sendBtn").onclick=sendMessage;
   function openDetails(){el("details").classList.add("open");el("sheetScrim").classList.add("show");navOpen("details",closeDetails)}
   function closeDetails(){navDrop("details");el("details").classList.remove("open");el("sheetScrim").classList.remove("show")}

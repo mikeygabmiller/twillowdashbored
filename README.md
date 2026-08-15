@@ -11,6 +11,14 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
 - **Mobile-first UI** (red & black): conversation list, search, unread badges,
   message bubbles, mark-read-on-open, Enter to send. Installs to the home screen
   as a PWA (app icon, full-screen, offline shell via `public/sw.js`).
+- **Starting a text is a person, not a phone number.** The pencil opens a picker:
+  everyone you've ever texted, most recent first, searchable by name *or* by digits.
+  Tap a name and you're in the conversation with the cursor already in the box. Type
+  a number nobody's texted yet and it's offered as its own row ("Text (425) 555-9999
+  · Someone new"), so a first-time customer is the same two taps. Someone who texted
+  STOP still shows up — flagged **Do not text** — so you learn that before you type.
+  A conversation with nothing in it offers your own saved openers as chips, which
+  makes the first text to a new customer three taps and no typing.
 - **PIN / password login** (set the `DASHBOARD_PASSWORD` secret).
 - **Lead pipeline:** mark each conversation **New / Active / Won / Lost**, add custom
   **tags**, and filter the list by status, unread, or scheduled.
