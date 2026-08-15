@@ -157,6 +157,14 @@ ok('the epoch was recomputed from the new time', r.detection.at === M.bkLaEpoch(
 
 // ------------------------------------------------------------- soft holds
 section('Soft holds — the website cannot sell a slot promised over text');
+// Computed from today, never hardcoded. bkAvailability() only offers slots in the
+// future, so a fixed calendar date here starts returning an empty list the day it
+// slides into the past — and then every check below passes vacuously, because
+// "no slots held" and "no slots at all" look identical. That is exactly how this
+// section rotted, silently, months after it was written.
+const HOLD_DAY = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(new Date(Date.now() + 10 * 86400000));
 store.clear(); M.__resetCfg();
 await kv.put('bk:config', JSON.stringify({
   tz: 'America/Los_Angeles', workDays: [0, 1, 2, 3, 4, 5, 6], dayStart: '07:00', lastStart: '16:00',
@@ -165,20 +173,20 @@ await kv.put('bk:config', JSON.stringify({
   services: [{ id: 'full', name: 'Full', enabled: true, price: { suv: 339 }, duration: { suv: 180 } }],
   addons: [], cities: [], content: {}, proof: {}, calendar: { enabled: false }, blockedDates: [],
 }));
-const free = await M.bkAvailability('2026-08-02', 'full', 'suv');
+const free = await M.bkAvailability(HOLD_DAY, 'full', 'suv');
 ok('slots open before any detection', free.length > 0, free.length);
-await M.saveDetections([{ id: 'd1', phone: '+1', kind: 'set', date: '2026-08-02', slot: '10:00', durationMin: 180, tentative: false }]);
-const held = await M.bkAvailability('2026-08-02', 'full', 'suv');
+await M.saveDetections([{ id: 'd1', phone: '+1', kind: 'set', date: HOLD_DAY, slot: '10:00', durationMin: 180, tentative: false }]);
+const held = await M.bkAvailability(HOLD_DAY, 'full', 'suv');
 ok('an UNCONFIRMED card already holds its slot', held.length < free.length, { before: free.length, after: held.length });
 ok('10:00 is no longer offered', !held.includes('10:00'));
-await M.saveDetections([{ id: 'd1', phone: '+1', kind: 'set', date: '2026-08-02', slot: '10:00', durationMin: 180, tentative: true }]);
-ok('a loose "Saturday morning" hold blocks the whole day', (await M.bkAvailability('2026-08-02', 'full', 'suv')).length === 0);
+await M.saveDetections([{ id: 'd1', phone: '+1', kind: 'set', date: HOLD_DAY, slot: '10:00', durationMin: 180, tentative: true }]);
+ok('a loose "Saturday morning" hold blocks the whole day', (await M.bkAvailability(HOLD_DAY, 'full', 'suv')).length === 0);
 await M.saveDetections([]);
-ok('dismissing releases the hold immediately', (await M.bkAvailability('2026-08-02', 'full', 'suv')).length === free.length);
+ok('dismissing releases the hold immediately', (await M.bkAvailability(HOLD_DAY, 'full', 'suv')).length === free.length);
 M.__resetCfg();
 await kv.put('config', JSON.stringify({ detect: Object.assign(M.detDefaults(), { holdSlots: false }) }));
-await M.saveDetections([{ id: 'd1', phone: '+1', kind: 'set', date: '2026-08-02', slot: '10:00', durationMin: 180, tentative: true }]);
-ok('holds can be turned off', (await M.bkAvailability('2026-08-02', 'full', 'suv')).length === free.length);
+await M.saveDetections([{ id: 'd1', phone: '+1', kind: 'set', date: HOLD_DAY, slot: '10:00', durationMin: 180, tentative: true }]);
+ok('holds can be turned off', (await M.bkAvailability(HOLD_DAY, 'full', 'suv')).length === free.length);
 
 // ---------------------------------------------------------------- drafting
 section('The confirmation draft');
