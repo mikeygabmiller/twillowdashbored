@@ -19,6 +19,13 @@ VERIFY LIVE THE RIGHT WAY (the live URL is the only source of truth):
     or code from the Cloudflare MCP (workers_get_worker_code). Those ALL change for
     PREVIEW builds off non-production branches and do NOT mean the live URL updated.
 
+SHIP IT WITHOUT BEING ASKED:
+  Finished work gets MERGED, not parked in a PR waiting for approval. Both suites
+  (npm test AND npm run test:ui) must run with no NEW failures, and the fingerprint
+  must be bumped, first. Exceptions that still need a human: anything that texts
+  customers on its own, deletes/rewrites stored data, touches secrets or billing, or
+  changes the deploy wiring. Full policy: CLAUDE.md.
+
 OTHER GOTCHAS:
   - The GitHub default branch may be stale — never target it for a deploy.
   - Live Worker is "texting"; "mikeys-detailing-sms" is old/unused — ignore it.
