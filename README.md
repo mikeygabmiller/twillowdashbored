@@ -27,8 +27,12 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   where they are, what they drive, the open quote, the plan they're on, anything
   queued to send, where the lead came from, and their own last words. Arrows step
   to the next person without closing, so you can flick through the whole list.
-  Swipe **right** still archives. Everything shown comes off the list row already
-  in memory — **no network call, and peeking never marks a conversation read.**
+  Swipe **right** still archives. Every row carries a faded red edge and a small
+  chevron on its right side so the gesture is discoverable instead of secret — it
+  fades out mid-swipe once the real label shows, and only appears on touch devices,
+  where there's actually a thumb to pull with. Everything shown comes off the list
+  row already in memory — **no network call, and peeking never marks a conversation
+  read.**
 - **PIN / password login** (set the `DASHBOARD_PASSWORD` secret).
 - **Lead pipeline:** mark each conversation **New / Active / Won / Lost**, add custom
   **tags**, and filter the list by status, unread, or scheduled.
