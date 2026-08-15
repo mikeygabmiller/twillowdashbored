@@ -23,16 +23,22 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   twenty means asking that twenty times, and answering it used to mean opening the
   thread — which marks it read and loses your place. A left swipe pops a summary
   instead: the one line that matters (*Booked Thu, Aug 21 · 2:00 PM — in 3 days*,
-  *Waiting on your reply — you quoted $240, no answer*, *They texted STOP*), then
+  *Waiting on your reply — you quoted $240, no answer*, *They texted STOP*), an
+  AI one-liner of **what actually happened** in your own shorthand (*"asked about
+  ceramic on his Tahoe, you said you'd price it Thursday"*, *"job finished, he
+  Venmo'd you $180"*), then
   where they are, what they drive, the open quote, the plan they're on, anything
   queued to send, where the lead came from, and their own last words. Arrows step
   to the next person without closing, so you can flick through the whole list.
   Swipe **right** still archives. Every row carries a faded red edge and a small
   chevron on its right side so the gesture is discoverable instead of secret — it
   fades out mid-swipe once the real label shows, and only appears on touch devices,
-  where there's actually a thumb to pull with. Everything shown comes off the list
-  row already in memory — **no network call, and peeking never marks a conversation
-  read.**
+  where there's actually a thumb to pull with. Everything except the recap comes off
+  the list row already in memory, and the recap is cached against the last message's
+  timestamp — so it costs one Gemini call per conversation per new message, retires
+  itself the moment either of you texts again, and is instant every time after.
+  **Peeking never marks a conversation read** (`POST /api/ai/recap` deliberately uses
+  `loadThread`, not `openThreadForRead`, which clears unread).
 - **PIN / password login** (set the `DASHBOARD_PASSWORD` secret).
 - **Lead pipeline:** mark each conversation **New / Active / Won / Lost**, add custom
   **tags**, and filter the list by status, unread, or scheduled.
