@@ -100,18 +100,29 @@ for (const t of [
 ]) check(`not a promise: ${t.slice(0, 44) || '(empty)'}`, promLooksLikePromise(t), false);
 
 console.log('\n=== the clock: what he said becomes when he is nudged ===');
-const NOON = bkLaEpoch('2026-08-10', '12:00');   // a Monday, midday Pacific
+// Dates here are computed from today, never hardcoded. promDueAt() sanity-checks a
+// promised date against the REAL clock — it refuses anything already past or more
+// than ~400 days out — so a fixed calendar date in this file quietly stops being
+// "a day he named" and starts being "a date in the past", falling into the default
+// gap and failing. That is how these two rotted.
+const dayStr = (offset) => new Intl.DateTimeFormat('en-CA', {
+  timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(new Date(Date.now() + offset * 86400000));
+const SOON = dayStr(2);      // comfortably inside the trusted window
+const WAY_OUT = dayStr(500); // past the ~400-day horizon it refuses to believe
+
+const NOON = bkLaEpoch(dayStr(0), '12:00');   // midday Pacific, today
 const cfg = { tz: TZ, promise: { defaultHours: 24 } };
 check('a day and a time is taken as given',
-  promDueAt({ date: '2026-08-12', time: '14:30' }, cfg, NOON), bkLaEpoch('2026-08-12', '14:30'));
+  promDueAt({ date: SOON, time: '14:30' }, cfg, NOON), bkLaEpoch(SOON, '14:30'));
 check('a day with no time lands at 9am that day',
-  promDueAt({ date: '2026-08-12', time: '' }, cfg, NOON), bkLaEpoch('2026-08-12', '09:00'));
+  promDueAt({ date: SOON, time: '' }, cfg, NOON), bkLaEpoch(SOON, '09:00'));
 check('no day at all falls back to the default gap',
   promDueAt({ date: '', time: '' }, cfg, NOON), NOON + 24 * 3600000);
 check('a date in the past is not trusted — it falls back too',
   promDueAt({ date: '2020-01-01', time: '09:00' }, cfg, NOON), NOON + 24 * 3600000);
-check('and neither is one three years out',
-  promDueAt({ date: '2030-01-01', time: '09:00' }, cfg, NOON), NOON + 24 * 3600000);
+check('and neither is one well past the horizon',
+  promDueAt({ date: WAY_OUT, time: '09:00' }, cfg, NOON), NOON + 24 * 3600000);
 check('a shorter default is honoured',
   promDueAt({ date: '', time: '' }, { tz: TZ, promise: { defaultHours: 2 } }, NOON), NOON + 2 * 3600000);
 
