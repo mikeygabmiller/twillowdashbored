@@ -100,6 +100,22 @@ const peekText = () => page.locator('#pkCard').innerText();
 
 await toChats();
 
+section('A faded edge marks where the swipe lives');
+ok('every row carries the hint', await page.locator('.conv .conv-hint').count() === rows.length);
+ok('it is showing on a touch device', await page.locator('.conv .conv-hint').first().isVisible());
+ok('it points the way you pull — left', await page.locator('.conv .conv-hint svg').first().count() === 1);
+ok('it never eats a tap', await page.evaluate(() =>
+  getComputedStyle(document.querySelector('.conv-hint')).pointerEvents === 'none'));
+ok('it sits under the unread pill, not over it', await page.evaluate(() => {
+  const h = getComputedStyle(document.querySelector('.conv .conv-hint')).zIndex;
+  const p = getComputedStyle(document.querySelector('.conv .unread-pill')).zIndex;
+  return Number(p) > Number(h);
+}));
+ok('it is faded, not shouting', await page.evaluate(() => {
+  const o = Number(getComputedStyle(document.querySelector('.conv-hint')).opacity);
+  return o > 0.2 && o < 0.8;
+}));
+
 section('Swiping left brings up the summary — swiping right still archives');
 await drag('.conv', -140);
 ok('the peek opened', await page.locator('#pkCard').count() === 1);

@@ -136,6 +136,19 @@
   .conv-wrap .swipe-bg{position:absolute;inset:0;background:linear-gradient(90deg,#1d2a1f,#16331f);display:flex;align-items:center;justify-content:flex-end;padding-right:24px;color:#69e29a;font-weight:700;font-size:13px;gap:7px}
   /* the other direction: a look at who this is, without opening anything */
   .conv-wrap .swipe-bg.peek{background:linear-gradient(90deg,#101a2e,#1b2436);color:#8ab4ff}
+  /* A faded edge on the right of every row — the handle you pull leftward for the
+     summary. Decorative enough to earn its place, quiet enough to ignore. Touch
+     only: on a mouse there is nothing to pull, so it would be a lie. */
+  .conv-hint{position:absolute;top:1px;right:0;bottom:1px;width:36px;z-index:0;pointer-events:none;display:none;
+    align-items:center;justify-content:flex-end;padding-right:6px;color:var(--accent);
+    background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--accent) 15%,transparent));
+    opacity:.55;transition:opacity .18s}
+  body.touchui .conv-hint{display:flex}
+  /* give the strip its own room, so the chevron never crowds an unread pill */
+  body.touchui .conv{padding-right:27px}
+  .conv.swiping .conv-hint{opacity:0}          /* out of the way once the real label shows */
+  .conv-hint svg{width:13px;height:13px}
+  .conv .unread-pill{position:relative;z-index:1}   /* stays above the fade */
   .conv{display:flex;gap:13px;padding:13px 16px;border-bottom:1px solid var(--line2);cursor:pointer;position:relative;background:var(--panel);transition:background .12s;will-change:transform}
   .conv:hover{background:var(--panel2)}
   .conv.active{background:var(--panel2);box-shadow:inset 3px 0 0 var(--accent)}
@@ -2962,7 +2975,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-15·swipe-peek";
+  var APP_BUILD="2026-08-15·swipe-hint";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4895,7 +4908,8 @@
           (rowHas("tags")?(t.tags||[]).slice(0,2).map(function(x){return '<span class="tag">'+esc(x)+'</span>'}).join(''):'')+
         '</div>'+
       '</div>'+
-      ((rowHas("unread")&&t.unread>0)?'<span class="unread-pill">'+t.unread+'</span>':'');
+      ((rowHas("unread")&&t.unread>0)?'<span class="unread-pill">'+t.unread+'</span>':'')+
+      '<span class="conv-hint">'+ic("chevron-left",13)+'</span>';
     d.onclick=function(){if(ctxJustOpened){ctxJustOpened=false;return}openThread(t.phone)};
     attachSwipe(d,t,wrap);
     attachContextMenu(d,t);
@@ -5597,14 +5611,16 @@
       // gesture is clearly sideways. Scrolling a list with a thumb always drifts
       // a few pixels horizontally, and that used to drag rows around.
       if(!engaged){
-        if(Math.abs(dy)>10&&Math.abs(dy)>Math.abs(dx)){active=false;node.style.transform="";return}
+        if(Math.abs(dy)>10&&Math.abs(dy)>Math.abs(dx)){active=false;node.classList.remove("swiping");node.style.transform="";return}
         if(Math.abs(dx)>12&&Math.abs(dx)>Math.abs(dy))engaged=true;else return;
       }
       label(dx<0?-1:1);
+      node.classList.add("swiping");
       node.style.transform="translateX("+dx+"px)";
     },{passive:true});
     node.addEventListener("touchend",function(){
       if(!active)return;active=false;node.style.transition="transform .2s";
+      node.classList.remove("swiping");
       // Archiving is the one that's hard to take back, so it asks for a longer
       // pull than peeking does.
       if(engaged&&dx>120){node.style.transform="translateX(100%)";vibrate(12);setTimeout(function(){doArchiveToggle(t)},150)}
@@ -8125,6 +8141,10 @@
     if((e.metaKey||e.ctrlKey)&&(e.key==="k"||e.key==="K")){e.preventDefault();si.focus();si.select();return}
     if(e.key==="/"&&!typing&&!e.metaKey&&!e.ctrlKey&&!e.altKey){e.preventDefault();si.focus()}
   });
+
+  // The swipe hint on each row only makes sense where there's a thumb to swipe
+  // with. Checked once at startup rather than per-render.
+  try{if(("ontouchstart" in window)||navigator.maxTouchPoints>0)document.body.classList.add("touchui")}catch(e){}
 
   el("fab").onclick=newConversation;
   el("emptyNew").onclick=newConversation;
