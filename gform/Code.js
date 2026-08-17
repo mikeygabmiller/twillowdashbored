@@ -236,6 +236,36 @@ function onOpen() {
     .addToUi();
 }
 
+// Everything setup actually does, with no UI in it at all.
+//
+// Split out because neither way in is guaranteed. A bound script's custom menu
+// can fail to appear — Forms is the worst of the three for this — and getUi()
+// prompts throw outright when a function is run from the Apps Script editor, so
+// the obvious fallback was broken too. This path needs neither, which is what
+// makes setUpHere() below possible.
+function finishSetup_() {
+  var p = props_();
+  if (!String(p.getProperty(P_URL) || '').trim()) {
+    throw new Error('No dashboard URL yet. Project Settings → Script Properties → add DASH_URL.');
+  }
+  p.deleteProperty(P_COOKIE);
+  login_();
+  buildForm_(api_('/api/money/config').config);
+  installTriggers_();
+  refreshConfirmation_();
+  return FormApp.getActiveForm().getPublishedUrl();
+}
+
+// The way in that always works, menu or no menu. In the Apps Script editor:
+// Project Settings → Script Properties → add DASH_URL (and DASH_PW, if the
+// dashboard asks you for a password), then come back, pick setUpHere from the
+// function dropdown and press Run. There is never a Deploy step.
+function setUpHere() {
+  var link = finishSetup_();
+  Logger.log('Ready. Put this on your phone home screen:\n' + link);
+  return link;
+}
+
 function setUp() {
   var ui = FormApp.getUi();
   var p = props_();
@@ -245,16 +275,11 @@ function setUp() {
   var pw = ui.prompt('Dashboard password', 'The same one you type to open the dashboard. Leave blank if it never asks.', ui.ButtonSet.OK_CANCEL);
   if (pw.getSelectedButton() !== ui.Button.OK) return;
   p.setProperty(P_PW, pw.getResponseText());
-  p.deleteProperty(P_COOKIE);
 
-  var cfg;
-  try { login_(); cfg = api_('/api/money/config').config; }
+  var link;
+  try { link = finishSetup_(); }
   catch (err) { ui.alert('Could not reach the dashboard: ' + err.message); return; }
-
-  buildForm_(cfg);
-  installTriggers_();
-  refreshConfirmation_();
-  ui.alert('Ready.\n\nPut this on your phone\'s home screen:\n\n' + FormApp.getActiveForm().getPublishedUrl());
+  ui.alert('Ready.\n\nPut this on your phone\'s home screen:\n\n' + link);
 }
 
 function showLink() {

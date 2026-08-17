@@ -117,5 +117,19 @@ check('labor',    S.entryLabel_({ type: 'jp' }, { jpName: 'Marcus' }), 'Pay Marc
 check('expense',  S.entryLabel_({ type: 'exp', cat: 'supplies' }, {}), 'Supplies');
 check('unknown category falls back', S.entryLabel_({ type: 'exp', cat: 'nope' }, {}), 'Misc');
 
+console.log('\n=== setup must not depend on a menu that may never appear ===');
+// A bound script's custom menu can silently fail to turn up, and getUi() prompts
+// throw when a function is run from the Apps Script editor — so the obvious
+// fallback was broken too. setUpHere() is the path that works either way.
+check('there is a setup that needs no UI', /function setUpHere\(/.test(SRC), true);
+check('the real work has no prompts in it',
+  /function finishSetup_\(\)[\s\S]*?\n\}/.exec(SRC)[0].indexOf('getUi()'), -1);
+check('the menu version delegates instead of duplicating',
+  /function setUp\(\)[\s\S]*?\n\}/.exec(SRC)[0].indexOf('finishSetup_()') > 0, true);
+check('it says what to do when the URL is missing', /Script Properties/.test(SRC), true);
+// There is no web app here. If a doGet ever appears, so does a Deploy step, and
+// a deploy URL is exactly what a confused setup lands on.
+check('this is not a web app', /function doGet\b/.test(SRC), false);
+
 console.log(`\n================  ${PASS} passed, ${FAIL} failed  ================`);
 process.exit(FAIL ? 1 : 0);

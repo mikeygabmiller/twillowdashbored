@@ -24,6 +24,30 @@ triggers, and pulls your current numbers down.
 The password is stored in the script's own private properties, **not in a cell** —
 so if you ever share the sheet with someone, the password doesn't go with it.
 
+### If the 💵 menu never shows up
+
+Bound-script menus don't always appear — it happens. There's a way in that doesn't need the menu at all:
+
+1. In the Apps Script editor, **⚙ Project Settings → Script properties → Add**:
+   - `DASH_URL` → `https://texting.mikeysdetailingsnohomish.workers.dev`
+   - `DASH_PW` → your dashboard password (skip this row if it never asks you for one)
+2. Back on the **Editor** tab, pick **`setUpHere`** in the function dropdown at
+   the top, and press **▶ Run**. Authorize when asked.
+
+That does exactly what the menu item does.
+
+### Never click Deploy
+
+There is no deploy step, ever. These scripts aren't web apps — they run from the
+container and from triggers. Clicking **Deploy** produces a
+`script.google.com/macros/…/start?mid=…` link that can only ever show
+*"Sorry, unable to open the file at this time"*, because there's nothing there to
+open.
+
+Also: if you're signed into more than one Google account, do all of this in the
+account that owns the file. A `authuser=1` in the address bar means the browser
+is using your *second* account, which is its own source of that same error.
+
 ## Using it in the cab
 
 The **Log** tab. The first four columns are the whole job:
