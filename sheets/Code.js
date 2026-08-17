@@ -203,6 +203,33 @@ function onOpen() {
     .addToUi();
 }
 
+// Everything setup actually does, with no UI in it at all.
+//
+// Split out because neither way in is guaranteed. A bound script's custom menu
+// can fail to appear, and getUi() prompts throw outright when a function is run
+// from the Apps Script editor, so the obvious fallback was broken too. This path
+// needs neither, which is what makes setUpHere() below possible.
+function finishSetup_() {
+  var p = props_();
+  if (!String(p.getProperty(P_URL) || '').trim()) {
+    throw new Error('No dashboard URL yet. Project Settings → Script Properties → add DASH_URL.');
+  }
+  p.deleteProperty(P_COOKIE);
+  login_();
+  buildSheets_(api_('/api/money/config').config);
+  installTriggers_();
+}
+
+// The way in that always works, menu or no menu. In the Apps Script editor:
+// Project Settings → Script Properties → add DASH_URL (and DASH_PW, if the
+// dashboard asks you for a password), then come back, pick setUpHere from the
+// function dropdown and press Run. There is never a Deploy step.
+function setUpHere() {
+  finishSetup_();
+  Logger.log('Ready. Fill a row on the Log tab and tick "Log it".');
+  return 'ok';
+}
+
 function setUp() {
   var ui = SpreadsheetApp.getUi();
   var p = props_();
@@ -212,14 +239,9 @@ function setUp() {
   var pw = ui.prompt('Dashboard password', 'The same one you type to open the dashboard. Leave blank if it does not ask for one.', ui.ButtonSet.OK_CANCEL);
   if (pw.getSelectedButton() !== ui.Button.OK) return;
   p.setProperty(P_PW, pw.getResponseText());
-  p.deleteProperty(P_COOKIE);
 
-  var cfg = null;
-  try { login_(); cfg = api_('/api/money/config').config; }
+  try { finishSetup_(); }
   catch (err) { ui.alert('Could not reach the dashboard: ' + err.message); return; }
-
-  buildSheets_(cfg);
-  installTriggers_();
   ui.alert('Ready. Fill a row on the Log tab and tick "Log it" — it posts straight to the dashboard.');
 }
 

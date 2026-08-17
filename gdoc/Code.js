@@ -265,6 +265,36 @@ function onOpen() {
     .addToUi();
 }
 
+// Everything setup actually does, with no UI in it at all.
+//
+// Split out because neither way in is guaranteed. A bound script's custom menu
+// can fail to appear, and getUi() prompts throw outright when a function is run
+// from the Apps Script editor, so the obvious fallback was broken too. This path
+// needs neither, which is what makes setUpHere() below possible.
+function finishSetup_() {
+  var p = props_();
+  if (!String(p.getProperty(P_URL) || '').trim()) {
+    throw new Error('No dashboard URL yet. Project Settings → Script Properties → add DASH_URL.');
+  }
+  p.deleteProperty(P_COOKIE);
+  p.deleteProperty(P_FINAL);
+  p.deleteProperty(P_STAMP);
+  login_();
+  api_('/api/money/config');
+  installTrigger_(5);
+  showNumbers();
+}
+
+// The way in that always works, menu or no menu. In the Apps Script editor:
+// Project Settings → Script Properties → add DASH_URL (and DASH_PW, if the
+// dashboard asks you for a password), then come back, pick setUpHere from the
+// function dropdown and press Run. There is never a Deploy step.
+function setUpHere() {
+  finishSetup_();
+  Logger.log('Ready. Type one thing per line — "250 job Dana venmo", "40 fuel".');
+  return 'ok';
+}
+
 function setUp() {
   var ui = DocumentApp.getUi();
   var p = props_();
@@ -274,15 +304,9 @@ function setUp() {
   var pw = ui.prompt('Dashboard password', 'The same one you type to open the dashboard. Leave blank if it never asks.', ui.ButtonSet.OK_CANCEL);
   if (pw.getSelectedButton() !== ui.Button.OK) return;
   p.setProperty(P_PW, pw.getResponseText());
-  p.deleteProperty(P_COOKIE);
-  p.deleteProperty(P_FINAL);
-  p.deleteProperty(P_STAMP);
 
-  try { login_(); api_('/api/money/config'); }
+  try { finishSetup_(); }
   catch (err) { ui.alert('Could not reach the dashboard: ' + err.message); return; }
-
-  installTrigger_(5);
-  showNumbers();
   ui.alert('Ready. Type one thing per line — "250 job Dana venmo", "40 fuel" — and each line gets a ✓ once it lands.');
 }
 
