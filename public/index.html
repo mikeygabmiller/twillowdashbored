@@ -295,47 +295,47 @@
   .air-acts .btn{flex:1;font-size:12.5px;padding:8px 6px;display:inline-flex;align-items:center;justify-content:center;gap:5px}
   .air-acts .btn.accent{flex:1.5}
   .air-acts .btn svg{width:15px;height:15px}
-  /* ---- Auto-polish: a one-line "ready" bar + the review sheet it opens ----
-     Polish runs on its own as you type, but it never takes the screen: all it
-     does is drop this slim pill above the composer. The full before/after only
-     opens when you tap it, so on a phone the conversation stays visible. */
-  .polish-bar{display:none;align-items:center;gap:8px;margin:6px 12px 0;padding:8px 11px;border-radius:999px;cursor:pointer;
-    background:linear-gradient(135deg,var(--panel3),var(--panel2));border:1px solid var(--line);border-left:3px solid var(--purple);animation:pop .18s ease}
+  /* ---- Auto-polish: one slim strip above the composer ----
+     Polish no longer asks permission — it rewrites the box for you when you
+     pause. That only works if the swap is never a mystery, so this strip is
+     always honest about what state we're in: armed (and how to stop it),
+     working, or done-and-here's-your-way-back. It stays one line tall on a
+     phone; the changed-word chips get their own scrolling row underneath. */
+  .polish-bar{display:none;flex-direction:column;gap:6px;margin:6px 12px 0;padding:7px 9px 7px 11px;border-radius:14px;
+    background:linear-gradient(135deg,var(--panel3),var(--panel2));border:1px solid var(--line);border-left:3px solid var(--line);animation:pop .18s ease}
   .polish-bar.show{display:flex}
-  .polish-bar .pb-ic{color:var(--purple);display:flex;flex:none}
-  .polish-bar .pb-ic svg{width:15px;height:15px}
-  .polish-bar .pb-t{flex:1;min-width:0;font-size:12.5px;font-weight:650;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .polish-bar .pb-cta{flex:none;font-size:11.5px;font-weight:800;color:var(--purple);white-space:nowrap}
-  .polish-bar .pb-x{flex:none;background:none;border:0;color:var(--muted2);cursor:pointer;display:flex;padding:2px}
-  .pp-scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:70;opacity:0;pointer-events:none;transition:opacity .2s}
-  .pp-scrim.show{opacity:1;pointer-events:auto}
-  .pp-sheet{position:fixed;left:0;right:0;bottom:0;z-index:71;background:var(--panel3);border-top:1px solid var(--line);
-    border-radius:20px 20px 0 0;max-height:88vh;display:flex;flex-direction:column;padding-bottom:var(--safe-bottom);
-    transform:translateY(101%);transition:transform .26s cubic-bezier(.4,0,.2,1);box-shadow:0 -10px 44px rgba(0,0,0,.55)}
-  .pp-sheet.show{transform:translateY(0)}
-  .pp-hd{display:flex;align-items:center;gap:8px;padding:12px 16px 10px;border-bottom:1px solid var(--line);flex:0 0 auto}
-  .pp-hd .pp-t{font-size:15px;font-weight:750;display:flex;align-items:center;gap:7px}
-  .pp-hd .pp-t svg{width:17px;height:17px;color:var(--purple)}
-  .pp-hd .pp-x{margin-left:auto;background:transparent;border:0;color:var(--muted2);cursor:pointer;display:flex;padding:4px;border-radius:8px}
-  .pp-body{overflow:auto;padding:12px 16px 4px}
-  .pp-lbl{font-size:10.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:var(--muted2);margin-bottom:5px}
-  .pp-orig{background:rgba(127,127,127,.08);border:1px solid var(--line);border-radius:10px;padding:9px 10px;font-size:13px;line-height:1.45;
-    color:var(--muted);white-space:pre-wrap;word-wrap:break-word;max-height:22vh;overflow:auto;margin-bottom:12px}
-  .pp-sheet textarea{width:100%;background:var(--panel);border:1px solid var(--purple);border-radius:11px;color:var(--text);
-    font:inherit;font-size:14.5px;line-height:1.5;padding:10px 11px;resize:none;min-height:76px;max-height:34vh;overflow:auto}
-  .pp-note{font-size:11.5px;color:var(--muted2);margin-top:7px}
-  .pp-acts{display:flex;gap:7px;padding:11px 16px 10px;flex:0 0 auto}
-  .pp-acts .btn{flex:1;justify-content:center;font-size:13px;padding:11px 6px;display:inline-flex;align-items:center;gap:6px}
-  .pp-acts .btn.accent{flex:1.6}
-  .pp-acts .btn svg{width:15px;height:15px}
-  .pp-foot{display:flex;align-items:center;gap:9px;padding:0 16px 14px;font-size:12px;color:var(--muted2);flex:0 0 auto}
-  .pp-foot .sw{margin-left:auto}
-  @media(min-width:781px){
-    .pp-sheet{left:50%;right:auto;bottom:auto;top:50%;width:min(560px,92vw);border:1px solid var(--line);border-radius:16px;
-      transform:translate(-50%,-46%) scale(.97);opacity:0;pointer-events:none;transition:opacity .18s,transform .18s}
-    .pp-sheet.show{transform:translate(-50%,-50%) scale(1);opacity:1;pointer-events:auto}
-    .pp-sheet .sheet-handle{display:none}
-  }
+  .polish-bar.applied{border-left-color:var(--purple)}
+  .polish-bar.paused{opacity:.82}
+  .pb-top{display:flex;align-items:center;gap:8px}
+  .pb-ic{color:var(--muted2);display:flex;flex:none}
+  .polish-bar.applied .pb-ic{color:var(--purple)}
+  .pb-ic svg{width:15px;height:15px}
+  .pb-t{flex:1;min-width:0;font-size:12.5px;font-weight:650;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .polish-bar.applied .pb-t{color:var(--text)}
+  /* Undo is the escape hatch for an automatic rewrite, so it reads as a real
+     button, not a link you have to hunt for. */
+  .pb-undo{flex:none;display:inline-flex;align-items:center;gap:4px;background:var(--panel);border:1px solid var(--line);
+    color:var(--purple);border-radius:999px;padding:5px 10px;font-size:11.5px;font-weight:800;cursor:pointer}
+  .pb-undo:hover{border-color:var(--purple)}
+  .pb-undo svg{width:13px;height:13px}
+  .pb-pp{flex:none;background:none;border:0;color:var(--muted2);cursor:pointer;display:flex;padding:4px;border-radius:8px}
+  .pb-pp:hover{color:var(--text);background:rgba(127,127,127,.14)}
+  .pb-pp svg{width:16px;height:16px}
+  /* One chip per thing it changed. Tap it and YOUR wording comes back for that
+     spot only — the rest of the polish stays. */
+  .pb-words{display:flex;gap:6px;overflow-x:auto;padding-bottom:1px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .pb-words::-webkit-scrollbar{display:none}
+  .pb-w{flex:none;max-width:62%;display:inline-flex;align-items:center;gap:5px;background:rgba(124,92,255,.14);
+    border:1px solid rgba(124,92,255,.4);color:var(--text);border-radius:999px;padding:4px 9px;font-size:11.5px;
+    font-weight:650;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pb-w:hover{border-color:var(--purple)}
+  .pb-w .pb-wl{overflow:hidden;text-overflow:ellipsis}
+  .pb-w.mine{background:rgba(127,127,127,.12);border-color:var(--line);color:var(--muted)}
+  .pb-w.mine .pb-wl{text-decoration:none}
+  .pb-w svg{width:11px;height:11px;flex:none;opacity:.75}
+  /* Text changing by itself is startling if nothing marks the moment. */
+  @keyframes polishFlash{0%{background:rgba(124,92,255,.22)}100%{background:transparent}}
+  .just-polished{animation:polishFlash .7s ease}
   /* skeleton loading rows */
   .skel-row{display:flex;gap:13px;padding:13px 16px;border-bottom:1px solid var(--line2)}
   .skel-av{width:46px;height:46px;border-radius:50%;flex:none}
@@ -2860,29 +2860,6 @@
   <div class="guide-body" id="guideBody"></div>
 </div>
 
-<!-- ============ Polish review (opened from the "polished text is ready" bar) ============ -->
-<div class="pp-scrim" id="polishScrim"></div>
-<div class="pp-sheet" id="polishSheet">
-  <div class="sheet-handle"></div>
-  <div class="pp-hd">
-    <span class="pp-t"><span class="ic-inline" data-ic="wand" data-ic-size="17"></span> Polished version</span>
-    <button class="pp-x" id="polishClose" data-ic="x" aria-label="Close"></button>
-  </div>
-  <div class="pp-body">
-    <div class="pp-lbl">You wrote</div>
-    <div class="pp-orig" id="polishOrig"></div>
-    <div class="pp-lbl">Polished — edit anything before you use it</div>
-    <textarea id="polishText" rows="3"></textarea>
-    <div class="pp-note" id="polishNote"></div>
-  </div>
-  <div class="pp-acts">
-    <button class="btn accent ic-btn" id="polishUse" data-ic="check" data-ic-label="Use this"></button>
-    <button class="btn ic-btn" id="polishRedo" data-ic="refresh-cw" data-ic-label="Redo"></button>
-    <button class="btn" id="polishKeep">Keep mine</button>
-  </div>
-  <div class="pp-foot"><span>Polish as you type</span><span class="sw" id="polishAutoSw"></span></div>
-</div>
-
 <!-- ============ AI command bar ============ -->
 <div class="setup-overlay" id="aiCmdOverlay" style="display:none">
   <div class="setup-box" id="aiCmdBox">
@@ -3044,7 +3021,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-16·setup";
+  var APP_BUILD="2026-08-20·autopolish";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -3155,6 +3132,7 @@
     "camera":'<path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3Z"/><circle cx="12" cy="13" r="3"/>',
     "share":'<path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/>',
     "play":'<polygon points="6 3 20 12 6 21 6 3"/>',
+    "pause":'<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>',
     "flag":'<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/>',
     "message-square":'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
     "message-circle":'<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/>',
@@ -3480,7 +3458,7 @@
     preset:"crimson", accent:["#ff2e43","#c81e30"],
     radius:"md", density:"comfy", textScale:100, font:"system", bg:"solid",
     mode:"simple", locked:false, tourSeen:false, listStyle:"compact",
-    autoPolish:true,   // polish drafts as you type (the "ready" bar over the composer)
+    autoPolish:true,   // rewrite the draft in place when you pause typing (undo lives on the strip)
     navV:3, tabsOrder:["home","messages","pipeline","money","stats","more"], tabsHidden:[],
     mblocks:["hero","log","alerts","pulse","brain","today","pricing"], mblocksHidden:[],
     mkpis:["net","you","costs","savings","avg","jobs","margin","owed","best"],
@@ -6932,7 +6910,7 @@
       {act:"plan",   ic:"refresh-cw",      t:"Put them on a plan", s:"Every few weeks, on a rhythm — you get reminded, they get asked", accent:true},
       {act:"link",   ic:"share",           t:"Send their booking link", s:"Their own page — book, move, cancel, see past jobs. No texting you", accent:true},
       {act:"draft",  ic:"sparkles",       t:"AI draft a reply", s:"Let the AI suggest a full reply to send"},
-      {act:"polish", ic:"wand",           t:"Polish my text now", s:"Don't wait — review the polished version right away"},
+      {act:"polish", ic:"wand",           t:"Polish my text now", s:"Don't wait for the pause — rewrite it this second"},
       {act:"tpl",    ic:"zap",            t:"Quick replies", s:"Insert one of your saved replies"},
       {act:"sched",  ic:"calendar-clock", t:"Schedule send", s:"Write now, send automatically later"},
       {act:"rem",    ic:"bell",           t:"Appointment reminder", s:"Get a private nudge before an appointment"}
@@ -6943,7 +6921,7 @@
     // the Tools button instead of a scroll to the bottom of ten actions.
     var h='<div class="ts-hd">Typing help</div>'+
       '<div class="ts-row ts-sw" id="tsAutoPolish"><span class="ts-ic">'+ic("wand",19)+'</span>'+
-      '<span class="ts-txt"><b>Polish as you type</b><span>Offers a cleaned-up version when you pause</span></span>'+
+      '<span class="ts-txt"><b>Auto Polish</b><span>Rewrites your text when you pause — undo is always one tap</span></span>'+
       '<span class="sw'+(autoPolishOn()?" on":"")+'" id="tsAutoPolishSw"></span></div>'+
       '<div class="ts-row ts-sw" id="tsPredict"><span class="ts-ic">'+ic("keyboard",19)+'</span>'+
       '<span class="ts-txt"><b>Next-word suggestions</b><span>The word chips above the message box</span></span>'+
@@ -6957,9 +6935,7 @@
     var apRow=sheet.querySelector("#tsAutoPolish");
     if(apRow)apRow.onclick=function(e){
       if(e){e.stopPropagation()}
-      setAutoPolish(!autoPolishOn());
-      var sw=sheet.querySelector("#tsAutoPolishSw");if(sw)sw.classList.toggle("on",autoPolishOn());
-      toast(autoPolishOn()?"Polish as you type is on":"Polish as you type is off");
+      setAutoPolish(!autoPolishOn());   // it repaints the switch and says which way it went
     };
     var pkRow=sheet.querySelector("#tsPredict");
     if(pkRow)pkRow.onclick=function(e){
@@ -7363,12 +7339,26 @@
   // =========================================================================
   // AUTO-POLISH
   // -------------------------------------------------------------------------
-  // Polish used to be a button you had to remember to press. Now it just runs:
-  // stop typing for a beat and the polished version is fetched in the
-  // background. Nothing is ever swapped into the box behind your back and
-  // nothing covers the screen — all you get is a one-line bar above the
-  // composer ("Polished version ready"). Tap it and the review sheet slides up
-  // where you can confirm, edit, redo, or keep your own wording.
+  // Polish used to hand you a version and wait for a decision — a bar, a sheet,
+  // an "accept" tap, every time you paused. That reads as pushy when you're
+  // just typing: a lot of alternate drafts to judge when all you wanted was to
+  // answer somebody. So it doesn't ask any more. Stop typing for a beat and it
+  // rewrites the box for you.
+  //
+  // Three things make an automatic rewrite safe to live with:
+  //   1. It waits longer. A rewrite you didn't ask for has to be sure you're
+  //      actually done with the thought, so the pause is half again as long as
+  //      it was when this only offered a suggestion.
+  //   2. There is always a way back. Undo puts your exact words back, and each
+  //      thing it changed is its own chip — tap one and YOUR wording returns for
+  //      that spot only, without losing the rest.
+  //   3. It can be stopped mid-sentence. The pause button on the strip kills the
+  //      next rewrite instantly, which is the answer to "I'm done, leave it".
+  //
+  // The loop this has to avoid: it rewrites, you put a word back, it rewrites
+  // that word again, forever. So anything the swap produces — the polish, an
+  // undo, a single word put back — is remembered as "you already decided about
+  // this exact text" and is never sent again.
   //
   // Cost control (every run is a Gemini call, and the predictive keyboard is
   // already spending some of that budget): only fires on a real pause, only for
@@ -7376,12 +7366,12 @@
   // every result is cached by the exact text so the same draft is never sent
   // twice.
   // =========================================================================
-  var POLISH_IDLE=1600;      // ms of "you stopped typing" before we polish
-  var POLISH_COOLDOWN=4000;  // ms minimum between two automatic runs
+  var POLISH_IDLE=2400;      // ms of "you stopped typing" before we rewrite (was 1600 when it only offered)
+  var POLISH_COOLDOWN=6000;  // ms minimum between two automatic runs
   var POLISH_MIN=15;         // don't bother with "ok", "on my way", etc.
-  var polish={timer:null,busy:false,open:false,src:"",out:"",same:false,at:0};
+  var polish={timer:null,busy:false,at:0,applied:false,before:"",after:"",parts:[],phone:"",undone:""};
   var polishCache={};        // exact draft text -> polished text ("" = nothing to suggest)
-  var polishDeclined={};     // exact draft text -> true (you said "keep mine")
+  var polishDeclined={};     // exact draft text -> true (already your call — never re-polish this)
   function autoPolishOn(){return UI.autoPolish!==false}
   function curDraft(){var i=el("msgInput");return i?(i.value||"").trim():""}
   function polishWorthIt(text){
@@ -7389,34 +7379,87 @@
   }
   function prunePolishCache(){
     var k=Object.keys(polishCache);if(k.length>60)k.slice(0,30).forEach(function(x){delete polishCache[x]});
+    var d=Object.keys(polishDeclined);if(d.length>80)d.slice(0,40).forEach(function(x){delete polishDeclined[x]});
   }
-  // Called on every keystroke. Debounces, and re-offers instantly from cache.
+  function polishDecide(text){if(text)polishDeclined[text]=true}
+
+  // ---- word-level diff, so "put that one back" can mean one word ----
+  // Each unit carries the whitespace in front of it, which is what makes a
+  // revert clean: drop the unit and its spacing goes with it instead of
+  // leaving a double space behind.
+  function polishUnits(text){
+    var out=[],re=/(\s*)(\S+)/g,m;
+    while((m=re.exec(text))!==null)out.push({ws:m[1],w:m[2]});
+    return out;
+  }
+  function polishText2(units,a,b){var s="";for(var i=a;i<b;i++)s+=units[i].ws+units[i].w;return s}
+  // Longest-common-subsequence over words. Texts here are one SMS long, so the
+  // table is tiny; the size guard is only there so a pasted wall of text can't
+  // lock the phone up.
+  function polishDiff(aTxt,bTxt){
+    var A=polishUnits(aTxt),B=polishUnits(bTxt),n=A.length,m=B.length,i,j;
+    if(!n||!m||n*m>40000)return null;
+    var dp=new Array(n+1);
+    for(i=0;i<=n;i++){dp[i]=new Array(m+1);dp[i][m]=0}
+    for(j=0;j<=m;j++)dp[n][j]=0;
+    for(i=n-1;i>=0;i--)for(j=m-1;j>=0;j--)
+      dp[i][j]=(A[i].w===B[j].w)?dp[i+1][j+1]+1:(dp[i+1][j]>=dp[i][j+1]?dp[i+1][j]:dp[i][j+1]);
+    var parts=[],ai=0,bi=0;
+    function push(eq,a0,a1,b0,b1){
+      var last=parts[parts.length-1];
+      if(last&&last.eq===eq){last.from+=polishText2(A,a0,a1);last.to+=polishText2(B,b0,b1);return}
+      parts.push({eq:eq,from:polishText2(A,a0,a1),to:polishText2(B,b0,b1),mine:false});
+    }
+    while(ai<n&&bi<m){
+      if(A[ai].w===B[bi].w){push(true,ai,ai+1,bi,bi+1);ai++;bi++}
+      else if(dp[ai+1][bi]>=dp[ai][bi+1]){push(false,ai,ai+1,bi,bi);ai++}
+      else {push(false,ai,ai,bi,bi+1);bi++}
+    }
+    if(ai<n)push(false,ai,n,bi,bi);
+    if(bi<m)push(false,n,n,bi,m);
+    return parts;
+  }
+  // Rebuild the message from the parts. Unchanged stretches always render the
+  // polished spacing; a changed stretch renders yours if you tapped its chip.
+  function polishJoin(parts){
+    var s="";
+    for(var i=0;i<parts.length;i++)s+=(parts[i].eq||!parts[i].mine)?parts[i].to:parts[i].from;
+    return s.replace(/^\s+/,"");
+  }
+  function polishChanges(){
+    var out=[];
+    for(var i=0;i<polish.parts.length;i++)if(!polish.parts[i].eq)out.push(i);
+    return out;
+  }
+
+  // Called on every keystroke. Debounces; a cached result lands immediately.
   function schedulePolish(){
     if(polish.timer){clearTimeout(polish.timer);polish.timer=null}
     var text=curDraft();
-    if(polish.src&&text!==polish.src&&!polish.open)hidePolishBar(); // the suggestion is stale now
-    if(!state.thread||!autoPolishOn()||polish.open)return;
-    if(!polishWorthIt(text)||polishDeclined[text])return;
-    if(polishCache[text]!==undefined){offerPolish(text,state.thread.phone);return}
-    if(polish.busy)return; // the in-flight run reschedules itself when it lands
+    // You typed after a rewrite, so the chips no longer point at anything real.
+    if(polish.applied&&text!==polish.after)clearApplied();
+    if(polish.undone&&text!==polish.undone)polish.undone="";
+    if(!state.thread){renderPolishBar();return}
+    if(!autoPolishOn()||!polishWorthIt(text)||polishDeclined[text]){renderPolishBar();return}
+    if(polishCache[text]!==undefined){applyPolish(text,polishCache[text],state.thread.phone);return}
+    if(polish.busy){renderPolishBar();return}
     var wait=Math.max(POLISH_IDLE,POLISH_COOLDOWN-(Date.now()-polish.at));
     polish.timer=setTimeout(function(){
       if(curDraft()!==text||!state.thread)return schedulePolish();
       requestPolish(text,state.thread.phone,false);
     },wait);
+    renderPolishBar();
   }
-  // One polish run. manual=true means you pressed the Polish tool, so it opens
-  // the sheet even when there was nothing to change, and surfaces errors.
+  // One polish run. manual=true means you pressed "Polish my text now", so it
+  // skips the wait and says something when the call fails.
   function requestPolish(text,forPhone,manual){
-    polish.busy=true;polish.at=Date.now();
+    polish.busy=true;polish.at=Date.now();renderPolishBar();
     return post("/api/ai/draft",{phone:forPhone,text:text}).then(function(d){
       if(d&&d.ok&&d.draft){
         var out=d.draft.trim();
         polishCache[text]=(out===text)?"":out;prunePolishCache();
-        if(manual){
-          if(curDraft()!==text||!state.thread||state.thread.phone!==forPhone)return;
-          polish.src=text;polish.out=out;polish.same=(out===text);openPolishSheet();
-        } else offerPolish(text,forPhone);
+        applyPolish(text,polishCache[text],forPhone);
+        if(manual&&!polishCache[text])toast("Already reads well — nothing to change");
       } else {
         polishCache[text]="";  // remember the miss so auto-polish can't hammer a failing API
         if(manual)toast("Polish failed: "+((d&&d.error)||"error"),{bad:true});
@@ -7427,98 +7470,138 @@
     }).then(function(){
       polish.busy=false;
       var bb=el("polishBtn");if(bb){bb.disabled=false;bb.innerHTML=ic("wand",21)}
-      if(!polish.open)schedulePolish(); // the draft may have moved on while we waited
+      renderPolishBar();
     });
   }
-  // Show the ready-bar — but only if the polished text still matches what's in
-  // the box and you're still in the same conversation.
-  function offerPolish(src,forPhone){
-    if(!state.thread||state.thread.phone!==forPhone)return;
-    if(curDraft()!==src||polishDeclined[src])return;
-    var out=polishCache[src];if(!out)return;
-    polish.src=src;polish.out=out;polish.same=false;
-    if(polish.open){renderPolishSheet();return}
-    showPolishBar();
-  }
-  function showPolishBar(){
-    var bar=el("polishBar");if(!bar)return;
-    bar.innerHTML='<span class="pb-ic">'+ic("wand",15)+'</span>'+
-      '<span class="pb-t">Polished version ready</span>'+
-      '<span class="pb-cta">Review</span>'+
-      '<button class="pb-x" aria-label="Dismiss">'+ic("x",15)+'</button>';
-    bar.onclick=function(){openPolishSheet()};
-    bar.querySelector(".pb-x").onclick=function(e){e.stopPropagation();polishKeepMine()};
-    bar.classList.add("show");
-  }
-  function hidePolishBar(){var bar=el("polishBar");if(bar){bar.classList.remove("show");bar.innerHTML=""}}
-  function openPolishSheet(){
-    if(!polish.src)return;
-    polish.open=true;hidePolishBar();renderPolishSheet();
-    el("polishScrim").classList.add("show");el("polishSheet").classList.add("show");
-    if(typeof vibrate==="function")vibrate(6);
-  }
-  function renderPolishSheet(){
-    el("polishOrig").textContent=polish.src;
-    var ta=el("polishText");ta.disabled=false;ta.value=polish.out||polish.src;
-    el("polishNote").textContent=polish.same?"Looks good already — no changes needed.":"Same meaning, cleaned up to read clearly. Edit anything before you use it.";
-    var sw=el("polishAutoSw");if(sw)sw.classList.toggle("on",autoPolishOn());
-    setTimeout(function(){ta.style.height="auto";ta.style.height=Math.min(ta.scrollHeight+2,Math.round(window.innerHeight*.34))+"px"},0);
-  }
-  // keepBar=true means "close for now" (the X / tapping outside) — the bar comes
-  // back so the suggestion isn't lost.
-  function closePolishSheet(keepBar){
-    polish.open=false;
-    el("polishScrim").classList.remove("show");el("polishSheet").classList.remove("show");
-    if(keepBar&&polish.out&&curDraft()===polish.src)showPolishBar();
-  }
-  function polishUse(){
-    var v=(el("polishText").value||"").trim();
-    if(!v){toast("Nothing to use — type or edit the text first",{bad:true});return}
-    var inp=el("msgInput");inp.value=v;autoGrow();updateCount();
+  // The swap itself. Bails unless the box still holds exactly the text we sent
+  // and you're still in the same conversation, so a rewrite can never land on
+  // top of words you typed while waiting — or in someone else's thread.
+  function applyPolish(src,out,forPhone){
+    if(!out||!state.thread||state.thread.phone!==forPhone||curDraft()!==src){renderPolishBar();return}
+    var parts=polishDiff(src,out);
+    if(!parts||!polishChangesIn(parts).length){polishCache[src]="";renderPolishBar();return}
+    var inp=el("msgInput");
+    inp.value=out;autoGrow();updateCount();
     if(typeof stashDraft==="function")stashDraft(state.phone);
-    polishCache[v]="";polishDeclined[v]=true; // never turn around and re-polish what it just wrote
-    polish.src="";polish.out="";
-    closePolishSheet(false);hidePolishBar();
+    if(document.activeElement===inp&&inp.setSelectionRange){try{inp.setSelectionRange(out.length,out.length)}catch(e){}}
+    inp.classList.add("just-polished");setTimeout(function(){inp.classList.remove("just-polished")},700);
+    polish.applied=true;polish.before=src;polish.after=out;polish.parts=parts;polish.phone=forPhone;
+    // Its own output is never a candidate again — that's the loop-guard.
+    polishCache[out]="";polishDecide(out);
     if(typeof vibrate==="function")vibrate(8);
+    renderPolishBar();
+  }
+  function polishChangesIn(parts){var o=[];for(var i=0;i<parts.length;i++)if(!parts[i].eq)o.push(i);return o}
+  function clearApplied(){polish.applied=false;polish.before="";polish.after="";polish.parts=[];polish.phone=""}
+
+  // ---- the strip above the composer ----
+  // Four states, one line: paused, waiting, working, done. Nothing is hidden
+  // behind a tap except the before/after itself, which is what the chips are.
+  function renderPolishBar(){
+    var bar=el("polishBar");if(!bar)return;
+    var text=curDraft(),paused=!autoPolishOn();
+    var undone=!!(polish.undone&&text&&text===polish.undone);
+    var show=!!state.thread&&(polish.applied||polish.busy||undone||(polishWorthIt(text)&&!polishDeclined[text]));
+    if(paused&&!polish.applied&&!polishWorthIt(text))show=false;
+    if(!show){hidePolishBar();return}
+    var icon,label;
+    if(polish.applied){icon="wand";label="Polished — tap to undo a word";}
+    else if(polish.busy){icon="wand";label="Polishing…";}
+    else if(undone){icon="undo";label=paused?"Your words are back · paused":"Your words are back — this one is left alone";}
+    else if(paused){icon="pause";label="Auto Polish paused";}
+    else {icon="wand";label="Polishes when you pause";}
+    var h='<div class="pb-top"><span class="pb-ic">'+ic(icon,15)+'</span><span class="pb-t">'+esc(label)+'</span>';
+    if(polish.applied)h+='<button class="pb-undo" id="pbUndo">'+ic("undo",13)+'Undo</button>';
+    h+='<button class="pb-pp" id="pbPP" aria-label="'+(paused?"Resume Auto Polish":"Pause Auto Polish")+'" '+
+       'title="'+(paused?"Resume Auto Polish":"Pause Auto Polish")+'">'+ic(paused?"play":"pause",16)+'</button></div>';
+    if(polish.applied){
+      var ch=polishChanges();
+      if(ch.length){
+        h+='<div class="pb-words" id="pbWords">';
+        ch.forEach(function(i){
+          var p=polish.parts[i],lbl=polishChipLabel(p);
+          h+='<button class="pb-w'+(p.mine?" mine":"")+'" data-i="'+i+'" title="'+
+             esc(p.mine?("Polished: "+(p.to.trim()||"(removed)")):("You wrote: "+(p.from.trim()||"(nothing here)")))+'">'+
+             '<span class="pb-wl">'+esc(lbl)+'</span>'+(p.mine?"":ic("undo",11))+'</button>';
+        });
+        h+='</div>';
+      }
+    }
+    bar.innerHTML=h;bar.className="polish-bar show"+(polish.applied?" applied":"")+(paused?" paused":"");
+    var u=bar.querySelector("#pbUndo");if(u)u.onclick=function(e){e.stopPropagation();polishUndoAll()};
+    bar.querySelector("#pbPP").onclick=function(e){e.stopPropagation();setAutoPolish(!autoPolishOn())};
+    Array.prototype.forEach.call(bar.querySelectorAll(".pb-w"),function(b){
+      b.onclick=function(e){e.stopPropagation();polishToggleWord(Number(b.getAttribute("data-i")))};
+    });
+  }
+  // A chip says what's in the box right now for that spot, so tapping it reads
+  // as "swap this back" rather than a riddle.
+  function polishChipLabel(p){
+    var cur=(p.mine?p.from:p.to).trim(),other=(p.mine?p.to:p.from).trim();
+    if(!cur)return "put back “"+polishClip(other)+"”";
+    return polishClip(cur);
+  }
+  function polishClip(s){s=String(s||"").replace(/\s+/g," ");return s.length>26?s.slice(0,25)+"…":s}
+  function hidePolishBar(){var bar=el("polishBar");if(bar){bar.className="polish-bar";bar.innerHTML=""}}
+
+  // Undo: your exact words back, and they stay yours — the same draft is never
+  // sent for polishing a second time, or undo would just be a loop.
+  function polishUndoAll(){
+    if(!polish.applied)return;
+    var src=polish.before,inp=el("msgInput");
+    inp.value=src;autoGrow();updateCount();
+    if(typeof stashDraft==="function")stashDraft(state.phone);
+    polishDecide(src);
+    clearApplied();
+    polish.undone=src;
+    if(typeof vibrate==="function")vibrate(6);
+    renderPolishBar();
     inp.focus();
   }
-  function polishRedo(){
-    var src=polish.src;if(!src||!state.thread||polish.busy)return;
-    delete polishCache[src];
-    var ta=el("polishText");ta.disabled=true;ta.value="Rewriting…";
-    requestPolish(src,state.thread.phone,true).then(function(){
-      var t2=el("polishText");if(t2)t2.disabled=false;
-      if(polish.open)renderPolishSheet();
-    });
+  // One spot back to your wording. Everything else it fixed stays fixed, and
+  // the result is marked decided so it can't be re-polished right back.
+  function polishToggleWord(i){
+    var p=polish.parts[i];if(!polish.applied||!p||p.eq)return;
+    p.mine=!p.mine;
+    var out=polishJoin(polish.parts),inp=el("msgInput");
+    inp.value=out;autoGrow();updateCount();
+    if(typeof stashDraft==="function")stashDraft(state.phone);
+    polish.after=out;polishCache[out]="";polishDecide(out);
+    if(typeof vibrate==="function")vibrate(5);
+    renderPolishBar();
   }
-  function polishKeepMine(){
-    if(polish.src)polishDeclined[polish.src]=true;
-    polish.src="";polish.out="";
-    closePolishSheet(false);hidePolishBar();
-  }
-  // Wipe everything on send / switching conversations, so a suggestion can
-  // never leak from one customer's draft into another's.
+  // Wipe everything on send / switching conversations, so a rewrite can never
+  // leak from one customer's draft into another's.
   function resetPolish(){
     if(polish.timer){clearTimeout(polish.timer);polish.timer=null}
-    polish.src="";polish.out="";polish.same=false;
-    if(polish.open)closePolishSheet(false);
+    clearApplied();polish.undone="";
     hidePolishBar();
   }
   function setAutoPolish(on){
     UI.autoPolish=!!on;saveUI();
     if(typeof vibrate==="function")vibrate(6);
-    if(on){schedulePolish();return}
-    // Turning it off stops future runs, but never yanks a review you're reading.
+    var sw=el("tsAutoPolishSw");if(sw)sw.classList.toggle("on",autoPolishOn());
+    if(on){toast("Auto Polish on");schedulePolish();return}
+    // Pausing stops the next rewrite instantly, but never yanks back one that
+    // already landed — the undo chips stay until you type again.
     if(polish.timer){clearTimeout(polish.timer);polish.timer=null}
-    if(!polish.open){polish.src="";polish.out="";hidePolishBar()}
+    toast("Auto Polish paused");
+    renderPolishBar();
   }
-  // The Polish tool still works on demand — it just opens the same sheet, and
-  // reuses the polish that's already waiting instead of paying for another call.
+  // Read-only view for the UI tests (and for debugging a rewrite that surprised you).
+  window.__polish=function(){
+    return {on:autoPolishOn(),applied:polish.applied,busy:polish.busy,before:polish.before,after:polish.after,
+            idle:POLISH_IDLE,changes:polish.parts.filter(function(p){return !p.eq}).map(function(p){
+              return {from:p.from.trim(),to:p.to.trim(),mine:p.mine}})};
+  };
+  // The Polish tool means "don't wait for the pause" — same rewrite, right now.
   function aiPolish(){
     var t=state.thread;if(!t)return;
     var text=curDraft();
     if(!text){toast("Type a reply first — polish cleans up what you wrote",{bad:true});return}
-    if(polishCache[text]){polish.src=text;polish.out=polishCache[text];polish.same=false;openPolishSheet();return}
+    if(polish.timer){clearTimeout(polish.timer);polish.timer=null}
+    delete polishDeclined[text];
+    if(polishCache[text]){applyPolish(text,polishCache[text],t.phone);return}
     var b=el("polishBtn");if(b){b.disabled=true;b.innerHTML='<span class="spin"></span>'}
     requestPolish(text,t.phone,true);
   }
@@ -8282,16 +8365,6 @@
   el("dtArchive").onclick=function(){var t=state.thread;doArchiveToggle(t);closeDetails();if(!t.archived){document.body.classList.remove("viewing");state.phone=null}};
 
   el("msgInput").addEventListener("input",function(){updateCount();autoGrow();stashDraft(state.phone);pkOnType();schedulePolish()});
-  el("polishScrim").onclick=function(){closePolishSheet(true)};
-  el("polishClose").onclick=function(){closePolishSheet(true)};
-  el("polishUse").onclick=polishUse;
-  el("polishRedo").onclick=polishRedo;
-  el("polishKeep").onclick=polishKeepMine;
-  el("polishAutoSw").onclick=function(){setAutoPolish(!autoPolishOn());el("polishAutoSw").classList.toggle("on",autoPolishOn())};
-  el("polishText").addEventListener("keydown",function(e){
-    if(e.key==="Escape"){e.preventDefault();closePolishSheet(true)}
-    else if(e.key==="Enter"&&(e.metaKey||e.ctrlKey)){e.preventDefault();polishUse()}
-  });
   // Predictive keyboard: Tab (or → at the very end) takes the AI's completion,
   // Esc waves it off. Registered ahead of the Enter handler and only ever acts
   // when a ghost is actually showing, so sending is untouched.
