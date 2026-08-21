@@ -25,6 +25,10 @@
  *   ANTHROPIC_MODEL       (optional — defaults to claude-opus-5)
  *   CLAUDE_DISABLED       (optional kill switch — set to "1" to force drafting
  *                          back onto Gemini without removing the key)
+ *   CALL_BRIDGE_PHONE     (optional — the handset dashboard click-to-call rings
+ *                          before bridging to the customer; defaults to
+ *                          +14252321355. Used ONLY for outbound click-to-call;
+ *                          alerts and inbound forwarding still use MIKEY_PHONE.)
  *   RESEND_API_KEY        (optional — email alerts instead of texting yourself)
  *   ALERT_EMAIL           (optional — where alerts go; defaults to nothing)
  *   ALERT_FROM            (optional — verified sender; defaults to Resend's)
@@ -74,7 +78,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-21·ledger-seed';
+const BUILD = '2026-08-21·call-routing';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -8332,7 +8336,17 @@ async function sendSms(to, body, opts = {}) {
   return res.json();
 }
 
-// Click-to-call: ring Mikey's cell, then bridge the call to the customer.
+// The handset that click-to-call rings. This is deliberately its OWN number and
+// NOT MIKEY_PHONE: dashboard "Call" is the only thing that uses it. Inbound call
+// forwarding, missed-call/voicemail alerts and every self-text still go to
+// MIKEY_PHONE — changing this line does not touch any of them.
+// Override without a deploy by setting the Worker var CALL_BRIDGE_PHONE.
+const CALL_BRIDGE_PHONE = '+14252321355';
+function callBridgePhone() {
+  return normalizePhone(ENV.CALL_BRIDGE_PHONE) || CALL_BRIDGE_PHONE;
+}
+
+// Click-to-call: ring the call handset, then bridge the call to the customer.
 async function placeBridgeCall(customer) {
   const sid = ENV.TWILIO_ACCOUNT_SID;
   const token = ENV.TWILIO_AUTH_TOKEN;
@@ -8346,7 +8360,7 @@ async function placeBridgeCall(customer) {
       'Authorization': `Basic ${btoa(`${sid}:${token}`)}`,
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-    body: new URLSearchParams({ To: ENV.MIKEY_PHONE, From: from, Twiml: twimlXml }),
+    body: new URLSearchParams({ To: callBridgePhone(), From: from, Twiml: twimlXml }),
   });
   if (!res.ok) throw new Error(`Twilio call ${res.status}: ${await res.text()}`);
   return res.json();

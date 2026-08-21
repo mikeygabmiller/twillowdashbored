@@ -62,3 +62,8 @@ crons = ["* * * * *"]
 #   npx wrangler secret put MIKEY_PHONE
 #   npx wrangler secret put GEMINI_API_KEY   # optional, for the AI features
 #   npx wrangler secret put RESEND_API_KEY   # optional — sends owner alerts as email (with ALERT_EMAIL above) instead of texting yourself
+
+# Dashboard click-to-call rings CALL_BRIDGE_PHONE (defaults to +14252321355 in
+# src/index.js) and then bridges to the customer. It is separate from MIKEY_PHONE
+# on purpose — alerts and inbound call forwarding still go to MIKEY_PHONE. To ring
+# a different handset without a deploy, add CALL_BRIDGE_PHONE under Variables.
