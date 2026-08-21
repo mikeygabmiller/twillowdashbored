@@ -56,9 +56,12 @@ DR_API_BASE = "https://bible-api.com"
 # GitHub Pages repo the web archive is committed to.
 SITE_REPO = "mikeygabmiller/matins"
 SITE_BRANCH = "main"
-# "1" builds and publishes without emailing. Now "0": the daily cron sends to
-# every CONFIRMED subscriber. Nobody is emailed until they double opt in.
-SEND_PAUSED = "0"
+# "1" builds and publishes without emailing. Back to "1" on 2026-08-21 together
+# with the cron below: with no cron there is nothing to pause, but a hand-run
+# POST /admin/run defaults to send=1, so this is what stops an admin call made
+# to look at the writing from also mailing the whole confirmed list while the
+# daily is off. Set to "0" in the same change that restores the cron.
+SEND_PAUSED = "1"
 
 # Subscribers, issue archive, rotation state. Create with:
 #   npx wrangler kv namespace create DEVOTIONAL
@@ -66,11 +69,34 @@ SEND_PAUSED = "0"
 binding = "DEVOTIONAL"
 id = "2469221591314033a84969f0f5815e69"
 
-# Daily build + send. Cron is UTC: 12:00 UTC = 5am PDT / 4am PST.
-# Keep SEND_HOUR/SEND_TZ in sync — the handler re-checks local time and skips
-# runs that are not the send hour, so a DST-shifted cron never double-sends.
+# Daily build + send — PAUSED 2026-08-21, to stop the Gemini spend.
+#
+# The cron is what had to go, not just the send. Every morning's build makes
+# roughly a dozen model calls — the reflection and the saint story are drafted
+# twice and the headline three times, each draft is judged for craft, and every
+# generated block then goes through a second safety call — so pausing delivery
+# alone would have left the whole bill in place for an issue nobody received.
+#
+# An empty list is the off switch. `wrangler deploy` deletes every cron trigger
+# on the Worker when it reads this; deleting the [triggers] block outright is
+# the thing that does NOT work, because the live triggers would simply stay as
+# they are. Nothing is lost by pausing: the archive and the subscriber list sit
+# in KV untouched, and the Worker keeps serving signup, confirm, unsubscribe
+# and the archive routes.
+#
+# TO RESUME: put the two crons back (the line below), set SEND_PAUSED = "0"
+# above, then deploy. Both are UTC and both are meant to be there — the handler
+# re-checks local time and does nothing outside SEND_HOUR, so 12:00 UTC fires
+# at 5am PDT and skips in winter, 13:00 UTC fires at 5am PST and skips in
+# summer, and the daylight-saving shift never costs a morning or doubles one.
+#
+#   crons = ["0 12 * * *", "0 13 * * *"]
+#
+# Until it is deployed this file has changed nothing. To stop the sends right
+# now without a deploy: Cloudflare dashboard → Workers → matins → Settings →
+# Triggers → delete both cron triggers.
 [triggers]
-crons = ["0 12 * * *", "0 13 * * *"]
+crons = []
 
 # NOTE: ./site is the GitHub Pages source, not Worker assets. The Worker
 # renders its own signup and notice pages, so nothing is bound here — that

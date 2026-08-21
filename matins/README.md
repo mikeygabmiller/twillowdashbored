@@ -144,9 +144,20 @@ is actually live.
 not email. Work through the build order — preview, then a test send, then web
 publish, then signup — and flip it to `"0"` when you are ready.
 
-Two crons are configured (12:00 and 13:00 UTC) so the 5am local send survives
-the daylight-saving shift; the handler ignores any run whose local hour is not
-`SEND_HOUR`, and `sent:<date>` prevents a double send regardless.
+Two crons are meant to be configured (12:00 and 13:00 UTC) so the 5am local send
+survives the daylight-saving shift; the handler ignores any run whose local hour
+is not `SEND_HOUR`, and `sent:<date>` prevents a double send regardless.
+
+**The daily is paused right now.** `crons = []` and `SEND_PAUSED = "1"` as of
+2026-08-21, because the morning build spends more Gemini quota than the app is
+worth while it is still being refined. Nothing else is affected: the archive and
+the subscriber list are in KV, and signup, confirm, unsubscribe and the archive
+routes all still work. `npm run preview` and `POST /admin/run` still build a
+full issue on demand, so refining the writing does not need the cron back.
+
+To resume, restore both crons and set `SEND_PAUSED = "0"` — `wrangler.toml`
+carries the exact line to paste — then `npx wrangler deploy`. Neither setting
+takes effect, in either direction, until a deploy.
 
 ## Routes
 
