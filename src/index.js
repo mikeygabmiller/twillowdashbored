@@ -74,7 +74,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-20·autopolish';
+const BUILD = '2026-08-21·ledger-seed';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -109,6 +109,9 @@ async function runCron() {
   // "I'll get back to you Monday" — nudge him when the time he promised arrives.
   await dispatchDuePromises().catch(() => {});
   await evaluateFollowups();
+  // Card charges shipped with the deploy (see LEDGER_SEEDS). No-ops after the
+  // first tick that lands them.
+  await applyLedgerSeeds().catch(() => {});
   await moneyCron().catch(() => {}); // money reminders must never break the SMS cron
   // One KV write a day: snapshot the KPIs that cannot be reconstructed later.
   await recordPulse().catch(() => {});
@@ -5819,6 +5822,78 @@ function sanitizeMoneyEntry(e, existingId) {
   if (e.rc) out.rc = 1; // has a receipt photo stored under money:rc:<id>
   if (e.imp) out.imp = true; // came from a CSV import (used for de-dupe on re-import)
   return out;
+}
+
+// ===========================================================================
+// One-time ledger seeds
+// ---------------------------------------------------------------------------
+// Card charges that reached Mikey as a bank screenshot instead of through the
+// Log screen. There is no door into the live ledger from outside the app —
+// every /api/money route sits behind the dashboard password — so a batch like
+// this ships WITH the deploy: the first cron tick after it goes live writes the
+// entries, stamps the batch, and never writes again. Mikey taps nothing.
+//
+// Two rules keep a seed from becoming a duplicate or a zombie:
+//   • Stable ids — a re-run recognises what it already wrote and skips it, so a
+//     tick that dies between the month write and the stamp costs nothing.
+//   • The stamp is a batch version, and only batches NEWER than it are applied.
+//     That makes deleting a seeded entry in the app final: the next tick won't
+//     bring it back. To send another batch, add rows carrying the next `v` and
+//     bump LEDGER_SEED_VERSION to match.
+//
+// Amounts and categories are Mikey's own call, not a guess from the merchant
+// name — the 76 fill-up is fuel, the rest of that day's card 1917 charges are
+// food (two of them rung up at a gas station, which is exactly why the merchant
+// can't be trusted to pick the category).
+// ===========================================================================
+const LEDGER_SEED_VERSION = 1;
+const LEDGER_SEED_KEY = 'money:seed';
+const LEDGER_SEEDS = [
+  { v: 1, id: 'sd1-76express', date: '2026-08-20', type: 'exp', cat: 'fuel', amount: 25.11, note: '76 Express, Snohomish · card 1917' },
+  { v: 1, id: 'sd1-chickfila', date: '2026-08-20', type: 'exp', cat: 'food', amount: 7.61,  note: 'Chick-fil-A, Bothell · card 1917' },
+  { v: 1, id: 'sd1-shell-491', date: '2026-08-20', type: 'exp', cat: 'food', amount: 4.91,  note: 'Shell, Snohomish · card 1917' },
+  { v: 1, id: 'sd1-shell-548', date: '2026-08-20', type: 'exp', cat: 'food', amount: 5.48,  note: 'Shell, Snohomish · card 1917' },
+  { v: 1, id: 'sd1-safeway',   date: '2026-08-20', type: 'exp', cat: 'food', amount: 1.19,  note: 'Safeway #107, Snohomish · card 1917' },
+];
+
+// Set once the stamp is known to be current, so a long-lived isolate stops
+// reading the key every minute. A cold isolate costs one KV read, then nothing.
+let LEDGER_SEEDS_DONE = false;
+
+// ⚠ KV WRITE — at most one per month touched, once ever per batch.
+async function applyLedgerSeeds() {
+  if (LEDGER_SEEDS_DONE) return;
+  const applied = Number(await kv().get(LEDGER_SEED_KEY)) || 0;
+  if (applied >= LEDGER_SEED_VERSION) { LEDGER_SEEDS_DONE = true; return; }
+
+  // Group by month so a batch spanning a month boundary still costs one write
+  // per month, not one per entry.
+  const byMonth = new Map();
+  LEDGER_SEEDS.filter((s) => (s.v || 1) > applied).forEach((s, i) => {
+    // A fixed timestamp — midday local on the day of the charge, nudged a minute
+    // per row so the day reads in statement order — keeps the entry honest about
+    // when the money went out rather than when the deploy happened.
+    const e = sanitizeMoneyEntry(Object.assign({ ts: Date.parse(s.date + 'T19:00:00Z') + i * 60000 }, s), s.id);
+    if (!e) return;
+    const m = e.date.slice(0, 7);
+    if (!byMonth.has(m)) byMonth.set(m, []);
+    byMonth.get(m).push(e);
+  });
+
+  for (const [month, entries] of byMonth) {
+    const doc = await loadMonth(month);
+    let dirty = false;
+    for (const e of entries) {
+      // Already there — a previous tick wrote it, or Mikey has since edited it.
+      // Either way his copy wins.
+      if (doc.entries.some((x) => x.id === e.id)) continue;
+      doc.entries.push(e);
+      dirty = true;
+    }
+    if (dirty) await saveMonth(month, doc);
+  }
+  await kv().put(LEDGER_SEED_KEY, String(LEDGER_SEED_VERSION));
+  LEDGER_SEEDS_DONE = true;
 }
 
 // One month, one pass: everything the Report view and the recaps need.
