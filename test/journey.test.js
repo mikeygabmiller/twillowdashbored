@@ -1,0 +1,185 @@
+// Customer journeys. The whole feature turns on two claims: an anonymous path
+// only ever gets a name when the customer hands over their number, and the
+// merged timeline is genuinely in order. Both are tested here, plus the boring
+// safety properties — the doc can't grow forever, a refresh isn't four steps,
+// and a missing visitor id never breaks the lead.
+//
+// The journey functions are module-private in the Worker, so they're lifted out
+// of the source by name and evaluated with a fake KV (same trick as
+// snapshot.test.js) rather than exported purely for tests.
+//
+//   node test/journey.test.js
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+const SRC = fs.readFileSync(path.join(__dirname, '..', 'src', 'index.js'), 'utf8');
+
+function lift(name) {
+  const re = new RegExp(`(async )?function ${name}\\(`);
+  const m = re.exec(SRC);
+  if (!m) throw new Error(`function ${name} not found in src/index.js`);
+  const start = m.index;
+  let p = SRC.indexOf('(', start), pd = 0, bodyStart = -1;
+  for (let j = p; j < SRC.length; j++) {
+    if (SRC[j] === '(') pd++;
+    else if (SRC[j] === ')') { pd--; if (pd === 0) { bodyStart = SRC.indexOf('{', j); break; } }
+  }
+  let depth = 0;
+  for (let j = bodyStart; j < SRC.length; j++) {
+    if (SRC[j] === '{') depth++;
+    else if (SRC[j] === '}') { depth--; if (depth === 0) return SRC.slice(start, j + 1); }
+  }
+  throw new Error(`could not find end of ${name}`);
+}
+const constant = (decl) => {
+  const m = SRC.match(new RegExp(`^const ${decl}[^\\n]*$`, 'm'));
+  if (!m) throw new Error(`const ${decl} not found`);
+  return m[0];
+};
+
+// --- fake KV -----------------------------------------------------------------
+const STORE = new Map();   // key -> { value, metadata }
+const KV = {
+  async get(k, opt) {
+    const row = STORE.get(k);
+    if (!row) return null;
+    return (opt && opt.type === 'json') ? JSON.parse(row.value) : row.value;
+  },
+  async put(k, v, opt) { STORE.set(k, { value: v, metadata: (opt && opt.metadata) || null }); },
+  async list({ prefix, cursor }) {
+    const keys = [...STORE.keys()].filter((k) => k.startsWith(prefix))
+      .map((k) => ({ name: k, metadata: STORE.get(k).metadata }));
+    return { keys, list_complete: true, cursor: null };
+  },
+};
+
+const THREADS = {};
+const ctx = {
+  kv: () => KV,
+  threadKey: (p) => 'thread:' + p,
+  normalizePhone: (p) => {
+    const d = String(p || '').replace(/\D/g, '').slice(-10);
+    return d.length === 10 ? '+1' + d : '';
+  },
+  json: (o) => ({ __json: o }),
+};
+
+const CODE = [
+  constant('JOURNEY_TTL'), constant('JOURNEY_MAX_STEPS'),
+  constant('journeyKey'), constant('journeyPhoneKey'),
+  lift('cleanVid'), lift('journeyMeta'), lift('journeyStep'), lift('journeyLink'),
+  lift('journeyPageTitle'), lift('journeyRefLabel'),
+  lift('apiJourneys'), lift('apiJourney'), lift('journeyThreadSteps'),
+].join('\n\n');
+
+const factory = new Function(...Object.keys(ctx), CODE + `
+  return { journeyStep, journeyLink, journeyPageTitle, journeyRefLabel,
+           apiJourneys, apiJourney, journeyThreadSteps, cleanVid, JOURNEY_MAX_STEPS };`);
+const J = factory(...Object.values(ctx));
+
+// The fake thread store the lifted apiJourney reads through kv().get(threadKey()).
+const putThread = (t) => STORE.set('thread:' + t.phone, { value: JSON.stringify(t), metadata: null });
+
+// --- harness -----------------------------------------------------------------
+let pass = 0, fail = 0;
+const ok = (n, c, x) => { if (c) { pass++; console.log('  ✓', n); } else { fail++; console.log('  ✗', n, x !== undefined ? '→ ' + JSON.stringify(x) : ''); } };
+const section = (s) => console.log('\n' + s);
+const U = (q) => new URL('https://x.test/api/journey' + q);
+
+const now = Date.now();
+const min = 60000;
+
+section('A visitor is nobody until they hand over their number');
+await J.journeyStep('vis1', { t: now - 20 * min, p: '/', r: 'google.com' });
+await J.journeyStep('vis1', { t: now - 18 * min, p: '/ceramic-coating-snohomish-county/', r: '' });
+await J.journeyStep('vis1', { t: now - 15 * min, p: '/monroe/', r: '' });
+let d = (await J.apiJourney(U('?vid=vis1'))).__json;
+ok('their path is recorded', d.pages === 3, d.pages);
+ok('but no phone is attached', d.phone === '', d.phone);
+ok('no thread either', d.hasThread === false, d.hasThread);
+
+await J.journeyLink('vis1', '+14255550123', 'Sarah Reed');
+d = (await J.apiJourney(U('?vid=vis1'))).__json;
+ok('linking attaches the number', d.phone === '+14255550123', d.phone);
+ok('and the name', d.name === 'Sarah Reed', d.name);
+ok('a "left their number" step lands on the line', d.steps.some((s) => s.kind === 'lead'), d.steps.map((s) => s.kind));
+
+section('The link is by phone, both directions');
+d = (await J.apiJourney(U('?phone=(425) 555-0123'))).__json;
+ok('a loose phone finds the journey', d.pages === 3, d.pages);
+ok('even though only the vid was ever stored', d.vid === 'vis1', d.vid);
+d = (await J.apiJourney(U('?phone=+14259999999'))).__json;
+ok('an unknown number is empty, not an error', d.ok === true && d.pages === 0 && d.steps.length === 0, d);
+
+section('The website path and the conversation merge into one ordered story');
+putThread({
+  phone: '+14255550123', name: 'Sarah Reed', status: 'won', statusAt: now - 2 * min,
+  appointmentAt: now - 4 * min,
+  quote: { at: now - 6 * min, total: 240, service: 'Full Detail' },
+  messages: [
+    { id: 'a', dir: 'in',  body: 'hey is that price for an SUV?', ts: now - 12 * min },
+    { id: 'b', dir: 'in',  body: 'its a 2019 pilot',             ts: now - 11 * min },
+    { id: 'c', dir: 'out', body: 'Hey Sarah — yes, $240 covers it.', ts: now - 10 * min },
+  ],
+});
+d = (await J.apiJourney(U('?phone=+14255550123'))).__json;
+const ts = d.steps.map((s) => s.t);
+ok('every step is in time order', ts.every((v, i) => i === 0 || ts[i - 1] <= v), ts);
+ok('the story starts on the website, not the text', d.steps[0].kind === 'found', d.steps[0]);
+ok('pages come before the texts', d.steps.findIndex((s) => s.kind === 'page') < d.steps.findIndex((s) => s.kind === 'them'), d.steps.map((s) => s.kind));
+ok('the quote is on the line', d.steps.some((s) => s.kind === 'quote' && /240/.test(s.detail)), d.steps.filter((s) => s.kind === 'quote'));
+ok('so is the booking and the win', d.steps.some((s) => s.kind === 'booked') && d.steps.some((s) => s.kind === 'won'));
+
+section('A run of texts is one step, not a transcript');
+const them = d.steps.filter((s) => s.kind === 'them');
+ok('two texts in a row collapse to one step', them.length === 1, them);
+ok('and it says how many', /2 times/.test(them[0].title), them[0].title);
+ok('your reply is its own step', d.steps.filter((s) => s.kind === 'you').length === 1);
+
+section('It never grows without bound');
+for (let i = 0; i < J.JOURNEY_MAX_STEPS + 25; i++) {
+  await J.journeyStep('vis2', { t: now + i * 5 * min, p: '/page-' + i, r: '' });
+}
+const big = await KV.get('journey:vis2', { type: 'json' });
+ok('steps are capped', big.steps.length === J.JOURNEY_MAX_STEPS, big.steps.length);
+ok('the cap keeps the NEWEST steps', big.steps[big.steps.length - 1].p === '/page-' + (J.JOURNEY_MAX_STEPS + 24), big.steps[big.steps.length - 1].p);
+
+section('A refresh is not four visits');
+await J.journeyStep('vis3', { t: now, p: '/', r: '' });
+await J.journeyStep('vis3', { t: now + 900, p: '/', r: '' });
+await J.journeyStep('vis3', { t: now + 2000, p: '/', r: '' });
+let v3 = await KV.get('journey:vis3', { type: 'json' });
+ok('same page inside a minute stays one step', v3.steps.length === 1, v3.steps.length);
+await J.journeyStep('vis3', { t: now + 5 * min, p: '/', r: '' });
+v3 = await KV.get('journey:vis3', { type: 'json' });
+ok('coming back later is a real second step', v3.steps.length === 2, v3.steps.length);
+
+section('Nothing here can break a lead');
+ok('no visitor id is a silent no-op', (await J.journeyLink('', '+14255550123', 'X')) === undefined);
+ok('an unknown visitor id is too', (await J.journeyLink('ghost', '+14255550123', 'X')) === undefined);
+ok('a junk id is rejected before it touches KV', J.cleanVid('../../evil key') === 'evilkey', J.cleanVid('../../evil key'));
+ok('nothing was written for the ghost', !STORE.has('journey:ghost'));
+
+section('The board reads from metadata alone');
+const board = (await J.apiJourneys(new URL('https://x.test/api/journeys?limit=30'))).__json;
+ok('every visitor is listed', board.total === 3, board.total);
+ok('newest first', board.journeys[0].at >= board.journeys[1].at, board.journeys.map((r) => r.at));
+ok('the known one carries its phone', board.journeys.some((r) => r.phone === '+14255550123'), board.journeys);
+ok('and the count of who converted', board.named === 1, board.named);
+ok('a row knows how many steps without opening the doc', board.journeys.every((r) => r.steps > 0), board.journeys);
+
+section('Pages and referrers read like English');
+ok('a slug becomes a title', J.journeyPageTitle('/ceramic-coating-snohomish-county/') === 'Ceramic Coating Snohomish County', J.journeyPageTitle('/ceramic-coating-snohomish-county/'));
+ok('the root is the home page', J.journeyPageTitle('/') === 'Home page');
+ok('a query string is dropped', J.journeyPageTitle('/monroe/?utm_source=x') === 'Monroe', J.journeyPageTitle('/monroe/?utm_source=x'));
+ok('Google is named', /Google/.test(J.journeyRefLabel('google.com')), J.journeyRefLabel('google.com'));
+ok('no referrer is not blank', J.journeyRefLabel('') === 'Came straight to you', J.journeyRefLabel(''));
+
+section('Looking at a journey never marks a conversation read');
+ok('apiJourney reads the thread through kv(), not openThreadForRead',
+  !/openThreadForRead/.test(lift('apiJourney')));
+
+console.log(`\n${pass} passed, ${fail} failed`);
+process.exit(fail ? 1 : 0);

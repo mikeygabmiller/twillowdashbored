@@ -78,7 +78,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-21·call-routing';
+const BUILD = '2026-08-24·journey';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -251,6 +251,8 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/ai/generate') return apiAiGenerate(request);
 
   // QQC quote log (Analytics → Quotes) — every quote the form has sent in.
+  if (request.method === 'GET'  && pathname === '/api/journeys')      return apiJourneys(url);
+  if (request.method === 'GET'  && pathname === '/api/journey')       return apiJourney(url);
   if (request.method === 'GET'  && pathname === '/api/quotes')        return apiQuotes(url);
   if (request.method === 'GET'  && pathname === '/api/quotes/export') return apiQuotesExport(url);
   if (request.method === 'POST' && pathname === '/api/quotes/import') return apiQuotesImport(request);
@@ -437,6 +439,9 @@ async function handleSubmit(request) {
     name, phone: clientPhone, email, location, total, vehicle, condition,
     services: serviceList, notes, type: body.type, appointment: body.appointment,
   });
+  // Put a name on whatever browsing led here. The form carries the visitor id
+  // from site-stats.js; without it this is a no-op and the lead is unaffected.
+  await journeyLink(body.vid, clientPhone, name);
 
   const ok = mikeyAlert;
   return cors(json({ ok, clientSms, mikeyAlert }, ok ? 200 : 207));
@@ -2093,6 +2098,11 @@ async function handlePixel(url, request) {
     doc.paths = trimCountMap(doc.paths, 60);
     doc.refs = trimCountMap(doc.refs, 40);
     await kv().put(analyticsDayKey(day), JSON.stringify(doc));
+    // Same ping, second job: append this page to that visitor's own path so the
+    // Journey board can replay it. `v` is only there if the browser could store
+    // an id — no id, no journey, and the counts above are unaffected either way.
+    const vid = url.searchParams.get('v');
+    if (vid) await journeyStep(vid, { t: now, p: path, r: refHost });
   } catch (e) { /* never let analytics break the pixel */ }
   return pxResponse();
 }
@@ -2121,6 +2131,206 @@ async function pixelRollup(days) {
 async function apiAnalytics(url) {
   const days = Math.min(60, Math.max(7, parseInt(url.searchParams.get('days') || '14', 10)));
   return json(await pixelRollup(days));
+}
+
+// ===========================================================================
+// Customer journeys — replaying one person's path, not counting page views
+// ---------------------------------------------------------------------------
+// The /px pixel above answers "how many". This answers "what did THIS one do":
+// Google → the ceramic page → Monroe → the quote form → they texted → booked.
+//
+// How the link is made, because it's the part that matters: site-stats.js mints
+// a random id in the visitor's own browser (localStorage `md_vid`) and sends it
+// with every page ping. It identifies nobody. When they fill out the quote or
+// booking form, that same id rides along with the lead, and THAT is the single
+// moment an anonymous path gets a name on it. No id, no journey — a visitor who
+// never gives you their number stays a stranger who read four pages.
+//
+// Storage is one doc per visitor (journey:<vid>), capped and self-expiring, so
+// this can never grow without bound. The recent-journeys board is built from KV
+// *metadata* alone — listing 500 visitors costs zero reads.
+// ===========================================================================
+const JOURNEY_TTL = 45 * 86400;   // browsing older than ~6 weeks isn't a journey
+const JOURNEY_MAX_STEPS = 40;     // a doc stays small; the oldest steps fall off
+const journeyKey = (vid) => 'journey:' + vid;
+const journeyPhoneKey = (phone) => 'journeymap:' + phone;
+
+function cleanVid(v) { return String(v || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 32); }
+
+// Everything the recent-journeys board needs, small enough to live in KV
+// metadata (1 KB cap) so the board never has to open a single doc.
+function journeyMeta(doc) {
+  const last = doc.steps[doc.steps.length - 1] || {};
+  return {
+    at: doc.lastAt || 0, first: doc.firstAt || 0, n: doc.steps.length,
+    phone: doc.phone || '', name: String(doc.name || '').slice(0, 40),
+    last: String(last.p || last.k || '').slice(0, 60),
+    ref: String((doc.steps[0] || {}).r || '').slice(0, 40),
+  };
+}
+
+async function journeyStep(vid, step) {
+  vid = cleanVid(vid);
+  if (!vid) return null;
+  const key = journeyKey(vid);
+  const doc = (await kv().get(key, { type: 'json' })) || { vid, phone: '', name: '', firstAt: step.t, lastAt: step.t, steps: [] };
+  doc.steps = doc.steps || [];
+  // A refresh, a back-button, or a second pixel fire is the same visit — moving
+  // the timestamp beats printing "Home page" four times in a row.
+  const prev = doc.steps[doc.steps.length - 1];
+  if (prev && prev.k === step.k && prev.p === step.p && step.t - prev.t < 60000) prev.t = step.t;
+  else doc.steps.push(step);
+  doc.firstAt = doc.firstAt || step.t;
+  doc.lastAt = step.t;
+  if (doc.steps.length > JOURNEY_MAX_STEPS) doc.steps = doc.steps.slice(-JOURNEY_MAX_STEPS);
+  await kv().put(key, JSON.stringify(doc), { expirationTtl: JOURNEY_TTL, metadata: journeyMeta(doc) });
+  return doc;
+}
+
+// The moment a stranger becomes a customer. Called from /submit with the id the
+// form carried. Silent on every failure — a lead must never be lost over this.
+async function journeyLink(vid, phone, name) {
+  vid = cleanVid(vid);
+  if (!vid || !phone) return;
+  try {
+    const doc = await kv().get(journeyKey(vid), { type: 'json' });
+    if (!doc) return;
+    doc.phone = phone;
+    if (name && !doc.name) doc.name = String(name).slice(0, 60);
+    doc.steps = doc.steps || [];
+    doc.lastAt = Date.now();
+    doc.steps.push({ t: doc.lastAt, k: 'lead' });
+    if (doc.steps.length > JOURNEY_MAX_STEPS) doc.steps = doc.steps.slice(-JOURNEY_MAX_STEPS);
+    await kv().put(journeyKey(vid), JSON.stringify(doc), { expirationTtl: JOURNEY_TTL, metadata: journeyMeta(doc) });
+    // Reverse lookup so a conversation can find its own journey by phone.
+    await kv().put(journeyPhoneKey(phone), vid, { expirationTtl: JOURNEY_TTL });
+  } catch (e) { /* journeys are never worth failing a lead over */ }
+}
+
+// "/ceramic-coating-snohomish-county/" → "Ceramic Coating Snohomish County".
+// The URL slugs on the marketing site are already written in plain English, so
+// un-hyphenating them beats keeping a title map that goes stale.
+function journeyPageTitle(p) {
+  const s = String(p || '/').split('?')[0].replace(/\/+$/, '');
+  if (!s || s === '') return 'Home page';
+  const seg = s.split('/').filter(Boolean).pop() || '';
+  if (!seg) return 'Home page';
+  return seg.replace(/[-_]+/g, ' ').replace(/\.html?$/i, '').replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+// Where they came from, said the way Mikey would say it.
+function journeyRefLabel(r) {
+  const h = String(r || '').replace(/^www\./, '').toLowerCase();
+  if (!h) return 'Came straight to you';
+  if (/google/.test(h)) return 'Found you on Google';
+  if (/bing|duckduckgo|yahoo|search/.test(h)) return 'Found you in search';
+  if (/facebook|fb\.|instagram|nextdoor|tiktok|yelp/.test(h)) return 'Came from ' + h.split('.')[0].replace(/\b\w/, (c) => c.toUpperCase());
+  return 'Came from ' + h;
+}
+
+// GET /api/journeys?limit=30 — the recent-journeys board. Built entirely from
+// KV list metadata, so it costs one list call and zero document reads.
+async function apiJourneys(url) {
+  const limit = Math.min(60, Math.max(5, parseInt(url.searchParams.get('limit') || '30', 10)));
+  const rows = [];
+  let cursor = undefined, guard = 0;
+  do {
+    const page = await kv().list({ prefix: 'journey:', cursor, limit: 1000 });
+    for (const k of page.keys || []) {
+      const m = k.metadata || {};
+      rows.push({
+        vid: k.name.slice('journey:'.length), at: m.at || 0, first: m.first || 0,
+        steps: m.n || 0, phone: m.phone || '', name: m.name || '',
+        last: m.last || '', ref: m.ref || '',
+      });
+    }
+    cursor = page.list_complete ? null : page.cursor;
+  } while (cursor && ++guard < 5);
+  rows.sort((a, b) => (b.at || 0) - (a.at || 0));
+  const named = rows.filter((r) => r.phone).length;
+  return json({ ok: true, journeys: rows.slice(0, limit), total: rows.length, named });
+}
+
+// GET /api/journey?phone=+1425…  (or ?vid=…) — one person's whole story, with
+// the website path and the conversation merged into a single ordered list.
+// Deliberately uses loadThread, NOT openThreadForRead: opening a thread clears
+// its unread badge, and looking at a journey must never do that.
+async function apiJourney(url) {
+  let vid = cleanVid(url.searchParams.get('vid') || '');
+  const phone = normalizePhone(url.searchParams.get('phone') || '') || '';
+  if (!vid && phone) vid = cleanVid((await kv().get(journeyPhoneKey(phone))) || '');
+  const doc = vid ? await kv().get(journeyKey(vid), { type: 'json' }) : null;
+  const who = phone || (doc && doc.phone) || '';
+
+  const steps = [];
+  let firstRef = '';
+  for (const s of (doc && doc.steps) || []) {
+    if (s.k === 'lead') {
+      steps.push({ t: s.t, kind: 'lead', title: 'Left their number', detail: 'Filled out the form on your site' });
+    } else {
+      if (!firstRef && s.r) firstRef = s.r;
+      steps.push({ t: s.t, kind: 'page', title: journeyPageTitle(s.p), detail: s.p || '/' });
+    }
+  }
+  // The very first page view is also the "how they found you" moment.
+  if (doc && doc.steps && doc.steps.length) {
+    const f = doc.steps.find((s) => s.k !== 'lead');
+    if (f) steps.push({ t: (f.t || 0) - 1, kind: 'found', title: journeyRefLabel(f.r), detail: '' });
+  }
+
+  let thread = null;
+  if (who) {
+    thread = await kv().get(threadKey(who), { type: 'json' });
+    if (thread) steps.push(...journeyThreadSteps(thread));
+  }
+  steps.sort((a, b) => (a.t || 0) - (b.t || 0));
+
+  return json({
+    ok: true, vid: vid || '', phone: who,
+    name: (thread && thread.name) || (doc && doc.name) || '',
+    hasWeb: !!(doc && (doc.steps || []).length), hasThread: !!thread,
+    pages: ((doc && doc.steps) || []).filter((s) => s.k !== 'lead').length,
+    firstAt: steps.length ? steps[0].t : 0, lastAt: steps.length ? steps[steps.length - 1].t : 0,
+    steps,
+  });
+}
+
+// The conversation side of a journey. Runs of texts in the same direction
+// collapse into one step ("They texted 3 times") — a 60-message thread drawn one
+// bubble per row is a transcript, not a story, and Mikey already has the
+// transcript one tap away.
+function journeyThreadSteps(thread) {
+  const out = [];
+  const msgs = (thread.messages || []).slice().sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  let run = null;
+  for (const m of msgs) {
+    if (run && run.dir === m.dir) { run.n++; run.last = m.ts; continue; }
+    if (run) out.push(runStep(run));
+    run = { dir: m.dir, n: 1, t: m.ts, last: m.ts, body: m.body || '' };
+  }
+  if (run) out.push(runStep(run));
+
+  if (thread.quote && thread.quote.at) {
+    out.push({ t: thread.quote.at, kind: 'quote', title: 'You sent a quote',
+      detail: (thread.quote.total ? '$' + thread.quote.total : '') + (thread.quote.service ? ' · ' + thread.quote.service : '') });
+  }
+  if (thread.appointmentAt) out.push({ t: thread.appointmentAt, kind: 'booked', title: 'Booked in', detail: '' });
+  if (thread.plan && thread.plan.startedAt) {
+    out.push({ t: thread.plan.startedAt, kind: 'plan', title: 'Started a plan',
+      detail: thread.plan.every ? 'Every ' + thread.plan.every : '' });
+  }
+  if (thread.status === 'won' && thread.statusAt) out.push({ t: thread.statusAt, kind: 'won', title: 'Became a customer', detail: '' });
+  return out;
+
+  function runStep(r) {
+    const them = r.dir === 'in';
+    return {
+      t: r.t, kind: them ? 'them' : 'you',
+      title: them ? (r.n === 1 ? 'They texted you' : 'They texted ' + r.n + ' times')
+                  : (r.n === 1 ? 'You replied' : 'You sent ' + r.n + ' texts'),
+      detail: String(r.body || '').replace(/\s+/g, ' ').slice(0, 120),
+    };
+  }
 }
 
 // ===========================================================================
