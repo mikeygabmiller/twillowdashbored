@@ -30,7 +30,7 @@ const kv = {
 globalThis.fetch = async () => ({ ok: false, status: 404, text: async () => 'no', json: async () => ({}) });
 
 const M = new Function('__env__', src + '\n; ENV = __env__; return Object.assign({' + EXPORTS.join(',') +
-  '}, {__resetCfg(){ CFG_CACHE = null; }});')({
+  '}, {__resetCfg(){ resetInvocationCaches(); }});')({
   MESSAGES: kv, TWILIO_ACCOUNT_SID: 'AC1', TWILIO_AUTH_TOKEN: 't',
   TWILIO_FROM: '+14256007897', MIKEY_PHONE: '+13607975831', DETECT_DISABLED: '1',
 });

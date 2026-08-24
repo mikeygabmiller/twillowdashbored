@@ -37,7 +37,7 @@ globalThis.fetch = async (u, opts) => {
 };
 
 const M = new Function('__env__', src + '\n; ENV = __env__; return Object.assign({' + EXPORTS.join(',') +
-  '}, {__resetCfg(){ CFG_CACHE = null; BCFG_CACHE = null; }});')({
+  '}, {__resetCfg(){ resetInvocationCaches(); BCFG_CACHE = null; }});')({
   MESSAGES: kv, TWILIO_ACCOUNT_SID: 'AC1', TWILIO_AUTH_TOKEN: 't',
   TWILIO_FROM: '+14256007897', MIKEY_PHONE: '+13607975831',
   RESEND_API_KEY: 'r', ALERT_EMAIL: 'a@b.c', DETECT_DISABLED: '1',

@@ -48,14 +48,14 @@ const NAMES = [
   'promIcsAttachment', 'promWhenLabel', 'promMadeEmail', 'promDueEmail',
   'icsEscape', 'icsStamp', 'b64',
   // shared helpers the above lean on
-  'jdStr', 'jdIsDate', 'bkLaEpoch', 'bkLaOffsetMin', 'localDateStr', 'localTimeHm',
+  'jdStr', 'jdIsDate', 'bkLaEpoch', 'bkLaOffsetMin', 'tzFmt', 'localDateStr', 'localTimeHm',
   'humanAgo', 'genId', 'htmlEsc', 'mailLines', 'mailShell', 'mailCard', 'mailLabel',
   'mailShout', 'mailBtn', 'mailBody',
 ];
 // eslint-disable-next-line no-new-func
 new Function('ctx', 'ENV', 'publicBase',
   NAMES.map(lift).join('\n') + '\n' +
-  ['MAILC', 'MAILF', 'PROM_ME_RE', 'PROM_ACT_RE'].map(liftConst).join('\n') + '\n' +
+  ['MAILC', 'MAILF', 'TZFMT', 'PROM_ME_RE', 'PROM_ACT_RE'].map(liftConst).join('\n') + '\n' +
   NAMES.map((n) => `ctx.${n} = ${n};`).join(''),
 )(ctx, { ALERT_EMAIL: 'mikey@example.com' }, () => 'https://dash.example.com');
 
