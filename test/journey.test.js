@@ -64,19 +64,24 @@ const ctx = {
     return d.length === 10 ? '+1' + d : '';
   },
   json: (o) => ({ __json: o }),
+  Response: class { constructor(b, i) { this.body = b; this.status = (i || {}).status; } },
 };
 
 const CODE = [
   constant('JOURNEY_TTL'), constant('JOURNEY_MAX_STEPS'),
   constant('journeyKey'), constant('journeyPhoneKey'),
-  lift('cleanVid'), lift('journeyMeta'), lift('journeyStep'), lift('journeyLink'),
-  lift('journeyPageTitle'), lift('journeyRefLabel'),
+  constant('PX_EVENT_KINDS'),
+  lift('cleanVid'), lift('journeyMeta'), lift('journeyHotLabel'),
+  lift('blankJourney'), lift('appendStep'), lift('journeyStep'), lift('journeyLink'),
+  lift('handlePixelEvents'), lift('pxOk'),
+  lift('journeyPageTitle'), lift('journeyRefLabel'), lift('journeyReadStep'),
   lift('apiJourneys'), lift('apiJourney'), lift('journeyThreadSteps'),
 ].join('\n\n');
 
 const factory = new Function(...Object.keys(ctx), CODE + `
-  return { journeyStep, journeyLink, journeyPageTitle, journeyRefLabel,
-           apiJourneys, apiJourney, journeyThreadSteps, cleanVid, JOURNEY_MAX_STEPS };`);
+  return { journeyStep, journeyLink, journeyPageTitle, journeyRefLabel, journeyReadStep,
+           apiJourneys, apiJourney, journeyThreadSteps, handlePixelEvents,
+           cleanVid, JOURNEY_MAX_STEPS };`);
 const J = factory(...Object.values(ctx));
 
 // The fake thread store the lifted apiJourney reads through kv().get(threadKey()).
@@ -180,6 +185,76 @@ ok('no referrer is not blank', J.journeyRefLabel('') === 'Came straight to you',
 section('Looking at a journey never marks a conversation read');
 ok('apiJourney reads the thread through kv(), not openThreadForRead',
   !/openThreadForRead/.test(lift('apiJourney')));
+
+section('Every action they take lands on the line');
+const beacon = (v, p, e) => J.handlePixelEvents({ text: async () => JSON.stringify({ v, p, e }) });
+const T = now - 30 * min;   // a real session, not the future — see the clock-skew test below
+await beacon('act1', '/', [
+  { t: T,          k: 'v', l: 'Landed on the page', d: 'google.com' },
+  { t: T + 4000,   k: 's', l: 'Quick Quote Calculator' },
+  { t: T + 9000,   k: 'c', l: 'Get My Instant Quote' },
+  { t: T + 15000,  k: 'f', l: 'Quote form — step 2', d: 'Your vehicle' },
+  { t: T + 40000,  k: 'c', l: 'Tapped to CALL', d: '(425) 600-7897' },
+  { t: T + 50000,  k: 'x', l: 'Left the page', d: '92s · 78% down' },
+]);
+d = (await J.apiJourney(U('?vid=act1'))).__json;
+const kinds = d.steps.map((x) => x.kind);
+ok('the landing is a page step, not a duplicate', kinds.filter((k) => k === 'page').length === 1, kinds);
+ok('a section they scrolled to is recorded', d.steps.some((x) => x.kind === 'section' && /Quick Quote/.test(x.title)), d.steps);
+ok('a button they pushed is recorded', d.steps.some((x) => /Pushed "Get My Instant Quote"/.test(x.title)), d.steps.map((x) => x.title));
+ok('a form step is recorded', d.steps.some((x) => x.kind === 'form' && /step 2/.test(x.title)));
+ok('a tap-to-call is called out as its own thing', d.steps.some((x) => x.kind === 'contact' && /CALL/.test(x.title)));
+ok('the exit carries time and scroll depth', d.steps.some((x) => x.kind === 'exit' && /78% down/.test(x.detail)), d.steps.filter((x) => x.kind === 'exit'));
+ok('actions are counted apart from pages', d.pages === 1 && d.acts === 5, { pages: d.pages, acts: d.acts });
+ok('every action knows which page it happened on', d.steps.filter((x) => x.kind !== 'found').every((x) => x.page !== undefined));
+
+section('The GIF ping and the event POST do not double-count a landing');
+await J.journeyStep('act2', { t: T, p: '/monroe/', r: 'google.com' });
+await beacon('act2', '/monroe/', [{ t: T + 500, k: 'v', l: 'Landed on the page', d: 'google.com' }]);
+let a2 = await KV.get('journey:act2', { type: 'json' });
+ok('one landing, not two', a2.steps.length === 1, a2.steps);
+await beacon('act2', '/monroe/', [{ t: T + 400000, k: 'v', l: 'Landed on the page', d: '' }]);
+a2 = await KV.get('journey:act2', { type: 'json' });
+ok('but coming back later is a real second visit', a2.steps.length === 2, a2.steps.length);
+
+section('A batch is one write, whatever is in it');
+let writes = 0;
+const realPut = KV.put.bind(KV);
+KV.put = async (...a) => { writes++; return realPut(...a); };
+await beacon('act3', '/', Array.from({ length: 20 }, (_, i) => ({ t: T + i * 1000, k: 'c', l: 'Button ' + i })));
+KV.put = realPut;
+ok('twenty events cost one KV write', writes === 1, writes);
+ok('and all twenty are there', (await KV.get('journey:act3', { type: 'json' })).steps.length === 20);
+
+section('A public endpoint takes nothing on faith');
+await beacon('act4', '/', [{ t: T, k: 'evil', l: 'not a real kind' }]);
+ok('an unknown event kind is dropped', !STORE.has('journey:act4') || (await KV.get('journey:act4', { type: 'json' })).steps.length === 0);
+await beacon('act5', '/', [{ t: T, k: 'c', l: 'x'.repeat(500), d: 'y'.repeat(500) }]);
+const a5 = (await KV.get('journey:act5', { type: 'json' })).steps[0];
+ok('an oversized label is clamped', a5.l.length === 60, a5.l.length);
+ok('so is the detail', a5.d.length === 80, a5.d.length);
+await beacon('act6', '/', Array.from({ length: 300 }, (_, i) => ({ t: T + i, k: 'c', l: 'spam' + i })));
+ok('a flood is capped at 80 per batch', (await KV.get('journey:act6', { type: 'json' })).steps.length === 80,
+  (await KV.get('journey:act6', { type: 'json' })).steps.length);
+await beacon('act7', '/', [{ t: now + 400 * 86400000, k: 'c', l: 'from the future' }]);
+const a7 = (await KV.get('journey:act7', { type: 'json' })).steps[0];
+ok('a skewed clock is pulled back to now', Math.abs(a7.t - Date.now()) < 60000, new Date(a7.t).toISOString());
+ok('a missing visitor id writes nothing', await (async () => {
+  const before = STORE.size;
+  await beacon('', '/', [{ t: T, k: 'c', l: 'x' }]);
+  return STORE.size === before;
+})());
+ok('junk that is not JSON is survivable', await (async () => {
+  try { await J.handlePixelEvents({ text: async () => 'not json at all' }); return true; } catch (e) { return false; }
+})());
+
+section('The board can describe a path without opening it');
+const board2 = (await J.apiJourneys(new URL('https://x.test/api/journeys?limit=60'))).__json;
+const act1 = board2.journeys.find((r) => r.vid === 'act1');
+ok('it knows pages and actions separately', act1.pages === 1 && act1.acts === 5, act1);
+ok('and surfaces the loudest thing that happened', /Tapped to CALL/.test(act1.hot), act1.hot);
+const plain = board2.journeys.find((r) => r.vid === 'vis2');
+ok('a path with nothing loud on it has no badge', !plain.hot, plain.hot);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

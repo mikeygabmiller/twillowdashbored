@@ -1911,7 +1911,8 @@
   .jn-av{flex:none;width:32px;height:32px;border-radius:50%;background:var(--panel2);color:var(--muted2);display:flex;align-items:center;justify-content:center}
   .jn-card.known .jn-av{background:var(--accent-soft);color:var(--accent-text)}
   .jn-meta{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
-  .jn-meta b{font-size:14px;font-weight:800}
+  .jn-name{display:flex;align-items:center;min-width:0}
+  .jn-meta b{font-size:14px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .jn-meta small{font-size:11.5px;color:var(--muted2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .jn-ago{flex:none;font-size:11px;color:var(--muted2);font-weight:700}
   .jn-chev{flex:none;color:var(--muted2);display:flex}
@@ -1926,7 +1927,21 @@
      the work without reading a word. */
   .jn-k-t .jn-dot,.jn-k-l .jn-dot{background:rgba(96,165,250,.16);border-color:rgba(96,165,250,.4);color:#60a5fa}
   .jn-k-y .jn-dot{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text)}
-  .jn-k-q .jn-dot,.jn-k-w .jn-dot,.jn-k-b .jn-dot{background:rgba(52,211,153,.16);border-color:rgba(52,211,153,.4);color:#34d399}
+  .jn-k-q .jn-dot,.jn-k-w .jn-dot,.jn-k-b .jn-dot,.jn-k-c .jn-dot{background:rgba(52,211,153,.16);border-color:rgba(52,211,153,.4);color:#34d399}
+  .jn-k-a .jn-dot{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text)}
+  .jn-k-s .jn-dot,.jn-k-e .jn-dot{background:var(--panel2);border-color:var(--line);color:var(--muted2)}
+  .jn-k-e .jn-t{color:var(--muted2);font-weight:700}
+  /* In-page actions are indented under the page they happened on, with a lighter
+     dot, so a block reads "this page — and here's what they did on it". */
+  .jn-step.jn-in{padding-left:22px}
+  .jn-step.jn-in .jn-dot{width:20px;height:20px;margin-top:2px}
+  .jn-step.jn-in .jn-t{font-size:12.5px;font-weight:700}
+  .jn-line::before{left:12px}
+  .jn-sum{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted2);padding:10px 0 0 2px}
+  .jn-acts{display:flex;flex-direction:column;gap:7px;margin-top:8px}
+  .jn-acts .btn{width:100%;justify-content:center}
+  .jn-hot{flex:none;display:inline-block;font-style:normal;font-size:10px;font-weight:900;letter-spacing:.04em;text-transform:uppercase;
+    background:rgba(52,211,153,.16);color:#34d399;border-radius:999px;padding:2px 7px;margin-left:7px;vertical-align:1px}
   .jn-body{flex:1;min-width:0;padding-top:3px}
   .jn-t{font-size:13.5px;font-weight:800}
   .jn-d{font-size:12.5px;color:var(--muted);line-height:1.45;word-break:break-word}
@@ -3052,7 +3067,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-24·journey";
+  var APP_BUILD="2026-08-24·actions";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -8554,7 +8569,8 @@
     web:{range:"7d",data:null,loading:false,err:"",settings:false,status:null,ai:"",aiRange:"",aiLoading:false,savingGa:false,savingCl:false},
     // `steps` is a per-visitor cache: the board is one cheap list call, but each
     // replay is its own fetch, so re-collapsing a card must not re-fetch it.
-    journey:{list:null,total:0,named:0,loading:false,err:"",open:"",steps:{}},
+    journey:{list:null,total:0,named:0,loading:false,err:"",open:"",steps:{},
+             ai:"",aiScope:"",aiLoading:false,aiErr:""},
     quotes:{months:6,data:null,loading:false,err:""},
     map:{mode:"area",area:{size:9,radius:12,metric:"rev",months:12},
          rank:{data:null,loading:false,err:"",setup:false,saving:false,
@@ -8897,9 +8913,15 @@
   // The board lists recent visitors newest-first; tap one to expand it in place
   // (no second screen — the whole point is scanning several in a row).
   // ============================================================
-  var JN_ICON={found:["search","f"],page:["file-text","p"],lead:["clipboard-list","l"],
+  var JN_ICON={found:["search","f"],page:["file-text","p"],section:["chevron-down","s"],
+    click:["target","a"],contact:["phone","c"],form:["clipboard-list","a"],
+    exit:["log-out","e"],lead:["clipboard-list","l"],
     them:["message-square","t"],you:["send","y"],quote:["dollar","q"],
     booked:["calendar-days","b"],plan:["refresh-cw","b"],won:["check-circle","w"]};
+  // A page starts a new block; everything after it happened INSIDE that page, so
+  // it's indented under it. Without this the timeline reads as one flat list and
+  // you can't tell which page a button was on.
+  var JN_NESTED={section:1,click:1,contact:1,form:1,exit:1};
   function jnLoadList(force){
     var J=GROW.journey;
     if(J.loading)return;
@@ -8930,7 +8952,8 @@
   }
   function jnStepRow(s){
     var k=JN_ICON[s.kind]||["file-text","p"];
-    return '<div class="jn-step jn-k-'+k[1]+'">'+
+    var nest=JN_NESTED[s.kind]?" jn-in":"";
+    return '<div class="jn-step jn-k-'+k[1]+nest+'">'+
       '<span class="jn-dot">'+ic(k[0],13)+"</span>"+
       '<div class="jn-body"><div class="jn-t">'+esc(s.title||"")+"</div>"+
       (s.detail?'<div class="jn-d">'+esc(s.detail)+"</div>":"")+
@@ -8941,10 +8964,16 @@
     if(!d||d.error)return '<div class="jn-load">'+esc((d&&d.error)||"Couldn't load")+"</div>";
     var steps=d.steps||[];
     if(!steps.length)return '<div class="jn-load">Nothing recorded yet.</div>';
-    var h='<div class="jn-line">';
+    var mins=Math.max(1,Math.round(((d.lastAt||0)-(d.firstAt||0))/60000));
+    var h='<div class="jn-sum">'+(d.pages||0)+(d.pages===1?" page":" pages")+" · "+
+      (d.acts||0)+(d.acts===1?" action":" actions")+" · "+mins+" min</div>";
+    h+='<div class="jn-line">';
     steps.forEach(function(s){h+=jnStepRow(s)});
     h+="</div>";
-    if(d.phone)h+='<button class="btn ic-btn jn-open" data-jn-phone="'+esc(d.phone)+'" style="width:100%;justify-content:center;margin-top:8px">'+ic("message-square",15)+"<span>Open the conversation</span></button>";
+    var btns="";
+    if(d.phone)btns+='<button class="btn ic-btn" data-jn-phone="'+esc(d.phone)+'">'+ic("message-square",15)+"<span>Open the conversation</span></button>";
+    btns+='<button class="btn ic-btn" data-jn-ai="'+esc(d.vid||"")+'">'+ic("sparkles",15)+"<span>What were they after?</span></button>";
+    h+='<div class="jn-acts">'+btns+"</div>";
     return h;
   }
   function growJourney(box){
@@ -8962,14 +8991,20 @@
     }
     h+='<div class="wa-tiles"><div class="wa-tile"><div class="t-l">'+ic("users",12)+' Visitors tracked</div><div class="t-v">'+(J.total||rows.length)+"</div></div>"+
        '<div class="wa-tile"><div class="t-l">'+ic("clipboard-list",12)+' Left their number</div><div class="t-v">'+(J.named||0)+"</div></div></div>";
+    // The whole point of recording behaviour rather than counting it: ask what
+    // the pattern IS. One button, reading every path on the board at once.
+    h+='<button class="btn ic-btn" id="jnAiAll" style="width:100%;justify-content:center;margin:2px 0 10px">'+ic("sparkles",15)+
+       "<span>"+(J.aiLoading&&J.aiScope==="all"?"Reading what everyone did…":"AI read — what are people actually doing?")+"</span></button>";
+    if(J.aiErr)h+='<div class="wa-ins bad"><span class="i-ic">'+ic("alert",15)+"</span><div>"+esc(J.aiErr)+"</div></div>";
+    if(J.ai)h+='<div class="wa-panel"><div class="p-t">'+ic("bot",14)+" AI read <small>"+esc(J.aiScope==="one"?"this visitor":"across "+(J.aiVisitors||0)+" visitors")+"</small></div><div class=\"wa-ai\">"+esc(J.ai)+"</div></div>";
     h+='<div class="gr-sec"><span class="gs-ic">'+ic("route",16)+"</span>Recent visitors</div>";
     rows.forEach(function(r){
       var open=J.open===r.vid;
       h+='<div class="jn-card'+(open?" on":"")+(r.phone?" known":"")+'">';
       h+='<button class="jn-head" data-jn-vid="'+esc(r.vid)+'">'+
         '<span class="jn-av">'+ic(r.phone?"user":"activity",15)+"</span>"+
-        '<span class="jn-meta"><b>'+esc(jnWho(r))+"</b>"+
-        "<small>"+esc(r.steps+(r.steps===1?" step":" steps"))+" · "+esc(r.last?("last: "+r.last):"")+"</small></span>"+
+        '<span class="jn-meta"><span class="jn-name"><b>'+esc(jnWho(r))+"</b>"+(r.hot?'<i class="jn-hot">'+esc(r.hot)+"</i>":"")+"</span>"+
+        "<small>"+esc((r.pages||0)+" pages · "+(r.acts||0)+" actions")+(r.last?" · "+esc(r.last):"")+"</small></span>"+
         '<span class="jn-ago">'+esc(r.at?ago(r.at):"")+"</span>"+
         '<span class="jn-chev">'+ic(open?"chevron-up":"chevron-down",15)+"</span></button>";
       if(open)h+='<div class="jn-detail">'+jnTimelineHtml(J.steps[r.vid])+"</div>";
@@ -8977,7 +9012,30 @@
     });
     box.innerHTML=h;jnWire(box);
   }
+  // One call for both scopes: no vid means "read everyone on the board", a vid
+  // means "read this one visit". Same endpoint, same panel.
+  function jnAsk(vid){
+    var J=GROW.journey;
+    if(J.aiLoading)return;
+    J.aiLoading=true;J.aiErr="";J.ai="";J.aiScope=vid?"one":"all";growRender();
+    post("/api/journey/ai",{vid:vid||""}).then(function(d){
+      J.aiLoading=false;
+      if(d&&d.ok){
+        J.ai=d.empty?"Not enough recorded yet to say anything useful. Give it a few days of visits.":(d.read||"");
+        J.aiVisitors=d.visitors||0;
+      }else{
+        J.aiErr=(d&&d.error==="ai_not_configured")?"The AI key isn't set on the Worker yet.":((d&&d.error)||"Couldn't read them");
+      }
+      if(el("growApp").classList.contains("show")&&GROW.view==="journey")growRender();
+    }).catch(function(){J.aiLoading=false;J.aiErr="Network error";
+      if(el("growApp").classList.contains("show")&&GROW.view==="journey")growRender();});
+  }
   function jnWire(box){
+    var all=box.querySelector("#jnAiAll");
+    if(all)all.onclick=function(){vibrate(6);jnAsk("")};
+    Array.prototype.forEach.call(box.querySelectorAll("[data-jn-ai]"),function(b){
+      b.onclick=function(){vibrate(6);jnAsk(b.getAttribute("data-jn-ai"));el("grBody").scrollTop=0};
+    });
     Array.prototype.forEach.call(box.querySelectorAll("[data-jn-vid]"),function(b){
       b.onclick=function(){
         var v=b.getAttribute("data-jn-vid");vibrate(6);
