@@ -1901,6 +1901,36 @@
   .wa-no{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;border-radius:999px;padding:3px 9px;background:var(--panel2);color:var(--muted2)}
   .wa-hint{color:var(--muted2);font-size:12px;line-height:1.5;margin:4px 0 8px}
   .wa-ai{white-space:pre-wrap;font-size:13.5px;line-height:1.65}
+  /* ---- Customer journey (Analytics → Journey) ----
+     The timeline is one continuous rail with the dots sitting ON it, so a run of
+     steps reads as a single path rather than a stack of cards. The rail is drawn
+     on .jn-line (not per-step) so it can't gap between rows. */
+  .jn-card{background:var(--panel);border:1px solid var(--line2);border-radius:15px;margin-bottom:9px;overflow:hidden}
+  .jn-card.on{border-color:var(--accent)}
+  .jn-head{display:flex;align-items:center;gap:11px;width:100%;background:none;border:0;padding:12px 13px;text-align:left;color:inherit;cursor:pointer;font:inherit}
+  .jn-av{flex:none;width:32px;height:32px;border-radius:50%;background:var(--panel2);color:var(--muted2);display:flex;align-items:center;justify-content:center}
+  .jn-card.known .jn-av{background:var(--accent-soft);color:var(--accent-text)}
+  .jn-meta{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+  .jn-meta b{font-size:14px;font-weight:800}
+  .jn-meta small{font-size:11.5px;color:var(--muted2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .jn-ago{flex:none;font-size:11px;color:var(--muted2);font-weight:700}
+  .jn-chev{flex:none;color:var(--muted2);display:flex}
+  .jn-detail{padding:2px 13px 13px;border-top:1px solid var(--line)}
+  .jn-load{color:var(--muted2);font-size:13px;padding:12px 2px;display:flex;align-items:center;gap:8px}
+  .jn-line{position:relative;padding:12px 0 2px 0}
+  .jn-line::before{content:"";position:absolute;left:12px;top:20px;bottom:18px;width:2px;background:var(--line2)}
+  .jn-step{position:relative;display:flex;gap:12px;padding:0 0 14px 0}
+  .jn-dot{position:relative;z-index:1;flex:none;width:26px;height:26px;border-radius:50%;background:var(--panel2);border:1px solid var(--line2);color:var(--muted2);display:flex;align-items:center;justify-content:center}
+  /* Colour carries the meaning: they act (blue), you act (accent), money and
+     the win stand out (green). Reading top to bottom you can see who was doing
+     the work without reading a word. */
+  .jn-k-t .jn-dot,.jn-k-l .jn-dot{background:rgba(96,165,250,.16);border-color:rgba(96,165,250,.4);color:#60a5fa}
+  .jn-k-y .jn-dot{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text)}
+  .jn-k-q .jn-dot,.jn-k-w .jn-dot,.jn-k-b .jn-dot{background:rgba(52,211,153,.16);border-color:rgba(52,211,153,.4);color:#34d399}
+  .jn-body{flex:1;min-width:0;padding-top:3px}
+  .jn-t{font-size:13.5px;font-weight:800}
+  .jn-d{font-size:12.5px;color:var(--muted);line-height:1.45;word-break:break-word}
+  .jn-when{font-size:11px;color:var(--muted2);margin-top:2px}
   /* ---- Deep analytics (Analytics → Customers / Profit / Pulse) ---- */
   .iv-hero{background:var(--panel);border:1px solid var(--line2);border-radius:16px;padding:15px 16px;margin-bottom:12px}
   .iv-hero .h-k{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted2)}
@@ -2929,6 +2959,7 @@
     <button data-gv="profit"><span class="e" data-ic="trending-up" data-ic-size="20"></span>Profit</button>
     <button data-gv="pulse"><span class="e" data-ic="activity" data-ic-size="20"></span>Pulse</button>
     <button data-gv="analytics"><span class="e" data-ic="bar-chart" data-ic-size="20"></span>Website</button>
+    <button data-gv="journey"><span class="e" data-ic="route" data-ic-size="20"></span>Journey</button>
     <button data-gv="map"><span class="e" data-ic="pin" data-ic-size="20"></span>Map</button>
   </nav>
 </div>
@@ -3021,7 +3052,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-24·cpu-budget";
+  var APP_BUILD="2026-08-24·journey";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4112,6 +4143,7 @@
     {id:"owed",t:"Owed to you",g:"Money",ic:"alert",k:"unpaid outstanding debt chase overdue",run:function(){openMoney()}},
     // — insight
     {id:"analytics",t:"Analytics",g:"Insights",ic:"bar-chart",k:"stats numbers reports overview business",run:function(){openAnalytics("overview")}},
+    {id:"journey",t:"Customer journey",g:"Insights",ic:"route",k:"path pages visited what they did before texting replay story",run:function(){openAnalytics("journey")}},
     {id:"website",t:"Website analytics",g:"Insights",ic:"activity",k:"traffic visitors ga4 clarity seo google site stats",run:function(){openAnalytics("analytics")}},
     {id:"quotes",t:"Quotes over time",g:"Insights",ic:"clipboard-list",k:"qqc quote form submissions leads history value average month",run:function(){openAnalytics("quotes")}},
     {id:"customers",t:"Who your customers are",g:"Insights",ic:"users",k:"repeat churn slipping loyal segments",run:function(){openAnalytics("customers")}},
@@ -8520,6 +8552,9 @@
   // ============================================================
   var GROW={view:"overview",wired:false,
     web:{range:"7d",data:null,loading:false,err:"",settings:false,status:null,ai:"",aiRange:"",aiLoading:false,savingGa:false,savingCl:false},
+    // `steps` is a per-visitor cache: the board is one cheap list call, but each
+    // replay is its own fetch, so re-collapsing a card must not re-fetch it.
+    journey:{list:null,total:0,named:0,loading:false,err:"",open:"",steps:{}},
     quotes:{months:6,data:null,loading:false,err:""},
     map:{mode:"area",area:{size:9,radius:12,metric:"rev",months:12},
          rank:{data:null,loading:false,err:"",setup:false,saving:false,
@@ -8539,6 +8574,7 @@
     profit:["Profit","What each job is really worth"],
     pulse:["Pulse","Where the month lands, and what just changed"],
     analytics:["Website","Your website, decoded — live"],
+    journey:["Journey","What one customer actually did"],
     map:["Map","Where the work and the rankings are"]};
   // view is optional: the Stats tab opens straight onto the website numbers,
   // which is what "check my stats" means day to day. Everything else lands on
@@ -8573,7 +8609,7 @@
     if(nv){var mark=function(){nv.classList.toggle("ovf",nv.scrollWidth>nv.clientWidth+1)};
       mark();setTimeout(mark,60);window.addEventListener("resize",mark);}
     Array.prototype.forEach.call(el("grNav").querySelectorAll("[data-gv]"),function(b){b.onclick=function(){vibrate(6);growSet(b.getAttribute("data-gv"))}});
-    el("grRefresh").onclick=function(){vibrate(6);if(GROW.view==="analytics"){growLoadWeb(true)}else if(GROW.view==="quotes"){GROW.quotes.data=null;growLoadQuotes()}else if(GROW.view==="map"){if(GROW.map.mode==="rank")ggLoadRank(true);else growRender();}else if(IV[GROW.view]){ivLoad(GROW.view,true)}else{refreshThreads();fetchInsights();api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.entries=d.entries||[];MO.today=d.today;MO.week=d.week;MO.allTime=d.allTime}growRender()});}toast("Refreshed")};
+    el("grRefresh").onclick=function(){vibrate(6);if(GROW.view==="analytics"){growLoadWeb(true)}else if(GROW.view==="journey"){GROW.journey.steps={};jnLoadList(true)}else if(GROW.view==="quotes"){GROW.quotes.data=null;growLoadQuotes()}else if(GROW.view==="map"){if(GROW.map.mode==="rank")ggLoadRank(true);else growRender();}else if(IV[GROW.view]){ivLoad(GROW.view,true)}else{refreshThreads();fetchInsights();api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.entries=d.entries||[];MO.today=d.today;MO.week=d.week;MO.allTime=d.allTime}growRender()});}toast("Refreshed")};
   }
   function growRender(){
     var meta=GROW_VIEWS[GROW.view]||GROW_VIEWS.overview;
@@ -8581,6 +8617,7 @@
     el("grRefresh").style.visibility="visible";
     var b=el("grBody");
     if(GROW.view==="analytics")return growAnalytics(b);
+    if(GROW.view==="journey")return growJourney(b);
     if(GROW.view==="quotes")return growQuotes(b);
     if(GROW.view==="map")return growMap(b);
     if(GROW.view==="customers")return ivRender(b,"customers");
@@ -8851,6 +8888,111 @@
     h+="</div>";
     return h;
   }
+
+  // ============================================================
+  // Analytics → Journey — one customer's whole story, in order.
+  // Every other screen here is a number. This one is a person: the pages they
+  // read before they ever said a word, the moment they left their number, and
+  // the conversation that followed, on a single vertical line.
+  // The board lists recent visitors newest-first; tap one to expand it in place
+  // (no second screen — the whole point is scanning several in a row).
+  // ============================================================
+  var JN_ICON={found:["search","f"],page:["file-text","p"],lead:["clipboard-list","l"],
+    them:["message-square","t"],you:["send","y"],quote:["dollar","q"],
+    booked:["calendar-days","b"],plan:["refresh-cw","b"],won:["check-circle","w"]};
+  function jnLoadList(force){
+    var J=GROW.journey;
+    if(J.loading)return;
+    if(J.list&&!force)return;
+    J.loading=true;J.err="";growRender();
+    api("/api/journeys?limit=40").then(function(d){
+      J.loading=false;
+      if(d&&d.ok){J.list=d.journeys||[];J.total=d.total||0;J.named=d.named||0}else{J.err=(d&&d.error)||"Couldn't load"}
+      if(el("growApp").classList.contains("show")&&GROW.view==="journey")growRender();
+    }).catch(function(){J.loading=false;J.err="Network error";
+      if(el("growApp").classList.contains("show")&&GROW.view==="journey")growRender();});
+  }
+  function jnLoadOne(vid){
+    var J=GROW.journey;
+    if(J.steps[vid])return;
+    J.steps[vid]="loading";
+    api("/api/journey?vid="+encodeURIComponent(vid)).then(function(d){
+      J.steps[vid]=(d&&d.ok)?d:{error:(d&&d.error)||"Couldn't load"};
+      if(el("growApp").classList.contains("show")&&GROW.view==="journey")growRender();
+    }).catch(function(){J.steps[vid]={error:"Network error"};
+      if(el("growApp").classList.contains("show")&&GROW.view==="journey")growRender();});
+  }
+  // A stranger still deserves a name in the list. "Someone" beats a hex string.
+  function jnWho(r){
+    if(r.name)return r.name;
+    if(r.phone)return prettyPhone(r.phone);
+    return "Someone new";
+  }
+  function jnStepRow(s){
+    var k=JN_ICON[s.kind]||["file-text","p"];
+    return '<div class="jn-step jn-k-'+k[1]+'">'+
+      '<span class="jn-dot">'+ic(k[0],13)+"</span>"+
+      '<div class="jn-body"><div class="jn-t">'+esc(s.title||"")+"</div>"+
+      (s.detail?'<div class="jn-d">'+esc(s.detail)+"</div>":"")+
+      '<div class="jn-when">'+esc(fmtFull(s.t))+"</div></div></div>";
+  }
+  function jnTimelineHtml(d){
+    if(d==="loading")return '<div class="jn-load"><span class="spin"></span> Replaying…</div>';
+    if(!d||d.error)return '<div class="jn-load">'+esc((d&&d.error)||"Couldn't load")+"</div>";
+    var steps=d.steps||[];
+    if(!steps.length)return '<div class="jn-load">Nothing recorded yet.</div>';
+    var h='<div class="jn-line">';
+    steps.forEach(function(s){h+=jnStepRow(s)});
+    h+="</div>";
+    if(d.phone)h+='<button class="btn ic-btn jn-open" data-jn-phone="'+esc(d.phone)+'" style="width:100%;justify-content:center;margin-top:8px">'+ic("message-square",15)+"<span>Open the conversation</span></button>";
+    return h;
+  }
+  function growJourney(box){
+    box=box||el("grBody");
+    var J=GROW.journey;
+    if(!J.list&&!J.loading&&!J.err){jnLoadList(false);return}
+    var h="";
+    h+='<div class="gr-hero gr-hero-web"><h2>What they actually did</h2><p>Every page someone read before they ever texted you — and everything that happened after — on one line. Tap a name to replay it.</p></div>';
+    if(J.loading&&!J.list){box.innerHTML=h+'<div class="wc-empty"><span class="spin"></span> Loading journeys…</div>';return jnWire(box)}
+    if(J.err&&!J.list){box.innerHTML=h+'<div class="wc-empty">'+ic("info",15)+" "+esc(J.err)+"</div>";return jnWire(box)}
+    var rows=J.list||[];
+    if(!rows.length){
+      h+='<div class="wc-empty">'+ic("info",15)+' No journeys yet. They start showing up as soon as the site sends its next visit — give it a day.</div>';
+      box.innerHTML=h;return jnWire(box);
+    }
+    h+='<div class="wa-tiles"><div class="wa-tile"><div class="t-l">'+ic("users",12)+' Visitors tracked</div><div class="t-v">'+(J.total||rows.length)+"</div></div>"+
+       '<div class="wa-tile"><div class="t-l">'+ic("clipboard-list",12)+' Left their number</div><div class="t-v">'+(J.named||0)+"</div></div></div>";
+    h+='<div class="gr-sec"><span class="gs-ic">'+ic("route",16)+"</span>Recent visitors</div>";
+    rows.forEach(function(r){
+      var open=J.open===r.vid;
+      h+='<div class="jn-card'+(open?" on":"")+(r.phone?" known":"")+'">';
+      h+='<button class="jn-head" data-jn-vid="'+esc(r.vid)+'">'+
+        '<span class="jn-av">'+ic(r.phone?"user":"activity",15)+"</span>"+
+        '<span class="jn-meta"><b>'+esc(jnWho(r))+"</b>"+
+        "<small>"+esc(r.steps+(r.steps===1?" step":" steps"))+" · "+esc(r.last?("last: "+r.last):"")+"</small></span>"+
+        '<span class="jn-ago">'+esc(r.at?ago(r.at):"")+"</span>"+
+        '<span class="jn-chev">'+ic(open?"chevron-up":"chevron-down",15)+"</span></button>";
+      if(open)h+='<div class="jn-detail">'+jnTimelineHtml(J.steps[r.vid])+"</div>";
+      h+="</div>";
+    });
+    box.innerHTML=h;jnWire(box);
+  }
+  function jnWire(box){
+    Array.prototype.forEach.call(box.querySelectorAll("[data-jn-vid]"),function(b){
+      b.onclick=function(){
+        var v=b.getAttribute("data-jn-vid");vibrate(6);
+        GROW.journey.open=(GROW.journey.open===v)?"":v;
+        // Draw either way. Deferring the render to jnLoadOne meant a card whose
+        // replay was already cached opened in state but never on screen.
+        if(GROW.journey.open)jnLoadOne(v);
+        growRender();
+      };
+    });
+    Array.prototype.forEach.call(box.querySelectorAll("[data-jn-phone]"),function(b){
+      b.onclick=function(){vibrate(6);closeAnalytics();openThread(b.getAttribute("data-jn-phone"))};
+    });
+  }
+
   function growAnalytics(box){
     var wd=GROW.web;
     if(!wd.data&&!wd.loading&&!wd.err){growLoadWeb(false);return}
