@@ -120,7 +120,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-24·journey';
+const BUILD = '2026-08-24·actions';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -211,6 +211,8 @@ async function handle(request) {
   // First-party website analytics pixel (public, no auth — it's called from the
   // owner's marketing site). Accepts GET beacons and returns a 1x1 GIF.
   if (request.method === 'GET'  && pathname === '/px')             return handlePixel(url, request);
+  if (request.method === 'POST' && pathname === '/px/e')            return handlePixelEvents(request);
+  if (request.method === 'OPTIONS' && pathname === '/px/e')          return pxOk();
 
   // ---- Public booking API (customer-facing /book.html — MUST stay above the /api auth gate) ----
   if (request.method === 'GET'  && (pathname === '/book' || pathname === '/book/')) return Response.redirect(new URL('/book.html', request.url).toString(), 302);
@@ -295,6 +297,7 @@ async function handle(request) {
   // QQC quote log (Analytics → Quotes) — every quote the form has sent in.
   if (request.method === 'GET'  && pathname === '/api/journeys')      return apiJourneys(url);
   if (request.method === 'GET'  && pathname === '/api/journey')       return apiJourney(url);
+  if (request.method === 'POST' && pathname === '/api/journey/ai')    return apiJourneyAi(request);
   if (request.method === 'GET'  && pathname === '/api/quotes')        return apiQuotes(url);
   if (request.method === 'GET'  && pathname === '/api/quotes/export') return apiQuotesExport(url);
   if (request.method === 'POST' && pathname === '/api/quotes/import') return apiQuotesImport(request);
@@ -2193,7 +2196,11 @@ async function apiAnalytics(url) {
 // *metadata* alone — listing 500 visitors costs zero reads.
 // ===========================================================================
 const JOURNEY_TTL = 45 * 86400;   // browsing older than ~6 weeks isn't a journey
-const JOURNEY_MAX_STEPS = 40;     // a doc stays small; the oldest steps fall off
+// Room for a real session. Page views alone needed 40; sections seen, buttons
+// pushed and form steps across several pages need far more, and a journey that
+// silently drops the first half of what someone did is worse than no journey.
+// ~250 steps is roughly 20 KB — nowhere near KV's 25 MB value ceiling.
+const JOURNEY_MAX_STEPS = 250;
 const journeyKey = (vid) => 'journey:' + vid;
 const journeyPhoneKey = (phone) => 'journeymap:' + phone;
 
@@ -2203,30 +2210,107 @@ function cleanVid(v) { return String(v || '').replace(/[^A-Za-z0-9_-]/g, '').sli
 // metadata (1 KB cap) so the board never has to open a single doc.
 function journeyMeta(doc) {
   const last = doc.steps[doc.steps.length - 1] || {};
+  // "Tapped to CALL" tells you more from the board than "/monroe/" does, so the
+  // label wins over the path when there is one.
+  const lastLabel = last.l || last.p || '';
   return {
     at: doc.lastAt || 0, first: doc.firstAt || 0, n: doc.steps.length,
     phone: doc.phone || '', name: String(doc.name || '').slice(0, 40),
-    last: String(last.p || last.k || '').slice(0, 60),
+    last: String(lastLabel).slice(0, 60),
     ref: String((doc.steps[0] || {}).r || '').slice(0, 40),
+    // Split so the board can say "5 pages · 12 actions" without opening a doc.
+    pages: doc.steps.filter((x) => !x.k).length,
+    acts: doc.steps.filter((x) => x.k && x.k !== 'lead').length,
+    // The loudest thing that happened, for the board's own eye. A tap-to-call
+    // buried 40 steps down is the thing worth seeing from the list.
+    hot: journeyHotLabel(doc.steps),
   };
+}
+
+// The one step on this path most worth Mikey's attention, if there is one.
+function journeyHotLabel(steps) {
+  const hit = (re) => (steps.find((x) => re.test(String(x.l || ''))) || {}).l || '';
+  return hit(/^BOOKED/) || hit(/Tapped to CALL/) || hit(/Tapped to TEXT/) || hit(/^Quote form/) || '';
+}
+
+function blankJourney(vid, t) { return { vid, phone: '', name: '', firstAt: t, lastAt: t, steps: [] }; }
+
+// Append one step to a doc in memory. Pulled out of journeyStep so a batch of
+// twenty events from one flush costs ONE KV read and ONE write instead of
+// twenty of each — which, on a page where someone taps a lot, is the whole
+// difference between this being free and this being a bill.
+function appendStep(doc, step) {
+  doc.steps = doc.steps || [];
+  const prev = doc.steps[doc.steps.length - 1];
+  // A refresh, a back-button, or the GIF ping and the event POST both reporting
+  // the same landing are one visit. Same kind + same page inside a minute moves
+  // the timestamp instead of printing "Home page" four times in a row.
+  if (prev && prev.k === step.k && prev.p === step.p && prev.l === step.l && step.t - prev.t < 60000) prev.t = step.t;
+  else doc.steps.push(step);
+  doc.firstAt = doc.firstAt || step.t;
+  doc.lastAt = Math.max(doc.lastAt || 0, step.t);
+  if (doc.steps.length > JOURNEY_MAX_STEPS) doc.steps = doc.steps.slice(-JOURNEY_MAX_STEPS);
+  return doc;
 }
 
 async function journeyStep(vid, step) {
   vid = cleanVid(vid);
   if (!vid) return null;
   const key = journeyKey(vid);
-  const doc = (await kv().get(key, { type: 'json' })) || { vid, phone: '', name: '', firstAt: step.t, lastAt: step.t, steps: [] };
-  doc.steps = doc.steps || [];
-  // A refresh, a back-button, or a second pixel fire is the same visit — moving
-  // the timestamp beats printing "Home page" four times in a row.
-  const prev = doc.steps[doc.steps.length - 1];
-  if (prev && prev.k === step.k && prev.p === step.p && step.t - prev.t < 60000) prev.t = step.t;
-  else doc.steps.push(step);
-  doc.firstAt = doc.firstAt || step.t;
-  doc.lastAt = step.t;
-  if (doc.steps.length > JOURNEY_MAX_STEPS) doc.steps = doc.steps.slice(-JOURNEY_MAX_STEPS);
+  const doc = (await kv().get(key, { type: 'json' })) || blankJourney(vid, step.t);
+  appendStep(doc, step);
   await kv().put(key, JSON.stringify(doc), { expirationTtl: JOURNEY_TTL, metadata: journeyMeta(doc) });
   return doc;
+}
+
+// POST /px/e — a batch of what someone actually DID on one page: the sections
+// they scrolled to, the buttons they pushed, how far down they got, how long
+// they stayed. Public and unauthenticated (it comes from the marketing site),
+// so everything is clamped hard before it ever reaches KV.
+//
+// Sent as text/plain by navigator.sendBeacon, which keeps it a "simple" request
+// — no CORS preflight, and it survives the page being closed mid-flight.
+const PX_EVENT_KINDS = { v: 1, s: 1, c: 1, f: 1, x: 1 };
+async function handlePixelEvents(request) {
+  try {
+    const raw = await request.text();
+    if (raw.length > 20000) return pxOk();          // nobody legitimate sends this much
+    const body = JSON.parse(raw);
+    const vid = cleanVid(body && body.v);
+    if (!vid) return pxOk();
+    let page = String((body && body.p) || '/').slice(0, 120);
+    const list = Array.isArray(body && body.e) ? body.e.slice(0, 80) : [];
+    if (!list.length) return pxOk();
+
+    const now = Date.now();
+    const key = journeyKey(vid);
+    const doc = (await kv().get(key, { type: 'json' })) || blankJourney(vid, now);
+    for (const raw2 of list) {
+      const k = String((raw2 && raw2.k) || '');
+      if (!PX_EVENT_KINDS[k]) continue;
+      // Trust the server's clock for ordering, but keep the client's ordering
+      // within the batch: a browser with a skewed clock must not scatter its
+      // events across the timeline.
+      const t = Number(raw2.t) || now;
+      const ts = (t > now + 300000 || t < now - 86400000) ? now : t;
+      const step = { t: ts, p: page,
+        l: String(raw2.l || '').slice(0, 60), d: String(raw2.d || '').slice(0, 80) };
+      // A landing IS a page step — same shape the GIF ping writes — so the two
+      // reports of the same page load collapse into one instead of doubling up.
+      if (k === 'v') { step.r = step.d; delete step.l; delete step.d; }
+      else step.k = k;
+      appendStep(doc, step);
+    }
+    await kv().put(key, JSON.stringify(doc), { expirationTtl: JOURNEY_TTL, metadata: journeyMeta(doc) });
+  } catch (e) { /* a malformed beacon is not an error worth reporting */ }
+  return pxOk();
+}
+function pxOk() {
+  return new Response('', { status: 204, headers: {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Cache-Control': 'no-store',
+  } });
 }
 
 // The moment a stranger becomes a customer. Called from /submit with the id the
@@ -2282,8 +2366,9 @@ async function apiJourneys(url) {
       const m = k.metadata || {};
       rows.push({
         vid: k.name.slice('journey:'.length), at: m.at || 0, first: m.first || 0,
-        steps: m.n || 0, phone: m.phone || '', name: m.name || '',
-        last: m.last || '', ref: m.ref || '',
+        steps: m.n || 0, pages: m.pages || 0, acts: m.acts || 0,
+        phone: m.phone || '', name: m.name || '',
+        last: m.last || '', ref: m.ref || '', hot: m.hot || '',
       });
     }
     cursor = page.list_complete ? null : page.cursor;
@@ -2305,20 +2390,11 @@ async function apiJourney(url) {
   const who = phone || (doc && doc.phone) || '';
 
   const steps = [];
-  let firstRef = '';
-  for (const s of (doc && doc.steps) || []) {
-    if (s.k === 'lead') {
-      steps.push({ t: s.t, kind: 'lead', title: 'Left their number', detail: 'Filled out the form on your site' });
-    } else {
-      if (!firstRef && s.r) firstRef = s.r;
-      steps.push({ t: s.t, kind: 'page', title: journeyPageTitle(s.p), detail: s.p || '/' });
-    }
-  }
-  // The very first page view is also the "how they found you" moment.
-  if (doc && doc.steps && doc.steps.length) {
-    const f = doc.steps.find((s) => s.k !== 'lead');
-    if (f) steps.push({ t: (f.t || 0) - 1, kind: 'found', title: journeyRefLabel(f.r), detail: '' });
-  }
+  for (const s of (doc && doc.steps) || []) steps.push(journeyReadStep(s));
+  // The very first PAGE view is also the "how they found you" moment. It has to
+  // be the first page specifically — events carry no referrer.
+  const firstPage = ((doc && doc.steps) || []).find((s) => !s.k);
+  if (firstPage) steps.push({ t: (firstPage.t || 0) - 1, kind: 'found', title: journeyRefLabel(firstPage.r), detail: '' });
 
   let thread = null;
   if (who) {
@@ -2331,10 +2407,98 @@ async function apiJourney(url) {
     ok: true, vid: vid || '', phone: who,
     name: (thread && thread.name) || (doc && doc.name) || '',
     hasWeb: !!(doc && (doc.steps || []).length), hasThread: !!thread,
-    pages: ((doc && doc.steps) || []).filter((s) => s.k !== 'lead').length,
+    pages: ((doc && doc.steps) || []).filter((s) => !s.k).length,
+    acts: ((doc && doc.steps) || []).filter((s) => s.k && s.k !== 'lead').length,
     firstAt: steps.length ? steps[0].t : 0, lastAt: steps.length ? steps[steps.length - 1].t : 0,
     steps,
   });
+}
+
+// POST /api/journey/ai  { vid? }
+// ---------------------------------------------------------------------------
+// The reason for recording any of this. One journey, or the last 25 of them,
+// flattened into plain text and handed to Gemini with one question: what are
+// these people doing, where do they give up, and what should Mikey change?
+//
+// No chart can answer that. A chart can only show you what you already thought
+// to plot; this can notice that everyone who books read the ceramic page first.
+async function apiJourneyAi(request) {
+  if (!ENV.GEMINI_API_KEY) return json({ ok: false, error: 'ai_not_configured' }, 503);
+  let data = {};
+  try { data = await request.json(); } catch (e) {}
+  const one = cleanVid(data.vid || '');
+
+  const docs = [];
+  if (one) {
+    const d = await kv().get(journeyKey(one), { type: 'json' });
+    if (d) docs.push(d);
+  } else {
+    // Newest first, and only paths with enough on them to say anything.
+    const page = await kv().list({ prefix: 'journey:', limit: 1000 });
+    const rows = (page.keys || []).map((k) => ({ name: k.name, m: k.metadata || {} }))
+      .filter((r) => (r.m.n || 0) >= 3)
+      .sort((a, b) => (b.m.at || 0) - (a.m.at || 0)).slice(0, 25);
+    for (const r of rows) {
+      const d = await kv().get(r.name, { type: 'json' });
+      if (d) docs.push(d);
+    }
+  }
+  if (!docs.length) return json({ ok: true, read: '', empty: true });
+
+  const lines = [];
+  docs.forEach((d, i) => {
+    const who = d.name || (d.phone ? 'left their number' : 'never made contact');
+    lines.push(`--- VISITOR ${i + 1} (${who}) ---`);
+    for (const st of (d.steps || []).slice(0, 60)) {
+      const r = journeyReadStep(st);
+      lines.push(`  ${new Date(r.t).toISOString().slice(11, 16)}  ${r.title}${r.detail ? ' — ' + r.detail : ''}`);
+    }
+  });
+
+  const prompt = [
+    'You are looking at recorded sessions from a mobile car-detailing website in Snohomish County, WA.',
+    'Each block is ONE anonymous visitor: the pages they opened, the sections they scrolled to, the buttons',
+    'they pushed, how far down each page they got, how long they stayed, and — if they ever filled out the',
+    'quote or booking form — what happened in the conversation afterwards.',
+    '',
+    one ? 'Tell the owner, Mikey, the story of this one visit in plain language: what they were clearly looking for, how interested they were, and what he should do about it.'
+        : 'Find the PATTERNS across these visits. What do the people who make contact do that the people who leave do not? Where exactly do people give up? Which sections and buttons are doing work, and which are being ignored?',
+    '',
+    'Rules:',
+    '- Talk to Mikey like a person, not a report. Short paragraphs, no headings, no bullet symbols.',
+    '- Say what the evidence actually supports. If there is not enough here to tell, say that plainly.',
+    '- Never invent a number you were not given.',
+    '- End with the single most useful thing he could change on the site, and why this data says so.',
+    '',
+    lines.join('\n').slice(0, 40000),
+  ].join('\n');
+
+  try {
+    const read = await geminiGenerate(prompt, { temperature: 0.5, maxTokens: 900 });
+    return json({ ok: true, read, visitors: docs.length, scope: one ? 'one' : 'all' });
+  } catch (err) {
+    return json({ ok: false, error: String(err.message || err).slice(0, 200) }, 502);
+  }
+}
+
+// One stored step → one row Mikey can read. The storage shape is deliberately
+// terse (k/l/d/p, one or two letters) because it's written on every click and
+// read on every page load; all the English lives here, at read time, where it
+// costs nothing and can be reworded without a migration.
+function journeyReadStep(s) {
+  if (!s.k) return { t: s.t, kind: 'page', title: journeyPageTitle(s.p), detail: s.p || '/', page: s.p || '/' };
+  if (s.k === 'lead') return { t: s.t, kind: 'lead', title: 'Left their number', detail: 'Filled out the form on your site' };
+  const base = { t: s.t, detail: s.d || '', page: s.p || '' };
+  if (s.k === 's') return { ...base, kind: 'section', title: 'Scrolled to ' + (s.l || 'a section') };
+  if (s.k === 'f') return { ...base, kind: 'form', title: s.l || 'Form step' };
+  if (s.k === 'x') return { ...base, kind: 'exit', title: s.l || 'Left the page' };
+  if (s.k === 'c') {
+    // A tap-to-call or tap-to-text is the single most valuable thing anyone
+    // does on that site, so it says so plainly instead of "Pushed (425)…".
+    const hot = /^Tapped to (CALL|TEXT)/.test(s.l || '');
+    return { ...base, kind: hot ? 'contact' : 'click', title: hot ? s.l : 'Pushed "' + (s.l || 'a button') + '"' };
+  }
+  return { ...base, kind: 'click', title: s.l || 'Did something' };
 }
 
 // The conversation side of a journey. Runs of texts in the same direction
