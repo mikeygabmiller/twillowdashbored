@@ -56,6 +56,37 @@
  * │ If you add a feature that writes on a schedule, do the math first:        │
  * │   writes/day = (threads touched) × (writes each) × 1440. Keep it << 1000. │
  * └─────────────────────────────────────────────────────────────────────────┘
+ *
+ * ┌───────────────────────────────────────────────────────────────────────────┐
+ * │ ⚠  CPU TIME — A SEPARATE LIMIT FROM THE ONE ABOVE. BOTH APPLY.            │
+ * ├───────────────────────────────────────────────────────────────────────────┤
+ * │ The free tier also caps CPU at ~10ms PER INVOCATION. Not a daily budget:  │
+ * │ every request and every cron tick gets its own 10ms, and one that runs    │
+ * │ over is KILLED MID-TASK. That shows up as a dropped alert, a follow-up    │
+ * │ that never fires, or a webhook Twilio sees fail — not as a clean error.   │
+ * │                                                                           │
+ * │ The write box above says "reads are far cheaper". That is true of the     │
+ * │ daily QUOTA and FALSE of CPU. `kv().get(k, {type:'json'})` parses that    │
+ * │ JSON on our clock, so a read of the index or a fat thread is one of the   │
+ * │ most expensive things we do. Waiting on fetch/KV is free; parsing,        │
+ * │ stringifying, string-building and looping are not.                        │
+ * │                                                                           │
+ * │ RULES:                                                                    │
+ * │   1. Load a KV doc ONCE per invocation and pass it down. loadConfig()     │
+ * │      and loadIndex() are memoized for exactly this reason — do not add    │
+ * │      a raw kv().get() for a doc one of them already holds.                │
+ * │   2. Never build a timezone formatter inside a loop. Go through           │
+ * │      localDateStr/localHour/localDow, which reuse a cached formatter      │
+ * │      (see tzFmt) — a bare .toLocaleString({timeZone}) builds a new one    │
+ * │      every call.                                                          │
+ * │   3. Anything that loads N threads in one invocation (batchLoadThreads,   │
+ * │      apiSnapshot, buildBrief) scales its CPU with N. Bound N, or move it  │
+ * │      off the request path — it is fine at 20 conversations and not at     │
+ * │      500.                                                                 │
+ * │   4. Per-tick cron work must be flat, not per-thread. The guard that      │
+ * │      keeps writes down (skip before loading) is the same guard that       │
+ * │      keeps CPU down — do not load a thread you are not going to act on.   │
+ * └───────────────────────────────────────────────────────────────────────────┘
  */
 
 // env is identical across every request of a deployment (bindings + secrets
@@ -66,6 +97,17 @@ let ENV = null;
 // doesn't re-read it for every thread it touches. Cleared at the top of each
 // entry point so a settings change is picked up on the very next invocation.
 let CFG_CACHE = null;
+// Same idea for the thread index, and for a bigger reason: the index is the
+// largest doc we own, and `{type:'json'}` parses it on OUR CPU clock. A minute
+// cron that loads it in four separate sub-jobs paid for four full parses of every
+// conversation, every minute, forever — which is what put us over the CPU limit
+// (see the CPU TIME box up top). Cleared per invocation, same as CFG_CACHE.
+let IDX_CACHE = null;
+// Every per-invocation cache is dropped here, and both entry points call it
+// before doing any work. One function rather than a line per cache: the reason
+// the CPU limit crept up on us is that "this is memoized" was knowledge living in
+// four separate places, and the next cache added has to be freed here too.
+function resetInvocationCaches() { CFG_CACHE = null; IDX_CACHE = null; }
 // The public origin the Worker is reachable at (e.g. https://…workers.dev). Captured
 // from the first request so cron-time sends can build an absolute Twilio StatusCallback
 // URL; falls back to the PUBLIC_BASE_URL var when no request has been seen yet.
@@ -78,7 +120,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-21·call-routing';
+const BUILD = '2026-08-24·cpu-budget';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -91,7 +133,7 @@ function envFlag(name) {
 
 export default {
   async fetch(request, env) {
-    ENV = env; CFG_CACHE = null;
+    ENV = env; resetInvocationCaches();
     try {
       return await handle(request);
     } catch (err) {
@@ -99,7 +141,7 @@ export default {
     }
   },
   async scheduled(event, env, ctx) {
-    ENV = env; CFG_CACHE = null;
+    ENV = env; resetInvocationCaches();
     ctx.waitUntil(runCron());
   },
 };
@@ -5244,10 +5286,10 @@ function autopilotAllowed(plan, fu, cfg) {
 
 // ---- quiet hours (don't autopilot-text customers overnight) -----------------
 function localHour(ts, tz) {
-  try {
-    const s = new Date(ts).toLocaleString('en-US', { timeZone: tz || 'America/Los_Angeles', hour12: false, hour: '2-digit' });
-    return parseInt(s, 10) % 24;
-  } catch { return new Date(ts).getUTCHours(); }
+  // See tzFmt: the formatter is cached, because inQuietHours asks this on every
+  // autopilot candidate on every tick.
+  const f = tzFmt('hour', tz);
+  return f ? parseInt(f.format(new Date(ts)), 10) % 24 : new Date(ts).getUTCHours();
 }
 function inQuietHours(ts, cfg) {
   const qs = cfg.quietStart, qe = cfg.quietEnd;
@@ -5783,15 +5825,41 @@ function prevMonthKey(m) {
 }
 // Local calendar date (YYYY-MM-DD) / weekday in the business's timezone, so the
 // "day" an entry belongs to matches Mikey's clock, not UTC.
+//
+// Every one of these goes through a timezone formatter, and BUILDING one is the
+// expensive half — a `toLocaleDateString({timeZone})` constructs a throwaway
+// formatter on each call, which is why "which day did this land on?" over a few
+// hundred conversations was one of the costliest loops in the Worker. Formatting
+// with a formatter we already have is cheap, so they're built once per timezone
+// and kept. Same output, a fraction of the CPU.
+const TZFMT = new Map();
+// Returns null — never throws — when the timezone itself is unusable, and
+// remembers that so a bad `tz` in config costs one failed construction rather
+// than one per call. Narrow on purpose: the callers below used to wrap the whole
+// conversion in try/catch, which meant ANY error in here (a typo, a helper that
+// hadn't been wired up) came back as a plausible-looking UTC date instead of a
+// crash. A wrong day on the run board is much worse than a loud failure.
+function tzFmt(kind, tz) {
+  const zone = tz || 'America/Los_Angeles';
+  const key = kind + '|' + zone;
+  if (TZFMT.has(key)) return TZFMT.get(key);
+  let f = null;
+  try {
+    f = kind === 'date' ? new Intl.DateTimeFormat('en-CA', { timeZone: zone })
+      : kind === 'dow' ? new Intl.DateTimeFormat('en-US', { timeZone: zone, weekday: 'short' })
+      : new Intl.DateTimeFormat('en-US', { timeZone: zone, hour12: false, hour: '2-digit' });
+  } catch { f = null; }
+  TZFMT.set(key, f);
+  return f;
+}
 function localDateStr(ts, tz) {
-  try { return new Date(ts).toLocaleDateString('en-CA', { timeZone: tz || 'America/Los_Angeles' }); }
-  catch { return new Date(ts).toISOString().slice(0, 10); }
+  const f = tzFmt('date', tz);
+  return f ? f.format(new Date(ts)) : new Date(ts).toISOString().slice(0, 10);
 }
 function localDow(ts, tz) {
-  try {
-    const s = new Date(ts).toLocaleDateString('en-US', { timeZone: tz || 'America/Los_Angeles', weekday: 'short' });
-    return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(s.slice(0, 3));
-  } catch { return new Date(ts).getUTCDay(); }
+  const f = tzFmt('dow', tz);
+  if (!f) return new Date(ts).getUTCDay();
+  return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(f.format(new Date(ts)).slice(0, 3));
 }
 
 // Validate + trim an incoming entry. Returns null when it isn't usable.
@@ -6748,14 +6816,25 @@ async function saveThread(thread) {
   await kv().put(threadKey(thread.phone), JSON.stringify(thread));
 }
 
+// One KV read and ONE parse per invocation, however many callers ask for it.
+// Each caller gets its own array so the existing habits still hold — sorting it
+// (apiSnapshot), filtering it, or swapping an entry via applyIndexSummary can't
+// leak into the next caller. Entries themselves are never mutated in place
+// anywhere in this file; they're replaced wholesale, which is what makes the
+// shallow copy enough.
 async function loadIndex() {
-  return (await kv().get(INDEX_KEY, { type: 'json' })) || [];
+  if (!IDX_CACHE) IDX_CACHE = (await kv().get(INDEX_KEY, { type: 'json' })) || [];
+  return IDX_CACHE.slice();
 }
 
 // ⚠ KV WRITE — rewrites the entire index. In cron/loop code, mutate the index in
 // memory and call this ONCE at the end, not once per thread (see note up top).
+// Refreshing the cache here also closes a real hole: KV is eventually consistent,
+// so a later sub-job in the same tick re-reading from KV could get the version
+// from BEFORE this write and quietly undo it on its own save.
 async function saveIndex(index) {
   await kv().put(INDEX_KEY, JSON.stringify(index));
+  IDX_CACHE = index.slice();
 }
 
 function preview(body) {
