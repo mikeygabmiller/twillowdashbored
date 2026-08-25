@@ -183,6 +183,19 @@ await page.locator('[data-jn-phone]').click();
 await page.waitForTimeout(500);
 ok('tapping it leaves Analytics', await page.locator('#growApp.show').count() === 0);
 
+section('The "saw the price and left" email opens straight onto that visitor');
+// There is no thread to jump to — they never left a number — so the link in
+// that alert has to land on the one thing that exists: their path.
+oneCalls['v-ghost'] = 0;
+await page.goto('https://texting.test/?journey=v-ghost');
+await page.waitForTimeout(900);
+ok('Analytics opened on Journey', await page.locator('#growApp.show').count() === 1 &&
+  await page.locator('#grNav [data-gv="journey"].active').count() === 1);
+ok('their card is already expanded', await page.locator('.jn-card.on').count() === 1);
+ok('and it is the right one', await page.locator('.jn-card.on [data-jn-ai]').first().getAttribute('data-jn-ai') === 'v-ghost');
+ok('their steps were fetched', oneCalls['v-ghost'] === 1, oneCalls);
+ok('the vid is scrubbed out of the address bar', !/journey=/.test(page.url()), page.url());
+
 section('No console noise');
 ok('no page errors', errs.length === 0, errs);
 
