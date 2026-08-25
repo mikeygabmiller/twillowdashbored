@@ -170,10 +170,12 @@ async function runCron() {
   await moneyCron().catch(() => {}); // money reminders must never break the SMS cron
   // One KV write a day: snapshot the KPIs that cannot be reconstructed later.
   await recordPulse().catch(() => {});
-  // Last chance for anything the gate is still holding, if it has been waiting
-  // long enough to be worth a write. NOT forced: this tick runs every minute,
+  // Land any AI counts this isolate is still holding, so a quiet stretch after a
+  // busy one doesn't leave the last few calls unrecorded. No-op when empty.
+  await flushAiUsage().catch(() => {});
+  // Same idea for the usage gate, but NOT forced: this tick runs every minute,
   // and a forced flush in an isolate that has been serving requests would be
-  // 1,440 writes a day entirely by itself.
+  // 1,440 writes a day entirely by itself. It writes only once it is due.
   await useMaybeFlush(false).catch(() => {});
   // Job Day suite. Both are write-frugal by design: the brief stamps one key a
   // day, the invoice sweep only writes when something is actually overdue.
@@ -280,6 +282,7 @@ async function handle(request) {
   // Predictive keyboard — next-word suggestions built from that same corpus.
   if (request.method === 'GET'  && pathname === '/api/ai/style')           return apiAiStyle(url);
   if (request.method === 'POST' && pathname === '/api/ai/predict')         return apiAiPredict(request);
+  if (request.method === 'GET'  && pathname === '/api/ai/usage')           return apiAiUsage(url);
   if (request.method === 'GET'  && pathname === '/api/media')      return apiMediaProxy(url);
   if (request.method === 'POST' && pathname === '/api/media-backfill') return apiMediaBackfill(request);
   if (request.method === 'POST' && pathname === '/api/voicemail-backfill') return apiVoicemailBackfill(request);
@@ -836,10 +839,18 @@ async function handleInboundSms(request) {
   // thread. Best-effort — never blocks or fails the inbound webhook. Drafted BEFORE
   // the alert goes out so the alert can show him the actual wording and ask for a
   // plain yes or no (see assistAlertBody / runAssist's YES/NO handling).
-  const draft = await maybeSuggestReply(fromNorm);
+  const suggestion = await maybeSuggestReply(fromNorm);
+  const draft = suggestion.text;
   // Work out what he actually needs to decide, so the alert asks him a question
   // he can answer in four words. Best-effort — a failure just means a plainer email.
-  const ask = await assistAsk(inThread, alertCfg).catch(() => null);
+  //
+  // Skipped entirely when the reply check just ruled that nothing is owed. That
+  // ruling is already made — often by a free rule — and triage on a "thanks!" only
+  // ever comes back "chitchat, nothing needed", which is exactly what we hand the
+  // alert here for nothing. It was the one ungated AI call on the inbound path.
+  const ask = (suggestion.verdict && suggestion.verdict.needed === false)
+    ? { kind: 'chitchat', ask: suggestion.verdict.reason || 'Nothing to answer here.', examples: [] }
+    : await assistAsk(inThread, alertCfg).catch(() => null);
   const who = inThread.name || from;
   // Their actual words go in the subject, so the phone's notification banner —
   // which is all he sees half the time — already says what was asked.
@@ -1179,9 +1190,9 @@ async function assistAsk(thread, cfg) {
     `kind guide: "price" = they want a number. "schedule" = they want a day/time. "question" = a factual question about the service. ` +
     `"confirm" = they're agreeing/confirming and just need acknowledgement. "chitchat" = thanks/emoji, nothing needed. ` +
     `"escalate" = a complaint, damage, refund, anger, or anything needing a careful personal reply.\n\n` +
-    `Conversation:\n${transcript(thread)}`;
+    `Conversation:\n${transcript(thread, AI_CLASSIFY_TURNS)}`;
   try {
-    const raw = await geminiGenerate(prompt, { json: true, maxTokens: 500, temperature: 0.2 });
+    const raw = await geminiGenerate(prompt, { surface: 'inbound triage', json: true, maxTokens: 500, temperature: 0.2 });
     const p = JSON.parse(raw);
     const examples = Array.isArray(p.examples)
       ? p.examples.map((x) => String(x).trim()).filter(Boolean).slice(0, 3) : [];
@@ -2500,7 +2511,7 @@ async function apiJourneyAi(request) {
   ].join('\n');
 
   try {
-    const read = await geminiGenerate(prompt, { temperature: 0.5, maxTokens: 900 });
+    const read = await geminiGenerate(prompt, { surface: 'journey read', temperature: 0.5, maxTokens: 900 });
     return json({ ok: true, read, visitors: docs.length, scope: one ? 'one' : 'all' });
   } catch (err) {
     return json({ ok: false, error: String(err.message || err).slice(0, 200) }, 502);
@@ -3030,7 +3041,9 @@ async function apiUseAi(request) {
   ].join('\n');
 
   try {
-    const read = await geminiGenerate(prompt, { temperature: 0.5, maxTokens: 900 });
+    // Tagged like every other call site so this shows up by name in
+    // ☰ → Settings → what the AI is actually costing, rather than in "other".
+    const read = await geminiGenerate(prompt, { surface: 'usage read', temperature: 0.5, maxTokens: 900 });
     return json({ ok: true, read, days: g.days });
   } catch (err) {
     return json({ ok: false, error: String(err.message || err).slice(0, 200) }, 502);
@@ -3457,7 +3470,7 @@ async function apiWebstatsAi(request) {
   const prompt = 'You are the sharp, no-nonsense marketing analyst for Mikey\'s Mobile Detailing, a one-man mobile car detailing business in Snohomish County, WA. His website stats:\n\n' + L.join('\n') +
     '\n\nWrite for a busy owner reading on his phone:\n1. THREE short bullets — the most important things happening, in plain English, each citing its number.\n2. One line starting "DO THIS WEEK:" — the single highest-impact action.\nNo jargon, no fluff, no headings other than the bullets and that final line.';
   try {
-    const text = await geminiGenerate(prompt, { temperature: 0.5, maxTokens: 700 });
+    const text = await geminiGenerate(prompt, { surface: 'website stats', temperature: 0.5, maxTokens: 700 });
     return json({ ok: true, text });
   } catch (e) {
     return json({ ok: false, error: 'ai_error', detail: String(e.message || e).slice(0, 200) }, 502);
@@ -4466,7 +4479,7 @@ async function apiAiGenerate(request) {
   };
   const prompt = PROMPTS[task] || (`You are the marketing assistant for ${biz}, a mobile auto detailing business in ${area}. ${context}`);
   try {
-    const text = await geminiGenerate(prompt, { temperature: 0.8, maxTokens: 600 });
+    const text = await geminiGenerate(prompt, { surface: 'write something', temperature: 0.8, maxTokens: 600 });
     return json({ ok: true, task, text });
   } catch (e) {
     return json({ ok: false, error: 'ai_error', detail: String(e.message || e).slice(0, 200) }, 502);
@@ -4787,7 +4800,7 @@ async function apiAiSummary(request) {
     `"tags": array of up to 4 short, useful labels like "Truck","Ceramic","Quote sent","Needs follow-up","VIP"}\n\n` +
     `Conversation:\n${transcript(thread)}`;
   try {
-    const text = await geminiGenerate(prompt, { json: true, maxTokens: 1200 });
+    const text = await geminiGenerate(prompt, { surface: 'summary', json: true, maxTokens: 1200 });
     let parsed = {};
     try { parsed = JSON.parse(text); } catch { parsed = { summary: text }; }
     return json({
@@ -4838,7 +4851,7 @@ async function generateReply(thread, cfg, hint) {
     (extra || '') +
     `\n\nConversation so far:\n${transcript(thread)}\n\nReply:`;
 
-  let text = await aiGenerate(build(''), { tier: 'voice', maxTokens: 800, temperature: 0.45 });
+  let text = await aiGenerate(build(''), { surface: 'reply draft', tier: 'voice', maxTokens: 800, temperature: 0.45 });
   text = cleanReply(text);
   // One regeneration if the draft gave itself away — either a stock AI phrase, or a
   // shape outside his measured habits (far too long, an emoji he'd never use, a
@@ -4852,7 +4865,7 @@ async function generateReply(thread, cfg, hint) {
     try {
       const retry = await aiGenerate(
         build(`CRITICAL: your previous attempt ${off}. Mikey does not write like that. Rewrite it to read exactly like the real texts above, and avoid any customer-service filler. `),
-        { tier: 'voice', maxTokens: 800, temperature: 0.45 },
+        { surface: 'reply draft', tier: 'voice', maxTokens: 800, temperature: 0.45 },
       );
       const cleaned = cleanReply(retry);
       // Take the retry even if it still trips a rule — it was written under the
@@ -4902,7 +4915,7 @@ async function apiAiDraft(request) {
         `Return ONLY the polished message — no quotes, no explanation, no preamble. ` +
         (hint ? `Also follow this instruction: ${hint}. ` : '') +
         `\n\nMessage to polish:\n${draftText}\n\nPolished message:`;
-      const text = await geminiGenerate(prompt, { temperature: 0.4, maxTokens: 800 });
+      const text = await geminiGenerate(prompt, { surface: 'auto polish', temperature: 0.4, maxTokens: 800 });
       return json({ ok: true, draft: text.replace(/^["']|["']$/g, '').trim() });
     }
     const text = await generateReply(thread, cfg, hint);
@@ -4934,7 +4947,7 @@ async function apiAiTriage() {
     `Be concise and practical. ` +
     `Keep each bullet to one complete sentence and finish your final bullet.\n\n${lines}`;
   try {
-    const briefing = await geminiGenerate(prompt, { maxTokens: 2000 });
+    const briefing = await geminiGenerate(prompt, { surface: 'triage board', maxTokens: 2000 });
     return json({ ok: true, briefing });
   } catch (err) {
     return json({ ok: false, error: String(err.message || err) }, 502);
@@ -5065,7 +5078,7 @@ async function interpretCommand(text) {
     `- A specific person or phone number -> nameOrPhone.\n` +
     `- If the request is unclear, unsafe, or not one of the supported actions, use action "none" and put a short clarifying question in "reply".\n\n` +
     `Request: ${JSON.stringify(String(text || '').slice(0, 400))}`;
-  const raw = await geminiGenerate(prompt, { json: true, maxTokens: 500, temperature: 0.1 });
+  const raw = await geminiGenerate(prompt, { surface: 'command', json: true, maxTokens: 500, temperature: 0.1 });
   let p = {};
   try { p = JSON.parse(raw); } catch { p = { action: 'none', reply: 'Sorry, I didn\'t catch that — try rephrasing.' }; }
   if (!CMD_ACTIONS.includes(p.action)) p.action = 'none';
@@ -5328,7 +5341,7 @@ async function apiAiAnalyze(request) {
     `Rules: Max 6 items per bucket, fewer is better — only real, high-impact items. Ground every item in the snapshot (use real names). ` +
     `A "command" must be a phrase like "archive everything marked lost", "mark all unread as read", "mark <name> as won", "pin the won leads" — only include it when a bulk command bar action genuinely fits. Never invent customers or facts not in the snapshot.`;
   let raw;
-  try { raw = await geminiGenerate(prompt, { json: true, maxTokens: 2600, temperature: 0.3 }); }
+  try { raw = await geminiGenerate(prompt, { surface: 'analyze', json: true, maxTokens: 2600, temperature: 0.3 }); }
   catch (err) { return json({ ok: false, error: String(err.message || err) }, 502); }
   let p = {};
   try { p = JSON.parse(raw); } catch { return json({ ok: false, error: 'ai_parse_failed', raw: String(raw).slice(0, 400) }, 502); }
@@ -5661,7 +5674,7 @@ async function apiAiAgent(request) {
     '- Only propose actions Mikey actually asked for or that directly serve his request. If you are unsure, ask in "answer" instead of guessing with actions.\n\n' +
     'MIKEY SAYS: ' + JSON.stringify(text);
   let raw;
-  try { raw = await geminiGenerate(prompt, { json: true, maxTokens: 4096, temperature: 0.2 }); }
+  try { raw = await geminiGenerate(prompt, { surface: 'agent', json: true, maxTokens: 4096, temperature: 0.2 }); }
   catch (err) { return json({ ok: false, error: String(err.message || err) }, 502); }
   let p = {};
   try { p = JSON.parse(raw); } catch { return json({ ok: false, error: 'ai_parse_failed', raw: String(raw).slice(0, 400) }, 502); }
@@ -5713,7 +5726,7 @@ async function apiAiPhotoQuote(request) {
     `"draft":"a warm 1-3 sentence text reply that acknowledges the vehicle, notes what you'd focus on, and says you'll confirm the exact price — NEVER state a specific price or appointment time"}. ` +
     `Base everything only on what is actually visible.\n\nConversation so far:\n${transcript(thread)}`;
   try {
-    const text = await geminiGenerate(prompt, { json: true, maxTokens: 1200, images: [{ mimeType: pic.mimeType, dataB64: pic.dataB64 }] });
+    const text = await geminiGenerate(prompt, { surface: 'photo quote', json: true, maxTokens: 1200, images: [{ mimeType: pic.mimeType, dataB64: pic.dataB64 }] });
     let p = {}; try { p = JSON.parse(text); } catch { p = { draft: text }; }
     return json({
       ok: true,
@@ -5749,7 +5762,7 @@ async function apiAiCoach(request) {
     `If the playbook is thin, still give your best general detailing-business guidance.` +
     `\n\nConversation:\n${transcript(thread)}`;
   try {
-    const text = await geminiGenerate(prompt, { json: true, maxTokens: 1500 });
+    const text = await geminiGenerate(prompt, { surface: 'coach', json: true, maxTokens: 1500 });
     let parsed = {};
     try { parsed = JSON.parse(text); } catch { parsed = {}; }
     const arr = (v, n) => Array.isArray(v) ? v.map((s) => String(s).trim()).filter(Boolean).slice(0, n) : [];
@@ -5802,7 +5815,7 @@ async function apiAiMoney(request) {
     `Be specific to THESE numbers (call out trends, spikes, the food/misc leak, unpaid balances). ` +
     `Plain language, no jargon, no invented numbers.`;
   try {
-    const text = await geminiGenerate(prompt, { json: true, maxTokens: 1200 });
+    const text = await geminiGenerate(prompt, { surface: 'money advisor', json: true, maxTokens: 1200 });
     let p = {};
     try { p = JSON.parse(text); } catch { p = {}; }
     const arr = (v, n) => Array.isArray(v) ? v.map((s) => String(s).trim()).filter(Boolean).slice(0, n) : [];
@@ -5900,7 +5913,7 @@ async function judgeReplyNeeded(thread, cfg) {
   const prompt =
     businessContext(cfg) +
     `You are triaging text conversations for Mikey's Mobile Detailing so Mikey only gets reminded about the ones that still need him.\n\n` +
-    `Read the ENTIRE conversation below, then decide ONE thing: after the customer's most recent message, is there still something for Mikey to answer or do?\n\n` +
+    `Read the conversation below, then decide ONE thing: after the customer's most recent message, is there still something for Mikey to answer or do?\n\n` +
     `Answer "needsReply": false when the conversation has reached a natural resting point — for example:\n` +
     `- the customer's last message is just thanks, praise, or an acknowledgement ("thanks!", "ok", "sounds good", "perfect", "👍")\n` +
     `- it is a reaction/tapback (a message that starts with Liked/Loved/Laughed at)\n` +
@@ -5914,8 +5927,8 @@ async function judgeReplyNeeded(thread, cfg) {
     `- Mikey's last message promised something (a quote, a time, a call back) that he has not delivered yet\n\n` +
     `If you are genuinely unsure, answer true — missing a real customer is worse than an extra reminder.\n\n` +
     `Return ONLY JSON: {"needsReply": true|false, "reason": "<plain English, max 10 words, why>"}\n\n` +
-    `Conversation (oldest to newest):\n${transcript(thread)}\n`;
-  const raw = await geminiGenerate(prompt, { json: true, maxTokens: 300, temperature: 0.1 });
+    `Conversation (the recent messages, oldest to newest):\n${transcript(thread, AI_CLASSIFY_TURNS)}\n`;
+  const raw = await geminiGenerate(prompt, { surface: 'reply check', json: true, maxTokens: 300, temperature: 0.1 });
   const p = JSON.parse(raw);
   return {
     needed: p.needsReply !== false,
@@ -5977,11 +5990,11 @@ async function ensureRecap(thread, cfg) {
     `- No greeting, no "the customer", no advice, no quotation marks, no trailing period needed.\n` +
     `- If they only just reached out and nothing has been settled, say that plainly.\n\n` +
     `Return ONLY JSON: {"recap":"..."}\n\n` +
-    `Conversation:\n${transcript(thread)}`;
+    `Conversation:\n${transcript(thread, AI_CLASSIFY_TURNS)}`;
 
   let text = '';
   try {
-    const raw = await geminiGenerate(prompt, { json: true, maxTokens: 200 });
+    const raw = await geminiGenerate(prompt, { surface: 'recap', json: true, maxTokens: 200 });
     try { text = String(JSON.parse(raw).recap || '').trim(); }
     catch { text = String(raw || '').trim(); }
   } catch {
@@ -6249,7 +6262,7 @@ async function buildFollowupDraft(thread, plan, cfg, opts = {}) {
       `\n\nConversation so far:\n${transcript(thread)}\n\nFollow-up text:`;
   }
   try {
-    const t = (await geminiGenerate(prompt, { temperature: 0.7, maxTokens: 500 })).replace(/^["']|["']$/g, '').trim();
+    const t = (await geminiGenerate(prompt, { surface: 'follow-up draft', temperature: 0.7, maxTokens: 500 })).replace(/^["']|["']$/g, '').trim();
     return t || tmpl;
   } catch { return tmpl; }
 }
@@ -6514,12 +6527,14 @@ async function apiSaveConfig(request) {
   if (typeof data.missedCallText === 'string') next.missedCallText = data.missedCallText.slice(0, 320);
   if (typeof data.autoReplyAlert === 'boolean') next.autoReplyAlert = data.autoReplyAlert;
   if (typeof data.predictive === 'boolean') next.predictive = data.predictive;
+  if (typeof data.predictiveAi === 'boolean') next.predictiveAi = data.predictiveAi;
   if (typeof data.assistSms === 'boolean') next.assistSms = data.assistSms;
   if (data.assistDelaySec != null && !isNaN(+data.assistDelaySec)) next.assistDelaySec = Math.max(0, Math.min(600, Math.round(+data.assistDelaySec)));
   if (typeof data.assistEmail === 'boolean') next.assistEmail = data.assistEmail;
   if (data.assistEmailDelaySec != null && !isNaN(+data.assistEmailDelaySec)) next.assistEmailDelaySec = Math.max(0, Math.min(900, Math.round(+data.assistEmailDelaySec)));
   if (typeof data.teamMode === 'boolean') next.teamMode = data.teamMode;
   if (typeof data.briefEnabled === 'boolean') next.briefEnabled = data.briefEnabled;
+  if (typeof data.dailyEmailsPaused === 'boolean') next.dailyEmailsPaused = data.dailyEmailsPaused;
   if (data.briefHour != null && !isNaN(+data.briefHour)) next.briefHour = Math.max(4, Math.min(11, Math.round(+data.briefHour)));
   if (Array.isArray(data.team)) next.team = sanitizeTeam(data.team);
   if (data.playbook && typeof data.playbook === 'object') next.playbook = sanitizePlaybook(data.playbook, next.playbook);
@@ -7368,7 +7383,8 @@ async function moneyCron(now = Date.now()) {
   const hour = localHour(now, tz);
   const today = localDateStr(now, tz);
 
-  if (cfg.reminderEnabled !== false && hour === (cfg.reminderHour == null ? 19 : cfg.reminderHour)) {
+  if (!mainCfg.dailyEmailsPaused &&
+      cfg.reminderEnabled !== false && hour === (cfg.reminderHour == null ? 19 : cfg.reminderHour)) {
     const state = await loadMoneyState();
     if (state.dailySent !== today) {
       const doc = await loadMonth(today.slice(0, 7));
@@ -7526,8 +7542,14 @@ function defaultConfig() {
                              // submission; this one fires ~3.5 min later when the text
                              // really goes out, so he knows the customer has heard from
                              // him and can take over the conversation.
-    predictive: true,        // predictive keyboard: next-word chips + inline AI completion
-                             // above the compose box, learned from the texts he's sent
+    predictive: true,        // predictive keyboard: next-word chips above the compose box,
+                             // learned from the texts he's sent. Runs in the browser off a
+                             // downloaded n-gram model — no API call, so it costs nothing.
+    predictiveAi: false,     // the AI half of that keyboard: ghost text that finishes the
+                             // sentence, one Gemini call per typing pause. Off by default
+                             // because it was quietly the single biggest line on the AI
+                             // bill (~29% of it) for a suggestion he mostly typed past.
+                             // See docs/AI-COST.md.
     assistSms: true,         // text your own business number the bare facts ("375, thursday
                              // works") and the AI writes the customer reply in your voice.
                              // You supply every fact; the AI only does the wording.
@@ -7541,6 +7563,15 @@ function defaultConfig() {
     team: [],                // [{ id, name, role }] — the people who help answer texts
     briefEnabled: true,      // the 6am daily brief (push + email). Off = never sent.
     briefHour: 6,            // local hour the brief fires (4–11)
+    dailyEmailsPaused: true, // one switch over BOTH things that email him every single day:
+                             // the morning brief and the evening "log today's money?" nudge.
+                             // Paused 2026-08-25 at his request — he wasn't reading either,
+                             // and two mails a day is the kind of noise that makes the alerts
+                             // that DO matter (a customer texted) easy to scroll past. It sits
+                             // in front of briefEnabled / money reminderEnabled rather than
+                             // replacing them, so flipping it back restores whatever those
+                             // were already set to. New key, so an existing stored config
+                             // inherits the pause; weekly and monthly recaps are unaffected.
     playbook: defaultPlaybook(), // the business "brain" that trains every AI output
     detect: detDefaults(),   // auto-detecting appointments out of text conversations
     promise: promDefaults(), // catching "I'll get back to you Monday" and reminding him
@@ -7880,6 +7911,12 @@ function computeReplyStats(messages) {
   }
   return { avgMs: count ? Math.round(total / count) : null, count, awaiting: pending != null, awaitingSince: pending };
 }
+
+// How much conversation a CLASSIFY-style prompt gets. Input tokens dominate those
+// calls — the full playbook is prepended to every one of them — and the last dozen
+// turns is all "does he still owe a reply?" or "what happened here?" ever reads.
+// Drafting deliberately keeps the full 40: holding his voice is worth the context.
+const AI_CLASSIFY_TURNS = 12;
 
 function transcript(thread, max = 40) {
   return (thread.messages || []).slice(-max)
@@ -8314,7 +8351,7 @@ async function deriveVoiceFingerprint(v, cfg) {
     `Finish with a line starting exactly "NEVER: " listing things he never does.\n\n` +
     `Do not quote the messages back. Do not praise him. Just the rules.\n\n` +
     sample.map((s) => `- ${s}`).join('\n');
-  const text = await aiGenerate(prompt, { tier: 'fast', maxTokens: 800, temperature: 0.2 });
+  const text = await aiGenerate(prompt, { surface: 'voice training', tier: 'fast', maxTokens: 800, temperature: 0.2 });
   return String(text || '').trim().slice(0, 1600);
 }
 
@@ -8773,6 +8810,13 @@ async function apiAiPredict(request) {
   const text = String(data.text || '').slice(0, 400);
   if (!ENV.GEMINI_API_KEY && !ENV.ANTHROPIC_API_KEY) return json({ ok: false, error: 'no_ai' }, 503);
   if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  // Off by default. The browser already knows this and shouldn't be calling, but
+  // a stale tab (or a cached shell after a deploy) still can — and the whole
+  // point of the switch is that no call gets paid for while it's off. `no_ai` is
+  // the answer the keyboard already understands: it stops asking and carries on
+  // with its free local half.
+  const preCfg = await loadConfig();
+  if (preCfg.predictiveAi !== true) return json({ ok: false, error: 'no_ai' }, 503);
   // A typing suggestion is the least important thing the AI does here. Over
   // budget, drop it quietly — the keyboard falls back to its local model.
   if (!predictBudgetOk()) return json({ ok: true, completion: '', options: [], throttled: true });
@@ -8798,7 +8842,7 @@ async function apiAiPredict(request) {
       `Match the real texts above — his length, his rhythm, his punctuation. No customer-service filler. Never invent a price, date or time he hasn't given; if a number would come next, stop the completion before it. Never add a greeting or sign-off he didn't start.\n\n` +
       (convo ? `Conversation so far:\n${convo}\n\n` : '') +
       `Mikey is typing: "${text}"\n\nJSON:`;
-    const out = await aiGenerate(prompt, { tier: 'fast', json: true, temperature: 0.35, maxTokens: 220 });
+    const out = await aiGenerate(prompt, { surface: 'keyboard', tier: 'fast', json: true, temperature: 0.35, maxTokens: 220 });
     let parsed = {};
     try { parsed = JSON.parse(out); } catch { parsed = {}; }
     // Belt and braces: models echo the typed text back. Strip that overlap so we
@@ -8894,21 +8938,27 @@ async function apiVoiceBuild() {
 // waiting when Mikey opens the thread ("reply already waiting"). Best-effort: it
 // never blocks or fails the inbound webhook, and only runs when the ball is in
 // Mikey's court (last message is inbound, not opted out, not archived).
-// Returns the drafted text (or '' when there's nothing to draft) so the caller
-// can show it in the alert and ask for a yes/no.
+// Returns { text, verdict } — the drafted text (or '' when there's nothing to
+// draft) so the caller can show it in the alert and ask for a yes/no, plus the
+// reply-needed verdict it worked out on the way. The verdict is worth handing
+// back rather than recomputing: the caller uses it to decide whether the inbound
+// is even worth a triage call (see handleInboundSms), and that's one whole
+// Gemini call saved on every "thanks!" that lands.
 async function maybeSuggestReply(phone) {
   let drafted = '';
+  let verdict = null;
   try {
     const cfg = await loadConfig();
-    if (isOptedOut(cfg, phone)) return '';
+    if (isOptedOut(cfg, phone)) return { text: '', verdict: null };
     const thread = await loadThread(phone);
-    if (thread.archived) return '';
+    if (thread.archived) return { text: '', verdict: null };
     const last = thread.messages[thread.messages.length - 1];
-    if (!last || last.dir !== 'in') return '';
+    if (!last || last.dir !== 'in') return { text: '', verdict: null };
     // Decide first whether this message actually leaves anything open. Doing it
     // here (rather than waiting for the follow-up engine) means a "Thanks!" never
     // even appears in "Needs your attention".
     let changed = await ensureReplyCheck(thread, cfg);
+    verdict = replyCheckFor(thread);
     if (replyOwed(thread)) {
       if (aiConfigured()) {
         const text = await generateReply(thread, cfg, '');
@@ -8919,7 +8969,7 @@ async function maybeSuggestReply(phone) {
     }
     if (changed) { await saveThread(thread); await updateIndexEntry(thread); }
   } catch { /* suggestions are a bonus — swallow errors so inbound never breaks */ }
-  return drafted;
+  return { text: drafted, verdict };
 }
 
 // The AI "brain": render the business playbook into a compact prompt preamble so
@@ -9009,12 +9059,133 @@ async function claudeGenerate(prompt, opts = {}) {
     },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) {
+    await noteAiUsage(opts.surface, 'claude', 0, 0, true);
+    throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  }
   const data = await res.json();
+  const cu = data.usage || {};
+  await noteAiUsage(opts.surface, 'claude', cu.input_tokens, cu.output_tokens, false);
   if (data.stop_reason === 'refusal') throw new Error('anthropic_refusal');
   const text = (data.content || []).filter((b) => b && b.type === 'text').map((b) => b.text || '').join('').trim();
   if (!text) throw new Error('anthropic_empty');
   return text;
+}
+
+// ===========================================================================
+// What the AI actually costs — measured, not modelled
+// ===========================================================================
+// Every Gemini and Claude response carries exact input/output token counts, and
+// until now this app threw all of them away. docs/AI-COST.md had to *model* the
+// bill from assumed daily volumes, which is a fine way to rank the big offenders
+// and a useless way to tell whether a cut worked. So: one counter per surface
+// per day, and the guessing stops.
+//
+// KV cost is the whole design constraint here. Counts accumulate in the isolate
+// and only reach KV when there are enough of them to be worth a write (or when
+// the buffer has been sitting a while), so a busy hour of texting costs a couple
+// of writes rather than one per AI call. A crashed isolate loses at most a few
+// counts — acceptable for a spend gauge, and never worth a write budget.
+const AI_USAGE_DAYS = 45;              // how long a day's counters stick around in KV
+const AI_USAGE_FLUSH_CALLS = 8;        // flush once this many calls are buffered
+const AI_USAGE_FLUSH_MS = 10 * 60 * 1000;
+let AI_USAGE_BUF = null;               // { date, by: { surface: {calls,in,out,errors} } }
+let AI_USAGE_PENDING = 0;
+let AI_USAGE_LAST_FLUSH = 0;
+
+function aiUsageKey(date) { return `ai:usage:${date}`; }
+
+function aiUsageRow(by, surface) {
+  const k = surface || 'other';
+  if (!by[k]) by[k] = { calls: 0, in: 0, out: 0, errors: 0 };
+  return by[k];
+}
+
+// Fold one call into the buffer, then flush if it's grown enough to be worth it.
+// Never throws: a counter must not be able to break a reply.
+async function noteAiUsage(surface, provider, inTok, outTok, failed) {
+  try {
+    if (envFlag('AI_USAGE_OFF')) return;
+    const date = localDateStr(Date.now(), (CFG_CACHE && CFG_CACHE.tz) || 'America/Los_Angeles');
+    if (!AI_USAGE_BUF || AI_USAGE_BUF.date !== date) {
+      // Day rolled over mid-buffer: get yesterday's tail into yesterday's key
+      // before starting a new one, or the last few calls land on the wrong day.
+      if (AI_USAGE_BUF && AI_USAGE_PENDING) await flushAiUsage();
+      AI_USAGE_BUF = { date, by: {} };
+    }
+    const row = aiUsageRow(AI_USAGE_BUF.by, `${surface || 'other'}${provider === 'claude' ? ' (claude)' : ''}`);
+    row.calls += 1;
+    row.in += Math.max(0, inTok | 0);
+    row.out += Math.max(0, outTok | 0);
+    if (failed) row.errors += 1;
+    AI_USAGE_PENDING += 1;
+    if (AI_USAGE_PENDING >= AI_USAGE_FLUSH_CALLS ||
+        Date.now() - AI_USAGE_LAST_FLUSH > AI_USAGE_FLUSH_MS) await flushAiUsage();
+  } catch { /* counting is never worth an error */ }
+}
+
+// ⚠ KV WRITE — one per flush, not one per AI call. See the note above.
+async function flushAiUsage() {
+  const buf = AI_USAGE_BUF;
+  if (!buf || !AI_USAGE_PENDING) return;
+  AI_USAGE_PENDING = 0;
+  AI_USAGE_LAST_FLUSH = Date.now();
+  const pending = buf.by;
+  AI_USAGE_BUF = { date: buf.date, by: {} };
+  try {
+    const doc = (await kv().get(aiUsageKey(buf.date), { type: 'json' })) || { date: buf.date, by: {} };
+    for (const [k, v] of Object.entries(pending)) {
+      const row = aiUsageRow(doc.by, k);
+      row.calls += v.calls; row.in += v.in; row.out += v.out; row.errors += v.errors;
+    }
+    await kv().put(aiUsageKey(buf.date), JSON.stringify(doc), { expirationTtl: AI_USAGE_DAYS * 86400 });
+  } catch {
+    // Put the counts back rather than lose them; the next call retries the write.
+    for (const [k, v] of Object.entries(pending)) {
+      const row = aiUsageRow(AI_USAGE_BUF.by, k);
+      row.calls += v.calls; row.in += v.in; row.out += v.out; row.errors += v.errors;
+      AI_USAGE_PENDING += v.calls;
+    }
+  }
+}
+
+// GET /api/ai/usage?days=14 — the answer to "is this thing costing me anything?"
+// Returns real counted tokens per surface, biggest first, so a cut can be judged
+// by looking at the day after rather than by argument.
+async function apiAiUsage(url) {
+  await flushAiUsage();
+  const cfg = await loadConfig();
+  const days = Math.max(1, Math.min(45, Number(url.searchParams.get('days')) || 14));
+  const today = localDateStr(Date.now(), cfg.tz);
+  const out = [];
+  for (let i = 0; i < days; i++) {
+    const d = localDateStr(Date.now() - i * 86400000, cfg.tz);
+    const doc = await kv().get(aiUsageKey(d), { type: 'json' });
+    if (doc) out.push(doc);
+  }
+  const roll = {};
+  let calls = 0, inTok = 0, outTok = 0;
+  for (const doc of out) {
+    for (const [k, v] of Object.entries(doc.by || {})) {
+      const row = aiUsageRow(roll, k);
+      row.calls += v.calls || 0; row.in += v.in || 0; row.out += v.out || 0; row.errors += v.errors || 0;
+      calls += v.calls || 0; inTok += v.in || 0; outTok += v.out || 0;
+    }
+  }
+  const bySurface = Object.entries(roll)
+    .map(([surface, v]) => Object.assign({ surface }, v))
+    .sort((a, b) => (b.in + b.out) - (a.in + a.out));
+  const todayDoc = out.find((d) => d.date === today);
+  return json({
+    ok: true, days, today,
+    model: ENV.GEMINI_MODEL || 'gemini-2.5-flash',
+    total: { calls, in: inTok, out: outTok, days: out.length },
+    bySurface,
+    todayTotal: todayDoc
+      ? Object.values(todayDoc.by || {}).reduce((a, v) => ({
+        calls: a.calls + (v.calls || 0), in: a.in + (v.in || 0), out: a.out + (v.out || 0) }), { calls: 0, in: 0, out: 0 })
+      : { calls: 0, in: 0, out: 0 },
+  });
 }
 
 // ===========================================================================
@@ -9041,8 +9212,16 @@ async function geminiGenerate(prompt, opts = {}) {
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },
   );
-  if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) {
+    // A rejected call still costs him nothing in tokens, but it is exactly the
+    // thing you want to see on the usage screen — a surface quietly erroring all
+    // day looks identical to a surface nobody uses until you count both.
+    await noteAiUsage(opts.surface, 'gemini', 0, 0, true);
+    throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  }
   const data = await res.json();
+  const um = data.usageMetadata || {};
+  await noteAiUsage(opts.surface, 'gemini', um.promptTokenCount, um.candidatesTokenCount, false);
   const cand = (data.candidates || [])[0] || {};
   const parts = ((cand.content || {}).parts) || [];
   let text = parts.map((p) => p.text || '').join('').trim();
@@ -12208,6 +12387,7 @@ async function apiBrief(url) {
 // inside the 6–9am local window so a cold start at 3am never fires it early.
 async function maybeDailyBrief() {
   const cfg = await loadConfig();
+  if (cfg.dailyEmailsPaused) return;   // both daily mails paused — see defaultConfig()
   if (cfg.briefEnabled === false) return;
   const now = Date.now();
   const today = localDateStr(now, cfg.tz);
@@ -12385,7 +12565,7 @@ async function detAskAi(thread, msgs, cfg) {
     `- Below 0.45 confidence, answer "none".`;
 
   let o;
-  try { o = JSON.parse(await geminiGenerate(prompt, { json: true, temperature: 0.1, maxTokens: 700 })); }
+  try { o = JSON.parse(await geminiGenerate(prompt, { surface: 'appointment detect', json: true, temperature: 0.1, maxTokens: 700 })); }
   catch { return null; }
   if (!o || !o.intent || o.intent === 'none') return null;
   if (Number(o.confidence || 0) < 0.45) return null;
@@ -12603,7 +12783,7 @@ async function detConfirmDraft(rec, cfg, kind) {
       `Customer: ${first}. When: ${when}.${rec.service ? ` Service: ${rec.service}.` : ''}${rec.address ? ` Address: ${rec.address}.` : ''}\n` +
       ((cfg.playbook && cfg.playbook.rules) ? `Rules you follow:\n${jdStr(cfg.playbook.rules, 600)}\n` : '') +
       `Never invent a price. Sign off "- Mikey". 2 sentences max. Return only the message text.`,
-      { temperature: 0.5, maxTokens: 220 });
+      { surface: 'appointment draft', temperature: 0.5, maxTokens: 220 });
     const clean = jdStr(out, 600);
     // Only trust it if it reads like a sentence; a stray JSON blob falls back.
     if (clean.length < 15 || !/[a-z]{3}/i.test(clean) || /^[[{]/.test(clean)) return tpl;
@@ -12711,7 +12891,7 @@ async function promAskAi(thread, msgs, target, cfg) {
     `- Only fill date/time with what he actually said. Never invent one.\n` +
     `- Below 0.55 confidence, answer "promise":false.`;
   let o;
-  try { o = JSON.parse(await geminiGenerate(prompt, { json: true, temperature: 0.1, maxTokens: 400 })); }
+  try { o = JSON.parse(await geminiGenerate(prompt, { surface: 'promise catch', json: true, temperature: 0.1, maxTokens: 400 })); }
   catch { return null; }
   if (!o || o.promise !== true) return null;
   if (Number(o.confidence || 0) < 0.55) return null;
