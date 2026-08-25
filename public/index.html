@@ -1828,6 +1828,19 @@
   .hbar-top .hb-n{color:var(--muted2);font-weight:800;flex:none}
   .hbar-track{height:7px;background:var(--panel2);border-radius:5px;overflow:hidden}
   .hbar-fill{height:100%;background:var(--accent);border-radius:5px;transition:width .5s}
+  /* Usage — the dead list and the replay tape. Both are long, plain and meant
+     to be scanned rather than admired, so they stay deliberately quiet: the
+     point of the dead list is its LENGTH, and dressing each row up would fight
+     that. */
+  .uz-dead{display:flex;align-items:center;gap:8px;padding:8px 2px;border-bottom:1px solid var(--line2);font-size:12.5px;color:var(--muted2)}
+  .uz-dead:last-child{border-bottom:0}
+  .uz-dead span{flex:1;min-width:0;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .uz-dead i{flex:none;font-style:normal;font-size:11px;opacity:.7}
+  .uz-dead svg{flex:none;opacity:.55}
+  .uz-step{display:flex;gap:10px;padding:6px 2px;font-size:12.5px;border-bottom:1px solid var(--line2)}
+  .uz-step:last-child{border-bottom:0}
+  .uz-step i{flex:none;font-style:normal;color:var(--muted2);font-variant-numeric:tabular-nums;min-width:64px}
+  .uz-step span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* checklist (SEO/GBP) */
   .ck-item{display:flex;gap:12px;align-items:flex-start;padding:12px 2px;border-bottom:1px solid var(--line2)}
   .ck-item:last-child{border-bottom:0}
@@ -2975,6 +2988,7 @@
     <button data-gv="pulse"><span class="e" data-ic="activity" data-ic-size="20"></span>Pulse</button>
     <button data-gv="analytics"><span class="e" data-ic="bar-chart" data-ic-size="20"></span>Website</button>
     <button data-gv="journey"><span class="e" data-ic="route" data-ic-size="20"></span>Journey</button>
+    <button data-gv="usage"><span class="e" data-ic="target" data-ic-size="20"></span>Usage</button>
     <button data-gv="map"><span class="e" data-ic="pin" data-ic-size="20"></span>Map</button>
   </nav>
 </div>
@@ -3067,7 +3081,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-24·actions";
+  var APP_BUILD="2026-08-25·usage";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -8572,6 +8586,9 @@
     journey:{list:null,total:0,named:0,loading:false,err:"",open:"",steps:{},
              ai:"",aiScope:"",aiLoading:false,aiErr:""},
     quotes:{months:6,data:null,loading:false,err:""},
+    // Usage is the only screen in here that measures the app instead of the
+    // business, so it keeps its own range separate from everything else.
+    usage:{days:30,data:null,loading:false,err:"",ai:"",aiDays:0,aiLoading:false,aiErr:"",deadAll:false,copied:false},
     map:{mode:"area",area:{size:9,radius:12,metric:"rev",months:12},
          rank:{data:null,loading:false,err:"",setup:false,saving:false,
                size:7,radius:5,keyword:"",scanning:false,done:0,total:0,live:null,viewId:"",
@@ -8591,6 +8608,7 @@
     pulse:["Pulse","Where the month lands, and what just changed"],
     analytics:["Website","Your website, decoded — live"],
     journey:["Journey","What one customer actually did"],
+    usage:["Usage","How you actually use this dashboard"],
     map:["Map","Where the work and the rankings are"]};
   // view is optional: the Stats tab opens straight onto the website numbers,
   // which is what "check my stats" means day to day. Everything else lands on
@@ -8634,6 +8652,7 @@
     var b=el("grBody");
     if(GROW.view==="analytics")return growAnalytics(b);
     if(GROW.view==="journey")return growJourney(b);
+    if(GROW.view==="usage")return growUsage(b);
     if(GROW.view==="quotes")return growQuotes(b);
     if(GROW.view==="map")return growMap(b);
     if(GROW.view==="customers")return ivRender(b,"customers");
@@ -9049,6 +9068,173 @@
     Array.prototype.forEach.call(box.querySelectorAll("[data-jn-phone]"),function(b){
       b.onclick=function(){vibrate(6);closeAnalytics();openThread(b.getAttribute("data-jn-phone"))};
     });
+  }
+
+
+  // ============================================================
+  // Stats → Usage — what he actually touches in this app
+  // ------------------------------------------------------------
+  // Every other screen in here measures the business. This one measures the
+  // dashboard, and it exists because the app has ~570 named controls on it and
+  // no one can say from memory which have ever been pushed. The list that
+  // matters is the last one on the screen, not the first: "never once used" is
+  // what tells you which screens to delete, and deleting is the only thing
+  // that keeps this file from growing forever.
+  // ============================================================
+  var UZ_RANGES=[[7,"7 days"],[30,"30 days"],[90,"90 days"]];
+  function uzMins(ms){var m=Math.round((ms||0)/60000);return m<1?"under a minute":m<60?m+" min":(Math.round(m/6)/10)+" hr"}
+  function uzDate(ts){return ts?new Date(ts).toLocaleDateString("en-US",{month:"short",day:"numeric"}):""}
+  function growLoadUsage(force){
+    var U=GROW.usage;
+    if(U.loading)return;
+    if(U.data&&!force)return;
+    U.loading=true;U.err="";growRender();
+    api("/api/use?days="+U.days).then(function(d){
+      U.loading=false;
+      if(d&&d.ok)U.data=d;else U.err=(d&&d.error)||"Couldn't load";
+      if(el("growApp").classList.contains("show")&&GROW.view==="usage")growRender();
+    }).catch(function(){U.loading=false;U.err="Network error";
+      if(el("growApp").classList.contains("show")&&GROW.view==="usage")growRender();});
+  }
+  function uzBars(rows,label,icon,fmt){
+    if(!rows||!rows.length)return"";
+    var max=Math.max(1,rows[0].n||1);
+    var h='<div class="gr-sec"><span class="gs-ic">'+ic(icon,16)+"</span>"+esc(label)+"</div>";
+    rows.forEach(function(r){
+      h+='<div class="hbar"><div class="hbar-top"><span class="hb-k">'+esc(r.k||r.key)+'</span><span class="hb-n">'+esc(fmt?fmt(r):String(r.n))+
+         '</span></div><div class="hbar-track"><div class="hbar-fill" style="width:'+Math.round((r.n||0)/max*100)+'%"></div></div></div>';
+    });
+    return h;
+  }
+  function growUsage(box){
+    box=box||el("grBody");
+    var U=GROW.usage;
+    if(!U.data&&!U.loading&&!U.err){growLoadUsage(false);return}
+    var h='<div class="gr-hero gr-hero-web"><h2>How you actually use this</h2><p>Every button you push and every screen you sit on, counted — so the stuff you never touch can come out, and the stuff you lean on can get better.</p></div>';
+    h+='<div class="qv-ranges">';
+    UZ_RANGES.forEach(function(r){h+='<button class="qv-range'+(U.days===r[0]?" on":"")+'" data-uzr="'+r[0]+'">'+r[1]+"</button>"});
+    h+="</div>";
+    if(U.loading&&!U.data){box.innerHTML=h+'<div class="wc-empty"><span class="spin"></span> Reading what you\'ve been doing…</div>';return uzWire(box)}
+    if(U.err&&!U.data){box.innerHTML=h+'<div class="wc-empty">'+ic("info",15)+" "+esc(U.err)+"</div>";return uzWire(box)}
+    var d=U.data||{},T=d.totals||{};
+    if(U.loading)h+='<div class="wc-empty" style="margin-bottom:8px"><span class="spin"></span> Refreshing…</div>';
+
+    if(!T.events){
+      h+='<div class="wc-empty">'+ic("info",15)+' Nothing recorded yet. It starts counting the moment this build is live — give it a day of normal use and come back.</div>';
+      box.innerHTML=h;return uzWire(box);
+    }
+
+    h+='<div class="big-tiles"><div class="big-tile"><div class="bt-v">'+waN(T.taps||0)+'</div><div class="bt-l">Buttons pushed</div></div>'+
+       '<div class="big-tile"><div class="bt-v">'+waN(T.sessions||0)+'</div><div class="bt-l">Times you opened it</div></div></div>';
+    h+='<div class="big-tiles" style="margin-top:8px"><div class="big-tile"><div class="bt-v">'+waN(T.tracked||0)+'</div><div class="bt-l">Controls seen</div></div>'+
+       '<div class="big-tile"><div class="bt-v">'+waN(T.dead||0)+'</div><div class="bt-l">Never once used</div></div></div>';
+
+    var tr=d.trend||[];
+    if(tr.length>1){
+      h+='<div class="wa-panel" style="margin-top:10px"><div class="p-t">'+ic("bar-chart",14)+" Every day you were in here</div>";
+      h+=waBarChart(tr.map(function(x){return{d:String(x.d).replace(/-/g,""),n:x.n}}),"n",56,function(x,v){return waDay(x.d)+" — "+v+" things"})+"</div>";
+    }
+
+    // The one button worth putting above the lists: a chart can only show what
+    // you already thought to plot.
+    h+='<button class="btn ic-btn" id="uzAi" style="width:100%;justify-content:center;margin:10px 0 4px">'+ic("sparkles",15)+
+       "<span>"+(U.aiLoading?"Reading how you work…":"AI read — how do I actually use this?")+"</span></button>";
+    if(U.aiErr)h+='<div class="wa-ins bad"><span class="i-ic">'+ic("alert",15)+"</span><div>"+esc(U.aiErr)+"</div></div>";
+    if(U.ai)h+='<div class="wa-panel"><div class="p-t">'+ic("bot",14)+" AI read <small>last "+(U.aiDays||U.days)+" days</small></div><div class=\"wa-ai\">"+esc(U.ai)+"</div></div>";
+
+    h+=uzBars((d.top||[]).slice(0,20),"What you push most","target",null);
+
+    var sc=(d.screens||[]).map(function(s){return{k:s.k,n:s.ms,opens:s.n,bail:s.bail}});
+    if(sc.length){
+      var max=Math.max(1,sc[0].n||1);
+      h+='<div class="gr-sec"><span class="gs-ic">'+ic("clock",16)+"</span>Where the time goes</div>";
+      sc.slice(0,14).forEach(function(r){
+        h+='<div class="hbar"><div class="hbar-top"><span class="hb-k">'+esc(r.k)+'</span><span class="hb-n">'+esc(uzMins(r.n))+
+           '</span></div><div class="hbar-track"><div class="hbar-fill" style="width:'+Math.round(r.n/max*100)+'%"></div></div>'+
+           '<div class="hint" style="margin:2px 0 0;font-size:11px">'+r.opens+" opens"+(r.bail?" · walked straight back out "+r.bail+(r.bail===1?" time":" times"):"")+"</div></div>";
+      });
+    }
+
+    var hrs=d.hours||[];
+    if(hrs.some(function(x){return x>0})){
+      h+='<div class="gr-sec"><span class="gs-ic">'+ic("activity",16)+"</span>When you're in here</div>";
+      h+='<div class="wa-panel"><div class="uz-hours">'+
+         waBarChart(hrs.map(function(n,i){return{i:i,n:n}}),"n",44,function(x,v){return uzHour(x.i)+" — "+v})+
+         '<div class="hint" style="display:flex;justify-content:space-between;margin:4px 0 0">'+
+         "<span>12am</span><span>6am</span><span>noon</span><span>6pm</span><span>11pm</span></div></div></div>";
+    }
+
+    h+=uzBars((d.server||[]).slice(0,15),"What the server does for you","zap",null);
+
+    // Last, and the point of all of it.
+    var dead=d.dead||[];
+    h+='<div class="gr-sec"><span class="gs-ic">'+ic("trash",16)+"</span>Never once used ("+dead.length+")</div>";
+    if(!dead.length)h+='<div class="hint" style="margin:0 0 10px">Nothing yet — this list fills in as you open each screen, since a control has to be seen before it can be called unused.</div>';
+    else{
+      h+='<div class="hint" style="margin:0 0 8px">On your screen, never pushed. Each one is a candidate to delete.</div>';
+      dead.slice(0,U.deadAll?dead.length:25).forEach(function(r){
+        h+='<div class="uz-dead">'+ic("x",12)+"<span>"+esc(r.key)+'</span><i>seen '+esc(uzDate(r.since))+"</i></div>";
+      });
+      if(dead.length>25&&!U.deadAll)h+='<button class="btn" id="uzMore" style="width:100%;margin-top:8px">Show all '+dead.length+"</button>";
+    }
+
+    var cold=d.cold||[];
+    if(cold.length){
+      h+='<div class="gr-sec"><span class="gs-ic">'+ic("clock",16)+"</span>Went cold ("+cold.length+")</div>";
+      h+='<div class="hint" style="margin:0 0 8px">You used these once. Nothing in over a month.</div>';
+      cold.slice(0,20).forEach(function(r){
+        h+='<div class="uz-dead"><span>'+esc(r.key)+"</span><i>"+r.n+"× · last "+esc(uzDate(r.last))+"</i></div>";
+      });
+    }
+
+    var tape=d.tape||[];
+    if(tape.length){
+      h+='<div class="gr-sec"><span class="gs-ic">'+ic("route",16)+"</span>The last few moves</div>";
+      h+='<div class="hint" style="margin:0 0 8px">Newest first. The order is where a shortcut hides.</div>';
+      tape.slice(0,30).forEach(function(s){
+        h+='<div class="uz-step"><i>'+esc(uzClock(s.t))+"</i><span>"+esc(uzVerb(s.k))+" "+esc(s.l||"")+"</span></div>";
+      });
+    }
+
+    h+='<button class="btn ic-btn" id="uzCopy" style="width:100%;justify-content:center;margin:14px 0 4px">'+ic("copy",15)+
+       "<span>"+(U.copied?"Copied — paste it to Claude":"Copy all of this for Claude")+"</span></button>";
+    h+='<p class="hint" style="margin:6px 0 0">Features and screens only — no messages, no names, no amounts. Safe to paste anywhere.</p>';
+
+    box.innerHTML=h;uzWire(box);
+  }
+  function uzHour(i){return i===0?"12am":i<12?i+"am":i===12?"noon":(i-12)+"pm"}
+  function uzClock(t){return new Date(t).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})}
+  function uzVerb(k){return k==="t"?"pushed":k==="v"?"opened":k==="b"?"opened and left":k==="a"?"server":k}
+  function uzAsk(){
+    var U=GROW.usage;
+    if(U.aiLoading)return;
+    U.aiLoading=true;U.aiErr="";U.ai="";growRender();
+    post("/api/use/ai",{days:U.days}).then(function(d){
+      U.aiLoading=false;
+      if(d&&d.ok){U.ai=d.empty?"Not enough recorded yet to say anything useful. Give it a few days of normal use.":(d.read||"");U.aiDays=d.days||U.days}
+      else U.aiErr=(d&&d.error==="ai_not_configured")?"The AI key isn't set on the Worker yet.":((d&&d.error)||"Couldn't read it");
+      if(el("growApp").classList.contains("show")&&GROW.view==="usage")growRender();
+    }).catch(function(){U.aiLoading=false;U.aiErr="Network error";
+      if(el("growApp").classList.contains("show")&&GROW.view==="usage")growRender();});
+  }
+  function uzWire(box){
+    Array.prototype.forEach.call(box.querySelectorAll("[data-uzr]"),function(b){
+      b.onclick=function(){vibrate(6);GROW.usage.days=+b.getAttribute("data-uzr");GROW.usage.data=null;GROW.usage.deadAll=false;growLoadUsage(true)};
+    });
+    var ai=box.querySelector("#uzAi");if(ai)ai.onclick=function(){vibrate(6);uzAsk()};
+    var more=box.querySelector("#uzMore");if(more)more.onclick=function(){vibrate(6);GROW.usage.deadAll=true;growRender()};
+    var cp=box.querySelector("#uzCopy");
+    if(cp)cp.onclick=function(){
+      vibrate(6);
+      // Straight from the export endpoint rather than scraped off this screen:
+      // the screen is trimmed to what fits, the export is the whole record.
+      fetch("/api/use/export?days="+GROW.usage.days).then(function(r){return r.text()}).then(function(txt){
+        return navigator.clipboard.writeText(txt);
+      }).then(function(){
+        GROW.usage.copied=true;growRender();toast("Copied — paste it into a chat with Claude");
+        setTimeout(function(){GROW.usage.copied=false;if(GROW.view==="usage"&&el("growApp").classList.contains("show"))growRender()},4000);
+      }).catch(function(){toast("Couldn't copy — try again")});
+    };
   }
 
   function growAnalytics(box){
@@ -13278,6 +13464,315 @@
     }).catch(function(){});
   }
 
+  // ============================================================
+  // Usage — what actually gets touched in here
+  // ------------------------------------------------------------
+  // The Worker counts every /api call on its own (see noteApiUse in
+  // src/index.js), so this half only reports the things a server can never
+  // see: which screen he's standing on and for how long, which button he
+  // pushed to get there, and which screens he opens and abandons in seconds.
+  //
+  // Nothing here is hand-wired to a feature. Controls name THEMSELVES from
+  // their own visible text — there are 400-odd click handlers in this file and
+  // instrumenting them one at a time would be wrong the day after it shipped.
+  // A control whose text reads badly can override it with data-track="Name".
+  // Screens are hooked by wrapping the four functions every screen already
+  // goes through (setTab, navOpen, navDrop, and each hub's own view setter)
+  // rather than by editing every opener.
+  //
+  // COST is why the timer below is minutes rather than seconds. The Worker gets
+  // ~1,000 KV writes a DAY for the whole app (see the budget warning at the top
+  // of src/index.js) and blowing it 429s everything until midnight — so a
+  // tracker that flushed every few seconds would take the app down to measure
+  // it. The real batching boundary isn't a timer anyway, it's him putting the
+  // phone down: hiding the app always beacons, so a session of two hundred taps
+  // costs ONE write. The timer is only a backstop for a session left open all
+  // afternoon.
+  //
+  // The trade is that an app killed outright by the OS — no pagehide, no
+  // visibilitychange — can lose up to USE_FLUSH_MS of taps. Worth it: the
+  // alternative is a usage report that breaks the thing it is reporting on.
+  //
+  // Content is never recorded: that he pushed Send, never what he sent. Not a
+  // detail — /api/use/export is meant to be pasted into a chat with Claude,
+  // and that is only safe if no customer has ever been in it.
+  // ============================================================
+  var USE_FLUSH_MS=300000;      // backstop only — hiding the app is the real flush
+  var USE_MAX_BATCH=200;        // …or this many taps without one, whichever first
+  var USE_BAIL_MS=2500;         // in and out this fast, having done nothing, is a dead end
+  var USE_LEAVE_MS=300;         // a tap this close to a screen change IS the screen change
+  var USE_SCAN_MS=4000;         // how often we look for controls we've never seen
+  var USE_SCAN_CAP=1200;        // …and how much of a very large DOM one pass will walk
+  var USE_Q_KEY="mkd-use-q";    // events stranded by a dead network
+  var USE_SEEN_KEY="mkd-use-seen";
+  var USE_OWNED={analytics:1,jobs:1,more:1,moreView:1}; // named by their own hook, with the view
+  var USE={q:[],seen:{},pending:{},screen:"",at:0,acts:0,actAt:0,timer:null,scan:0,on:true};
+
+  function useNow(){return Date.now()}
+  function usePush(k,l,d){
+    if(!USE.on)return;
+    l=String(l==null?"":l).replace(/\s+/g," ").trim().slice(0,60);
+    if(k!=="s"&&!l)return;
+    USE.q.push({t:useNow(),k:k,l:l,d:d||0});
+    if(k==="t"){USE.acts++;USE.actAt=useNow()}
+    if(USE.q.length>=USE_MAX_BATCH)useFlush(false);
+    else useArm();
+  }
+  function useArm(){if(USE.timer)return;USE.timer=setTimeout(function(){USE.timer=null;useFlush(false)},USE_FLUSH_MS)}
+
+  // Stash anything the network wouldn't take. A day of use with the phone in a
+  // dead zone should still show up, and the alternative — dropping it — quietly
+  // biases the whole record towards wherever he has signal.
+  function useStash(evs){
+    try{
+      var q=JSON.parse(localStorage.getItem(USE_Q_KEY)||"[]");
+      localStorage.setItem(USE_Q_KEY,JSON.stringify(q.concat(evs).slice(-300)));
+    }catch(e){}
+  }
+  function useUnstash(){
+    try{
+      var q=JSON.parse(localStorage.getItem(USE_Q_KEY)||"[]");
+      localStorage.removeItem(USE_Q_KEY);
+      return Array.isArray(q)?q:[];
+    }catch(e){return[]}
+  }
+
+  function useFlush(beacon){
+    if(USE.timer){clearTimeout(USE.timer);USE.timer=null}
+    var evs=USE.q;USE.q=[];
+    // 300 is the server's own ceiling; sending more just wastes the request.
+    var cat=Object.keys(USE.pending).slice(0,300);USE.pending={};
+    if(!evs.length&&!cat.length)return;
+    var body=JSON.stringify({e:evs,c:cat});
+    // Same-origin, so the auth cookie rides along and there is no CORS at all —
+    // which is what makes sendBeacon usable here. It survives the page being
+    // closed mid-flight; a fetch does not.
+    if(beacon&&navigator.sendBeacon){
+      var sent=false;
+      try{sent=navigator.sendBeacon("/api/use",new Blob([body],{type:"application/json"}))}catch(e){}
+      if(sent){useMarkSeen(cat);return}
+    }
+    fetch("/api/use",{method:"POST",headers:{"Content-Type":"application/json"},body:body,keepalive:true})
+      .then(function(r){return r.json().catch(function(){return{}})})
+      .then(function(d){
+        // The Worker has a kill switch (USAGE_OFF). When it is thrown, stop
+        // collecting here too rather than posting batches into a bin — the
+        // whole point of that switch is that something has gone wrong and this
+        // should get out of the way.
+        if(d&&d.off){USE.on=false;USE.q=[];USE.pending={};return}
+        useMarkSeen(cat);
+      })
+      .catch(function(){
+        useStash(evs);
+        // Put the catalog back rather than replacing it: entries found while
+        // the request was in flight are just as unreported as these.
+        cat.forEach(function(k){USE.pending[k]=1});
+      });
+  }
+  function useSetOf(list){var o={};list.forEach(function(k){o[k]=1});return o}
+  // Remember which controls we've already told the server about, so a flush
+  // isn't re-sending the same 300 labels every eight seconds forever.
+  function useMarkSeen(cat){
+    if(!cat.length)return;
+    cat.forEach(function(k){USE.seen[k]=1});
+    try{localStorage.setItem(USE_SEEN_KEY,JSON.stringify(Object.keys(USE.seen).slice(-2000)))}catch(e){}
+  }
+
+  // ---- naming a control ----------------------------------------------------
+  // In order of how well it reads to a person: an explicit override, then what
+  // the button actually SAYS, then what a screen reader would call it, then the
+  // id as a last resort for an icon-only control that has neither.
+  //
+  // Two rules here are the ones keeping customers out of the record, and both
+  // are easy to lose in a refactor:
+  //
+  // A control that hangs off a PERSON — a conversation row, a tap-to-call, a
+  // journey card — is named for what it is and never for who it is about.
+  //
+  // Text longer than USE_TEXT_MAX is prose, not a name. A suggested reply, a
+  // message preview and a customer row all have long text, and in every one of
+  // those cases the text is precisely the thing that must not be recorded. So
+  // long text does not get truncated — it gets abandoned, and the control falls
+  // through to its aria-label or its id instead.
+  var USE_TEXT_MAX=40;
+  var USE_PRIVATE="[data-phone],[data-open],[data-vid],[data-jn-vid],[data-jn-phone],[href^='tel:'],[href^='sms:'],[href^='mailto:']";
+  // A last-ditch net under everything above, for the label that gets through by
+  // a route nobody thought of. Cheap, and it costs nothing to be wrong.
+  function useScrub(l){
+    return String(l)
+      .replace(/[\w.+-]+@[\w.-]+\.\w+/g,"…")
+      .replace(/\+?\d[\d\s().-]{6,}\d/g,"…")
+      .replace(/\$\s?[\d,]+(\.\d\d)?/g,"$…");
+  }
+  // What the control SAYS, minus the counters bolted onto it. Without this the
+  // unread badge rides along and "Chats" becomes "1Chats", "2Chats", "3Chats" —
+  // a brand-new feature every time a text arrives, and the real one buried.
+  function useText(node){
+    var out="",kids=node.childNodes;
+    for(var i=0;i<kids.length;i++){
+      var c=kids[i];
+      if(c.nodeType===3){out+=c.nodeValue;continue}
+      if(c.nodeType!==1)continue;
+      var cn=c.className;
+      var cls=" "+String((cn&&cn.baseVal!==undefined)?cn.baseVal:(cn||""))+" ";
+      if(/\s(ndot|badge|dot|hb-n|pill-n|count)\s/.test(cls))continue;
+      out+=c.textContent||"";
+    }
+    return out.replace(/\s+/g," ").trim();
+  }
+  function useCtrlLabel(node){
+    var t=node.getAttribute("data-track");
+    if(t)return useScrub(t);
+    var priv=node.closest?node.closest(USE_PRIVATE):null;
+    if(priv){
+      var href=node.getAttribute("href")||priv.getAttribute("href")||"";
+      if(/^tel:/.test(href))return "Tap to call";
+      if(/^sms:/.test(href))return "Tap to text";
+      if(/^mailto:/.test(href))return "Tap to email";
+      return "Open a conversation";
+    }
+    var txt=useText(node);
+    if(txt&&txt.length<=USE_TEXT_MAX)return useScrub(txt);
+    var aria=node.getAttribute("aria-label");
+    if(aria)return useScrub(aria);
+    var id=node.id||node.getAttribute("data-ic")||"";
+    return id?"#"+id:"";
+  }
+  // Qualified by the screen it was pushed on, because "Back" and "Send" exist
+  // on half the screens in here and merging them into one number would make
+  // both meaningless.
+  function useFullLabel(node){
+    var l=useCtrlLabel(node);
+    if(!l)return "";
+    return (USE.screen?USE.screen+" · ":"")+l;
+  }
+  var USE_SEL="button,[data-track],[role=button],a[href],.navitem,.mr-item,.cz-item,.qv-range,.fx-row";
+
+  // ---- where he is standing ------------------------------------------------
+  // One current screen at a time, closed out when the next one opens. A screen
+  // he opened and left inside USE_BAIL_MS is reported as a bail, not a visit —
+  // that is the signal for "this screen isn't answering the question he opened
+  // it with", and it is invisible in a plain view count.
+  function useScreen(name){
+    name=String(name||"").slice(0,60);
+    if(name===USE.screen)return;
+    useCloseScreen();
+    USE.screen=name;USE.at=useNow();USE.acts=0;USE.actAt=0;
+    if(name)usePush("v",name);
+  }
+  function useCloseScreen(){
+    if(!USE.screen||!USE.at)return;
+    var ms=useNow()-USE.at,acts=USE.acts;
+    // The tap that LEFT a screen is not use of that screen. Without this, every
+    // dead end looks like a visit — he opens Garage, finds nothing, and the tap
+    // on the segment that gets him out reads as him using Garage. Which would
+    // hide the one thing this event exists to find.
+    if(acts&&USE.actAt&&useNow()-USE.actAt<USE_LEAVE_MS)acts--;
+    // A bail is short AND empty-handed. Passing through a screen quickly on the
+    // way somewhere else is just navigation; leaving one having done nothing at
+    // all is the screen failing to answer whatever he opened it for.
+    usePush(ms<USE_BAIL_MS&&!acts?"b":"x",USE.screen,ms);
+    USE.at=0;USE.acts=0;USE.actAt=0;
+  }
+  function useTabName(t){
+    for(var i=0;i<UI_TABLIST.length;i++)if(UI_TABLIST[i][0]===t)return "Tab · "+UI_TABLIST[i][1];
+    return "Tab · "+t;
+  }
+  // Where we land when a layer closes: the layer underneath if there is one,
+  // otherwise back on the list.
+  function useAfterDrop(){
+    var top=NAV.length?NAV[NAV.length-1].id:"";
+    if(!top)return useScreen(useTabName(state.tab));
+    if(USE_OWNED[top])return;                       // its own hook still owns the name
+    useScreen("Screen · "+top);
+  }
+
+  // ---- the catalog ---------------------------------------------------------
+  // Every control currently ON SCREEN, whether or not it was pushed. This is
+  // what makes a dead list possible: "seen a hundred times, pushed zero" is a
+  // finding, where a control simply absent from the counts might only mean he
+  // never opened that screen. Throttled, and skipped while hidden, because it
+  // is a querySelectorAll over a very large DOM.
+  function useScan(){
+    if(!USE.on||document.hidden)return;
+    var t=useNow();
+    if(t-USE.scan<USE_SCAN_MS)return;
+    USE.scan=t;
+    try{
+      var found=document.querySelectorAll(USE_SEL),n=0;
+      for(var i=0;i<found.length&&i<USE_SCAN_CAP&&n<200;i++){
+        var node=found[i];
+        if(!node.offsetParent&&node.offsetWidth===0&&node.offsetHeight===0)continue;  // not actually visible
+        // Naming a control means reading its text, and doing that for a
+        // thousand nodes every few seconds on a phone is not free. A node's
+        // name doesn't change, so remember it ON the node: after the first
+        // pass over a screen this loop is a property read.
+        var l=node.__uzl;
+        if(l===undefined){l=useFullLabel(node);node.__uzl=l}
+        if(!l||USE.seen[l]||USE.pending[l])continue;
+        USE.pending[l]=1;n++;
+      }
+      if(n)useArm();
+    }catch(e){}
+  }
+
+  function useStart(){
+    try{
+      var s=JSON.parse(localStorage.getItem(USE_SEEN_KEY)||"[]");
+      if(Array.isArray(s))USE.seen=useSetOf(s);
+    }catch(e){}
+    var stranded=useUnstash();
+    if(stranded.length)USE.q=stranded.concat(USE.q);
+    usePush("s","");
+    useScreen(useTabName(state.tab||"home"));
+
+    // Every control names itself. Capture phase so a handler that stops
+    // propagation (several do) can't make its own feature invisible.
+    document.addEventListener("click",function(e){
+      try{
+        var node=e.target&&e.target.closest?e.target.closest(USE_SEL):null;
+        if(!node)return;
+        var l=useFullLabel(node);
+        if(l)usePush("t",l);
+      }catch(err){}
+    },true);
+
+    // Hiding the app is the one moment worth spending a beacon on: it is both
+    // the end of a session and the last thing he did before putting the phone
+    // down, and a normal fetch would be killed mid-flight.
+    document.addEventListener("visibilitychange",function(){
+      if(document.hidden){useCloseScreen();useFlush(true);USE.at=useNow()}
+      else{USE.at=useNow();useScan()}
+    });
+    window.addEventListener("pagehide",function(){useCloseScreen();useFlush(true)});
+
+    setInterval(useScan,USE_SCAN_MS);
+    setTimeout(useScan,1500);
+
+    // ---- wrap the screen switches -------------------------------------
+    // Reassigning the binding beats editing every opener: these are function
+    // declarations in this same closure, so every existing call goes through
+    // the wrapper without one call site changing.
+    var _setTab=setTab;
+    setTab=function(tab){useScreen(useTabName(tab));return _setTab.apply(this,arguments)};
+    var _navOpen=navOpen;
+    navOpen=function(id){var r=_navOpen.apply(this,arguments);if(!USE_OWNED[id])useScreen("Screen · "+id);return r};
+    var _navDrop=navDrop;
+    navDrop=function(){var r=_navDrop.apply(this,arguments);useAfterDrop();return r};
+    var _openAnalytics=openAnalytics;
+    openAnalytics=function(v){var r=_openAnalytics.apply(this,arguments);useScreen("Stats · "+(GROW.view||"overview"));return r};
+    var _growSet=growSet;
+    growSet=function(v){useScreen("Stats · "+v);return _growSet.apply(this,arguments)};
+    var _openJobs=openJobs;
+    openJobs=function(v){var r=_openJobs.apply(this,arguments);useScreen("Pipeline · "+(JD.view||"run"));return r};
+    var _jdSet=jdSet;
+    jdSet=function(v){useScreen("Pipeline · "+v);return _jdSet.apply(this,arguments)};
+    var _openMore=openMore;
+    openMore=function(v){var r=_openMore.apply(this,arguments);useScreen("More · "+(MORE.view||"root"));return r};
+    var _mrSet=mrSet;
+    mrSet=function(v){useScreen("More · "+v);return _mrSet.apply(this,arguments)};
+  }
+
   // ---- boot ----
   hydrateIcons();
   el("myAvatar").innerHTML=brandGlyph();el("loginLogo").innerHTML=brandGlyph();
@@ -13288,6 +13783,9 @@
   jdPrefetchToday();loadBrief();pushRefresh();
   if(!vxSupported()){var vf=el("vxFab");if(vf)vf.style.display="none";}
   maybeDeepLink();
+  // Last, and after every screen function exists: the collector wraps several
+  // of them, so it has to run once the closure is fully built.
+  useStart();
 })();
 </script>
 <script>
