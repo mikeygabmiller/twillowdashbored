@@ -235,6 +235,10 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   works on demand), and **Tools → Polish my text now** skips the wait.
 - **AI helpers (optional, Gemini):** conversation summary, draft a reply, and an
   inbox triage briefing.
+- **Bank screenshot → ledger (optional, Gemini):** screenshot your Wells Fargo
+  activity list and every charge and deposit comes back as a checklist —
+  categories guessed, deposits matched to the customer who paid, anything
+  already logged flagged. Nothing is written until you confirm.
 - **Editable quick-reply templates**, contact rename, pin, and archive.
 - **Free-tier friendly:** adaptive polling that backs off and pauses when idle/hidden.
 
@@ -285,6 +289,39 @@ here and a time booked on the website can never disagree about what's free, and
 it lands as **pending** for Mikey to confirm exactly like a website booking. A
 customer cancelling pulls the reminders that job still had queued (so nobody
 gets "see you tomorrow!" for a job that isn't happening) and emails Mikey.
+
+## Bank screenshot → ledger (Money → Log → Scan)
+Screenshot the Wells Fargo activity list on your phone, tap **Scan a bank
+screenshot** on the Money Log screen, and Gemini reads the rows straight off the
+picture — up to three screenshots at a time. Every charge and deposit comes back
+as a checklist. Nothing is written until you tap the button at the bottom.
+
+The confirm step exists because three things are genuinely not safe to take the
+model's word for, and all three are fixed right in the sheet:
+
+- **The category.** A merchant name is bad evidence — two of the card charges
+  that started this feature rang up at gas stations and were food, not fuel. The
+  prompt says so explicitly (a few dollars at a pump is a drink; $15+ is a
+  fill-up), and every expense row still gets a dropdown.
+- **Which customer paid.** Deposits are matched against your text book by name,
+  including the "SARAH M" form Zelle usually prints. A match has to be
+  *unambiguous* — two Sarahs means nobody is picked and both are offered as
+  chips instead. Unmatched income still logs; it just isn't tied to a customer.
+- **Whether a row is new.** Each proposal is checked against what that month
+  already holds — same day, same amount, same side of the books — however it got
+  there. Anything already logged arrives unticked and labelled, so re-scanning an
+  overlapping screenshot next week can't double-log it. The commit re-checks, in
+  case the ledger moved while you were reading.
+
+Also unticked on arrival: charges still **pending** at the bank (the amount can
+change), and money in that plainly isn't a customer — a transfer from savings, a
+refund, interest — which would otherwise inflate gross and every average built
+on it.
+
+Costs a fraction of a cent per screenshot on `gemini-2.5-flash` and needs no
+setup beyond the `GEMINI_API_KEY` the other AI helpers already use. Entries land
+stamped `bk` so the ledger knows which rows came off a statement. One KV write
+per month touched, however many rows you tick.
 
 ## Are you charging enough? (Money → pricing)
 Every quote sent, against every job actually paid. A quote counts as **won**
@@ -518,6 +555,7 @@ Job Day suite: `/api/day` `/api/day/state` `/api/day/job` `/api/day/remove`
 `/api/push/peek` · `/api/quote/config` `/api/quote` `/api/quote/action` ·
 `/api/pay` `/api/pay/config` `/api/pay/request` `/api/pay/action` ·
 `/api/garage` · `/api/blast/candidates` `/api/blast/send` ·
+Bank scan: `/api/money/scan` `/api/money/scan/commit` ·
 Money on the table: `/api/cold` `/api/cold/action` · Plans: `/api/plan` ·
 Customer page: `/api/cust/link` · Pricing: `/api/pricing` ·
 `/api/photos` `/api/photos/img` `/api/photos/delete` · `/api/brief`
