@@ -60,7 +60,7 @@ section('The picker opens instead of dumping the whole app');
 await openPicker();
 ok('sheet is showing', await page.locator('#jdSheet').evaluate((e) => e.classList.contains('show')));
 ok('it is the snapshot sheet', (await page.locator('#jdSheet .jd-sh-title').innerText()).includes('Snapshot for Claude'));
-ok('every piece of the app is offered', (await page.locator('.snap-row').count()) === 7);
+ok('every piece of the app is offered', (await page.locator('.snap-row').count()) === 13, await page.locator('.snap-row').count());
 ok('nothing downloaded on open', snapUrl === null);
 ok('texts are the sensible default', JSON.stringify(await ticked()) === JSON.stringify(['messages']), await ticked());
 
@@ -93,6 +93,18 @@ ok('text options appear with texts picked', await page.locator('#snapMsgs').isVi
 await page.locator('[data-preset="2"]').click();
 await page.waitForTimeout(300);
 ok('"Just my money" hides the text options', (await page.locator('#snapMsgs').count()) === 0);
+await page.locator('[data-preset="3"]').click();
+await page.waitForTimeout(300);
+ok('"The whole app" really means all of it', (await ticked()).length === 13, (await ticked()).length);
+
+section('The screens beyond texts and money are reachable too');
+await page.locator('#snapSay').fill('quotes and follow-ups');
+await page.locator('#snapSay').press('Enter');
+await page.waitForTimeout(350);
+ok('asked for in plain english', JSON.stringify((await ticked()).sort()) === JSON.stringify(['followups', 'quotes']), await ticked());
+await page.locator('.snap-row[data-part="ai"]').click();
+await page.waitForTimeout(300);
+ok('and by tapping', (await ticked()).indexOf('ai') >= 0, await ticked());
 
 section('Only what was asked for is fetched');
 await page.locator('[data-preset="0"]').click();
