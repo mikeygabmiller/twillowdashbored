@@ -1109,6 +1109,37 @@
 
   /* ---- shell polish ---- */
   .mo-body{padding-top:12px}
+  .pe-card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:12px}
+  .pe-top{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+  .pe-city{font-weight:800;font-size:15px;letter-spacing:-.01em}
+  .pe-meta{color:var(--muted2);font-size:11.5px}
+  .pe-pill{font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:999px;text-transform:uppercase;letter-spacing:.04em}
+  .pe-pill.ready{background:rgba(52,199,89,.16);color:#34c759}
+  .pe-pill.draft{background:rgba(255,214,10,.16);color:#ffd60a}
+  .pe-pill.posted{background:rgba(120,120,128,.2);color:var(--muted2)}
+  .pe-shots{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:10px}
+  .pe-shot{flex:none;width:110px}
+  .pe-shot img{width:110px;height:110px;object-fit:cover;border-radius:10px;display:block;background:var(--line)}
+  .pe-role{width:100%;margin-top:4px;font-size:11px;padding:3px;border-radius:7px;background:var(--bg);color:var(--fg);border:1px solid var(--line)}
+  .pe-lbl{font-size:11px;font-weight:800;color:var(--muted2);text-transform:uppercase;letter-spacing:.05em;margin:10px 0 4px}
+  .pe-ta{width:100%;box-sizing:border-box;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:10px;padding:9px;font:inherit;font-size:13px;line-height:1.45;resize:vertical}
+  .pe-acts{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}
+  .pe-btn{background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:9px;padding:7px 11px;font-size:12.5px;font-weight:700}
+  .pe-btn.go{background:var(--accent);color:var(--accent-text);border-color:transparent}
+  .pe-btn.bad{color:#ff453a}
+  .pe-warn{background:rgba(255,159,10,.12);color:#ff9f0a;border-radius:9px;padding:8px 10px;font-size:12px;margin-top:8px;line-height:1.4}
+  .pe-empty{text-align:center;color:var(--muted2);padding:40px 16px;font-size:13.5px;line-height:1.6}
+  .pe-ok{background:rgba(52,199,89,.12);color:#34c759;border-radius:12px;padding:11px 13px;font-size:13px;font-weight:700;margin-bottom:14px}
+  .pe-chk{display:flex;gap:9px;align-items:flex-start;padding:8px 0;border-top:1px solid var(--line)}
+  .pe-chk:first-of-type{border-top:none}
+  .pe-chk b{font-size:13px}
+  .pe-chk-i{flex:none;width:18px;text-align:center;font-weight:800;color:#ff9f0a;line-height:1.5}
+  .pe-chk.ok .pe-chk-i{color:#34c759}
+  .pe-fix{font-size:11.5px;color:var(--muted2);background:var(--bg);border-radius:8px;padding:6px 8px;margin-top:5px;line-height:1.45}
+  .pe-set{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:14px}
+  .pe-row{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:13px}
+  .pe-row label{flex:1;min-width:0}
+  .pe-row input[type=text]{flex:1.4;min-width:0;background:var(--bg);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 8px;font:inherit;font-size:12.5px}
   .mo-head{backdrop-filter:blur(12px);background:color-mix(in srgb,var(--panel) 86%,transparent)}
   .mo-title b{font-weight:800;letter-spacing:-.02em}
   .mo-nav{background:color-mix(in srgb,var(--panel) 92%,transparent)}
@@ -1790,6 +1821,7 @@
     <div class="ditem" data-tab="scheduled"><span class="ic" data-ic="calendar-days"></span>Scheduled<span class="n" id="mnSched"></span></div>
     <div class="ditem" data-tab="archived"><span class="ic" data-ic="archive"></span>Archived<span class="n" id="mnArch"></span></div>
     <div class="ditem" id="moneyItem"><span class="ic" data-ic="dollar"></span>Money tracker</div>
+    <div class="ditem" id="photoItem"><span class="ic" data-ic="image"></span>Photo Engine<span class="n" id="mnPhotos"></span></div>
     <div class="ditem" id="analyticsItem"><span class="ic" data-ic="bar-chart"></span>Analytics — website &amp; business</div>
 
     <div class="sec-lbl">Auto follow-up settings</div>
@@ -1871,6 +1903,17 @@
 </div>
 
 <!-- ============ Money tracker — its own full-screen section ============ -->
+<!-- Photo Engine — the marketing queue. Reuses the .money overlay chrome so it
+     matches Money/Analytics without a second design language. -->
+<div class="money" id="photoApp">
+  <div class="mo-head">
+    <button class="btn icon" id="peBack" data-ic="chevron-left" aria-label="Back to texting"></button>
+    <div class="mo-title"><b>Photo Engine</b><small id="peSub">Text photos in — posts come out</small></div>
+    <button class="btn icon" id="peRefresh" data-ic="refresh-cw" aria-label="Refresh"></button>
+  </div>
+  <div class="mo-body" id="peBody"></div>
+</div>
+
 <div class="money" id="moneyApp">
   <div class="mo-head">
     <button class="btn icon" id="moBack" data-ic="chevron-left" aria-label="Back to texting"></button>
@@ -1956,7 +1999,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-21·booking+redesign";
+  var APP_BUILD="2026-07-31·photo-engine";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -2139,7 +2182,7 @@
       var res=el("aiCmdResult");res.className="aicmd-result ar-done";
       res.innerHTML='<div class="ar-line"><span class="ar-ic">'+ic("check",16)+'</span><span>'+esc(d.reply||"Done.")+'</span></div>';
       res.style.display="block";
-      refreshThreads();if(typeof loadMoney==="function")loadMoney();if(typeof fetchInsights==="function")fetchInsights();
+      refreshThreads();if(typeof loadMoney==="function")loadMoney();if(typeof fetchInsights==="function")fetchInsights();if(typeof peFetch==="function")peFetch();
       if(typeof renderHome==="function"&&state.tab==="home")setTimeout(function(){aiBriefLoad(true)},400);
       toast(d.reply||"Done");
     }).catch(function(){aiCmdShowError("Network error — please try again.")});
@@ -2152,7 +2195,7 @@
   function submitLogin(value,wrongMsg){
     el("loginErr").textContent="";
     post("/api/login",{password:value}).then(function(d){
-      if(d&&d.ok){pin="";if(el("loginPass"))el("loginPass").value="";hideLogin();refreshThreads();loadTemplates();checkHealth();startPoll();loadConfig();fetchInsights();loadMoney();showBuild();if(state.pendingC)openThread(state.pendingC)}
+      if(d&&d.ok){pin="";if(el("loginPass"))el("loginPass").value="";hideLogin();refreshThreads();loadTemplates();checkHealth();startPoll();loadConfig();fetchInsights();loadMoney();showBuild();peFetch();if(state.pendingC)openThread(state.pendingC)}
       else{
         el("loginErr").textContent=wrongMsg||"Wrong PIN — try again";
         var box=el("loginBox");if(box){box.classList.remove("pin-shake");void box.offsetWidth;box.classList.add("pin-shake")}
@@ -5105,6 +5148,181 @@
     return new Date(+dstr.slice(0,4),+dstr.slice(5,7)-1,+dstr.slice(8,10)).toLocaleDateString([],{weekday:"short",month:"short",day:"numeric"});
   }
 
+  // ---- Photo Engine ----------------------------------------------------
+  // The queue of job photos texted in from the driveway, each already carrying a
+  // GBP post, an Instagram caption and a review-request text written off the
+  // playbook. Every asset has a Copy button, so this works with zero automation
+  // configured; the webhook and the token endpoints just remove the tapping.
+  var PE={jobs:[],cfg:null,wired:false,busy:""};
+  function openPhotos(){
+    el("photoApp").style.display="flex";
+    if(!PE.wired){peWire();PE.wired=true}
+    peRender();peFetch(true);
+  }
+  function closePhotos(){el("photoApp").style.display="none"}
+  function peWire(){
+    el("peBack").onclick=closePhotos;
+    el("peRefresh").onclick=function(){vibrate(6);peFetch(true);toast("Refreshed")};
+  }
+  // check=1 makes the server run its real setup probes (including a live R2
+  // write/read). Only asked for when the panel is open, never on the background
+  // poll that keeps the drawer badge fresh.
+  function peFetch(check){
+    return api("/api/photos"+(check?"?check=1":"")).then(function(d){
+      if(!d||!d.ok)return;
+      PE.jobs=d.jobs||[];PE.cfg=d.config||{};PE.configured=!!d.configured;
+      if(d.readiness)PE.readiness=d.readiness;
+      var n=PE.jobs.filter(function(j){return j.status==="ready"}).length;
+      var dot=el("mnPhotos");if(dot)dot.textContent=n?String(n):"";
+      if(el("photoApp").style.display==="flex")peRender();
+    }).catch(function(){});
+  }
+  function peEsc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
+  function peCopy(text,what){
+    function done(){toast((what||"Caption")+" copied")}
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(done,function(){peCopyFallback(text,done)})}
+    else peCopyFallback(text,done);
+  }
+  function peCopyFallback(text,done){
+    var t=document.createElement("textarea");t.value=text;t.style.position="fixed";t.style.opacity="0";
+    document.body.appendChild(t);t.select();try{document.execCommand("copy");done()}catch(e){toast("Couldn't copy",{bad:true})}
+    document.body.removeChild(t);
+  }
+  // Setup checklist. The only way to tell whether this thing is actually wired
+  // up without opening a terminal, so it says what's wrong AND where to click.
+  function peSetupHTML(){
+    var r=PE.readiness;
+    if(!r)return"";
+    var bad=r.checks.filter(function(c){return!c.ok});
+    if(r.ready&&!bad.length)return'<div class="pe-ok">✓ Everything is set up. Text a before and after photo to your business number.</div>';
+    var h='<div class="pe-set"><div class="pe-lbl" style="margin-top:0">Setup'
+      +(r.ready?' — ready to use':' — not live yet')+'</div>';
+    r.checks.forEach(function(c){
+      h+='<div class="pe-chk'+(c.ok?" ok":"")+'"><span class="pe-chk-i">'+(c.ok?"✓":"○")+'</span>'
+        +'<div><b>'+peEsc(c.label)+'</b><div class="pe-meta">'+peEsc(c.detail)+'</div>'
+        +(c.ok?"":'<div class="pe-fix">'+peEsc(c.fix)+'</div>')+'</div></div>';
+    });
+    if(!r.ready)h+='<div class="pe-meta" style="margin-top:8px">The first four are required. The rest are optional — the Copy and Download buttons work without them.</div>';
+    return h+'</div>';
+  }
+  function peRender(){
+    var b=el("peBody");if(!b)return;
+    var h="";
+    h+=peSetupHTML();
+    var c=PE.cfg||{};
+    h+='<div class="pe-set">'
+      +'<div class="pe-row"><label>Photo Engine on</label><input type="checkbox" id="peEnabled"'+(c.enabled!==false?" checked":"")+'></div>'
+      +'<div class="pe-row"><label>Text me a confirmation<br><span class="pe-meta">Off = email instead (free). On costs a Twilio message per batch.</span></label><input type="checkbox" id="peConfirm"'+(c.confirmText?" checked":"")+'></div>'
+      +'<div class="pe-row"><label>Default city</label><input type="text" id="peCity" value="'+peEsc(c.defaultCity||"")+'"></div>'
+      +'<div class="pe-row"><label>Publish webhook<br><span class="pe-meta">Make/Zapier catch hook — the hands-off path</span></label><input type="text" id="peHook" placeholder="https://hook.eu2.make.com/…" value="'+peEsc(c.webhookUrl||"")+'"></div>'
+      +'<div class="pe-row"><label>Auto-post ready jobs<br><span class="pe-meta">Needs a webhook. Max '+(c.maxPerDay||2)+'/day.</span></label><input type="checkbox" id="peAuto"'+(c.autopost?" checked":"")+'></div>'
+      +'<div class="pe-acts"><button class="pe-btn go" id="peSaveCfg">Save settings</button></div>'
+      +'</div>';
+    if(!PE.jobs.length){
+      h+='<div class="pe-empty">Nothing queued yet.<br><br>Text your before and after photos to your own business number from the driveway. Add the city in the message ("after — Lake Stevens") and the post writes itself.</div>';
+    }
+    PE.jobs.forEach(function(j){h+=peCard(j)});
+    b.innerHTML=h;
+    peBind();
+  }
+  function peCard(j){
+    var p=j.payload||{};
+    var st=j.status==="posted"?"posted":(j.status==="ready"?"ready":"draft");
+    var when=new Date(j.createdAt).toLocaleDateString([],{month:"short",day:"numeric"});
+    var h='<div class="pe-card" data-job="'+peEsc(j.id)+'">';
+    h+='<div class="pe-top"><span class="pe-city">'+peEsc(j.city||"—")+'</span>'
+      +'<span class="pe-pill '+st+'">'+st+'</span>'
+      +'<span class="pe-meta">'+when+(j.vehicle?" · "+peEsc(j.vehicle):"")+'</span></div>';
+    h+='<div class="pe-shots">';
+    (j.photos||[]).forEach(function(ph){
+      h+='<div class="pe-shot"><a href="'+peEsc(ph.url)+'" target="_blank" rel="noopener"><img src="'+peEsc(ph.url)+'" alt=""></a>'
+        +'<select class="pe-role" data-key="'+peEsc(ph.key)+'">'
+        +'<option value="before"'+(ph.role==="before"?" selected":"")+'>before</option>'
+        +'<option value="after"'+(ph.role==="after"?" selected":"")+'>after</option>'
+        +'</select></div>';
+    });
+    h+='</div>';
+    if(p.warnings&&p.warnings.length)h+='<div class="pe-warn">'+peEsc(p.warnings.join(" · "))+'</div>';
+    if(j.lastError)h+='<div class="pe-warn">Last error: '+peEsc(j.lastError)+'</div>';
+    if(!j.caption||!j.caption.gbp){
+      h+='<div class="pe-acts"><button class="pe-btn go" data-act="caption">Write the post</button>'
+        +'<button class="pe-btn bad" data-act="delete">Delete</button></div></div>';
+      return h;
+    }
+    h+='<div class="pe-lbl">Google Business Profile post</div>'
+      +'<textarea class="pe-ta" rows="4" data-f="gbp">'+peEsc(j.caption.gbp)+'</textarea>'
+      +'<div class="pe-acts">'
+      +'<button class="pe-btn go" data-act="copy-gbp">Copy post</button>'
+      +'<a class="pe-btn" href="'+peEsc(p.gbp&&p.gbp.photo_url||"")+'" download target="_blank" rel="noopener">Download photo</a>'
+      +'<a class="pe-btn" href="https://business.google.com/posts" target="_blank" rel="noopener">Open GBP</a>'
+      +'</div>';
+    h+='<div class="pe-lbl">Instagram caption</div>'
+      +'<textarea class="pe-ta" rows="3" data-f="ig">'+peEsc(j.caption.ig)+'</textarea>'
+      +'<div class="pe-acts"><button class="pe-btn" data-act="copy-ig">Copy caption</button></div>';
+    h+='<div class="pe-lbl">Review request text</div>'
+      +'<textarea class="pe-ta" rows="3" data-f="review">'+peEsc(j.caption.review)+'</textarea>'
+      +'<div class="pe-acts"><button class="pe-btn" data-act="copy-review">Copy text</button>'
+      +'<button class="pe-btn" data-act="send-review">Text it to…</button></div>';
+    h+='<div class="pe-acts" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">'
+      +'<button class="pe-btn" data-act="save">Save edits</button>'
+      +'<button class="pe-btn" data-act="caption">Rewrite</button>'
+      +(PE.cfg&&PE.cfg.webhookUrl?'<button class="pe-btn go" data-act="push">Publish now</button>':"")
+      +(j.posted&&j.posted.gbp?"":'<button class="pe-btn" data-act="mark">Mark posted</button>')
+      +'<button class="pe-btn bad" data-act="delete">Delete</button>'
+      +'</div>';
+    return h+'</div>';
+  }
+  function peJobEl(node){while(node&&!node.getAttribute("data-job"))node=node.parentNode;return node}
+  function peCollect(card){
+    var out={caption:{},roles:{}};
+    Array.prototype.forEach.call(card.querySelectorAll("[data-f]"),function(t){out.caption[t.getAttribute("data-f")]=t.value});
+    Array.prototype.forEach.call(card.querySelectorAll(".pe-role"),function(s){out.roles[s.getAttribute("data-key")]=s.value});
+    return out;
+  }
+  function peBind(){
+    var sv=el("peSaveCfg");
+    if(sv)sv.onclick=function(){
+      vibrate(6);
+      post("/api/photos/config",{
+        enabled:el("peEnabled").checked,confirmText:el("peConfirm").checked,
+        autopost:el("peAuto").checked,defaultCity:el("peCity").value,webhookUrl:el("peHook").value,
+      }).then(function(d){if(d&&d.ok){PE.cfg=d.config;toast("Settings saved");peRender()}else toast("Couldn't save",{bad:true})});
+    };
+    Array.prototype.forEach.call(el("peBody").querySelectorAll("[data-act]"),function(btn){
+      btn.onclick=function(){
+        var card=peJobEl(btn);if(!card)return;
+        var id=card.getAttribute("data-job");
+        var job=PE.jobs.filter(function(x){return x.id===id})[0];if(!job)return;
+        var act=btn.getAttribute("data-act");vibrate(6);
+        if(act==="copy-gbp")return peCopy(card.querySelector('[data-f="gbp"]').value,"Post");
+        if(act==="copy-ig")return peCopy(card.querySelector('[data-f="ig"]').value,"Caption");
+        if(act==="copy-review")return peCopy(card.querySelector('[data-f="review"]').value,"Text");
+        if(act==="send-review"){
+          var to=prompt("Text the review request to which number?",job.phone&&job.phone!==job.ownerPhone?job.phone:"");
+          if(!to)return;
+          var e164=digitsToE164(to);if(!e164)return toast("That doesn't look like a phone number",{bad:true});
+          return post("/api/send",{phone:e164,body:card.querySelector('[data-f="review"]').value})
+            .then(function(d){toast(d&&d.ok?"Review request sent":"Couldn't send: "+((d&&d.error)||"error"),{bad:!(d&&d.ok)})});
+        }
+        if(act==="delete"){
+          if(!confirm("Delete this job and its photos?"))return;
+          return post("/api/photos/delete",{id:id}).then(function(){toast("Deleted");peFetch()});
+        }
+        btn.disabled=true;
+        var body=Object.assign({id:id},peCollect(card));
+        var req=act==="caption"?post("/api/photos/caption",{id:id})
+          :act==="push"?post("/api/photos/update",body).then(function(){return post("/api/photos/publish",{id:id,push:true,targets:["gbp"]})})
+          :act==="mark"?post("/api/photos/update",body).then(function(){return post("/api/photos/publish",{id:id,targets:["gbp"]})})
+          :post("/api/photos/update",body);
+        req.then(function(d){
+          btn.disabled=false;
+          if(d&&d.ok){toast(act==="caption"?"Rewritten":act==="push"?"Published":act==="mark"?"Marked posted":"Saved");peFetch()}
+          else toast("Failed: "+((d&&d.error)||"error"),{bad:true});
+        }).catch(function(){btn.disabled=false;toast("Network error",{bad:true})});
+      };
+    });
+  }
+
   function openMoney(){MO.open=true;el("moneyApp").style.display="flex";if(!MO.loadedOnce||MO.month!==moCurMonth()){moRender();loadMoney()}else moRender()}
   function closeMoney(){MO.open=false;el("moneyApp").style.display="none";closeMoSheet()}
   function refreshMoBadge(){var n=el("navMoney");if(n){var c=(MO.cfg&&MO.cfg.wonNudge!==false)?(MO.nudges||[]).length:0;n.textContent=c;n.className="ndot"+(c?" show":"")}}
@@ -6233,6 +6451,7 @@
   Array.prototype.forEach.call(el("moNav").querySelectorAll("[data-mv]"),function(b){b.onclick=function(){vibrate(6);moSetView(b.getAttribute("data-mv"))}});
   el("moScrim").onclick=closeMoSheet;
   el("moneyItem").onclick=function(){closeDrawer();openMoney()};
+  el("photoItem").onclick=function(){closeDrawer();openPhotos()};
   var anI=el("analyticsItem");if(anI)anI.onclick=function(){closeDrawer();openAnalytics()};
   el("customizeItem").onclick=function(){closeDrawer();openCustomize()};
   el("snapshotItem").onclick=function(){closeDrawer();snapshotForClaude()};
