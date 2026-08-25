@@ -3067,7 +3067,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-25·ai-diet";
+  var APP_BUILD="2026-08-25·see-it-all";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -3821,6 +3821,12 @@
     ["bookings","Bookings","Booked jobs and the schedule","calendar-days"],
     ["emails","Emails","Anything forwarded into the app","mail"],
     ["settings","Settings & AI training","Playbook, prices, templates, preferences","sliders"],
+    ["quotes","Quotes","Every quote you've given and what it was worth","file-text"],
+    ["followups","Follow-ups & promises","Who you owe a shout, what you promised, who's gone quiet","bell"],
+    ["work","Jobs & vehicles","The garage — whose car is what, and what they've spent","car"],
+    ["website","Website visitors","Where leads came from and what they read first","activity"],
+    ["ai","What the AI's been doing","Its spend, the rules it follows, how well it sounds like you","sparkles"],
+    ["trends","Numbers & trends","Insights, price history, and what's changed lately","bar-chart"],
     ["look","App look & layout","How you've set this device up","wand"]
   ];
   var SNAP_RANGES=[[30,"Last 30 days"],[90,"Last 3 months"],[365,"Last year"],[0,"Everything, all time"]];
@@ -3828,7 +3834,7 @@
     ["Just my texts",["messages"],30],
     ["Texts + who they are",["messages","leads"],90],
     ["Just my money",["money"],365],
-    ["The whole app",["messages","leads","money","bookings","emails","settings","look"],0]
+    ["The whole app",SNAP_PARTS.map(function(x){return x[0]}),0]
   ];
   function snapPrefs(){
     var d={parts:["messages"],days:30,msgs:60,q:""};
@@ -3846,6 +3852,12 @@
     if(/book|appoint|schedul|calendar|job/.test(s))add("bookings");
     if(/email|inbox/.test(s))add("emails");
     if(/setting|playbook|train|price|pricing|template|preference/.test(s))add("settings");
+    if(/quote|estimate/.test(s))add("quotes");
+    if(/follow.?up|promis|owe.*shout|gone quiet|cold|win.?back/.test(s))add("followups");
+    if(/garage|vehicle|car\b|what they.*spent/.test(s))add("work");
+    if(/website|visitor|traffic|where.*came from|google|search/.test(s))add("website");
+    if(/\bai\b|robot|assistant|token|voice train/.test(s))add("ai");
+    if(/trend|insight|number|stat|chart|what.*chang/.test(s))add("trends");
     if(/look|layout|theme|customi[sz]/.test(s))add("look");
     if(/everything|whole app|all of it|the lot/.test(s)){parts=SNAP_PARTS.map(function(x){return x[0]});hit=true}
     var m=s.match(/last\s+(\d+)\s*(day|week|month|year)/);

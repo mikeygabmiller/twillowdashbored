@@ -120,7 +120,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-25·ai-diet';
+const BUILD = '2026-08-25·see-it-all';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -6625,7 +6625,33 @@ async function apiMoneyByPhone(url) {
 //   ?q=sarah                only conversations matching a name or number
 //   ?limit=300              max conversations
 // No params at all = the old behavior (everything), so older links keep working.
-const SNAP_PARTS = ['messages', 'leads', 'money', 'bookings', 'emails', 'settings'];
+const SNAP_PARTS = ['messages', 'leads', 'money', 'bookings', 'emails', 'settings',
+  'quotes', 'followups', 'work', 'website', 'ai', 'trends'];
+
+// The screens below already have an endpoint that answers "what does this screen
+// show". Re-deriving any of that here would drift the first time someone changed
+// one of those screens, so the snapshot calls the very same handler the screen
+// calls and folds the answer straight in. Adding a screen is one line.
+//   [name it gets in the file, the handler, the query string it runs with]
+// The function gets the ?days= window, so a screen that can narrow itself does.
+// Deliberately NOT here: /api/webstats, because it calls Google and Clarity over
+// the network — a snapshot has to come back fast and work with the keys unset.
+const SNAP_SCREENS = {
+  quotes:    (d) => [['quotes',        apiQuotes,     d ? 'months=' + Math.ceil(d / 30) : '']],
+  followups: ()  => [['followUps',     apiFollowups,  ''],
+                     ['promises',      apiPromises,   ''],
+                     ['goneQuiet',     apiCold,       '']],
+  work:      ()  => [['jobsAndCars',   apiGarage,     '']],
+  website:   (d) => [['siteVisitors',  apiAnalytics,  d ? 'days=' + Math.min(60, d) : ''],
+                     ['whoWentWhere',  apiJourneys,   'limit=60'],
+                     ['serviceArea',   apiGeogrid,    '']],
+  ai:        (d) => [['aiSpend',       apiAiUsage,    d ? 'days=' + Math.min(45, d) : ''],
+                     ['aiRules',       apiRulesGet,   ''],
+                     ['voiceTraining', apiVoiceStats, '']],
+  trends:    ()  => [['insights',      apiInsights,   ''],
+                     ['priceHistory',  apiPricing,    ''],
+                     ['whatChanged',   apiDetections, '']],
+};
 
 async function apiSnapshot(url) {
   const P = url.searchParams;
@@ -6737,6 +6763,27 @@ async function apiSnapshot(url) {
     out.moneyConfig = scrub(await loadMoneyConfig());
     out.bookingConfig = scrub(await loadBookingConfig());
     out.templates = (await kv().get('templates', { type: 'json' })) || [];
+  }
+
+  // ---- every other screen, read through its own endpoint (see SNAP_SCREENS) ----
+  // One screen failing must not cost you the whole file, so each is caught on its
+  // own and named under `couldntRead` instead of throwing the snapshot away.
+  for (const key of Object.keys(SNAP_SCREENS)) {
+    if (!want(key)) continue;
+    for (const [name, handler, qs] of SNAP_SCREENS[key](days)) {
+      try {
+        const body = await (await handler(new URL('https://snapshot.invalid/x?' + qs))).json();
+        if (!body || body.ok === false) {
+          (out.couldntRead = out.couldntRead || {})[name] = (body && body.error) || 'no answer';
+          continue;
+        }
+        delete body.ok;
+        out[name] = scrub(body);
+        counts.screens = (counts.screens || 0) + 1;
+      } catch (e) {
+        (out.couldntRead = out.couldntRead || {})[name] = String((e && e.message) || e).slice(0, 120);
+      }
+    }
   }
 
   out.counts = counts;
