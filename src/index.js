@@ -36,6 +36,9 @@
  *                          dashboard to stop the follow-up cron WITHOUT a KV
  *                          write, for when the daily write limit is exhausted and
  *                          the in-app toggle therefore can't save. Unset to resume.)
+ *   USAGE_OFF=1            (kill switch for dashboard usage tracking — stops the
+ *                          collectors and their KV writes. Also a var, for the
+ *                          same reason: it has to work with writes exhausted.)
  * Required KV binding: MESSAGES
  *
  * ┌─────────────────────────────────────────────────────────────────────────┐
@@ -140,12 +143,18 @@ function envFlag(name) {
 }
 
 export default {
-  async fetch(request, env) {
+  async fetch(request, env, ctx) {
     ENV = env; resetInvocationCaches();
     try {
       return await handle(request);
     } catch (err) {
       return json({ ok: false, error: String((err && err.message) || err) }, 500);
+    } finally {
+      // Usage counts ride out AFTER the response, never in front of it. The
+      // buffer decides for itself whether it's due (see useMaybeFlush), so this
+      // costs a KV write at most once every USE_FLUSH_MS however hard he taps —
+      // and a slow KV day can never show up as a slow dashboard.
+      try { if (ctx && ctx.waitUntil) ctx.waitUntil(useMaybeFlush(false)); } catch (e) {}
     }
   },
   async scheduled(event, env, ctx) {
@@ -172,6 +181,10 @@ async function runCron() {
   // Land any AI counts this isolate is still holding, so a quiet stretch after a
   // busy one doesn't leave the last few calls unrecorded. No-op when empty.
   await flushAiUsage().catch(() => {});
+  // Same idea for the usage gate, but NOT forced: this tick runs every minute,
+  // and a forced flush in an isolate that has been serving requests would be
+  // 1,440 writes a day entirely by itself. It writes only once it is due.
+  await useMaybeFlush(false).catch(() => {});
   // Job Day suite. Both are write-frugal by design: the brief stamps one key a
   // day, the invoice sweep only writes when something is actually overdue.
   await maybeDailyBrief().catch(() => {});
@@ -247,6 +260,10 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/logout')     return apiLogout();
   // Everything else under /api/ requires the dashboard password (once one is set).
   if (pathname.startsWith('/api/') && !(await isAuthed(request)))   return json({ ok: false, error: 'unauthorized' }, 401);
+  // Past the gate = a real, authenticated use of a real feature. Buffered, never
+  // written here: see noteApiUse. This is the half of usage tracking that keeps
+  // working when the browser is serving a stale cached shell.
+  if (pathname.startsWith('/api/')) noteApiUse(pathname, request.method);
 
   if (request.method === 'GET'  && pathname === '/api/health')     return apiHealth();
   if (request.method === 'GET'  && pathname === '/api/threads')    return apiThreads(url);
@@ -310,6 +327,14 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/journeys')      return apiJourneys(url);
   if (request.method === 'GET'  && pathname === '/api/journey')       return apiJourney(url);
   if (request.method === 'POST' && pathname === '/api/journey/ai')    return apiJourneyAi(request);
+
+  // Dashboard usage — the same recording trick as the journeys above, pointed
+  // at this app instead of the website. /api/use is the browser's batch; the
+  // gate below counts the server side on its own.
+  if (request.method === 'POST' && pathname === '/api/use')           return apiUseIngest(request);
+  if (request.method === 'GET'  && pathname === '/api/use')           return apiUse(url);
+  if (request.method === 'GET'  && pathname === '/api/use/export')    return apiUseExport(url);
+  if (request.method === 'POST' && pathname === '/api/use/ai')        return apiUseAi(request);
   if (request.method === 'GET'  && pathname === '/api/quotes')        return apiQuotes(url);
   if (request.method === 'GET'  && pathname === '/api/quotes/export') return apiQuotesExport(url);
   if (request.method === 'POST' && pathname === '/api/quotes/import') return apiQuotesImport(request);
@@ -2558,6 +2583,480 @@ function journeyThreadSteps(thread) {
                   : (r.n === 1 ? 'You replied' : 'You sent ' + r.n + ' texts'),
       detail: String(r.body || '').replace(/\s+/g, ' ').slice(0, 120),
     };
+  }
+}
+
+// ===========================================================================
+// Dashboard usage — what actually gets touched in here
+// ---------------------------------------------------------------------------
+// The /px pixel above answers "what do customers do on the website". This
+// answers the same question about the dashboard itself, and it exists for one
+// reason: this app is a 13,000-line HTML file with ~570 named controls on it,
+// and nobody — Mikey included — can say from memory which of them he has ever
+// pushed. A screen that has been sitting there for a month unused is a screen
+// that should come out, and until it's counted, cutting anything is a guess.
+//
+// Two collectors feed one set of docs:
+//
+//   THE GATE. `noteApiUse()` sits just past the /api auth check in handle(),
+//   so every server-backed feature — all ~130 routes — counts itself with no
+//   client code at all. That coverage keeps working if the browser collector
+//   is ever broken, blocked, or serving a stale cached shell.
+//
+//   THE BROWSER. A delegated click listener plus the screen switches report
+//   what the server can never see: which screen he's standing on and for how
+//   long, which buttons only open a sheet, and which screens he opens and
+//   abandons in seconds. Those last ones are the interesting ones — a screen
+//   opened daily and left immediately is a screen that isn't answering the
+//   question he opened it with.
+//
+// COST decides the whole shape of this, and the budget is brutal: the free tier
+// allows ~1,000 KV WRITES A DAY for the entire app (see the warning at the top
+// of this file), and blowing it hard-stops everything with 429s until midnight.
+// A feature that measures the dashboard must never be the thing that breaks it.
+//
+// So the target here is ~100 writes a day, and three decisions get it there:
+//
+//   ONE WRITE PER FLUSH. The replay tape lives inside the day doc rather than
+//   in a key of its own, so a flush is a single put() — not three.
+//
+//   FLUSHES ARE RARE. The browser's timer is USE_FLUSH_MS — minutes, not
+//   seconds — because the real batching boundary is him putting the phone down:
+//   hiding the app always beacons. A session of two hundred taps is ONE write.
+//
+//   THE CATALOG IS WRITTEN ONLY WHEN IT MEANS SOMETHING. Its counts change on
+//   every flush, but what it is FOR — the dead list and the cold list — only
+//   changes when a control is seen for the first time, or used for the first
+//   time. Those force a write; a bumped counter does not, and rides along on
+//   the next one. See useCatalogDirty.
+//
+// AND A KILL SWITCH. Set the Worker var USAGE_OFF=1 and every collector here
+// goes quiet at once. It is a var rather than a KV flag on purpose — the exact
+// emergency this needs to survive is the daily write limit being exhausted, and
+// at that point an in-app toggle cannot save itself. Same reasoning as the other
+// kill switches; see envFlag() at the top of this file.
+//
+// WHAT IS DELIBERATELY NOT RECORDED: content. That he pushed Send, never what
+// he sent. That he logged money, never how much. That he opened a thread,
+// never whose. /api/use/export exists to be pasted into a chat with Claude,
+// and that is only a safe thing to do if no customer has ever been in it.
+// ===========================================================================
+const USE_TTL = 200 * 86400;        // ~6 months of days is plenty to spot a trend
+const USE_TAPE_PER_DAY = 120;       // the replay tape, kept inside the day doc
+const USE_TAPE_READ = 120;          // how much of it any one read hands back
+const USE_CATALOG_MAX = 1500;       // hard ceiling on the feature index
+const USE_FLUSH_MS = 600000;        // gate backstop: ten minutes, not seconds — see COST
+const USE_BUF_MAX = 400;            // …or this many, whichever comes first
+const USE_CATALOG_STALE = 86400000; // refresh the counters at most once a day
+const USE_BAIL_MS = 2500;           // opened and gone again = a dead end, not a visit
+const useDayKey = (d) => 'use:day:' + d;
+const USE_CATALOG_KEY = 'use:catalog';
+
+// The gate's buffer. Module-level ON PURPOSE, and deliberately NOT cleared by
+// resetInvocationCaches(): it has to survive from one request to the next
+// inside the same isolate, because surviving is the entire saving. Losing a
+// few counts when Cloudflare evicts an idle isolate is the price, and for
+// "which features does he use" it costs nothing worth having.
+let USE_BUF = [];
+let USE_BUF_AT = 0;
+
+// Event kinds. One letter because these are written on every tap; all the
+// English lives in useReadKind() at read time, same bargain as journeyReadStep.
+//   t = tapped a control      v = opened a screen     x = left a screen (ms)
+//   b = bailed out of a screen (opened, gone in seconds)
+//   s = opened the app        a = called a server feature (from the gate)
+const USE_KINDS = { t: 1, v: 1, x: 1, b: 1, s: 1, a: 1 };
+
+function useLabel(s, max) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, max || 60); }
+
+// A route reduced to the feature it is. Tokens, phone numbers and ids in the
+// path would otherwise make every call look like its own feature and blow the
+// catalog out — "/api/thread/+14255550123" is the same feature every time.
+function useRoutePath(pathname) {
+  return String(pathname || '').split('?')[0].split('/').map((seg) => {
+    if (!seg) return seg;
+    // 16 is well past every real segment in the router ("disconnect" is the
+    // longest at 10) and well short of any token or id, which is the line that
+    // actually needs drawing.
+    const plain = /^[a-z][a-z0-9-]*$/i.test(seg) && !/^\d+$/.test(seg) && seg.length <= 16;
+    return plain ? seg : ':id';
+  }).join('/').slice(0, 60);
+}
+
+// ---- the feature index -----------------------------------------------------
+// One doc that answers "has this ever been used, and when last" without
+// reading a single day doc. This is the cheap surface the dead-list and the
+// export both read; the day docs are only for drawing the trend.
+//
+// `seen` is what makes a dead list possible at all. The browser reports every
+// control it has ever PUT ON SCREEN, not just the ones that got pushed — so a
+// button with seen-but-never-used is a genuine finding, where a button simply
+// missing from the counts might just mean he never opened that screen.
+function blankUseCatalog() { return { at: 0, keys: {} }; }
+// Returns true when this touch changed something a reader would actually see —
+// a control that has never been seen before, or one crossing from never-used to
+// used. A bumped counter returns false: it is kept in memory and written out
+// with the next real change, because paying a KV write for it would cost more
+// than the number is worth.
+function useCatalogTouch(cat, key, kind, ts, used) {
+  const k = useLabel(key);
+  if (!k) return false;
+  let notable = false;
+  let row = cat.keys[k];
+  if (!row) { row = cat.keys[k] = { k: kind || 't', f: ts, l: 0, n: 0 }; notable = true; }
+  if (kind && row.k !== kind && row.n === 0) row.k = kind;
+  row.f = Math.min(row.f || ts, ts);
+  if (used) {
+    if (!row.n) notable = true;          // off the dead list — that has to stick
+    row.n = (row.n || 0) + 1;
+    row.l = Math.max(row.l || 0, ts);
+  }
+  return notable;
+}
+// Bound the index. Something that has never been used and was first seen
+// longest ago is the safest thing to forget — it's either gone from the UI or
+// it's about to be reported again the next time that screen draws.
+function useCatalogTrim(cat) {
+  const keys = Object.keys(cat.keys);
+  if (keys.length <= USE_CATALOG_MAX) return cat;
+  const drop = keys.filter((k) => !cat.keys[k].n).sort((a, b) => (cat.keys[a].f || 0) - (cat.keys[b].f || 0));
+  let over = keys.length - USE_CATALOG_MAX;
+  for (const k of drop) { if (over-- <= 0) break; delete cat.keys[k]; }
+  // Still over even after dropping every unused one: fall back to least-recently-used.
+  const left = Object.keys(cat.keys);
+  if (left.length > USE_CATALOG_MAX) {
+    const lru = left.sort((a, b) => (cat.keys[a].l || 0) - (cat.keys[b].l || 0)).slice(0, left.length - USE_CATALOG_MAX);
+    for (const k of lru) delete cat.keys[k];
+  }
+  return cat;
+}
+
+function blankUseDay(d) {
+  return { d, n: 0, sess: 0, first: 0, last: 0,
+    f: {},      // control label -> taps
+    api: {},    // server route -> calls
+    s: {},      // screen -> times opened
+    ms: {},     // screen -> milliseconds actually on it
+    b: {},      // screen -> times opened and abandoned in seconds
+    h: {},      // local hour -> events, i.e. when in the day he's in here
+    // The replay tape lives HERE rather than in a key of its own. Counts tell
+    // you what he uses; only the order tells you that he checks Money after
+    // every single send. Keeping it in the day doc is what makes a flush one
+    // KV write instead of two — and reads want the day docs anyway.
+    tape: [] };
+}
+
+// Apply one event to a day doc. Split out so a whole flush shares a single
+// read-modify-write per day, the same reason appendStep() exists above.
+function useApplyEvent(doc, ev, hour) {
+  if (!USE_KINDS[ev.k]) return false;
+  doc.n = (doc.n || 0) + 1;
+  doc.first = doc.first ? Math.min(doc.first, ev.t) : ev.t;
+  doc.last = Math.max(doc.last || 0, ev.t);
+  if (hour >= 0) doc.h[hour] = (doc.h[hour] || 0) + 1;
+  const l = ev.l;
+  if (ev.k === 's') doc.sess = (doc.sess || 0) + 1;
+  else if (ev.k === 't' && l) doc.f[l] = (doc.f[l] || 0) + 1;
+  else if (ev.k === 'a' && l) doc.api[l] = (doc.api[l] || 0) + 1;
+  else if (ev.k === 'v' && l) doc.s[l] = (doc.s[l] || 0) + 1;
+  else if (ev.k === 'b' && l) doc.b[l] = (doc.b[l] || 0) + 1;
+  else if (ev.k === 'x' && l) doc.ms[l] = (doc.ms[l] || 0) + Math.max(0, Math.min(3600000, Number(ev.d) || 0));
+  return true;
+}
+
+// Write a batch. Events are grouped by their own local day first so a flush
+// that straddles midnight lands on both days correctly rather than dumping
+// yesterday's evening into today.
+//
+// The write count is the thing to watch here: one put() per day touched (nearly
+// always exactly one), plus the catalog only when it has something new to say.
+async function useFlush(events, seenKeys) {
+  if (envFlag('USAGE_OFF')) return 0;
+  const list = (events || []).filter((e) => e && USE_KINDS[e.k]);
+  if (!list.length && !(seenKeys || []).length) return 0;
+  const cfg = await loadConfig();
+  const tz = cfg.tz;
+
+  const byDay = new Map();
+  for (const ev of list) {
+    const day = localDateStr(ev.t, tz);
+    if (!byDay.has(day)) byDay.set(day, []);
+    byDay.get(day).push(ev);
+  }
+  for (const [day, evs] of byDay) {
+    const key = useDayKey(day);
+    const doc = (await kv().get(key, { type: 'json' })) || blankUseDay(day);
+    // An older doc written before a field existed must not throw here.
+    for (const f of ['f', 'api', 's', 'ms', 'b', 'h']) doc[f] = doc[f] || {};
+    doc.tape = doc.tape || [];
+    for (const ev of evs) useApplyEvent(doc, ev, localHour(ev.t, tz));
+    // Screen-exits and app-opens stay off the tape: they are bookkeeping, and
+    // they would bury the actual moves under themselves.
+    const acts = evs.filter((e) => e.k === 't' || e.k === 'v' || e.k === 'b' || e.k === 'a');
+    if (acts.length) {
+      doc.tape = doc.tape.concat(acts.map((e) => ({ t: e.t, k: e.k, l: e.l })))
+        .sort((a, b) => a.t - b.t).slice(-USE_TAPE_PER_DAY);
+    }
+    await kv().put(key, JSON.stringify(doc), { expirationTtl: USE_TTL });
+  }
+
+  const cat = (await kv().get(USE_CATALOG_KEY, { type: 'json' })) || blankUseCatalog();
+  cat.keys = cat.keys || {};
+  let notable = false;
+  for (const k of seenKeys || []) notable = useCatalogTouch(cat, k, 't', Date.now(), false) || notable;
+  for (const ev of list) {
+    if (ev.k === 't') notable = useCatalogTouch(cat, ev.l, 't', ev.t, true) || notable;
+    else if (ev.k === 'a') notable = useCatalogTouch(cat, ev.l, 'api', ev.t, true) || notable;
+    else if (ev.k === 'v') notable = useCatalogTouch(cat, ev.l, 'screen', ev.t, true) || notable;
+  }
+  // Written when the dead or cold list would actually read differently, or when
+  // the counters have gone a day stale — never merely because a number moved.
+  if (notable || Date.now() - (cat.at || 0) > USE_CATALOG_STALE) {
+    cat.at = Date.now();
+    await kv().put(USE_CATALOG_KEY, JSON.stringify(useCatalogTrim(cat)));
+  }
+  return list.length;
+}
+
+// ---- the gate --------------------------------------------------------------
+// Called for every authenticated /api/* request. Buffers only; the write
+// happens in useMaybeFlush(), off the response path.
+function noteApiUse(pathname, method) {
+  if (envFlag('USAGE_OFF')) return;
+  const p = useRoutePath(pathname);
+  // Never count the usage endpoints themselves — a tracker that shows up as
+  // the most-used feature in its own report is just noise.
+  if (p.indexOf('/api/use') === 0) return;
+  const l = useLabel((method === 'GET' ? '' : method + ' ') + p);
+  USE_BUF.push({ t: Date.now(), k: 'a', l });
+  if (!USE_BUF_AT) USE_BUF_AT = Date.now();
+}
+function useBufDue() {
+  return USE_BUF.length >= USE_BUF_MAX || (USE_BUF_AT && Date.now() - USE_BUF_AT >= USE_FLUSH_MS);
+}
+// Hand the buffer over and clear it in the same breath, so a flush running in
+// waitUntil can't race the next request into writing the same events twice.
+function useTakeBuf() { const out = USE_BUF; USE_BUF = []; USE_BUF_AT = 0; return out; }
+async function useMaybeFlush(force) {
+  if (!USE_BUF.length || (!force && !useBufDue())) return 0;
+  try { return await useFlush(useTakeBuf(), []); } catch (e) { return 0; }
+}
+
+// ---- POST /api/use — the browser's batch ----------------------------------
+// Behind the /api auth gate, so unlike /px/e this is never public. Everything
+// is still clamped, because a stale cached shell sending a malformed batch is
+// a real thing that happens and must not poison the counts.
+async function apiUseIngest(request) {
+  if (envFlag('USAGE_OFF')) return json({ ok: true, off: true });
+  let body = {};
+  try { body = await readJson(request); } catch (e) {}
+  const now = Date.now();
+  const raw = Array.isArray(body.e) ? body.e.slice(0, 120) : [];
+  const events = [];
+  for (const r of raw) {
+    const k = String((r && r.k) || '');
+    if (!USE_KINDS[k] || k === 'a') continue;    // 'a' is the gate's alone
+    // Trust the server clock for anything wildly off: a phone whose clock is
+    // days out must not scatter its taps across the calendar.
+    const t = Number(r.t) || now;
+    const ts = (t > now + 300000 || t < now - 86400000) ? now : t;
+    events.push({ t: ts, k, l: useLabel(r.l), d: Number(r.d) || 0 });
+  }
+  const seen = (Array.isArray(body.c) ? body.c.slice(0, 400) : []).map((x) => useLabel(x)).filter(Boolean);
+  // Fold in whatever the gate is holding: this request is already paying for a
+  // read and a write, so the buffered API counts ride along for free.
+  const mine = useTakeBuf();
+  const n = await useFlush(events.concat(mine), seen);
+  return json({ ok: true, n });
+}
+
+// ---- reading it back -------------------------------------------------------
+const useSortDesc = (m) => Object.keys(m || {}).map((k) => ({ k, n: m[k] })).sort((a, b) => b.n - a.n);
+const useDays = (v) => Math.max(1, Math.min(90, parseInt(v, 10) || 30));
+
+async function useLoadDays(days, tz) {
+  const now = Date.now();
+  const out = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = localDateStr(now - i * DAY_MS, tz);
+    const doc = await kv().get(useDayKey(d), { type: 'json' });
+    out.push(doc || blankUseDay(d));
+  }
+  return out;
+}
+
+// Everything the three read endpoints need, gathered once. They used to each
+// walk the day docs themselves, which meant three copies of the same summing
+// loop and three chances for the numbers on the screen to disagree with the
+// numbers in the export.
+async function useGather(days) {
+  const cfg = await loadConfig();
+  const docs = await useLoadDays(days, cfg.tz);
+  const cat = (await kv().get(USE_CATALOG_KEY, { type: 'json' })) || blankUseCatalog();
+  const g = { days, docs, cat, tape: [], f: {}, api: {}, s: {}, ms: {}, b: {}, h: {},
+              sess: 0, activeDays: 0, events: 0, taps: 0 };
+  for (const doc of docs) {
+    if (doc.n) g.activeDays++;
+    g.events += doc.n || 0;
+    g.sess += doc.sess || 0;
+    for (const [m, into] of [[doc.f, g.f], [doc.api, g.api], [doc.s, g.s], [doc.ms, g.ms], [doc.b, g.b], [doc.h, g.h]]) {
+      for (const k of Object.keys(m || {})) into[k] = (into[k] || 0) + m[k];
+    }
+    for (const k of Object.keys(doc.f || {})) g.taps += doc.f[k];
+  }
+  // The tape is stitched back together out of the day docs, which are already
+  // loaded — so the replay costs no extra read at all.
+  for (const doc of docs) if (doc.tape && doc.tape.length) g.tape = g.tape.concat(doc.tape);
+  g.tape = g.tape.slice(-USE_TAPE_READ);
+  g.rows = Object.keys(cat.keys || {}).map((key) => Object.assign({ key }, cat.keys[key]));
+  return g;
+}
+// Seen on screen, never once pushed. The list the whole feature is for.
+function useDeadRows(g) {
+  return g.rows.filter((r) => !r.n && r.k === 't').sort((a, b) => (a.f || 0) - (b.f || 0));
+}
+// Used once upon a time and not since — a different finding, and a different fix.
+function useColdRows(g, now) {
+  return g.rows.filter((r) => r.n > 0 && r.l && now - r.l > 30 * DAY_MS).sort((a, b) => (a.l || 0) - (b.l || 0));
+}
+// Screens ranked by where the time actually goes rather than by how often he
+// lands on them: a screen he opens twenty times for three seconds each is a
+// very different thing from one he sits on.
+function useScreenRows(g) {
+  return Object.keys(Object.assign({}, g.s, g.ms)).map((k) => ({
+    k, n: g.s[k] || 0, ms: g.ms[k] || 0, bail: g.b[k] || 0,
+  })).sort((a, b) => b.ms - a.ms);
+}
+
+// GET /api/use?days=30 — everything the Usage screen draws.
+async function apiUse(url) {
+  const g = await useGather(useDays(url.searchParams.get('days')));
+  const now = Date.now();
+  const dead = useDeadRows(g).slice(0, 120).map((r) => ({ key: r.key, since: r.f || 0 }));
+  const cold = useColdRows(g, now).slice(0, 60).map((r) => ({ key: r.key, n: r.n, last: r.l }));
+  return json({ ok: true, days: g.days,
+    range: { from: g.docs[0].d, to: g.docs[g.docs.length - 1].d },
+    trend: g.docs.map((d) => ({ d: d.d, n: d.n || 0, sess: d.sess || 0 })),
+    totals: { events: g.events, taps: g.taps, sessions: g.sess, activeDays: g.activeDays,
+              tracked: g.rows.length, dead: dead.length },
+    top: useSortDesc(g.f).slice(0, 40),
+    server: useSortDesc(g.api).slice(0, 40),
+    screens: useScreenRows(g).slice(0, 20),
+    hours: Array.from({ length: 24 }, (_, i) => g.h[i] || 0),
+    dead, cold,
+    tape: g.tape.slice(-60).reverse(),
+  });
+}
+
+// One stored event -> one line a person can read. Same bargain as
+// journeyReadStep: the storage stays one letter, the English lives here.
+function useReadKind(k) {
+  return k === 't' ? 'pushed' : k === 'v' ? 'opened' : k === 'b' ? 'opened and left' :
+         k === 'a' ? 'server' : k === 'x' ? 'left' : k === 's' ? 'opened the app' : k;
+}
+
+// The export, as plain text — deliberately.
+// This is the deliverable: the thing to paste into a chat with Claude when the
+// question is "what do I actually use". JSON would be smaller and worse. The
+// point is that it reads as evidence to a person and to a model alike, and
+// that anyone can see at a glance that no customer is in it.
+function useExportText(g) {
+  const now = Date.now();
+  const mins = (v) => Math.round((v || 0) / 60000);
+  const L = [];
+  L.push(`DASHBOARD USAGE — ${g.docs[0].d} to ${g.docs[g.docs.length - 1].d} (${g.days} days)`);
+  L.push('Nothing below identifies a customer: features and screens only, never content.');
+  L.push('');
+  L.push(`App opened ${g.sess} times across ${g.activeDays} of ${g.days} days.`);
+  L.push('');
+  L.push('WHAT HE PUSHES (times, control)');
+  const top = useSortDesc(g.f);
+  if (!top.length) L.push('  (nothing recorded yet)');
+  top.slice(0, 60).forEach((r) => L.push(`  ${r.n}\t${r.k}`));
+  L.push('');
+  L.push('WHERE THE TIME GOES (screen, opens, minutes on it, times he walked straight back out)');
+  const screens = useScreenRows(g).slice(0, 25);
+  if (!screens.length) L.push('  (nothing recorded yet)');
+  screens.forEach((r) => L.push(`  ${r.k}\t${r.n} opens\t${mins(r.ms)} min${r.bail ? `\t${r.bail} bailed` : ''}`));
+  L.push('');
+  L.push('SERVER FEATURES CALLED (times, route)');
+  const srv = useSortDesc(g.api);
+  if (!srv.length) L.push('  (nothing recorded yet)');
+  srv.slice(0, 60).forEach((r) => L.push(`  ${r.n}\t${r.k}`));
+  L.push('');
+  L.push('WHEN HE IS IN HERE (local hour: events)');
+  L.push('  ' + Array.from({ length: 24 }, (_, i) => `${i}:${g.h[i] || 0}`).join('  '));
+  L.push('');
+  const dead = useDeadRows(g);
+  L.push(`NEVER ONCE USED — on screen but never pushed (${dead.length})`);
+  if (!dead.length) L.push('  (none yet — the catalog fills in as each screen is opened)');
+  dead.slice(0, 150).forEach((r) => L.push(`  ${r.key}\t(first seen ${new Date(r.f || now).toISOString().slice(0, 10)})`));
+  L.push('');
+  const cold = useColdRows(g, now);
+  L.push(`WENT COLD — used before, nothing in 30+ days (${cold.length})`);
+  if (!cold.length) L.push('  (none)');
+  cold.slice(0, 80).forEach((r) => L.push(`  ${r.key}\t${r.n} times, last ${new Date(r.l).toISOString().slice(0, 10)}`));
+  L.push('');
+  L.push('THE LAST FEW MOVES, IN ORDER (most recent last)');
+  const steps = g.tape.slice(-USE_TAPE_READ);
+  if (!steps.length) L.push('  (nothing recorded yet)');
+  steps.forEach((st) => {
+    L.push(`  ${new Date(st.t).toISOString().replace('T', ' ').slice(0, 16)}  ${useReadKind(st.k)} ${st.l || ''}`.trimEnd());
+  });
+  return L.join('\n');
+}
+
+// GET /api/use/export?days=30
+async function apiUseExport(url) {
+  const g = await useGather(useDays(url.searchParams.get('days')));
+  return new Response(useExportText(g), { status: 200, headers: {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Cache-Control': 'no-store',
+  } });
+}
+
+// POST /api/use/ai — the reason for recording behaviour instead of counting it.
+// A bar chart can only show what someone already thought to plot. This can
+// notice that he opens Money right after every send, or that he has opened
+// Pipeline every morning for a month and never once pushed anything on it.
+async function apiUseAi(request) {
+  if (!ENV.GEMINI_API_KEY) return json({ ok: false, error: 'ai_not_configured' }, 503);
+  let data = {};
+  try { data = await readJson(request); } catch (e) {}
+  const g = await useGather(useDays(data.days));
+  // Emptiness is a fact about the record, not something to infer from the text
+  // of the report — the header alone ("across 0 of 30 days") carries digits.
+  if (!g.events) return json({ ok: true, read: '', empty: true });
+  const body = useExportText(g);
+
+  const prompt = [
+    'Below is a recording of how ONE person — Mikey, who runs a mobile car-detailing business alone —',
+    'actually uses his own dashboard: which controls he pushes, which screens he sits on and for how long,',
+    'which screens he opens and abandons in seconds, what hours he is in there, which controls have been',
+    'on his screen for weeks and never once pushed, and the raw order of his last few moves.',
+    '',
+    'Tell him what this says about how he really works. Specifically:',
+    '- What is he leaning on hardest, and what does that suggest is missing right next to it?',
+    '- What routine shows up in the ORDER of his moves that could be collapsed into one button?',
+    '- What has he never used, or stopped using, that is worth deleting to make the app smaller?',
+    '- Where does he open something and leave immediately? That screen is not answering his question.',
+    '',
+    'Rules:',
+    '- Talk to Mikey like a person, not a report. Short paragraphs, no headings, no bullet symbols.',
+    '- Say what the evidence actually supports. If there is not enough recorded yet to tell, say so plainly.',
+    '- Never invent a number you were not given.',
+    '- End with the single most useful change to the dashboard this data argues for, and why.',
+    '',
+    body.slice(0, 40000),
+  ].join('\n');
+
+  try {
+    // Tagged like every other call site so this shows up by name in
+    // ☰ → Settings → what the AI is actually costing, rather than in "other".
+    const read = await geminiGenerate(prompt, { surface: 'usage read', temperature: 0.5, maxTokens: 900 });
+    return json({ ok: true, read, days: g.days });
+  } catch (err) {
+    return json({ ok: false, error: String(err.message || err).slice(0, 200) }, 502);
   }
 }
 
