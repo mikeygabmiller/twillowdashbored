@@ -20,6 +20,11 @@ directory = "./public"
 [vars]
 PUBLIC_BASE_URL = "https://texting.mikeysdetailingsnohomish.workers.dev"
 
+# NOTE (2026-08-25): the two mails that went out EVERY day — the morning brief and
+# the evening "log today's money?" nudge — are paused. It's an in-app switch, not a
+# var: ☰ → Settings → Phone notifications → Daily emails. Weekly recap, monthly
+# close-out and anything a customer sets off are unaffected.
+#
 # Owner alerts (new leads, missed calls, voicemails, follow-up nudges) go out as
 # EMAIL instead of a Twilio SMS whenever RESEND_API_KEY (secret, below) AND
 # ALERT_EMAIL are both set — see notifyMikey() in src/index.js. Keeps self-alerts
@@ -48,6 +53,9 @@ id = "e3305474d22a48ac97265b394aba685e"
 #     can't drop real inbound texts. Turn it ON with  TWILIO_SIGNATURE_ENFORCE = 1
 #     under Variables (validated with your existing TWILIO_AUTH_TOKEN — no new secret).
 #     Remove the var to instantly go back to accept-all if webhooks ever stop arriving.
+#   - Stop counting what the AI costs (per-surface token counters, ~1 KV write per
+#     8 AI calls): add  AI_USAGE_OFF = 1  under Variables. The AI itself keeps
+#     working; only the /api/ai/usage numbers stop moving.
 #   - Kill appointment detection + the day-of briefs only: add  DAYOF_DISABLED = 1
 #     under Variables. Texting, follow-ups and scheduled sends all keep working.
 #     Remove it to resume. (The in-app master switch does the same thing, but it
