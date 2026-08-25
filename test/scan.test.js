@@ -56,7 +56,7 @@ const IMG = 'data:image/jpeg;base64,' + 'A'.repeat(64);
 function world({ reply = { rows: [] }, contacts = [], months = {}, key = 'test-key' } = {}) {
   const store = new Map();
   for (const m of Object.keys(months)) store.set('money:m:' + m, JSON.stringify({ entries: months[m], rec: {} }));
-  const w = { store, written: [], prompts: [], images: [] };
+  const w = { store, written: [], prompts: [], opts: [], images: [] };
   w.deps = {
     kv: () => ({
       get: async (k, opt) => {
@@ -74,6 +74,7 @@ function world({ reply = { rows: [] }, contacts = [], months = {}, key = 'test-k
     loadIndex: async () => contacts.slice(),
     geminiGenerate: async (prompt, opts) => {
       w.prompts.push(prompt);
+      w.opts.push(opts || {});
       w.images.push((opts && opts.images) || []);
       if (reply instanceof Error) throw reply;
       return typeof reply === 'string' ? reply : JSON.stringify(reply);
@@ -159,6 +160,9 @@ console.log('\n=== reading a statement ===');
   check('the prompt tells it today', /2026-08-25/.test(w.prompts[0]), true);
   check('and the real category list', /fuel, supplies, equipment/.test(w.prompts[0]), true);
   check('the image went to the model', w.images[0].length, 1);
+  // Untagged calls pile into an "other" bucket, and a scan is the most
+  // expensive call in the app — image tokens — so it has to name itself.
+  check('the call is tagged for the usage counters', w.opts[0].surface, 'bank scan');
 }
 
 console.log('\n=== how the money arrived ===');

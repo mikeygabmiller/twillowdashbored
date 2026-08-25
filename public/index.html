@@ -5489,6 +5489,10 @@
   // textareas (that would fight the cursor while typing) — they save on blur and
   // keep their own DOM state.
   function predictOn(){return !(state.config&&state.config.predictive===false)}
+  // The AI half is opt-IN, not opt-out: every pause it fires on is a paid call,
+  // and it was the biggest single line on the AI bill for a suggestion that
+  // mostly got typed straight past. The free local chips are unaffected.
+  function predictAiOn(){return !!(state.config&&state.config.predictiveAi===true)}
   // Turning the word chips off should feel instant — the strip goes away on the
   // tap, and the save catches up. afterConfig() re-reads the saved value, so a
   // failed save corrects itself on the next config load.
@@ -5499,9 +5503,21 @@
     if(PK.off)pkHide();else if(state.thread)pkOnType();
     return saveConfig({predictive:!!on});
   }
+  // Same instant-feel pattern for the paid half. PK.noAi is the flag the asking
+  // code already checks, so flipping it here stops the calls on this keystroke,
+  // not on the next config load.
+  function setPredictiveAi(on){
+    if(state.config)state.config.predictiveAi=!!on;
+    PK.noAi=!on;
+    if(typeof vibrate==="function")vibrate(6);
+    if(!on)pkGhost("");
+    return saveConfig({predictiveAi:!!on});
+  }
   function afterConfig(){
     PK.off=!!(state.config&&state.config.predictive===false);
+    PK.noAi=!predictAiOn();
     if(PK.off)pkHide();
+    if(PK.noAi)pkGhost("");
     renderFuSettings();renderTeam();applyTeamUI();renderMain();
     if(state.phone&&state.thread)renderDetails();
   }
@@ -5600,6 +5616,51 @@
       });
     });
   }
+  // Counted AI use, biggest spender first. This exists because every earlier
+  // answer to "what is the AI costing me?" was a model built on guessed daily
+  // volumes — fine for ranking the offenders, useless for telling whether
+  // switching one off actually did anything. These are real token counts off
+  // each response, so the day after a change is the proof.
+  var AIUSE=null;
+  function fmtTok(n){
+    n=n||0;
+    if(n>=1000000)return (n/1000000).toFixed(n>=10000000?0:1)+"M";
+    if(n>=1000)return (n/1000).toFixed(n>=10000?0:1)+"k";
+    return String(n);
+  }
+  function renderAiUsage(){
+    var box=el("aiUseCard");if(!box)return;
+    var paint=function(d){
+      if(!(d&&d.ok)){box.innerHTML="Couldn't read the AI usage counters.";return}
+      var rows=d.bySurface||[];
+      if(!rows.length){
+        box.innerHTML='Nothing counted yet. Every AI call from here on is recorded — check back tomorrow and this shows exactly which features are spending, biggest first.';
+        return;
+      }
+      var top=rows[0].in+rows[0].out||1;
+      var h='<div style="font-weight:700;color:var(--text)">'+d.total.calls+' AI call'+(d.total.calls===1?"":"s")+
+        ' over '+d.total.days+' day'+(d.total.days===1?"":"s")+
+        ' \u00b7 '+fmtTok(d.total.in)+' in / '+fmtTok(d.total.out)+' out</div>'+
+        '<div style="margin:3px 0 8px">Today so far: '+d.todayTotal.calls+' call'+(d.todayTotal.calls===1?"":"s")+
+        ' \u00b7 '+fmtTok(d.todayTotal.in)+' in / '+fmtTok(d.todayTotal.out)+' out \u00b7 model '+esc(d.model)+'</div>';
+      rows.slice(0,10).forEach(function(r){
+        var tot=r.in+r.out;
+        var pct=Math.max(2,Math.round(tot/top*100));
+        h+='<div style="display:flex;align-items:center;gap:8px;margin:4px 0">'+
+          '<span style="flex:0 0 118px;color:var(--text);font-weight:600;font-size:11.5px">'+esc(r.surface)+'</span>'+
+          '<span style="flex:1;height:6px;background:var(--panel);border-radius:99px;overflow:hidden"><span style="display:block;height:100%;width:'+pct+'%;background:var(--accent)"></span></span>'+
+          '<span style="flex:0 0 auto;font-variant-numeric:tabular-nums">'+r.calls+'\u00d7 \u00b7 '+fmtTok(tot)+
+          (r.errors?' \u00b7 <b style="color:var(--accent)">'+r.errors+' failed</b>':"")+'</span></div>';
+      });
+      h+='<div style="margin-top:7px"><a href="#" id="aiUseRefresh" style="color:var(--muted2)">Refresh</a> \u00b7 last 14 days, counted from what each AI response reports.</div>';
+      box.innerHTML=h;
+      var rf=el("aiUseRefresh");
+      if(rf)rf.onclick=function(e){e.preventDefault();AIUSE=null;box.innerHTML="Counting\u2026";renderAiUsage()};
+    };
+    if(AIUSE){paint(AIUSE);return}
+    api("/api/ai/usage?days=14").then(function(d){AIUSE=d;paint(d)}).catch(function(){paint(null)});
+  }
+
   function renderFuSettings(){
     var wrap=el("fuSettings");if(!wrap)return;var c=state.config||{};
     wrap.innerHTML=
@@ -5617,10 +5678,14 @@
       '<div class="hint">When a call goes unanswered, the caller instantly gets a friendly text so the lead turns into a conversation you can answer from anywhere. Leave the message blank to use the default.</div>'+
       '<div class="fu-row"><span class="lbl2">Tell me when the auto-reply sends <span style="color:var(--muted2);font-weight:400">· quote form</span></span><span class="sw'+(c.autoReplyAlert!==false?" on":"")+'" id="cfgArAlert"></span></div>'+
       '<div class="hint">A quote from your site alerts you right away, but the customer\'s reply is held about 3½ minutes so it reads like you texting back, not a bot. This texts you the moment it actually reaches them — with their name and number — so you know they\'ve heard from you and can take the conversation from there. If it fails to send, you get told that instead.</div>'+
+      '<div class="fu-col"><span class="lbl2">What the AI is actually costing</span></div>'+
+      '<div id="aiUseCard" class="hint">Counting\u2026</div>'+
       '<div class="fu-row"><span class="lbl2">AI keyboard <span style="color:var(--muted2);font-weight:400">· suggests your next word</span></span><span class="sw'+(c.predictive!==false?" on":"")+'" id="cfgPredict"></span></div>'+
+      '<div class="fu-row"><span class="lbl2">Let the AI finish the sentence <span style="color:var(--muted2);font-weight:400">· costs a little every pause</span></span><span class="sw'+(c.predictiveAi===true?" on":"")+'" id="cfgPredictAi"></span></div>'+
       '<div class="fu-col"><button id="cfgPredictTrain" class="btn" style="white-space:nowrap;align-self:flex-start">'+ic("sparkles",14)+' Relearn how I text</button></div>'+
       '<div class="hint">'+(PK.style&&PK.style.n?('Learned from <b>'+PK.style.n+'</b> of your texts. '):"")+
-        'The strip above the message box predicts your next word from your own texting habits — instantly, right on your phone — and the AI reads the conversation to finish the sentence in dim grey behind the cursor (tap the \u2728 suggestion, or press Tab, to take it). It learns from the same texts as <b>Train AI</b>, so an import or a rebuild there makes this sharper too.</div>'+
+        'The strip above the message box predicts your next word from your own texting habits — instantly, right on your phone, <b>free</b>. It learns from the same texts as <b>Train AI</b>, so an import or a rebuild there makes this sharper too.<br><br>' +
+        'The second switch is the paid half: every time you pause typing, the AI reads the conversation and finishes the sentence in dim grey behind the cursor (tap the \u2728 suggestion, or press Tab, to take it). It\'s <b>off</b> — it was the biggest single item on the AI bill, and most of its guesses got typed straight past. Turn it on if you miss it.</div>'+
       '<div class="fu-row"><span class="lbl2">Answer by email <span style="color:var(--muted2);font-weight:400">· free — no text used</span></span><span class="sw'+(c.assistEmail!==false?" on":"")+'" id="cfgAssistEmail"></span></div>'+
       '<div class="fu-row"><span class="lbl2">Hold before sending</span><span style="display:flex;align-items:center;gap:6px"><input type="number" id="cfgAssistEmailDelay" min="0" max="900" value="'+(c.assistEmailDelaySec==null?180:c.assistEmailDelaySec)+'"><span style="color:var(--muted2)">sec</span></span></div>'+
       '<div class="hint">Every new-text alert now shows you <b>the exact reply it would send</b>, written in your voice. Hit <b>reply</b> and answer <b>"yes"</b> to send it as-is, or <b>"no"</b> to drop it. Want it said differently? Reply with the bare facts instead — <b>"375, thursday works"</b> — and it gets rewritten and sent. The reply already knows who it\'s about, so there\'s nothing to address. <b>Costs nothing</b> — the only text message used is the one the customer receives.</div>'+
@@ -5661,7 +5726,9 @@
     el("cfgMct").onclick=function(){saveConfig({missedCallTextback:!(c.missedCallTextback!==false)})};
     el("cfgMctText").onchange=function(){saveConfig({missedCallText:el("cfgMctText").value})};
     el("cfgArAlert").onclick=function(){saveConfig({autoReplyAlert:!(c.autoReplyAlert!==false)})};
+    renderAiUsage();
     el("cfgPredict").onclick=function(){setPredictive(!predictOn())};
+    el("cfgPredictAi").onclick=function(){setPredictiveAi(!predictAiOn())};
     el("cfgPredictTrain").onclick=function(){
       var b=el("cfgPredictTrain");b.disabled=true;b.innerHTML='<span class="spin"></span> Learning\u2026';
       pkLoadStyle(true).then(function(m){
@@ -11679,6 +11746,10 @@
     var h='<div class="mo-sec-h">Reminders</div><div class="mo-set">';
     h+='<div class="mo-srow"><span class="lb">Evening “log today?” nudge<small>Only fires when nothing got logged that day. Delivered by email when alerts are set up, otherwise by text.</small></span>'+sw("reminderEnabled",c.reminderEnabled!==false)+'</div>';
     if(c.reminderEnabled!==false)h+='<div class="mo-srow"><span class="lb">Send it around</span>'+hourSel("moRemHour",c.reminderHour==null?19:c.reminderHour)+'</div>';
+    // This switch lives in the main config, not the money one, so it can't be a
+    // row here — but leaving it unsaid would make the switch above look broken.
+    if(c.reminderEnabled!==false&&state.config&&state.config.dailyEmailsPaused)
+      h+='<div class="mo-srow"><span class="lb" style="color:var(--muted2)">Paused right now<small>Daily emails are switched off under \u2630 \u2192 Phone notifications \u2192 Daily emails. The weekly recap below is unaffected.</small></span></div>';
     h+='<div class="mo-srow"><span class="lb">Weekly recap<small>Gross, labor, expenses, net and job count for the week.</small></span>'+sw("weeklyEmail",c.weeklyEmail!==false)+'</div>';
     if(c.weeklyEmail!==false)h+='<div class="mo-srow"><span class="lb">Every</span><select id="moWkDay">'+days.map(function(dd,i){return '<option value="'+i+'"'+(i===(c.weeklyDay==null?0:c.weeklyDay)?" selected":"")+'>'+dd+'</option>'}).join("")+'</select>'+hourSel("moWkHour",c.weeklyHour==null?17:c.weeklyHour)+'</div>';
     h+='<div class="mo-srow"><span class="lb">Monthly close-out<small>1st of the month: last month’s P&amp;L, the auto-split buckets, and a CSV backup link.</small></span>'+sw("monthlyEmail",c.monthlyEmail!==false)+'</div>';
@@ -13321,6 +13392,7 @@
     var on=PUSH.state==="on";
     var brief=!(state.config&&state.config.briefEnabled===false);
     var hour=(state.config&&state.config.briefHour)||6;
+    var dailyPaused=!!(state.config&&state.config.dailyEmailsPaused);
     var h='<div class="jd-sh-title">Phone notifications</div>'+
       '<div class="jd-sh-sub">Push rings this phone the moment a text, missed call or voicemail lands — no polling, no delay.</div>';
     if(!pushSupported()){
@@ -13339,12 +13411,20 @@
     h+='<div class="jd-sec">'+ic("sun",14)+' Morning brief</div>'+
       '<label class="jd-field" style="display:flex;align-items:center;gap:10px;cursor:pointer;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px 13px">'+
       '<input type="checkbox" id="pshBrief"'+(brief?" checked":"")+' style="width:20px;height:20px;flex:none;accent-color:var(--accent)">'+
-      '<span style="flex:1"><b style="font-size:14px;font-weight:700">Send me the day brief</b><br>'+
+      '<span style="flex:1"><b style="font-size:14px;font-weight:700">Send me the day brief</b>'+(dailyPaused?' <span style="font-size:11px;font-weight:700;color:var(--muted2)">· paused below</span>':"")+'<br>'+
       '<span style="font-size:12px;color:var(--muted2)">Today\'s jobs, rain risk, who\'s waiting and yesterday\'s money</span></span></label>'+
       '<div class="jd-field"><label>What time</label><select id="pshHour">'+
       [5,6,7,8,9].map(function(x){return '<option value="'+x+'"'+(x===hour?" selected":"")+'>'+(x>12?x-12:x)+':00 '+(x>=12?"PM":"AM")+'</option>'}).join("")+
       '</select></div>'+
       '<button class="jd-btn" id="pshBriefNow" style="margin-top:2px">'+ic("sun",16)+' Show me today\'s brief</button>'+
+      // One switch over everything that mails him on a daily rhythm, because the
+      // complaint was never about a particular mail — it was about opening the
+      // inbox to two of them every day whether or not anything happened.
+      '<div class="jd-sec">'+ic("mail",14)+' Daily emails</div>'+
+      '<label class="jd-field" style="display:flex;align-items:center;gap:10px;cursor:pointer;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px 13px">'+
+      '<input type="checkbox" id="pshDailyPause"'+(dailyPaused?" checked":"")+' style="width:20px;height:20px;flex:none;accent-color:var(--accent)">'+
+      '<span style="flex:1"><b style="font-size:14px;font-weight:700">Pause the daily emails</b><br>'+
+      '<span style="font-size:12px;color:var(--muted2)">Holds back both of them — the morning brief and the evening \u201clog today\u2019s money?\u201d nudge. The Sunday recap, the month close-out and anything a customer sets off still come through.</span></span></label>'+
       '<button class="jd-btn ghost" id="pshClose" style="margin-top:8px">Done</button>';
     var s=jdSheetOpen(h);
     var q=function(id){return s.querySelector("#"+id)};
@@ -13354,11 +13434,15 @@
     q("pshClose").onclick=jdSheetClose;
     q("pshBriefNow").onclick=function(){if(!el("jdApp").classList.contains("show"))openJobs("run");jdBriefSheet()};
     var save=function(){
-      post("/api/config",{briefEnabled:q("pshBrief").checked,briefHour:+q("pshHour").value}).then(function(d){
+      return post("/api/config",{briefEnabled:q("pshBrief").checked,briefHour:+q("pshHour").value,
+                          dailyEmailsPaused:q("pshDailyPause").checked}).then(function(d){
         if(d&&d.ok){state.config=d.config;toast("Saved ✓");updatePushBadge()}
       });
     };
     q("pshBrief").onchange=save;q("pshHour").onchange=save;
+    // Re-open the sheet so the "· paused below" note on the brief row follows the
+    // switch immediately, instead of looking stale until the next visit.
+    q("pshDailyPause").onchange=function(){save().then(function(){jdSheetClose();jdPushSheet()})};
   }
   function updatePushBadge(){
     var n=el("pushState");if(!n)return;
