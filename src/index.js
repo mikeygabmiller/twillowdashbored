@@ -131,7 +131,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-25·usage';
+const BUILD = '2026-08-25·quote-watch';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -190,6 +190,8 @@ async function runCron() {
   await maybeDailyBrief().catch(() => {});
   await maybeWeeklyRecap().catch(() => {});
   await maybePayReminders().catch(() => {});
+  // "They saw the price and never left a number." Costs one KV read a minute.
+  await quoteAbandonCron().catch(() => {});
 }
 
 // Private "remind me to follow up on <date>" reminders — a nudge to Mikey, not a
@@ -2332,6 +2334,7 @@ async function handlePixelEvents(request) {
     const now = Date.now();
     const key = journeyKey(vid);
     const doc = (await kv().get(key, { type: 'json' })) || blankJourney(vid, now);
+    let reveal = null;
     for (const raw2 of list) {
       const k = String((raw2 && raw2.k) || '');
       if (!PX_EVENT_KINDS[k]) continue;
@@ -2347,8 +2350,17 @@ async function handlePixelEvents(request) {
       if (k === 'v') { step.r = step.d; delete step.l; delete step.d; }
       else step.k = k;
       appendStep(doc, step);
+      // A price landing on someone's screen is the one event here that starts a
+      // clock. Keep the richest reveal in the batch — the form sends the priced
+      // one and the plain "reached step 4" one together.
+      if (isQuoteRevealStep(step) && (!reveal || quoteWatchPrice(step).total)) reveal = step;
     }
     await kv().put(key, JSON.stringify(doc), { expirationTtl: JOURNEY_TTL, metadata: journeyMeta(doc) });
+    // Only now — after the write that has to happen anyway — do we spend a config
+    // read, and only for the handful of visitors who actually get a price.
+    if (reveal && (await loadConfig()).quoteAbandon !== false) {
+      await armQuoteWatch(vid, reveal, page);
+    }
   } catch (e) { /* a malformed beacon is not an error worth reporting */ }
   return pxOk();
 }
@@ -2365,6 +2377,9 @@ function pxOk() {
 async function journeyLink(vid, phone, name) {
   vid = cleanVid(vid);
   if (!vid || !phone) return;
+  // They left their number, so the "saw the price and vanished" watch is void.
+  // Before the doc read below, which returns early when there's no journey yet.
+  await clearQuoteWatch(vid);
   try {
     const doc = await kv().get(journeyKey(vid), { type: 'json' });
     if (!doc) return;
@@ -2378,6 +2393,191 @@ async function journeyLink(vid, phone, name) {
     // Reverse lookup so a conversation can find its own journey by phone.
     await kv().put(journeyPhoneKey(phone), vid, { expirationTtl: JOURNEY_TTL });
   } catch (e) { /* journeys are never worth failing a lead over */ }
+}
+
+// ===========================================================================
+// Saw the price, never left a number
+// ---------------------------------------------------------------------------
+// The quote form shows somebody a dollar figure on step 4 and then asks for
+// their name and number. Everyone who stops between those two things is a lead
+// that got away without ever existing — no thread, no phone, nothing on the
+// board. This is the one alert that fires for a customer who never became one.
+//
+// The trigger is the site's own event stream (site-stats.js → /px/e), so no new
+// endpoint and no new thing the marketing site has to remember to call: the
+// moment a visitor's batch carries "Saw their quote", a watch is armed for that
+// visitor id. Two minutes later the cron looks at it and either finds a phone on
+// the journey (they submitted — drop it, silently) or emails Mikey.
+//
+// Two minutes of SILENCE, not two minutes of clock. Somebody still tapping
+// around the page hasn't abandoned anything, and an email that says "they left"
+// while they're mid-way through typing their name is worse than no email. The
+// journey doc's own `lastAt` — already written by the same beacon — answers that
+// for free, which is why nothing here keeps its own activity timestamp.
+//
+// Cost, because this rides a minute cron: ONE KV read per minute (skipped
+// entirely when the switch is off), and a write only when the pending set
+// actually changes — arming a watch, clearing one, firing one. A quiet day is
+// 1,440 reads and zero writes.
+// ===========================================================================
+const QUOTE_WATCH_KEY = 'quote:watch';
+// A cap so a scripted flood of beacons can't grow one doc without bound. Real
+// life puts a handful of people on step 4 in any two-minute window.
+const QUOTE_WATCH_MAX = 40;
+// However long they keep fiddling, the alert goes out by this point. Somebody
+// who has had the price on screen for half an hour isn't about to submit.
+const QUOTE_WATCH_GIVEUP_MS = 30 * 60000;
+// Hygiene only: anything this old survived a cron outage. Drop it rather than
+// email him about a visit from before lunch.
+const QUOTE_WATCH_STALE_MS = 6 * 3600000;
+
+// The step that means "a price is on their screen". The site sends the first
+// one with the money and the car in the detail; the second is what the form has
+// always sent on reaching step 4, and is here so this works on the site exactly
+// as it is deployed today, before the richer event ships.
+function isQuoteRevealStep(step) {
+  const l = String((step && step.l) || '');
+  return /^Saw their quote/i.test(l) || /^Quote form\b.*\bstep 4\b/i.test(l);
+}
+
+// Minutes he asked for, clamped to something a human would pick.
+function quoteWatchWaitMs(cfg) {
+  const m = Number((cfg || {}).quoteAbandonMin);
+  return Math.max(1, Math.min(60, isNaN(m) || !m ? 2 : m)) * 60000;
+}
+
+async function loadQuoteWatch() {
+  const doc = await kv().get(QUOTE_WATCH_KEY, { type: 'json' });
+  return { list: Array.isArray(doc && doc.list) ? doc.list : [] };
+}
+// ⚠ KV WRITE — only on a real change to who is being watched.
+async function saveQuoteWatch(list) {
+  await kv().put(QUOTE_WATCH_KEY, JSON.stringify({ list: list.slice(-QUOTE_WATCH_MAX) }));
+}
+
+// Arm (or re-price) the watch on one visitor. Called from the beacon handler
+// with the reveal step it found. Returns true when it wrote.
+//
+// Re-arming is deliberately stingy: somebody who adds a service and comes back
+// to step 4 six times must not cost six writes. Only a price they hadn't seen
+// before restarts the clock — and that is also the honest reading, since the
+// number they're deciding about just changed.
+async function armQuoteWatch(vid, step, page) {
+  vid = cleanVid(vid);
+  if (!vid) return false;
+  const priced = quoteWatchPrice(step);
+  const doc = await loadQuoteWatch();
+  const prev = doc.list.find((w) => w.vid === vid);
+  // Never downgrade: the form fires the priced event and the plain "reached step
+  // 4" one on the same reveal, and whichever lands second must not wipe the money
+  // out of an alert that already has it.
+  if (prev && (prev.total === priced.total || !priced.total)) return false;
+  const entry = {
+    vid,
+    at: Number(step && step.t) || Date.now(),
+    total: priced.total,
+    what: priced.what,
+    page: String(page || '/').slice(0, 80),
+  };
+  const list = doc.list.filter((w) => w.vid !== vid);
+  list.push(entry);
+  await saveQuoteWatch(list);
+  return true;
+}
+
+// "$420 · Full-size truck · Full Detail, Pet hair" → the money and the rest.
+function quoteWatchPrice(step) {
+  const d = String((step && step.d) || '');
+  const m = d.match(/\$\s*([0-9][0-9,]*)/);
+  if (!m) return { total: 0, what: '' };   // the plain step-4 event carries no money
+  const parts = d.split('·').map((s) => s.trim()).filter((s) => s && !/^\$/.test(s));
+  return { total: Number(m[1].replace(/,/g, '')), what: parts.join(' · ').slice(0, 80) };
+}
+
+// They left their number after all. Called from journeyLink, which runs on every
+// lead the site posts — quote form and booking alike.
+async function clearQuoteWatch(vid) {
+  vid = cleanVid(vid);
+  if (!vid) return;
+  try {
+    const doc = await loadQuoteWatch();
+    if (!doc.list.some((w) => w.vid === vid)) return;   // the usual case: no write
+    await saveQuoteWatch(doc.list.filter((w) => w.vid !== vid));
+  } catch (e) { /* a missed clear costs one email, never a lead */ }
+}
+
+// The cron pass. Fires at most one email per watched visitor, ever.
+async function quoteAbandonCron(now = Date.now()) {
+  const cfg = await loadConfig();
+  if (cfg.quoteAbandon === false) return;
+  const doc = await loadQuoteWatch();
+  if (!doc.list.length) return;                          // quiet day: one read, no write
+  const wait = quoteWatchWaitMs(cfg);
+  const keep = [];
+  let dirty = false;
+  for (const w of doc.list) {
+    const age = now - (w.at || 0);
+    if (age > QUOTE_WATCH_STALE_MS) { dirty = true; continue; }   // survived an outage
+    if (age < wait) { keep.push(w); continue; }
+    const j = await kv().get(journeyKey(w.vid), { type: 'json' });
+    // They submitted. Nothing got away — this is the happy ending, and it's
+    // silent because the NEW QUOTE alert already told him.
+    if (j && j.phone) { dirty = true; continue; }
+    // Still on the page doing things. Give them the rest of their silence.
+    if (j && j.lastAt && now - j.lastAt < wait && age < QUOTE_WATCH_GIVEUP_MS) { keep.push(w); continue; }
+    dirty = true;
+    notifyMikey(quoteAbandonSubject(w), quoteAbandonEmail(w, j, now)).catch(() => {});
+  }
+  if (dirty) await saveQuoteWatch(keep);
+}
+
+function quoteAbandonSubject(w) {
+  return w.total ? `👀 Saw $${w.total} and left — no name, no number` : '👀 Saw their quote and left — no name, no number';
+}
+
+// What he actually reads. Everything here answers one question: is this worth
+// changing something over? So it leads with the price they walked away from,
+// then what they'd picked, then how they found the site — and it says plainly
+// that there is nobody to text, because the instinct on any other alert in this
+// app is to go answer it.
+function quoteAbandonEmail(w, doc, now = Date.now()) {
+  const base = publicBase();
+  const steps = (doc && Array.isArray(doc.steps)) ? doc.steps : [];
+  const pages = steps.filter((s) => !s.k).length;
+  const mins = Math.max(1, Math.round(((doc && doc.lastAt ? doc.lastAt : now) - ((doc && doc.firstAt) || w.at)) / 60000));
+  const price = w.total ? `$${w.total}` : 'their price';
+  const facts = [
+    w.what ? `Picked: ${w.what}` : '',
+    `Quoting from: ${journeyPageTitle(w.page)}`,
+    pages ? `On the site: ${pages} page${pages === 1 ? '' : 's'} · ${mins} min` : '',
+    journeyRefLabel(String((steps[0] || {}).r || '')),
+  ].filter(Boolean).join('\n');
+  const link = base ? `${base}/?journey=${encodeURIComponent(w.vid)}` : '';
+
+  const text =
+    `Somebody got their quote — ${price} — and closed it without leaving a name or number.\n\n` +
+    `${facts}\n\n` +
+    `There's nobody to text back: they never gave you a number. This is here so you know where people stop.\n\n` +
+    (link ? `See everything they did: ${link}\n` : '');
+
+  const B = [];
+  B.push(mailCard(
+    mailLabel('Quote seen — nothing left behind', MAILC.amberInk) +
+    `<div style="font-family:${MAILF};font-size:34px;line-height:1.15;font-weight:800;color:${MAILC.ink};margin:0;">${htmlEsc(price)}</div>` +
+    `<div style="font:400 15px/1.55 ${MAILF};color:${MAILC.amberInk};margin-top:8px;">They saw this, then closed it without leaving a name or number.</div>`,
+    { bg: MAILC.amberBg, border: '#fde68a', edge: MAILC.amber, pad: '18px' }));
+  B.push(mailCard(mailLabel('What they were buying', MAILC.blue) + mailBody(facts, MAILC.ink),
+    { bg: MAILC.blueBg, border: '#bfdbfe', edge: MAILC.blue }));
+  B.push(mailCard(
+    (link ? mailBtn(link, 'See everything they did', MAILC.ink) : '') +
+    `<div style="font:400 13px/1.6 ${MAILF};color:${MAILC.mute};margin-top:${link ? '12px' : '0'};">There's nobody to text back — they never gave you a number. Nothing was sent to anyone.</div>`));
+
+  return {
+    text,
+    html: mailShell(`${price} — seen, then gone`, B.join('')),
+    // A text message can't carry the card, and he's paying per segment for it.
+    sms: `👀 Someone saw ${price} on your quote form and left without giving a name or number.${w.what ? ' (' + w.what + ')' : ''}`,
+  };
 }
 
 // "/ceramic-coating-snohomish-county/" → "Ceramic Coating Snohomish County".
@@ -6536,6 +6736,8 @@ async function apiSaveConfig(request) {
   if (typeof data.missedCallTextback === 'boolean') next.missedCallTextback = data.missedCallTextback;
   if (typeof data.missedCallText === 'string') next.missedCallText = data.missedCallText.slice(0, 320);
   if (typeof data.autoReplyAlert === 'boolean') next.autoReplyAlert = data.autoReplyAlert;
+  if (typeof data.quoteAbandon === 'boolean') next.quoteAbandon = data.quoteAbandon;
+  if (data.quoteAbandonMin != null && !isNaN(+data.quoteAbandonMin)) next.quoteAbandonMin = Math.max(1, Math.min(60, Math.round(+data.quoteAbandonMin)));
   if (typeof data.predictive === 'boolean') next.predictive = data.predictive;
   if (typeof data.predictiveAi === 'boolean') next.predictiveAi = data.predictiveAi;
   if (typeof data.assistSms === 'boolean') next.assistSms = data.assistSms;
@@ -7819,6 +8021,10 @@ function defaultConfig() {
                              // were already set to. New key, so an existing stored config
                              // inherits the pause; weekly and monthly recaps are unaffected.
     playbook: defaultPlaybook(), // the business "brain" that trains every AI output
+    quoteAbandon: true,      // email him when somebody sees their price on the site
+                             // and closes it without leaving a name or number —
+                             // the only lead that never shows up anywhere else
+    quoteAbandonMin: 2,      // minutes of silence after the price before it fires
     detect: detDefaults(),   // auto-detecting appointments out of text conversations
     promise: promDefaults(), // catching "I'll get back to you Monday" and reminding him
   };

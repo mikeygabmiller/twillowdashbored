@@ -3108,7 +3108,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-25·usage";
+  var APP_BUILD="2026-08-25·quote-watch";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -5692,6 +5692,9 @@
       '<div class="hint">When a call goes unanswered, the caller instantly gets a friendly text so the lead turns into a conversation you can answer from anywhere. Leave the message blank to use the default.</div>'+
       '<div class="fu-row"><span class="lbl2">Tell me when the auto-reply sends <span style="color:var(--muted2);font-weight:400">· quote form</span></span><span class="sw'+(c.autoReplyAlert!==false?" on":"")+'" id="cfgArAlert"></span></div>'+
       '<div class="hint">A quote from your site alerts you right away, but the customer\'s reply is held about 3½ minutes so it reads like you texting back, not a bot. This texts you the moment it actually reaches them — with their name and number — so you know they\'ve heard from you and can take the conversation from there. If it fails to send, you get told that instead.</div>'+
+      '<div class="fu-row"><span class="lbl2">Email me when a quote is seen but not sent <span style="color:var(--muted2);font-weight:400">· the ones that get away</span></span><span class="sw'+(c.quoteAbandon!==false?" on":"")+'" id="cfgQab"></span></div>'+
+      '<div class="fu-row"><span class="lbl2">Give them this long first</span><span style="display:flex;align-items:center;gap:6px"><input type="number" id="cfgQabMin" min="1" max="60" value="'+(c.quoteAbandonMin==null?2:c.quoteAbandonMin)+'"><span style="color:var(--muted2)">min</span></span></div>'+
+      '<div class="hint">Somebody builds a quote on your site, sees the price, and closes it without leaving a name or number — there\'s no thread, no lead, nothing anywhere to tell you it happened. This emails you when it does, with the price they walked away from and what they\'d picked. The clock is <b>quiet</b> time: if they\'re still tapping around the page it waits, so you don\'t get told they left while they\'re typing their name. Nothing is ever sent to them — they never gave you a number.</div>'+
       '<div class="fu-col"><span class="lbl2">What the AI is actually costing</span></div>'+
       '<div id="aiUseCard" class="hint">Counting\u2026</div>'+
       '<div class="fu-row"><span class="lbl2">AI keyboard <span style="color:var(--muted2);font-weight:400">· suggests your next word</span></span><span class="sw'+(c.predictive!==false?" on":"")+'" id="cfgPredict"></span></div>'+
@@ -5740,6 +5743,8 @@
     el("cfgMct").onclick=function(){saveConfig({missedCallTextback:!(c.missedCallTextback!==false)})};
     el("cfgMctText").onchange=function(){saveConfig({missedCallText:el("cfgMctText").value})};
     el("cfgArAlert").onclick=function(){saveConfig({autoReplyAlert:!(c.autoReplyAlert!==false)})};
+    el("cfgQab").onclick=function(){saveConfig({quoteAbandon:!(c.quoteAbandon!==false)})};
+    el("cfgQabMin").onchange=function(){saveConfig({quoteAbandonMin:+el("cfgQabMin").value})};
     renderAiUsage();
     el("cfgPredict").onclick=function(){setPredictive(!predictOn())};
     el("cfgPredictAi").onclick=function(){setPredictiveAi(!predictAiOn())};
@@ -6055,6 +6060,15 @@
       if(/[?&]money=1/.test(location.search)){
         if(window.history&&history.replaceState)history.replaceState(null,"",location.pathname+location.hash);
         openMoney();return;
+      }
+      // ?journey=<vid> (from the "saw the price and left" email) — straight to
+      // that one visitor's replay, already open. There's no phone to jump to;
+      // the path they walked IS the whole story of that lead.
+      var jm=location.search.match(/[?&]journey=([^&#]+)/);
+      if(jm){
+        var jvid=decodeURIComponent(jm[1]);
+        if(window.history&&history.replaceState)history.replaceState(null,"",location.pathname+location.hash);
+        GROW.journey.open=jvid;jnLoadOne(jvid);openAnalytics("journey");return;
       }
       var m=location.search.match(/[?&]c=([^&#]+)/);
       if(m){state.pendingC=decodeURIComponent(m[1]);
