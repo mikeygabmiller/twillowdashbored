@@ -74,7 +74,8 @@ const NAMES = ['kv'];
 const BODY =
   liftDecl('INDEX_KEY') + '\n' +
   'let IDX_CACHE = null;\n' +
-  lift('loadIndex') + '\n' + lift('saveIndex') + '\n' +
+  liftDecl('IDX_TOUCHED') + '\n' +
+  lift('loadIndex') + '\n' + lift('saveIndex') + '\n' + lift('mergeIndexWrites') + '\n' +
   lift('applyIndexSummary') + '\n' +
   'return { loadIndex, saveIndex, applyIndexSummary, newInvocation: () => { IDX_CACHE = null; } };';
 // Each build() is a fresh isolate; newInvocation() is what the fetch/scheduled
@@ -157,6 +158,92 @@ console.log('\n=== an empty index is still cached ===');
   check('it reads as empty', a, []);
   check('and does not re-read on every miss', w.read.filter((k) => k === 'threads-index').length, 1);
   check('the empty copies are separate objects', a === b, false);
+}
+
+console.log('\n=== a tick cannot erase a text that arrived while it worked ===');
+{
+  // The bug this guards: the cron loads the index, then spends real time on AI
+  // and Twilio calls. A text landing in that window writes its own row. The tick
+  // must not put its pre-text snapshot back over the top — that leaves the
+  // message in its thread doc, and the alert already sent, but the row the
+  // dashboard lists gone.
+  const w = seeded(); const M = build(w);
+
+  const tick = await M.loadIndex();                       // cron reads the index
+  M.applyIndexSummary(tick, { phone: '+15552220000', name: 'Ruth', lastTs: 150, status: 'won', fu: null });
+
+  // …meanwhile an inbound text writes Sabine's row straight to KV.
+  w.store.set('threads-index', JSON.stringify([
+    IDX[0],
+    IDX[1],
+    { phone: '+15553330000', name: 'Sabine', lastTs: 900, status: 'new', lastBody: 'can you do saturday?', unread: 1 },
+  ]));
+
+  await M.saveIndex(tick);                                // cron writes at end of tick
+  const after = JSON.parse(w.store.get('threads-index'));
+  const sabine = after.find((t) => t.phone === '+15553330000');
+  check('the text that arrived mid-tick survives', sabine.lastBody, 'can you do saturday?');
+  check('with its unread badge intact', sabine.unread, 1);
+  check('and the tick still lands its own edit',
+    after.find((t) => t.phone === '+15552220000').status, 'won');
+  check('no row is lost', after.length, 3);
+}
+
+console.log('\n=== the same guard the other way round ===');
+{
+  // A conversation that is brand new to KV while we hold an older copy.
+  const w = seeded(); const M = build(w);
+  const tick = await M.loadIndex();
+  M.applyIndexSummary(tick, { phone: '+15551110000', name: 'Dave', lastTs: 700, status: 'won' });
+  const NEW = { phone: '+15554440000', name: 'Tomas', lastTs: 950, status: 'new' };
+  w.store.set('threads-index', JSON.stringify(IDX.concat([NEW])));
+
+  await M.saveIndex(tick);
+  const after = JSON.parse(w.store.get('threads-index'));
+  check('a first-ever text from a new number is kept',
+    !!after.find((t) => t.phone === '+15554440000'), true);
+  check('alongside our own edit',
+    after.find((t) => t.phone === '+15551110000').status, 'won');
+  check('and nothing is duplicated', after.length, 4);
+}
+
+console.log('\n=== a stale read cannot delete what we already know ===');
+{
+  // KV is eventually consistent: the re-read inside saveIndex can come back
+  // missing a row we hold. Rows are never deleted, so ours is real — keep it.
+  const w = seeded(); const M = build(w);
+  const tick = await M.loadIndex();
+  M.applyIndexSummary(tick, { phone: '+15551110000', name: 'Dave', lastTs: 700, status: 'won' });
+  w.store.set('threads-index', JSON.stringify([IDX[0]]));   // stale: Ruth + Sabine missing
+
+  await M.saveIndex(tick);
+  const after = JSON.parse(w.store.get('threads-index'));
+  check('rows absent from the stale read are restored', after.length, 3);
+  check('and our edit still applies',
+    after.find((t) => t.phone === '+15551110000').status, 'won');
+}
+
+console.log('\n=== the merge only costs a parse when we actually write ===');
+{
+  const w = seeded(); const M = build(w);
+  await M.loadIndex(); await M.loadIndex(); await M.loadIndex(); await M.loadIndex();
+  check('a tick that changes nothing never re-reads',
+    w.read.filter((k) => k === 'threads-index').length, 1);
+
+  const a = await M.loadIndex();
+  M.applyIndexSummary(a, { phone: '+15551110000', name: 'Dave', lastTs: 800, status: 'won' });
+  await M.saveIndex(a);
+  check('a write pays for exactly one more',
+    w.read.filter((k) => k === 'threads-index').length, 2);
+  check('and still writes once', w.written.filter((k) => k === 'threads-index').length, 1);
+
+  // Reads after the save come from the refreshed cache, as before.
+  const readsAfterSave = w.read.filter((k) => k === 'threads-index').length;
+  const b = await M.loadIndex();
+  check('the rest of the tick sees the write for free',
+    b.find((t) => t.phone === '+15551110000').status, 'won');
+  check('without another read',
+    w.read.filter((k) => k === 'threads-index').length, readsAfterSave);
 }
 
 // ---------------------------------------------------------------------------
@@ -249,7 +336,13 @@ console.log('\n=== the rules say so, so the next change knows ===');
     /true of the\s+\*\s*\|\s*daily QUOTA and FALSE of CPU/.test(SRC.replace(/\s+/g, ' ')) ||
     /daily QUOTA and FALSE of CPU/.test(SRC), true);
   check('loadIndex is memoized',            /if \(!IDX_CACHE\) IDX_CACHE =/.test(SRC), true);
-  check('saveIndex refreshes the cache',    /IDX_CACHE = index\.slice\(\)/.test(SRC), true);
+  check('saveIndex refreshes the cache',    /IDX_CACHE = merged\.slice\(\)/.test(SRC), true);
+  check('and merges instead of clobbering', /await mergeIndexWrites\(index\)/.test(SRC), true);
+  check('the touched record is not a module global',
+    /const IDX_TOUCHED = new WeakMap\(\);/.test(SRC), true);
+  check('and reset does NOT clear it',
+    /resetInvocationCaches\(\) \{ CFG_CACHE = null; IDX_CACHE = null; \}/.test(SRC) &&
+    !/resetInvocationCaches\(\) \{[^}]*IDX_TOUCHED/.test(SRC), true);
   check('one place frees every per-invocation cache',
     /function resetInvocationCaches\(\) \{ CFG_CACHE = null; IDX_CACHE = null; \}/.test(SRC), true);
   check('both entry points call it',
