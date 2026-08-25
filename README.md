@@ -483,6 +483,35 @@ Re-running it is safe — the same phone + total inside 10 minutes is skipped as
 duplicate. Backfilled rows carry the date, name and amount only; vehicle,
 condition and services lived in the email body and are left blank.
 
+## Saw the price and left (the email you get about a lead that never existed)
+Someone builds a quote on the site, reaches the estimate, and closes the tab
+without leaving a name or number. Nothing else in this app can tell you that
+happened — there's no thread, no phone, no row on any board. This emails you
+when it does: the price they walked away from, what they'd picked, how they
+found the site, and a link straight to their replay in **Analytics → Journey**.
+
+Nothing is ever sent to them. They never gave you a number — the email says so.
+
+**How it knows.** The marketing site already reports what people do
+(`site-stats.js` → `/px/e`). Reaching the estimate is one of those events, so
+the moment a visitor's batch carries it a watch is armed for that visitor id.
+Two minutes later the minute cron either finds a phone on their journey (they
+submitted — dropped, silently, because the NEW QUOTE alert already told you) or
+sends the email. Filling in the form clears the watch outright.
+
+**Two minutes of *silence*, not two minutes of clock.** Someone still tapping
+around the page hasn't abandoned anything, so the wait restarts while they're
+active — you don't get told they left while they're typing their name. After 30
+minutes on one price it fires regardless.
+
+**Settings** (☰ → the follow-up settings screen): *Email me when a quote is seen
+but not sent*, and how long to give them (1–60 min, default 2).
+
+**Cost.** One KV key (`quote:watch`, one small doc), read once a minute and
+written only when the pending set actually changes — arming, clearing, firing.
+A day with no quote views is 1,440 reads and zero writes. Switched off, not even
+the read.
+
 ## Spam-call screening
 Inbound calls are gated before they ever forward to your phone, so robocall
 auto-dialers stop flooding your voicemail:

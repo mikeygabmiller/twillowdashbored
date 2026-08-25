@@ -64,6 +64,7 @@ const ctx = {
     return d.length === 10 ? '+1' + d : '';
   },
   json: (o) => ({ __json: o }),
+  loadConfig: async () => ({}),
   Response: class { constructor(b, i) { this.body = b; this.status = (i || {}).status; } },
 };
 
@@ -71,6 +72,12 @@ const CODE = [
   constant('JOURNEY_TTL'), constant('JOURNEY_MAX_STEPS'),
   constant('journeyKey'), constant('journeyPhoneKey'),
   constant('PX_EVENT_KINDS'),
+  // The beacon handler arms the "saw the price and never left a number" watch,
+  // and a lead clears it — see quotewatch.test.js for that feature's own suite.
+  constant('QUOTE_WATCH_KEY'), constant('QUOTE_WATCH_MAX'),
+  lift('isQuoteRevealStep'), lift('quoteWatchPrice'),
+  lift('loadQuoteWatch'), lift('saveQuoteWatch'),
+  lift('armQuoteWatch'), lift('clearQuoteWatch'),
   lift('cleanVid'), lift('journeyMeta'), lift('journeyHotLabel'),
   lift('blankJourney'), lift('appendStep'), lift('journeyStep'), lift('journeyLink'),
   lift('handlePixelEvents'), lift('pxOk'),

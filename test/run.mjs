@@ -18,7 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const UNIT = [
   'hold', 'detect', 'pay', 'ai', 'compose', 'thread', 'inbox', 'money', 'quickreply',
   'replycheck', 'autoreply', 'quotes', 'balance', 'alertmail', 'promise', 'recap',
-  'geogrid', 'geogrid.ui', 'snapshot', 'journey', 'place', 'cold', 'portal', 'sheets', 'gdoc', 'gform', 'seed', 'cpu',
+  'geogrid', 'geogrid.ui', 'snapshot', 'journey', 'quotewatch', 'place', 'cold', 'portal', 'sheets', 'gdoc', 'gform', 'seed', 'cpu',
   'aicost',
 ].map((n) => `${n}.test.js`);
 
