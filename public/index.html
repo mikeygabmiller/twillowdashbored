@@ -1491,6 +1491,33 @@
   .mo-empty{display:flex;flex-direction:column;align-items:center;gap:9px;color:var(--muted2);text-align:center;padding:36px 20px;font-size:13px}
   .mo-empty .e{font-size:38px;opacity:.9}
 
+  /* ---- Bank screenshot scan ---- */
+  .mo-scanbtn{width:100%;margin-top:9px;display:flex;align-items:center;justify-content:center;gap:8px;background:var(--panel);border:1px dashed var(--line);border-radius:13px;color:var(--muted);padding:12px;font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
+  .mo-scanbtn:active{transform:scale(.985)}
+  .mo-scanbtn b{color:var(--accent-text)}
+  .sc-note{font-size:12px;color:var(--muted2);line-height:1.5;padding:2px 2px 10px}
+  .sc-row{background:var(--panel);border:1px solid var(--line2);border-radius:14px;padding:11px 12px;margin-bottom:9px}
+  .sc-row.off{opacity:.5}
+  .sc-hd{display:flex;align-items:flex-start;gap:11px}
+  .sc-tick{flex:none;width:24px;height:24px;margin-top:2px;border-radius:8px;border:1.5px solid var(--line);background:var(--panel2);color:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;padding:0}
+  .sc-tick.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .sc-main{flex:1;min-width:0}
+  .sc-l1{display:flex;align-items:baseline;gap:8px}
+  .sc-amt{font-size:16px;font-weight:800;font-variant-numeric:tabular-nums}
+  .sc-amt.in{color:var(--mo-good,#4ade80)}
+  .sc-date{font-size:11.5px;color:var(--muted2);font-weight:700;margin-left:auto;flex:none}
+  .sc-desc{font-size:12.5px;color:var(--muted);line-height:1.45;margin-top:2px;word-break:break-word}
+  .sc-bd{padding:10px 0 1px 35px}
+  .sc-bd .mo-f-lbl{margin:0 0 6px}
+  .sc-bd select{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:10px;color:var(--text);padding:9px 10px;font-size:13.5px;font-family:inherit}
+  .sc-bd .mo-in{font-size:13px;padding:8px 10px}
+  .sc-flag{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:800;border-radius:8px;padding:4px 8px;margin:0 6px 6px 0}
+  .sc-flag.dupe{background:#2a1c0a;border:1px solid #6b4a12;color:#f5c563}
+  .sc-flag.pend{background:var(--panel2);border:1px solid var(--line);color:var(--muted)}
+  .sc-flag.self{background:var(--panel2);border:1px solid var(--line);color:var(--muted)}
+  .sc-flag.mt{background:var(--accent-soft);border:1px solid var(--accent);color:var(--accent-text)}
+  .sc-foot{position:sticky;bottom:0;background:var(--panel3);padding-top:6px}
+
   /* ---- Budgets & Goals ---- */
   .mo-addbtn{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--accent-text);background:var(--accent-soft);border:1px solid var(--accent);border-radius:11px;padding:8px 13px;cursor:pointer;font-family:inherit}
   .mo-addbtn:active{transform:scale(.96)}
@@ -3220,6 +3247,7 @@
     "ban":'<circle cx="12" cy="12" r="10"/><path d="m4.9 4.9 14.2 14.2"/>',
     "search":'<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
     "copy":'<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+    "scan-line":'<path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><path d="M7 12h10"/>',
     "image":'<rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.09-3.09a2 2 0 0 0-2.82 0L6 21"/>',
     "chevron-up":'<path d="m18 15-6-6-6 6"/>',
     "chevron-down":'<path d="m6 9 6 6 6-6"/>',
@@ -10636,6 +10664,9 @@
     if(!MO.cfg||MO.cfg.personalEnabled!==false)h+='<button class="mo-btn dim" data-mo="personal"><span class="e">'+ic("user",24)+'</span>Personal</button>';
     h+='</div>';
     if(Object.keys(use).length>2)h+='<div class="mo-adapt">'+ic("sparkles",12)+' buttons auto-sort to what you log most</div>';
+    // The bank does the typing: screenshot the Wells Fargo activity list and the
+    // charges come back as a checklist instead of a dozen trips through the keypad.
+    h+='<button class="mo-scanbtn" id="moScanBtn">'+ic("scan-line",17)+'Scan a <b>bank screenshot</b></button>';
     h+='</div>';
     // ===== ACTIONABLE ALERTS (only when they exist) =====
     h+='<div data-mblock="alerts">';
@@ -10688,6 +10719,7 @@
     var hbal=el("heroBal");if(hbal)hbal.onclick=function(ev){ev.stopPropagation();openBalanceSheet()};
     var ha=el("heroAlloc");if(ha)ha.onclick=openSplitSheet;
     var sb=el("moSplitBtn");if(sb)sb.onclick=openSplitSheet;
+    var scb=el("moScanBtn");if(scb)scb.onclick=moScanPick;
     var bb=el("moBrainBtn");if(bb)bb.onclick=openBrainSheet;
     var ph=el("moPulseHd");if(ph)ph.onclick=function(){MO.pulseOpen=!MO.pulseOpen;el("moPulse").classList.toggle("open",MO.pulseOpen)};
     var pmore=el("moPulseMore");if(pmore)pmore.onclick=function(){moSetView("report")};
@@ -10992,6 +11024,198 @@
     }).catch(function(){b.disabled=false;toast("Network error",{bad:true})});
   }
 
+  // ---- Bank screenshot → ledger --------------------------------------------
+  // Screenshot the Wells Fargo activity list, tap Scan, tick what's real. The
+  // server reads the picture and proposes rows; nothing is written until the
+  // button at the bottom of this sheet is pressed, and every field it guessed
+  // (category, which customer paid) is editable right here first.
+  var SCAN=null;
+  // The picker is attached to the page rather than clicked while detached: iOS
+  // Safari — which is what the installed PWA is — ignores .click() on an input
+  // that isn't in the document, and silently doing nothing is the worst possible
+  // response to tapping Scan.
+  function moScanPick(){
+    var inp=document.createElement("input");
+    inp.type="file";inp.accept="image/*";inp.multiple=true;
+    inp.style.cssText="position:fixed;left:-9999px;width:1px;height:1px;opacity:0";
+    document.body.appendChild(inp);
+    var done=function(){try{inp.remove()}catch(e){}};
+    inp.onchange=function(){
+      var files=Array.prototype.slice.call(inp.files||[]).slice(0,3);
+      done();
+      if(!files.length)return;
+      Promise.all(files.map(moScanShrink)).then(function(imgs){
+        imgs=imgs.filter(Boolean);
+        if(!imgs.length){toast("Couldn't read that image",{bad:true});return}
+        moScanRun(imgs);
+      });
+    };
+    // Cancelling the picker fires no change event on any browser — clean up on
+    // the way back to the page instead, so a cancelled tap leaves nothing behind.
+    window.addEventListener("focus",function once(){window.removeEventListener("focus",once);setTimeout(done,400)});
+    inp.click();
+  }
+  // Statement text has to survive the resize, so these go wider than a receipt
+  // photo (1600px) before the quality ladder starts stepping down.
+  function moScanShrink(f){
+    return new Promise(function(res){
+      var img=new Image(),rd=new FileReader();
+      rd.onerror=function(){res(null)};
+      rd.onload=function(){
+        img.onerror=function(){res(null)};
+        img.onload=function(){
+          var mx=1600,w=img.width,hh=img.height;
+          if(w>mx||hh>mx){var sc=mx/Math.max(w,hh);w=Math.round(w*sc);hh=Math.round(hh*sc)}
+          var cv=document.createElement("canvas");cv.width=w;cv.height=hh;
+          cv.getContext("2d").drawImage(img,0,0,w,hh);
+          var q=0.8,out=cv.toDataURL("image/jpeg",q);
+          while(out.length>380000&&q>0.35){q-=0.1;out=cv.toDataURL("image/jpeg",q)}
+          res(out.length>380000?null:out);
+        };
+        img.src=rd.result;
+      };
+      rd.readAsDataURL(f);
+    });
+  }
+  function moScanRun(imgs){
+    var sh=el("moSheet");
+    sh.innerHTML='<div class="sh-hd"><span class="e">'+ic("scan-line",21)+'</span><b>Reading your statement…</b></div>'+
+      '<div class="sh-body"><div class="mo-empty"><span class="e">'+ic("sparkles",34)+'</span>Pulling the rows off '+imgs.length+' screenshot'+(imgs.length>1?"s":"")+'.<br>A few seconds.</div></div>';
+    el("moScrim").classList.add("show");sh.classList.add("show");navOpen("moSheet",closeMoSheet);
+    post("/api/money/scan",{imgs:imgs}).then(function(d){
+      if(!d||!d.ok){
+        closeMoSheet();
+        toast(d&&d.error==="ai_not_configured"?"Add a Gemini key to use Scan":("Scan failed: "+((d&&d.error)||"error")),{bad:true});
+        return;
+      }
+      if(!d.rows||!d.rows.length){closeMoSheet();toast("No transactions found in that screenshot",{bad:true});return}
+      SCAN={rows:d.rows};
+      moScanSheet();
+    }).catch(function(){closeMoSheet();toast("Network error",{bad:true})});
+  }
+  function moScanSheet(){
+    var rows=SCAN.rows,onCount=rows.filter(function(r){return r.on}).length;
+    var h='<div class="sh-hd"><span class="e">'+ic("scan-line",21)+'</span><b>'+rows.length+' transaction'+(rows.length>1?"s":"")+' found</b><button class="sh-x" id="scX">'+ic("x",20)+'</button></div><div class="sh-body">';
+    h+='<div class="sc-note">Tick what to log. Categories are a guess — change any that are wrong before saving. Nothing is written until you tap the button at the bottom.</div>';
+    rows.forEach(function(r,i){h+=moScanRow(r,i)});
+    h+='<div class="sc-foot"><button class="mo-save" id="scSave"'+(onCount?"":" disabled")+'>'+
+      (onCount?"Log "+onCount+" entr"+(onCount>1?"ies":"y"):"Nothing ticked")+'</button></div>';
+    h+='</div>';
+    var sh=el("moSheet");sh.innerHTML=h;
+    el("scX").onclick=function(){SCAN=null;closeMoSheet()};
+    moScanWire();
+  }
+  function moScanRow(r,i){
+    var inRow=r.dir==="in";
+    var h='<div class="sc-row'+(r.on?"":" off")+'" data-i="'+i+'">'+
+      '<div class="sc-hd">'+
+        '<button class="sc-tick'+(r.on?" on":"")+'" data-tick="'+i+'" aria-label="Include this one">'+ic("check",15)+'</button>'+
+        '<div class="sc-main">'+
+          '<div class="sc-l1"><span class="sc-amt'+(inRow?" in":"")+'">'+(inRow?"+":"")+fmtMoney(r.amount)+'</span>'+
+            '<span class="sc-date">'+esc(moDayLabel(r.date))+'</span></div>'+
+          '<div class="sc-desc">'+esc(r.desc||"(no description)")+'</div>'+
+        '</div></div>';
+    h+='<div class="sc-bd">';
+    if(r.dupe)h+='<span class="sc-flag dupe">'+ic("alert-triangle",12)+' Already in the ledger</span>';
+    if(r.pending)h+='<span class="sc-flag pend">Pending at the bank</span>';
+    if(inRow&&r.self)h+='<span class="sc-flag self">Not a customer payment</span>';
+    if(r.on){
+      if(inRow){
+        h+='<div class="mo-f-lbl">Who paid'+(r.payer?' — statement says "'+esc(r.payer)+'"':"")+'</div>';
+        h+='<div id="scCust'+i+'">'+moScanCustHtml(r,i)+'</div>';
+      } else {
+        h+='<div class="mo-f-lbl">Category</div>';
+        h+='<select data-cat="'+i+'">'+MO_CATS.map(function(c){
+          return '<option value="'+c[0]+'"'+(r.cat===c[0]?" selected":"")+'>'+esc(c[1])+'</option>'}).join("")+'</select>';
+      }
+      h+='<div class="mo-f-lbl">Note</div><input class="mo-in" type="text" maxlength="200" data-note="'+i+'" value="'+esc(r.note||"")+'">';
+    }
+    h+='</div></div>';
+    return h;
+  }
+  // Who paid: the server's match (if it was sure), the runners-up it wasn't sure
+  // between, and a search box over the whole text book for everyone else.
+  function moScanCustHtml(r,i){
+    if(r.phone){
+      return '<div class="mo-chips"><span class="mo-chip on" data-custclr="'+i+'">'+esc(r.name||prettyPhone(r.phone))+' ✕</span>'+
+        (r.matchScore&&r.matchScore<1?'<span class="sc-flag mt">matched on name</span>':"")+'</div>';
+    }
+    var alts=(r.alts||[]).slice(0,4);
+    var q=(r.custQ||"").toLowerCase();
+    var pool=alts.length&&!q?alts:(state.threads||[]).filter(function(t){
+      return !t.archived&&t.name&&(!q||(displayName(t)+" "+t.phone).toLowerCase().indexOf(q)>=0);
+    }).slice(0,5).map(function(t){return {phone:t.phone,name:displayName(t)}});
+    return '<input class="mo-in" type="text" data-custq="'+i+'" placeholder="Search your texts…" value="'+esc(r.custQ||"")+'">'+
+      '<div class="mo-chips" style="margin-top:7px">'+pool.map(function(c){
+        return '<span class="mo-chip" data-cust="'+i+'|'+esc(c.phone)+'|'+esc(c.name||"")+'">'+esc(c.name||prettyPhone(c.phone))+'</span>'}).join("")+
+      (pool.length?"":'<span style="font-size:12px;color:var(--muted2)">No match — leave it blank and the income still logs.</span>')+'</div>';
+  }
+  function moScanWire(){
+    var sh=el("moSheet");
+    Array.prototype.forEach.call(sh.querySelectorAll("[data-tick]"),function(b){b.onclick=function(){
+      var i=+b.getAttribute("data-tick");SCAN.rows[i].on=!SCAN.rows[i].on;vibrate(6);
+      moScanRepaintRow(i);
+    }});
+    Array.prototype.forEach.call(sh.querySelectorAll("[data-cat]"),function(sel){sel.onchange=function(){
+      SCAN.rows[+sel.getAttribute("data-cat")].cat=sel.value;
+    }});
+    Array.prototype.forEach.call(sh.querySelectorAll("[data-note]"),function(inp){inp.oninput=function(){
+      SCAN.rows[+inp.getAttribute("data-note")].note=inp.value;
+    }});
+    Array.prototype.forEach.call(sh.querySelectorAll("[data-custclr]"),function(c){c.onclick=function(){
+      var i=+c.getAttribute("data-custclr");var r=SCAN.rows[i];
+      r.phone="";r.name="";r.matchScore=0;moScanRefreshCust(i);
+    }});
+    Array.prototype.forEach.call(sh.querySelectorAll("[data-cust]"),function(c){c.onclick=function(){
+      var p=c.getAttribute("data-cust").split("|");var i=+p[0];
+      SCAN.rows[i].phone=p[1];SCAN.rows[i].name=p.slice(2).join("|");moScanRefreshCust(i);
+    }});
+    Array.prototype.forEach.call(sh.querySelectorAll("[data-custq]"),function(inp){inp.oninput=function(){
+      var i=+inp.getAttribute("data-custq");SCAN.rows[i].custQ=inp.value;moScanRefreshCust(i);
+      var ni=sh.querySelector('[data-custq="'+i+'"]');
+      if(ni){ni.focus();try{ni.setSelectionRange(ni.value.length,ni.value.length)}catch(e){}}
+    }});
+    var sv=el("scSave");if(sv)sv.onclick=moScanCommit;
+  }
+  // Repaint one row and the footer, never the whole sheet — a full re-render
+  // throws a twenty-row list back to the top on every tick.
+  function moScanRepaintRow(i){
+    var sh=el("moSheet"),row=sh.querySelector('.sc-row[data-i="'+i+'"]');
+    if(!row){moScanSheet();return}
+    row.outerHTML=moScanRow(SCAN.rows[i],i);
+    moScanFoot();moScanWire();
+  }
+  function moScanFoot(){
+    var n=(SCAN.rows||[]).filter(function(r){return r.on}).length,b=el("scSave");
+    if(!b)return;
+    b.textContent=n?("Log "+n+" entr"+(n>1?"ies":"y")):"Nothing ticked";
+    b.disabled=!n;
+  }
+  // Repaint one row's customer picker in place — a full re-render would steal
+  // focus from the search box on every keystroke.
+  function moScanRefreshCust(i){
+    var box=el("scCust"+i);if(!box)return;
+    box.innerHTML=moScanCustHtml(SCAN.rows[i],i);
+    moScanWire();
+  }
+  function moScanCommit(){
+    var picked=(SCAN.rows||[]).filter(function(r){return r.on});
+    if(!picked.length){toast("Tick at least one",{bad:true});return}
+    var rows=picked.map(function(r){
+      var e={type:r.dir==="in"?"job":"exp",amount:r.amount,date:r.date,note:r.note||r.desc||""};
+      if(e.type==="exp")e.cat=r.cat||"misc";
+      else{if(r.method)e.method=r.method;if(r.phone){e.phone=r.phone;e.name=r.name||""}}
+      return e;
+    });
+    var b=el("scSave");b.disabled=true;b.textContent="Logging…";
+    post("/api/money/scan/commit",{rows:rows}).then(function(d){
+      if(d&&d.ok){
+        SCAN=null;closeMoSheet();MO.report=null;dtMoneyCache={};
+        toast("Logged "+d.logged+" from your statement"+(d.skipped?" · "+d.skipped+" skipped as duplicates":""));
+        vibrate(12);loadMoney(MO.view==="log"?null:MO.month);
+      } else {b.disabled=false;b.textContent="Try again";toast("Couldn't save: "+((d&&d.error)||"error"),{bad:true})}
+    }).catch(function(){b.disabled=false;b.textContent="Try again";toast("Network error",{bad:true})});
+  }
   // ---- History view ----
   function moMonthNav(m){
     var isCur=m===moCurMonth();

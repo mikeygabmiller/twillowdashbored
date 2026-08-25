@@ -108,6 +108,14 @@ let IDX_CACHE = null;
 // the CPU limit crept up on us is that "this is memoized" was knowledge living in
 // four separate places, and the next cache added has to be freed here too.
 function resetInvocationCaches() { CFG_CACHE = null; IDX_CACHE = null; }
+// Which index rows a given copy of the index has deliberately changed, keyed by
+// the array itself rather than by a module global — and deliberately NOT cleared
+// by resetInvocationCaches. One isolate runs several invocations at once, so a
+// global here would let an arriving request wipe the record of what a cron tick
+// still has in flight, which is the very thing saveIndex needs in order not to
+// overwrite that request's work. Keyed by the array, each caller's record lives
+// exactly as long as the copy it belongs to.
+const IDX_TOUCHED = new WeakMap();
 // The public origin the Worker is reachable at (e.g. https://…workers.dev). Captured
 // from the first request so cron-time sends can build an absolute Twilio StatusCallback
 // URL; falls back to the PUBLIC_BASE_URL var when no request has been seen yet.
@@ -342,6 +350,8 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/money/import')   return apiMoneyImport(request);
   if (request.method === 'GET'  && pathname === '/api/money/config')   return apiMoneyGetConfig();
   if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/money/receipt') return apiMoneyReceipt(request, url);
+  if (request.method === 'POST' && pathname === '/api/money/scan')        return apiMoneyScan(request);
+  if (request.method === 'POST' && pathname === '/api/money/scan/commit') return apiMoneyScanCommit(request);
   if (request.method === 'POST' && pathname === '/api/money/config')   return apiMoneySaveConfig(request);
   if (request.method === 'POST' && pathname === '/api/money/balance')  return apiMoneySetBalance(request);
 
@@ -6281,6 +6291,7 @@ function sanitizeMoneyEntry(e, existingId) {
   }
   if (e.rc) out.rc = 1; // has a receipt photo stored under money:rc:<id>
   if (e.imp) out.imp = true; // came from a CSV import (used for de-dupe on re-import)
+  if (e.bk) out.bk = 1;      // read off a bank screenshot rather than typed in
   return out;
 }
 
@@ -6574,6 +6585,241 @@ async function apiMoneyReceipt(request, url) {
   e.rc = 1;
   await saveMonth(month, doc);
   return json({ ok: true });
+}
+
+// ---- bank screenshot → ledger  (POST /api/money/scan, /api/money/scan/commit)
+// ---------------------------------------------------------------------------
+// Mikey screenshots his Wells Fargo activity list on his phone. Gemini reads the
+// rows out of the picture, this code turns them into ledger entries, and he
+// confirms them in a checklist before a single one is written. Nothing is ever
+// logged straight off the model's word: the scan is a PROPOSAL (no KV writes at
+// all), and the commit is a separate call carrying what he actually approved.
+//
+// Three things the model is not trusted with, all handled here:
+//   • The category. A merchant name is genuinely bad evidence — two of the card
+//     1917 charges that started this feature rang up at gas stations and were
+//     food. Its guess is a starting point; the confirm sheet has a dropdown.
+//   • Which customer paid. The model only pulls the NAME off the row; matching
+//     that to a real thread is done below against the index, and an ambiguous
+//     match stays unpicked rather than guessing.
+//   • Whether a row is new. Every proposed row is checked against what's already
+//     in that month, so re-scanning an overlapping screenshot next week doesn't
+//     double-log the same charge.
+const SCAN_MAX_IMAGES = 3;
+// ~300KB of JPEG once base64'd — the same ceiling a receipt photo gets.
+const SCAN_MAX_IMG_CHARS = 400000;
+
+// Money coming IN that isn't a customer paying for a detail — a transfer from
+// savings, a refund, interest. Logging these as jobs would inflate gross and
+// every average built on it, so they arrive pre-unchecked.
+function scanLooksSelfTransfer(desc) {
+  return /\b(transfer|refund|reversal|interest|cash\s*back|rewards?|deposit\s+from\s+wells|overdraft|atm\s+deposit|mobile\s+deposit)\b/i.test(String(desc || ''));
+}
+
+// Match a deposit to the payment vocabulary the Log screen already uses, so a
+// scanned Zelle sits in the same bucket as one tapped in by hand rather than
+// starting a "Bank" bucket of its own. Anything else is left blank.
+function scanMethodFrom(desc) {
+  const s = String(desc || '');
+  if (/\bzelle\b/i.test(s)) return 'Zelle';
+  if (/\bvenmo\b/i.test(s)) return 'Venmo';
+  if (/\bcheck\b/i.test(s)) return 'Check';
+  if (/\bcash\s*app\b/i.test(s)) return 'Cash App';
+  return '';
+}
+
+function scanNameTokens(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z\s]/g, ' ').split(/\s+/).filter(Boolean);
+}
+
+// Score one contact against the payer name printed on a deposit row. Zelle often
+// prints "SARAH M" rather than a full name, so a first name plus a last INITIAL
+// has to count as a strong match — but only when nobody else in the book scores
+// the same, which is what the caller checks.
+function scanNameScore(payerTokens, contactTokens) {
+  const p = payerTokens, c = contactTokens;
+  if (!p.length || !c.length) return 0;
+  const pf = p[0], pl = p[p.length - 1], cf = c[0], cl = c[c.length - 1];
+  if (p.join(' ') === c.join(' ')) return 1;
+  if (pf !== cf) return (pl === cl && pl.length > 2) ? 0.45 : 0; // surname-only agreement
+  if (p.length === 1 || c.length === 1) return 0.65;             // one side gave a first name only
+  // Same first name — the surnames decide, and an initial on either side counts.
+  if (pl === cl) return 0.95;
+  if ((pl.length === 1 || cl.length === 1) && pl[0] === cl[0]) return 0.85;
+  return 0.5; // same first name, different surname — a candidate, never a pick
+}
+
+// Best contact for a payer name, plus the runners-up. A pick needs to clear 0.65
+// AND stand alone at the top: two Sarahs means Mikey chooses, not us.
+function scanMatchCustomer(payer, index) {
+  const p = scanNameTokens(payer);
+  if (p.length === 0) return { match: null, alts: [] };
+  const scored = [];
+  for (const t of index || []) {
+    if (t.archived) continue;
+    const s = scanNameScore(p, scanNameTokens(t.name));
+    if (s > 0) scored.push({ phone: t.phone, name: t.name, score: Math.round(s * 100) / 100 });
+  }
+  scored.sort((a, b) => b.score - a.score || (a.name || '').localeCompare(b.name || ''));
+  const top = scored[0];
+  const clear = top && top.score >= 0.65 && (!scored[1] || scored[1].score < top.score);
+  return {
+    match: clear ? top : null,
+    alts: scored.filter((x) => x !== (clear ? top : null)).slice(0, 4),
+  };
+}
+
+// The prompt. Everything it needs to read a bank list correctly lives here —
+// today's date (so "Aug 20" resolves to a year), the real category list, and the
+// standing warning that a gas station is not automatically fuel.
+function scanPrompt(today) {
+  const year = +today.slice(0, 4);
+  return (
+    'You are reading one or more phone screenshots of a Wells Fargo bank account ' +
+    'activity list. Extract every transaction row that is FULLY visible.\n\n' +
+    'Rules:\n' +
+    '- Never invent a row. If a row is cut off at the top or bottom edge of the image, skip it.\n' +
+    '- Skip anything that is not a transaction: running balances, account totals, ' +
+    'headers, "available balance", date separators, navigation buttons.\n' +
+    '- If the same row appears in two screenshots (overlapping scrolls), return it ONCE.\n' +
+    `- Today is ${today}. Rows usually print a short date like "Aug 20" with no year: ` +
+    `use ${year}, unless that would make the date later than today, in which case use ${year - 1}.\n\n` +
+    'Return ONLY JSON: {"rows":[…]}. Each row:\n' +
+    '  "date"   : "YYYY-MM-DD"\n' +
+    '  "amount" : a positive number — no $, no commas, no minus sign\n' +
+    '  "dir"    : "out" if money LEFT the account (purchase, withdrawal, fee, payment sent), ' +
+    '"in" if money ARRIVED (deposit, Zelle/Venmo received, transfer in)\n' +
+    '  "desc"   : the merchant or description as printed, tidied — drop reference numbers, ' +
+    'trailing card noise and ALL-CAPS shouting, keep the merchant and the city\n' +
+    '  "payer"  : for "in" rows ONLY, the PERSON who sent the money if the row names one ' +
+    '(e.g. "ZELLE FROM SARAH MILLER ON 08/19 REF#123" → "Sarah Miller"). "" if the row names ' +
+    'no person, or the money came from the account holder themselves.\n' +
+    '  "card"   : the last 4 digits of the card if the row shows them, else ""\n' +
+    '  "pending": true if the row is marked pending or processing\n' +
+    `  "cat"    : for "out" rows, the best category from EXACTLY this list: ${MONEY_CATS.join(', ')}. ` +
+    'Use "misc" when genuinely unsure. Omit for "in" rows.\n\n' +
+    'Category guidance — the merchant name on its own is often misleading:\n' +
+    '- Gas stations sell food and drinks. Only call it "fuel" when the amount looks like an ' +
+    'actual fill-up (roughly $15 or more) or the row says fuel/gas/pump. A few dollars at a ' +
+    'gas station is "food".\n' +
+    '- Auto parts, detailing chemicals, microfiber, car washes → "supplies".\n' +
+    '- Tools, machines, polishers, vacuums, a pressure washer → "equipment".\n' +
+    '- Cell service and internet → "phone". Rent, utilities, software subscriptions → "bills".\n' +
+    '- Ads, printing, signage, business cards → "marketing".\n' +
+    '- Anything that is plainly not a business cost → "misc".\n\n' +
+    'Amounts are always positive; "dir" is what carries the direction.'
+  );
+}
+
+// POST /api/money/scan {imgs:[dataURL,…]} → proposed rows. Reads KV, writes none.
+async function apiMoneyScan(request) {
+  if (!ENV.GEMINI_API_KEY) return json({ ok: false, error: 'ai_not_configured' }, 503);
+  const data = await readJson(request);
+  const imgs = (Array.isArray(data.imgs) ? data.imgs : [data.img]).filter(Boolean).slice(0, SCAN_MAX_IMAGES);
+  if (!imgs.length) return json({ ok: false, error: 'no_image' }, 422);
+  const parts = [];
+  for (const raw of imgs) {
+    const s = String(raw);
+    const m = s.match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/s);
+    if (!m || s.length > SCAN_MAX_IMG_CHARS) return json({ ok: false, error: 'bad_image' }, 422);
+    parts.push({ mimeType: m[1], dataB64: m[2] });
+  }
+
+  const mainCfg = await loadConfig();
+  const today = localDateStr(Date.now(), mainCfg.tz);
+  let raw;
+  try { raw = await geminiGenerate(scanPrompt(today), { surface: 'bank scan', json: true, maxTokens: 4096, temperature: 0.1, images: parts }); }
+  catch (err) { return json({ ok: false, error: String(err.message || err) }, 502); }
+  let parsed = {};
+  try { parsed = JSON.parse(raw); } catch { return json({ ok: false, error: 'ai_parse_failed', raw: String(raw).slice(0, 400) }, 502); }
+  const rowsIn = Array.isArray(parsed.rows) ? parsed.rows : (Array.isArray(parsed) ? parsed : []);
+
+  const index = await loadIndex();
+  const months = new Map(); // month → doc, loaded at most once each
+  const rows = [];
+  const seen = new Set(); // the model repeating a row across overlapping screenshots
+  for (const r of rowsIn.slice(0, 60)) {
+    const amount = money2(r.amount);
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(String(r.date || '')) ? String(r.date) : null;
+    if (!date || !amount || !isFinite(amount) || amount <= 0 || amount > 1000000) continue;
+    if (date > today) continue; // a misread year, not a real charge
+    const dir = r.dir === 'in' ? 'in' : 'out';
+    const desc = String(r.desc || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+    const dedupeKey = date + '|' + dir + '|' + amount + '|' + desc.toLowerCase();
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+
+    const month = date.slice(0, 7);
+    if (!months.has(month)) months.set(month, await loadMonth(month));
+    const doc = months.get(month);
+    // Already in the ledger? Same day, same amount, same side of the books —
+    // whether it got there by an earlier scan or by hand.
+    const wantJob = dir === 'in';
+    const hit = (doc.entries || []).find((e) => e.date === date && Math.abs(e.amount - amount) < 0.005 &&
+      (wantJob ? e.type === 'job' : e.type !== 'job'));
+
+    const row = {
+      date, amount, dir, desc,
+      card: String(r.card || '').replace(/\D/g, '').slice(-4),
+      pending: !!r.pending,
+      note: (desc + (r.card ? ' · card ' + String(r.card).replace(/\D/g, '').slice(-4) : '')).slice(0, 200),
+    };
+    if (dir === 'out') {
+      row.type = 'exp';
+      row.cat = MONEY_CATS.includes(r.cat) ? r.cat : 'misc';
+    } else {
+      row.type = 'job';
+      row.method = scanMethodFrom(desc);
+      row.payer = String(r.payer || '').replace(/\s+/g, ' ').trim().slice(0, 60);
+      row.self = scanLooksSelfTransfer(desc) || !row.payer;
+      const mm = scanMatchCustomer(row.payer, index);
+      if (mm.match) { row.phone = mm.match.phone; row.name = mm.match.name; row.matchScore = mm.match.score; }
+      if (mm.alts.length) row.alts = mm.alts;
+    }
+    // Off by default when it's already logged, still pending at the bank, or
+    // money moving between Mikey's own accounts.
+    if (hit) row.dupe = { id: hit.id, type: hit.type, amount: hit.amount, note: hit.note || '' };
+    row.on = !hit && !row.pending && !row.self;
+    rows.push(row);
+  }
+  rows.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  return json({ ok: true, today, rows, count: rows.length });
+}
+
+// POST /api/money/scan/commit {rows:[…]} → writes the approved rows.
+// One KV write per month touched, however many rows he ticked.
+// ⚠ KV WRITE
+async function apiMoneyScanCommit(request) {
+  const data = await readJson(request);
+  const list = Array.isArray(data.rows) ? data.rows.slice(0, 60) : [];
+  if (!list.length) return json({ ok: false, error: 'no_rows' }, 422);
+  const byMonth = {};
+  let skipped = 0;
+  for (const r of list) {
+    const e = sanitizeMoneyEntry(Object.assign({}, r, { bk: 1, ts: Date.parse(String(r.date) + 'T12:00:00Z') || Date.now() }));
+    if (!e) { skipped++; continue; }
+    (byMonth[e.date.slice(0, 7)] = byMonth[e.date.slice(0, 7)] || []).push(e);
+  }
+  let logged = 0;
+  for (const m of Object.keys(byMonth)) {
+    const doc = await loadMonth(m);
+    let added = 0;
+    for (const e of byMonth[m]) {
+      // Last-chance guard: the ledger may have moved between the scan and the
+      // tap (another device, a manual entry). Same day + amount + side wins.
+      const clash = doc.entries.some((x) => x.date === e.date && Math.abs(x.amount - e.amount) < 0.005 &&
+        (e.type === 'job' ? x.type === 'job' : x.type !== 'job'));
+      if (clash) { skipped++; continue; }
+      doc.entries.push(e); added++; logged++;
+    }
+    if (added) {
+      if (doc.entries.length > 3000) return json({ ok: false, error: 'month_full' }, 422);
+      await saveMonth(m, doc);
+    }
+  }
+  const cur = localDateStr(Date.now(), (await loadConfig()).tz).slice(0, 7);
+  const doc = byMonth[cur] ? await loadMonth(cur) : null;
+  return json({ ok: true, logged, skipped, months: Object.keys(byMonth), summary: doc ? summarizeMonth(doc.entries) : null });
 }
 
 // Per-month aggregates going back N months — feeds the month-vs-month chart.
@@ -7280,12 +7526,55 @@ async function loadIndex() {
 
 // ⚠ KV WRITE — rewrites the entire index. In cron/loop code, mutate the index in
 // memory and call this ONCE at the end, not once per thread (see note up top).
-// Refreshing the cache here also closes a real hole: KV is eventually consistent,
-// so a later sub-job in the same tick re-reading from KV could get the version
-// from BEFORE this write and quietly undo it on its own save.
+//
+// It never writes the caller's array as it stands, and that is the whole point.
+// The index is ONE document that every writer shares, and a cron sub-job holds
+// its copy across slow AI and Twilio calls — a minute is a long time. A text that
+// arrives in that window is appended to its own thread doc and its index row is
+// written correctly, and then the tick finishes and puts its pre-text snapshot
+// back over the top. The thread still has the message and the alert already went
+// out, so the text is real everywhere EXCEPT the list the dashboard reads, which
+// is exactly how it looks when texts "stop showing up".
+//
+// So only the rows this caller actually changed are replayed, onto the freshest
+// copy KV has. Every other row is left as whoever else wrote it.
+//
+// The re-read costs one extra parse, and only on a call that genuinely writes.
+// Reads stay memoized, which is where the CPU actually went (see the CPU box).
 async function saveIndex(index) {
-  await kv().put(INDEX_KEY, JSON.stringify(index));
-  IDX_CACHE = index.slice();
+  const merged = await mergeIndexWrites(index);
+  await kv().put(INDEX_KEY, JSON.stringify(merged));
+  IDX_CACHE = merged.slice();
+  return merged;
+}
+
+// Replay this array's own edits onto the current contents of KV.
+//
+// Safe because the index behaves as a map keyed by phone: applyIndexSummary is
+// the only thing that ever changes it, it replaces or appends one row at a time,
+// and nothing anywhere deletes a row (archiving sets a flag on the row). So the
+// three cases below cover every difference two writers can have.
+async function mergeIndexWrites(mine) {
+  const touched = IDX_TOUCHED.get(mine);
+  if (!touched || !touched.size) return mine;   // read-only copy; nothing to replay
+  const base = (await kv().get(INDEX_KEY, { type: 'json' })) || [];
+  const out = base.slice();
+  const at = new Map();
+  for (let i = 0; i < out.length; i++) at.set(out[i].phone, i);
+  // 1. A row we hold that the fresh read has never heard of. Rows are never
+  //    deleted, so that read was stale (KV is eventually consistent) — keep ours.
+  for (const e of mine) {
+    if (!at.has(e.phone)) { at.set(e.phone, out.length); out.push(e); }
+  }
+  // 2. Rows we deliberately changed win outright.
+  // 3. Everything else — including a row another writer touched while we were
+  //    working — is already in `out` untouched, which is the fix.
+  for (const [phone, summary] of touched) {
+    const i = at.get(phone);
+    if (i === undefined) { at.set(phone, out.length); out.push(summary); }
+    else out[i] = summary;
+  }
+  return out;
 }
 
 function preview(body) {
@@ -7414,6 +7703,11 @@ function applyIndexSummary(index, summary) {
   } else {
     index.push(summary);
   }
+  // Record the edit against THIS array so saveIndex can replay just our own rows.
+  // A no-op returns above without recording, so it can't claim a row it left alone.
+  let touched = IDX_TOUCHED.get(index);
+  if (!touched) IDX_TOUCHED.set(index, (touched = new Map()));
+  touched.set(summary.phone, summary);
   return true;
 }
 
