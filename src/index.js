@@ -108,6 +108,14 @@ let IDX_CACHE = null;
 // the CPU limit crept up on us is that "this is memoized" was knowledge living in
 // four separate places, and the next cache added has to be freed here too.
 function resetInvocationCaches() { CFG_CACHE = null; IDX_CACHE = null; }
+// Which index rows a given copy of the index has deliberately changed, keyed by
+// the array itself rather than by a module global — and deliberately NOT cleared
+// by resetInvocationCaches. One isolate runs several invocations at once, so a
+// global here would let an arriving request wipe the record of what a cron tick
+// still has in flight, which is the very thing saveIndex needs in order not to
+// overwrite that request's work. Keyed by the array, each caller's record lives
+// exactly as long as the copy it belongs to.
+const IDX_TOUCHED = new WeakMap();
 // The public origin the Worker is reachable at (e.g. https://…workers.dev). Captured
 // from the first request so cron-time sends can build an absolute Twilio StatusCallback
 // URL; falls back to the PUBLIC_BASE_URL var when no request has been seen yet.
@@ -120,7 +128,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-25·ai-diet';
+const BUILD = '2026-08-25·index-merge';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -7233,12 +7241,55 @@ async function loadIndex() {
 
 // ⚠ KV WRITE — rewrites the entire index. In cron/loop code, mutate the index in
 // memory and call this ONCE at the end, not once per thread (see note up top).
-// Refreshing the cache here also closes a real hole: KV is eventually consistent,
-// so a later sub-job in the same tick re-reading from KV could get the version
-// from BEFORE this write and quietly undo it on its own save.
+//
+// It never writes the caller's array as it stands, and that is the whole point.
+// The index is ONE document that every writer shares, and a cron sub-job holds
+// its copy across slow AI and Twilio calls — a minute is a long time. A text that
+// arrives in that window is appended to its own thread doc and its index row is
+// written correctly, and then the tick finishes and puts its pre-text snapshot
+// back over the top. The thread still has the message and the alert already went
+// out, so the text is real everywhere EXCEPT the list the dashboard reads, which
+// is exactly how it looks when texts "stop showing up".
+//
+// So only the rows this caller actually changed are replayed, onto the freshest
+// copy KV has. Every other row is left as whoever else wrote it.
+//
+// The re-read costs one extra parse, and only on a call that genuinely writes.
+// Reads stay memoized, which is where the CPU actually went (see the CPU box).
 async function saveIndex(index) {
-  await kv().put(INDEX_KEY, JSON.stringify(index));
-  IDX_CACHE = index.slice();
+  const merged = await mergeIndexWrites(index);
+  await kv().put(INDEX_KEY, JSON.stringify(merged));
+  IDX_CACHE = merged.slice();
+  return merged;
+}
+
+// Replay this array's own edits onto the current contents of KV.
+//
+// Safe because the index behaves as a map keyed by phone: applyIndexSummary is
+// the only thing that ever changes it, it replaces or appends one row at a time,
+// and nothing anywhere deletes a row (archiving sets a flag on the row). So the
+// three cases below cover every difference two writers can have.
+async function mergeIndexWrites(mine) {
+  const touched = IDX_TOUCHED.get(mine);
+  if (!touched || !touched.size) return mine;   // read-only copy; nothing to replay
+  const base = (await kv().get(INDEX_KEY, { type: 'json' })) || [];
+  const out = base.slice();
+  const at = new Map();
+  for (let i = 0; i < out.length; i++) at.set(out[i].phone, i);
+  // 1. A row we hold that the fresh read has never heard of. Rows are never
+  //    deleted, so that read was stale (KV is eventually consistent) — keep ours.
+  for (const e of mine) {
+    if (!at.has(e.phone)) { at.set(e.phone, out.length); out.push(e); }
+  }
+  // 2. Rows we deliberately changed win outright.
+  // 3. Everything else — including a row another writer touched while we were
+  //    working — is already in `out` untouched, which is the fix.
+  for (const [phone, summary] of touched) {
+    const i = at.get(phone);
+    if (i === undefined) { at.set(phone, out.length); out.push(summary); }
+    else out[i] = summary;
+  }
+  return out;
 }
 
 function preview(body) {
@@ -7367,6 +7418,11 @@ function applyIndexSummary(index, summary) {
   } else {
     index.push(summary);
   }
+  // Record the edit against THIS array so saveIndex can replay just our own rows.
+  // A no-op returns above without recording, so it can't claim a row it left alone.
+  let touched = IDX_TOUCHED.get(index);
+  if (!touched) IDX_TOUCHED.set(index, (touched = new Map()));
+  touched.set(summary.phone, summary);
   return true;
 }
 
