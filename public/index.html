@@ -2182,6 +2182,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .cz-item .eye{flex:none;width:34px;height:34px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--muted);display:grid;place-items:center;cursor:pointer}
   .cz-item .eye.off{color:var(--muted2);opacity:.6}
   .cz-note{font-size:11.5px;color:var(--muted2);text-align:center;padding:6px 0 2px}
+  /* the way out of an "app ≠ server" mismatch, next to the mismatch itself */
+  .build-up{margin:7px 0 3px;background:var(--accent);border:1px solid var(--accent);color:#fff;
+    font:inherit;font-size:12px;font-weight:750;padding:7px 14px;border-radius:9px;cursor:pointer}
+  .build-up:disabled{opacity:.6;cursor:default}
   .cz-danger{color:#ff6b6b!important;border-color:rgba(255,80,80,.4)!important}
   .cz-bigbtn{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;padding:13px;border-radius:13px;border:1px solid var(--line);background:var(--panel2);color:var(--text);font-size:14px;font-weight:750;cursor:pointer;font-family:inherit;margin-top:8px}
   .cz-bigbtn:active{transform:scale(.99)}
@@ -3898,7 +3902,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-27·four-layouts";
+  var APP_BUILD="2026-08-27·update-now";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -9455,16 +9459,41 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     }).catch(function(){b.className="health bad";el("healthTxt").textContent="offline"});
   }
   // Confirm the live URL is serving this exact build (assets AND worker together).
+  // A mismatch means the Worker has shipped but this tab is still running the
+  // HTML it loaded earlier — an installed PWA holds a document open for days.
+  // Saying so and stopping was no help: "close and reopen it" is folklore you
+  // have to be told. The warning is a button now, and it does the two things
+  // that actually clear a stale shell — drop the cached copy, then re-fetch the
+  // page past the HTTP cache. It deliberately does NOT unregister the service
+  // worker: the push subscription lives on that registration, and throwing it
+  // away would silently stop the phone ringing for new texts.
+  function refreshShell(btn){
+    if(btn){btn.disabled=true;btn.textContent="Updating…"}
+    var jobs=[];
+    try{if(window.caches&&caches.keys)jobs.push(caches.keys().then(function(ks){
+      return Promise.all(ks.map(function(k){return caches.delete(k)}))}))}catch(e){}
+    try{if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations)
+      jobs.push(navigator.serviceWorker.getRegistrations().then(function(rs){
+        return Promise.all(rs.map(function(r){return r.update()}))}))}catch(e){}
+    // cache:"reload" forces the network and rewrites the HTTP cache entry, so
+    // the reload that follows can't be answered from disk with the old page.
+    jobs.push(fetch(location.pathname,{cache:"reload",credentials:"include"}));
+    Promise.all(jobs.map(function(j){return Promise.resolve(j).catch(function(){})}))
+      .then(function(){location.reload()});
+  }
   function showBuild(){
     var s=el("buildStamp");if(!s)return;
     s.textContent="app "+APP_BUILD;
     api("/api/version").then(function(d){
-      if(d&&d.build){
-        var ok=d.build===APP_BUILD;
-        s.innerHTML="app "+esc(APP_BUILD)+" · server "+esc(d.build)+" "+(ok?"✓ live":"⚠ mismatch");
-        s.style.color=ok?"":"var(--accent-text)";
-        s.style.opacity=ok?".75":"1";
-      }
+      if(!d||!d.build)return;
+      var ok=d.build===APP_BUILD;
+      s.innerHTML="app "+esc(APP_BUILD)+" · server "+esc(d.build)+" "+(ok?"✓ live":"⚠ mismatch")+
+        (ok?"":'<br><button class="build-up" id="buildUpdate">Update now</button>'+
+             '<br><span style="opacity:.7">This tab is running an older copy of the app.</span>');
+      s.style.color=ok?"":"var(--accent-text)";
+      s.style.opacity=ok?".75":"1";
+      var b=el("buildUpdate");
+      if(b)b.onclick=function(){vibrate(8);refreshShell(b)};
     }).catch(function(){});
   }
 
