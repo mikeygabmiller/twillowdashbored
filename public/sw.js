@@ -3,7 +3,7 @@
  * app shell. API calls are always live (never cached). Also receives Web Push
  * so new texts, missed calls and the morning brief ring the phone instantly
  * instead of waiting for the next poll. */
-const CACHE = 'mkd-shell-v16';
+const CACHE = 'mkd-shell-v17';
 const SHELL = ['/', '/manifest.webmanifest', '/favicon.svg', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (e) => {

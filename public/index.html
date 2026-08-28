@@ -3108,7 +3108,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-25·see-it-all";
+  var APP_BUILD="2026-08-28·email-answers-that-stick";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -5718,9 +5718,13 @@
       '<div class="fu-row"><span class="lbl2">Answer by email <span style="color:var(--muted2);font-weight:400">· free — no text used</span></span><span class="sw'+(c.assistEmail!==false?" on":"")+'" id="cfgAssistEmail"></span></div>'+
       '<div class="fu-row"><span class="lbl2">Hold before sending</span><span style="display:flex;align-items:center;gap:6px"><input type="number" id="cfgAssistEmailDelay" min="0" max="900" value="'+(c.assistEmailDelaySec==null?180:c.assistEmailDelaySec)+'"><span style="color:var(--muted2)">sec</span></span></div>'+
       '<div class="hint">Every new-text alert now shows you <b>the exact reply it would send</b>, written in your voice. Hit <b>reply</b> and answer <b>"yes"</b> to send it as-is, or <b>"no"</b> to drop it. Want it said differently? Reply with the bare facts instead — <b>"375, thursday works"</b> — and it gets rewritten and sent. The reply already knows who it\'s about, so there\'s nothing to address. <b>Costs nothing</b> — the only text message used is the one the customer receives.</div>'+
+      '<div class="fu-row"><span class="lbl2">Stop it if the wording says something I didn\'t <span style="color:var(--muted2);font-weight:400">· prices and days</span></span><span class="sw'+(c.assistFactCheck!==false?" on":"")+'" id="cfgAssistFacts"></span></div>'+
+      '<div class="hint">The deal with this feature is that <b>every fact comes from you</b> — the AI only does the wording. This is what actually holds it to that. If the finished text quotes a price, or commits you to a day, that you never said and the conversation never mentioned, it <b>doesn\'t send</b>: it shows you the wording and waits. Reply <b>yes</b> and it goes out exactly as written. Leave it on.</div>'+
+      '<div class="fu-col"><span class="lbl2">Is it working?</span><div id="cfgAssistHealth" class="hint" style="margin:0">Checking…</div></div>'+
       '<div class="fu-col"><span class="lbl2">Set it up &amp; try it</span><span style="display:flex;gap:6px;flex-wrap:wrap">'+
         '<button id="cfgAssistScript" class="btn">1 · Copy the Gmail script</button>'+
         '<button id="cfgAssistPractice" class="btn">2 · Send me a practice question</button>'+
+        '<button id="cfgAssistRecheck" class="btn">Check again</button>'+
       '</span><span id="cfgAssistScriptMsg" style="color:var(--muted2);font-size:12px"></span></div>'+
       '<div class="hint"><b>Practice questions are safe.</b> They come from a fake customer, and replying runs the whole thing end to end — but the finished message is shown back to you marked TEST and is never sent to anyone. Tap it a few times: you\'ll get a price question, a scheduling one, a "do you do X", and a complaint (which it deliberately refuses to answer for you).</div>'+
       '<div class="fu-row"><span class="lbl2">Answer by text <span style="color:var(--muted2);font-weight:400">· same thing, uses a text</span></span><span class="sw'+(c.assistSms!==false?" on":"")+'" id="cfgAssist"></span></div>'+
@@ -5771,6 +5775,9 @@
     el("cfgAssistDelay").onchange=function(){saveConfig({assistDelaySec:+el("cfgAssistDelay").value})};
     el("cfgAssistEmail").onclick=function(){saveConfig({assistEmail:!(c.assistEmail!==false)})};
     el("cfgAssistEmailDelay").onchange=function(){saveConfig({assistEmailDelaySec:+el("cfgAssistEmailDelay").value})};
+    el("cfgAssistFacts").onclick=function(){saveConfig({assistFactCheck:!(c.assistFactCheck!==false)})};
+    el("cfgAssistRecheck").onclick=function(){ASSISTH=null;renderAssistHealth()};
+    renderAssistHealth();
     el("cfgProm").onclick=function(){saveConfig({promise:{enabled:!((c.promise||{}).enabled!==false)}})};
     el("cfgPromMail").onclick=function(){saveConfig({promise:{emailEach:!((c.promise||{}).emailEach!==false)}})};
     el("cfgPromHours").onchange=function(){saveConfig({promise:{defaultHours:+el("cfgPromHours").value}})};
@@ -6162,6 +6169,70 @@
   // Pull recent voicemails from Twilio into their conversations so they're playable here.
   // Fetch the ready-to-paste Gmail script and put it on the clipboard. Falls back
   // to a textarea + manual copy on browsers that block clipboard writes.
+  // ---- "Is Answer by email actually working?" ------------------------------
+  // This whole card exists because the failure mode of this feature is silence.
+  // The Gmail trigger stops — a revoked permission, a paused project, a quota —
+  // and nothing anywhere says so. He keeps replying to alerts, customers keep not
+  // hearing back, and the first sign is an unhappy phone call. So the script
+  // checks in and this says, in words, whether it did.
+  var ASSISTH=null;
+  var ASSIST_STALE_MS=45*60000;
+  function assistHealthHtml(d){
+    if(!d||!d.ok)return"Couldn't check just now — tap <b>Check again</b>.";
+    var h=d.health||{},out=[];
+    if(!h.pingAt){
+      // An older copy of the script answers replies perfectly well but never
+      // checks in, so "not connected" would be a lie. Say which it is.
+      if(h.replyAt&&Date.now()-h.replyAt<7*864e5){
+        return '<b>Answering \u2014 but on the old Gmail script.</b> Your last reply went through '+ago(h.replyAt)+
+          ' ago, so it works; it just has no way to tell you when it stops. Tap <b>Copy the Gmail script</b>, '+
+          'paste over the old one, and run <b>mikeyAssistSetUp</b> to get that.';
+      }
+      return '<b>Not connected yet.</b> Tap <b>Copy the Gmail script</b>, paste it into a new project at '+
+        '<b>script.google.com</b>, then run <b>mikeyAssistSetUp</b> once. This line changes the moment it checks in.';
+    }
+    var age=Date.now()-h.pingAt;
+    if(age<ASSIST_STALE_MS){
+      out.push('<b style="color:#16a34a">✓ Working.</b> Gmail last checked '+ago(h.pingAt)+' ago.');
+    }else{
+      out.push('<b style="color:var(--accent)">⚠ The Gmail script hasn\'t checked in for '+ago(h.pingAt)+'.</b> '+
+        'Replies you send right now are <b>not</b> reaching your customers. Open <b>script.google.com</b>, pick '+
+        '<b>mikeyAssistCheck</b> from the dropdown and press Run — it prints exactly what\'s wrong.');
+    }
+    if(h.lastError)out.push('Last problem ('+ago(h.lastErrorAt||h.pingAt)+' ago): '+esc(h.lastError));
+    if(h.sentAt)out.push('Last answer sent: '+esc(h.sentWho||"a customer")+', '+ago(h.sentAt)+' ago.');
+    else if(h.replyAt)out.push('Last reply of yours read: '+ago(h.replyAt)+' ago.');
+    if(h.skippedAt&&Date.now()-h.skippedAt<7*864e5)out.push('Last thing it deliberately did <b>not</b> send: '+esc(h.skippedWhy||"")+' ('+ago(h.skippedAt)+' ago).');
+    if(h.strangerFrom&&Date.now()-(h.strangerAt||0)<14*864e5){
+      var known=(d.assistFrom||[]).indexOf(h.strangerFrom)>-1||h.strangerFrom===d.alertEmail;
+      if(!known){
+        out.push('A reply came in from <b>'+esc(h.strangerFrom)+'</b>, which isn\'t the address your alerts go to, '+
+          'so it was left alone. <a href="#" id="cfgAssistAddFrom">That\'s me too — use it</a>.');
+      }
+    }
+    return out.join('<br>');
+  }
+  function renderAssistHealth(){
+    var box=el("cfgAssistHealth");if(!box)return;
+    var paint=function(d){
+      box.innerHTML=assistHealthHtml(d);
+      var add=el("cfgAssistAddFrom");
+      if(add)add.onclick=function(e){
+        e.preventDefault();
+        var h=(d&&d.health)||{},list=(d&&d.assistFrom)||[];
+        if(!h.strangerFrom)return;
+        box.innerHTML="Adding…";
+        saveConfig({assistFrom:list.concat([h.strangerFrom])}).then(function(){
+          ASSISTH=null;renderAssistHealth();
+          toast("Replies from "+h.strangerFrom+" count as you now");
+        }).catch(function(){box.innerHTML="Couldn't add that address — tap <b>Check again</b>."});
+      };
+    };
+    if(ASSISTH){paint(ASSISTH);return}
+    box.innerHTML="Checking…";
+    api("/api/email-setup").then(function(d){ASSISTH=d;paint(d)}).catch(function(){paint(null)});
+  }
+
   function copyAssistScript(){
     var msg=el("cfgAssistScriptMsg");
     if(msg)msg.textContent="Getting it…";
@@ -6169,7 +6240,7 @@
       if(!d||!d.ok||!d.script){if(msg)msg.textContent="Couldn't build it — try again";return}
       var done=function(){
         if(msg)msg.textContent="Copied ✓";
-        toast("Script copied. Open script.google.com, make a new project, paste it, then add a 1-minute trigger.");
+        toast("Script copied. Open script.google.com \u2192 New project, paste it, then Run \u2192 mikeyAssistSetUp. It installs its own trigger.");
       };
       if(navigator.clipboard&&navigator.clipboard.writeText){
         navigator.clipboard.writeText(d.script).then(done,function(){manualCopy(d.script,done)});
