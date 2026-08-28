@@ -25,6 +25,7 @@ const UNIT = [
 const UI = [
   'detect.ui', 'pay.ui', 'nav.ui', 'search.ui', 'tabs.ui', 'snapshot.ui', 'place.ui',
   'newmsg.ui', 'peek.ui', 'polish.ui', 'journey.ui', 'scan.ui', 'aidiet.ui', 'use.ui',
+  'keyboard.ui',
 ].map((n) => `${n}.test.js`);
 
 const mode = (process.argv[2] || 'unit').toLowerCase();
