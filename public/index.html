@@ -9,6 +9,11 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
 <meta name="robots" content="noindex, nofollow" />
 <meta name="theme-color" content="#0a0a0c" />
+<script>/* set the saved LAYOUT before first paint — otherwise a reload flashes Classic's
+   bottom bar for a frame before the rail/top bar/dock takes over. Classic sets
+   no attribute at all, which is what keeps it byte-for-byte the original. */
+(function(){try{var u=JSON.parse(localStorage.getItem("mkd-ui")||"{}");var L=u&&u.layout;
+if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.setAttribute("data-layout",L);}catch(e){}})();</script>
 <script>/* set saved theme before first paint to avoid a flash */(function(){try{var m=localStorage.getItem("mkd-theme");if(m==="light"||m==="dark"){document.documentElement.setAttribute("data-theme",m);var tc=document.querySelector('meta[name="theme-color"]');if(tc)tc.setAttribute("content",m==="light"?"#eef0f3":"#0a0a0c")}}catch(e){}})();</script>
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -2216,6 +2221,10 @@
   .cz-item .eye{flex:none;width:34px;height:34px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--muted);display:grid;place-items:center;cursor:pointer}
   .cz-item .eye.off{color:var(--muted2);opacity:.6}
   .cz-note{font-size:11.5px;color:var(--muted2);text-align:center;padding:6px 0 2px}
+  /* the way out of an "app ≠ server" mismatch, next to the mismatch itself */
+  .build-up{margin:7px 0 3px;background:var(--accent);border:1px solid var(--accent);color:#fff;
+    font:inherit;font-size:12px;font-weight:750;padding:7px 14px;border-radius:9px;cursor:pointer}
+  .build-up:disabled{opacity:.6;cursor:default}
   .cz-danger{color:#ff6b6b!important;border-color:rgba(255,80,80,.4)!important}
   .cz-bigbtn{width:100%;display:flex;align-items:center;justify-content:center;gap:8px;padding:13px;border-radius:13px;border:1px solid var(--line);background:var(--panel2);color:var(--text);font-size:14px;font-weight:750;cursor:pointer;font-family:inherit;margin-top:8px}
   .cz-bigbtn:active{transform:scale(.99)}
@@ -2729,6 +2738,793 @@
     .vx-fab{bottom:24px;right:24px}
   }
 
+  /* ==========================================================================
+     LAYOUT MODES — four whole apps out of one
+     --------------------------------------------------------------------------
+     Everything below is scoped to :root[data-layout="…"]. Classic carries NO
+     attribute at all, so not one of these rules can reach it: the default is
+     literally untouched code, not a mode that happens to look like the old one.
+
+     The four are not skins. Each re-answers where you stand, what the tab bar
+     is, how a conversation list reads and what a message even looks like:
+
+       deck     three-pane workstation. Tabs are a left rail that never leaves.
+                Messages are a threaded transcript, not bubbles.
+       air      one calm column. Tabs are a floating dock; big titles up top;
+                round, roomy bubbles with breathing room.
+       bento    a board of tiles. Tabs are a labelled top bar; the chat list is
+                a card grid; the thread is a sheet of paper on a desk.
+       console  mission control. Tabs are a mono strip, there's a status bar,
+                the list is a table and the thread is a log.
+
+     One rule they all share and Classic doesn't: the primary nav is permanent
+     chrome. Money / Pipeline / Stats / More open INSIDE the shell instead of
+     covering it, so you can always see where you are. Their own sub-navs move
+     to the top of the panel as a segmented strip for the same reason.
+     ========================================================================== */
+
+  /* --rail-w / --topbar-h / --shell-b are how much of the viewport this layout's
+     permanent chrome has taken. They already include the safe-area insets, so
+     the panes inside zero those out (below) rather than counting them twice. */
+  :root[data-layout]{--rail-w:0px;--topbar-h:0px;--shell-b:0px}
+
+  /* the shell makes room for whatever chrome the layout pins to the viewport */
+  :root[data-layout] .app{padding:var(--topbar-h) 0 var(--shell-b) var(--rail-w)}
+  /* The nav is moved to <body> for these layouts (applyLayout) so it survives
+     body.viewing hiding the sidebar on a phone — this is what makes it chrome. */
+  :root[data-layout] .bottomnav{z-index:95}
+  /* Full-screen sections stop being full-screen: they inset to the content area
+     so the rail / top bar / dock stays visible and lit while you're in them. */
+  :root[data-layout] .money,:root[data-layout] .grow,:root[data-layout] .jd,
+  :root[data-layout] .mr,:root[data-layout] .cz{
+    inset:var(--topbar-h) 0 var(--shell-b) var(--rail-w)}
+  /* Modal sheets go OVER the permanent chrome rather than inside it — a scrim
+     that leaves the tab bar lit and clickable isn't a modal. They also both hide
+     with translateY(10x%) of their OWN height, which clears bottom:0 by under a
+     pixel when the sheet is empty; the extra offset stops that hairline of a
+     rounded top edge showing above the dock. */
+  :root[data-layout] .jd-scrim,:root[data-layout] .guide-scrim{z-index:96}
+  :root[data-layout] .jd-sheet,:root[data-layout] .guide{z-index:97}
+  :root[data-layout] .jd-sheet{transform:translateY(calc(102% + 30px))}
+  :root[data-layout] .jd-sheet.show{transform:translateY(0)}
+  :root[data-layout] .guide{transform:translateY(calc(101% + 30px))}
+  :root[data-layout] .guide.show{transform:translateY(0)}
+  /* …and their bottom nav becomes a strip under their own header. */
+  :root[data-layout] .mo-head,:root[data-layout] .gr-head,:root[data-layout] .jd-head{order:1}
+  :root[data-layout] .mo-nav,:root[data-layout] .gr-nav,:root[data-layout] .jd-nav{
+    position:static;order:2;bottom:auto;padding-bottom:0;flex:none;
+    border-top:none;border-bottom:1px solid var(--line2);
+    backdrop-filter:none;-webkit-backdrop-filter:none;background:var(--panel)}
+  :root[data-layout] .mo-body,:root[data-layout] .gr-body,:root[data-layout] .jd-body{
+    order:3;padding-bottom:calc(30px + var(--safe-bottom))}
+  :root[data-layout] .gr-nav-2{-webkit-mask-image:none;mask-image:none}
+  :root[data-layout] .gr-nav-2 button{font-size:11px;padding-left:8px;padding-right:8px}
+  :root[data-layout] .gr-nav-2 button.active::before,
+  :root[data-layout] .mo-nav button.active::before{top:auto;bottom:0;border-radius:4px 4px 0 0}
+  @media(max-width:780px){
+    /* --vv-top for the same reason as the Classic rule above: on iOS the pane is
+       pinned to a page top that the keyboard has slid off the screen. */
+    :root[data-layout] .chat{top:calc(var(--topbar-h) + var(--vv-top,0px));left:var(--rail-w);
+      bottom:calc(var(--kb,0px) + var(--shell-b))}
+    /* .details hides by sliding a full height down — but "down" is the bottom of
+       .chat, and these layouts hold .chat off the floor, so it parked in the gap
+       above the dock. It has to clear the chrome too. */
+    :root[data-layout] .details{transform:translateY(calc(100% + var(--shell-b) + 10px))}
+    :root[data-layout] .details.open{transform:translateY(0)}
+  }
+
+  /* ── one screen at a time ──────────────────────────────────────────────────
+     Bento's board and Console's table are the whole window, not a 360px column
+     beside a thread: a card grid collapses to one column in there and a table
+     loses every column but the name. So at every width they behave the way the
+     phone already does — the list fills the shell, and opening a conversation
+     takes the screen. These are the max-width:780px rules, un-gated for these
+     two layouts only. */
+  :root[data-layout="bento"] .app,:root[data-layout="console"] .app{grid-template-columns:minmax(0,1fr)}
+  :root[data-layout="bento"] .sidebar,:root[data-layout="console"] .sidebar{min-width:0;overflow:hidden}
+  :root[data-layout="bento"] .chat,:root[data-layout="console"] .chat{
+    display:none;position:fixed;top:calc(var(--topbar-h) + var(--vv-top,0px));left:0;right:0;
+    bottom:calc(var(--kb,0px) + var(--shell-b));z-index:40}
+  :root[data-layout="bento"] body.viewing .sidebar,:root[data-layout="console"] body.viewing .sidebar{display:none}
+  :root[data-layout="bento"] body.viewing .chat,:root[data-layout="console"] body.viewing .chat{display:flex}
+  :root[data-layout="bento"] .backbtn,:root[data-layout="console"] .backbtn{display:inline-flex}
+  :root[data-layout="bento"] .details,:root[data-layout="console"] .details{
+    top:auto;bottom:0;left:0;right:0;width:100%;height:auto;max-height:90%;
+    border-left:none;border-top:1px solid var(--line);transform:translateY(100%);
+    box-shadow:0 -12px 40px rgba(0,0,0,.55)}
+  :root[data-layout="bento"] .details,:root[data-layout="console"] .details{
+    transform:translateY(calc(100% + var(--shell-b) + 10px))}
+  :root[data-layout="bento"] .details.open,:root[data-layout="console"] .details.open{transform:translateY(0)}
+  :root[data-layout="bento"] .sheet-scrim,:root[data-layout="console"] .sheet-scrim{display:block}
+  :root[data-layout="bento"] .sheet-handle,:root[data-layout="console"] .sheet-handle{
+    display:block;width:42px;height:5px;border-radius:3px;background:var(--muted2);margin:9px auto 0;opacity:.5}
+
+  /* Injected chrome. These nodes live in the DOM for every layout and each one
+     shows only where it belongs, so switching is an attribute flip, not a
+     rebuild — nothing that holds state is ever destroyed. */
+  .ly-brand,.ly-railfoot,.ly-status,.ly-title{display:none}
+  .ly-brand .lb-mark{width:34px;height:34px;border-radius:11px;flex:none;
+    background:linear-gradient(135deg,var(--accent),var(--accent-dark));color:#fff;
+    display:flex;align-items:center;justify-content:center;font-weight:900;font-size:14px;letter-spacing:-.03em;
+    box-shadow:0 6px 16px -6px var(--accent)}
+  .ly-status .lys-dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex:none}
+
+  /* ==========================================================================
+     1 · DECK — the workstation
+     ========================================================================== */
+  :root[data-layout="deck"]{--rail-w:88px;--topbar-h:0px;--shell-b:0px;--nav-h:0px;--radius:10px}
+  @media(max-width:780px){:root[data-layout="deck"]{--rail-w:62px}}
+
+  /* --- the rail --- */
+  :root[data-layout="deck"] .bottomnav{
+    position:fixed;top:0;left:0;right:auto;bottom:0;width:var(--rail-w);height:auto;
+    flex-direction:column;align-items:stretch;gap:2px;
+    padding:calc(10px + var(--safe-top)) 8px calc(10px + var(--safe-bottom));
+    background:var(--panel);border-top:none;border-right:1px solid var(--line);
+    backdrop-filter:none;-webkit-backdrop-filter:none;overflow-y:auto;scrollbar-width:none}
+  :root[data-layout="deck"] .bottomnav::-webkit-scrollbar{display:none}
+  :root[data-layout="deck"] .ly-brand{display:flex;align-items:center;justify-content:center;
+    padding:2px 0 14px;margin-bottom:6px;border-bottom:1px solid var(--line2);flex:none}
+  :root[data-layout="deck"] .ly-brand .lb-name{display:none}
+  :root[data-layout="deck"] .navitem{
+    flex:none;flex-direction:column;gap:5px;padding:11px 2px 9px;border-radius:12px;
+    font-size:9.5px;font-weight:750;letter-spacing:.04em;text-transform:uppercase;
+    transition:background .14s,color .14s}
+  :root[data-layout="deck"] .navitem:hover{background:var(--panel2);color:var(--text)}
+  /* inset shadow, not a ::after bar — the rail scrolls, and anything hanging
+     outside its padding box would be clipped by that overflow. */
+  :root[data-layout="deck"] .navitem.active{background:var(--accent-soft);color:var(--accent-text);
+    box-shadow:inset 3px 0 0 var(--accent)}
+  :root[data-layout="deck"] .navitem::after{display:none}
+  :root[data-layout="deck"] .navitem .ic svg{width:21px;height:21px}
+  :root[data-layout="deck"] .navitem .ndot{top:6px;left:calc(50% + 9px)}
+  @media(max-width:780px){
+    :root[data-layout="deck"] .navitem{font-size:0;padding:12px 0;gap:0}
+    :root[data-layout="deck"] .navitem .ic svg{width:22px;height:22px}
+  }
+
+  /* --- the list pane --- */
+  :root[data-layout="deck"] .app{grid-template-columns:340px 1fr}
+  @media(max-width:780px){:root[data-layout="deck"] .app{grid-template-columns:minmax(0,1fr)}}
+  :root[data-layout="deck"] .appbar{padding:calc(9px + var(--safe-top)) 12px 9px;gap:8px}
+  :root[data-layout="deck"] .menubtn,:root[data-layout="deck"] .myavatar{display:none}
+  :root[data-layout="deck"] .searchpill{border-radius:9px;height:38px;background:var(--panel2);
+    border:1px solid var(--line2)}
+  :root[data-layout="deck"] .searchpill input{font-size:13.5px}
+  :root[data-layout="deck"] .filters{padding:8px 10px;gap:6px;border-bottom:1px solid var(--line)}
+  :root[data-layout="deck"] .chip{border-radius:7px;font-size:11.5px;padding:5px 10px;font-weight:700;
+    background:transparent;border-color:transparent;color:var(--muted2)}
+  :root[data-layout="deck"] .chip:hover{background:var(--panel2);color:var(--text)}
+  :root[data-layout="deck"] .chip.active{background:var(--accent-soft);border-color:transparent;color:var(--accent-text)}
+  :root[data-layout="deck"] .conv{padding:9px 12px;gap:10px;border-bottom:1px solid var(--line2);align-items:center}
+  /* opaque, not --accent-soft: the swipe-to-archive layer sits behind every row
+     and a translucent highlight lets it bleed through. */
+  :root[data-layout="deck"] .conv.active{background:color-mix(in srgb,var(--accent) 13%,var(--panel));
+    box-shadow:inset 2px 0 0 var(--accent)}
+  :root[data-layout="deck"] .conv .avatar{width:32px;height:32px;border-radius:9px;font-size:12px;
+    box-shadow:none;align-self:flex-start;margin-top:2px}
+  :root[data-layout="deck"] .conv .nm{font-size:13.5px;font-weight:700;letter-spacing:-.01em}
+  :root[data-layout="deck"] .conv .tm{font-size:11px;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+  :root[data-layout="deck"] .conv .prev{font-size:12.5px;margin-top:1px}
+  :root[data-layout="deck"] .conv .meta{margin-top:5px;gap:5px}
+  :root[data-layout="deck"] .badge{border-radius:5px;font-size:9px;padding:2px 6px}
+  :root[data-layout="deck"] .tag{border-radius:5px}
+  :root[data-layout="deck"] .unread-pill{border-radius:6px;min-width:19px;height:18px;font-size:10.5px}
+  :root[data-layout="deck"] .fab{border-radius:12px;width:46px;height:46px;right:14px;bottom:calc(var(--safe-bottom) + 14px)}
+  :root[data-layout="deck"] .fab svg{width:20px;height:20px}
+  :root[data-layout="deck"] .vx-fab{border-radius:12px;width:40px;height:40px;right:14px;
+    bottom:calc(var(--safe-bottom) + 68px)}
+
+  /* --- the thread: a transcript, not a bubble stream --- */
+  :root[data-layout="deck"] .chat{background:var(--bg);background-image:none}
+  :root[data-layout="deck"] .chat-head{background:var(--panel);backdrop-filter:none;
+    padding:calc(8px + var(--safe-top)) 14px 8px;border-bottom:1px solid var(--line)}
+  :root[data-layout="deck"] .chat-head .av{width:30px;height:30px;border-radius:9px;font-size:12px;box-shadow:none}
+  :root[data-layout="deck"] .chat-head .who .nm{font-size:14.5px;letter-spacing:-.01em}
+  :root[data-layout="deck"] .chat-head .who .nm::before{
+    content:"Chats  /";color:var(--muted2);font-weight:600;font-size:12px;letter-spacing:.02em}
+  :root[data-layout="deck"] .chat-head .who .num{font-size:11px;font-variant-numeric:tabular-nums}
+  :root[data-layout="deck"] .messages{padding:10px 0 6px;gap:0}
+  :root[data-layout="deck"] .bubble{
+    max-width:100%;align-self:stretch;background:none;border-radius:0;
+    padding:9px 20px 10px 20px;font-size:14px;line-height:1.55;
+    border-left:2px solid transparent;animation:none;color:var(--text)}
+  :root[data-layout="deck"] .bubble:hover{background:color-mix(in srgb,var(--panel2) 60%,transparent)}
+  :root[data-layout="deck"] .bubble::before{
+    content:attr(data-who);display:block;font-size:11px;font-weight:800;letter-spacing:.03em;
+    color:var(--muted);margin-bottom:3px}
+  :root[data-layout="deck"] .bubble.same{padding-top:1px}
+  :root[data-layout="deck"] .bubble.same::before{display:none}
+  :root[data-layout="deck"] .bubble.same + .bubble{margin-top:0}
+  :root[data-layout="deck"] .bubble.in{border-left-color:var(--line)}
+  :root[data-layout="deck"] .bubble.out{
+    background:color-mix(in srgb,var(--accent) 7%,transparent);border-left-color:var(--accent);color:var(--text)}
+  :root[data-layout="deck"] .bubble.out::before{color:var(--accent-text)}
+  :root[data-layout="deck"] .bubble.out .t,:root[data-layout="deck"] .bubble.out .deliv{color:var(--muted2)}
+  :root[data-layout="deck"] .bubble.out.auto,:root[data-layout="deck"] .bubble.out.scheduled{
+    background:color-mix(in srgb,var(--gold) 8%,transparent);border-left-color:var(--gold)}
+  :root[data-layout="deck"] .bubble .t{
+    position:absolute;top:9px;right:16px;margin:0;font-size:10px;font-variant-numeric:tabular-nums;opacity:.6}
+  :root[data-layout="deck"] .bubble.same .t{top:2px}
+  :root[data-layout="deck"] .day{align-self:stretch;text-align:left;background:none;border-radius:0;
+    border-top:1px solid var(--line2);margin:10px 0 6px;padding:10px 20px 0;
+    font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.09em}
+  :root[data-layout="deck"] .newmark{margin:10px 20px 4px}
+  :root[data-layout="deck"] .composer{background:var(--panel);padding:10px 16px calc(10px + var(--safe-bottom))}
+  :root[data-layout="deck"] .crow textarea{border-radius:9px;background:var(--panel2);padding:11px 14px}
+  :root[data-layout="deck"] .sendcircle{border-radius:9px;width:44px;height:44px}
+  :root[data-layout="deck"] .qreply button{border-radius:7px}
+  :root[data-layout="deck"] .details{border-left:1px solid var(--line);width:320px}
+  :root[data-layout="deck"] .dt-id{flex-direction:row;text-align:left;align-items:center;flex-wrap:wrap}
+  :root[data-layout="deck"] .dt-id .avatar{width:46px;height:46px;font-size:17px;border-radius:12px}
+  :root[data-layout="deck"] .dt-quick{width:100%;justify-content:flex-start;gap:8px}
+  :root[data-layout="deck"] .dt-quick .qb .c{width:40px;height:40px;border-radius:10px}
+
+  /* --- sub-apps read as tool windows --- */
+  :root[data-layout="deck"] .mo-nav,:root[data-layout="deck"] .gr-nav,:root[data-layout="deck"] .jd-nav{
+    padding:0 10px;gap:2px;background:var(--panel)}
+  :root[data-layout="deck"] .mo-nav button,:root[data-layout="deck"] .gr-nav button,
+  :root[data-layout="deck"] .jd-nav button{
+    flex:none;flex-direction:row;gap:7px;padding:10px 13px;font-size:12px;font-weight:700;
+    border-bottom:2px solid transparent;letter-spacing:.01em;min-width:0;text-transform:none}
+  :root[data-layout="deck"] .mo-nav button.active,:root[data-layout="deck"] .gr-nav button.active,
+  :root[data-layout="deck"] .jd-nav button.active{border-bottom-color:var(--accent)}
+  :root[data-layout="deck"] .mo-nav button.active::before,
+  :root[data-layout="deck"] .gr-nav-2 button.active::before{display:none}
+  :root[data-layout="deck"] .mo-nav button .e svg,:root[data-layout="deck"] .gr-nav button .e svg,
+  :root[data-layout="deck"] .jd-nav button .e svg{width:16px;height:16px}
+  :root[data-layout="deck"] .mo-head,:root[data-layout="deck"] .gr-head,
+  :root[data-layout="deck"] .jd-head,:root[data-layout="deck"] .mr-head,
+  :root[data-layout="deck"] .cz-head{padding:calc(9px + var(--safe-top)) 14px 9px;background:var(--panel)}
+  :root[data-layout="deck"] .mo-body,:root[data-layout="deck"] .gr-body,
+  :root[data-layout="deck"] .jd-body,:root[data-layout="deck"] .mr-body,
+  :root[data-layout="deck"] .cz-body{max-width:820px}
+  :root[data-layout="deck"] .mr-list{border-radius:9px}
+  :root[data-layout="deck"] .cz-card{border-radius:11px}
+  :root[data-layout="deck"] .cz-tab{border-radius:8px}
+  :root[data-layout="deck"] .toast{bottom:calc(18px + var(--safe-bottom));left:auto;right:22px;transform:none;border-radius:10px}
+  :root[data-layout="deck"] .toast.show{transform:none}
+
+  /* ==========================================================================
+     2 · AIR — one calm column
+     ========================================================================== */
+  :root[data-layout="air"]{--rail-w:0px;--topbar-h:0px;--shell-b:calc(84px + var(--safe-bottom));
+    --nav-h:0px;--radius:20px}
+  /* the dock owns the bottom inset; panes inside must not add it again */
+  :root[data-layout="air"] .app,:root[data-layout="air"] .money,:root[data-layout="air"] .grow,
+  :root[data-layout="air"] .jd,:root[data-layout="air"] .mr,:root[data-layout="air"] .cz{--safe-bottom:0px}
+
+  /* --- the dock --- */
+  :root[data-layout="air"] .bottomnav{
+    position:fixed;left:50%;right:auto;bottom:calc(14px + var(--safe-bottom));transform:translateX(-50%);
+    width:auto;max-width:calc(100% - 24px);height:auto;padding:7px 8px;gap:2px;
+    border:1px solid var(--ring);border-top:1px solid var(--ring);border-radius:999px;
+    background:color-mix(in srgb,var(--panel) 82%,transparent);
+    backdrop-filter:blur(22px) saturate(1.5);-webkit-backdrop-filter:blur(22px) saturate(1.5);
+    box-shadow:var(--elev-2);overflow:visible}
+  /* font-size:0 mutes the button's own text node — the label the base layout
+     draws under the icon. In a horizontal pill it would sit next to the icon on
+     every tab, doubling up with the ::after label and bursting the dock. The
+     ::after re-states a size, so only the live pill ever spells its name. */
+  :root[data-layout="air"] .navitem{
+    flex:0 1 auto;min-width:0;flex-direction:row;gap:0;padding:9px 13px;border-radius:999px;
+    font-size:0;font-weight:750;transition:background .2s,color .2s,padding .2s}
+  :root[data-layout="air"] .navitem .ic svg{width:21px;height:21px}
+  /* the base ::after is a 3px indicator bar; here it becomes the label that the
+     live pill grows to show, so every one of its properties is re-stated. */
+  :root[data-layout="air"] .navitem::after{
+    content:attr(data-label);position:static;transform:none;height:auto;width:auto;
+    background:none;border-radius:0;
+    font-size:12.5px;font-weight:750;letter-spacing:-.01em;
+    max-width:0;overflow:hidden;white-space:nowrap;opacity:0;
+    transition:max-width .24s cubic-bezier(.3,1,.4,1),opacity .16s,margin-left .24s;margin-left:0}
+  :root[data-layout="air"] .navitem.active{background:var(--accent);color:#fff;box-shadow:0 8px 20px -10px var(--accent)}
+  :root[data-layout="air"] .navitem.active::after{max-width:100px;opacity:1;margin-left:7px}
+  :root[data-layout="air"] .navitem.active .ic{transform:none}
+  :root[data-layout="air"] .navitem .ndot{top:3px;left:calc(50% + 5px)}
+  @media(max-width:379px){:root[data-layout="air"] .navitem{padding:9px 10px}}
+
+  /* --- a large title, the way a calm app opens --- */
+  :root[data-layout="air"] .ly-title{display:block;padding:4px 20px 12px;flex:none}
+  :root[data-layout="air"] .ly-title .lt-k{font-size:11px;font-weight:800;letter-spacing:.1em;
+    text-transform:uppercase;color:var(--accent-text);margin-bottom:4px}
+  :root[data-layout="air"] .ly-title .lt-t{font-size:31px;font-weight:800;letter-spacing:-.035em;line-height:1.05}
+  :root[data-layout="air"] .ly-title .lt-s{font-size:13px;color:var(--muted);margin-top:5px;line-height:1.45}
+  :root[data-layout="air"] .appbar{border-bottom:none;padding:calc(12px + var(--safe-top)) 16px 6px;gap:10px}
+  :root[data-layout="air"] .searchpill{height:46px;border-radius:23px;background:var(--panel2)}
+  :root[data-layout="air"] .sidebar{background:var(--bg);border-right:1px solid var(--line2)}
+  :root[data-layout="air"] .filters{padding:2px 16px 14px;gap:9px;border-bottom:none}
+  :root[data-layout="air"] .chip{border-radius:999px;padding:9px 16px;font-size:13px;font-weight:650;
+    background:var(--panel);border-color:var(--line2)}
+  :root[data-layout="air"] .chip.active{background:var(--accent);border-color:var(--accent);color:#fff;
+    box-shadow:0 8px 18px -10px var(--accent)}
+  :root[data-layout="air"] .scroll{padding:0 12px 18px}
+
+  /* --- list: airy cards, no dividers --- */
+  :root[data-layout="air"] .conv-wrap{border-radius:20px;margin-bottom:9px}
+  :root[data-layout="air"] .conv{
+    border:none;border-bottom:none;border-radius:20px;padding:15px 16px;gap:14px;align-items:center;
+    background:var(--panel);box-shadow:var(--elev-1);transition:transform .14s,box-shadow .18s}
+  :root[data-layout="air"] .conv:hover{transform:translateY(-1px);box-shadow:var(--elev-2);background:var(--panel)}
+  :root[data-layout="air"] .conv.active{background:var(--panel);box-shadow:0 0 0 2px var(--accent),var(--elev-1)}
+  :root[data-layout="air"] .conv .avatar{width:52px;height:52px;font-size:18px}
+  :root[data-layout="air"] .conv .nm{font-size:16px;font-weight:700;letter-spacing:-.015em}
+  :root[data-layout="air"] .conv .prev{font-size:13.5px;margin-top:4px}
+  :root[data-layout="air"] .conv .tm{font-size:12px;font-weight:600}
+  :root[data-layout="air"] .conv .meta{margin-top:9px}
+  :root[data-layout="air"] .unread-pill{min-width:24px;height:24px;border-radius:12px;font-size:12px;
+    box-shadow:0 6px 14px -6px var(--accent)}
+  :root[data-layout="air"] .fab{width:62px;height:62px;border-radius:50%;right:20px;bottom:18px}
+  :root[data-layout="air"] .vx-fab{width:52px;height:52px;border-radius:50%;right:22px;bottom:90px}
+
+  /* --- thread: roomy, rounded, iMessage-calm --- */
+  :root[data-layout="air"] .chat{background:var(--bg);
+    background-image:radial-gradient(120% 60% at 50% 0%,color-mix(in srgb,var(--accent) 7%,transparent),transparent 70%)}
+  :root[data-layout="air"] .chat-head{
+    flex-direction:column;gap:6px;padding:calc(10px + var(--safe-top)) 56px 12px;
+    background:color-mix(in srgb,var(--panel) 78%,transparent);border-bottom:1px solid var(--line2);position:relative}
+  :root[data-layout="air"] .chat-head .backbtn{position:absolute;left:6px;top:calc(12px + var(--safe-top))}
+  :root[data-layout="air"] .chat-head .head-actions{position:absolute;right:6px;top:calc(12px + var(--safe-top))}
+  :root[data-layout="air"] .chat-head .av{width:44px;height:44px;font-size:16px}
+  :root[data-layout="air"] .chat-head .who{flex:none;text-align:center;width:100%}
+  :root[data-layout="air"] .chat-head .who .nm{justify-content:center;font-size:16px}
+  :root[data-layout="air"] .chat-head .who .num{font-size:11.5px}
+  :root[data-layout="air"] .messages{padding:20px 18px 10px;gap:5px}
+  :root[data-layout="air"] .bubble{
+    max-width:74%;padding:12px 17px;border-radius:22px;font-size:15.5px;line-height:1.45;
+    box-shadow:var(--elev-1)}
+  :root[data-layout="air"] .bubble.in{background:var(--panel);border:1px solid var(--line2);
+    border-bottom-left-radius:22px}
+  :root[data-layout="air"] .bubble.out{border-bottom-right-radius:22px}
+  :root[data-layout="air"] .bubble + .bubble.same{margin-top:-3px}
+  :root[data-layout="air"] .bubble.in + .bubble.in.same{border-top-left-radius:9px}
+  :root[data-layout="air"] .bubble.out + .bubble.out.same{border-top-right-radius:9px}
+  :root[data-layout="air"] .bubble .t{font-size:10.5px;margin-top:5px;opacity:.55}
+  :root[data-layout="air"] .day{background:none;color:var(--muted2);font-size:11px;font-weight:750;
+    letter-spacing:.08em;text-transform:uppercase;margin:20px 0 12px}
+  :root[data-layout="air"] .composer{background:transparent;border-top:none;padding:6px 14px calc(12px + var(--safe-bottom))}
+  :root[data-layout="air"] .crow{background:var(--panel);border:1px solid var(--line2);border-radius:28px;
+    padding:5px 5px 5px 6px;box-shadow:var(--elev-1)}
+  :root[data-layout="air"] .crow textarea{background:transparent;border:none;border-radius:24px;padding:12px 12px}
+  :root[data-layout="air"] .crow textarea:focus{border-color:transparent}
+  :root[data-layout="air"] .qreply button{border-radius:999px;padding:8px 15px;background:var(--panel);
+    border-color:var(--line2);box-shadow:var(--elev-1)}
+  :root[data-layout="air"] .details{border-radius:26px 26px 0 0}
+  @media(min-width:781px){:root[data-layout="air"] .details{border-radius:0;width:360px}}
+
+  /* --- sub-apps: large title + pill segments --- */
+  :root[data-layout="air"] .mo-head,:root[data-layout="air"] .gr-head,
+  :root[data-layout="air"] .jd-head,:root[data-layout="air"] .mr-head,:root[data-layout="air"] .cz-head{
+    border-bottom:none;background:transparent;padding:calc(12px + var(--safe-top)) 18px 4px}
+  :root[data-layout="air"] .mo-title b,:root[data-layout="air"] .gr-title b,
+  :root[data-layout="air"] .jd-title b,:root[data-layout="air"] .mr-title b,
+  :root[data-layout="air"] .cz-head .t b{font-size:26px;font-weight:850;letter-spacing:-.035em}
+  :root[data-layout="air"] .mo-nav,:root[data-layout="air"] .gr-nav,:root[data-layout="air"] .jd-nav{
+    background:transparent;border-bottom:none;padding:10px 14px 12px;gap:8px;overflow-x:auto;scrollbar-width:none}
+  :root[data-layout="air"] .mo-nav::-webkit-scrollbar,:root[data-layout="air"] .gr-nav::-webkit-scrollbar,
+  :root[data-layout="air"] .jd-nav::-webkit-scrollbar{display:none}
+  :root[data-layout="air"] .mo-nav button,:root[data-layout="air"] .gr-nav button,
+  :root[data-layout="air"] .jd-nav button{
+    flex:none;flex-direction:row;gap:7px;padding:10px 16px;border-radius:999px;font-size:13px;font-weight:700;
+    background:var(--panel);border:1px solid var(--line2);min-width:0}
+  :root[data-layout="air"] .mo-nav button.active,:root[data-layout="air"] .gr-nav button.active,
+  :root[data-layout="air"] .jd-nav button.active{background:var(--accent);border-color:var(--accent);color:#fff;
+    box-shadow:0 10px 22px -12px var(--accent)}
+  :root[data-layout="air"] .mo-nav button.active::before,
+  :root[data-layout="air"] .gr-nav-2 button.active::before{display:none}
+  :root[data-layout="air"] .mo-nav button .e svg,:root[data-layout="air"] .gr-nav button .e svg,
+  :root[data-layout="air"] .jd-nav button .e svg{width:17px;height:17px}
+  :root[data-layout="air"] .mr-list{border-radius:20px}
+  :root[data-layout="air"] .mr-row{padding:16px 16px}
+  :root[data-layout="air"] .cz-card{border-radius:22px;padding:18px 19px}
+  :root[data-layout="air"] .toast{bottom:calc(var(--shell-b) + 14px);border-radius:999px}
+
+  /* ==========================================================================
+     3 · BENTO — the board
+     ========================================================================== */
+  :root[data-layout="bento"]{--rail-w:0px;--topbar-h:calc(64px + var(--safe-top));--shell-b:0px;
+    --nav-h:0px;--radius:16px}
+  @media(max-width:780px){:root[data-layout="bento"]{--topbar-h:calc(58px + var(--safe-top))}}
+  :root[data-layout="bento"] .app,:root[data-layout="bento"] .money,:root[data-layout="bento"] .grow,
+  :root[data-layout="bento"] .jd,:root[data-layout="bento"] .mr,:root[data-layout="bento"] .cz{--safe-top:0px}
+
+  /* --- the top bar of labelled tiles --- */
+  :root[data-layout="bento"] .bottomnav{
+    position:fixed;top:0;left:0;right:0;bottom:auto;height:var(--topbar-h);
+    padding:calc(9px + var(--safe-top)) 12px 9px;gap:7px;align-items:stretch;
+    background:var(--panel);border-top:none;border-bottom:1px solid var(--line);
+    backdrop-filter:none;-webkit-backdrop-filter:none;overflow-x:auto;scrollbar-width:none}
+  :root[data-layout="bento"] .bottomnav::-webkit-scrollbar{display:none}
+  :root[data-layout="bento"] .ly-brand{display:flex;align-items:center;gap:10px;padding-right:14px;
+    margin-right:4px;border-right:1px solid var(--line2);flex:none}
+  :root[data-layout="bento"] .ly-brand .lb-name{font-size:13.5px;font-weight:850;letter-spacing:-.02em;white-space:nowrap}
+  :root[data-layout="bento"] .ly-brand .lb-name small{display:block;font-size:10px;font-weight:700;
+    color:var(--muted2);letter-spacing:.06em;text-transform:uppercase;margin-top:1px}
+  @media(max-width:900px){:root[data-layout="bento"] .ly-brand .lb-name{display:none}}
+  :root[data-layout="bento"] .navitem{
+    flex:0 1 auto;min-width:0;flex-direction:row;gap:8px;padding:0 15px;border-radius:12px;
+    font-size:13px;font-weight:750;letter-spacing:-.01em;border:1px solid var(--line2);
+    background:var(--panel2);transition:background .14s,border-color .14s,color .14s}
+  :root[data-layout="bento"] .navitem:hover{border-color:var(--line);color:var(--text)}
+  :root[data-layout="bento"] .navitem.active{background:var(--accent);border-color:var(--accent);color:#fff;
+    box-shadow:0 8px 20px -12px var(--accent)}
+  :root[data-layout="bento"] .navitem.active .ic{transform:none}
+  :root[data-layout="bento"] .navitem .ic svg{width:18px;height:18px}
+  :root[data-layout="bento"] .navitem .ndot{top:4px;left:auto;right:4px}
+  :root[data-layout="bento"] .navitem::after{display:none}
+  @media(max-width:780px){
+    :root[data-layout="bento"] .navitem{font-size:0;gap:0;padding:0 13px}
+    :root[data-layout="bento"] .navitem .ic svg{width:20px;height:20px}
+    :root[data-layout="bento"] .navitem.active{font-size:12.5px;gap:7px}
+  }
+
+  /* --- list: a grid of tiles --- */
+  :root[data-layout="bento"] .sidebar{background:var(--bg);border-right:1px solid var(--line2)}
+  :root[data-layout="bento"] .appbar{border-bottom:1px solid var(--line2);padding:11px 14px}
+  :root[data-layout="bento"] .searchpill{border-radius:12px;height:42px;background:var(--panel);
+    border:1px solid var(--line2)}
+  :root[data-layout="bento"] .filters{padding:11px 14px;border-bottom:1px solid var(--line2)}
+  :root[data-layout="bento"] .chip{border-radius:9px;font-weight:700;background:var(--panel)}
+  :root[data-layout="bento"] .scroll{padding:14px 14px calc(var(--safe-bottom) + 18px)}
+  /* Only the conversation list becomes a board. Home and the leads columns lay
+     themselves out and would be shredded by a grid they never asked for, so the
+     grid keys off the view renderMain() stamps on the container. */
+  /* grid-auto-rows:min-content, not the default auto. With auto rows Blink
+     squeezes the whole board to the scroller's height once the cards overflow
+     it — every row lands on the same wrong height and each card gets its
+     preview and chips cut off at the fold. Pinning the rows to their content
+     lets the board overflow and scroll, which is what it is supposed to do. */
+  :root[data-layout="bento"] .scroll[data-view="list"]{
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));
+    grid-auto-rows:min-content;gap:12px;align-content:start}
+  :root[data-layout="bento"] .scroll[data-view="list"] > .sumbar,
+  :root[data-layout="bento"] .scroll[data-view="list"] > .emptyview,
+  :root[data-layout="bento"] .scroll[data-view="list"] > .fx-wrap,
+  :root[data-layout="bento"] .scroll[data-view="list"] > .skel-row{grid-column:1/-1}
+  :root[data-layout="bento"] .scroll[data-view="list"] > .sumbar{margin:0}
+  /* the wrapper stretches to the grid row; the card fills the wrapper. Giving
+     the card height:100% instead resolved against an auto-height parent and cut
+     the name off at the fold. */
+  :root[data-layout="bento"] .conv-wrap{border-radius:16px;overflow:hidden;display:flex}
+  :root[data-layout="bento"] .conv{
+    flex:1;flex-direction:column;align-items:stretch;gap:0;
+    border:1px solid var(--line2);border-radius:16px;padding:14px 15px 13px;
+    background:var(--panel);box-shadow:var(--elev-1);position:relative;overflow:hidden}
+  :root[data-layout="bento"] .conv::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;
+    background:var(--line);opacity:.9}
+  :root[data-layout="bento"] .conv.unrd::before{background:var(--accent)}
+  :root[data-layout="bento"] .conv:hover{border-color:var(--line);transform:translateY(-2px);
+    box-shadow:var(--elev-2);background:var(--panel)}
+  :root[data-layout="bento"] .conv.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent),var(--elev-1)}
+  :root[data-layout="bento"] .conv .avatar{width:40px;height:40px;border-radius:12px;font-size:15px;margin-bottom:11px}
+  :root[data-layout="bento"] .conv .body{flex:1;display:flex;flex-direction:column}
+  :root[data-layout="bento"] .conv .row1{flex-direction:column;align-items:flex-start;gap:2px}
+  :root[data-layout="bento"] .conv .nm{font-size:14.5px;font-weight:750;letter-spacing:-.015em;max-width:100%}
+  :root[data-layout="bento"] .conv .tm{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
+  :root[data-layout="bento"] .conv .prev{white-space:normal;display:-webkit-box;-webkit-line-clamp:2;
+    -webkit-box-orient:vertical;overflow:hidden;font-size:13px;line-height:1.45;margin-top:8px;min-height:2.9em}
+  :root[data-layout="bento"] .conv .prev span{white-space:normal!important;overflow:visible!important}
+  :root[data-layout="bento"] .conv .meta{margin-top:auto;padding-top:10px}
+  :root[data-layout="bento"] .conv .unread-pill{position:absolute;top:14px;right:14px;border-radius:8px}
+  :root[data-layout="bento"] .conv-hint{display:none!important}
+  :root[data-layout="bento"] .badge{border-radius:7px}
+  :root[data-layout="bento"] .fab{border-radius:16px;right:20px;bottom:calc(var(--safe-bottom) + 20px)}
+  :root[data-layout="bento"] .vx-fab{border-radius:14px;bottom:calc(var(--safe-bottom) + 90px)}
+
+  /* --- thread: a sheet of paper on the desk --- */
+  :root[data-layout="bento"] .chat{background:var(--bg);background-image:none}
+  :root[data-layout="bento"] .chat-head{background:var(--panel);backdrop-filter:none;
+    border-bottom:1px solid var(--line);padding:10px 14px}
+  :root[data-layout="bento"] .chat-head .av{border-radius:13px}
+  :root[data-layout="bento"] .messages{padding:16px;gap:4px;background:var(--bg)}
+  /* the thread is a sheet of paper, and paper has a measure — a bubble 900px
+     wide on a desktop window is a paragraph, not a text message. */
+  :root[data-layout="bento"] .messages,:root[data-layout="bento"] .composer,
+  :root[data-layout="bento"] .chat-head{max-width:960px;width:100%;margin-left:auto;margin-right:auto}
+  :root[data-layout="bento"] body.viewing .messages{
+    background-image:radial-gradient(circle at 1px 1px,var(--line2) 1px,transparent 0);background-size:22px 22px}
+  :root[data-layout="bento"] .bubble{
+    max-width:70%;border-radius:14px;padding:11px 14px;font-size:14.5px;
+    border:1px solid var(--line2);box-shadow:var(--elev-1)}
+  :root[data-layout="bento"] .bubble.in{background:var(--panel);border-bottom-left-radius:14px}
+  :root[data-layout="bento"] .bubble.out{border-color:transparent;border-bottom-right-radius:14px}
+  :root[data-layout="bento"] .day{background:var(--panel);border:1px solid var(--line2);border-radius:9px;
+    font-weight:750;letter-spacing:.04em;padding:5px 14px;box-shadow:var(--elev-1)}
+  :root[data-layout="bento"] .composer{background:var(--panel);border-top:1px solid var(--line);
+    padding:11px 14px calc(11px + var(--safe-bottom))}
+  :root[data-layout="bento"] .crow textarea{border-radius:13px;background:var(--panel2)}
+  :root[data-layout="bento"] .sendcircle{border-radius:13px;width:46px;height:46px}
+  :root[data-layout="bento"] .qreply button{border-radius:9px}
+  :root[data-layout="bento"] .details{border-radius:0}
+
+  /* --- sub-apps: tiles at the top --- */
+  :root[data-layout="bento"] .mo-nav,:root[data-layout="bento"] .gr-nav,:root[data-layout="bento"] .jd-nav{
+    padding:10px 12px;gap:7px;background:var(--panel);border-bottom:1px solid var(--line);
+    overflow-x:auto;scrollbar-width:none}
+  :root[data-layout="bento"] .mo-nav::-webkit-scrollbar,:root[data-layout="bento"] .gr-nav::-webkit-scrollbar,
+  :root[data-layout="bento"] .jd-nav::-webkit-scrollbar{display:none}
+  :root[data-layout="bento"] .mo-nav button,:root[data-layout="bento"] .gr-nav button,
+  :root[data-layout="bento"] .jd-nav button{
+    flex:1 0 auto;flex-direction:row;gap:7px;padding:9px 14px;border-radius:11px;font-size:12.5px;font-weight:750;
+    border:1px solid var(--line2);background:var(--panel2);min-width:0}
+  :root[data-layout="bento"] .mo-nav button.active,:root[data-layout="bento"] .gr-nav button.active,
+  :root[data-layout="bento"] .jd-nav button.active{background:var(--accent);border-color:var(--accent);color:#fff}
+  :root[data-layout="bento"] .mo-nav button.active::before,
+  :root[data-layout="bento"] .gr-nav-2 button.active::before{display:none}
+  :root[data-layout="bento"] .mo-nav button .e svg,:root[data-layout="bento"] .gr-nav button .e svg,
+  :root[data-layout="bento"] .jd-nav button .e svg{width:16px;height:16px}
+  :root[data-layout="bento"] .mo-body,:root[data-layout="bento"] .gr-body,
+  :root[data-layout="bento"] .jd-body,:root[data-layout="bento"] .mr-body{max-width:900px}
+  :root[data-layout="bento"] .mr-grp .mr-list{background:transparent;border:none;border-radius:0;
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:10px}
+  :root[data-layout="bento"] .mr-row{border:1px solid var(--line2);border-radius:14px;background:var(--panel);
+    box-shadow:var(--elev-1);border-top:1px solid var(--line2)}
+  :root[data-layout="bento"] .mr-row:hover{border-color:var(--line)}
+  :root[data-layout="bento"] .toast{bottom:calc(var(--safe-bottom) + 20px)}
+
+  /* ==========================================================================
+     4 · CONSOLE — mission control
+     ========================================================================== */
+  :root[data-layout="console"]{
+    --rail-w:0px;--topbar-h:calc(44px + var(--safe-top));--shell-b:calc(26px + var(--safe-bottom));
+    --statusbar-h:26px;--nav-h:0px;--radius:4px;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace}
+  :root[data-layout="console"] .app,:root[data-layout="console"] .money,:root[data-layout="console"] .grow,
+  :root[data-layout="console"] .jd,:root[data-layout="console"] .mr,
+  :root[data-layout="console"] .cz{--safe-top:0px;--safe-bottom:0px}
+
+  /* --- the tab strip --- */
+  :root[data-layout="console"] .bottomnav{
+    position:fixed;top:0;left:0;right:0;bottom:auto;height:var(--topbar-h);
+    padding:var(--safe-top) 0 0;gap:0;align-items:stretch;
+    background:var(--panel);border-top:none;border-bottom:1px solid var(--accent);
+    backdrop-filter:none;-webkit-backdrop-filter:none;overflow-x:auto;scrollbar-width:none}
+  :root[data-layout="console"] .bottomnav::-webkit-scrollbar{display:none}
+  :root[data-layout="console"] .ly-brand{display:flex;align-items:center;gap:9px;padding:0 14px;flex:none;
+    border-right:1px solid var(--line)}
+  :root[data-layout="console"] .ly-brand .lb-mark{width:22px;height:22px;border-radius:4px;font-size:10px;box-shadow:none}
+  :root[data-layout="console"] .ly-brand .lb-name{font-family:var(--mono);font-size:11px;font-weight:700;
+    letter-spacing:.14em;text-transform:uppercase;white-space:nowrap;color:var(--muted)}
+  :root[data-layout="console"] .ly-brand .lb-name small{display:none}
+  @media(max-width:700px){:root[data-layout="console"] .ly-brand .lb-name{display:none}
+    :root[data-layout="console"] .ly-brand{padding:0 10px}}
+  :root[data-layout="console"] .navitem{
+    flex:0 1 auto;flex-direction:row;gap:7px;padding:0 15px;border-radius:0;
+    font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.13em;text-transform:uppercase;
+    border-right:1px solid var(--line2);transition:background .1s,color .1s}
+  :root[data-layout="console"] .navitem:hover{background:var(--panel2);color:var(--text)}
+  :root[data-layout="console"] .navitem.active{background:var(--accent-soft);color:var(--accent-text)}
+  :root[data-layout="console"] .navitem.active::after{
+    content:"";position:absolute;left:0;right:0;bottom:0;top:auto;width:auto;height:2px;
+    background:var(--accent);border-radius:0;transform:none}
+  :root[data-layout="console"] .navitem .ic svg{width:15px;height:15px}
+  :root[data-layout="console"] .navitem.active .ic{transform:none}
+  :root[data-layout="console"] .navitem .ndot{top:5px;left:auto;right:5px;border-radius:3px;min-width:14px;height:14px;font-size:8.5px}
+  @media(max-width:780px){
+    :root[data-layout="console"] .navitem{padding:0 11px;font-size:0;gap:0}
+    :root[data-layout="console"] .navitem.active{font-size:9.5px;gap:6px}
+    :root[data-layout="console"] .navitem .ic svg{width:16px;height:16px}
+  }
+
+  /* --- the status bar --- */
+  :root[data-layout="console"] .ly-status{
+    display:flex;align-items:center;gap:14px;position:fixed;left:0;right:0;bottom:0;z-index:95;
+    height:calc(var(--statusbar-h) + var(--safe-bottom));padding:0 12px var(--safe-bottom);
+    background:var(--panel);border-top:1px solid var(--line);
+    font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--muted2);overflow:hidden;white-space:nowrap}
+  :root[data-layout="console"] .ly-status .lys-i{display:flex;align-items:center;gap:6px;flex:none}
+  :root[data-layout="console"] .ly-status .lys-sp{flex:1}
+  :root[data-layout="console"] .ly-status b{color:var(--accent-text);font-weight:700}
+  @media(max-width:640px){:root[data-layout="console"] .ly-status .lys-hide{display:none}}
+
+  /* --- a grid-paper shell --- */
+  :root[data-layout="console"] body,:root[data-layout="console"] .sidebar{background:var(--bg)}
+  :root[data-layout="console"] .sidebar{border-right:1px solid var(--line)}
+  :root[data-layout="console"] .appbar{padding:8px 10px;border-bottom:1px solid var(--line)}
+  :root[data-layout="console"] .searchpill{border-radius:3px;height:32px;background:var(--panel2);
+    border:1px solid var(--line);font-family:var(--mono)}
+  :root[data-layout="console"] .searchpill input{font-family:var(--mono);font-size:12px;letter-spacing:.01em}
+  :root[data-layout="console"] .filters{padding:0;gap:0;border-bottom:1px solid var(--line);background:var(--panel)}
+  :root[data-layout="console"] .chip{border-radius:0;border:none;border-right:1px solid var(--line2);
+    background:transparent;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:.11em;
+    text-transform:uppercase;padding:9px 12px}
+  :root[data-layout="console"] .chip.active{background:var(--accent-soft);color:var(--accent-text);
+    box-shadow:inset 0 -2px 0 var(--accent)}
+  :root[data-layout="console"] .scroll{padding-bottom:calc(var(--safe-bottom) + 8px)}
+
+  /* --- list: a table you can read at a glance --- */
+  :root[data-layout="console"] .conv{
+    padding:0 10px;gap:10px;align-items:center;min-height:38px;border-bottom:1px solid var(--line2);
+    background:var(--panel)}
+  :root[data-layout="console"] .conv-wrap:nth-child(even) .conv{background:var(--bg)}
+  :root[data-layout="console"] .conv:hover{background:var(--panel2)}
+  :root[data-layout="console"] .conv.active{background:color-mix(in srgb,var(--accent) 13%,var(--panel));
+    box-shadow:inset 3px 0 0 var(--accent)}
+  :root[data-layout="console"] .conv .avatar{width:24px;height:24px;border-radius:3px;font-size:9.5px;
+    font-family:var(--mono);letter-spacing:0;box-shadow:none}
+  :root[data-layout="console"] .conv .avatar .pdot{width:10px;height:10px;border-radius:2px;border-width:1.5px}
+  /* display:contents dissolves the row1 wrapper so time / name / preview / chips
+     line up as four real columns of one table row. */
+  :root[data-layout="console"] .conv .body{display:flex;align-items:center;gap:10px;min-width:0}
+  :root[data-layout="console"] .conv .row1{display:contents}
+  :root[data-layout="console"] .conv .tm{order:1;flex:none;width:56px;text-align:right;
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.02em}
+  :root[data-layout="console"] .conv .nm{order:2;flex:none;width:126px;text-align:left;
+    font-size:12.5px;font-weight:700;letter-spacing:-.005em}
+  :root[data-layout="console"] .conv .prev{order:3;flex:1;min-width:0;margin-top:0;font-size:12px;
+    font-family:var(--mono);letter-spacing:-.01em;opacity:.85}
+  :root[data-layout="console"] .conv .meta{order:4;flex:none;margin-top:0;flex-wrap:nowrap;gap:5px}
+  :root[data-layout="console"] .badge,:root[data-layout="console"] .tag{border-radius:2px;font-family:var(--mono);
+    font-size:9px;letter-spacing:.09em;padding:2px 5px}
+  :root[data-layout="console"] .unread-pill{border-radius:2px;font-family:var(--mono);min-width:18px;height:16px;font-size:10px}
+  :root[data-layout="console"] .conv-hint{display:none!important}
+  @media(max-width:640px){
+    :root[data-layout="console"] .conv .body{flex-wrap:wrap;gap:3px 10px;padding:7px 0}
+    :root[data-layout="console"] .conv .nm{width:auto;flex:1}
+    :root[data-layout="console"] .conv .prev{order:5;flex:1 0 100%}
+  }
+  :root[data-layout="console"] .fab{border-radius:5px;width:44px;height:44px;right:12px;
+    bottom:calc(var(--safe-bottom) + 12px);box-shadow:0 0 0 1px var(--accent),0 6px 18px -8px var(--accent)}
+  :root[data-layout="console"] .vx-fab{border-radius:5px;width:38px;height:38px;right:12px;
+    bottom:calc(var(--safe-bottom) + 64px)}
+
+  /* --- thread: a log --- */
+  :root[data-layout="console"] .chat{background:var(--bg);background-image:none}
+  :root[data-layout="console"] .chat-head{background:var(--panel);backdrop-filter:none;padding:6px 10px;
+    border-bottom:1px solid var(--line)}
+  :root[data-layout="console"] .chat-head .av{width:26px;height:26px;border-radius:3px;font-size:10px;
+    font-family:var(--mono);box-shadow:none}
+  :root[data-layout="console"] .chat-head .who .nm{font-family:var(--mono);font-size:12.5px;font-weight:700;
+    letter-spacing:.06em;text-transform:uppercase}
+  :root[data-layout="console"] .chat-head .who .nm::before{content:"▸ ";color:var(--accent)}
+  :root[data-layout="console"] .chat-head .who .num{font-family:var(--mono);font-size:10.5px;letter-spacing:.04em}
+  :root[data-layout="console"] .messages{padding:6px 0 6px;gap:0}
+  :root[data-layout="console"] .messages,:root[data-layout="console"] .composer,
+  :root[data-layout="console"] .chat-head{max-width:1100px;width:100%;margin-left:auto;margin-right:auto}
+  :root[data-layout="console"] .bubble{
+    max-width:100%;align-self:stretch;background:none;border-radius:0;animation:none;
+    padding:4px 12px 4px 92px;font-size:13px;line-height:1.5;font-family:var(--mono);
+    letter-spacing:-.01em;border-left:2px solid transparent;position:relative;color:var(--text)}
+  :root[data-layout="console"] .bubble:hover{background:var(--panel2)}
+  :root[data-layout="console"] .bubble.in{border-left-color:var(--line)}
+  :root[data-layout="console"] .bubble.out{border-left-color:var(--accent);
+    background:color-mix(in srgb,var(--accent) 5%,transparent);color:var(--text)}
+  :root[data-layout="console"] .bubble.out.auto{border-left-color:var(--gold);
+    background:color-mix(in srgb,var(--gold) 6%,transparent)}
+  :root[data-layout="console"] .bubble.out.scheduled{border-left-color:var(--blue);
+    background:color-mix(in srgb,var(--blue) 6%,transparent)}
+  /* the gutter: a fixed-width clock and a direction glyph, like any log */
+  :root[data-layout="console"] .bubble::before{
+    content:attr(data-clock);position:absolute;left:12px;top:4px;width:68px;
+    font-size:10.5px;letter-spacing:.02em;color:var(--muted2);text-align:right;white-space:nowrap}
+  :root[data-layout="console"] .bubble::after{
+    content:"<";position:absolute;left:84px;top:4px;font-size:11px;font-weight:700;color:var(--muted2)}
+  :root[data-layout="console"] .bubble.out::after{content:">";color:var(--accent-text)}
+  :root[data-layout="console"] .bubble .t{display:none}
+  :root[data-layout="console"] .bubble .deliv{font-size:9px;letter-spacing:.08em;text-transform:uppercase;
+    text-align:left;color:var(--muted2)}
+  :root[data-layout="console"] .bubble.out .deliv{color:var(--muted2)}
+  :root[data-layout="console"] .day{align-self:stretch;background:var(--panel);border-radius:0;
+    border-top:1px solid var(--line);border-bottom:1px solid var(--line);margin:8px 0 0;
+    padding:5px 12px;text-align:left;font-family:var(--mono);font-size:9.5px;font-weight:700;
+    letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+  :root[data-layout="console"] .newmark{margin:8px 12px 2px;font-family:var(--mono)}
+  @media(max-width:640px){
+    :root[data-layout="console"] .bubble{padding-left:74px}
+    :root[data-layout="console"] .bubble::before{width:52px;font-size:9.5px}
+    :root[data-layout="console"] .bubble::after{left:68px}
+  }
+  :root[data-layout="console"] .composer{background:var(--panel);border-top:1px solid var(--accent);
+    padding:8px 10px calc(8px + var(--safe-bottom))}
+  :root[data-layout="console"] .crow{gap:7px}
+  :root[data-layout="console"] .tawrap::before{content:">";position:absolute;left:10px;top:12px;z-index:2;
+    font-family:var(--mono);font-size:14px;font-weight:700;color:var(--accent);pointer-events:none}
+  :root[data-layout="console"] .crow textarea{border-radius:3px;background:var(--bg);padding:12px 12px 12px 26px;
+    font-family:var(--mono);font-size:13px}
+  :root[data-layout="console"] .pk-ghost{padding-left:26px!important;font-family:var(--mono)!important}
+  :root[data-layout="console"] .sendcircle{border-radius:3px;width:44px;height:44px}
+  :root[data-layout="console"] .qreply button{border-radius:3px;font-family:var(--mono);font-size:11.5px}
+  :root[data-layout="console"] .details{border-radius:0;border-left:1px solid var(--line)}
+  :root[data-layout="console"] .dt-sec .lbl{font-family:var(--mono);letter-spacing:.12em}
+  :root[data-layout="console"] .infoline{font-family:var(--mono);font-size:11.5px}
+
+  /* --- sub-apps: mono strips --- */
+  :root[data-layout="console"] .mo-head,:root[data-layout="console"] .gr-head,
+  :root[data-layout="console"] .jd-head,:root[data-layout="console"] .mr-head,
+  :root[data-layout="console"] .cz-head{padding:7px 10px;background:var(--panel);border-bottom:1px solid var(--line)}
+  :root[data-layout="console"] .mo-title b,:root[data-layout="console"] .gr-title b,
+  :root[data-layout="console"] .jd-title b,:root[data-layout="console"] .mr-title b,
+  :root[data-layout="console"] .cz-head .t b{font-family:var(--mono);font-size:13px;font-weight:700;
+    letter-spacing:.11em;text-transform:uppercase}
+  :root[data-layout="console"] .mo-title small,:root[data-layout="console"] .gr-title small,
+  :root[data-layout="console"] .jd-title small,:root[data-layout="console"] .mr-title small,
+  :root[data-layout="console"] .cz-head .t small{font-family:var(--mono);font-size:10px;letter-spacing:.06em}
+  :root[data-layout="console"] .mo-nav,:root[data-layout="console"] .gr-nav,:root[data-layout="console"] .jd-nav{
+    padding:0;gap:0;background:var(--panel);border-bottom:1px solid var(--line)}
+  :root[data-layout="console"] .mo-nav button,:root[data-layout="console"] .gr-nav button,
+  :root[data-layout="console"] .jd-nav button{
+    flex:1 0 auto;flex-direction:row;gap:6px;padding:9px 12px;border-radius:0;min-width:0;
+    font-family:var(--mono);font-size:9.5px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
+    border-right:1px solid var(--line2)}
+  :root[data-layout="console"] .mo-nav button.active,:root[data-layout="console"] .gr-nav button.active,
+  :root[data-layout="console"] .jd-nav button.active{background:var(--accent-soft);
+    box-shadow:inset 0 -2px 0 var(--accent)}
+  :root[data-layout="console"] .mo-nav button.active::before,
+  :root[data-layout="console"] .gr-nav-2 button.active::before{display:none}
+  :root[data-layout="console"] .mo-nav button .e svg,:root[data-layout="console"] .gr-nav button .e svg,
+  :root[data-layout="console"] .jd-nav button .e svg{width:14px;height:14px}
+  :root[data-layout="console"] .mr-list{border-radius:3px}
+  :root[data-layout="console"] .mr-gh,:root[data-layout="console"] .mr-sec{font-family:var(--mono);letter-spacing:.14em}
+  :root[data-layout="console"] .cz-card{border-radius:5px}
+  :root[data-layout="console"] .cz-tab{border-radius:3px;font-family:var(--mono);font-size:11px;
+    letter-spacing:.09em;text-transform:uppercase}
+  :root[data-layout="console"] .toast{bottom:calc(var(--shell-b) + 12px);border-radius:4px}
+
+  /* ==========================================================================
+     The picker — five wireframes you can read at a glance
+     ========================================================================== */
+  .ly-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:11px;margin-top:6px}
+  .ly-card{position:relative;text-align:left;padding:0;overflow:hidden;cursor:pointer;
+    border:2px solid var(--line);border-radius:15px;background:var(--panel2);
+    transition:border-color .14s,transform .1s,box-shadow .18s;font-family:inherit;color:inherit}
+  .ly-card:hover{border-color:var(--muted2);box-shadow:var(--elev-1)}
+  .ly-card:active{transform:scale(.985)}
+  .ly-card.sel{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+  .ly-card .lyc-tick{position:absolute;top:9px;right:9px;width:20px;height:20px;border-radius:50%;
+    background:var(--accent);color:#fff;display:none;align-items:center;justify-content:center;z-index:3;
+    box-shadow:0 4px 10px -3px var(--accent)}
+  .ly-card.sel .lyc-tick{display:flex}
+  .ly-card .lyc-body{display:block;padding:10px 12px 12px}
+  .ly-card .lyc-n{display:block;font-size:13.5px;font-weight:800;letter-spacing:-.015em}
+  .ly-card .lyc-d{display:block;font-size:11.5px;color:var(--muted);line-height:1.4;margin-top:2px}
+  /* the wireframe: real boxes, arranged the way the layout actually is */
+  .lyw{height:96px;background:var(--panel3);display:flex;overflow:hidden;position:relative;
+    border-bottom:1px solid var(--line)}
+  .lyw i{display:block;background:var(--muted2);opacity:.42;border-radius:2px}
+  .lyw .w-rail{width:17px;flex:none;background:var(--panel);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;align-items:center;gap:4px;padding:6px 0}
+  .lyw .w-rail i{width:9px;height:9px;border-radius:3px}
+  .lyw .w-main{flex:1;display:flex;flex-direction:column;min-width:0}
+  .lyw .w-top{height:14px;flex:none;background:var(--panel);border-bottom:1px solid var(--line);
+    display:flex;align-items:center;gap:3px;padding:0 5px}
+  .lyw .w-top i{height:6px;width:15px;border-radius:2px}
+  .lyw .w-cols{flex:1;display:flex;min-height:0}
+  .lyw .w-list{width:36%;flex:none;border-right:1px solid var(--line);padding:5px 4px;
+    display:flex;flex-direction:column;gap:4px;background:var(--panel)}
+  .lyw .w-list i{height:7px;width:100%}
+  .lyw .w-list i:nth-child(2){width:72%}
+  .lyw .w-thread{flex:1;padding:6px 5px;display:flex;flex-direction:column;gap:4px;min-width:0}
+  .lyw .w-thread i{height:8px;width:64%;border-radius:5px}
+  .lyw .w-thread i.r{align-self:flex-end;background:var(--accent);opacity:.75}
+  .lyw .w-dock{position:absolute;left:50%;bottom:5px;transform:translateX(-50%);height:12px;width:56%;
+    border-radius:99px;background:var(--panel);border:1px solid var(--line);display:flex;align-items:center;
+    justify-content:center;gap:4px;padding:0 5px}
+  .lyw .w-dock i{width:5px;height:5px;border-radius:50%}
+  .lyw .w-dock i.on{background:var(--accent);opacity:1;width:14px;border-radius:99px}
+  .lyw .w-tiles{flex:1;display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:5px}
+  .lyw .w-tiles i{height:auto;border-radius:4px;background:var(--panel);border:1px solid var(--line);opacity:1}
+  .lyw .w-rows{flex:1;display:flex;flex-direction:column;gap:0;padding:0}
+  .lyw .w-rows i{height:9px;width:100%;border-radius:0;border-bottom:1px solid var(--line);opacity:.28}
+  .lyw .w-rows i:nth-child(odd){opacity:.14}
+  .lyw .w-status{position:absolute;left:0;right:0;bottom:0;height:8px;background:var(--panel);
+    border-top:1px solid var(--line)}
+  .lyw .w-lg{padding:7px 6px 0;flex:none}
+  .lyw .w-lg i{height:11px;width:52%;border-radius:3px;opacity:.6}
+  .lyw.w-air .w-main{background:var(--panel3)}
+  /* the strip that names what's live right now, above the grid */
+  .ly-now{display:flex;align-items:center;gap:11px;padding:12px 13px;border-radius:13px;
+    background:var(--panel2);border:1px solid var(--line2);margin-bottom:13px}
+  .ly-now .lyn-t{flex:1;min-width:0}
+  .ly-now .lyn-t b{font-size:13.5px;font-weight:800;display:block}
+  .ly-now .lyn-t span{font-size:11.5px;color:var(--muted);display:block;margin-top:2px;line-height:1.45}
+  .ly-now .lyn-ic{width:38px;height:38px;border-radius:11px;flex:none;display:grid;place-items:center;
+    background:var(--accent-soft);color:var(--accent-text)}
+  .ly-feats{list-style:none;margin:12px 0 0;padding:0;display:flex;flex-direction:column;gap:7px}
+  .ly-feats li{display:flex;gap:9px;font-size:12.5px;color:var(--muted);line-height:1.45;align-items:flex-start}
+  .ly-feats li b{color:var(--text);font-weight:700}
+  .ly-feats li .lf-d{width:6px;height:6px;border-radius:50%;background:var(--accent);flex:none;margin-top:6px}
+
 </style>
 </head>
 <body>
@@ -3235,6 +4031,13 @@
   });
   // Read-only view of the stack, for the UI tests to assert against.
   window.__nav=function(){return{depth:NAV.length,top:navTop(),sentinel:navSentinel,rewinding:navRewinding}};
+  // Test hook, same shape as __nav: report the live layout, and switch to one
+  // without the toast so a suite can walk all five quickly. The picker in
+  // Customize is the real path and is exercised on its own.
+  window.__layout=function(id){
+    if(id)setLayout(id,true);
+    return{id:layoutId(),attr:document.documentElement.getAttribute("data-layout")};
+  };
 
   // ---- team mode helpers ----
   function teamOn(){return !!(state.config&&state.config.teamMode)}
@@ -3326,6 +4129,7 @@
     "settings":'<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
     "lightbulb":'<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>',
     "credit-card":'<rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/>',
+    "layout-grid":'<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>',
     "sliders":'<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="1" x2="7" y1="14" y2="14"/><line x1="9" x2="15" y1="8" y2="8"/><line x1="17" x2="23" y1="16" y2="16"/>',
     "trending-down":'<polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/>',
     "lock":'<rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>',
@@ -3585,6 +4389,7 @@
     preset:"crimson", accent:["#ff2e43","#c81e30"],
     radius:"md", density:"comfy", textScale:100, font:"system", bg:"solid",
     mode:"simple", locked:false, tourSeen:false, listStyle:"compact",
+    layout:"classic",   // classic | deck | air | bento | console — see applyLayout()
     autoPolish:true,   // rewrite the draft in place when you pause typing (undo lives on the strip)
     navV:3, tabsOrder:["home","messages","pipeline","money","stats","more"], tabsHidden:[],
     mblocks:["hero","log","alerts","pulse","brain","today","pricing"], mblocksHidden:[],
@@ -3636,6 +4441,7 @@
     try{applyAccent(a[0],a[1]);localStorage.setItem("mkd-accent",a[0]);}catch(e){}
     document.body.classList.toggle("list-cards",UI.listStyle==="cards");
     applyNavTabs();
+    applyLayout();
   }
   // Which nav pill is lit. Pipeline and Money open their own full-screen
   // section rather than rendering into the list, so they have to light their
@@ -3647,6 +4453,9 @@
   function navPillFor(tab){return CHAT_TABS.indexOf(tab)>=0?"messages":tab}
   function setNavActive(tab){
     var want=navPillFor(tab);
+    // Air's big title and Console's status bar name where you're standing, and
+    // this is the one function every destination already routes through.
+    if(typeof lyPaintTitle==="function"){lyPaintTitle(tab);lyPaintStatus();}
     Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){
       b.classList.toggle("active",b.getAttribute("data-tab")===want);
     });
@@ -3658,6 +4467,204 @@
     var visible=order.filter(function(t){return UI.tabsHidden.indexOf(t)<0});
     UI_TABLIST.forEach(function(t){var b=nav.querySelector('.navitem[data-tab="'+t[0]+'"]');if(b)b.style.display=(visible.indexOf(t[0])>=0)?"":"none";});
     visible.forEach(function(k){var b=nav.querySelector('.navitem[data-tab="'+k+'"]');if(b)nav.appendChild(b)});
+  }
+
+  // ==========================================================================
+  // LAYOUT MODES — four apps, one codebase
+  // --------------------------------------------------------------------------
+  // A layout is an attribute on <html> plus a little permanent chrome. It never
+  // adds, removes or reroutes a feature: every button, panel and handler is the
+  // same node it was before the switch, which is why switching is instant and
+  // can't lose a draft, a listener or an open sheet.
+  //
+  // Classic carries NO attribute at all — not data-layout="classic", nothing —
+  // so the default is the untouched original, not a mode that imitates it.
+  //
+  // The one thing all four change about how the app *works*: the primary nav is
+  // permanent chrome. Money / Pipeline / Stats / More inset into the shell
+  // instead of covering it, so the tab you're standing on stays lit and one tap
+  // away. Their own sub-navs move to the top of their panel to match.
+  // ==========================================================================
+  var LAYOUTS=[
+    {id:"classic",name:"Classic",tag:"The original",
+     blurb:"Bottom tab bar, a list beside the thread, bubbles. Exactly what you have now — nothing moves.",
+     feats:[["Tabs","along the bottom, six across"],["Chats","compact rows with a round avatar"],
+            ["Messages","rounded bubbles, yours in accent"],["Money · Pipeline · Stats","open full-screen over the app"]]},
+    {id:"deck",name:"Command Deck",tag:"Workstation",
+     blurb:"A left rail that never leaves, a dense list, and the thread as a threaded transcript with names — built for a desk and a keyboard.",
+     feats:[["Tabs","a vertical rail down the left edge"],["Chats","tight rows, square avatars, tabular times"],
+            ["Messages","a named transcript, not bubbles"],["Sections","open beside the rail with tabs on top"]]},
+    {id:"air",name:"Air",tag:"Calm",
+     blurb:"One roomy column under a big title, a floating dock instead of a tab bar, and generous rounded bubbles. Made for a phone in one hand.",
+     feats:[["Tabs","a floating pill dock that names the live one"],["Chats","spacious cards, big avatars, no dividers"],
+            ["Messages","large soft bubbles with room to breathe"],["Sections","big titles and pill segments"]]},
+    {id:"bento",name:"Bento",tag:"Board",
+     blurb:"Everything is a tile. Labelled tabs across the top, the chat list as a card board you scan in one look, the thread on a sheet of paper.",
+     feats:[["Tabs","labelled tiles across a top bar"],["Chats","a grid of cards, two lines of preview"],
+            ["Messages","bordered cards on dotted paper"],["Sections","tile strips and a tiled More screen"]]},
+    {id:"console",name:"Console",tag:"Mission control",
+     blurb:"Monospace, dense, and everything visible at once: a tab strip up top, a status bar below, the list as a table and the thread as a log.",
+     feats:[["Tabs","a mono strip with a live status bar"],["Chats","a table — time, name, preview, state"],
+            ["Messages","a timestamped log with in/out markers"],["Sections","mono strips, square corners"]]}
+  ];
+  function layoutMeta(id){for(var i=0;i<LAYOUTS.length;i++)if(LAYOUTS[i].id===id)return LAYOUTS[i];return LAYOUTS[0]}
+  function layoutId(){var id=UI.layout||"classic";return layoutMeta(id).id}
+
+  // Chrome that only some layouts show. Built once, parked in the right place,
+  // and shown/hidden by CSS — so a switch never rebuilds anything stateful.
+  var lyBuilt=false;
+  function lyBuildChrome(){
+    if(lyBuilt)return;lyBuilt=true;
+    var nav=el("bottomnav");
+    if(nav&&!el("lyBrand")){
+      var b=document.createElement("div");b.id="lyBrand";b.className="ly-brand";
+      b.innerHTML='<span class="lb-mark">M</span><span class="lb-name">Mikey’s<small>Detailing</small></span>';
+      b.title="Mikey's Mobile Detailing";
+      b.onclick=function(){vibrate(6);openMore()};
+      nav.insertBefore(b,nav.firstChild);
+    }
+    // The large title that Air puts above the list.
+    var side=document.querySelector(".sidebar"),filt=el("filters");
+    if(side&&filt&&!el("lyTitle")){
+      var t=document.createElement("div");t.id="lyTitle";t.className="ly-title";
+      t.innerHTML='<div class="lt-k"></div><div class="lt-t"></div><div class="lt-s"></div>';
+      side.insertBefore(t,filt);
+    }
+    // Console's status bar.
+    if(!el("lyStatus")){
+      var s=document.createElement("div");s.id="lyStatus";s.className="ly-status";
+      s.innerHTML='<span class="lys-i"><span class="lys-dot"></span><span id="lysConn">LIVE</span></span>'+
+        '<span class="lys-i lys-hide">VIEW <b id="lysView">TODAY</b></span>'+
+        '<span class="lys-i lys-hide">UNREAD <b id="lysUnread">0</b></span>'+
+        '<span class="lys-sp"></span>'+
+        '<span class="lys-i lys-hide" id="lysClock"></span>'+
+        '<span class="lys-i">MMD</span>';
+      document.body.appendChild(s);
+    }
+    // Air's dock grows the live pill to show its name. The label goes on the
+    // button as an attribute so CSS can reveal it without JS touching the DOM
+    // on every switch — read from UI_TABLIST, because the button's own text
+    // picks up the unread badge once threads land.
+    Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(n){
+      var k=n.getAttribute("data-tab"),m=null;
+      for(var i=0;i<UI_TABLIST.length;i++)if(UI_TABLIST[i][0]===k)m=UI_TABLIST[i];
+      n.setAttribute("data-label",m?m[1]:(n.getAttribute("data-tab")||""));
+    });
+  }
+
+  var LY_TITLES={home:["Today","What needs you first"],messages:["Chats","Every conversation, newest first"],
+    followups:["Follow-ups","People you said you'd get back to"],scheduled:["Scheduled","Texts queued to go out"],
+    archived:["Archived","Filed away, still searchable"],leads:["Leads","Your pipeline by stage"]};
+  function lyPaintTitle(tab){
+    var t=el("lyTitle");if(!t)return;
+    var m=LY_TITLES[tab]||LY_TITLES.messages;
+    var k=t.querySelector(".lt-k"),h=t.querySelector(".lt-t"),s=t.querySelector(".lt-s");
+    if(k)k.textContent=new Date().toLocaleDateString([],{weekday:"long",month:"short",day:"numeric"});
+    if(h)h.textContent=m[0];
+    if(s)s.textContent=m[1];
+    var v=el("lysView");if(v)v.textContent=(m[0]||"").toUpperCase();
+  }
+  function lyPaintStatus(){
+    if(layoutId()!=="console")return;
+    var u=el("lysUnread");
+    if(u)u.textContent=String(((typeof state==="object"&&state&&state.threads)||[]).reduce(function(a,t){return a+(!t.archived&&t.unread>0?t.unread:0)},0));
+    var c=el("lysClock");
+    if(c)c.textContent=new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"});
+    var conn=el("lysConn");
+    if(conn)conn.textContent=(typeof navigator!=="undefined"&&navigator.onLine===false)?"OFFLINE":"LIVE";
+  }
+  var lyClockTimer=null;
+  function applyLayout(){
+    lyBuildChrome();
+    var id=layoutId(),r=document.documentElement;
+    if(id==="classic")r.removeAttribute("data-layout");
+    else r.setAttribute("data-layout",id);
+    // The tab bar ships inside .sidebar, and a phone hides .sidebar outright the
+    // moment a thread is open (body.viewing). Every layout but Classic treats
+    // the nav as permanent chrome, so it has to hang off <body> to survive that.
+    // Moving the node keeps its handlers — they're properties on the buttons.
+    var nav=el("bottomnav"),side=document.querySelector(".sidebar");
+    if(nav&&side){
+      if(id==="classic"){if(nav.parentNode!==side)side.appendChild(nav);}
+      else if(nav.parentNode!==document.body)document.body.appendChild(nav);
+    }
+    document.body.classList.toggle("ly-on",id!=="classic");
+    lyPaintTitle(state&&state.tab||"home");
+    lyPaintStatus();
+    if(lyClockTimer){clearInterval(lyClockTimer);lyClockTimer=null}
+    if(id==="console")lyClockTimer=setInterval(lyPaintStatus,30000);
+    // The rail/top bar changes how much room the list has; a resize event is the
+    // one signal every measuring bit of the app already listens for.
+    try{window.dispatchEvent(new Event("resize"))}catch(e){}
+  }
+  function setLayout(id,quiet){
+    var m=layoutMeta(id);
+    if(UI.layout===m.id&&!quiet)return;
+    UI.layout=m.id;saveUI();applyLayout();
+    if(typeof renderMain==="function"&&!state.phone)renderMain();
+    if(state.phone&&typeof renderThread==="function"&&state.thread)renderThread();
+    if(!quiet){vibrate(10);toast(m.name+" — "+m.tag.toLowerCase())}
+  }
+
+  // ---- the picker ----------------------------------------------------------
+  // Each card draws the layout instead of describing it: the wireframe below is
+  // the real arrangement in miniature, so you can pick with your eyes.
+  function lyWire(id){
+    if(id==="deck")return '<div class="lyw"><div class="w-rail"><i></i><i></i><i></i><i></i></div>'+
+      '<div class="w-main"><div class="w-cols"><div class="w-list"><i></i><i></i><i></i><i></i></div>'+
+      '<div class="w-thread"><i></i><i class="r"></i><i></i><i class="r"></i></div></div></div></div>';
+    if(id==="air")return '<div class="lyw w-air"><div class="w-main"><div class="w-lg"><i></i></div>'+
+      '<div class="w-thread"><i></i><i class="r"></i><i></i></div></div>'+
+      '<div class="w-dock"><i class="on"></i><i></i><i></i><i></i></div></div>';
+    if(id==="bento")return '<div class="lyw"><div class="w-main"><div class="w-top"><i></i><i></i><i></i></div>'+
+      '<div class="w-tiles"><i></i><i></i><i></i><i></i></div></div></div>';
+    if(id==="console")return '<div class="lyw"><div class="w-main"><div class="w-top"><i></i><i></i><i></i><i></i></div>'+
+      '<div class="w-rows"><i></i><i></i><i></i><i></i><i></i><i></i></div></div><div class="w-status"></div></div>';
+    return '<div class="lyw"><div class="w-main"><div class="w-cols"><div class="w-list"><i></i><i></i><i></i></div>'+
+      '<div class="w-thread"><i></i><i class="r"></i><i></i></div></div>'+
+      '<div class="w-top" style="border-bottom:none;border-top:1px solid var(--line)"><i></i><i></i><i></i><i></i></div></div></div>';
+  }
+  function czShell(p){
+    p.innerHTML="";
+    var cur=layoutMeta(layoutId());
+    var now=document.createElement("div");now.className="cz-card";
+    now.innerHTML='<h3>Layout</h3><p class="hint">Four complete rearrangements of the same dashboard. Every feature, button and screen stays exactly where it works — only where things <i>live</i> changes. Switch as often as you like; nothing is lost either way.</p>'+
+      '<div class="ly-now"><span class="lyn-ic">'+ic("layout-grid",19)+'</span>'+
+      '<span class="lyn-t"><b>'+esc(cur.name)+'</b><span>'+esc(cur.blurb)+'</span></span></div>'+
+      '<div class="ly-grid" id="lyGrid"></div>';
+    p.appendChild(now);
+    var g=now.querySelector("#lyGrid");
+    LAYOUTS.forEach(function(L){
+      var c=document.createElement("button");c.type="button";
+      c.className="ly-card"+(L.id===cur.id?" sel":"");c.setAttribute("data-ly",L.id);
+      c.innerHTML='<span class="lyc-tick">'+ic("check",13)+'</span>'+lyWire(L.id)+
+        '<span class="lyc-body"><span class="lyc-n">'+esc(L.name)+'</span>'+
+        '<span class="lyc-d">'+esc(L.tag)+'</span></span>';
+      c.onclick=function(){setLayout(L.id);czRender()};
+      g.appendChild(c);
+    });
+    var d=document.createElement("div");d.className="cz-card";
+    d.innerHTML='<h3>What '+esc(cur.name)+' does</h3><p class="hint">'+esc(cur.blurb)+'</p>';
+    var ul=document.createElement("ul");ul.className="ly-feats";
+    cur.feats.forEach(function(f){
+      var li=document.createElement("li");
+      li.innerHTML='<span class="lf-d"></span><span><b>'+esc(f[0])+'</b> — '+esc(f[1])+'</span>';
+      ul.appendChild(li);
+    });
+    d.appendChild(ul);
+    if(cur.id!=="classic"){
+      var note=document.createElement("p");note.className="hint";note.style.margin="14px 0 0";
+      note.innerHTML="In every layout but Classic the tab bar is permanent: Money, Pipeline, Stats and More open <b>inside</b> the shell instead of covering it, so you can always see where you are.";
+      d.appendChild(note);
+      var back=document.createElement("button");back.className="cz-btn";back.style.marginTop="12px";
+      back.textContent="Back to Classic";
+      back.onclick=function(){setLayout("classic");czRender()};
+      d.appendChild(back);
+    }
+    p.appendChild(d);
+    var tip=document.createElement("div");tip.className="cz-note";
+    tip.textContent="Colours, corners, spacing, fonts and your tab order all still apply on top of whichever layout you pick.";
+    p.appendChild(tip);
   }
 
   // ---- drag-to-reorder (pointer based, works on touch + mouse) ----
@@ -3712,7 +4719,7 @@
   function openCustomize(){el("czApp").classList.add("show");czRender();navOpen("customize",closeCustomize);if(!UI.tourSeen)setTimeout(czTour,500);}
   function closeCustomize(){navDrop("customize");el("czApp").classList.remove("show");}
   function czToast(m){toast(m)}
-  var CZ_TABS=[["look","Look","image"],["layout","Tabs","home"],["home","Home","home"],["chats","Chats","message-square"],["leads","Leads","clipboard-list"],["money","Money","dollar"],["safe","Simple & safe","check-circle"]];
+  var CZ_TABS=[["shell","Layout","layout-grid"],["look","Look","image"],["layout","Tabs","home"],["home","Home","home"],["chats","Chats","message-square"],["leads","Leads","clipboard-list"],["money","Money","dollar"],["safe","Simple & safe","check-circle"]];
   function czRender(){
     el("czMode").textContent=UI.mode==="pro"?"Pro":"Simple";
     var tabs=el("czTabs");
@@ -3720,6 +4727,7 @@
     Array.prototype.forEach.call(tabs.querySelectorAll("[data-czt]"),function(b){b.onclick=function(){CZ.tab=b.getAttribute("data-czt");czRender()}});
     var p=el("czPanel");
     if(UI.locked&&CZ.tab!=="safe"){p.innerHTML='<div class="cz-card"><h3 class="cz-h-ic">'+ic("lock",15)+' Locked</h3><p class="hint">Customizing is locked so nothing changes by accident. Unlock it under <b>Simple &amp; safe</b>.</p></div>';return;}
+    if(CZ.tab==="shell")return czShell(p);
     if(CZ.tab==="look")return czLook(p);
     if(CZ.tab==="layout")return czLayout(p);
     if(CZ.tab==="home")return czHome(p);
@@ -4206,6 +5214,10 @@
   // ---- main view dispatch ----
   function renderMain(){
     renderFilters();refreshBadges();
+    // Bento turns the list into a card board, but Home and the leads columns lay
+    // themselves out — so stamp which one is in there and let CSS pick.
+    var sc=el("scroll");
+    if(sc)sc.setAttribute("data-view",(state.tab==="home"&&!state.search)?"home":(state.tab==="leads"?"leads":"list"));
     var r=renderMainInner();
     // Searching also searches the app itself, not just the conversations —
     // matching features are listed above whatever the current tab found, and
@@ -4263,6 +5275,7 @@
     {id:"voice",t:"Talk to your dashboard",g:"AI",ic:"mic",k:"hands free speak dictate voice control",run:function(){vxOpen()}},
     {id:"playbook",t:"Business playbook",g:"AI",ic:"file-text",k:"rules standing instructions brain knowledge facts",run:function(){openPlaybook()}},
     // — settings
+    {id:"shell",t:"Layout",g:"Settings",ic:"layout-grid",k:"mode skin shell rearrange rail dock tiles console deck air bento classic look different app",run:function(){openCustomize();CZ.tab="shell";czRender()}},
     {id:"customize",t:"Customize everything",g:"Settings",ic:"sliders",k:"appearance theme colour color layout tabs widgets look font dark light",run:function(){openCustomize()}},
     {id:"push",t:"Phone notifications",g:"Settings",ic:"bell",k:"alerts push notify ping mobile",run:function(){jdPushSheet()}},
     {id:"health",t:"Connection",g:"Settings",ic:"activity",k:"status online offline health diagnostics",run:function(){openMore("account");checkHealth()}},
@@ -6727,6 +7740,10 @@
       var b=document.createElement("div");
       b.className="bubble "+(m.dir==="out"?"out":"in")+(m.dir===lastDir?" same":"")+(m.kind==="auto"?" auto":"")+(m.kind==="scheduled"?" scheduled":"");
       if(m.id)b.setAttribute("data-mid",m.id);
+      // Deck (transcript) and Console (log) draw a speaker and a clock in the
+      // gutter from these. Every other layout ignores them.
+      b.setAttribute("data-who",m.dir==="out"?(m.by||"You"):displayName(t));
+      b.setAttribute("data-clock",fmtTime(m.ts));
       if(m.id&&m.id===firstUnreadId){
         var nu=document.createElement("div");nu.className="newmark";nu.innerHTML='<span>'+t.unread+' new</span>';box.appendChild(nu);
       }
@@ -8434,7 +9451,8 @@
   function mrSettings(b){
     b.appendChild(mrGroup("",[
       {t:"Phone notifications",ic:"bell",noteId:"pushState",go:function(){closeMore();jdPushSheet()}},
-      {t:"Customize everything",ic:"sliders",go:function(){closeMore();openCustomize()}}
+      {t:"Customize everything",ic:"sliders",go:function(){closeMore();openCustomize()}},
+      {t:"Layout",ic:"layout-grid",note:layoutMeta(layoutId()).name,go:function(){closeMore();openCustomize();CZ.tab="shell";czRender()}}
     ]));
     b.appendChild(mrLabel("Auto follow-ups & calls"));b.appendChild(el("fuSettings"));
     b.appendChild(mrLabel("Team"));b.appendChild(el("teamPanel"));
@@ -8487,16 +9505,41 @@
     }).catch(function(){b.className="health bad";el("healthTxt").textContent="offline"});
   }
   // Confirm the live URL is serving this exact build (assets AND worker together).
+  // A mismatch means the Worker has shipped but this tab is still running the
+  // HTML it loaded earlier — an installed PWA holds a document open for days.
+  // Saying so and stopping was no help: "close and reopen it" is folklore you
+  // have to be told. The warning is a button now, and it does the two things
+  // that actually clear a stale shell — drop the cached copy, then re-fetch the
+  // page past the HTTP cache. It deliberately does NOT unregister the service
+  // worker: the push subscription lives on that registration, and throwing it
+  // away would silently stop the phone ringing for new texts.
+  function refreshShell(btn){
+    if(btn){btn.disabled=true;btn.textContent="Updating…"}
+    var jobs=[];
+    try{if(window.caches&&caches.keys)jobs.push(caches.keys().then(function(ks){
+      return Promise.all(ks.map(function(k){return caches.delete(k)}))}))}catch(e){}
+    try{if(navigator.serviceWorker&&navigator.serviceWorker.getRegistrations)
+      jobs.push(navigator.serviceWorker.getRegistrations().then(function(rs){
+        return Promise.all(rs.map(function(r){return r.update()}))}))}catch(e){}
+    // cache:"reload" forces the network and rewrites the HTTP cache entry, so
+    // the reload that follows can't be answered from disk with the old page.
+    jobs.push(fetch(location.pathname,{cache:"reload",credentials:"include"}));
+    Promise.all(jobs.map(function(j){return Promise.resolve(j).catch(function(){})}))
+      .then(function(){location.reload()});
+  }
   function showBuild(){
     var s=el("buildStamp");if(!s)return;
     s.textContent="app "+APP_BUILD;
     api("/api/version").then(function(d){
-      if(d&&d.build){
-        var ok=d.build===APP_BUILD;
-        s.innerHTML="app "+esc(APP_BUILD)+" · server "+esc(d.build)+" "+(ok?"✓ live":"⚠ mismatch");
-        s.style.color=ok?"":"var(--accent-text)";
-        s.style.opacity=ok?".75":"1";
-      }
+      if(!d||!d.build)return;
+      var ok=d.build===APP_BUILD;
+      s.innerHTML="app "+esc(APP_BUILD)+" · server "+esc(d.build)+" "+(ok?"✓ live":"⚠ mismatch")+
+        (ok?"":'<br><button class="build-up" id="buildUpdate">Update now</button>'+
+             '<br><span style="opacity:.7">This tab is running an older copy of the app.</span>');
+      s.style.color=ok?"":"var(--accent-text)";
+      s.style.opacity=ok?".75":"1";
+      var b=el("buildUpdate");
+      if(b)b.onclick=function(){vibrate(8);refreshShell(b)};
     }).catch(function(){});
   }
 

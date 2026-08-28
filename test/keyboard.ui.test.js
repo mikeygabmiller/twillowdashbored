@@ -158,6 +158,21 @@ b = await boxFits();
 ok('the box sits on the bottom of the screen', b.bottom <= 720 + 1 && b.bottom > 600, b);
 ok('and it is back to full height', b.height >= 44, b);
 
+section('The rule holds in the other four layouts too');
+// Each shape pins .chat differently — its own top bar, its own dock along the
+// bottom — so each one has to lift by the keyboard on its own terms.
+for (const mode of ['deck', 'air', 'bento', 'console']) {
+  await page.evaluate((l) => window.__layout(l), mode);
+  await page.waitForTimeout(350);
+  await keyboard(340);
+  await page.waitForTimeout(150);
+  const r = await boxFits();
+  ok(mode + ': the box is above the keyboard', r.bottom <= r.floor + 1 && r.height > 20, r);
+  ok(mode + ': and on screen, not off the top', r.top >= 0, r);
+}
+await page.evaluate(() => window.__layout('classic'));
+await page.waitForTimeout(350);
+
 console.log('\nJS errors:', errs.length ? errs.join('\n  ') : 'none');
 if (errs.length) fail += errs.length;
 

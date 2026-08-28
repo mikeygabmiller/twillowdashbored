@@ -24,7 +24,7 @@ const UNIT = [
 
 const UI = [
   'detect.ui', 'pay.ui', 'nav.ui', 'search.ui', 'tabs.ui', 'snapshot.ui', 'place.ui',
-  'newmsg.ui', 'peek.ui', 'polish.ui', 'journey.ui', 'scan.ui', 'aidiet.ui', 'use.ui',
+  'newmsg.ui', 'peek.ui', 'polish.ui', 'journey.ui', 'scan.ui', 'aidiet.ui', 'use.ui', 'layout.ui', 'stale.ui',
   'keyboard.ui',
 ].map((n) => `${n}.test.js`);
 
