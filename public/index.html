@@ -410,7 +410,42 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .sw.on::after{left:20px}
 
   /* composer */
-  .composer{border-top:1px solid var(--line);background:var(--panel);padding:9px 12px calc(9px + var(--safe-bottom))}
+  .composer{border-top:1px solid var(--line);background:var(--panel);padding:9px 12px calc(9px + var(--safe-bottom));flex:none}
+
+  /* ---- Hard rule: the message box stays on screen while he's typing --------
+     Two different things hide it, and both have to be handled or the rule is
+     only half true.
+       (1) The keyboard covering the bottom of the screen. That's --kb, measured
+           from visualViewport further down, and the chat pane lifts off the
+           bottom by it.
+       (2) The chat column running out of room. Everything between the header
+           and the box — job, plan, hold, opt-out, quote, reminder, scheduled,
+           follow-up — is its own element in one flex column, and with a
+           keyboard up there can be barely 300px of screen left. The column
+           can't fit them all AND the box, so the box, being last, is the part
+           that goes off the bottom edge. Hence: the composer never shrinks
+           (flex:none above), and while the keyboard is up the informational
+           banners step aside. Seeing the words you're typing beats a reminder
+           that comes straight back the moment you put the keyboard away.
+     The banners are shown with inline styles from JS, so these need !important. */
+  html.kb-up .chat>.job-banner,
+  html.kb-up .chat>#planChipWrap,
+  html.kb-up .chat>.hold-banner,
+  html.kb-up .chat>.optout-banner,
+  html.kb-up .chat>.logjob-banner,
+  html.kb-up .chat>.quote-banner,
+  html.kb-up .chat>.remind-banner,
+  html.kb-up .chat>.sched-banner,
+  html.kb-up .chat>.followup-banner,
+  html.kb-up .chat>.date-banner,
+  html.kb-up .chat>.team-id-bar,
+  html.kb-up .chat>.coach-panel{display:none!important}
+  /* The draft-review panels are about what he's writing, so they stay — capped
+     to a slice of what's actually on screen (--vvh), never the window height. */
+  html.kb-up .chat>.ai-review,
+  html.kb-up .chat>.polish-bar{max-height:calc(var(--vvh,100vh) * .26);overflow-y:auto}
+  /* A long draft must not grow the box until it swallows its own screen. */
+  html.kb-up .crow textarea{max-height:min(140px,calc(var(--vvh,100vh) * .34))}
   .ctools{display:flex;gap:4px;align-items:center;margin-bottom:7px;position:relative}
   .ctools .spacer{flex:1}
   /* Three replies that fit THIS conversation, one tap away, right above the
@@ -1200,8 +1235,12 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     .app{grid-template-columns:minmax(0,1fr)}
     .sidebar{min-width:0;overflow:hidden}
     /* The chat pane is pinned to the viewport on a phone, so it has to lift off
-       the bottom by the keyboard height itself — shrinking .app doesn't reach it. */
-    .chat{display:none;position:fixed;top:0;left:0;right:0;bottom:var(--kb,0px);z-index:40}
+       the bottom by the keyboard height itself — shrinking .app doesn't reach it.
+       --vv-top matters on iOS, which answers a keyboard by scrolling the visible
+       window down inside the page instead of shrinking it: without the offset the
+       pane is pinned to a top that has slid off the screen, and everything —
+       including the message box — sits that far too low. */
+    .chat{display:none;position:fixed;top:var(--vv-top,0px);left:0;right:0;bottom:var(--kb,0px);z-index:40}
     body.viewing .sidebar{display:none}
     body.viewing .chat{display:flex}
     .backbtn{display:inline-flex}
@@ -2763,7 +2802,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   :root[data-layout] .gr-nav-2 button.active::before,
   :root[data-layout] .mo-nav button.active::before{top:auto;bottom:0;border-radius:4px 4px 0 0}
   @media(max-width:780px){
-    :root[data-layout] .chat{top:var(--topbar-h);left:var(--rail-w);
+    /* --vv-top for the same reason as the Classic rule above: on iOS the pane is
+       pinned to a page top that the keyboard has slid off the screen. */
+    :root[data-layout] .chat{top:calc(var(--topbar-h) + var(--vv-top,0px));left:var(--rail-w);
       bottom:calc(var(--kb,0px) + var(--shell-b))}
     /* .details hides by sliding a full height down — but "down" is the bottom of
        .chat, and these layouts hold .chat off the floor, so it parked in the gap
@@ -2782,7 +2823,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   :root[data-layout="bento"] .app,:root[data-layout="console"] .app{grid-template-columns:minmax(0,1fr)}
   :root[data-layout="bento"] .sidebar,:root[data-layout="console"] .sidebar{min-width:0;overflow:hidden}
   :root[data-layout="bento"] .chat,:root[data-layout="console"] .chat{
-    display:none;position:fixed;top:var(--topbar-h);left:0;right:0;
+    display:none;position:fixed;top:calc(var(--topbar-h) + var(--vv-top,0px));left:0;right:0;
     bottom:calc(var(--kb,0px) + var(--shell-b));z-index:40}
   :root[data-layout="bento"] body.viewing .sidebar,:root[data-layout="console"] body.viewing .sidebar{display:none}
   :root[data-layout="bento"] body.viewing .chat,:root[data-layout="console"] body.viewing .chat{display:flex}
@@ -3902,7 +3943,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-27·update-now";
+  var APP_BUILD="2026-08-28·see-what-you-type";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -9214,7 +9255,12 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var h=ta.scrollHeight;
     // scrollHeight excludes borders, and the box is border-box sized — add them back.
     if(gg&&gg.innerHTML)h=Math.max(h,gg.scrollHeight+(gg.offsetHeight-gg.clientHeight));
-    ta.style.height=Math.min(h,140)+"px";
+    // Floor at the 46px the stylesheet asks for. A box that isn't on screen yet
+    // measures scrollHeight 0 — and autoGrow does run before the composer is
+    // shown, restoring a draft — which used to stamp height:0 inline. Inline wins
+    // over the stylesheet, so from then on the empty box was a 26px sliver of
+    // padding: you could type into it but barely see what you'd typed.
+    ta.style.height=Math.min(Math.max(h,46),140)+"px";
   }
 
   // ---- per-conversation drafts --------------------------------------------
@@ -9607,19 +9653,70 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // measure what the on-screen keyboard is covering and shrink the app by it, so
   // the compose box and send button never end up behind the keys. Where the meta
   // IS honored the window has already shrunk, this measures ~0, and nothing moves.
+  //
+  // This is the enforcement half of the hard rule up in the CSS: while a keyboard
+  // is up, the message box has to stay on screen. It publishes three things —
+  //   --kb      how much of the screen the keyboard is covering
+  //   --vv-top  how far the visible window has slid down inside the page (iOS)
+  //   --vvh     how tall the visible window actually is right now
+  // — and flags html.kb-up so the CSS can clear the banners out of the way.
   (function(){
     var vv=window.visualViewport;if(!vv)return;
-    var last=0;
+    var last=-1,lastTop=-1,lastUp=null,screenH=window.innerHeight;
+    // A real keyboard covers a big slice of the screen; the URL bar sliding away
+    // covers ~60px and must not count as one. But once the caret is actually in a
+    // box we KNOW there's a keyboard, so a short one — a split or floating
+    // keyboard, or a hardware pad's accessory bar — counts too.
+    function caretInABox(){
+      var a=document.activeElement;if(!a)return false;
+      var t=(a.tagName||"").toLowerCase();
+      return t==="textarea"||t==="input"||a.isContentEditable===true;
+    }
+    // Split out so a test can check the arithmetic without a real keyboard.
+    function kbFor(innerH,vh,top,typing){
+      var covered=Math.max(0,innerH-vh-top);
+      return covered>(typing?40:120)?Math.round(covered):0;
+    }
     function apply(){
-      var covered=Math.max(0,window.innerHeight-vv.height-vv.offsetTop);
-      var kb=covered>120?Math.round(covered):0; // ignore URL-bar shifts, only a real keyboard
+      var top=Math.round(vv.offsetTop);
+      var typing=caretInABox();
+      var kb=kbFor(window.innerHeight,vv.height,vv.offsetTop,typing);
+      // Whether a keyboard is UP is a different question from how far the pane
+      // has to lift. Where the viewport meta IS honored (Android Chrome) the
+      // window itself already shrank, so kb measures 0 — but the screen is just
+      // as short, and the banners still have to get out of the way. So compare
+      // against the tallest the page has ever been instead.
+      screenH=Math.max(screenH,window.innerHeight);
+      var up=(screenH-Math.round(vv.height))>(typing?40:120);
+      var d=document.documentElement;
+      d.style.setProperty("--vvh",Math.round(vv.height)+"px");
+      if(top!==lastTop){lastTop=top;d.style.setProperty("--vv-top",top+"px")}
+      if(up!==lastUp){lastUp=up;d.classList.toggle("kb-up",up)}
+      // iOS also scrolls the whole page up to reveal the focused box and just
+      // leaves it there. The chat pane is position:fixed, so it rides along and
+      // the message box lands below the bottom of the screen. Put the page back —
+      // the body never scrolls here anyway (body{overflow:hidden}).
+      if(kb&&window.scrollY)window.scrollTo(0,0);
       if(kb===last)return;
       last=kb;
-      document.documentElement.style.setProperty("--kb",kb+"px");
+      d.style.setProperty("--kb",kb+"px");
       // Keyboard just opened over a conversation — keep the newest message in view.
       if(kb&&state.phone){var b=el("messages");if(b)setTimeout(function(){b.scrollTop=b.scrollHeight},60)}
     }
-    vv.addEventListener("resize",apply);vv.addEventListener("scroll",apply);apply();
+    vv.addEventListener("resize",apply);vv.addEventListener("scroll",apply);
+    // The viewport events can fire before the keyboard has finished sliding up,
+    // and on iOS sometimes not at all until it has. Re-measure around the caret
+    // landing and leaving, twice, so the last word is a settled one.
+    function remeasure(){setTimeout(apply,60);setTimeout(apply,340)}
+    document.addEventListener("focusin",remeasure);
+    document.addEventListener("focusout",remeasure);
+    // Turning the phone changes what "the whole screen" means, so the tallest-ever
+    // height has to be forgotten or every portrait keyboard looks like it's up.
+    window.addEventListener("orientationchange",function(){screenH=0;remeasure()});
+    apply();
+    // For the UI test: the measured state, and the raw arithmetic.
+    window.__kb=function(a,b,c,d){return arguments.length?kbFor(a,b,c,d):
+      {kb:last,top:lastTop,up:document.documentElement.classList.contains("kb-up")}};
   })();
   // Enter key in the compose box. On a phone/tablet the on-screen return key ( ↵ )
   // must make a LINE BREAK — there's no Shift to hold, and the send button is right
