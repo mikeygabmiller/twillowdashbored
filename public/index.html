@@ -201,6 +201,58 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .sched-flag{color:#7dd3fc;font-size:11px;display:inline-flex;align-items:center;gap:3px}
   .tag{font-size:10px;padding:2px 8px;border-radius:7px;background:var(--tag-bg);color:var(--tag-ink);border:1px solid var(--tag-line)}
 
+  /* ---- Calls screen ------------------------------------------------------
+     The phone log. Built as its own row rather than reusing .conv because a
+     call is not a conversation: what matters is the OUTCOME (missed, voicemail,
+     answered) and what was said, and both of those need room the chat row
+     doesn't have. Everything is one tap from the row — call back, text back,
+     open the thread — because this screen exists to be used one-handed in a
+     driveway. */
+  .callhead{padding:12px 16px;border-bottom:1px solid var(--line2);background:var(--panel)}
+  .callhead .ch-line{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);flex-wrap:wrap}
+  .callhead .ch-line b{color:var(--text);font-weight:650}
+  .callhead .ch-line .lnk{color:var(--accent-text);cursor:pointer;font-weight:650}
+  .callfilters{display:flex;gap:7px;padding:10px 16px;overflow-x:auto;border-bottom:1px solid var(--line2);background:var(--panel);
+    scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .callfilters::-webkit-scrollbar{display:none}
+  .callfilters .cf{flex:none;font-size:12.5px;font-weight:650;padding:7px 13px;border-radius:20px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--muted);cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+  .callfilters .cf.active{background:var(--accent-soft);border-color:transparent;color:var(--accent-text)}
+  .callfilters .cf .n{font-size:11px;opacity:.8}
+
+  .callrow{display:flex;gap:13px;padding:13px 16px;border-bottom:1px solid var(--line2);background:var(--panel);position:relative}
+  .callrow.fresh{background:var(--panel2);box-shadow:inset 3px 0 0 var(--accent)}
+  .callrow .cbody{flex:1;min-width:0}
+  .callrow .row1{display:flex;justify-content:space-between;gap:8px;align-items:baseline}
+  .callrow .nm{font-weight:650;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .callrow .tm{color:var(--muted2);font-size:12px;white-space:nowrap;flex:none}
+  .callrow .cwhat{display:flex;align-items:center;gap:7px;margin-top:5px;flex-wrap:wrap;font-size:12.5px;color:var(--muted)}
+  /* The outcome badge is the whole point of the row — it reads before the name does. */
+  .cbadge{font-size:10px;font-weight:750;padding:3px 8px;border-radius:20px;text-transform:uppercase;letter-spacing:.3px;
+    display:inline-flex;align-items:center;gap:4px}
+  .cbadge svg{width:11px;height:11px}
+  .cb-missed{background:rgba(251,113,133,.16);color:#fb7185}
+  .cb-voicemail{background:rgba(168,85,247,.2);color:#cda4f7}
+  .cb-answered{background:rgba(34,197,94,.18);color:#69e29a}
+  .cb-ringing{background:rgba(234,179,8,.16);color:#eab308}
+  .cb-screened{background:rgba(138,147,163,.18);color:#b6bdc9}
+  .cb-declined{background:rgba(138,147,163,.18);color:#b6bdc9}
+  .cb-blocked{background:rgba(138,147,163,.18);color:#b6bdc9}
+  .cb-past{background:rgba(59,130,246,.16);color:#7eb0ff}
+  /* A voicemail transcript is the thing Google Voice did better. Give it real
+     reading room instead of a one-line ellipsis. */
+  .callrow .ctx{margin-top:8px;font-size:13.5px;line-height:1.5;color:var(--text);background:var(--panel2);
+    border:1px solid var(--line2);border-left:3px solid #a855f7;border-radius:10px;padding:9px 11px}
+  .callrow .ctx.pending{color:var(--muted2);font-style:italic;border-left-color:var(--line)}
+  .callrow audio{width:100%;height:34px;margin-top:8px;display:block}
+  .callrow .cacts{display:flex;gap:7px;margin-top:9px;flex-wrap:wrap}
+  .callrow .cacts button{font-size:12.5px;font-weight:650;padding:7px 12px;border-radius:9px;border:1px solid var(--line);
+    background:var(--panel2);color:var(--text);cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+  .callrow .cacts button:hover{background:var(--panel3)}
+  .callrow .cacts button.pri{background:var(--accent);border-color:transparent;color:#fff}
+  .callrow .cacts button.quiet{color:var(--muted2)}
+  .callrow .cacts button svg{width:14px;height:14px}
+
   .st-new{background:rgba(59,130,246,.18);color:#7eb0ff}
   .st-active{background:rgba(34,197,94,.18);color:#69e29a}
   .st-won{background:rgba(168,85,247,.2);color:#cda4f7}
@@ -227,12 +279,12 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   /* ---------- Bottom nav ---------- */
   .bottomnav{position:absolute;left:0;right:0;bottom:0;height:calc(var(--nav-h) + var(--safe-bottom));padding-bottom:var(--safe-bottom);
     display:flex;background:rgba(18,18,22,.92);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line2);z-index:20}
-  /* min-width:0 lets six items share a narrow phone without the labels wrapping
+  /* min-width:0 lets seven items share a narrow phone without the labels wrapping
      to two lines and shoving the icons up. */
   .navitem{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;border:none;background:none;color:var(--muted2);font-size:10.5px;font-weight:600;position:relative;padding-top:6px;white-space:nowrap}
   .navitem .ic{line-height:0;transition:transform .15s;display:flex}
   .navitem .ic svg{width:23px;height:23px}
-  @media (max-width:379px){.navitem{font-size:9.5px}.navitem .ic svg{width:21px;height:21px}}
+  @media (max-width:409px){.navitem{font-size:9.5px}.navitem .ic svg{width:21px;height:21px}}
   .navitem.active{color:var(--accent-text)}
   .navitem.active .ic{transform:translateY(-1px) scale(1.06)}
   .navitem .ndot{position:absolute;top:5px;left:calc(50% + 7px);min-width:16px;height:16px;border-radius:9px;background:var(--accent);color:#fff;font-size:9px;font-weight:700;display:none;align-items:center;justify-content:center;padding:0 4px}
@@ -3554,6 +3606,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     <nav class="bottomnav" id="bottomnav">
       <button class="navitem active" data-tab="home"><span class="ic" data-ic="home"></span><span class="ndot" id="navHome"></span>Today</button>
       <button class="navitem" data-tab="messages"><span class="ic" data-ic="message-square"></span><span class="ndot" id="navUnread"></span>Chats</button>
+      <button class="navitem" data-tab="calls"><span class="ic" data-ic="phone"></span><span class="ndot" id="navCalls"></span>Calls</button>
       <button class="navitem" data-tab="pipeline"><span class="ic" data-ic="route"></span><span class="ndot" id="navJobs"></span>Pipeline</button>
       <button class="navitem" data-tab="money"><span class="ic" data-ic="dollar"></span><span class="ndot" id="navMoney"></span>Money</button>
       <button class="navitem" data-tab="stats"><span class="ic" data-ic="bar-chart"></span><span class="ndot" id="navStats"></span>Stats</button>
@@ -3943,7 +3996,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-28·email-answers-that-stick";
+  var APP_BUILD="2026-08-30·calls-here";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4050,6 +4103,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
 
   // ---- inline icon system (Lucide paths, MIT) — crisp & consistent across devices ----
   var ICONS={
+    // Calls screen — an outcome you can read at arm's length beats a label.
+    "phone-missed":'<line x1="22" x2="16" y1="2" y2="8"/><line x1="16" x2="22" y1="2" y2="8"/><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3.1-8.7A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2Z"/>',
+    "phone-incoming":'<polyline points="16 2 16 8 22 8"/><line x1="22" x2="16" y1="2" y2="8"/><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6 19.8 19.8 0 0 1-3.1-8.7A2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.4-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2Z"/>',
+    "voicemail":'<circle cx="6" cy="12" r="4"/><circle cx="18" cy="12" r="4"/><line x1="6" x2="18" y1="16" y2="16"/>',
     "menu":'<line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="18" y2="18"/>',
     // Job Day suite
     "route":'<circle cx="6" cy="19" r="3"/><path d="M9 19h8.5a3.5 3.5 0 0 0 0-7h-11a3.5 3.5 0 0 1 0-7H15"/><circle cx="18" cy="5" r="3"/>',
@@ -4356,7 +4413,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // money) and it was a three-tap trip through More to reach. Nothing was
   // removed to make room — hide whatever you don't use in Customize → Tabs, and
   // the bar re-splits evenly over whatever is left.
-  var UI_TABLIST=[["home","Today","home"],["messages","Chats","message-square"],["pipeline","Pipeline","route"],["money","Money","dollar"],["stats","Stats","bar-chart"],["more","More","menu"]];
+  var UI_TABLIST=[["home","Today","home"],["messages","Chats","message-square"],["calls","Calls","phone"],["pipeline","Pipeline","route"],["money","Money","dollar"],["stats","Stats","bar-chart"],["more","More","menu"]];
   var UI_PRESETS=[ // id, name, accent, accentDark
     ["crimson","Crimson","#ff2e43","#c81e30"],["ocean","Ocean","#2f9bff","#1d5fd8"],
     ["mint","Mint","#22c55e","#15803d"],["grape","Grape","#a855f7","#7e22ce"],
@@ -4391,7 +4448,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     mode:"simple", locked:false, tourSeen:false, listStyle:"compact",
     layout:"classic",   // classic | deck | air | bento | console — see applyLayout()
     autoPolish:true,   // rewrite the draft in place when you pause typing (undo lives on the strip)
-    navV:3, tabsOrder:["home","messages","pipeline","money","stats","more"], tabsHidden:[],
+    navV:4, tabsOrder:["home","messages","calls","pipeline","money","stats","more"], tabsHidden:[],
     mblocks:["hero","log","alerts","pulse","brain","today","pricing"], mblocksHidden:[],
     mkpis:["net","you","costs","savings","avg","jobs","margin","owed","best"],
     // Phase 2/3
@@ -4413,7 +4470,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // navV3 puts Stats in the bar: checking the website was a three-tap trip
   // through More, and it is one of the three things this app gets opened for.
   function migrateUI(u){
-    if(u.navV!==3){var d=defaultUI();u.navV=3;u.tabsOrder=d.tabsOrder.slice();u.tabsHidden=d.tabsHidden.slice()}
+    if(u.navV!==4){var d=defaultUI();u.navV=4;u.tabsOrder=d.tabsOrder.slice();u.tabsHidden=d.tabsHidden.slice()}
     // Widgets shipped after this layout was saved were being switched ON for
     // everyone: the render appended any unknown widget to the order and only
     // ever consulted the saved hidden list, which of course couldn't mention a
@@ -5099,6 +5156,11 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var nh=el("navHome");if(nh){nh.textContent=c.needs;nh.className="ndot"+(c.needs?" show":"")}
     var nn=el("navNeeds");if(nn){nn.textContent=c.needs;nn.className="ndot"+(c.needs?" show":"")}
     var nf=el("navFollow");if(nf){nf.textContent=c.follow;nf.className="ndot"+(c.follow?" show":"")}
+    // Missed calls and unheard voicemails, counted by the server — the one badge
+    // that isn't derived from the thread list, because a call that never became a
+    // text thread has no row there to derive it from.
+    var cu=(typeof CALLS!=="undefined"&&CALLS)?(CALLS.unseen||0):0;
+    var nc=el("navCalls");if(nc){nc.textContent=cu;nc.className="ndot"+(cu?" show":"")}
     // These counts used to live on menu rows. Those rows are Chats filter chips
     // now and carry their own counts, drawn in renderFilters().
   }
@@ -5227,6 +5289,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   }
   function renderMainInner(){
     if(state.tab==="home"&&!state.search)return renderHome();
+    if(state.tab==="calls")return renderCalls();
     if(state.tab==="leads")return renderLeads();
     if(state.tab==="followups")return renderFollowups();
     if(state.tab==="scheduled")return renderList("scheduled");
@@ -5247,6 +5310,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     {id:"scheduled",t:"Scheduled texts",g:"Chats",ic:"calendar-days",k:"later queued send timed",run:function(){setTab("scheduled")}},
     {id:"archived",t:"Archived",g:"Chats",ic:"archive",k:"hidden old done filed",run:function(){setTab("archived")}},
     {id:"newmsg",t:"New message",g:"Chats",ic:"plus",k:"compose text someone start write",run:function(){var f=el("fab");if(f)f.click()}},
+    // — the phone
+    {id:"calls",t:"Calls",g:"Calls",ic:"phone",k:"phone log ring rang history who called dialed",run:function(){setTab("calls")}},
+    {id:"voicemail",t:"Voicemails",g:"Calls",ic:"voicemail",k:"message recording transcript listen played answering machine google voice",run:function(){setTab("calls");CALLS.filter="voicemail";renderMain()}},
+    {id:"missedcalls",t:"Missed calls",g:"Calls",ic:"phone-missed",k:"no answer didn't pick up lost lead rang out",run:function(){setTab("calls");CALLS.filter="missed";renderMain()}},
     // — work
     {id:"leads",t:"Leads pipeline",g:"Pipeline",ic:"clipboard-list",k:"prospects enquiries board stages funnel won lost",run:function(){openJobs("leads")}},
     {id:"run",t:"Today's run",g:"Pipeline",ic:"route",k:"jobs schedule route day work appointments",run:function(){openJobs("run")}},
@@ -6285,6 +6352,234 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var more=el("sumMore");if(more)more.onclick=function(){openAnalytics()};
   }
 
+  // ============================================================
+  // CALLS — the phone log
+  // ============================================================
+  // Calls used to forward to Google Voice, and that was a fair trade: Google
+  // Voice had a screen where you could see who rang and read what they said, and
+  // this dashboard had nothing. Twilio knew all of it the whole time — a missed
+  // call, a voicemail, its transcript, its recording — and none of it was being
+  // written down. Now it is, and this is where you look at it.
+  //
+  // Everything on a row is one tap: call back (rings your phone first, then
+  // bridges, exactly like calling from a conversation), text back, open the
+  // conversation, block. The point of the screen is that a lead from a Google
+  // ad who rings and doesn't get through is still recoverable in ten seconds.
+  var CALLS={list:null,loading:false,err:"",filter:"all",seenTs:0,unseen:0,forwardTo:"",screening:true,busy:""};
+  var CALL_FILTERS=[["all","All"],["needs","Needs you"],["voicemail","Voicemail"],["missed","Missed"],["blocked","Screened"]];
+
+  // What a row's outcome MEANS, in the customer's language rather than Twilio's.
+  // "ringing" only ever lingers when a call died before any later webhook fired,
+  // so after a couple of minutes it is honestly reported as a hang-up, not a
+  // call that is somehow still ringing.
+  function callOutcome(c){
+    var o=c.outcome||"past";
+    if(o==="ringing"&&Date.now()-(c.ts||0)>120000)o="dropped";
+    return o;
+  }
+  var CALL_META={
+    voicemail:["Voicemail","voicemail","voicemail"],
+    missed:["Missed","phone-missed","missed"],
+    answered:["Answered","phone","answered"],
+    ringing:["Ringing now","phone-incoming","ringing"],
+    dropped:["Hung up","phone-missed","missed"],
+    screened:["Screened out","ban","screened"],
+    declined:["Didn't press 1","ban","declined"],
+    blocked:["Blocked","ban","blocked"],
+    past:["Call","phone-incoming","past"]
+  };
+  function callSecs(n){n=Math.max(0,Math.round(n||0));var m=Math.floor(n/60);return m+":"+(n%60<10?"0":"")+(n%60)}
+  function callNeedsYou(c){var o=callOutcome(c);return o==="voicemail"||o==="missed"||o==="dropped"}
+  function callPassesFilter(c){
+    var o=callOutcome(c);
+    if(CALLS.filter==="all")return true;
+    if(CALLS.filter==="needs")return callNeedsYou(c);
+    if(CALLS.filter==="voicemail")return o==="voicemail";
+    if(CALLS.filter==="missed")return o==="missed"||o==="dropped";
+    return o==="screened"||o==="declined"||o==="blocked";
+  }
+  // The row's own name lookup. A caller who has a conversation here shows as a
+  // person; one who doesn't shows as a readable phone number, never a raw +1.
+  function callName(c){return (c.name&&c.name.trim())?c.name:prettyPhone(c.fromNorm||c.from||"")}
+  function callInitials(c){
+    var n=callName(c).replace(/[^a-zA-Z ]/g,"").split(/\s+/).filter(Boolean);
+    if(!n.length)return "#";
+    return (n[0][0]+(n[1]?n[1][0]:"")).toUpperCase();
+  }
+
+  // A poll must never yank a voicemail out from under the person listening to it:
+  // re-rendering the list rebuilds the <audio> element, which restarts playback
+  // from zero. So a playing recording holds the redraw until it stops.
+  function callsAudioBusy(){
+    var a=el("scroll").querySelectorAll("audio");
+    for(var i=0;i<a.length;i++)if(!a[i].paused)return true;
+    return false;
+  }
+  function loadCalls(force,then){
+    if(CALLS.loading&&!force)return;
+    CALLS.loading=true;CALLS.err="";
+    api("/api/calls").then(function(d){
+      CALLS.loading=false;
+      if(!d||!d.ok){CALLS.err=(d&&d.error)||"load_failed";if(state.tab==="calls")renderMain();return}
+      CALLS.list=d.calls||[];CALLS.seenTs=d.seenTs||0;CALLS.unseen=d.unseen||0;
+      CALLS.forwardTo=d.forwardTo||"";CALLS.screening=!!d.screening;
+      refreshBadges();
+      if(state.tab==="calls"&&!callsAudioBusy())renderMain();
+      if(then)then();
+    }).catch(function(){CALLS.loading=false;CALLS.err="network";if(state.tab==="calls")renderMain()});
+  }
+
+  // The badge has to move without the tab being open — a missed call from a Google
+  // ad is exactly the thing you want to see from the Today screen. Kept on its own
+  // slower clock than the thread poll: the log is a small doc and calls are rare.
+  var callsPolledAt=0;
+  function pollCalls(force){
+    if(!force&&Date.now()-callsPolledAt<60000)return;
+    callsPolledAt=Date.now();
+    loadCalls(true);
+  }
+
+  // Opening the screen is what marks it read — the same contract as walking into
+  // a room. One KV write, and only when something is actually newer than the
+  // last look (the server skips the write otherwise).
+  function markCallsSeen(){
+    if(!CALLS.unseen)return;
+    CALLS.unseen=0;refreshBadges();
+    post("/api/calls/seen",{}).then(function(d){if(d&&d.seenTs)CALLS.seenTs=d.seenTs}).catch(function(){});
+  }
+
+  function renderCalls(){
+    var box=el("scroll");
+    if(CALLS.list===null){box.innerHTML=skeletonList(6);return}
+    var all=CALLS.list;
+    var counts={};
+    CALL_FILTERS.forEach(function(f){
+      var save=CALLS.filter;CALLS.filter=f[0];
+      counts[f[0]]=all.filter(callPassesFilter).length;
+      CALLS.filter=save;
+    });
+
+    var where=CALLS.forwardTo?prettyPhone(CALLS.forwardTo):"your phone";
+    var h='<div class="callhead"><div class="ch-line">'+ic("phone-incoming",13)+
+      '<span>Calls to your business number ring <b>'+esc(where)+'</b>'+
+      (CALLS.screening?' after the caller presses 1':'')+
+      '. No answer in 20 seconds and they leave a voicemail — it lands here with a transcript.</span>'+
+      '<span class="lnk" id="clSettings">Change</span></div></div>';
+
+    h+='<div class="callfilters">';
+    CALL_FILTERS.forEach(function(f){
+      h+='<button class="cf'+(CALLS.filter===f[0]?" active":"")+'" data-cf="'+f[0]+'">'+esc(f[1])+
+        (counts[f[0]]?'<span class="n">'+counts[f[0]]+'</span>':'')+'</button>';
+    });
+    h+='</div>';
+
+    var items=all.filter(callPassesFilter);
+    if(!items.length){
+      var empty=all.length
+        ? ["Nothing under this filter","phone","Try “All” to see every call."]
+        : ["No calls yet","phone","Calls to your business number will show up here — missed ones and voicemails with their transcript. Already had calls? Pull them in from Twilio."];
+      h+='<div class="emptyview"><div class="big">'+ic(empty[1],46)+'</div><div>'+esc(empty[0])+'</div><div class="sub">'+esc(empty[2])+'</div>'+
+        (all.length?'':'<button class="btn accent ic-btn" id="clBackfill">'+ic("refresh-cw",15)+'<span>'+(CALLS.busy==="backfill"?"Pulling…":"Recover past calls")+'</span></button>')+'</div>';
+      box.innerHTML=h;hydrateIcons(box);wireCalls();return;
+    }
+
+    items.forEach(function(c){
+      var o=callOutcome(c),m=CALL_META[o]||CALL_META.past;
+      var fresh=(c.ts||0)>CALLS.seenTs&&callNeedsYou(c);
+      var sub=[];
+      if(o==="answered"&&c.talkSec)sub.push("talked "+callSecs(c.talkSec));
+      if(o==="voicemail"&&c.vmSec)sub.push(callSecs(c.vmSec)+" message");
+      if(o==="past"&&c.talkSec)sub.push(callSecs(c.talkSec));
+      if(c.name)sub.push(prettyPhone(c.fromNorm||c.from||""));
+      if(c.blocked&&o!=="blocked")sub.push("on your block list");
+
+      h+='<div class="callrow'+(fresh?" fresh":"")+'" data-cid="'+esc(c.id||"")+'" data-phone="'+esc(c.fromNorm||"")+'">'+
+        '<div class="avatar" style="background:'+colorFor(c.fromNorm||"")+'">'+esc(callInitials(c))+'</div>'+
+        '<div class="cbody">'+
+          '<div class="row1"><span class="nm">'+esc(callName(c))+'</span><span class="tm">'+esc(fmtTime(c.ts))+'</span></div>'+
+          '<div class="cwhat"><span class="cbadge cb-'+esc(m[2])+'">'+ic(m[1],11)+esc(m[0])+'</span>'+
+            (sub.length?'<span>'+esc(sub.join(" · "))+'</span>':'')+'</div>';
+
+      if(o==="voicemail"){
+        h+=c.transcript
+          ? '<div class="ctx">'+ic("voicemail",12)+' '+esc(c.transcript)+'</div>'
+          : '<div class="ctx pending">'+(c.transcriptFailed
+              ?'No transcript for this one — too quiet, too noisy, or not English. Play it below.'
+              :'Transcribing… the text lands here on its own in a minute.')+'</div>';
+        if(c.recording)h+='<audio controls preload="none" src="/api/media?u='+esc(encodeURIComponent(c.recording))+'"></audio>';
+      }
+
+      // A blocked or screened-out number gets the opposite pair of buttons from a
+      // real customer: nothing here should make it easy to call a robo-dialer back.
+      var spam=(o==="screened"||o==="declined"||o==="blocked");
+      h+='<div class="cacts">';
+      if(!spam)h+='<button class="pri" data-act="call">'+ic("phone",14)+'Call back</button>'+
+                  '<button data-act="text">'+ic("message-square",14)+'Text</button>';
+      h+='<button data-act="open">'+ic("chevron-right",14)+'Conversation</button>'+
+         '<button class="quiet" data-act="'+(c.blocked?"unblock":"block")+'">'+ic("ban",14)+(c.blocked?"Unblock":"Block")+'</button>';
+      h+='</div></div></div>';
+    });
+
+    box.innerHTML=h;
+    hydrateIcons(box);
+    wireCalls();
+  }
+
+  function wireCalls(){
+    var box=el("scroll");
+    var setg=el("clSettings");if(setg)setg.onclick=function(){vibrate(6);openMore("settings")};
+    var bf=el("clBackfill");if(bf)bf.onclick=callsBackfill;
+    Array.prototype.forEach.call(box.querySelectorAll(".callfilters .cf"),function(b){
+      b.onclick=function(){vibrate(6);CALLS.filter=b.getAttribute("data-cf");renderMain();el("scroll").scrollTop=0};
+    });
+    Array.prototype.forEach.call(box.querySelectorAll(".callrow"),function(row){
+      var phone=row.getAttribute("data-phone");
+      Array.prototype.forEach.call(row.querySelectorAll(".cacts button"),function(b){
+        b.onclick=function(e){e.stopPropagation();callAction(b.getAttribute("data-act"),phone,row)};
+      });
+    });
+  }
+
+  function callAction(act,phone,row){
+    if(!phone){toast("No number on this call",{bad:true});return}
+    vibrate(8);
+    if(act==="call"){
+      if(!confirm("Call "+prettyPhone(phone)+"?\nYour phone rings first — answer it to connect."))return;
+      post("/api/call",{phone:phone}).then(function(d){
+        toast(d&&d.ok?"Calling your phone — answer to connect":"Call failed: "+((d&&d.error)||"error"),{bad:!(d&&d.ok)});
+      });
+      return;
+    }
+    // Text and Conversation are the same destination; Text just puts the cursor
+    // in the box, because "text them back" is one move, not two.
+    if(act==="text"||act==="open"){
+      setTab("messages");openThread(phone);
+      if(act==="text")setTimeout(function(){var i=el("msgInput");if(i)i.focus()},350);
+      return;
+    }
+    if(act==="block"||act==="unblock"){
+      var on=act==="block";
+      if(on&&!confirm("Block "+prettyPhone(phone)+"?\nThey'll be rejected instantly — no ring, no voicemail."))return;
+      post("/api/block",{phone:phone,blocked:on}).then(function(d){
+        if(!d||!d.ok){toast("Couldn't update the block list",{bad:true});return}
+        toast(on?"Blocked — they won't ring you again":"Unblocked");
+        loadCalls(true);
+      });
+    }
+  }
+
+  function callsBackfill(){
+    if(CALLS.busy)return;
+    var redraw=function(){if(state.tab==="calls")renderMain()};
+    CALLS.busy="backfill";redraw();toast("Checking Twilio for past calls…");
+    post("/api/calls/backfill",{}).then(function(d){
+      CALLS.busy="";
+      if(!d||!d.ok){toast("Couldn't reach Twilio: "+((d&&d.error)||"error"),{bad:true});redraw();return}
+      toast(d.added?("Pulled in "+d.added+" call"+(d.added>1?"s":"")):"No older calls to pull in",{bad:!d.added});
+      loadCalls(true);
+    }).catch(function(){CALLS.busy="";toast("Network error",{bad:true});redraw()});
+  }
+
   // Renders into the sidebar list by default, or into whatever container the
   // Pipeline board hands it.
   function renderLeads(into){
@@ -6749,6 +7044,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       '<div class="fu-row"><span class="lbl2">Rebook reminder after</span><span style="display:flex;align-items:center;gap:6px"><input type="number" id="cfgRebook" min="1" max="365" value="'+(c.rebookDays||90)+'"><span style="color:var(--muted2)">days</span></span></div>'+
       '<div class="fu-row"><span class="lbl2">Quiet hours</span><span style="display:flex;align-items:center;gap:5px"><input type="number" id="cfgQs" min="0" max="23" value="'+(c.quietStart==null?20:c.quietStart)+'"><span style="color:var(--muted2)">to</span><input type="number" id="cfgQe" min="0" max="23" value="'+(c.quietEnd==null?8:c.quietEnd)+'"></span></div>'+
       '<div class="hint">'+esc(c.tz||"America/Los_Angeles")+', 24-hour. Suggestions still appear anytime — only automatic sends wait for daytime.</div>'+
+      '<div class="fu-col"><span class="lbl2">Calls ring this phone</span><input type="tel" id="cfgFwd" placeholder="(425) 232-1355" value="'+esc(c.callForwardTo||"")+'"></div>'+
+      '<div class="hint">Somebody calls your business number, this phone rings, and you\'re connected — the same way calling from a conversation rings you first. Don\'t point it at Google Voice: Google Voice <b>answers</b> the call with its own voicemail, so the message, the transcript and the missed call all end up over there instead of on your <b>Calls</b> screen. Leave it blank to use your usual handset.</div>'+
       '<div class="fu-row"><span class="lbl2">Call screening <span style="color:var(--muted2);font-weight:400">· stop spam calls</span></span><span class="sw'+(c.callScreening!==false?" on":"")+'" id="cfgScreen"></span></div>'+
       '<div class="hint">Callers hear "press 1 to reach Mikey." Robo-dialers don\'t press a key, so they never ring your phone or leave voicemail. Real customers press 1 and get through.</div>'+
       '<div class="fu-row"><span class="lbl2">Missed-call text-back <span style="color:var(--muted2);font-weight:400">· never lose a missed call</span></span><span class="sw'+(c.missedCallTextback!==false?" on":"")+'" id="cfgMct"></span></div>'+
@@ -6788,6 +7085,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       '<div class="fu-col"><span class="lbl2">Look back through what I\'ve already sent</span><span style="display:flex;align-items:center;gap:6px"><button id="cfgPromScan" class="btn" style="white-space:nowrap">'+ic("search",14)+' Scan my last <span id="cfgPromDepthLbl">'+(((c.promise||{}).scanDepth)||3)+'</span> messages</button><input type="number" id="cfgPromDepth" min="1" max="10" value="'+(((c.promise||{}).scanDepth)||3)+'" style="width:64px"></span><span id="cfgPromScanMsg" style="color:var(--muted2);font-size:12px"></span></div>'+
       '<div class="hint">Every text <b>you</b> send is read for a promise to come back to someone \u2014 \u201cI\u2019ll check and let you know\u201d, \u201cI\u2019ll get you a price tonight\u201d. When it finds one you get an email with a <b>calendar invite attached</b>, it shows up on Home, and you get a nudge at the time you promised. Nothing is ever texted to the customer. The scan reads back over the last few messages of every open conversation and picks up the ones you made before \u2014 the ones most likely already forgotten.</div>'+
       '<div class="fu-col"><span class="lbl2">Voicemails</span><button id="cfgVmRecover" class="btn" style="white-space:nowrap;align-self:flex-start">'+ic("mic",14)+' Recover past voicemails</button></div>'+
+      '<div class="fu-col"><span class="lbl2">Call history</span><button id="cfgCallRecover" class="btn" style="white-space:nowrap;align-self:flex-start">'+ic("phone",14)+' Pull past calls into the log</button></div>'+
+      '<div class="hint">Fills the <b>Calls</b> screen with the calls Twilio already has on record — recordings and transcripts included. Safe to run anytime; it skips anything already there.</div>'+
       '<div class="hint">Pulls your recent voicemails from Twilio into the right conversations so you can play them right here. Safe to run anytime.</div>'+
       '<div class="fu-col"><span class="lbl2">Block a number</span><span style="display:flex;gap:6px"><input type="text" id="cfgBlockNum" placeholder="+1425…" style="flex:1"><button id="cfgBlockBtn" class="btn" style="white-space:nowrap">Block</button></span></div>'+
       blockedListHtml(c.blockedNumbers)+
@@ -6808,6 +7107,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     el("cfgQs").onchange=function(){saveConfig({quietStart:+el("cfgQs").value})};
     el("cfgQe").onchange=function(){saveConfig({quietEnd:+el("cfgQe").value})};
     el("cfgScreen").onclick=function(){saveConfig({callScreening:!(c.callScreening!==false)})};
+    // Saved on blur rather than per keystroke: this one writes to KV, and the
+    // write budget doesn't survive a config save per character typed.
+    el("cfgFwd").onchange=function(){saveConfig({callForwardTo:el("cfgFwd").value});pollCalls(true)};
     el("cfgMct").onclick=function(){saveConfig({missedCallTextback:!(c.missedCallTextback!==false)})};
     el("cfgMctText").onchange=function(){saveConfig({missedCallText:el("cfgMctText").value})};
     el("cfgArAlert").onclick=function(){saveConfig({autoReplyAlert:!(c.autoReplyAlert!==false)})};
@@ -6840,6 +7142,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     el("cfgVoiceOpen").onclick=function(){openTrainAI()};
     refreshVoiceStat();
     el("cfgVmRecover").onclick=function(){recoverVoicemails(el("cfgVmRecover"))};
+    el("cfgCallRecover").onclick=function(){callsBackfill()};
     el("cfgBlockBtn").onclick=function(){var v=el("cfgBlockNum").value.trim();if(v)blockNumber(v,"block")};
     el("cfgRuleAdd").onclick=function(){
       var v=el("cfgRuleNew").value.trim();if(!v)return;
@@ -9449,6 +9752,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     renderMain();
     if(tab==="home")fetchInsights();
     if(tab==="followups")refreshThreads();
+    // Opening Calls is what marks it read. Always re-fetch: a voicemail's
+    // transcript arrives a minute after the voicemail does, so a cached list is
+    // routinely a row that says "Transcribing…" when the words are already there.
+    if(tab==="calls"){callsPolledAt=Date.now();loadCalls(true,markCallsSeen)}
   }
 
   // ---- More --------------------------------------------------------------
@@ -9463,6 +9770,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       {t:"Train AI",ic:"sparkles",noteId:"mnTrainStat",go:function(){closeMore();openTrainAI()}},
       {t:"Talk to your dashboard",ic:"mic",go:function(){closeMore();vxOpen()}},
       {t:"Business playbook",ic:"file-text",into:"playbook"}
+    ]},
+    {g:"Phone",rows:[
+      {t:"Calls & voicemail",ic:"phone",noteId:"mnCallStat",go:function(){closeMore();setTab("calls")}}
     ]},
     {g:"Insights",rows:[
       {t:"Analytics — website & business",ic:"bar-chart",go:function(){closeMore();openAnalytics()}}
@@ -9558,6 +9868,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     navOpen("more",closeMore);
     if(MORE.view!=="root")navOpen("moreView",function(){MORE.view="root";mrRender()});
     refreshVoiceStat();
+    // The menu row carries its own count so "have I got a voicemail waiting?" is
+    // answerable without opening the screen. Read off the poll's copy — no fetch.
+    var cs=el("mnCallStat");
+    if(cs)cs.textContent=CALLS.unseen?(CALLS.unseen+" waiting"):((CALLS.list&&CALLS.list.length)?"all clear":"—");
   }
   function closeMore(){
     navDrop("more");
@@ -9630,10 +9944,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     p.then(function(){
       var s=sig();
       pollInterval=(s===lastSig)?Math.min(Math.round(pollInterval*1.6),POLL_MAX):POLL_MIN;
-      lastSig=s;scheduleNext();
+      lastSig=s;pollCalls();scheduleNext();
     });
   }
-  function startPoll(){paused=false;lastActivity=Date.now();pollInterval=POLL_MIN;lastSig=sig();scheduleNext()}
+  function startPoll(){paused=false;lastActivity=Date.now();pollInterval=POLL_MIN;lastSig=sig();pollCalls(true);scheduleNext()}
   function markActivity(){lastActivity=Date.now();if(paused&&!document.hidden){paused=false;pollInterval=POLL_MIN;runPoll()}}
   document.addEventListener("visibilitychange",function(){
     if(document.hidden){stopPoll()}
