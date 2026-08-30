@@ -132,7 +132,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-30·sounds-human';
+const BUILD = '2026-08-30·paid-or-not';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -2874,6 +2874,95 @@ async function fnv1aHex(str) {
 }
 function analyticsDayKey(d) { return 'analytics:day:' + d; }
 function utcDayStr(ts) { return new Date(ts).toISOString().slice(0, 10); }
+
+// ===========================================================================
+// Paid or organic — the one thing a referrer can never tell you
+// ---------------------------------------------------------------------------
+// A Google ad click and a free Google search click arrive from the same place:
+// both carry the referrer "google.com". So every visit landed on the Journey
+// board reading "Found you on Google" whether it cost $2.60 or nothing, and
+// there was no honest way to answer "which of this morning's clicks did I pay
+// for" from inside this app.
+//
+// The only proof is the click id the ad platform staples onto its own landing
+// URL — `gclid` for Google, `msclkid` for Microsoft, `fbclid` for Meta. Those
+// live in the QUERY STRING of the page they land on, which means this can only
+// see them if the site sends the query string along with the path. site-stats.js
+// historically sent `location.pathname` alone, so three things feed this:
+//
+//   1. a query string riding on `p` (the snippet in the app now sends
+//      location.pathname + location.search),
+//   2. a dedicated `q` parameter, for a tracker that would rather keep the
+//      path clean,
+//   3. the referrer host, which is all there is until the site ships either of
+//      those — googleadservices.com and doubleclick.net only ever appear on a
+//      click somebody paid for.
+//
+// FIRST TOUCH WINS, same rule as markSource() on a conversation: the ad is what
+// brought them, and page four of the same visit carrying no gclid must never
+// erase that.
+// ===========================================================================
+const AD_CLICK_IDS = { gclid: 'google', gbraid: 'google', wbraid: 'google', dclid: 'google', msclkid: 'bing', fbclid: 'facebook', ttclid: 'tiktok', li_fat_id: 'linkedin' };
+// Hosts that only ever appear on a paid click. The plain search hosts are
+// deliberately absent — google.com is exactly the ambiguity this exists to fix.
+const AD_REF_HOSTS = [[/googleadservices|googlesyndication|doubleclick/, 'google'], [/bat\.bing|adsyndication/, 'bing']];
+// utm_medium values that mean money changed hands. A newsletter is tagged too,
+// and is not an ad.
+const AD_PAID_MEDIUM = /^(cpc|ppc|paid|paidsearch|paid_search|paid-search|paidsocial|paid-social|display|retargeting)$/i;
+const AD_NAMES = { google: 'Google', bing: 'Microsoft', facebook: 'Facebook', instagram: 'Instagram', tiktok: 'TikTok', linkedin: 'LinkedIn', ads: 'paid' };
+
+// A referrer (full URL or bare host) reduced to its hostname.
+function refHostOf(ref) {
+  const s = String(ref || '').trim();
+  if (!s) return '';
+  try { return new URL(s).hostname.replace(/^www\./, ''); } catch (e) { return s.replace(/^www\./, '').slice(0, 60); }
+}
+
+// { ad, camp } for one landing. `ad` is the platform that got paid, '' when
+// nothing here says anyone did.
+function adFromLanding(landing, refHost) {
+  const out = { ad: '', camp: '' };
+  const s = String(landing || '');
+  const q = s.indexOf('?') >= 0 ? s.slice(s.indexOf('?') + 1) : s;
+  let p = null;
+  try { p = new URLSearchParams(q); } catch (e) { p = null; }
+  if (p) {
+    for (const id of Object.keys(AD_CLICK_IDS)) {
+      if (p.get(id)) { out.ad = AD_CLICK_IDS[id]; break; }
+    }
+    if (!out.ad && AD_PAID_MEDIUM.test(String(p.get('utm_medium') || ''))) {
+      const src = String(p.get('utm_source') || '').toLowerCase().replace(/[^a-z]/g, '');
+      out.ad = AD_NAMES[src] ? src : 'ads';
+    }
+    // Kept whether or not it's paid: "Snohomish Detailing - Search - 2026" is
+    // the answer to "which campaign", and he named them himself.
+    out.camp = String(p.get('utm_campaign') || '').replace(/[^\w .-]+/g, ' ').trim().slice(0, 40);
+  }
+  if (!out.ad) {
+    const h = String(refHost || '').toLowerCase();
+    for (const row of AD_REF_HOSTS) if (row[0].test(h)) { out.ad = row[1]; break; }
+  }
+  return out;
+}
+
+// "Clicked your Google ad" — the whole point of the feature, in his words.
+function adLabel(ad, camp) {
+  if (!ad) return '';
+  return 'Clicked your ' + (AD_NAMES[ad] || 'paid') + ' ad' + (camp ? ' · ' + camp : '');
+}
+
+// City-level only, straight off the Cloudflare edge — no lookup, no key, no
+// call. This is the answer to "why is one of this morning's clicks in Seattle":
+// until now nothing in the app recorded WHERE a visitor was, so a click from
+// out of the service area looked exactly like one from next door. Nothing finer
+// than a city is stored, on purpose — same bargain as hashing the IP.
+function visitorCity(request) {
+  const cf = (request && request.cf) || {};
+  const city = String(cf.city || '').slice(0, 40);
+  const region = String(cf.regionCode || cf.region || '').slice(0, 12);
+  if (!city) return '';
+  return region && region.length <= 3 ? city + ', ' + region : city;
+}
 async function handlePixel(url, request) {
   try {
     const now = Date.now();
@@ -2882,8 +2971,18 @@ async function handlePixel(url, request) {
     try { path = decodeURIComponent(path); } catch (e) {}
     let ref = (url.searchParams.get('r') || '').slice(0, 200);
     // Reduce a referrer to its hostname so the top-referrers list stays tidy.
-    let refHost = '';
-    if (ref) { try { refHost = new URL(ref).hostname.replace(/^www\./, ''); } catch (e) { refHost = ref.slice(0, 60); } }
+    const refHost = refHostOf(ref);
+    // Did he pay for this click? The query string is on `p` when the site sends
+    // location.search with it, and on `q` when it sends it separately.
+    const ad = adFromLanding(url.searchParams.get('q') || path, refHost);
+    const city = visitorCity(request);
+    // …and then the query goes, before anything counts or stores it. Every ad
+    // click carries a gclid nobody has ever seen before, so leaving it on would
+    // turn one home page into a hundred rows in Top Pages, split the count that
+    // matters, and stop the GIF ping's step from collapsing into the beacon's
+    // (which only ever sends the bare path) — printing "Home page" twice on
+    // every replay.
+    path = path.split('?')[0] || '/';
     const ip = request.headers.get('CF-Connecting-IP') || '';
     const ua = request.headers.get('User-Agent') || '';
     const doc = (await kv().get(analyticsDayKey(day), { type: 'json' })) || { views: 0, visitors: 0, paths: {}, refs: {} };
@@ -2891,6 +2990,9 @@ async function handlePixel(url, request) {
     doc.paths = doc.paths || {}; doc.refs = doc.refs || {};
     if (path) doc.paths[path] = (doc.paths[path] || 0) + 1;
     if (refHost && !/mikeysdetailingsnohomish/i.test(refHost)) doc.refs[refHost] = (doc.refs[refHost] || 0) + 1;
+    // Paid clicks counted per platform, in the doc that was going to be written
+    // anyway — so "how many of today's visits did I buy" costs nothing extra.
+    if (ad.ad) { doc.ads = doc.ads || {}; doc.ads[ad.ad] = (doc.ads[ad.ad] || 0) + 1; }
     // Same-day unique-visitor de-dupe: hash IP+UA, keep a 26h TTL marker.
     if (ip) {
       const vh = await fnv1aHex(ip + '|' + ua + '|' + day);
@@ -2901,12 +3003,17 @@ async function handlePixel(url, request) {
     // Keep the maps bounded so a busy day can't bloat the doc.
     doc.paths = trimCountMap(doc.paths, 60);
     doc.refs = trimCountMap(doc.refs, 40);
-    await kv().put(analyticsDayKey(day), JSON.stringify(doc));
     // Same ping, second job: append this page to that visitor's own path so the
     // Journey board can replay it. `v` is only there if the browser could store
     // an id — no id, no journey, and the counts above are unaffected either way.
+    // Ordered ahead of the day-doc write so the "somebody just landed" alert can
+    // stamp its own counter into the same put() instead of buying a second one.
     const vid = url.searchParams.get('v');
-    if (vid) await journeyStep(vid, { t: now, p: path, r: refHost });
+    if (vid) {
+      const step = await journeyStep(vid, { t: now, p: path, r: refHost }, { ad: ad.ad, camp: ad.camp, city });
+      if (step && step.isNew) await alertNewClick(step.doc, { ad, city, path, refHost, day, doc });
+    }
+    await kv().put(analyticsDayKey(day), JSON.stringify(doc));
   } catch (e) { /* never let analytics break the pixel */ }
   return pxResponse();
 }
@@ -2916,21 +3023,124 @@ function trimCountMap(m, max) {
   const top = keys.sort((a, b) => m[b] - m[a]).slice(0, max);
   const out = {}; for (const k of top) out[k] = m[k]; return out;
 }
+
+// ===========================================================================
+// "Somebody just landed on your site"
+// ---------------------------------------------------------------------------
+// Every other alert in this app fires on a person he can answer: a text, a
+// missed call, a quote. This one fires on a stranger, and it exists because he
+// is paying Google by the click and had no way to see one arrive — the ad
+// platform's own app tells him a number at the end of the day, not that anybody
+// is on his site right now.
+//
+// WHAT MAKES IT A CLICK. A visitor id the browser has never sent before. Not a
+// page view: someone reading four pages is one click, because the id is already
+// on file by page two. A cleared browser looks like a new click, and that's the
+// honest answer — it's a new arrival either way.
+//
+// COST is the reason for the shape of this. The config read only happens for a
+// brand-new id (a handful a day, not once per page view), the daily counter
+// lives in the analytics day doc that handlePixel was already writing, and the
+// send is awaited on purpose: a 1×1 GIF nobody is waiting for can afford to sit
+// on a Resend call, and an alert fired into a promise the isolate may discard
+// is an alert that doesn't arrive.
+//
+// THE CAP is the thing that keeps this from being a mistake. He gets ~8 visits
+// a day; a link that goes around a Facebook group could put 400 in an hour, and
+// 400 emails would bury the alerts that actually matter. After CLICK_ALERT_MAX
+// in one UTC day it goes quiet on its own — the Website tab still counts every
+// one of them.
+// ===========================================================================
+const CLICK_ALERT_MAX = 20;
+
+// 'all' (every new visitor) | 'ads' (only clicks he paid for) | 'off'.
+function clickAlertMode(cfg) {
+  const v = (cfg || {}).clickAlert;
+  return (v === 'off' || v === 'ads' || v === 'all') ? v : 'all';
+}
+
+// Called with the freshly-created journey doc. `state.doc` is the live day doc,
+// mutated here and written by the caller.
+async function alertNewClick(journey, state) {
+  const dayDoc = state.doc || {};
+  if ((dayDoc.alerts || 0) >= CLICK_ALERT_MAX) return false;
+  const cfg = await loadConfig();
+  const mode = clickAlertMode(cfg);
+  const ad = (state.ad || {}).ad || '';
+  if (mode === 'off') return false;
+  if (mode === 'ads' && !ad) return false;
+  dayDoc.alerts = (dayDoc.alerts || 0) + 1;
+  const mail = newClickEmail(journey, state, dayDoc.alerts);
+  await notifyMikey(newClickSubject(state), mail).catch(() => {});
+  return true;
+}
+
+function newClickSubject(state) {
+  const ad = (state.ad || {}).ad || '';
+  const where = state.city ? ' — ' + state.city : '';
+  return ad ? `💸 New ${AD_NAMES[ad] || 'ad'} ad click${where}` : `👋 Somebody just landed on your site${where}`;
+}
+
+// Short on purpose. There is nobody to text and nothing to decide — this is a
+// "your money is doing something" note, so it says who, from where, on what
+// page, and gets out of the way.
+function newClickEmail(journey, state, nth) {
+  const base = publicBase();
+  const ad = (state.ad || {}).ad || '';
+  const camp = (state.ad || {}).camp || '';
+  const how = ad ? adLabel(ad, camp) : journeyRefLabel(state.refHost, '');
+  const facts = [
+    how,
+    state.city ? `Where they are: ${state.city}` : '',
+    `Landed on: ${journeyPageTitle(state.path)}`,
+    `That's visit #${nth} today that I've told you about.`,
+  ].filter(Boolean).join('\n');
+  const link = base ? `${base}/?journey=${encodeURIComponent(journey.vid || '')}` : '';
+
+  const text =
+    `${how}.\n\n${facts}\n\n` +
+    `Nothing has been sent to them — they haven't given you a number. This is just so you can see the click land.\n\n` +
+    (link ? `Watch what they do: ${link}\n` : '');
+
+  const B = [];
+  B.push(mailCard(
+    mailLabel(ad ? 'A click you paid for' : 'A new visitor', ad ? MAILC.blue : MAILC.mute) +
+    `<div style="font-family:${MAILF};font-size:26px;line-height:1.2;font-weight:800;color:${MAILC.ink};margin:0;">${htmlEsc(how)}</div>` +
+    (state.city ? `<div style="font:400 15px/1.55 ${MAILF};color:${MAILC.mute};margin-top:8px;">${htmlEsc(state.city)}</div>` : ''),
+    { bg: MAILC.blueBg, border: '#bfdbfe', edge: MAILC.blue, pad: '18px' }));
+  B.push(mailCard(mailLabel('Where they landed', MAILC.blue) + mailBody(journeyPageTitle(state.path), MAILC.ink)));
+  B.push(mailCard(
+    (link ? mailBtn(link, 'Watch what they do', MAILC.ink) : '') +
+    `<div style="font:400 13px/1.6 ${MAILF};color:${MAILC.mute};margin-top:${link ? '12px' : '0'};">Nothing was sent to them. Too many of these? Turn them off — or narrow them to ad clicks only — in ☰ → follow-up settings.</div>`));
+
+  return {
+    text,
+    html: mailShell(newClickSubject(state), B.join('')),
+    sms: `${how}${state.city ? ' · ' + state.city : ''} — landed on ${journeyPageTitle(state.path)}.`,
+  };
+}
 async function pixelRollup(days) {
   const now = Date.now();
   const series = [];
-  const paths = {}; const refs = {};
-  let totalViews = 0, totalVisitors = 0;
+  const paths = {}; const refs = {}; const ads = {};
+  let totalViews = 0, totalVisitors = 0, adClicks = 0;
   for (let i = days - 1; i >= 0; i--) {
     const day = utcDayStr(now - i * 86400000);
     const doc = (await kv().get(analyticsDayKey(day), { type: 'json' })) || { views: 0, visitors: 0, paths: {}, refs: {} };
-    series.push({ day, views: doc.views || 0, visitors: doc.visitors || 0 });
-    totalViews += doc.views || 0; totalVisitors += doc.visitors || 0;
+    const dayAds = Object.values(doc.ads || {}).reduce((a, b) => a + b, 0);
+    series.push({ day, views: doc.views || 0, visitors: doc.visitors || 0, ads: dayAds });
+    totalViews += doc.views || 0; totalVisitors += doc.visitors || 0; adClicks += dayAds;
     for (const [k, v] of Object.entries(doc.paths || {})) paths[k] = (paths[k] || 0) + v;
     for (const [k, v] of Object.entries(doc.refs || {})) refs[k] = (refs[k] || 0) + v;
+    for (const [k, v] of Object.entries(doc.ads || {})) ads[k] = (ads[k] || 0) + v;
   }
   const topList = (m) => Object.keys(m).sort((a, b) => m[b] - m[a]).slice(0, 8).map((k) => ({ k, n: m[k] }));
-  return { ok: true, days, totalViews, totalVisitors, series, topPaths: topList(paths), topRefs: topList(refs), origin: BASE_URL };
+  // Paid vs the rest, split here rather than in the browser so the daily brief
+  // and the Website tab can never disagree about what "an ad click" means.
+  return { ok: true, days, totalViews, totalVisitors, adClicks,
+    freeVisits: Math.max(0, totalViews - adClicks),
+    topAds: topList(ads).map((r) => ({ k: AD_NAMES[r.k] || r.k, n: r.n })),
+    series, topPaths: topList(paths), topRefs: topList(refs), origin: BASE_URL };
 }
 async function apiAnalytics(url) {
   const days = Math.min(60, Math.max(7, parseInt(url.searchParams.get('days') || '14', 10)));
@@ -2977,6 +3187,12 @@ function journeyMeta(doc) {
     phone: doc.phone || '', name: String(doc.name || '').slice(0, 40),
     last: String(lastLabel).slice(0, 60),
     ref: String((doc.steps[0] || {}).r || '').slice(0, 40),
+    // Paid-or-not and roughly where, mirrored here for the same reason as
+    // everything else in this object: the board must be able to say "Google ad ·
+    // Seattle" without opening a single doc.
+    ad: String(doc.ad || '').slice(0, 12),
+    camp: String(doc.camp || '').slice(0, 40),
+    city: String(doc.city || '').slice(0, 40),
     // Split so the board can say "5 pages · 12 actions" without opening a doc.
     pages: doc.steps.filter((x) => !x.k).length,
     acts: doc.steps.filter((x) => x.k && x.k !== 'lead').length,
@@ -3012,13 +3228,33 @@ function appendStep(doc, step) {
   return doc;
 }
 
-async function journeyStep(vid, step) {
+// `info` is what the visit itself says about the visitor — which ad brought
+// them, which campaign, what city the edge put them in. FIRST TOUCH WINS on all
+// three (see markSource): page four of the same visit carries no gclid, and must
+// not erase the ad that paid for page one.
+//
+// Returns { doc, isNew } rather than the doc alone because "this id has never
+// been seen before" is the definition of a new click, and the read that answers
+// it has already happened here — asking again from the caller would be a second
+// KV read for a fact this function had in its hand.
+async function journeyStep(vid, step, info) {
   vid = cleanVid(vid);
   if (!vid) return null;
   const key = journeyKey(vid);
-  const doc = (await kv().get(key, { type: 'json' })) || blankJourney(vid, step.t);
+  const had = await kv().get(key, { type: 'json' });
+  const doc = had || blankJourney(vid, step.t);
+  stampJourneyInfo(doc, info);
   appendStep(doc, step);
   await kv().put(key, JSON.stringify(doc), { expirationTtl: JOURNEY_TTL, metadata: journeyMeta(doc) });
+  return { doc, isNew: !had };
+}
+
+// First-touch stamping, shared by the GIF ping and the event beacon.
+function stampJourneyInfo(doc, info) {
+  const i = info || {};
+  if (i.ad && !doc.ad) doc.ad = String(i.ad).slice(0, 12);
+  if (i.camp && !doc.camp) doc.camp = String(i.camp).slice(0, 40);
+  if (i.city && !doc.city) doc.city = String(i.city).slice(0, 40);
   return doc;
 }
 
@@ -3038,6 +3274,12 @@ async function handlePixelEvents(request) {
     const vid = cleanVid(body && body.v);
     if (!vid) return pxOk();
     let page = String((body && body.p) || '/').slice(0, 120);
+    // Whatever the ad left in the URL is read here…
+    const landed = adFromLanding(String((body && body.q) || '') || page, '');
+    // …and then the query goes, so a gclid can never split one page into two
+    // steps or two rows. The GIF ping normalises the same way — the two reports
+    // of one page load have to end up identical or they stop collapsing.
+    page = page.split('?')[0] || '/';
     const list = Array.isArray(body && body.e) ? body.e.slice(0, 80) : [];
     if (!list.length) return pxOk();
 
@@ -3057,7 +3299,13 @@ async function handlePixelEvents(request) {
         l: String(raw2.l || '').slice(0, 60), d: String(raw2.d || '').slice(0, 80) };
       // A landing IS a page step — same shape the GIF ping writes — so the two
       // reports of the same page load collapse into one instead of doubling up.
-      if (k === 'v') { step.r = step.d; delete step.l; delete step.d; }
+      if (k === 'v') {
+        step.r = step.d; delete step.l; delete step.d;
+        // The landing is the only event that can say who paid for it: the query
+        // string read above, or failing that the referrer this event carries.
+        const byRef = landed.ad ? landed : adFromLanding('', refHostOf(step.r));
+        stampJourneyInfo(doc, { ad: byRef.ad, camp: byRef.camp || landed.camp, city: visitorCity(request) });
+      }
       else step.k = k;
       appendStep(doc, step);
       // A price landing on someone's screen is the one event here that starts a
@@ -3260,7 +3508,10 @@ function quoteAbandonEmail(w, doc, now = Date.now()) {
     w.what ? `Picked: ${w.what}` : '',
     `Quoting from: ${journeyPageTitle(w.page)}`,
     pages ? `On the site: ${pages} page${pages === 1 ? '' : 's'} · ${mins} min` : '',
-    journeyRefLabel(String((steps[0] || {}).r || '')),
+    journeyRefLabel(String((steps[0] || {}).r || ''), (doc && doc.ad) || '', (doc && doc.camp) || ''),
+    // A price walked away from is worth more when you know it was a click you
+    // bought, and whether they were even in the service area.
+    (doc && doc.city) ? `Where they are: ${doc.city}` : '',
   ].filter(Boolean).join('\n');
   const link = base ? `${base}/?journey=${encodeURIComponent(w.vid)}` : '';
 
@@ -3301,8 +3552,11 @@ function journeyPageTitle(p) {
   return seg.replace(/[-_]+/g, ' ').replace(/\.html?$/i, '').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-// Where they came from, said the way Mikey would say it.
-function journeyRefLabel(r) {
+// Where they came from, said the way Mikey would say it. `ad` wins over the
+// referrer whenever it's set, because "Found you on Google" is actively
+// misleading about a click he was billed for.
+function journeyRefLabel(r, ad, camp) {
+  if (ad) return adLabel(ad, camp);
   const h = String(r || '').replace(/^www\./, '').toLowerCase();
   if (!h) return 'Came straight to you';
   if (/google/.test(h)) return 'Found you on Google';
@@ -3326,6 +3580,10 @@ async function apiJourneys(url) {
         steps: m.n || 0, pages: m.pages || 0, acts: m.acts || 0,
         phone: m.phone || '', name: m.name || '',
         last: m.last || '', ref: m.ref || '', hot: m.hot || '',
+        // Paid or not, and roughly where — the two things he asked the board to
+        // answer at a glance. Both ride in metadata, so this still costs no reads.
+        ad: m.ad || '', camp: m.camp || '', city: m.city || '',
+        found: journeyRefLabel(m.ref || '', m.ad || '', m.camp || ''),
       });
     }
     cursor = page.list_complete ? null : page.cursor;
@@ -3351,7 +3609,11 @@ async function apiJourney(url) {
   // The very first PAGE view is also the "how they found you" moment. It has to
   // be the first page specifically — events carry no referrer.
   const firstPage = ((doc && doc.steps) || []).find((s) => !s.k);
-  if (firstPage) steps.push({ t: (firstPage.t || 0) - 1, kind: 'found', title: journeyRefLabel(firstPage.r), detail: '' });
+  if (firstPage) {
+    steps.push({ t: (firstPage.t || 0) - 1, kind: 'found',
+      title: journeyRefLabel(firstPage.r, (doc && doc.ad) || '', (doc && doc.camp) || ''),
+      detail: (doc && doc.city) ? 'Their phone was in ' + doc.city : '' });
+  }
 
   let thread = null;
   if (who) {
@@ -3363,6 +3625,7 @@ async function apiJourney(url) {
   return json({
     ok: true, vid: vid || '', phone: who,
     name: (thread && thread.name) || (doc && doc.name) || '',
+    ad: (doc && doc.ad) || '', camp: (doc && doc.camp) || '', city: (doc && doc.city) || '',
     hasWeb: !!(doc && (doc.steps || []).length), hasThread: !!thread,
     pages: ((doc && doc.steps) || []).filter((s) => !s.k).length,
     acts: ((doc && doc.steps) || []).filter((s) => s.k && s.k !== 'lead').length,
@@ -7551,6 +7814,7 @@ async function apiSaveConfig(request) {
   if (typeof data.autoReplyAlert === 'boolean') next.autoReplyAlert = data.autoReplyAlert;
   if (typeof data.quoteAbandon === 'boolean') next.quoteAbandon = data.quoteAbandon;
   if (data.quoteAbandonMin != null && !isNaN(+data.quoteAbandonMin)) next.quoteAbandonMin = Math.max(1, Math.min(60, Math.round(+data.quoteAbandonMin)));
+  if (data.clickAlert === 'all' || data.clickAlert === 'ads' || data.clickAlert === 'off') next.clickAlert = data.clickAlert;
   if (typeof data.predictive === 'boolean') next.predictive = data.predictive;
   if (typeof data.predictiveAi === 'boolean') next.predictiveAi = data.predictiveAi;
   if (typeof data.assistSms === 'boolean') next.assistSms = data.assistSms;
@@ -8905,6 +9169,13 @@ function defaultConfig() {
                              // and closes it without leaving a name or number —
                              // the only lead that never shows up anywhere else
     quoteAbandonMin: 2,      // minutes of silence after the price before it fires
+    clickAlert: 'all',       // email him the moment a NEW visitor lands on the site:
+                             // 'all' = every new arrival, 'ads' = only the clicks he
+                             // paid for, 'off' = none. Defaults to 'all' because the
+                             // ad-click half only works once the site sends its query
+                             // string (see adFromLanding), and a switch that silently
+                             // does nothing until then is worse than a little noise.
+                             // Capped at CLICK_ALERT_MAX a day regardless.
     detect: detDefaults(),   // auto-detecting appointments out of text conversations
     promise: promDefaults(), // catching "I'll get back to you Monday" and reminding him
   };
