@@ -8,9 +8,10 @@
  *   - Cron:    Netlify schedule -> Cloudflare Cron Trigger (scheduled handler)
  *   - Static dashboard (public/index.html) served via Workers static assets.
  *
- * Public webhooks:  /submit /sms /call /voicemail /voicemail-done
+ * Public webhooks:  /submit /sms /call /call-screen /voicemail /voicemail-done
  * Dashboard API:    /api/health /api/threads /api/thread /api/send /api/meta
  *                   /api/schedule /api/unschedule /api/call /api/read
+ *                   /api/calls /api/calls/seen /api/calls/backfill
  *                   /api/insights /api/ai/summary /api/ai/draft /api/ai/triage
  *                   /api/money/* (profit tracker — see the Money module)
  *
@@ -310,6 +311,10 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/booking-settings') return apiSaveBookingSettings(request);
   if (request.method === 'POST' && pathname === '/api/booking-cal-test') return apiCalTest(request);
   if (request.method === 'POST' && pathname === '/api/block')      return apiBlock(request);
+  // ---- Calls (the phone log Google Voice used to be the only place to see) ----
+  if (request.method === 'GET'  && pathname === '/api/calls')      return apiCalls();
+  if (request.method === 'POST' && pathname === '/api/calls/seen') return apiCallsSeen();
+  if (request.method === 'POST' && pathname === '/api/calls/backfill') return apiCallsBackfill();
   if (request.method === 'GET'  && pathname === '/api/migrate')    return apiMigrate(url);
   if (request.method === 'GET'  && pathname === '/api/templates')  return apiGetTemplates();
   if (request.method === 'POST' && pathname === '/api/templates')  return apiSaveTemplates(request);
@@ -970,6 +975,40 @@ async function assistDraftTarget(index, forcedPhone) {
   return null;
 }
 
+// "YES" means "send the reply you showed me". The danger is that the alert he's
+// answering is not the newest thing that happened — he reads it on the drive
+// home, the customer has since texted twice, or he already answered from the
+// dashboard. Sending the old draft then is worse than sending nothing: it answers
+// a question nobody is asking any more, in his name.
+//
+// Returns the sentence to send back instead, or '' when the draft is still good.
+function assistDraftStale(thread) {
+  const s = thread.suggested || {};
+  const forTs = Number(s.forTs || s.ts || 0);
+  const who = thread.name || thread.phone;
+  const msgs = thread.messages || [];
+  const newerIn = msgs.filter((m) => m.dir === 'in' && (m.ts || 0) > forTs);
+  if (newerIn.length) {
+    const last = newerIn[newerIn.length - 1];
+    return `I didn't send it — ${who} texted again after I wrote that:\n"${String(last.body || '').slice(0, 140)}"\n\n` +
+      `Answering the old message would have read wrong. Reply with the facts for the NEW one and I'll write that instead.`;
+  }
+  // He already answered them himself somewhere else. Sending again would be him
+  // saying the same thing twice, a minute apart, for no reason.
+  const newerOut = msgs.filter((m) => m.dir === 'out' && (m.ts || 0) > forTs);
+  if (newerOut.length) {
+    return `I didn't send it — you've already replied to ${who} since I wrote that one:\n"${String(newerOut[newerOut.length - 1].body || '').slice(0, 140)}"\n\n` +
+      `Nothing went out. Tell me what else you want said and I'll write it.`;
+  }
+  // A draft that's been sitting for a day is answering yesterday's conversation.
+  if (Number(s.ts) && Date.now() - Number(s.ts) > ASSIST_DRAFT_MAX_AGE_MS) {
+    return `I didn't send it — I wrote that reply for ${who} ${humanAgo(Date.now() - Number(s.ts))} ago, and that's too long to fire it off without you looking again. ` +
+      `Open the dashboard, or tell me the facts and I'll write a fresh one.`;
+  }
+  return '';
+}
+const ASSIST_DRAFT_MAX_AGE_MS = 18 * 3600 * 1000;
+
 async function assistAnswerDraft(yes, { index, cfg, reply, channel, forcedPhone }) {
   const thread = await assistDraftTarget(index, forcedPhone);
   if (!thread) {
@@ -980,6 +1019,14 @@ async function assistAnswerDraft(yes, { index, cfg, reply, channel, forcedPhone 
   }
   const who = thread.name || thread.phone;
   const draft = thread.suggested.text;
+  if (yes) {
+    const stale = assistDraftStale(thread);
+    if (stale) {
+      await assistHealthMark({ skippedAt: Date.now(), skippedWhy: `a YES for ${who} was held back — the conversation had moved on` });
+      await reply(stale);
+      return;
+    }
+  }
   if (!yes) {
     thread.suggested = null;
     await saveThread(thread);
@@ -998,6 +1045,75 @@ async function assistAnswerDraft(yes, { index, cfg, reply, channel, forcedPhone 
     await saveThread(after);
     await updateIndexEntry(after);
   }
+}
+
+// ---------------------------------------------------------------------------
+// The last gate before a real customer's phone buzzes
+// ---------------------------------------------------------------------------
+// Two different fears, two different checks.
+//
+// The first is plumbing escaping into a text. A reply that didn't get quoted the
+// way we expected can leave the cut marker, a [ref:] line or a whole quoted alert
+// sitting in what we're about to send — and "--- reply above this line ---" going
+// out to a customer under his name is the single most embarrassing thing this
+// feature could do. Cheap to spot, so spot it and refuse.
+function assistOutboundBlocked(text) {
+  const t = String(text || '');
+  if (t.includes(ASSIST_CUT)) return 'it still had the "reply above this line" marker in it';
+  if (/\[ref:/i.test(t)) return 'it still had the routing line ([ref:…]) in it';
+  if (/^\s*On .{0,120}\bwrote:\s*$/m.test(t) || /^\s*>/m.test(t) || /^\s*From:\s.+@/m.test(t)) {
+    return 'it looked like a quoted email had come along for the ride';
+  }
+  if (t.length > 900) return `it was ${t.length} characters — far too long for a text`;
+  return '';
+}
+
+// The second fear is the one he actually said out loud: it saying something he
+// never said. Every fact in an assist reply is supposed to come from HIM — the AI
+// is only doing the wording. So before it goes out, any money, and any day of the
+// week, in the finished text has to be traceable to what he typed or to the
+// conversation itself. A number that appears from nowhere is the AI quoting a
+// price off the playbook, and a price he didn't agree to is a price he has to
+// honour. Returns what's wrong in his words, or ''.
+const ASSIST_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+function assistFactDrift(out, hint, thread) {
+  const t = String(out || '');
+  // Placeholders are a straight template leak — "Hi [name]" needs no further
+  // reasoning to be wrong.
+  const ph = t.match(/\[[a-z][a-z ._-]{1,20}\]|\{\{?[a-z][a-z ._-]{1,20}\}?\}|<[a-z][a-z ._-]{1,20}>|\bXXX+\b/i);
+  if (ph) return `it still has a fill-in-the-blank in it (${ph[0]})`;
+
+  // Everything he's allowed to be repeating back: what he just typed, plus the
+  // conversation both sides can already see.
+  const msgs = (thread && thread.messages) || [];
+  const supplied = [String(hint || '')]
+    .concat(msgs.slice(-12).map((m) => String(m.body || '')))
+    .join(' \n ')
+    .toLowerCase();
+  const digitsIn = (s) => (s.match(/\d[\d,]*(?:\.\d+)?/g) || []).map((n) => n.replace(/[,]/g, '').replace(/\.0+$/, ''));
+  const known = new Set(digitsIn(supplied));
+
+  // Money only. Times ("9am", "3:30") and years are deliberately not treated as
+  // money, because they trip constantly and a wrong time is visible to him in the
+  // confirmation anyway — a wrong price is the one that costs money.
+  const money = [];
+  const reDollar = /\$\s?(\d[\d,]*(?:\.\d{2})?)/g;
+  let m;
+  while ((m = reDollar.exec(t))) money.push(m[1].replace(/,/g, '').replace(/\.00$/, ''));
+  const reBare = /(?<![\d$.:])(\d{2,4})(?![\d:]|\s*(?:am|pm|a\.m|p\.m))/gi;
+  while ((m = reBare.exec(t))) {
+    const n = Number(m[1]);
+    if (n >= 20 && n <= 2000) money.push(String(n));
+  }
+  for (const n of money) {
+    if (!known.has(n) && !known.has(`${n}.00`)) {
+      return `it quotes $${n}, and you didn't say that — it isn't anywhere in what you told me or in the conversation`;
+    }
+  }
+
+  const day = ASSIST_DAYS.find((d) => new RegExp(`\\b${d}\\b`, 'i').test(t) && !supplied.includes(d));
+  if (day) return `it commits you to ${day[0].toUpperCase()}${day.slice(1)}, and that day isn't in what you told me or in the conversation`;
+  return '';
 }
 
 // ---------------------------------------------------------------------------
@@ -1110,6 +1226,36 @@ async function runAssist({ text, cfg, reply, channel, forcedPhone }) {
   out = String(out || '').trim();
   if (!out) { await reply('That came back empty — try again, or use "send: <your exact message>".'); return; }
 
+  // Plumbing check runs on every path, his own words included: if a quoted alert
+  // survived the strip, "send:" would put it in front of a customer verbatim.
+  const blocked = assistOutboundBlocked(out);
+  if (blocked) {
+    await assistHealthMark({ skippedAt: Date.now(), skippedWhy: `a reply to ${assistWho(target)} was blocked — ${blocked}` });
+    await reply(`I didn't send that one — ${blocked}.\n\nNothing went to ${assistWho(target)}. Send it again with just the words you want them to read.`);
+    return;
+  }
+
+  // Fact check on the AI-worded path only. "send:" is his exact words and needs
+  // no second-guessing; a draft isn't going anywhere yet.
+  if (mode === 'ai' && cfg.assistFactCheck !== false) {
+    const drift = assistFactDrift(out, body, thread);
+    if (drift) {
+      // Held, not thrown away — parked as the thread's draft so one word ("yes")
+      // sends it as written once he's read it. That keeps the escape hatch as
+      // short as the happy path.
+      const last = thread.messages[thread.messages.length - 1];
+      thread.suggested = { text: out, ts: Date.now(), forTs: last ? last.ts : Date.now() };
+      await saveThread(thread);
+      await updateIndexEntry(thread);
+      await assistHealthMark({ skippedAt: Date.now(), skippedWhy: `a reply to ${assistWho(target)} was held — ${drift}` });
+      await reply(
+        `I stopped short of sending this one, because ${drift}:\n"${out}"\n\n` +
+        `Nothing went to ${assistWho(target)}. Reply YES and it goes out exactly as written, or tell me the right wording and I'll redo it.`,
+      );
+      return;
+    }
+  }
+
   if (mode === 'draft') {
     const last = thread.messages[thread.messages.length - 1];
     thread.suggested = { text: out, ts: Date.now(), forTs: last ? last.ts : Date.now() };
@@ -1141,6 +1287,7 @@ async function runAssist({ text, cfg, reply, channel, forcedPhone }) {
   thread.dateRequest = null;
   await saveThread(thread);
   await updateIndexEntry(thread);
+  if (channel === 'email') await assistHealthMark({ sentAt: Date.now(), sentWho: assistWho(target) });
   const when = delaySec >= 60 ? `~${Math.round(delaySec / 60)} min` : delaySec ? `~${delaySec}s` : 'on the next tick (~1 min)';
   await reply(
     `→ ${assistWho(target)}:\n"${out}"\n\n` +
@@ -1450,25 +1597,110 @@ function emailAddr(s) {
   return String(m ? m[1] : s || '').trim().toLowerCase();
 }
 
-// Is this ingested email Mikey answering a customer alert? Requires the sender
-// to be the alert mailbox AND the mail to reference a conversation — so ordinary
-// customer email flowing through the same ingest is never mistaken for a command.
-function assistIsOwnerReply(cfg, email) {
-  if (cfg.assistEmail === false) return '';
-  const owner = emailAddr(ENV.ALERT_EMAIL);
-  if (!owner || emailAddr(email.from) !== owner) return '';
-  return assistRefPhone(email.body);
+// The same mailbox, written any of the ways a mail client might write it. Gmail
+// ignores dots and everything after a "+", and "Mikey <M.Ikey+dash@Gmail.com>"
+// really is the same person as "mikey@gmail.com" — comparing the raw strings was
+// quietly turning his own replies into ordinary inbox mail, which looks exactly
+// like the feature being broken because nothing anywhere says it happened.
+function emailKey(s) {
+  const a = emailAddr(s);
+  const at = a.lastIndexOf('@');
+  if (at < 1) return a;
+  let local = a.slice(0, at), domain = a.slice(at + 1);
+  const plus = local.indexOf('+');
+  if (plus > 0) local = local.slice(0, plus);
+  if (domain === 'gmail.com' || domain === 'googlemail.com') { local = local.replace(/\./g, ''); domain = 'gmail.com'; }
+  return `${local}@${domain}`;
 }
 
-async function handleAssistEmail(cfg, email, phone) {
-  const text = assistStripQuoted(email.body);
-  if (!text) return;
+// Every address allowed to answer an alert: the alert mailbox itself, plus any
+// send-as alias he's added on the setup screen (Gmail sends from whichever alias
+// the thread was addressed to, so a one-address rule locks him out of his own
+// feature the first time he answers from an alias).
+function assistOwnerKeys(cfg) {
+  const keys = [emailKey(ENV.ALERT_EMAIL)];
+  for (const extra of (cfg && Array.isArray(cfg.assistFrom) ? cfg.assistFrom : [])) {
+    const k = emailKey(extra);
+    if (k && !keys.includes(k)) keys.push(k);
+  }
+  return keys.filter(Boolean);
+}
+
+// Is this ingested email Mikey answering a customer alert? Requires the sender
+// to be an address of his AND the mail to reference a conversation — so ordinary
+// customer email flowing through the same ingest is never mistaken for a command.
+// `ref` is the routing phone the Gmail script found in the thread; it only gets a
+// say when his own reply carries no [ref:] of its own, which happens whenever a
+// client sends a reply without quoting what it's replying to.
+function assistIsOwnerReply(cfg, email, ref) {
+  if (cfg.assistEmail === false) return '';
+  const from = emailKey(email.from);
+  if (!from || !assistOwnerKeys(cfg).includes(from)) return '';
+  return assistRefPhone(email.body) || normalizePhone(ref || '') || '';
+}
+
+// ---------------------------------------------------------------------------
+// Is the loop actually running?  (assist:health)
+// ---------------------------------------------------------------------------
+// The old failure mode wasn't a wrong answer, it was silence: the Gmail trigger
+// stops (a revoked permission, a paused script, a quota) and NOTHING anywhere
+// says so. He keeps replying to alerts, customers keep not hearing back, and the
+// first sign is an unhappy phone call. So the script checks in, we remember when,
+// and the setup screen says "checked 40 seconds ago" or "hasn't checked in since
+// Tuesday" in those words.
+//
+// Throttled hard on purpose. A minute trigger would be 1,440 KV writes a day for
+// a number that only needs to be roughly right, so a check-in that carries no
+// news only earns a write every 20 minutes.
+const HEALTH_KEY = 'assist:health';
+const HEALTH_QUIET_MS = 20 * 60000;
+async function assistHealth() {
+  return (await kv().get(HEALTH_KEY, { type: 'json' })) || {};
+}
+// `patch` is merged over what's there. `quiet` means "nothing happened, this is
+// just the heartbeat" — those are dropped unless the stored one has gone stale.
+async function assistHealthMark(patch, quiet) {
+  try {
+    const cur = await assistHealth();
+    if (quiet && cur.at && Date.now() - cur.at < HEALTH_QUIET_MS) return cur;
+    const next = Object.assign({}, cur, patch, { at: Date.now() });
+    await kv().put(HEALTH_KEY, JSON.stringify(next));
+    return next;
+  } catch { return {}; }
+}
+
+// A sent-folder reply older than this is history, not an instruction. The Gmail
+// script already refuses to look further back than its own install, but a
+// re-installed script, a restored backup or a hand-run POST can still hand us
+// something from last week — and rewriting a week-old "yes, thursday" into a text
+// to a customer is exactly the thing he's afraid of.
+const ASSIST_MAX_AGE_MS = 6 * 3600 * 1000;
+
+async function handleAssistEmail(cfg, email, phone, ver) {
   const subject = 'Re: ' + String(email.subject || 'your reply').replace(/^(re:\s*)+/i, '');
+  const say = (msg) => sendEmail(subject, `${ASSIST_CUT}\n${msg}\n\n[ref:${phone}]`).catch(() => {});
+  const age = Date.now() - (Number(email.date) || Date.now());
+  if (age > ASSIST_MAX_AGE_MS) {
+    await assistHealthMark({ skippedAt: Date.now(), skippedWhy: `a reply from ${humanAgo(age)} ago was left alone — too old to act on` });
+    return;
+  }
+  const text = assistStripQuoted(email.body);
+  // Silence used to be the answer to a reply we couldn't read — he'd assume it
+  // sent. Say so instead; it's a free email and it's the difference between
+  // "it's broken" and "oh, my signature ate it".
+  if (!text) {
+    await assistHealthMark({ skippedAt: Date.now(), skippedWhy: 'a reply came through with no words in it' });
+    await say("Your reply came through, but I couldn't find any words in it — nothing was sent.\n\nWrite your answer above the quoted text and send it again.");
+    return;
+  }
+  // The version tells the setup screen whether he's still on the old script — the
+  // one that answers fine but has no way to say when it has stopped.
+  await assistHealthMark({ replyAt: Date.now(), replyWords: text.slice(0, 80), scriptVer: String(ver || '1').slice(0, 8), lastError: '', lastErrorAt: 0 });
   await runAssist({
     text, cfg, channel: 'email', forcedPhone: phone,
     // The confirmation carries the marker and the ref too, so replying "cancel"
     // to IT routes back here instead of landing in the inbox as ordinary mail.
-    reply: (msg) => sendEmail(subject, `${ASSIST_CUT}\n${msg}\n\n[ref:${phone}]`).catch(() => {}),
+    reply: say,
   });
 }
 
@@ -1541,82 +1773,385 @@ async function apiAssistPractice(request) {
 // his inbox: whatever address the alert came from, his reply is in Sent, so this
 // needs no inbound-mail infrastructure, no custom domain and no third-party
 // automation — just a free 1-minute trigger on his own account.
-function assistAppsScript(url, token) {
+//
+// Version 2. Version 1 worked when it worked and told you nothing when it didn't,
+// which for a thing you only use a few times a week is the same as broken. Every
+// change below is one of the four ways it actually failed:
+//
+//   1. It aborted the whole run whenever Google returned a blank address for the
+//      signed-in user — which it does, inside a trigger, on plenty of accounts.
+//      One `return` and the feature was dead with a log line nobody reads.
+//   2. It treated ANY HTTP response as success, so a bad token or a deploy blip
+//      swallowed his answer permanently: marked handled, never sent, no error.
+//   3. It saved the handled list only at the very end, so an execution killed
+//      halfway re-sent everything it had already sent — to real customers.
+//   4. It had no starting line, so installing it answered up to two days of
+//      backlog at once, including conversations he'd already finished by hand.
+//
+// It also now checks in with the dashboard, which is what makes the setup screen
+// able to say "working, last checked 40 seconds ago" instead of nothing at all.
+function assistAppsScript(url, token, alertFrom) {
   return `/**
- * Mikey's Dashboard — "Answer by email".
+ * Mikey's Dashboard — "Answer by email"  (v2)
  * Reply to a new-text alert with the facts and the dashboard writes the
  * customer reply in your voice and sends it.
  *
- * SETUP (once, ~2 minutes)
+ * SETUP (once, about 2 minutes)
  *  1. Go to script.google.com -> New project
- *  2. Delete what's there, paste ALL of this, hit Save
- *  3. Run -> mikeyAssistSync  (approve the permission prompt the first time)
- *  4. Triggers (clock icon) -> Add Trigger -> mikeyAssistSync ->
- *     Time-driven -> Minutes timer -> Every minute -> Save
- * That's it. Replying to an alert now answers the customer.
+ *  2. Delete what is there, paste ALL of this, hit Save
+ *  3. In the function dropdown pick mikeyAssistSetUp, press Run,
+ *     and approve the permission prompt (your own script, your own account —
+ *     click Advanced -> Go to...)
+ * That is it. It installs its own every-minute trigger; there is no Deploy step,
+ * ever.
+ *
+ * IF IT EVER GOES QUIET: pick mikeyAssistCheck and press Run. It prints, in
+ * plain English, whether the trigger is on, whether Gmail will let it read, and
+ * whether the dashboard is answering.
+ *
+ * mikeyAssistReset draws a new starting line — it forgets everything before now,
+ * so nothing old can go out. Safe to run any time.
  */
-var DASH_URL   = ${JSON.stringify(url)};
-var DASH_TOKEN = ${JSON.stringify(token)};
+var DASH_URL    = ${JSON.stringify(url)};
+var DASH_TOKEN  = ${JSON.stringify(token)};
+var ALERT_FROM  = ${JSON.stringify(String(alertFrom || '').toLowerCase())};
+var VER         = '2';
+var LOOKBACK    = '1d';      // how far back in Sent to look at all
+var MAX_THREADS = 25;
+var PING_EVERY_MS = 20 * 60 * 1000;   // quiet check-ins, so the dashboard knows we are alive
 
-function mikeyAssistSync() {
-  // Who am I? A search for 'from:me' returns THREADS, and each thread holds both
-  // the dashboard's alert and my reply — so every message still has to be checked
-  // individually. If Google won't tell us the address (it can come back empty in
-  // some trigger contexts) we stop rather than treat every message as ours.
-  var me = '';
-  try { me = (Session.getActiveUser().getEmail() || '').toLowerCase(); } catch (e) {}
-  if (!me) { Logger.log('Could not read your Gmail address — re-run this once from the editor to re-approve.'); return; }
-
+// ---------------------------------------------------------------------------
+// Setup
+// ---------------------------------------------------------------------------
+function mikeyAssistSetUp() {
   var props = PropertiesService.getScriptProperties();
-  var seen = JSON.parse(props.getProperty('seen') || '[]');
-  var threads = GmailApp.search('from:me newer_than:2d', 0, 30);
-  var sent = 0;
+  // Draw the starting line HERE. Without it the first run finds every alert reply
+  // from the last day and answers all of them at once — a burst of texts to real
+  // customers about conversations that are already over.
+  props.setProperty('since', String(Date.now()));
+  props.deleteProperty('seen');
+  var killed = 0, all = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < all.length; i++) {
+    if (all[i].getHandlerFunction() === 'mikeyAssistSync') { ScriptApp.deleteTrigger(all[i]); killed++; }
+  }
+  ScriptApp.newTrigger('mikeyAssistSync').timeBased().everyMinutes(1).create();
+  Logger.log('Set up. From now on your replies to alerts get answered within a minute.'
+    + (killed ? (' (Replaced ' + killed + ' old trigger' + (killed === 1 ? '' : 's') + '.)') : ''));
+  return mikeyAssistCheck();
+}
+
+// Draw a fresh starting line. Everything sent before right now is forgotten, so
+// running this can only ever make it send less, never more.
+function mikeyAssistReset() {
+  var props = PropertiesService.getScriptProperties();
+  props.setProperty('since', String(Date.now()));
+  props.deleteProperty('seen');
+  Logger.log('Starting line reset. Only replies you send from now on will be answered.');
+  return 'Starting line reset.';
+}
+
+// The "why is it quiet?" button. Everything that can be wrong, checked in order,
+// in words that say what to do about it.
+function mikeyAssistCheck() {
+  var out = [], props = PropertiesService.getScriptProperties();
+  out.push('Dashboard: ' + DASH_URL);
+  out.push(DASH_TOKEN ? 'Token: set' : 'Token: MISSING - copy the script again from the dashboard');
+
+  var trig = 0, all = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < all.length; i++) if (all[i].getHandlerFunction() === 'mikeyAssistSync') trig++;
+  out.push(trig ? ('Trigger: ON (' + trig + ')') : 'Trigger: OFF - run mikeyAssistSetUp to install it');
+
+  var me = myAddrs_();
+  out.push(me.length
+    ? ('Signed in as: ' + me.join(', '))
+    : 'Signed in as: Google would not say - that is fine, it falls back to "anything that is not the dashboard"');
+
+  try {
+    var th = GmailApp.search(searchQuery_(), 0, 5);
+    out.push('Alert replies in your sent mail (last ' + LOOKBACK + '): ' + th.length);
+  } catch (e) {
+    out.push('Gmail: CANNOT READ - ' + e + ' (re-run mikeyAssistSetUp and approve the prompt)');
+  }
+
+  var r = post_({ ping: true, ver: VER, check: true });
+  out.push(r.ok ? 'Dashboard answered: OK' : ('Dashboard answered: ' + r.code + ' ' + String(r.text).slice(0, 140)));
+
+  var since = Number(props.getProperty('since') || 0);
+  out.push(since
+    ? ('Answering replies you sent after ' + new Date(since))
+    : 'No starting line yet - run mikeyAssistSetUp');
+
+  var msg = out.join('\\n');
+  Logger.log(msg);
+  return msg;
+}
+
+// ---------------------------------------------------------------------------
+// The every-minute job
+// ---------------------------------------------------------------------------
+function mikeyAssistSync() {
+  var lock = LockService.getScriptLock();
+  // A slow run must never overlap the next one: both would read the same handled
+  // list before either wrote it, and the customer would get the same text twice.
+  if (!lock.tryLock(3000)) return;
+  try { syncOnce_(); } finally { try { lock.releaseLock(); } catch (e) {} }
+}
+
+// Only threads you sent in, only recent ones, and only ones that actually carry a
+// dashboard routing line. Version 1 pulled 30 whole conversations a minute and
+// read every message in them; this reads almost nothing on a normal day.
+function searchQuery_() {
+  return 'in:sent newer_than:' + LOOKBACK + ' "[ref:" -in:drafts -in:chats';
+}
+
+function syncOnce_() {
+  var props = PropertiesService.getScriptProperties();
+  var since = Number(props.getProperty('since') || 0);
+  if (!since) { since = Date.now(); props.setProperty('since', String(since)); }
+  var seen = readSeen_(props);
+
+  var threads;
+  try { threads = GmailApp.search(searchQuery_(), 0, MAX_THREADS); }
+  catch (e) { ping_({ error: 'could not read Gmail: ' + e }); return; }
+
+  var mine = myAddrs_(), scanned = 0, sent = 0, failed = 0, err = '';
 
   for (var t = 0; t < threads.length; t++) {
     var msgs = threads[t].getMessages();
+    // The routing line lives in the alert. Reading it off the THREAD rather than
+    // off his reply is what makes this work with mail clients that send a reply
+    // without quoting the original at all — that used to look like the feature
+    // ignoring him.
+    var ref = threadRef_(msgs);
     for (var i = 0; i < msgs.length; i++) {
-      var m = msgs[i];
-      var id = m.getId();
-      if (seen.indexOf(id) !== -1) continue;                      // already sent
-      var from = m.getFrom();
-      if (from.toLowerCase().indexOf(me) === -1) continue;         // the alert, not my reply
+      var m = msgs[i], id = m.getId();
+      if (seen[id]) continue;
+      if (!isMine_(m, mine)) continue;
+      var when = m.getDate().getTime();
+      // Before the starting line = history. Mark it handled so we stop looking at
+      // it, but never act on it.
+      if (when <= since) { seen[id] = when; continue; }
       var body = m.getPlainBody() || '';
-      if (body.indexOf('[ref:') === -1) continue;                  // not a reply to a dashboard alert
+      if (body.indexOf('[ref:') === -1 && !ref) continue;
 
-      try {
-        UrlFetchApp.fetch(DASH_URL, {
-          method: 'post',
-          contentType: 'application/json',
-          headers: { 'X-Ingest-Token': DASH_TOKEN },
-          muteHttpExceptions: true,
-          payload: JSON.stringify({
-            token: DASH_TOKEN,
-            from: from,
-            subject: m.getSubject(),
-            body: body,
-            messageId: id,
-            date: m.getDate().getTime()
-          })
-        });
-        seen.push(id);
+      scanned++;
+      var r = post_({
+        token: DASH_TOKEN, from: m.getFrom(), subject: m.getSubject(),
+        body: body, messageId: id, date: when, ref: ref, ver: VER
+      });
+      if (r.ok) {
+        // Saved immediately, not at the end of the run. Apps Script kills long
+        // executions without warning, and the old code lost the whole list when
+        // it did — so the next run re-sent every answer it had already sent.
+        seen[id] = Date.now();
+        saveSeen_(props, seen);
         sent++;
-      } catch (err) { /* leave it unseen and try again next run */ }
+      } else {
+        // Deliberately left UNHANDLED so the next run tries again. A bad token or
+        // a dashboard hiccup must never quietly eat an answer he believes he sent.
+        failed++;
+        err = 'dashboard said ' + r.code + (r.text ? (': ' + String(r.text).slice(0, 120)) : '');
+      }
     }
   }
-  if (seen.length > 300) seen = seen.slice(-300);
-  props.setProperty('seen', JSON.stringify(seen));
-  Logger.log('Checked ' + threads.length + ' recent conversations, sent ' + sent + ' answer(s).');
+
+  saveSeen_(props, seen);
+  ping_({ scanned: scanned, sent: sent, failed: failed, error: err }, !(scanned || failed));
+  Logger.log('Looked at ' + threads.length + ' conversation(s); ' + sent + ' answer(s) sent'
+    + (failed ? (', ' + failed + ' failed - ' + err) : '') + '.');
+}
+
+// ---------------------------------------------------------------------------
+// Plumbing
+// ---------------------------------------------------------------------------
+function addr_(s) {
+  var m = String(s || '').match(/<([^>]+)>/);
+  return String(m ? m[1] : (s || '')).trim().toLowerCase();
+}
+
+// Every address that counts as you: the signed-in user, the account the script
+// runs as, and any send-as alias. Gmail sends a reply from whichever alias the
+// thread was addressed to, so aliases are not an edge case.
+function myAddrs_() {
+  var list = [];
+  var add = function (a) { a = addr_(a); if (a && list.indexOf(a) === -1) list.push(a); };
+  try { add(Session.getEffectiveUser().getEmail()); } catch (e) {}
+  try { add(Session.getActiveUser().getEmail()); } catch (e) {}
+  try { GmailApp.getAliases().forEach(add); } catch (e) {}
+  return list;
+}
+
+function isMine_(m, mine) {
+  var from = addr_(m.getFrom());
+  if (!from) return false;
+  if (mine.length) return mine.indexOf(from) !== -1;
+  // Google would not tell us who we are — which used to abort the entire run.
+  // Fall back to "anyone who is not the dashboard": the search already limited us
+  // to threads you sent in, and the dashboard checks the sender again before it
+  // acts, so being generous here cannot make anything go out that should not.
+  return !ALERT_FROM || from !== ALERT_FROM;
+}
+
+function threadRef_(msgs) {
+  for (var i = 0; i < msgs.length; i++) {
+    var m = String(msgs[i].getPlainBody() || '').match(/\\[ref:\\s*([+\\d(][\\d\\s()+.-]{6,})\\]/);
+    if (m) return m[1].replace(/[^\\d+]/g, '');
+  }
+  return '';
+}
+
+function post_(payload) {
+  try {
+    var res = UrlFetchApp.fetch(DASH_URL, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { 'X-Ingest-Token': DASH_TOKEN },
+      muteHttpExceptions: true,
+      payload: JSON.stringify(payload)
+    });
+    var code = res.getResponseCode();
+    // Version 1 never looked at this number, which is how a 401 became "sent".
+    return { ok: code >= 200 && code < 300, code: code, text: res.getContentText() };
+  } catch (e) {
+    return { ok: false, code: 0, text: String(e) };
+  }
+}
+
+// Tell the dashboard we are alive, so the setup screen can say so. A check-in
+// with no news only goes out every 20 minutes — a minute trigger phoning home
+// 1,440 times a day would cost more than the feature.
+function ping_(info, quiet) {
+  var props = PropertiesService.getScriptProperties();
+  var last = Number(props.getProperty('pingAt') || 0);
+  if (quiet && last && (Date.now() - last) < PING_EVERY_MS) return;
+  info = info || {};
+  info.ping = true;
+  info.ver = VER;
+  info.token = DASH_TOKEN;
+  var r = post_(info);
+  if (r.ok) props.setProperty('pingAt', String(Date.now()));
+}
+
+// The handled list, as { messageId: whenHandled }. Pruned by age and then by
+// count, so it cannot grow into the 9 KB property limit and start throwing.
+function readSeen_(props) {
+  var raw = props.getProperty('seen');
+  if (!raw) return {};
+  try {
+    var v = JSON.parse(raw);
+    if (Array.isArray(v)) { var o = {}; for (var i = 0; i < v.length; i++) o[v[i]] = Date.now(); return o; }
+    return v && typeof v === 'object' ? v : {};
+  } catch (e) { return {}; }
+}
+
+function saveSeen_(props, seen) {
+  var cutoff = Date.now() - 4 * 24 * 3600 * 1000;
+  var keys = Object.keys(seen).filter(function (k) { return Number(seen[k]) > cutoff; });
+  keys.sort(function (a, b) { return Number(seen[b]) - Number(seen[a]); });
+  if (keys.length > 400) keys = keys.slice(0, 400);
+  var out = {};
+  for (var i = 0; i < keys.length; i++) out[keys[i]] = seen[keys[i]];
+  props.setProperty('seen', JSON.stringify(out));
 }
 `;
 }
 
-// Small TwiML fragment that rings Mikey's cell and then falls through to
-// voicemail — shared by the direct path and the post-screening path.
-function dialMikeyTwiml() {
-  const mikeyPhone = normalizePhone(ENV.MIKEY_PHONE) || '+13607975831';
+// ───────────────────────────── THE CALL LOG ─────────────────────────────
+// Google Voice had exactly one thing this dashboard didn't: somewhere to SEE a
+// call. Who rang, who got missed, what the voicemail said — one list, in order.
+// Twilio knows all of that and nothing here was writing it down: a voicemail
+// landed as a bubble inside a text thread, and a plain missed call left no trace
+// at all. This is the ledger that fixes that.
+//
+// It is deliberately ONE KV doc, not a key per call. The write budget (see the
+// box at the top of this file) cannot take a key per ring, and a capped array we
+// rewrite in place costs one write per webhook no matter how busy the phone is.
+const CALLS_KEY = 'calls';
+const CALLS_MAX = 200;
+
+async function loadCalls() {
+  const raw = await kv().get(CALLS_KEY, { type: 'json' });
+  const doc = raw && typeof raw === 'object' ? raw : {};
+  return { calls: Array.isArray(doc.calls) ? doc.calls : [], seenTs: doc.seenTs || 0 };
+}
+
+// ⚠ KV WRITE — budgeted. Only ever called from a Twilio webhook or a deliberate
+// tap, never from the minute cron and never inside a loop.
+async function saveCalls(doc) {
+  doc.calls = (doc.calls || []).slice(0, CALLS_MAX);
+  await kv().put(CALLS_KEY, JSON.stringify(doc));
+}
+
+// One ring reaches us through up to four separate webhooks (/call → /call-screen
+// → /voicemail → /voicemail-done → /voicemail-tx). They all have to land on the
+// SAME row, or a single missed call reads as five entries. Twilio's CallSid is
+// that identity; RecordingSid is the backstop for a callback that arrives with
+// the recording but no call.
+async function recordCall(patch) {
+  const doc = await loadCalls();
+  let row = null;
+  if (patch.sid) row = doc.calls.find((c) => c.sid === patch.sid) || null;
+  if (!row && patch.recordingSid) row = doc.calls.find((c) => c.recordingSid === patch.recordingSid) || null;
+  if (!row) {
+    row = { id: genId(), ts: Date.now() };
+    doc.calls.unshift(row);
+  }
+  // Undefined means "I don't know this field", not "clear it". The transcript
+  // callback in particular arrives without a recording URL half the time, and a
+  // plain Object.assign would wipe the playable recording we already stored.
+  for (const k in patch) if (patch[k] !== undefined) row[k] = patch[k];
+  await saveCalls(doc);
+  return row;
+}
+
+// Who is this, in the customer's language rather than a raw +1? Read off the
+// thread index (memoized, already loaded on most of these paths) and stamped
+// onto the call row at write time, so the calls screen never has to load a
+// thread just to put a name on a row.
+async function callerName(fromNorm) {
+  try {
+    const index = await loadIndex();
+    const row = (index || []).find((r) => r.phone === fromNorm);
+    return (row && row.name) || '';
+  } catch { return ''; }
+}
+
+// A robo-dialer that redials the same number all afternoon shouldn't each time
+// cost a KV write. If this number already sat out the screening greeting in the
+// last half hour, that's the same story already on the board — skip it.
+function recentlyScreened(doc, fromNorm) {
+  const cut = Date.now() - 30 * 60000;
+  return (doc.calls || []).some((c) => c.fromNorm === fromNorm && c.outcome === 'screened' && (c.ts || 0) > cut);
+}
+
+// Where an inbound call actually rings. Settable in the app (☰ → Settings →
+// Calls) so the handset can change without a deploy; falls back to the same
+// handset dashboard click-to-call uses.
+function callForwardPhone(cfg) {
+  return normalizePhone((cfg && cfg.callForwardTo) || '') || callBridgePhone();
+}
+
+// Ring the handset, then bridge — the same shape as dashboard click-to-call.
+//
+// This used to dial MIKEY_PHONE, and that one line is why no voicemail ever
+// reached this dashboard. MIKEY_PHONE is the Google Voice number, and Google
+// Voice ANSWERS a forwarded call with its own greeting. From Twilio's side the
+// call was therefore `completed`, <Record> never ran, and the message, the
+// transcript and the missed-call trail all stayed locked inside Google Voice
+// where nothing here could read them.
+//
+// Dialing the cell directly puts Twilio back in charge of the unanswered case.
+// Keep `timeout` under ~25s on purpose: the carrier's own voicemail picks up
+// around then, and whichever voicemail answers first is the one that owns the
+// message. Twilio has to win that race or we are back to square one.
+//
+// answerOnBridge keeps the caller hearing a real ringback instead of dead air
+// until the handset actually picks up.
+function dialMikeyTwiml(cfg) {
+  const handset = callForwardPhone(cfg);
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial timeout="20" action="/voicemail" method="POST"><Number>${escapeXml(mikeyPhone)}</Number></Dial>
+  <Dial timeout="20" answerOnBridge="true" action="/voicemail" method="POST"><Number>${escapeXml(handset)}</Number></Dial>
 </Response>`;
 }
 
@@ -1634,11 +2169,15 @@ async function handleInboundCall(request) {
   if (!(await verifyTwilio(request, params))) return forbidden();
   const from = params.From || 'Unknown';
   const fromNorm = normalizePhone(from) || from;
+  const sid = params.CallSid || '';
   const cfg = await loadConfig();
+  const name = await callerName(fromNorm);
 
   // 1. Blocked number → reject with a rejected tone. No forward, no voicemail,
-  //    no alert. Costs Mikey nothing and the spammer gets a dead end.
+  //    no alert. Costs Mikey nothing and the spammer gets a dead end. Still
+  //    written to the log: "I blocked 6 of these" is worth being able to see.
   if (Array.isArray(cfg.blockedNumbers) && cfg.blockedNumbers.includes(fromNorm)) {
+    await recordCall({ sid, from, fromNorm, name, ts: Date.now(), outcome: 'blocked' });
     return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response><Reject reason="rejected"/></Response>');
   }
 
@@ -1646,6 +2185,14 @@ async function handleInboundCall(request) {
   //    the timeout, Twilio falls through to <Hangup/> and the call is dropped
   //    without ever forwarding to Mikey — which is what defeats the robo-dialers.
   if (cfg.callScreening !== false) {
+    // Logged as `screened` up front, before we know how it ends, because a caller
+    // who gives up during the greeting is a lead that otherwise vanished without
+    // trace. /call-screen overwrites this row the moment a key is pressed.
+    const doc = await loadCalls();
+    if (!recentlyScreened(doc, fromNorm)) {
+      doc.calls.unshift({ id: genId(), sid, from, fromNorm, name, ts: Date.now(), outcome: 'screened' });
+      await saveCalls(doc);
+    }
     const gate = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather numDigits="1" action="/call-screen" method="POST" timeout="8">
@@ -1656,9 +2203,10 @@ async function handleInboundCall(request) {
     return xmlResponse(gate);
   }
 
-  // Screening off → original behavior: forward straight to Mikey.
-  notifyMikey(`📞 Incoming call from ${from}`, `Incoming call from ${from} to your Mikey's Detailing number.`).catch(() => {});
-  return xmlResponse(dialMikeyTwiml());
+  // Screening off → forward straight to the handset.
+  await recordCall({ sid, from, fromNorm, name, ts: Date.now(), outcome: 'ringing' });
+  notifyMikey(`📞 Incoming call from ${name || from}`, `${name || from} is calling your Mikey's Detailing number right now.`).catch(() => {});
+  return xmlResponse(dialMikeyTwiml(cfg));
 }
 
 // Screening gate result. Only reached when a caller actually pressed a key, so
@@ -1668,11 +2216,18 @@ async function handleCallScreen(request) {
   const params = await formParams(request);
   if (!(await verifyTwilio(request, params))) return forbidden();
   const from = params.From || 'Unknown';
+  const fromNorm = normalizePhone(from) || from;
+  const sid = params.CallSid || '';
   const digits = params.Digits || '';
+  const cfg = await loadConfig();
   if (digits === '1') {
-    notifyMikey(`📞 Incoming call from ${from}`, `Incoming call from ${from} to your Mikey's Detailing number (passed screening).`).catch(() => {});
-    return xmlResponse(dialMikeyTwiml());
+    const name = await callerName(fromNorm);
+    await recordCall({ sid, from, fromNorm, name, outcome: 'ringing' });
+    notifyMikey(`📞 Incoming call from ${name || from}`, `${name || from} pressed 1 and is ringing your phone now.`).catch(() => {});
+    return xmlResponse(dialMikeyTwiml(cfg));
   }
+  // Pressed something that isn't 1 — a human, but not one being put through.
+  await recordCall({ sid, from, fromNorm, outcome: 'declined' });
   return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="alice">Sorry, I didn\'t get that. Goodbye.</Say><Hangup/></Response>');
 }
 
@@ -1680,8 +2235,18 @@ async function handleVoicemail(request) {
   const params = await formParams(request);
   if (!(await verifyTwilio(request, params))) return forbidden();
   const from = params.From || 'Unknown';
+  const fromNorm = normalizePhone(from) || from;
+  const sid = params.CallSid || '';
   const dialStatus = params.DialCallStatus || '';
-  if (dialStatus === 'completed') return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+  // This webhook is where a call's ending is finally known: `completed` means the
+  // handset picked up and the two of them talked, anything else means it rang out.
+  // Both belong on the board — "he answered, 4 minutes" is as much a record as a
+  // missed call, and it's the half Google Voice was keeping to itself.
+  if (dialStatus === 'completed') {
+    await recordCall({ sid, from, fromNorm, outcome: 'answered', talkSec: Number(params.DialCallDuration || 0) || 0 });
+    return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+  }
+  await recordCall({ sid, from, fromNorm, outcome: 'missed', dialStatus });
 
   // Missed-call instant text-back — the #1 lead-recovery move for a solo mobile
   // business. Fire a friendly SMS to the caller so a missed call converts into a
@@ -1726,7 +2291,8 @@ async function handleVoicemail(request) {
 </Response>`;
   notifyMikey(`📵 Missed call from ${from}`, `Missed call from ${from} — ` +
     (textedBack ? 'I sent them an instant text back, and they may leave a voicemail now.'
-                : "you've already texted them, so I left the auto text-back alone. They may leave a voicemail now.")).catch(() => {});
+                : "you've already texted them, so I left the auto text-back alone. They may leave a voicemail now.") +
+    " It's on the Calls screen in your dashboard.").catch(() => {});
   return xmlResponse(xml);
 }
 
@@ -1762,7 +2328,14 @@ async function handleVoicemailDone(request) {
       await saveThread(thread);
       await updateIndexEntry(thread);
     }
-    await notifyMikey(`🎙️ Voicemail from ${from}`, `Voicemail from ${from} (${duration}s). Open the dashboard to listen.`);
+    // Same voicemail, second home: the thread bubble keeps it in the conversation,
+    // the call row keeps it on the Calls screen next to the ring it came from.
+    await recordCall({
+      sid: params.CallSid || '', from, fromNorm, outcome: 'voicemail',
+      recording: recordingUrl + '.mp3', recordingSid: recordingSid || undefined,
+      vmSec: Number(duration) || 0,
+    });
+    await notifyMikey(`🎙️ Voicemail from ${from}`, `Voicemail from ${from} (${duration}s). Play it on the Calls screen in your dashboard.`);
   }
   return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
 }
@@ -1797,6 +2370,7 @@ async function handleVoicemailTranscription(request) {
       await saveThread(thread);
       await updateIndexEntry(thread);
     }
+    await recordCall({ sid: params.CallSid || '', recordingSid: recordingSid || undefined, transcriptFailed: true });
     return new Response('', { status: 204 });
   }
 
@@ -1823,6 +2397,14 @@ async function handleVoicemailTranscription(request) {
     await saveThread(thread);
     await updateIndexEntry(thread);
   }
+  // The transcript is the whole reason Google Voice felt better than this app.
+  // Mirrored onto the call row so the Calls screen can show what was said without
+  // opening a conversation, or playing anything.
+  await recordCall({
+    sid: params.CallSid || '', recordingSid: recordingSid || undefined,
+    outcome: 'voicemail', transcript: text, transcriptFailed: false,
+    recording: recording ? recording + '.mp3' : undefined,
+  });
   notifyMikey(`🎙️ Voicemail transcript from ${from}`, `"${text}"\n\nOpen the dashboard to reply.`).catch(() => {});
   return new Response('', { status: 204 });
 }
@@ -2093,6 +2675,119 @@ async function apiCall(request) {
   if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
   await placeBridgeCall(phone);
   return json({ ok: true });
+}
+
+// The Calls screen. Names are re-read from the index on the way out rather than
+// trusted from the row: a caller who was a bare +1 when they rang is usually a
+// named customer by the time you look at the log.
+async function apiCalls() {
+  const doc = await loadCalls();
+  const cfg = await loadConfig();
+  let index = [];
+  try { index = (await loadIndex()) || []; } catch { /* names are a nicety */ }
+  const names = new Map(index.map((r) => [r.phone, r.name || '']));
+  const blocked = new Set(Array.isArray(cfg.blockedNumbers) ? cfg.blockedNumbers : []);
+  const calls = doc.calls.map((c) => Object.assign({}, c, {
+    name: names.get(c.fromNorm) || c.name || '',
+    blocked: blocked.has(c.fromNorm),
+  }));
+  // "Needs you" is the badge number: a missed call or a voicemail you haven't
+  // looked at yet. A screened-out robo-dialer is history, not a to-do.
+  const unseen = calls.filter((c) => (c.ts || 0) > (doc.seenTs || 0) &&
+    (c.outcome === 'missed' || c.outcome === 'voicemail')).length;
+  return json({
+    ok: true, calls, seenTs: doc.seenTs || 0, unseen,
+    forwardTo: callForwardPhone(cfg), screening: cfg.callScreening !== false,
+  });
+}
+
+// Day one of the Calls screen is otherwise an empty screen: the log only knows
+// about calls that rang after it shipped, and the history Mikey actually wants to
+// see already happened. Twilio kept all of it. This pulls the recent inbound
+// calls (plus any recording and transcript attached to them) into the log in one
+// pass and ONE KV write.
+//
+// Backfilled rows are marked `past` rather than guessed into answered/missed.
+// Twilio's own call status can't tell "he picked up and talked" from "the caller
+// sat through the screening greeting and hung up" — both are `completed` — and a
+// log that quietly makes things up is worse than one that says "earlier call".
+async function apiCallsBackfill() {
+  const sid = ENV.TWILIO_ACCOUNT_SID, token = ENV.TWILIO_AUTH_TOKEN;
+  if (!sid || !token) return json({ ok: false, error: 'twilio_not_configured' }, 500);
+  const auth = `Basic ${btoa(`${sid}:${token}`)}`;
+  const api = (path) => fetch(`https://api.twilio.com${path}`, { headers: { Authorization: auth } });
+  const acct = `/2010-04-01/Accounts/${sid}`;
+  const grab = async (path, key) => {
+    const r = await api(path);
+    if (!r.ok) throw new Error(`${r.status}: ${(await r.text()).slice(0, 200)}`);
+    return (await r.json())[key] || [];
+  };
+
+  let calls, recs, txs;
+  try {
+    const to = ENV.TWILIO_FROM || '';
+    calls = await grab(`${acct}/Calls.json?To=${encodeURIComponent(to)}&PageSize=50`, 'calls');
+    recs = await grab(`${acct}/Recordings.json?PageSize=30`, 'recordings');
+    txs = await grab(`${acct}/Transcriptions.json?PageSize=30`, 'transcriptions');
+  } catch (e) {
+    return json({ ok: false, error: `twilio_list_failed: ${String((e && e.message) || e)}` }, 502);
+  }
+
+  const txByRec = new Map();
+  for (const t of txs) if (t.status === 'completed' && t.transcription_text) txByRec.set(t.recording_sid, (t.transcription_text || '').trim());
+  const recByCall = new Map();
+  for (const r of recs) if (r.call_sid) recByCall.set(r.call_sid, r);
+
+  const doc = await loadCalls();
+  let index = [];
+  try { index = (await loadIndex()) || []; } catch { /* names are a nicety */ }
+  const names = new Map(index.map((r) => [r.phone, r.name || '']));
+  const mikey = normalizePhone(ENV.MIKEY_PHONE);
+  const known = new Set(doc.calls.map((c) => c.sid).filter(Boolean));
+
+  let added = 0;
+  for (const c of calls) {
+    if (c.direction && !/inbound/i.test(c.direction)) continue;
+    if (!c.sid || known.has(c.sid)) continue;
+    const fromNorm = normalizePhone(c.from || '');
+    if (!fromNorm || fromNorm === mikey) continue;
+    const rec = recByCall.get(c.sid);
+    const row = {
+      id: genId(), sid: c.sid, from: c.from || fromNorm, fromNorm,
+      name: names.get(fromNorm) || '',
+      ts: c.start_time ? new Date(c.start_time).getTime() : Date.now(),
+      outcome: rec ? 'voicemail' : 'past',
+      talkSec: Number(c.duration || 0) || 0,
+      backfilled: true,
+    };
+    if (rec) {
+      row.recordingSid = rec.sid;
+      row.recording = `https://api.twilio.com${String(rec.uri).replace(/\.json$/, '')}.mp3`;
+      row.vmSec = Number(rec.duration || 0) || 0;
+      const tx = txByRec.get(rec.sid);
+      if (tx) row.transcript = tx; else row.transcriptFailed = true;
+    }
+    doc.calls.push(row);
+    added++;
+  }
+  if (added) {
+    doc.calls.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    // Backfilled history is history — it must not light up the "needs you" badge
+    // with calls from last week the moment it lands.
+    doc.seenTs = Math.max(doc.seenTs || 0, Date.now());
+    await saveCalls(doc);
+  }
+  return json({ ok: true, added });
+}
+
+// One write, on a deliberate tap: opening the Calls screen clears its badge.
+async function apiCallsSeen() {
+  const doc = await loadCalls();
+  const newest = (doc.calls[0] || {}).ts || 0;
+  if ((doc.seenTs || 0) >= newest) return json({ ok: true, seenTs: doc.seenTs || 0 });
+  doc.seenTs = Math.max(newest, Date.now());
+  await saveCalls(doc);
+  return json({ ok: true, seenTs: doc.seenTs });
 }
 
 async function apiRead(request) {
@@ -4725,6 +5420,21 @@ async function handleEmailIn(request) {
   const cfg = await loadConfig();
   const authed = (ENV.EMAIL_INGEST_TOKEN && token === ENV.EMAIL_INGEST_TOKEN) || (cfg.emailToken && token === cfg.emailToken);
   if (!token || !authed) return json({ ok: false, error: 'unauthorized' }, 401);
+
+  // A check-in from the Gmail script. Carries no mail — it exists so the setup
+  // screen can tell "working" from "stopped three days ago", which is the whole
+  // difference between a feature he trusts and one he keeps testing by hand.
+  if (data.ping) {
+    const err = String(data.error || '').slice(0, 200);
+    const patch = { pingAt: Date.now(), ver: String(data.ver || '').slice(0, 8) };
+    if (data.scanned != null) patch.lastScanned = Number(data.scanned) || 0;
+    if (err) { patch.lastError = err; patch.lastErrorAt = Date.now(); }
+    else if (data.check || data.sent) { patch.lastError = ''; patch.lastErrorAt = 0; }
+    // A newsless heartbeat is throttled; anything that actually happened is not.
+    const h = await assistHealthMark(patch, !(err || data.check || data.sent || data.failed));
+    return json({ ok: true, pong: true, assistEmail: cfg.assistEmail !== false, at: h.at || Date.now() });
+  }
+
   const rawDate = data.date;
   const email = {
     id: genId(),
@@ -4746,10 +5456,18 @@ async function handleEmailIn(request) {
   // Checked AFTER the de-dupe so a retrying forwarder can't send the same reply
   // twice; the assist itself is queued, so a stray double would surface as a
   // second queued message he can cancel rather than a second text going out.
-  const assistPhone = assistIsOwnerReply(cfg, email);
+  const assistPhone = assistIsOwnerReply(cfg, email, data.ref);
+  // A reply that carries a routing line but came from an address we don't know is
+  // the one failure that used to be completely invisible: it lands in the inbox
+  // feed as ordinary mail and the customer never hears back. Remember it so the
+  // setup screen can say "a reply came from this address — is that you?" and let
+  // him add it in one tap.
+  if (!assistPhone && assistRefPhone(email.body)) {
+    await assistHealthMark({ strangerAt: Date.now(), strangerFrom: emailAddr(email.from).slice(0, 120) });
+  }
   if (assistPhone) {
     if (mid) { list.unshift({ id: email.id, mid, assist: true, date: email.date, unread: 0, from: email.from, subject: email.subject, snippet: '' }); if (list.length > 60) list.length = 60; await kv().put('emails', JSON.stringify(list)); }
-    await handleAssistEmail(cfg, email, assistPhone);
+    await handleAssistEmail(cfg, email, assistPhone, data.ver);
     return json({ ok: true, assist: true });
   }
   list.unshift(email);
@@ -4780,8 +5498,11 @@ async function apiEmailSetup(request) {
     connected: list.length > 0, count: list.length, lastAt: list[0] ? list[0].date : null,
     // Ready to paste into script.google.com — this is what turns "reply to the
     // alert" into an answered customer.
-    script: assistAppsScript(url, token),
+    script: assistAppsScript(url, token, emailAddr(ENV.ALERT_FROM || 'onboarding@resend.dev')),
     assistReady: !!(ENV.RESEND_API_KEY && ENV.ALERT_EMAIL),
+    alertEmail: emailAddr(ENV.ALERT_EMAIL || ''),
+    assistFrom: Array.isArray(cfg.assistFrom) ? cfg.assistFrom : [],
+    health: await assistHealth(),
   });
 }
 async function apiEmailRead(request) {
@@ -6824,6 +7545,7 @@ async function apiSaveConfig(request) {
   if (data.quietEnd != null && !isNaN(+data.quietEnd)) next.quietEnd = Math.max(0, Math.min(23, Math.round(+data.quietEnd)));
   if (typeof data.tz === 'string' && data.tz) next.tz = data.tz.slice(0, 64);
   if (typeof data.callScreening === 'boolean') next.callScreening = data.callScreening;
+  if (typeof data.callForwardTo === 'string') next.callForwardTo = normalizePhone(data.callForwardTo) || '';
   if (typeof data.missedCallTextback === 'boolean') next.missedCallTextback = data.missedCallTextback;
   if (typeof data.missedCallText === 'string') next.missedCallText = data.missedCallText.slice(0, 320);
   if (typeof data.autoReplyAlert === 'boolean') next.autoReplyAlert = data.autoReplyAlert;
@@ -6835,6 +7557,13 @@ async function apiSaveConfig(request) {
   if (data.assistDelaySec != null && !isNaN(+data.assistDelaySec)) next.assistDelaySec = Math.max(0, Math.min(600, Math.round(+data.assistDelaySec)));
   if (typeof data.assistEmail === 'boolean') next.assistEmail = data.assistEmail;
   if (data.assistEmailDelaySec != null && !isNaN(+data.assistEmailDelaySec)) next.assistEmailDelaySec = Math.max(0, Math.min(900, Math.round(+data.assistEmailDelaySec)));
+  if (typeof data.assistFactCheck === 'boolean') next.assistFactCheck = data.assistFactCheck;
+  // The extra addresses allowed to answer an alert. Stored as bare addresses so
+  // the comparison never depends on a display name, and capped because this is a
+  // one-man business, not a mailing list.
+  if (Array.isArray(data.assistFrom)) {
+    next.assistFrom = data.assistFrom.map((a) => emailAddr(a)).filter((a) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a)).slice(0, 5);
+  }
   if (typeof data.teamMode === 'boolean') next.teamMode = data.teamMode;
   if (typeof data.briefEnabled === 'boolean') next.briefEnabled = data.briefEnabled;
   if (typeof data.dailyEmailsPaused === 'boolean') next.dailyEmailsPaused = data.dailyEmailsPaused;
@@ -8117,6 +8846,10 @@ function defaultConfig() {
     quietStart: 20,          // 8pm — no autopilot sends after this local hour…
     quietEnd: 8,             // …until 8am (suggestions still surface anytime)
     tz: 'America/Los_Angeles',
+    callForwardTo: '',       // handset an inbound call rings (blank = CALL_BRIDGE_PHONE).
+                             // Deliberately NOT MIKEY_PHONE: that's the Google Voice
+                             // number, and Google Voice answering a forwarded call is
+                             // what used to swallow every voicemail — see dialMikeyTwiml.
     callScreening: true,     // press-1 gate on inbound calls — stops robocall/spam
                              // auto-dialers before they ring your phone or hit voicemail
     blockedNumbers: [],      // normalized numbers that get rejected instantly (no ring)
@@ -8145,6 +8878,14 @@ function defaultConfig() {
                              // and the reply already knows which customer it's about
     assistEmailDelaySec: 180,// longer hold on the email path: a "cancel" reply has to make
                              // another trip through the inbox before it reaches us
+    assistFrom: [],          // extra addresses allowed to answer an alert. Gmail sends from
+                             // whichever send-as alias the thread was addressed to, and a
+                             // one-address rule quietly locked him out of his own feature
+                             // the first time he answered from one.
+    assistFactCheck: true,   // hold an AI-worded reply instead of sending it when it contains
+                             // a price or a day that he never gave and the conversation never
+                             // mentioned. The promise of this feature is that every FACT came
+                             // from him; this is what actually enforces it.
     teamMode: false,         // when on: conversations can be assigned, and each reply is
                              // attributed to the sender. Turn off to go back to solo.
     team: [],                // [{ id, name, role }] — the people who help answer texts

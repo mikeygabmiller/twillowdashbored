@@ -53,11 +53,11 @@ const visibleTabs = () => page.$$eval('.navitem', (ns) => ns
     .filter((c) => c.nodeType === 3).map((c) => c.textContent).join('').trim()));
 const activeTab = () => page.$eval('.navitem.active', (n) => n.getAttribute('data-tab')).catch(() => null);
 
-section('Six destinations, all real');
+section('Seven destinations, all real');
 const tabs = await visibleTabs();
-ok('exactly six tabs', tabs.length === 6, tabs);
-ok('they are Today/Chats/Pipeline/Money/Stats/More',
-  JSON.stringify(tabs) === JSON.stringify(['Today', 'Chats', 'Pipeline', 'Money', 'Stats', 'More']), tabs);
+ok('exactly seven tabs', tabs.length === 7, tabs);
+ok('they are Today/Chats/Calls/Pipeline/Money/Stats/More',
+  JSON.stringify(tabs) === JSON.stringify(['Today', 'Chats', 'Calls', 'Pipeline', 'Money', 'Stats', 'More']), tabs);
 
 section('The nav bar says where you actually are');
 ok('starts on Today', (await activeTab()) === 'home');
@@ -122,7 +122,7 @@ await page.waitForTimeout(500);
 ok('More opened', await page.locator('#moreApp').evaluate((e) => e.classList.contains('show')));
 ok('the old drawer is gone', (await page.locator('#drawer').count()) === 0);
 const groups = await page.$$eval('#mrBody .mr-gh', (ns) => ns.map((n) => n.textContent.trim()));
-ok('grouped by kind of work', JSON.stringify(groups) === JSON.stringify(['AI', 'Insights', 'Pipeline', 'Setup']), groups);
+ok('grouped by kind of work', JSON.stringify(groups) === JSON.stringify(['AI', 'Phone', 'Insights', 'Pipeline', 'Setup']), groups);
 const rootRows = await page.locator('#mrBody .mr-row').count();
 ok('root stays short (was 25 rows)', rootRows <= 10, rootRows);
 ok('no duplicate of a tab on the root', !(await page.$$eval('#mrBody .mr-row .t', (ns) => ns.map((n) => n.textContent)))
