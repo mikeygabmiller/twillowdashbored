@@ -75,6 +75,11 @@ const CODE = [
   constant('QUOTE_WATCH_KEY'), constant('QUOTE_WATCH_MAX'),
   constant('QUOTE_WATCH_GIVEUP_MS'), constant('QUOTE_WATCH_STALE_MS'),
   lift('cleanVid'), lift('journeyMeta'), lift('journeyHotLabel'),
+  // The beacon stamps paid-vs-organic on the visitor as it lands — see
+  // adsource.test.js for that feature; these are here because the handler
+  // under test calls them.
+  constant('AD_CLICK_IDS'), constant('AD_REF_HOSTS'), constant('AD_PAID_MEDIUM'), constant('AD_NAMES'),
+  lift('refHostOf'), lift('adFromLanding'), lift('adLabel'), lift('visitorCity'), lift('stampJourneyInfo'),
   lift('blankJourney'), lift('appendStep'), lift('journeyLink'),
   lift('handlePixelEvents'), lift('pxOk'),
   lift('journeyPageTitle'), lift('journeyRefLabel'),
