@@ -19,7 +19,7 @@ const UNIT = [
   'hold', 'detect', 'pay', 'ai', 'compose', 'thread', 'inbox', 'money', 'quickreply',
   'replycheck', 'autoreply', 'quotes', 'balance', 'alertmail', 'assistmail', 'promise', 'recap',
   'geogrid', 'geogrid.ui', 'snapshot', 'journey', 'quotewatch', 'place', 'cold', 'portal', 'sheets', 'gdoc', 'gform', 'seed', 'scan', 'cpu',
-  'aicost', 'use', 'calls',
+  'aicost', 'use', 'calls', 'reachout',
 ].map((n) => `${n}.test.js`);
 
 const UI = [

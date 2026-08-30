@@ -132,7 +132,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-30·calls-here';
+const BUILD = '2026-08-30·sounds-human';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -470,7 +470,10 @@ async function handleSubmit(request) {
     await kv().put(rlKey, String(n + 1), { expirationTtl: 3600 });
   }
 
-  const { name, phone, email, location, total, vehicle, condition, services, notes, smsConsent } = body;
+  const { phone, email, location, total, vehicle, condition, services, notes, smsConsent } = body;
+  // Straighten "MIKE JONES" / "mike jones" before it reaches the customer's text,
+  // the thread, or the quote log — see tidyName.
+  const name = tidyName(body.name);
   // Only auto-text the client if they ticked the SMS consent box on the form
   // (A2P/compliance). Mikey's lead alert + the dashboard lead always go through.
   const consent = smsConsent === true || smsConsent === 'true';
@@ -494,11 +497,6 @@ async function handleSubmit(request) {
     notes ? `Notes: ${notes}` : null, ``, `Open the dashboard to reply to ${name.split(' ')[0]}.`,
   ].filter((s) => s !== null).join('\n');
 
-  // Hold the customer's first auto-reply for a few minutes so it reads like Mikey
-  // personally texting back, not an instant bot. Mikey's own lead alert still goes
-  // out immediately below.
-  const FIRST_REACHOUT_DELAY_MS = 210000; // 3.5 minutes
-
   const mikeyAlert = await notifyMikey(`🔔 New quote — ${name}`, mikeyMsg);
 
   // Start the conversation, tag as a new lead, store form details as a note.
@@ -514,13 +512,15 @@ async function handleSubmit(request) {
   ].filter(Boolean).join('\n');
   if (detail && !thread.notes) thread.notes = `Quote request (${new Date().toLocaleDateString()}):\n${detail}`;
   // Queue the first reach-out (if they consented) instead of sending it now. The
-  // scheduled-send cron delivers it ~3.5 min later and records it in the thread;
-  // until then it shows as "scheduled to send" so Mikey can cancel and reply himself.
+  // scheduled-send cron delivers it ~3.5 min later — or at 5am for an overnight
+  // submission, see firstReachoutAt — and records it in the thread; until then it
+  // shows as "scheduled to send" so Mikey can cancel and reply himself.
   // `alertOnSend` makes the cron text him the moment it actually lands, so the 3.5
   // minutes of silence after the lead alert isn't a mystery — see dispatchDueScheduled.
   let clientSms = 'skipped';
   if (consent) {
-    thread.scheduled.push({ id: genId(), body: clientMsg, sendAt: Date.now() + FIRST_REACHOUT_DELAY_MS, alertOnSend: true });
+    const cfg = await loadConfig();
+    thread.scheduled.push({ id: genId(), body: clientMsg, sendAt: firstReachoutAt(Date.now(), cfg), alertOnSend: true });
     thread.scheduled.sort((a, b) => a.sendAt - b.sendAt);
     clientSms = 'scheduled';
   }
@@ -546,6 +546,7 @@ async function handleSubmit(request) {
 //   1. Text Mikey immediately:  🔔 NEW QUOTE — name, phone, $total, vehicle, services
 //   2. ~3.5 min later, text the customer the first reach-out — but only when they
 //      consented (Make's filter: smsConsent != "false") and the phone is a valid +1.
+//      An overnight submission waits for 5am instead (firstReachoutAt).
 // Improvements over Make: the delayed text goes through the reserve-then-send cron
 // (at-most-once, opt-out aware, delivery-tracked), the lead is recorded in the
 // dashboard, and Mikey gets a second text confirming the reach-out actually landed
@@ -561,7 +562,7 @@ async function handleQqcText(request) {
   // Bot honeypot — real customers never fill these hidden fields.
   if (body.website || body._gotcha || body.hp) return cors(json({ ok: true, clientSms: 'skipped', mikeyAlert: false }, 200));
 
-  const name = String(body.name || '').trim();
+  const name = tidyName(body.name);   // "MIKE JONES" -> "Mike Jones", see tidyName
   const clientPhone = normalizePhone(body.phone);
   if (!name || !clientPhone) return cors(json({ ok: false, error: 'missing_fields' }, 422));
 
@@ -602,7 +603,9 @@ async function handleQqcText(request) {
   if (detail && !thread.notes) thread.notes = `QQC quote (${new Date().toLocaleDateString()}):\n${detail}`;
   let clientSms = 'skipped';
   if (consent) {
-    thread.scheduled.push({ id: genId(), body: clientMsg, sendAt: Date.now() + 210000, alertOnSend: true }); // 3.5 min, like Make's Sleep
+    // 3.5 min, like Make's Sleep — except overnight, which Make couldn't do.
+    const cfg = await loadConfig();
+    thread.scheduled.push({ id: genId(), body: clientMsg, sendAt: firstReachoutAt(Date.now(), cfg), alertOnSend: true });
     thread.scheduled.sort((a, b) => a.sendAt - b.sendAt);
     clientSms = 'scheduled';
   }
@@ -2247,20 +2250,30 @@ async function handleVoicemail(request) {
 
   // Missed-call instant text-back — the #1 lead-recovery move for a solo mobile
   // business. Fire a friendly SMS to the caller so a missed call converts into a
-  // text thread Mikey can answer from the driveway. Opt-out aware, and throttled so
-  // a caller who rings twice in a row doesn't get spammed.
+  // text thread Mikey can answer from the driveway. Opt-out aware, and it only ever
+  // goes to a number this dashboard has never texted.
   const cfg = await loadConfig();
+  let textedBack = false;
   if (cfg.missedCallTextback !== false) {
     const caller = normalizePhone(from);
     if (caller && caller !== normalizePhone(ENV.MIKEY_PHONE) && !isOptedOut(cfg, caller)) {
       const thread = await loadThread(caller);
-      const recent = (thread.messages || []).some((m) => m.kind === 'missed-call' && Date.now() - m.ts < 30 * 60000);
-      if (!recent) {
+      // Cold numbers only. The common lead does BOTH — fills out the quote form and
+      // then calls a minute later — and was getting the form's reach-out and this
+      // one inside the same few minutes, two "personal" texts from Mikey that
+      // obviously weren't. Anything already sent, or still queued to send, means
+      // this caller is mid-conversation and a canned apology only makes it read
+      // like a robot. It also subsumes the old twice-in-a-row throttle: the first
+      // missed-call text is itself an outbound message.
+      const alreadyReachedOut = (thread.messages || []).some((m) => m.dir === 'out') ||
+                                (thread.scheduled || []).length > 0;
+      if (!alreadyReachedOut) {
         const body = (cfg.missedCallText && cfg.missedCallText.trim()) ||
           `Hey, it's Mikey with Mikey's Mobile Detailing — sorry I missed your call! Text me right here and I'll get back to you as quick as I can. 🚗`;
         try {
           const r = await sendSms(caller, body);
           thread.messages.push({ id: genId(), dir: 'out', body, ts: Date.now(), kind: 'missed-call', status: 'sent', sid: (r && r.sid) || undefined });
+          textedBack = true;
         } catch (err) {
           thread.messages.push({ id: genId(), dir: 'out', body, ts: Date.now(), kind: 'missed-call', error: String(err.message || err) });
         }
@@ -2276,7 +2289,10 @@ async function handleVoicemail(request) {
   <Say voice="alice">Hey, you've reached Mikey's Mobile Detailing. Leave a message and Mikey will text or call you right back.</Say>
   <Record maxLength="120" action="/voicemail-done" method="POST" playBeep="true" transcribe="true" transcribeCallback="/voicemail-tx" />
 </Response>`;
-  notifyMikey(`📵 Missed call from ${from}`, `Missed call from ${from} — I sent them an instant text back, and they may leave a voicemail now. It's on the Calls screen in your dashboard.`).catch(() => {});
+  notifyMikey(`📵 Missed call from ${from}`, `Missed call from ${from} — ` +
+    (textedBack ? 'I sent them an instant text back, and they may leave a voicemail now.'
+                : "you've already texted them, so I left the auto text-back alone. They may leave a voicemail now.") +
+    " It's on the Calls screen in your dashboard.").catch(() => {});
   return xmlResponse(xml);
 }
 
@@ -7113,9 +7129,85 @@ function inQuietHours(ts, cfg) {
   return (qs > qe) ? (h >= qs || h < qe) : (h >= qs && h < qe);
 }
 
+// Hold a new lead's first auto-reply for a few minutes so it reads like Mikey
+// personally texting back, not an instant bot. His own lead alert is unaffected —
+// that one goes out the second the form posts.
+const FIRST_REACHOUT_DELAY_MS = 210000; // 3.5 minutes
+
+// ---- the overnight hold on a brand-new lead's first text -------------------
+// Deliberately NOT cfg.quietStart/quietEnd. Those guard the autopilot nudge,
+// which can wait for morning without costing anything, so they're set wide
+// (8pm–8am). The quote-form reach-out is the opposite trade: someone filling out
+// the form at 9pm is sitting there waiting on a price, and making them wait till
+// 8am loses the lead. Only the genuinely dead hours get held.
+const NIGHT_HOLD_START = 23;  // 11pm — anything landing from here…
+const NIGHT_HOLD_END   = 5;   // …until 5am waits for 5am local
+
+function localMinute(ts, tz) {
+  const f = tzFmt('min', tz);
+  return f ? parseInt(f.format(new Date(ts)), 10) % 60 : new Date(ts).getUTCMinutes();
+}
+
+// Milliseconds from `ts` forward to the next time the local wall clock in `tz`
+// reads exactly `hour`:00.
+function msUntilLocalHour(ts, tz, hour) {
+  const h = localHour(ts, tz), m = localMinute(ts, tz);
+  let ahead = (hour - h + 24) % 24;
+  if (ahead === 0) ahead = 24;                 // already inside that hour — take tomorrow's
+  // Minutes and seconds past the hour tick identically in every zone, so they can
+  // come off the UTC timestamp directly.
+  let t = ts + ahead * 3600000 - m * 60000 - (ts % 60000);
+  // A DST jump between here and there leaves the arithmetic an hour off twice a
+  // year. Correct once rather than trying to predict it.
+  const got = localHour(t, tz);
+  if (got !== hour) t += ((hour - got + 24) % 24 === 23 ? -1 : 1) * 3600000;
+  return t - ts;
+}
+
+// When a new lead's first reach-out should actually go out. Normally a few
+// minutes after they submit, so it reads like Mikey picking up his phone rather
+// than a bot firing on the webhook. A 1am submission instead gets answered at
+// 5am — a text at 1:04am is the other way a real person gives themselves away.
+function firstReachoutAt(now, cfg) {
+  const at = now + FIRST_REACHOUT_DELAY_MS;
+  const h = localHour(at, cfg && cfg.tz);
+  if (h < NIGHT_HOLD_START && h >= NIGHT_HOLD_END) return at;
+  return at + msUntilLocalHour(at, cfg && cfg.tz, NIGHT_HOLD_END);
+}
+
 // ---- wording ---------------------------------------------------------------
+// People type their name however their phone keyboard happened to be set —
+// "MIKE JONES" in caps lock, "mike jones" in none. Echoing that straight back
+// ("Hey MIKE, it's Mikey") is the single loudest tell that a machine wrote the
+// text, so straighten the case before it goes anywhere a customer can see.
+//
+// Anything already mixed-case is left exactly as typed: that's a real person's
+// own capitalization (McRae, DeShawn, O'Neal, van Dyke) and "fixing" it would
+// only ever make it worse.
+function tidyName(raw) {
+  const s = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (!s) return '';
+  if (s !== s.toUpperCase() && s !== s.toLowerCase()) return s;
+  const low = s.toLowerCase();
+  return low.replace(/[a-z]+/g, (w, at) => {
+    const prev = at > 0 ? low[at - 1] : '';
+    if (prev === "'") {
+      // "O'Neal" and "D'Angelo" want the second half capitalized; a possessive
+      // or contraction ("john's") does not. A one- or two-letter stem is the
+      // tell that the apostrophe is part of the surname.
+      const stem = (low.slice(0, at - 1).match(/[a-z]+$/) || [''])[0];
+      if (stem.length > 2) return w;
+    } else if (prev && prev !== '-' && prev !== ' ' && prev !== '.') {
+      return w;
+    }
+    return w.charAt(0).toUpperCase() + w.slice(1);
+  });
+}
+
 function firstName(thread) {
-  const n = (thread.name || '').trim().split(/\s+/)[0];
+  // tidyName here as well as at intake, so threads saved before that existed
+  // stop shouting the customer's name back at them.
+  const n = tidyName(thread.name).split(' ')[0];
   return n || 'there';
 }
 // Plain-English "why now" shown to Mikey.
@@ -7674,6 +7766,7 @@ function tzFmt(kind, tz) {
   try {
     f = kind === 'date' ? new Intl.DateTimeFormat('en-CA', { timeZone: zone })
       : kind === 'dow' ? new Intl.DateTimeFormat('en-US', { timeZone: zone, weekday: 'short' })
+      : kind === 'min' ? new Intl.DateTimeFormat('en-US', { timeZone: zone, minute: '2-digit' })
       : new Intl.DateTimeFormat('en-US', { timeZone: zone, hour12: false, hour: '2-digit' });
   } catch { f = null; }
   TZFMT.set(key, f);
