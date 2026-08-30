@@ -224,6 +224,12 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   send*, this answers *what's my next word*. Rebuilt twice a day, with a
   **Relearn how I text** button and an on/off switch in the menu; the local half
   keeps working even with no AI key configured.
+- **The message box is never behind the keyboard.** A hard rule on a phone: while
+  you're typing, the box and the send button stay on screen. The chat pane tracks
+  the visible window (including iOS, which answers a keyboard by sliding the page
+  down rather than shrinking it), the box itself can never be squeezed, and the
+  informational banners — job, hold, quote, reminder, scheduled, follow-up — step
+  aside for as long as the keyboard is up and come straight back when it goes.
 - **Auto-polish:** you don't press anything. Stop typing for a beat and your draft
   is polished in the background — but nothing is ever swapped into the box behind
   your back and nothing covers the screen. A slim **"Polished version ready"** bar
