@@ -132,7 +132,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-30·paid-or-not';
+const BUILD = '2026-08-30·quote-reply';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -6043,6 +6043,15 @@ async function generateReply(thread, cfg, hint) {
   // Resolve the async context blocks once, then reuse them across attempts.
   const rulesCtx = await rulesContext();
   const editsCtx = await editsContext(bucket);
+  // The quote reply is a different shape from every other text he sends, and
+  // asking for "1-3 short sentences" was quietly guaranteeing a bad one: his real
+  // quote replies run 3-5 sentences and 171-313 characters, because naming the
+  // services and then the total simply takes that long. His overall median of 104
+  // characters comes from "Ready!" and "Be there in 20!" - the wrong target here.
+  const quoting = bucket === 'price';
+  const shape = quoting
+    ? `Write ONE reply (2-5 sentences, roughly 170-320 characters, no greeting line, no signature, ready to send). `
+    : `Write ONE reply (1-3 short complete sentences, no greeting line, no signature, ready to send). `;
   const build = (extra) =>
     businessContext(cfg) +
     rulesCtx +
@@ -6050,10 +6059,14 @@ async function generateReply(thread, cfg, hint) {
     voiceContext(voice, bucket, situation) +
     editsCtx +
     `You are replying to a customer by text for Mikey's Mobile Detailing. ` +
-    `Write ONE reply (1-3 short complete sentences, no greeting line, no signature, ready to send). ` +
+    shape +
     `It must be indistinguishable from the real texts above — same length, same rhythm, same punctuation habits. ` +
     `Ground it in the business playbook — use the real services, pricing ranges and voice, and never contradict them. ` +
-    `Do not make up a specific price or appointment time on your own. ` +
+    `Mikey works alone: always "I", never "we". ` +
+    `Every dollar figure you write must come from the playbook above, from this conversation, or from the goal below — ` +
+    `never a number you worked out yourself, and never one rounded up or down to look tidier. ` +
+    `If the playbook does not price this vehicle, ask for what you're missing instead of guessing at a total. ` +
+    `Do not make up an appointment time on your own. ` +
     `BUT if the goal below already specifies details the owner has decided — a price, a day, a time, an answer — use those exactly as given; that is the owner telling you what to say. ` +
     `Write it the way a busy person texts, not the way an assistant writes. Finish every sentence. ` +
     (hint ? `Goal of this reply (write a text that accomplishes exactly this): ${hint}. ` : '') +
@@ -6066,10 +6079,18 @@ async function generateReply(thread, cfg, hint) {
   // shape outside his measured habits (far too long, an emoji he'd never use, a
   // greeting he never writes). Naming the exact offence beats asking again nicely,
   // because it can't fix what it hasn't been told is wrong.
+  // Anything a price may legitimately be built from: the playbook's own numbers,
+  // whatever Mikey typed as the goal, and figures already agreed in this thread.
+  const priceSources = [businessContext(cfg), hint || '', transcript(thread)];
   const tell = findTell(text);
+  const madeUp = tell ? '' : findInventedPrice(text, priceSources);
   const off = tell
     ? `used the phrase "${tell}", which is a dead giveaway that a machine wrote it`
-    : styleViolation(text, voice && voice.style);
+    : madeUp
+      ? `quoted ${madeUp}, and that number appears nowhere in the playbook, this conversation, or anything Mikey told you. ` +
+        `Quoting a customer an invented price is the worst mistake you can make here. Use a price that is actually written down, ` +
+        `or ask for what you need instead of naming a total`
+      : styleViolation(text, voice && voice.style, bucket);
   if (off) {
     try {
       const retry = await aiGenerate(
@@ -9188,7 +9209,7 @@ function defaultConfig() {
 function defaultPlaybook() {
   return {
     about: "Mikey's Mobile Detailing is an owner-run mobile car detailing service for the Snohomish and Monroe, WA areas — Mikey comes to your driveway. It's always Mikey himself: personal, friendly work that's tailored to you, and you don't pay until you love it. 300+ cars detailed, 5-star rated.",
-    services: "- Interior Detail — starts at $160 (deep interior clean: full vacuum, carpets & seats, all interior surfaces wiped down, interior windows, door jambs, pet-hair removal and stain treatment; about 1½ hours)\n" +
+    services: "- Interior Detail — starts at $200 (deep interior clean: full vacuum, carpets & seats, all interior surfaces wiped down, interior windows, door jambs, pet-hair removal and stain treatment; about 1½ hours)\n" +
       "- Exterior Detail — starts at $130 (hand wash, wheels & tires, bug & tar removal, polish, and a spray wax/sealant so the paint really shines)\n" +
       "- Full Detail, In & Out — starts at $260 (everything inside and out; a first-time full detail runs about 3–4 hours)\n" +
       "Trucks and heavily-soiled vehicles are priced a bit higher. Every price is a \"starting at\" — the exact price depends on the vehicle's year, make, model and condition, and always gets confirmed before booking.\n" +
@@ -9204,11 +9225,55 @@ function defaultPlaybook() {
       "Deposit: none. Cancellation: no cancellation fee.\n" +
       "Payment: cash, Venmo, Zelle, or check.\n" +
       "Lead time: usually booking about a week out.",
+    quoting: "THE QUOTE REPLY — the text Mikey sends the moment a customer answers the intro message with their vehicle. " +
+      "This is where the job is won or lost, and it has its own shape. Follow it:\n\n" +
+      "1. OPEN with one beat of warmth and nothing more: \"Awesome!\", \"Sounds good!\", \"Great!\", \"Thanks for the info!\", " +
+      "\"Perfect, thanks for that info!\". Never greet them by name again — the intro text already did that.\n" +
+      "2. CALL THE VEHICLE what they'd call it: \"your Ram\", \"the truck\", \"your Jeep\". Never read the full " +
+      "\"2024 Ram 3500 crew cab diesel\" back at them.\n" +
+      "3. NAME THE SERVICES, THEN ONE FIRM TOTAL. Not a range — an actual number, with the package spelled out beside it: " +
+      "\"For a Full Detail, Exterior Polish, Carpet Shampoo, Ceramic Wax, and RainX Window treatment, it'll be $400.\" " +
+      "The number must come from the worked quotes below or from Mikey. Never invent one.\n" +
+      "4. CLOSE BY ASKING FOR THE ADDRESS — not for a time: \"If you send over your address or general street area, I can let " +
+      "you know how soon I can come by.\" The address comes first because it decides whether he can take the job at all. " +
+      "He once quoted a Mountain View that turned out to be Duvall, 40 minutes out, and had to walk the booking back.\n\n" +
+      "DON'T QUOTE YET IF YOU CAN'T SEE THE CONDITION. A year, make and model alone is not enough to price. Ask, and make it " +
+      "easy to answer: \"Could you also let me know the general condition of the truck? Either a photo or just a quick " +
+      "explanation is fine. Doesn't have to be super detailed, just want to know if there's anything out of the ordinary " +
+      "from normal use. Thanks!\"\n\n" +
+      "SAY THE HONEST CAVEAT BEFORE THE PRICE, not after, and never only when asked: \"I can't guarantee how much of the " +
+      "stains I can get out, but I'll go over all the surfaces and get out as much as I can.\"\n\n" +
+      "ANSWER THEIR SIDE QUESTION FIRST, and say so plainly when something costs nothing extra: \"That service is included " +
+      "with the carpet shampoo add-on, so it won't add to the price at all.\"\n\n" +
+      "MATCH URGENCY, DON'T DEFLECT IT. Someone in a hurry gets a hedged yes, not a policy: \"I can probably squeeze in that " +
+      "detail for your Ram tomorrow. If you send over your address, I'll let you know for sure if I can come by.\" " +
+      "Hedge with probably / likely / might — never a hard promise, never a flat no.\n\n" +
+      "WORKED QUOTES — real jobs, real numbers. Use these as the reference points for a similar vehicle and package; " +
+      "if nothing here is close, ask rather than interpolate:\n" +
+      "- 2024 Ram 3500 crew cab diesel — Interior Detail, Exterior Detail, Carpet Shampoo, Exterior Polish, Ceramic Wax: $450\n" +
+      "- 2022 Ford F450 — Full Detail, Exterior Polish, Carpet Shampoo, Ceramic Wax, RainX Window treatment: $400\n" +
+      "- 2009 Acura RDX — Full Detail, Carpet Shampoo: $380\n" +
+      "- 2013 Jeep Wrangler — Full Interior Detail, Carpet Shampoo (cloth seats): $300\n" +
+      "- 2012 Ford Fusion — flat-rate pre-sale detail, interior + exterior + basic engine wipe-down: $300\n\n" +
+      "SERVICE NAMES he actually quotes in: Interior Detail, Exterior Detail, Full Detail, Carpet Shampoo, Exterior Polish, " +
+      "Ceramic Wax, RainX Window treatment, headlight restoration, paint correction, and the flat-rate pre-sale detail " +
+      "(interior + exterior + a basic engine wipe-down, for a car being sold).\n\n" +
+      "HOW THESE READ END TO END — match this exactly:\n" +
+      "- \"Awesome! So for your Ram, an Interior Detail, Exterior Detail, Carpet Shampoo, Exterior Polish, and Ceramic Wax " +
+      "will be $450. Feel free to send over your address or general street location, and I'll get you a spot on my schedule.\"\n" +
+      "- \"Sounds good! I can do a full interior detail and carpet shampoo for you. I can't guarantee how much of the stains " +
+      "I can get out, but I'll go over all the surfaces and get out as much as I can. I can do that for $300. If you send over " +
+      "your address or general street area, I can let you know how soon I can come by.\"\n" +
+      "- \"Great! My flat-rate pre-sale detail is $300. That includes a full interior and exterior detail, plus a basic engine " +
+      "wipe-down, to get your car ready to sell. I might even be able to squeeze you in this week if you like. Let me know how " +
+      "that sounds.\"\n" +
+      "- \"Thanks for the info! I can definitely clean that seatbelt for you. That service is included with the carpet shampoo " +
+      "add-on, so it won't add to the price at all. How soon are you looking to get it detailed?\"",
     tone: "Friendly and warm, a confident pro, easygoing with a little humor, low-pressure, local and personable. " +
       "Keep it short and casual like a real text. No emoji graphics (no 🚗✨) — but a simple \":)\" now and then is on-brand; that's how Mikey texts. " +
       "Sometimes sign off with \"- Mikey\", but not on every text.",
     faqs: "Q: How much does it cost?\n" +
-      "A: Interior details start at $160, exterior at $130, and a full in-and-out starts at $260. Trucks and really dirty vehicles are a bit more. Send me your car's year, make and model plus what you're after and I'll lock in an exact price — and you don't pay until you love it.\n\n" +
+      "A: Interior details start at $200, exterior at $130, and a full in-and-out starts at $260. Trucks and really dirty vehicles are a bit more. Send me your car's year, make and model plus what you're after and I'll lock in an exact price — and you don't pay until you love it.\n\n" +
       "Q: Do you come to me?\n" +
       "A: Yes, I come to you! All I need is power and water within 20 ft of the vehicle.\n\n" +
       "Q: How long does a full detail take?\n" +
@@ -9244,8 +9309,13 @@ function defaultPlaybook() {
       "  \"I'm on my way, just running into a little traffic — ETA is about [time].\"\n\n" +
       "- Unhappy with the result / a complaint (always stay warm and fix it):\n" +
       "  \"I'm so sorry to hear that! I'd be more than happy to come back ASAP and make it right for you.\"",
-    rules: "Never promise an exact price or exact appointment time on your own — give the \"starts at\" range and say you'll confirm the exact price.\n" +
-      "Never invent details, prices, or policies you don't know.\n" +
+    rules: "NEVER write a dollar figure that isn't in this playbook, already agreed in the conversation, or given to you by Mikey. " +
+      "Do not add prices up into a new total, do not round one to look tidier, and do not guess a number because it seems about right. " +
+      "If this playbook doesn't price the vehicle in front of you, ask for what's missing instead of naming a total — " +
+      "a customer who's been quoted a number has been quoted it, and it can't be taken back.\n" +
+      "Never promise an exact appointment time on your own — offer to check and come back with a day.\n" +
+      "Never invent details or policies you don't know.\n" +
+      "Mikey works alone. Always \"I\", never \"we\".\n" +
       "Only recommend add-ons lightly and when they genuinely fit the car — never pushy.\n" +
       "Always be respectful, low-pressure, and never pushy.\n" +
       "If someone texts STOP, don't text them again.\n" +
@@ -9264,11 +9334,17 @@ function defaultPlaybook() {
   };
 }
 
-const PLAYBOOK_KEYS = ['about', 'services', 'area', 'booking', 'tone', 'faqs', 'scenarios', 'rules', 'examples'];
+const PLAYBOOK_KEYS = ['about', 'services', 'area', 'booking', 'quoting', 'tone', 'faqs', 'scenarios', 'rules', 'examples'];
+// 6000, up from 4000. The cap is only here to stop one runaway paste from bloating
+// the config value, and 4000 had become a real trap: the quote-reply section is
+// 4.2k on its own, so saving the playbook from the dashboard would have silently
+// cut it off mid-sentence — and a truncated instruction still reads as an
+// instruction to the model. The whole playbook is ~11k, nowhere near KV's limit.
+const PLAYBOOK_FIELD_MAX = 6000;
 function sanitizePlaybook(next, prev) {
   const out = Object.assign(defaultPlaybook(), prev || {});
   for (const k of PLAYBOOK_KEYS) {
-    if (typeof next[k] === 'string') out[k] = next[k].slice(0, 4000);
+    if (typeof next[k] === 'string') out[k] = next[k].slice(0, PLAYBOOK_FIELD_MAX);
   }
   return out;
 }
@@ -9738,6 +9814,21 @@ const VOICE_BUCKETS = ['price', 'schedule', 'confirm', 'answer', 'apology', 'clo
 //     confirmation. "You're all set for Tuesday" and "Perfect, let's shoot for
 //     10:45" are the same kind of message and must not be split apart; `confirm`
 //     is for agreements with no time in them ("Sounds good!", "Yep, will do").
+// Does this message name a vehicle? Two strengths, because one rule can't do both:
+//   - A model year or a make is decisive at any length, so "Thanks! It's a 2009
+//     Acura RDX" still reads as the quote moment and not as a thank-you.
+//   - A bare body type ("Truck") is far too common a word to trust inside a long
+//     message - Kate's "I appreciate you making the effort to try to fit my truck
+//     in" is a goodbye, not a quote request - so it only counts on its own.
+const VEHICLE_MAKES = /\b(ford|chevy|chevrolet|dodge|ram|jeep|toyota|honda|nissan|subaru|mazda|hyundai|kia|gmc|bmw|mercedes|benz|audi|vw|volkswagen|lexus|acura|infiniti|tesla|volvo|cadillac|buick|chrysler|lincoln|mitsubishi|porsche|jaguar|land rover|range rover|mini cooper|genesis|rivian|sprinter|f150|f250|f350|f450|silverado|sierra|tacoma|tundra|4runner|wrangler|escalade|suburban|tahoe)\b/;
+function mentionsVehicle(t) {
+  if (/\b(19|20)\d{2}\b/.test(t)) return true;          // a model year
+  if (VEHICLE_MAKES.test(t)) return true;
+  // Body type alone, only when that is essentially the whole message.
+  return t.trim().length <= 25 &&
+    /^(a |an |it'?s a |its a |just a )?(truck|suv|sedan|van|car|coupe|wagon|crossover|pickup|minivan)\b/.test(t.trim());
+}
+
 function voiceBucket(text) {
   const t = String(text || '').toLowerCase();
   if (!t) return 'general';
@@ -9746,6 +9837,14 @@ function voiceBucket(text) {
   // Bare clock times ("10:30", "let's shoot for 10:45") are how he actually writes
   // times — an am/pm suffix is the exception, not the rule.
   if (/\b(mon|tues|wednes|thurs|fri|satur|sun)day\b|\btomorrow\b|\btoday\b|\bnext week\b|\b\d{1,2}:\d{2}\b|\b\d{1,2}\s*(am|pm)\b|\bmorning\b|\bafternoon\b|\bslot\b|\bschedule\b|\bavailab/.test(t)) return 'schedule';
+  // The quote moment. When a customer answers the intro text with their vehicle,
+  // the reply Mikey writes is a QUOTE — so he must be shown his real quoting texts,
+  // not his one-word ones. Without this, "2024 Ram 3500 crew cab diesel." scored as
+  // `quick` and the model got handed "Ready!" and "Be there in 20!" as the examples
+  // to imitate, then wrote a one-liner for the most important text of the sale.
+  // Checked after `schedule` so an explicit day or time still wins, and before
+  // `closing` so "Thanks! It's a 2009 Acura RDX" doesn't read as a sign-off.
+  if (mentionsVehicle(t)) return 'price';
   if (/^(yes|yep|yeah|perfect|sounds good|you'?re all set|got it|ok|okay|will do)\b/.test(t)) return 'confirm';
   if (/\b(thank|thanks|appreciate|means a lot|no worries)\b/.test(t)) return 'closing';
   if (/\?/.test(t)) return 'answer';
@@ -10111,8 +10210,14 @@ function voiceContext(voice, bucket, query) {
 // Being spotted as AI is mostly about a handful of characteristic phrases, not
 // about missing warmth. Cheaper and more reliable to ban them outright than to
 // ask the model nicely.
+// "feel free to" used to sit in this list and had to come out: it is Mikey's own
+// phrase, not a machine's. It is in his measured fingerprint's recurring phrases,
+// it is in the intro text every customer gets, and he wrote "Feel free to send
+// over your address or general street location" by hand. Banning it meant the
+// gate fired on drafts that had got his voice exactly right and regenerated them
+// away from it.
 const AI_TELLS = [
-  /\bcertainly[!,.]/i, /\bi'?d be happy to\b/i, /\bhappy to assist\b/i, /\bfeel free to\b/i,
+  /\bcertainly[!,.]/i, /\bi'?d be happy to\b/i, /\bhappy to assist\b/i,
   /\brest assured\b/i, /\bat your earliest convenience\b/i, /\bplease don'?t hesitate\b/i,
   /\blet me know if you have any (other )?questions\b/i, /\bi hope this (message )?finds you\b/i,
   /\bthank you for reaching out\b/i, /\bi understand your concern\b/i, /\bgreat question\b/i,
@@ -10124,19 +10229,67 @@ function findTell(text) {
   return '';
 }
 
+// ---------------------------------------------------------------------------
+// The invented-price gate
+// ---------------------------------------------------------------------------
+// The single most expensive way this app can be wrong. Replaying six real quote
+// moments, the model produced $490 where Mikey charged $450, $399 where he
+// charged $380, and $429 for a truck whose condition it had never been told -
+// each one a confident, specific, sendable number that came from nowhere. A
+// customer who is quoted $429 has been quoted $429, and "the AI made it up" is
+// not a thing you get to say afterwards.
+//
+// So every dollar figure in a draft has to be traceable: it appears in the
+// playbook, in something Mikey typed as the goal, or already in this
+// conversation. Sums are allowed up to three parts, because a real quote is
+// genuinely built by adding a package to its add-ons.
+function priceFigures(text) {
+  const out = [];
+  for (const m of String(text || '').matchAll(/\$\s?(\d[\d,]*)/g)) {
+    const n = Number(m[1].replace(/,/g, ''));
+    if (n > 0) out.push(n);
+  }
+  return out;
+}
+// Every total reachable by adding up to three of the known figures. The base
+// figures are always included, so an exact playbook price passes untouched.
+function backedAmounts(sources) {
+  const base = [...new Set(sources.flatMap(priceFigures))];
+  const ok = new Set(base);
+  for (let i = 0; i < base.length; i++) {
+    for (let j = i; j < base.length; j++) {
+      ok.add(base[i] + base[j]);
+      for (let k = j; k < base.length; k++) ok.add(base[i] + base[j] + base[k]);
+    }
+  }
+  return ok;
+}
+// Returns the first unbacked figure as a string, or '' when every number checks out.
+function findInventedPrice(text, sources) {
+  const ok = backedAmounts(sources);
+  for (const n of priceFigures(text)) if (!ok.has(n)) return `$${n}`;
+  return '';
+}
+
 // The other half of the gate. A tell is a phrase; this catches drafts that use no
 // banned phrase but still don't read like him — three times his usual length, an
 // emoji when he almost never uses one, "Hi Sarah," when he never opens with a
 // greeting. Measured against his own counts, so the bar is his habits and not some
 // generic idea of a good text. Returns a fixable instruction, or ''.
-function styleViolation(text, st) {
+function styleViolation(text, st, bucket) {
   if (!st || !text) return '';
   const t = String(text).trim();
   const EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u;
+  // A quote reply is legitimately his longest text - itemising the services and
+  // then the total does not fit in two sentences - so it is measured against his
+  // real quote replies rather than against an average dragged down by "Ready!".
+  const quoting = bucket === 'price';
   // Generous ceiling: 1.6× his 90th percentile, floor 160, so only real bloat trips.
-  const ceiling = Math.max(Math.round((st.p90Len || 120) * 1.6), 160);
+  const ceiling = quoting ? 420 : Math.max(Math.round((st.p90Len || 120) * 1.6), 160);
   if (t.length > ceiling) {
-    return `it is ${t.length} characters, and his texts run about ${st.medLen}. Cut it to roughly ${st.medLen}–${st.p90Len} characters — say less`;
+    return quoting
+      ? `it is ${t.length} characters, and even his longest quote replies stop around 320. Cut it to roughly 170–320 characters`
+      : `it is ${t.length} characters, and his texts run about ${st.medLen}. Cut it to roughly ${st.medLen}–${st.p90Len} characters — say less`;
   }
   if (st.emojiPct <= 5 && EMOJI.test(t)) {
     return 'it uses an emoji, and he essentially never does. Remove it';
@@ -10145,7 +10298,9 @@ function styleViolation(text, st) {
     return 'it opens by greeting them by name, and he almost never does. Start with the actual answer';
   }
   const sentences = (t.match(/[.!?]+(\s|$)/g) || []).length || 1;
-  if (st.medSentences <= 2 && sentences >= 5) {
+  // 5 sentences is normal in a quote ("Sounds good! I can do X. I can't guarantee Y.
+  // I can do that for $300. If you send over your address...") - only 7+ is bloat.
+  if (st.medSentences <= 2 && sentences >= (quoting ? 7 : 5)) {
     return `it runs ${sentences} sentences and he usually writes ${st.medSentences}. Make it shorter`;
   }
   return '';
@@ -10633,6 +10788,7 @@ const PLAYBOOK_SECTIONS = [
   ['services', 'Services & pricing'],
   ['area', 'Service area & hours'],
   ['booking', 'Booking & policies'],
+  ['quoting', 'The quote reply — the most important text he sends'],
   ['tone', 'Voice & tone'],
   ['examples', 'How Mikey texts (copy this voice exactly)'],
   ['faqs', 'Common questions (approved answers)'],
