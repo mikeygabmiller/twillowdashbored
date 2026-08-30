@@ -451,6 +451,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .fu-settings .fu-row{display:flex;align-items:center;gap:9px;padding:8px 0;font-size:13px;color:var(--txt)}
   .fu-settings .fu-row .lbl2{flex:1}
   .fu-settings input[type=text],.fu-settings input[type=number]{background:var(--panel2);border:1px solid var(--line);border-radius:9px;color:var(--txt);padding:7px 9px;font-size:13px;width:100%}
+  .fu-settings .fu-row select{background:var(--panel2);border:1px solid var(--line);border-radius:9px;color:var(--txt);padding:7px 9px;font-size:13px;font-family:inherit;flex:none;max-width:60%}
   .fu-settings input[type=number]{width:64px;text-align:center}
   .fu-settings .hint{font-size:11.5px;color:var(--muted2);line-height:1.45;padding:2px 0 6px}
   .fu-settings .fu-col{display:flex;flex-direction:column;gap:5px;padding:6px 0}
@@ -2078,6 +2079,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .jn-acts .btn{width:100%;justify-content:center}
   .jn-hot{flex:none;display:inline-block;font-style:normal;font-size:10px;font-weight:900;letter-spacing:.04em;text-transform:uppercase;
     background:rgba(52,211,153,.16);color:#34d399;border-radius:999px;padding:2px 7px;margin-left:7px;vertical-align:1px}
+  /* A click he was BILLED for. Gold rather than green on purpose — green in
+     this app means money came in, and this is money going out. */
+  .jn-paid{flex:none;display:inline-block;font-style:normal;font-size:10px;font-weight:900;letter-spacing:.04em;text-transform:uppercase;
+    background:rgba(250,204,21,.16);color:var(--gold);border-radius:999px;padding:2px 7px;margin-left:7px;vertical-align:1px}
   .jn-body{flex:1;min-width:0;padding-top:3px}
   .jn-t{font-size:13.5px;font-weight:800}
   .jn-d{font-size:12.5px;color:var(--muted);line-height:1.45;word-break:break-word}
@@ -6897,6 +6902,14 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   function saveConfig(patch){
     return post("/api/config",patch).then(function(d){if(d&&d.ok){state.config=d.config;afterConfig()}return d});
   }
+  // Mirrors clickAlertMode() in the Worker, including its default: a config
+  // saved before this setting existed has no key, and "every new visitor" is
+  // what that means. Both sides have to agree or the switch shows one thing and
+  // the Worker does another.
+  function clickAlertMode(c){
+    var v=(c||{}).clickAlert;
+    return (v==="off"||v==="ads"||v==="all")?v:"all";
+  }
   // Toggle everything that depends on team mode being on/off.
   function applyTeamUI(){document.body.classList.toggle("teamon",teamOn());renderTeamBits()}
   // Per-conversation team chrome: the coach button and the "who are you?" nudge.
@@ -7057,6 +7070,13 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       '<div class="fu-row"><span class="lbl2">Email me when a quote is seen but not sent <span style="color:var(--muted2);font-weight:400">· the ones that get away</span></span><span class="sw'+(c.quoteAbandon!==false?" on":"")+'" id="cfgQab"></span></div>'+
       '<div class="fu-row"><span class="lbl2">Give them this long first</span><span style="display:flex;align-items:center;gap:6px"><input type="number" id="cfgQabMin" min="1" max="60" value="'+(c.quoteAbandonMin==null?2:c.quoteAbandonMin)+'"><span style="color:var(--muted2)">min</span></span></div>'+
       '<div class="hint">Somebody builds a quote on your site, sees the price, and closes it without leaving a name or number — there\'s no thread, no lead, nothing anywhere to tell you it happened. This emails you when it does, with the price they walked away from and what they\'d picked. The clock is <b>quiet</b> time: if they\'re still tapping around the page it waits, so you don\'t get told they left while they\'re typing their name. Nothing is ever sent to them — they never gave you a number.</div>'+
+      '<div class="fu-row"><span class="lbl2">Email me when somebody lands on my site <span style="color:var(--muted2);font-weight:400">\u00b7 as it happens</span></span>'+
+        '<select id="cfgClickAlert">'+
+          '<option value="all"'+(clickAlertMode(c)==="all"?" selected":"")+'>Every new visitor</option>'+
+          '<option value="ads"'+(clickAlertMode(c)==="ads"?" selected":"")+'>Only clicks I paid for</option>'+
+          '<option value="off"'+(clickAlertMode(c)==="off"?" selected":"")+'>Never</option>'+
+        '</select></div>'+
+      '<div class="hint">One email the moment a <b>new</b> visitor arrives \u2014 not every page they read, and not the same person twice. It says whether the click came from one of your ads or came in free, what city their phone was in, and which page they landed on. There is nobody to text: they haven\'t given you a number, and nothing is ever sent to them. It stops itself after 20 a day so a busy morning can\'t bury your real alerts.<br><br><b>"Only clicks I paid for"</b> needs your site to pass the ad\'s click id through to the tracker \u2014 the snippet in <b>Grow \u2192 Website</b> does this now; the copy on your site may be the older one, which sends the page but not the click id. Until it\'s updated, a paid click that Google routes through googleadservices still gets caught, and the rest read as ordinary visits.</div>'+
       '<div class="fu-col"><span class="lbl2">What the AI is actually costing</span></div>'+
       '<div id="aiUseCard" class="hint">Counting\u2026</div>'+
       '<div class="fu-row"><span class="lbl2">AI keyboard <span style="color:var(--muted2);font-weight:400">· suggests your next word</span></span><span class="sw'+(c.predictive!==false?" on":"")+'" id="cfgPredict"></span></div>'+
@@ -7116,6 +7136,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     el("cfgArAlert").onclick=function(){saveConfig({autoReplyAlert:!(c.autoReplyAlert!==false)})};
     el("cfgQab").onclick=function(){saveConfig({quoteAbandon:!(c.quoteAbandon!==false)})};
     el("cfgQabMin").onchange=function(){saveConfig({quoteAbandonMin:+el("cfgQabMin").value})};
+    el("cfgClickAlert").onchange=function(){saveConfig({clickAlert:el("cfgClickAlert").value})};
     renderAiUsage();
     el("cfgPredict").onclick=function(){setPredictive(!predictOn())};
     el("cfgPredictAi").onclick=function(){setPredictiveAi(!predictAiOn())};
@@ -10518,14 +10539,25 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     pct=pct||0;
     return '<div class="wa-meter"><span class="m-k">'+esc(label)+'</span><div class="m-track"><div class="m-fill" style="width:'+Math.min(100,Math.max(pct>0?2:0,pct)).toFixed(1)+'%;background:'+color+'"></div></div><span class="m-n">'+pct.toFixed(1)+'%</span></div>';
   }
+  // The snippet now sends location.search as well as the pathname. That query
+  // string is the ONLY place an ad click identifies itself (?gclid=...), so a
+  // tracker that sends the path alone can never tell a paid Google click from a
+  // free one. Anyone still running the old copy keeps working — they just don't
+  // get the ad labels.
   function waPixelSnippet(){
-    return '<script>(function(){var i=new Image();i.src="'+location.origin+'/px?p="+encodeURIComponent(location.pathname)+"&r="+encodeURIComponent(document.referrer)+"&t="+Date.now();})();<\/script>';
+    return '<script>(function(){var i=new Image();i.src="'+location.origin+'/px?p="+encodeURIComponent(location.pathname+location.search)+"&r="+encodeURIComponent(document.referrer)+"&t="+Date.now();})();<\/script>';
   }
   function waPixelHtml(px,primary){
     var h='<div class="gr-sec" style="margin-top:18px"><span class="gs-ic">'+ic("zap",16)+'</span>'+(primary?"Built-in tracker":"Built-in backup tracker")+'</div>';
     if(px&&(px.totalViews>0||px.totalVisitors>0)){
       h+='<div class="big-tiles"><div class="big-tile"><div class="bt-v">'+waN(px.totalViews)+'</div><div class="bt-l">Pixel views · 14 days</div></div>'+
          '<div class="big-tile"><div class="bt-v">'+waN(px.totalVisitors)+'</div><div class="bt-l">Unique visitors</div></div></div>';
+      // Paid vs free, side by side. Views he was billed for is the number that
+      // decides whether the ad budget is doing anything.
+      if(px.adClicks>0){
+        h+='<div class="big-tiles"><div class="big-tile"><div class="bt-v">'+waN(px.adClicks)+'</div><div class="bt-l">Clicks you paid for'+((px.topAds||[]).length?" · "+esc(px.topAds.map(function(a){return a.k}).join(", ")):"")+'</div></div>'+
+           '<div class="big-tile"><div class="bt-v">'+waN(px.freeVisits)+'</div><div class="bt-l">Came in free</div></div></div>';
+      }
       if(primary){
         var s=px.series||[];
         if(s.length>1){
@@ -10608,6 +10640,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     }).catch(function(){J.steps[vid]={error:"Network error"};
       if(el("growApp").classList.contains("show")&&GROW.view==="journey")growRender();});
   }
+  // The platform in his words. The server sends a slug so the label can change
+  // here without a migration; anything unrecognised still reads as an ad.
+  var JN_AD={google:"Google",bing:"Microsoft",facebook:"Facebook",instagram:"Instagram",tiktok:"TikTok",linkedin:"LinkedIn"};
+  function jnAdName(a){return JN_AD[a]||"Paid"}
   // A stranger still deserves a name in the list. "Someone" beats a hex string.
   function jnWho(r){
     if(r.name)return r.name;
@@ -10630,7 +10666,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(!steps.length)return '<div class="jn-load">Nothing recorded yet.</div>';
     var mins=Math.max(1,Math.round(((d.lastAt||0)-(d.firstAt||0))/60000));
     var h='<div class="jn-sum">'+(d.pages||0)+(d.pages===1?" page":" pages")+" · "+
-      (d.acts||0)+(d.acts===1?" action":" actions")+" · "+mins+" min</div>";
+      (d.acts||0)+(d.acts===1?" action":" actions")+" · "+mins+" min"+
+      (d.city?" · "+esc(d.city):"")+(d.ad?" · "+esc(jnAdName(d.ad))+" ad":"")+"</div>";
     h+='<div class="jn-line">';
     steps.forEach(function(s){h+=jnStepRow(s)});
     h+="</div>";
@@ -10653,8 +10690,14 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       h+='<div class="wc-empty">'+ic("info",15)+' No journeys yet. They start showing up as soon as the site sends its next visit — give it a day.</div>';
       box.innerHTML=h;return jnWire(box);
     }
+    // Paid vs the rest, counted off the same rows the board already has. The
+    // question this screen could never answer before was "which of these did I
+    // buy" — so it is a tile, not a footnote.
+    var paidRows=rows.filter(function(r){return r.ad}).length;
     h+='<div class="wa-tiles"><div class="wa-tile"><div class="t-l">'+ic("users",12)+' Visitors tracked</div><div class="t-v">'+(J.total||rows.length)+"</div></div>"+
-       '<div class="wa-tile"><div class="t-l">'+ic("clipboard-list",12)+' Left their number</div><div class="t-v">'+(J.named||0)+"</div></div></div>";
+       '<div class="wa-tile"><div class="t-l">'+ic("clipboard-list",12)+' Left their number</div><div class="t-v">'+(J.named||0)+"</div></div>"+
+       '<div class="wa-tile"><div class="t-l">'+ic("target",12)+' Clicks you paid for</div><div class="t-v">'+paidRows+"</div></div></div>";
+    if(!paidRows)h+='<div class="hint" style="margin:0 0 10px">None of these came in tagged as an ad click. If your ads are running, the site has to pass the click id through — see Grow \u2192 Website \u2192 the tracker snippet.</div>';
     // The whole point of recording behaviour rather than counting it: ask what
     // the pattern IS. One button, reading every path on the board at once.
     h+='<button class="btn ic-btn" id="jnAiAll" style="width:100%;justify-content:center;margin:2px 0 10px">'+ic("sparkles",15)+
@@ -10667,8 +10710,11 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       h+='<div class="jn-card'+(open?" on":"")+(r.phone?" known":"")+'">';
       h+='<button class="jn-head" data-jn-vid="'+esc(r.vid)+'">'+
         '<span class="jn-av">'+ic(r.phone?"user":"activity",15)+"</span>"+
-        '<span class="jn-meta"><span class="jn-name"><b>'+esc(jnWho(r))+"</b>"+(r.hot?'<i class="jn-hot">'+esc(r.hot)+"</i>":"")+"</span>"+
-        "<small>"+esc((r.pages||0)+" pages · "+(r.acts||0)+" actions")+(r.last?" · "+esc(r.last):"")+"</small></span>"+
+        '<span class="jn-meta"><span class="jn-name"><b>'+esc(jnWho(r))+"</b>"+
+          (r.ad?'<i class="jn-paid">'+esc(jnAdName(r.ad))+" ad</i>":"")+
+          (r.hot?'<i class="jn-hot">'+esc(r.hot)+"</i>":"")+"</span>"+
+        "<small>"+esc((r.city?r.city+" · ":"")+(r.pages||0)+" pages · "+(r.acts||0)+" actions")+(r.last?" · "+esc(r.last):"")+"</small>"+
+        (r.found?'<small>'+esc(r.found)+"</small>":"")+"</span>"+
         '<span class="jn-ago">'+esc(r.at?ago(r.at):"")+"</span>"+
         '<span class="jn-chev">'+ic(open?"chevron-up":"chevron-down",15)+"</span></button>";
       if(open)h+='<div class="jn-detail">'+jnTimelineHtml(J.steps[r.vid])+"</div>";
