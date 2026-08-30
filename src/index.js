@@ -8,9 +8,10 @@
  *   - Cron:    Netlify schedule -> Cloudflare Cron Trigger (scheduled handler)
  *   - Static dashboard (public/index.html) served via Workers static assets.
  *
- * Public webhooks:  /submit /sms /call /voicemail /voicemail-done
+ * Public webhooks:  /submit /sms /call /call-screen /voicemail /voicemail-done
  * Dashboard API:    /api/health /api/threads /api/thread /api/send /api/meta
  *                   /api/schedule /api/unschedule /api/call /api/read
+ *                   /api/calls /api/calls/seen /api/calls/backfill
  *                   /api/insights /api/ai/summary /api/ai/draft /api/ai/triage
  *                   /api/money/* (profit tracker — see the Money module)
  *
@@ -131,7 +132,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-25·see-it-all';
+const BUILD = '2026-08-30·calls-here';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -310,6 +311,10 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/booking-settings') return apiSaveBookingSettings(request);
   if (request.method === 'POST' && pathname === '/api/booking-cal-test') return apiCalTest(request);
   if (request.method === 'POST' && pathname === '/api/block')      return apiBlock(request);
+  // ---- Calls (the phone log Google Voice used to be the only place to see) ----
+  if (request.method === 'GET'  && pathname === '/api/calls')      return apiCalls();
+  if (request.method === 'POST' && pathname === '/api/calls/seen') return apiCallsSeen();
+  if (request.method === 'POST' && pathname === '/api/calls/backfill') return apiCallsBackfill();
   if (request.method === 'GET'  && pathname === '/api/migrate')    return apiMigrate(url);
   if (request.method === 'GET'  && pathname === '/api/templates')  return apiGetTemplates();
   if (request.method === 'POST' && pathname === '/api/templates')  return apiSaveTemplates(request);
@@ -1607,13 +1612,102 @@ function mikeyAssistSync() {
 `;
 }
 
-// Small TwiML fragment that rings Mikey's cell and then falls through to
-// voicemail — shared by the direct path and the post-screening path.
-function dialMikeyTwiml() {
-  const mikeyPhone = normalizePhone(ENV.MIKEY_PHONE) || '+13607975831';
+// ───────────────────────────── THE CALL LOG ─────────────────────────────
+// Google Voice had exactly one thing this dashboard didn't: somewhere to SEE a
+// call. Who rang, who got missed, what the voicemail said — one list, in order.
+// Twilio knows all of that and nothing here was writing it down: a voicemail
+// landed as a bubble inside a text thread, and a plain missed call left no trace
+// at all. This is the ledger that fixes that.
+//
+// It is deliberately ONE KV doc, not a key per call. The write budget (see the
+// box at the top of this file) cannot take a key per ring, and a capped array we
+// rewrite in place costs one write per webhook no matter how busy the phone is.
+const CALLS_KEY = 'calls';
+const CALLS_MAX = 200;
+
+async function loadCalls() {
+  const raw = await kv().get(CALLS_KEY, { type: 'json' });
+  const doc = raw && typeof raw === 'object' ? raw : {};
+  return { calls: Array.isArray(doc.calls) ? doc.calls : [], seenTs: doc.seenTs || 0 };
+}
+
+// ⚠ KV WRITE — budgeted. Only ever called from a Twilio webhook or a deliberate
+// tap, never from the minute cron and never inside a loop.
+async function saveCalls(doc) {
+  doc.calls = (doc.calls || []).slice(0, CALLS_MAX);
+  await kv().put(CALLS_KEY, JSON.stringify(doc));
+}
+
+// One ring reaches us through up to four separate webhooks (/call → /call-screen
+// → /voicemail → /voicemail-done → /voicemail-tx). They all have to land on the
+// SAME row, or a single missed call reads as five entries. Twilio's CallSid is
+// that identity; RecordingSid is the backstop for a callback that arrives with
+// the recording but no call.
+async function recordCall(patch) {
+  const doc = await loadCalls();
+  let row = null;
+  if (patch.sid) row = doc.calls.find((c) => c.sid === patch.sid) || null;
+  if (!row && patch.recordingSid) row = doc.calls.find((c) => c.recordingSid === patch.recordingSid) || null;
+  if (!row) {
+    row = { id: genId(), ts: Date.now() };
+    doc.calls.unshift(row);
+  }
+  // Undefined means "I don't know this field", not "clear it". The transcript
+  // callback in particular arrives without a recording URL half the time, and a
+  // plain Object.assign would wipe the playable recording we already stored.
+  for (const k in patch) if (patch[k] !== undefined) row[k] = patch[k];
+  await saveCalls(doc);
+  return row;
+}
+
+// Who is this, in the customer's language rather than a raw +1? Read off the
+// thread index (memoized, already loaded on most of these paths) and stamped
+// onto the call row at write time, so the calls screen never has to load a
+// thread just to put a name on a row.
+async function callerName(fromNorm) {
+  try {
+    const index = await loadIndex();
+    const row = (index || []).find((r) => r.phone === fromNorm);
+    return (row && row.name) || '';
+  } catch { return ''; }
+}
+
+// A robo-dialer that redials the same number all afternoon shouldn't each time
+// cost a KV write. If this number already sat out the screening greeting in the
+// last half hour, that's the same story already on the board — skip it.
+function recentlyScreened(doc, fromNorm) {
+  const cut = Date.now() - 30 * 60000;
+  return (doc.calls || []).some((c) => c.fromNorm === fromNorm && c.outcome === 'screened' && (c.ts || 0) > cut);
+}
+
+// Where an inbound call actually rings. Settable in the app (☰ → Settings →
+// Calls) so the handset can change without a deploy; falls back to the same
+// handset dashboard click-to-call uses.
+function callForwardPhone(cfg) {
+  return normalizePhone((cfg && cfg.callForwardTo) || '') || callBridgePhone();
+}
+
+// Ring the handset, then bridge — the same shape as dashboard click-to-call.
+//
+// This used to dial MIKEY_PHONE, and that one line is why no voicemail ever
+// reached this dashboard. MIKEY_PHONE is the Google Voice number, and Google
+// Voice ANSWERS a forwarded call with its own greeting. From Twilio's side the
+// call was therefore `completed`, <Record> never ran, and the message, the
+// transcript and the missed-call trail all stayed locked inside Google Voice
+// where nothing here could read them.
+//
+// Dialing the cell directly puts Twilio back in charge of the unanswered case.
+// Keep `timeout` under ~25s on purpose: the carrier's own voicemail picks up
+// around then, and whichever voicemail answers first is the one that owns the
+// message. Twilio has to win that race or we are back to square one.
+//
+// answerOnBridge keeps the caller hearing a real ringback instead of dead air
+// until the handset actually picks up.
+function dialMikeyTwiml(cfg) {
+  const handset = callForwardPhone(cfg);
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial timeout="20" action="/voicemail" method="POST"><Number>${escapeXml(mikeyPhone)}</Number></Dial>
+  <Dial timeout="20" answerOnBridge="true" action="/voicemail" method="POST"><Number>${escapeXml(handset)}</Number></Dial>
 </Response>`;
 }
 
@@ -1631,11 +1725,15 @@ async function handleInboundCall(request) {
   if (!(await verifyTwilio(request, params))) return forbidden();
   const from = params.From || 'Unknown';
   const fromNorm = normalizePhone(from) || from;
+  const sid = params.CallSid || '';
   const cfg = await loadConfig();
+  const name = await callerName(fromNorm);
 
   // 1. Blocked number → reject with a rejected tone. No forward, no voicemail,
-  //    no alert. Costs Mikey nothing and the spammer gets a dead end.
+  //    no alert. Costs Mikey nothing and the spammer gets a dead end. Still
+  //    written to the log: "I blocked 6 of these" is worth being able to see.
   if (Array.isArray(cfg.blockedNumbers) && cfg.blockedNumbers.includes(fromNorm)) {
+    await recordCall({ sid, from, fromNorm, name, ts: Date.now(), outcome: 'blocked' });
     return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response><Reject reason="rejected"/></Response>');
   }
 
@@ -1643,6 +1741,14 @@ async function handleInboundCall(request) {
   //    the timeout, Twilio falls through to <Hangup/> and the call is dropped
   //    without ever forwarding to Mikey — which is what defeats the robo-dialers.
   if (cfg.callScreening !== false) {
+    // Logged as `screened` up front, before we know how it ends, because a caller
+    // who gives up during the greeting is a lead that otherwise vanished without
+    // trace. /call-screen overwrites this row the moment a key is pressed.
+    const doc = await loadCalls();
+    if (!recentlyScreened(doc, fromNorm)) {
+      doc.calls.unshift({ id: genId(), sid, from, fromNorm, name, ts: Date.now(), outcome: 'screened' });
+      await saveCalls(doc);
+    }
     const gate = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather numDigits="1" action="/call-screen" method="POST" timeout="8">
@@ -1653,9 +1759,10 @@ async function handleInboundCall(request) {
     return xmlResponse(gate);
   }
 
-  // Screening off → original behavior: forward straight to Mikey.
-  notifyMikey(`📞 Incoming call from ${from}`, `Incoming call from ${from} to your Mikey's Detailing number.`).catch(() => {});
-  return xmlResponse(dialMikeyTwiml());
+  // Screening off → forward straight to the handset.
+  await recordCall({ sid, from, fromNorm, name, ts: Date.now(), outcome: 'ringing' });
+  notifyMikey(`📞 Incoming call from ${name || from}`, `${name || from} is calling your Mikey's Detailing number right now.`).catch(() => {});
+  return xmlResponse(dialMikeyTwiml(cfg));
 }
 
 // Screening gate result. Only reached when a caller actually pressed a key, so
@@ -1665,11 +1772,18 @@ async function handleCallScreen(request) {
   const params = await formParams(request);
   if (!(await verifyTwilio(request, params))) return forbidden();
   const from = params.From || 'Unknown';
+  const fromNorm = normalizePhone(from) || from;
+  const sid = params.CallSid || '';
   const digits = params.Digits || '';
+  const cfg = await loadConfig();
   if (digits === '1') {
-    notifyMikey(`📞 Incoming call from ${from}`, `Incoming call from ${from} to your Mikey's Detailing number (passed screening).`).catch(() => {});
-    return xmlResponse(dialMikeyTwiml());
+    const name = await callerName(fromNorm);
+    await recordCall({ sid, from, fromNorm, name, outcome: 'ringing' });
+    notifyMikey(`📞 Incoming call from ${name || from}`, `${name || from} pressed 1 and is ringing your phone now.`).catch(() => {});
+    return xmlResponse(dialMikeyTwiml(cfg));
   }
+  // Pressed something that isn't 1 — a human, but not one being put through.
+  await recordCall({ sid, from, fromNorm, outcome: 'declined' });
   return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="alice">Sorry, I didn\'t get that. Goodbye.</Say><Hangup/></Response>');
 }
 
@@ -1677,8 +1791,18 @@ async function handleVoicemail(request) {
   const params = await formParams(request);
   if (!(await verifyTwilio(request, params))) return forbidden();
   const from = params.From || 'Unknown';
+  const fromNorm = normalizePhone(from) || from;
+  const sid = params.CallSid || '';
   const dialStatus = params.DialCallStatus || '';
-  if (dialStatus === 'completed') return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+  // This webhook is where a call's ending is finally known: `completed` means the
+  // handset picked up and the two of them talked, anything else means it rang out.
+  // Both belong on the board — "he answered, 4 minutes" is as much a record as a
+  // missed call, and it's the half Google Voice was keeping to itself.
+  if (dialStatus === 'completed') {
+    await recordCall({ sid, from, fromNorm, outcome: 'answered', talkSec: Number(params.DialCallDuration || 0) || 0 });
+    return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+  }
+  await recordCall({ sid, from, fromNorm, outcome: 'missed', dialStatus });
 
   // Missed-call instant text-back — the #1 lead-recovery move for a solo mobile
   // business. Fire a friendly SMS to the caller so a missed call converts into a
@@ -1711,7 +1835,7 @@ async function handleVoicemail(request) {
   <Say voice="alice">Hey, you've reached Mikey's Mobile Detailing. Leave a message and Mikey will text or call you right back.</Say>
   <Record maxLength="120" action="/voicemail-done" method="POST" playBeep="true" transcribe="true" transcribeCallback="/voicemail-tx" />
 </Response>`;
-  notifyMikey(`📵 Missed call from ${from}`, `Missed call from ${from} — I sent them an instant text back, and they may leave a voicemail now.`).catch(() => {});
+  notifyMikey(`📵 Missed call from ${from}`, `Missed call from ${from} — I sent them an instant text back, and they may leave a voicemail now. It's on the Calls screen in your dashboard.`).catch(() => {});
   return xmlResponse(xml);
 }
 
@@ -1747,7 +1871,14 @@ async function handleVoicemailDone(request) {
       await saveThread(thread);
       await updateIndexEntry(thread);
     }
-    await notifyMikey(`🎙️ Voicemail from ${from}`, `Voicemail from ${from} (${duration}s). Open the dashboard to listen.`);
+    // Same voicemail, second home: the thread bubble keeps it in the conversation,
+    // the call row keeps it on the Calls screen next to the ring it came from.
+    await recordCall({
+      sid: params.CallSid || '', from, fromNorm, outcome: 'voicemail',
+      recording: recordingUrl + '.mp3', recordingSid: recordingSid || undefined,
+      vmSec: Number(duration) || 0,
+    });
+    await notifyMikey(`🎙️ Voicemail from ${from}`, `Voicemail from ${from} (${duration}s). Play it on the Calls screen in your dashboard.`);
   }
   return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
 }
@@ -1782,6 +1913,7 @@ async function handleVoicemailTranscription(request) {
       await saveThread(thread);
       await updateIndexEntry(thread);
     }
+    await recordCall({ sid: params.CallSid || '', recordingSid: recordingSid || undefined, transcriptFailed: true });
     return new Response('', { status: 204 });
   }
 
@@ -1808,6 +1940,14 @@ async function handleVoicemailTranscription(request) {
     await saveThread(thread);
     await updateIndexEntry(thread);
   }
+  // The transcript is the whole reason Google Voice felt better than this app.
+  // Mirrored onto the call row so the Calls screen can show what was said without
+  // opening a conversation, or playing anything.
+  await recordCall({
+    sid: params.CallSid || '', recordingSid: recordingSid || undefined,
+    outcome: 'voicemail', transcript: text, transcriptFailed: false,
+    recording: recording ? recording + '.mp3' : undefined,
+  });
   notifyMikey(`🎙️ Voicemail transcript from ${from}`, `"${text}"\n\nOpen the dashboard to reply.`).catch(() => {});
   return new Response('', { status: 204 });
 }
@@ -2078,6 +2218,119 @@ async function apiCall(request) {
   if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
   await placeBridgeCall(phone);
   return json({ ok: true });
+}
+
+// The Calls screen. Names are re-read from the index on the way out rather than
+// trusted from the row: a caller who was a bare +1 when they rang is usually a
+// named customer by the time you look at the log.
+async function apiCalls() {
+  const doc = await loadCalls();
+  const cfg = await loadConfig();
+  let index = [];
+  try { index = (await loadIndex()) || []; } catch { /* names are a nicety */ }
+  const names = new Map(index.map((r) => [r.phone, r.name || '']));
+  const blocked = new Set(Array.isArray(cfg.blockedNumbers) ? cfg.blockedNumbers : []);
+  const calls = doc.calls.map((c) => Object.assign({}, c, {
+    name: names.get(c.fromNorm) || c.name || '',
+    blocked: blocked.has(c.fromNorm),
+  }));
+  // "Needs you" is the badge number: a missed call or a voicemail you haven't
+  // looked at yet. A screened-out robo-dialer is history, not a to-do.
+  const unseen = calls.filter((c) => (c.ts || 0) > (doc.seenTs || 0) &&
+    (c.outcome === 'missed' || c.outcome === 'voicemail')).length;
+  return json({
+    ok: true, calls, seenTs: doc.seenTs || 0, unseen,
+    forwardTo: callForwardPhone(cfg), screening: cfg.callScreening !== false,
+  });
+}
+
+// Day one of the Calls screen is otherwise an empty screen: the log only knows
+// about calls that rang after it shipped, and the history Mikey actually wants to
+// see already happened. Twilio kept all of it. This pulls the recent inbound
+// calls (plus any recording and transcript attached to them) into the log in one
+// pass and ONE KV write.
+//
+// Backfilled rows are marked `past` rather than guessed into answered/missed.
+// Twilio's own call status can't tell "he picked up and talked" from "the caller
+// sat through the screening greeting and hung up" — both are `completed` — and a
+// log that quietly makes things up is worse than one that says "earlier call".
+async function apiCallsBackfill() {
+  const sid = ENV.TWILIO_ACCOUNT_SID, token = ENV.TWILIO_AUTH_TOKEN;
+  if (!sid || !token) return json({ ok: false, error: 'twilio_not_configured' }, 500);
+  const auth = `Basic ${btoa(`${sid}:${token}`)}`;
+  const api = (path) => fetch(`https://api.twilio.com${path}`, { headers: { Authorization: auth } });
+  const acct = `/2010-04-01/Accounts/${sid}`;
+  const grab = async (path, key) => {
+    const r = await api(path);
+    if (!r.ok) throw new Error(`${r.status}: ${(await r.text()).slice(0, 200)}`);
+    return (await r.json())[key] || [];
+  };
+
+  let calls, recs, txs;
+  try {
+    const to = ENV.TWILIO_FROM || '';
+    calls = await grab(`${acct}/Calls.json?To=${encodeURIComponent(to)}&PageSize=50`, 'calls');
+    recs = await grab(`${acct}/Recordings.json?PageSize=30`, 'recordings');
+    txs = await grab(`${acct}/Transcriptions.json?PageSize=30`, 'transcriptions');
+  } catch (e) {
+    return json({ ok: false, error: `twilio_list_failed: ${String((e && e.message) || e)}` }, 502);
+  }
+
+  const txByRec = new Map();
+  for (const t of txs) if (t.status === 'completed' && t.transcription_text) txByRec.set(t.recording_sid, (t.transcription_text || '').trim());
+  const recByCall = new Map();
+  for (const r of recs) if (r.call_sid) recByCall.set(r.call_sid, r);
+
+  const doc = await loadCalls();
+  let index = [];
+  try { index = (await loadIndex()) || []; } catch { /* names are a nicety */ }
+  const names = new Map(index.map((r) => [r.phone, r.name || '']));
+  const mikey = normalizePhone(ENV.MIKEY_PHONE);
+  const known = new Set(doc.calls.map((c) => c.sid).filter(Boolean));
+
+  let added = 0;
+  for (const c of calls) {
+    if (c.direction && !/inbound/i.test(c.direction)) continue;
+    if (!c.sid || known.has(c.sid)) continue;
+    const fromNorm = normalizePhone(c.from || '');
+    if (!fromNorm || fromNorm === mikey) continue;
+    const rec = recByCall.get(c.sid);
+    const row = {
+      id: genId(), sid: c.sid, from: c.from || fromNorm, fromNorm,
+      name: names.get(fromNorm) || '',
+      ts: c.start_time ? new Date(c.start_time).getTime() : Date.now(),
+      outcome: rec ? 'voicemail' : 'past',
+      talkSec: Number(c.duration || 0) || 0,
+      backfilled: true,
+    };
+    if (rec) {
+      row.recordingSid = rec.sid;
+      row.recording = `https://api.twilio.com${String(rec.uri).replace(/\.json$/, '')}.mp3`;
+      row.vmSec = Number(rec.duration || 0) || 0;
+      const tx = txByRec.get(rec.sid);
+      if (tx) row.transcript = tx; else row.transcriptFailed = true;
+    }
+    doc.calls.push(row);
+    added++;
+  }
+  if (added) {
+    doc.calls.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    // Backfilled history is history — it must not light up the "needs you" badge
+    // with calls from last week the moment it lands.
+    doc.seenTs = Math.max(doc.seenTs || 0, Date.now());
+    await saveCalls(doc);
+  }
+  return json({ ok: true, added });
+}
+
+// One write, on a deliberate tap: opening the Calls screen clears its badge.
+async function apiCallsSeen() {
+  const doc = await loadCalls();
+  const newest = (doc.calls[0] || {}).ts || 0;
+  if ((doc.seenTs || 0) >= newest) return json({ ok: true, seenTs: doc.seenTs || 0 });
+  doc.seenTs = Math.max(newest, Date.now());
+  await saveCalls(doc);
+  return json({ ok: true, seenTs: doc.seenTs });
 }
 
 async function apiRead(request) {
@@ -6733,6 +6986,7 @@ async function apiSaveConfig(request) {
   if (data.quietEnd != null && !isNaN(+data.quietEnd)) next.quietEnd = Math.max(0, Math.min(23, Math.round(+data.quietEnd)));
   if (typeof data.tz === 'string' && data.tz) next.tz = data.tz.slice(0, 64);
   if (typeof data.callScreening === 'boolean') next.callScreening = data.callScreening;
+  if (typeof data.callForwardTo === 'string') next.callForwardTo = normalizePhone(data.callForwardTo) || '';
   if (typeof data.missedCallTextback === 'boolean') next.missedCallTextback = data.missedCallTextback;
   if (typeof data.missedCallText === 'string') next.missedCallText = data.missedCallText.slice(0, 320);
   if (typeof data.autoReplyAlert === 'boolean') next.autoReplyAlert = data.autoReplyAlert;
@@ -8025,6 +8279,10 @@ function defaultConfig() {
     quietStart: 20,          // 8pm — no autopilot sends after this local hour…
     quietEnd: 8,             // …until 8am (suggestions still surface anytime)
     tz: 'America/Los_Angeles',
+    callForwardTo: '',       // handset an inbound call rings (blank = CALL_BRIDGE_PHONE).
+                             // Deliberately NOT MIKEY_PHONE: that's the Google Voice
+                             // number, and Google Voice answering a forwarded call is
+                             // what used to swallow every voicemail — see dialMikeyTwiml.
     callScreening: true,     // press-1 gate on inbound calls — stops robocall/spam
                              // auto-dialers before they ring your phone or hit voicemail
     blockedNumbers: [],      // normalized numbers that get rejected instantly (no ring)

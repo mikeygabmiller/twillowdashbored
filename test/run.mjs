@@ -19,12 +19,13 @@ const UNIT = [
   'hold', 'detect', 'pay', 'ai', 'compose', 'thread', 'inbox', 'money', 'quickreply',
   'replycheck', 'autoreply', 'quotes', 'balance', 'alertmail', 'promise', 'recap',
   'geogrid', 'geogrid.ui', 'snapshot', 'journey', 'quotewatch', 'place', 'cold', 'portal', 'sheets', 'gdoc', 'gform', 'seed', 'scan', 'cpu',
-  'aicost', 'use',
+  'aicost', 'use', 'calls',
 ].map((n) => `${n}.test.js`);
 
 const UI = [
   'detect.ui', 'pay.ui', 'nav.ui', 'search.ui', 'tabs.ui', 'snapshot.ui', 'place.ui',
   'newmsg.ui', 'peek.ui', 'polish.ui', 'journey.ui', 'scan.ui', 'aidiet.ui', 'use.ui',
+  'calls.ui',
 ].map((n) => `${n}.test.js`);
 
 const mode = (process.argv[2] || 'unit').toLowerCase();
