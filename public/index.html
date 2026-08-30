@@ -3996,7 +3996,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-30·sounds-human";
+  var APP_BUILD="2026-08-30·quote-reply";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -6969,6 +6969,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     ["services","Services & pricing","List your packages and price ranges so replies quote the right ballpark."],
     ["area","Service area & hours","Where you travel and the days/times you work."],
     ["booking","Booking & policies","How booking works, deposits, cancellations, guarantees."],
+    ["quoting","The quote reply","The text right after they send their vehicle — the shape, the caveats, and real worked quotes. This is the one the AI gets wrong most."],
     ["tone","Voice & tone","How replies should sound."],
     ["examples","How you text (voice examples)","Paste a few real texts you've sent so drafts copy your exact voice."],
     ["faqs","Common questions & answers","Paste real questions customers ask and the answers you'd give."],
