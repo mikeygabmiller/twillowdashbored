@@ -132,7 +132,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-31·reorg';
+const BUILD = '2026-08-31·claude-voice';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -193,6 +193,9 @@ async function runCron() {
   await maybePayReminders().catch(() => {});
   // "They saw the price and never left a number." Costs one KV read a minute.
   await quoteAbandonCron().catch(() => {});
+  // Re-derive the writing fingerprint when the corpus has drifted past it. Gated
+  // to one minute an hour and one refresh a day — see maybeRefreshVoice.
+  await maybeRefreshVoice().catch(() => {});
 }
 
 // Private "remind me to follow up on <date>" reminders — a nudge to Mikey, not a
@@ -6232,8 +6235,17 @@ async function apiAiDraft(request) {
       // it can't invent prices/times. This actually rewrites awkward phrasing —
       // it's not a bare proofread.
       const voice = (cfg.playbook && cfg.playbook.tone) ? `Write in this texting voice:\n${cfg.playbook.tone}\n\n` : '';
+      // Polish had the hand-written tone paragraph and nothing else, while the
+      // measured counts and the derived fingerprint — both already computed, both
+      // free to include — sat unused two functions away. Polishing is the surface
+      // where his own words are already on the page, so drifting off his rhythm is
+      // more obvious here than anywhere: it gets the same grounding as drafting.
+      const pv = await loadVoice();
+      const measured = pv ? measuredStyleRules(pv.style) : '';
       const prompt =
         voice +
+        (measured ? measured + '\n\n' : '') +
+        (pv && pv.fingerprint ? 'HOW MIKEY WRITES (derived from his real texts):\n' + pv.fingerprint + '\n\n' : '') +
         (await rulesContext()) +
         `You are polishing a short text message the user is about to send a customer. ` +
         `Rewrite it so it reads clearly and sounds great: fix spelling, grammar and punctuation, and reword any awkward, clunky or confusing phrasing so every sentence makes sense and flows naturally. ` +
@@ -6243,7 +6255,7 @@ async function apiAiDraft(request) {
         `Return ONLY the polished message — no quotes, no explanation, no preamble. ` +
         (hint ? `Also follow this instruction: ${hint}. ` : '') +
         `\n\nMessage to polish:\n${draftText}\n\nPolished message:`;
-      const text = await geminiGenerate(prompt, { surface: 'auto polish', temperature: 0.4, maxTokens: 800 });
+      const text = await aiGenerate(prompt, { surface: 'auto polish', tier: 'voice', temperature: 0.4, maxTokens: 800 });
       return json({ ok: true, draft: text.replace(/^["']|["']$/g, '').trim() });
     }
     const text = await generateReply(thread, cfg, hint);
@@ -7666,7 +7678,7 @@ async function buildFollowupDraft(thread, plan, cfg, opts = {}) {
       `\n\nConversation so far:\n${transcript(thread)}\n\nFollow-up text:`;
   }
   try {
-    const t = (await geminiGenerate(prompt, { surface: 'follow-up draft', temperature: 0.7, maxTokens: 500 })).replace(/^["']|["']$/g, '').trim();
+    const t = (await aiGenerate(prompt, { surface: 'follow-up draft', tier: 'voice', temperature: 0.7, maxTokens: 500 })).replace(/^["']|["']$/g, '').trim();
     return t || tmpl;
   } catch { return tmpl; }
 }
@@ -9900,14 +9912,17 @@ async function editsContext(bucket) {
 // unlike a hand-written list it covers the situations that actually come up, in
 // the proportions they actually come up.
 const VOICE_KEY = 'voice:profile';
-// Retrieval now ranks by relevance rather than taking the newest N, so a deeper pool
+// Retrieval ranks by relevance rather than taking the newest N, so a deeper pool
 // is a straight win: more chance something genuinely close to the question is in
-// there. 40 × 8 buckets ≈ 320 short texts, comfortably inside a single KV value.
-const VOICE_PER_BUCKET = 40;    // kept per situation (retrieval ranks across all of them)
-const VOICE_SHOW = 12;          // shown to the model per draft
+// there. The old cap of 40 was not a storage limit, it was a guess — and the live
+// profile proved it wrong, with price, schedule and general all pinned at exactly
+// 40 while the rest of his real texts were scanned and thrown away. 120 × 9
+// buckets is ~1,080 short texts, still a small fraction of one KV value.
+const VOICE_PER_BUCKET = 120;   // kept per situation (retrieval ranks across all of them)
+const VOICE_SHOW = 20;          // shown to the model per draft
 
 // Situation buckets. Deterministic and free — no AI call to file a message.
-const VOICE_BUCKETS = ['price', 'schedule', 'confirm', 'answer', 'apology', 'closing', 'quick', 'general'];
+const VOICE_BUCKETS = ['price', 'offer', 'schedule', 'confirm', 'answer', 'apology', 'closing', 'quick', 'general'];
 // Order matters. The rule: a message goes in the bucket whose OTHER messages it
 // most resembles stylistically, because the bucket decides which of his real
 // texts the model gets shown.
@@ -9915,10 +9930,17 @@ const VOICE_BUCKETS = ['price', 'schedule', 'confirm', 'answer', 'apology', 'clo
 // Two consequences worth stating, since both are easy to get backwards:
 //   - Bad news outranks its own subject. "Unfortunately I couldn't get a slot"
 //     belongs with how he softens bad news, not with scheduling.
-//   - A concrete day or time makes it scheduling even when it opens like a
-//     confirmation. "You're all set for Tuesday" and "Perfect, let's shoot for
-//     10:45" are the same kind of message and must not be split apart; `confirm`
-//     is for agreements with no time in them ("Sounds good!", "Yep, will do").
+//   - A concrete day or time still means one of the two time buckets, even when
+//     the text opens like a confirmation; `confirm` is for agreements with no time
+//     in them ("Sounds good!", "Yep, will do").
+//
+// The two time buckets used to be one, and it was the worst-scoring situation on
+// the board — 50% against 100% for pricing, on a bucket that was already full.
+// That was never a shortage of examples. Proposing a slot and locking one in are
+// opposite jobs: an offer has to leave room for a no ("I've got 10:45 open, want
+// it?"), a booking has to leave none ("You're all set for Tuesday"). Ranked
+// together, a draft that should have asked got shown texts that told, and copied
+// their certainty. `offer` proposes; `schedule` confirms.
 // Does this message name a vehicle? Two strengths, because one rule can't do both:
 //   - A model year or a make is decisive at any length, so "Thanks! It's a 2009
 //     Acura RDX" still reads as the quote moment and not as a thank-you.
@@ -9941,7 +9963,15 @@ function voiceBucket(text) {
   if (/\b(sorry|unfortunately|apolog|my bad|ran late|running late)\b/.test(t)) return 'apology';
   // Bare clock times ("10:30", "let's shoot for 10:45") are how he actually writes
   // times — an am/pm suffix is the exception, not the rule.
-  if (/\b(mon|tues|wednes|thurs|fri|satur|sun)day\b|\btomorrow\b|\btoday\b|\bnext week\b|\b\d{1,2}:\d{2}\b|\b\d{1,2}\s*(am|pm)\b|\bmorning\b|\bafternoon\b|\bslot\b|\bschedule\b|\bavailab/.test(t)) return 'schedule';
+  if (/\b(mon|tues|wednes|thurs|fri|satur|sun)day\b|\btomorrow\b|\btoday\b|\bnext week\b|\b\d{1,2}:\d{2}\b|\b\d{1,2}\s*(am|pm)\b|\bmorning\b|\bafternoon\b|\bslot\b|\bschedule\b|\bavailab/.test(t)) {
+    // Locked-in language wins outright: "see you Tuesday" is a booking that
+    // happens to name a day, not an offer of one.
+    if (/\b(all set|you'?re set|see you|see ya|booked|confirmed|put you down|got you down|i'?ll be there|on the books|locked in|penciled|penciled you)\b/.test(t)) return 'schedule';
+    // Still asking — a question, an opening he's offering, a "let me know" — is an
+    // offer. The question mark alone carries most of this.
+    if (/\?|\b(let me know|works? for you|work for you|i could|i can do|i'?ve got|i have|open|opening|free|available|what time|when works)\b/.test(t)) return 'offer';
+    return 'schedule';
+  }
   // The quote moment. When a customer answers the intro text with their vehicle,
   // the reply Mikey writes is a QUOTE — so he must be shown his real quoting texts,
   // not his one-word ones. Without this, "2024 Ram 3500 crew cab diesel." scored as
@@ -10076,8 +10106,14 @@ async function apiVoiceImport(request) {
   if (aiConfigured()) {
     try {
       const v = await loadVoice();
-      fingerprint = await deriveVoiceFingerprint(v, await loadConfig());
-      if (fingerprint) { v.fingerprint = fingerprint; await saveVoice(v); }
+      const icfg = await loadConfig();
+      fingerprint = await deriveVoiceFingerprint(v, icfg);
+      if (fingerprint) {
+        v.fingerprint = fingerprint;
+        v.fpAt = voiceSampleCount(v);
+        v.fpDay = localDateStr(Date.now(), icfg && icfg.tz);
+        await saveVoice(v);
+      }
     } catch { /* samples are in either way */ }
   }
   return json({ ok: true, mode: parsed.mode, found: texts.length, added, fingerprint });
@@ -10133,7 +10169,11 @@ async function buildVoiceProfile(opts = {}) {
   // Derive the fingerprint from the real samples. One AI call, and the only one
   // this whole build makes.
   if (kept >= 12 && opts.fingerprint !== false) {
-    try { v.fingerprint = await deriveVoiceFingerprint(v, cfg); } catch { v.fingerprint = ''; }
+    try {
+      v.fingerprint = await deriveVoiceFingerprint(v, cfg);
+      v.fpAt = voiceSampleCount(v);   // what the drift check below measures against
+      v.fpDay = localDateStr(Date.now(), cfg && cfg.tz);
+    } catch { v.fingerprint = ''; }
   }
   await saveVoice(v);
   return v;
@@ -10206,8 +10246,14 @@ async function deriveVoiceFingerprint(v, cfg) {
     `Finish with a line starting exactly "NEVER: " listing things he never does.\n\n` +
     `Do not quote the messages back. Do not praise him. Just the rules.\n\n` +
     sample.map((s) => `- ${s}`).join('\n');
-  const text = await aiGenerate(prompt, { surface: 'voice training', tier: 'fast', maxTokens: 800, temperature: 0.2 });
-  return String(text || '').trim().slice(0, 1600);
+  const text = await aiGenerate(prompt, { surface: 'voice training', tier: 'voice', maxTokens: 800, temperature: 0.2 });
+  // The fingerprint is a prompt, and a fingerprint that recommends a phrase the
+  // tell-blocker bans is a trap: the model obeys it, findTell() rejects the draft,
+  // and the rewrite costs a second full call every time. This is not theoretical —
+  // the live profile listed "Feel free to" as one of his recurring phrases, which
+  // AI_TELLS bans outright. Drop the offending line rather than hope nobody uses it.
+  const kept = String(text || '').split('\n').filter((line) => !findTell(line));
+  return kept.join('\n').trim().slice(0, 1600);
 }
 
 // ---------------------------------------------------------------------------
@@ -10409,6 +10455,47 @@ function styleViolation(text, st, bucket) {
     return `it runs ${sentences} sentences and he usually writes ${st.medSentences}. Make it shorter`;
   }
   return '';
+}
+
+function voiceSampleCount(v) {
+  let n = 0;
+  for (const b of VOICE_BUCKETS) n += ((v && v.buckets && v.buckets[b]) || []).length;
+  return n;
+}
+
+// Keep the fingerprint honest as his writing moves
+// ---------------------------------------------------------------------------
+// The corpus learns continuously — every draft he sends word for word, every one
+// he rewrites — but the fingerprint derived FROM that corpus only ever changed
+// when he remembered to tap a button. The live profile was three days stale on a
+// corpus that had grown the whole time, which is the worst combination: the model
+// is steered by a description of how he used to write.
+//
+// So re-derive it on drift. Deliberately NOT a full rebuild: that costs a KV read
+// per conversation and belongs behind a button. This is one KV read, one AI call
+// and one write, at most once a day, and only once enough new material has landed
+// to change the answer.
+const VOICE_FP_DRIFT = 25;      // new samples since the last derive before it's worth redoing
+async function maybeRefreshVoice() {
+  if (!aiConfigured()) return false;
+  // Checked on the hour rather than every minute: the cron runs 1,440 times a day
+  // and this is not 1,440 KV reads' worth of urgency.
+  if (new Date().getUTCMinutes() !== 7) return false;
+  const v = await loadVoice();
+  if (!v || !v.fingerprint) return false;                 // nothing derived yet — that's the button's job
+  const cfg = await loadConfig();
+  const today = localDateStr(Date.now(), cfg && cfg.tz);
+  if (v.fpDay === today) return false;                    // already refreshed today
+  const now = voiceSampleCount(v);
+  if (now - (v.fpAt || 0) < VOICE_FP_DRIFT) return false; // not enough new writing to say anything new
+  const fp = await deriveVoiceFingerprint(v, cfg);
+  if (!fp) return false;
+  v.fingerprint = fp;
+  v.fpAt = now;
+  v.fpDay = today;
+  v.style = measureStyle(v);
+  await saveVoice(v);
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -10802,7 +10889,15 @@ async function apiVoiceStats() {
     perBucket[b] = { samples: buckets[b] || 0, rounds: n, rate: n ? Math.round(((r.match || 0) / n) * 100) : null };
   }
 
-  const provider = ENV.ANTHROPIC_API_KEY && !envFlag('CLAUDE_DISABLED') ? 'claude' : (ENV.GEMINI_API_KEY ? 'gemini' : 'none');
+  let provider = ENV.ANTHROPIC_API_KEY && !envFlag('CLAUDE_DISABLED') ? 'claude' : (ENV.GEMINI_API_KEY ? 'gemini' : 'none');
+  // Say which model is writing RIGHT NOW, not which one is configured. Once the
+  // day's budget is spent the drafts come from Gemini, and a screen that still
+  // said "Claude" would be the one place he'd never think to look for why the
+  // drafts changed halfway through a Saturday.
+  const budget = aiDailyBudget();
+  const spent = provider === 'claude' ? await claudeSpentToday() : 0;
+  const budgetSpent = provider === 'claude' && !(budget > 0 && spent < budget);
+  if (budgetSpent) provider = ENV.GEMINI_API_KEY ? 'gemini' : 'none';
 
   // The single most useful next step, in priority order.
   let next = 'train';
@@ -10831,6 +10926,7 @@ async function apiVoiceStats() {
     rounds: total, match: s.match || 0, off: s.off || 0,
     recent: (s.rounds || []).slice(0, 20).map((r) => ({ verdict: r.verdict, at: r.at || 0, bucket: r.b || '' })),
     provider, next,
+    budget: { daily: budget, spent: Math.round(spent * 10000) / 10000, spentOut: budgetSpent },
     perBucketCap: VOICE_PER_BUCKET,
   });
 }
@@ -10934,12 +11030,84 @@ function businessContext(cfg) {
 // isn't set or the call fails, so the dashboard never loses the ability to draft.
 function aiConfigured() { return !!(ENV.GEMINI_API_KEY || ENV.ANTHROPIC_API_KEY); }
 
+// ---------------------------------------------------------------------------
+// The daily budget
+// ---------------------------------------------------------------------------
+// Claude writes the texts a customer reads, and Claude is metered per token. One
+// runaway retry loop, or one Saturday busier than any before it, should not be
+// able to turn into a bill he finds out about at the end of the month. So the
+// router prices every Claude call as it lands and stops reaching for Claude once
+// the day's ceiling is spent.
+//
+// The important half of this design is what "stopped" means: it falls back to
+// Gemini — it does NOT stop drafting. A budget that can leave him unable to
+// answer a customer is a worse failure than the bill it was protecting him from.
+//
+// Priced from the published per-million rates so the dashboard can say dollars
+// instead of tokens. If Anthropic's pricing moves, this table is the one place
+// to change.
+const AI_PRICE_PER_M = {              // model -> [input $/1M, output $/1M]
+  'claude-opus-5': [5, 25],
+  'claude-sonnet-5': [2, 10],
+  'claude-haiku-4-5': [1, 5],
+};
+// A draft costs roughly two and a half cents at Opus rates, so a dollar is about
+// forty of them in a day — comfortably more than a one-man detailing shop sends,
+// and small enough that a bug can't run away overnight.
+const AI_BUDGET_DEFAULT_USD = 1.00;
+
+function claudeModel() { return ENV.ANTHROPIC_MODEL || 'claude-opus-5'; }
+// Set ANTHROPIC_DAILY_BUDGET under Variables to change it without a deploy.
+// Setting it to 0 is a full stop: everything falls back to Gemini immediately,
+// which makes it a second kill switch alongside CLAUDE_DISABLED.
+function aiDailyBudget() {
+  const raw = Number(ENV.ANTHROPIC_DAILY_BUDGET);
+  return (Number.isFinite(raw) && raw >= 0) ? raw : AI_BUDGET_DEFAULT_USD;
+}
+function claudeCost(inTok, outTok) {
+  const p = AI_PRICE_PER_M[claudeModel()] || AI_PRICE_PER_M['claude-opus-5'];
+  return ((Math.max(0, inTok | 0) * p[0]) + (Math.max(0, outTok | 0) * p[1])) / 1e6;
+}
+
+// What Claude has cost today, in dollars. Held in the isolate and topped up from
+// KV every few minutes rather than read per draft: a spend gate that costs a KV
+// read every time it runs is spending the read budget to protect the token one.
+let CLAUDE_SPEND = null;                       // { date, usd, readAt }
+const CLAUDE_SPEND_TTL_MS = 5 * 60 * 1000;
+async function claudeSpentToday() {
+  const date = localDateStr(Date.now(), (CFG_CACHE && CFG_CACHE.tz) || 'America/Los_Angeles');
+  if (CLAUDE_SPEND && CLAUDE_SPEND.date === date &&
+      Date.now() - CLAUDE_SPEND.readAt < CLAUDE_SPEND_TTL_MS) return CLAUDE_SPEND.usd;
+  let usd = 0;
+  try {
+    const doc = await kv().get(aiUsageKey(date), { type: 'json' });
+    // noteAiUsage files Claude's calls under a surface suffixed "(claude)", which
+    // is what makes the day's spend readable without a second set of counters.
+    for (const [k, v] of Object.entries((doc && doc.by) || {})) {
+      if (/\(claude\)$/.test(k)) usd += claudeCost(v.in, v.out);
+    }
+  } catch { /* an unreadable counter must never be what blocks a reply */ }
+  CLAUDE_SPEND = { date, usd, readAt: Date.now() };
+  return usd;
+}
+// Fold a call's real cost in the moment it returns, so a burst inside one isolate
+// trips the gate long before those counts are due to reach KV.
+function noteClaudeSpend(inTok, outTok) {
+  if (CLAUDE_SPEND) CLAUDE_SPEND.usd += claudeCost(inTok, outTok);
+}
+
 async function aiGenerate(prompt, opts = {}) {
   if (opts.tier === 'voice' && ENV.ANTHROPIC_API_KEY && !envFlag('CLAUDE_DISABLED')) {
-    try { return await claudeGenerate(prompt, opts); }
-    catch (err) {
-      // Never let a provider outage stop him replying — fall through to Gemini.
-      console.log('claude failed, falling back to gemini:', String((err && err.message) || err).slice(0, 200));
+    const budget = aiDailyBudget();
+    const spent = await claudeSpentToday();
+    if (budget > 0 && spent < budget) {
+      try { return await claudeGenerate(prompt, opts); }
+      catch (err) {
+        // Never let a provider outage stop him replying — fall through to Gemini.
+        console.log('claude failed, falling back to gemini:', String((err && err.message) || err).slice(0, 200));
+      }
+    } else {
+      console.log(`claude over the day's budget ($${spent.toFixed(2)} of $${budget.toFixed(2)}) — drafting on gemini`);
     }
   }
   return geminiGenerate(prompt, opts);
@@ -10965,7 +11133,7 @@ async function claudeGenerate(prompt, opts = {}) {
   const key = ENV.ANTHROPIC_API_KEY;
   if (!key) throw new Error('ANTHROPIC_API_KEY not set');
   const body = {
-    model: ENV.ANTHROPIC_MODEL || 'claude-opus-5',
+    model: claudeModel(),
     max_tokens: Math.max(1024, Math.min(8000, (opts.maxTokens || 800) + 1200)), // room for thinking
     // Low effort: these are short, well-specified writing tasks with the examples
     // already in the prompt. Thinking stays ON — disabling it on Opus 5 can leak
@@ -10990,6 +11158,7 @@ async function claudeGenerate(prompt, opts = {}) {
   const data = await res.json();
   const cu = data.usage || {};
   await noteAiUsage(opts.surface, 'claude', cu.input_tokens, cu.output_tokens, false);
+  noteClaudeSpend(cu.input_tokens, cu.output_tokens);
   if (data.stop_reason === 'refusal') throw new Error('anthropic_refusal');
   const text = (data.content || []).filter((b) => b && b.type === 'text').map((b) => b.text || '').join('').trim();
   if (!text) throw new Error('anthropic_empty');
@@ -11100,9 +11269,20 @@ async function apiAiUsage(url) {
     .map(([surface, v]) => Object.assign({ surface }, v))
     .sort((a, b) => (b.in + b.out) - (a.in + a.out));
   const todayDoc = out.find((d) => d.date === today);
+  // What the metered half actually cost, priced from the counted tokens rather
+  // than modelled from assumed volumes — the whole point of counting them.
+  const claudeUsd = bySurface.reduce((a, r) => a + (/\(claude\)$/.test(r.surface) ? claudeCost(r.in, r.out) : 0), 0);
+  const spentToday = await claudeSpentToday();
   return json({
     ok: true, days, today,
     model: ENV.GEMINI_MODEL || 'gemini-2.5-flash',
+    claude: {
+      model: claudeModel(),
+      budget: aiDailyBudget(),
+      spentToday: Math.round(spentToday * 10000) / 10000,
+      spentRange: Math.round(claudeUsd * 10000) / 10000,
+      overBudget: aiDailyBudget() > 0 ? spentToday >= aiDailyBudget() : true,
+    },
     total: { calls, in: inTok, out: outTok, days: out.length },
     bySurface,
     todayTotal: todayDoc
@@ -14699,15 +14879,15 @@ async function detConfirmDraft(rec, cfg, kind) {
     : `Hey ${first}, you're all set for ${when}${rec.service ? ` — ${rec.service}` : ''}. ` +
       `${rec.address ? `I'll come to you at ${rec.address}. ` : ''}Just have the car accessible with water & power within about 20 ft. ` +
       `I'll text you when I'm on my way. - Mikey`;
-  if (!ENV.GEMINI_API_KEY) return tpl;
+  if (!aiConfigured()) return tpl;
   try {
-    const out = await geminiGenerate(
+    const out = await aiGenerate(
       `You are Mikey, owner of Mikey's Mobile Detailing. Write ONE short, warm, professional text to a customer.\n` +
       `Goal: ${rec.tentative || kind === 'pin' ? 'ask what exact time works that day so it can be pinned down' : 'confirm the appointment is locked in'}.\n` +
       `Customer: ${first}. When: ${when}.${rec.service ? ` Service: ${rec.service}.` : ''}${rec.address ? ` Address: ${rec.address}.` : ''}\n` +
       ((cfg.playbook && cfg.playbook.rules) ? `Rules you follow:\n${jdStr(cfg.playbook.rules, 600)}\n` : '') +
       `Never invent a price. Sign off "- Mikey". 2 sentences max. Return only the message text.`,
-      { surface: 'appointment draft', temperature: 0.5, maxTokens: 220 });
+      { surface: 'appointment draft', tier: 'voice', temperature: 0.5, maxTokens: 220 });
     const clean = jdStr(out, 600);
     // Only trust it if it reads like a sentence; a stray JSON blob falls back.
     if (clean.length < 15 || !/[a-z]{3}/i.test(clean) || /^[[{]/.test(clean)) return tpl;
