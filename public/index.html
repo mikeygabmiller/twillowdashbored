@@ -349,6 +349,17 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .air-text{background:rgba(127,127,127,.08);border:1px solid var(--line);border-radius:10px;padding:10px 11px;font-size:14px;line-height:1.5;white-space:pre-wrap;word-wrap:break-word;color:var(--text)}
   .air-note{font-size:11.5px;color:var(--muted2);margin-top:7px}
   .air-acts{display:flex;gap:7px;margin-top:10px}
+  /* "Needs you": the question the AI held its draft for, and the answers it can
+     take as a tap. Chips are deliberately big and finger-sized — this is the
+     one-tap shortcut, so a chip that needs aiming defeats the whole point. */
+  .ny-q{font-size:14.5px;font-weight:650;line-height:1.4;color:var(--text);padding:2px 1px 0}
+  .ny-sub{font-size:11.5px;color:var(--muted2);margin-top:3px;line-height:1.4}
+  .ny-opts{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+  .ny-opt{font-size:13.5px;font-weight:600;padding:9px 13px;border-radius:999px;border:1px solid var(--line);
+    background:rgba(127,127,127,.08);color:var(--text);cursor:pointer;line-height:1.2;min-height:38px}
+  .ny-opt:active{transform:scale(.97)}
+  .ny-opt.other{background:transparent;color:var(--muted2);font-weight:500}
+  .ny-opt[disabled]{opacity:.5}
   .air-acts .btn{flex:1;font-size:12.5px;padding:8px 6px;display:inline-flex;align-items:center;justify-content:center;gap:5px}
   .air-acts .btn.accent{flex:1.5}
   .air-acts .btn svg{width:15px;height:15px}
@@ -4001,7 +4012,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-30·quote-reply";
+  var APP_BUILD="2026-08-31·ask-me-first";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4202,7 +4213,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     "cloud-rain":'<path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M16 14v6"/><path d="M8 14v6"/><path d="M12 16v6"/>',
     "cloud-drizzle":'<path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M8 19v1"/><path d="M8 14v1"/><path d="M16 19v1"/><path d="M16 14v1"/><path d="M12 21v1"/><path d="M12 16v1"/>',
     "cloud-snow":'<path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M8 15h.01"/><path d="M8 19h.01"/><path d="M12 17h.01"/><path d="M12 21h.01"/><path d="M16 15h.01"/><path d="M16 19h.01"/>',
-    "cloud-lightning":'<path d="M6 16.326A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 1.5 8.742"/><path d="m13 12-3 5h4l-3 5"/>'
+    "cloud-lightning":'<path d="M6 16.326A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 1.5 8.742"/><path d="m13 12-3 5h4l-3 5"/>',
+    "help-circle":'<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>'
   };
   function ic(name,size,strokeW){
     size=size||22;var p=ICONS[name];if(p==null)return"";
@@ -6181,6 +6193,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
           ((teamOn()&&t.assignedTo)?assignBadge(t.assignedTo):'')+
           (t.sendFailed?'<span class="dnt">'+ic("alert",10)+'not sent</span>':'')+
           (t.replyReady?'<span class="reply-flag">'+ic("sparkles",11)+'reply ready</span>':'')+
+          (t.needsYou?'<span class="reply-flag" style="color:#a78bfa;background:rgba(167,139,250,.16)">'+ic("help-circle",11)+'needs you</span>':'')+
           (t.dateRequested?'<span class="reply-flag" style="color:#eab308;background:rgba(234,179,8,.14)">'+ic("calendar-days",11)+'date needed</span>':'')+
           (t.followupDue?'<span class="fu-flag'+(t.fu&&t.fu.urgency==="high"?" high":"")+'">'+ic("list-checks",11)+'follow-up</span>':'')+
           (t.scheduledCount>0?'<span class="sched-flag">'+ic("calendar-clock",12)+t.scheduledCount+'</span>':'')+
@@ -7095,7 +7108,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         '<button id="cfgAssistScript" class="btn">1 · Copy the Gmail script</button>'+
         '<button id="cfgAssistPractice" class="btn">2 · Send me a practice question</button>'+
         '<button id="cfgAssistRecheck" class="btn">Check again</button>'+
+        '<button id="cfgAskMeTest" class="btn">3 · Try &ldquo;Needs you&rdquo;</button>'+
       '</span><span id="cfgAssistScriptMsg" style="color:var(--muted2);font-size:12px"></span></div>'+
+      '<div class="hint"><b>Try &ldquo;Needs you&rdquo;</b> drops a fake customer asking <i>&ldquo;what time can you come Thursday?&rdquo;</i> into your list and opens it. Nothing in your playbook knows which hour you\'re free, so instead of inventing one the AI holds the draft and asks <b>you</b> — with the likely answers as buttons. Tap one and it writes the text from your answer, and you still get the last look before it sends. Same fake number as the practice questions, so nothing can reach a real person.</div>'+
       '<div class="hint"><b>Practice questions are safe.</b> They come from a fake customer, and replying runs the whole thing end to end — but the finished message is shown back to you marked TEST and is never sent to anyone. Tap it a few times: you\'ll get a price question, a scheduling one, a "do you do X", and a complaint (which it deliberately refuses to answer for you).</div>'+
       '<div class="fu-row"><span class="lbl2">Answer by text <span style="color:var(--muted2);font-weight:400">· same thing, uses a text</span></span><span class="sw'+(c.assistSms!==false?" on":"")+'" id="cfgAssist"></span></div>'+
       '<div class="fu-row"><span class="lbl2">Hold before sending</span><span style="display:flex;align-items:center;gap:6px"><input type="number" id="cfgAssistDelay" min="0" max="600" value="'+(c.assistDelaySec==null?60:c.assistDelaySec)+'"><span style="color:var(--muted2)">sec</span></span></div>'+
@@ -7161,6 +7176,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     el("cfgPromScan").onclick=function(){promScanNow(el("cfgPromScan"),el("cfgPromScanMsg"))};
     el("cfgAssistScript").onclick=function(){copyAssistScript()};
     el("cfgAssistPractice").onclick=function(){sendPractice(el("cfgAssistPractice"))};
+    el("cfgAskMeTest").onclick=function(){sendPractice(el("cfgAskMeTest"),"askme",true)};
     el("cfgVoiceOpen").onclick=function(){openTrainAI()};
     refreshVoiceStat();
     el("cfgVmRecover").onclick=function(){recoverVoicemails(el("cfgVmRecover"))};
@@ -7361,6 +7377,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(t.hasVoicemail)pills.push('<span class="pk-pill">Voicemail</span>');
     if(t.hasMedia)pills.push('<span class="pk-pill">Sent photos</span>');
     if(t.replyReady)pills.push('<span class="pk-pill hot">Reply ready</span>');
+    if(t.needsYou)pills.push('<span class="pk-pill hot">'+esc(t.needsYouAsk||"Needs you")+'</span>');
     if(pills.length)h+='<div class="pk-pills">'+pills.join("")+'</div>';
 
     h+='<div class="pk-head '+hd.tone+'"><b>'+esc(hd.t)+'</b>'+(hd.s?'<span>'+esc(hd.s)+'</span>':'')+'</div>';
@@ -7904,10 +7921,21 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
 
   // Fire a fake customer question at your own inbox so you can rehearse replying.
   // Nothing it produces can reach a real person.
-  function sendPractice(btn){
+  function sendPractice(btn,scenario,open){
     var orig=btn?btn.innerHTML:"", msg=el("cfgAssistScriptMsg");
     if(btn){btn.disabled=true;btn.innerHTML='<span class="spin"></span> Sending…'}
-    post("/api/assist/practice",{}).then(function(d){
+    post("/api/assist/practice",scenario?{scenario:scenario}:{}).then(function(d){
+      // The "Needs you" test is meant to be SEEN, not emailed about — so drop him
+      // straight into the conversation with the question already waiting.
+      if(open&&d&&d.phone){
+        if(msg)msg.textContent=d.needsYou?"Opened it — tap an answer.":"Opened it.";
+        if(typeof closeMore==="function")closeMore();
+        refreshThreads();
+        openThread(d.phone);
+        if(!d.needsYou)toast("Practice sent, but the AI answered it without needing you. Try again.",{bad:true});
+        if(btn){btn.disabled=false;btn.innerHTML=orig}
+        return;
+      }
       if(d&&d.ok){
         if(msg)msg.textContent="Sent — check your email, then just hit reply.";
         toast("Practice question emailed. Reply to it like you would a real one — nothing gets sent.");
@@ -8307,6 +8335,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   function renderSuggested(t){
     var box=el("suggestBox");if(!box)return;
     var s=t&&t.suggested;var msgs=(t&&t.messages)||[];var last=msgs[msgs.length-1];
+    // A held question outranks a draft: it exists precisely because there was
+    // nothing honest to draft yet.
+    if(t&&t.needsYou&&t.needsYou.question&&last&&last.dir==="in"){return renderNeedsYou(t)}
     if(!(s&&s.text&&last&&last.dir==="in")){box.style.display="none";box.innerHTML="";return}
     box.style.display="block";
     box.innerHTML='<div class="air-top"><span class="air-title">'+ic("sparkles",13)+' Reply ready — in your voice</span><button class="air-x" aria-label="Dismiss">'+ic("x",16)+'</button></div>'+
@@ -8320,6 +8351,60 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   function dismissSuggested(t){
     var box=el("suggestBox");if(box){box.style.display="none";box.innerHTML=""}
     post("/api/meta",{phone:t.phone,clearSuggested:true}).then(function(d){if(d&&d.ok&&d.thread&&state.phone===t.phone){state.thread=d.thread}});
+  }
+
+  // "Needs you": the AI worked out that answering this one takes a fact only he
+  // has — what time, what price, yes or no — so instead of inventing one it asks
+  // him and offers the likely answers as taps. He taps, the server writes the
+  // text from that answer, and it lands in the normal "Reply ready" box for a
+  // last look before it goes anywhere. Nothing is ever sent by a tap alone.
+  function renderNeedsYou(t){
+    var box=el("suggestBox");if(!box)return;
+    var n=t.needsYou||{};var opts=n.options||[];
+    box.style.display="block";
+    box.innerHTML='<div class="air-top"><span class="air-title">'+ic("help-circle",13)+' Needs you</span><button class="air-x" aria-label="Dismiss">'+ic("x",16)+'</button></div>'+
+      '<div class="ny-q">'+esc(n.question||"")+'</div>'+
+      '<div class="ny-sub">Only you know this one, so it didn\'t guess. Tap an answer and it writes the text.</div>'+
+      '<div class="ny-opts">'+
+        opts.map(function(o,i){return '<button class="ny-opt" data-i="'+i+'">'+esc(o)+'</button>'}).join('')+
+        '<button class="ny-opt other" data-other="1">'+ic("pencil",13)+' Something else</button>'+
+      '</div>';
+    hydrateIcons(box);
+    box.querySelector(".air-x").onclick=function(){dismissNeedsYou(t)};
+    // "Something else" is not a failure state — it's the escape hatch for the
+    // answer we didn't think of, and it should cost him nothing but typing.
+    box.querySelector('[data-other]').onclick=function(){
+      dismissNeedsYou(t);
+      var inp=el("msgInput");if(inp){inp.focus();autoGrow()}
+    };
+    Array.prototype.forEach.call(box.querySelectorAll('.ny-opt[data-i]'),function(b){
+      b.onclick=function(){answerNeedsYou(t,opts[Number(b.getAttribute("data-i"))],box)};
+    });
+  }
+  function answerNeedsYou(t,choice,box){
+    if(!choice)return;
+    if(typeof vibrate==="function")vibrate(8);
+    Array.prototype.forEach.call(box.querySelectorAll(".ny-opt"),function(b){b.disabled=true});
+    var q=box.querySelector(".ny-sub");if(q)q.innerHTML='<span class="spin"></span> Writing it with "'+esc(choice)+'"…';
+    post("/api/ai/answer",{phone:t.phone,choice:choice}).then(function(d){
+      if(d&&d.ok&&d.draft){
+        if(d.thread){if(state.phone===t.phone)state.thread=d.thread;t=d.thread}
+        else{t.needsYou=null;t.suggested={text:d.draft,ts:Date.now()}}
+        renderSuggested(t);
+        refreshThreads();
+      } else {
+        // Don't strand him staring at a dead card — put the answer he picked in
+        // the box so the tap still saved him something.
+        toast((d&&d.error)?"Couldn't write it — your answer is in the box":"Couldn't write it",{bad:true});
+        dismissNeedsYou(t);
+        var inp=el("msgInput");if(inp){inp.value=choice;autoGrow();updateCount();inp.focus()}
+      }
+    }).catch(function(){toast("Network error",{bad:true});renderNeedsYou(t)});
+  }
+  function dismissNeedsYou(t){
+    var box=el("suggestBox");if(box){box.style.display="none";box.innerHTML=""}
+    if(t)t.needsYou=null;
+    post("/api/meta",{phone:t.phone,clearNeedsYou:true}).then(function(d){if(d&&d.ok&&d.thread&&state.phone===t.phone){state.thread=d.thread}});
   }
   // ---- Payments: request + setup, reachable from anywhere ------------------
   // Deliberately standalone (its own overlay, not the Jobs sheet) so it opens
