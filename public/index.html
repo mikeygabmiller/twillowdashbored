@@ -1439,7 +1439,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .tai-sec{margin-top:22px}
   .tai-sec>h4{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted2);font-weight:800;margin:0 0 10px}
   .tai-bar{display:flex;align-items:center;gap:10px;padding:7px 0;font-size:13px}
-  .tai-bar .nm{width:74px;flex:none;color:var(--txt2,var(--text));text-transform:capitalize}
+  .tai-bar .nm{width:118px;flex:none;color:var(--txt2,var(--text));line-height:1.25}
   .tai-bar .tr{flex:1;height:7px;border-radius:4px;background:var(--line2);overflow:hidden;position:relative}
   .tai-bar .tr i{display:block;height:100%;border-radius:4px;background:var(--accent)}
   .tai-bar .tr i.good{background:var(--green,#31c46b)}
@@ -4054,7 +4054,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-31·reorg";
+  var APP_BUILD="2026-08-31·claude-voice";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -7844,6 +7844,16 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       '</svg><div class="v">'+(pct==null?"–":pct+"%")+'</div></div>';
   }
 
+  // The server buckets by keyword; these are the same situations said out loud.
+  // "offer" and "schedule" are the pair worth reading carefully — offering a time
+  // and locking one in used to be scored together, and together they were the
+  // worst thing on this screen.
+  var TA_SITUATION={
+    price:"Pricing", offer:"Offering a time", schedule:"Locking it in",
+    confirm:"Agreeing", answer:"Answering", apology:"Bad news",
+    closing:"Wrapping up", quick:"Quick replies", general:"Everything else"
+  };
+
   var TA_CTA={
     no_ai:   ["No AI key set on the server","Drafting is off until an API key is configured. Nothing here can run yet."],
     build:   ["Learn from my past texts","Reads the messages you've already sent and works out how you write. Start here."],
@@ -7858,6 +7868,17 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(sub)sub.textContent=(d.samples?d.samples+" of your texts learned":"nothing learned yet")+
       (d.provider==="claude"?" · Claude":d.provider==="gemini"?" · Gemini":"");
 
+    // The budget note only earns its place once there's something to say: either
+    // it's spent (which changes who is writing his texts, so he must be told), or
+    // he's used enough of it today to want the number.
+    var bg=d.budget||null, bnote="";
+    if(bg&&bg.daily>0){
+      if(bg.spentOut)bnote='<div class="tai-why" style="color:#f5b842">Today\'s AI budget of $'+bg.daily.toFixed(2)+
+        ' is spent, so drafts are coming from the free model until midnight. Nothing has stopped — they just won\'t sound as sharp.</div>';
+      else if(bg.spent>=bg.daily*0.5)bnote='<div class="tai-why">$'+bg.spent.toFixed(2)+' of today\'s $'+bg.daily.toFixed(2)+
+        ' AI budget used. Past it, drafting falls back to the free model rather than stopping.</div>';
+    }
+
     var headline=d.matchRate!=null?"<b>Sounds like you "+d.matchRate+"% of the time</b>":"<b>Not measured yet</b>";
     var detail=d.matchRate!=null
       ? "<span>Based on "+d.rounds+" draft"+(d.rounds===1?"":"s")+" you've judged against what you actually sent.</span>"
@@ -7867,10 +7888,11 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var h='<div class="tai-score">'+taDial(d.matchRate)+'<div class="lbl">'+headline+detail+'</div></div>';
     h+='<button class="tai-cta" id="taiCta"'+(d.next==="no_ai"?" disabled":"")+'>'+esc(cta[0])+'</button>';
     h+='<div class="tai-why">'+esc(cta[1])+'</div>';
+    h+=bnote;
 
     // Per-situation: the whole point of the screen. A global 78% hides that pricing
     // is the part that's wrong, and pricing is the part worth fixing.
-    var order=["price","schedule","confirm","answer","apology","closing","quick","general"];
+    var order=["price","offer","schedule","confirm","answer","apology","closing","quick","general"];
     var any=order.some(function(b){return d.perBucket[b]&&d.perBucket[b].samples});
     if(any){
       h+='<div class="tai-sec"><h4>How it does by situation</h4>';
@@ -7879,7 +7901,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         var pct=p.rate, w=pct==null?0:pct;
         var cls=pct==null?"":(pct>=80?"good":pct<70?"weak":"");
         var right=pct==null?(p.samples+(p.samples===1?" text":" texts")):(pct+"% · "+p.rounds);
-        h+='<div class="tai-bar"><span class="nm">'+esc(b)+'</span>'+
+        h+='<div class="tai-bar"><span class="nm">'+esc(TA_SITUATION[b]||b)+'</span>'+
            '<span class="tr"><i class="'+cls+'" style="width:'+w+'%"></i></span>'+
            '<span class="vv">'+esc(right)+'</span></div>';
       });

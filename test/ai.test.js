@@ -85,5 +85,86 @@ console.log('\n=== the customer reaches the writing paths too ===');
 check('drafting knows the customer',  /customerContext\(/.test(lift('generateReply')), true);
 check('coaching knows the customer',  /customerContext\(/.test(lift('apiAiCoach')), true);
 
+console.log('\n=== every text a customer reads is written by the good model ===');
+// The router has two tiers: 'voice' means a human is going to read it and judge
+// whether Mikey wrote it, 'fast' means nobody but the app ever sees the output.
+// Three of the four voice surfaces used to be hardcoded to the fast provider —
+// including polish, where his own words are already on the page. Anything that
+// ends up on a customer's phone belongs on the left of this list.
+const voiceSurfaces = ['reply draft', 'auto polish', 'follow-up draft', 'appointment draft', 'voice training'];
+const wrongTier = voiceSurfaces.filter((surface) => {
+  const at = SRC.indexOf(`surface: '${surface}'`);
+  if (at < 0) return true;                       // a surface that vanished is a failure too
+  const opts = SRC.slice(at, SRC.indexOf('}', at));
+  return !/tier: 'voice'/.test(opts);
+});
+check('all five customer-facing writers are on the voice tier', wrongTier, []);
+// The other side of the same rule: a surface nobody reads must NOT be paying for
+// the expensive model. The keyboard fires on every typing pause.
+const kbAt = SRC.indexOf("surface: 'keyboard'");
+check('the keyboard stays on the cheap tier', /tier: 'fast'/.test(SRC.slice(kbAt, SRC.indexOf('}', kbAt))), true);
+
+console.log('\n=== polish is grounded in his voice, not just the tone paragraph ===');
+const polish = lift('apiAiDraft');
+check('polish uses the measured counts', /measuredStyleRules\(/.test(polish), true);
+check('polish uses the derived fingerprint', /fingerprint/.test(polish), true);
+check('polish still refuses to invent facts', /Do NOT add, remove, or change any facts/.test(polish), true);
+
+console.log('\n=== offering a time and locking one in are different jobs ===');
+// This was the worst-scoring situation on the Train AI board — 50% against 100%
+// for pricing — on a bucket that was already FULL. More examples were never going
+// to fix it: an offer has to leave room for a no, a booking has to leave none, and
+// ranked together the draft copied whichever it happened to be shown.
+const vctx = {};
+// eslint-disable-next-line no-new-func
+new Function('ctx',
+  (SRC.match(/const VEHICLE_MAKES = .*;/) || [''])[0] + '\n' +
+  lift('mentionsVehicle') + lift('voiceBucket') +
+  'ctx.voiceBucket = voiceBucket;')(vctx);
+const { voiceBucket } = vctx;
+
+const offers = [
+  "I've got 10:45 open tomorrow if you want it",
+  'Does Tuesday morning work for you?',
+  'I could do Thursday afternoon, let me know',
+  'I have an opening Saturday at 9',
+];
+for (const t of offers) check(`offer: "${t.slice(0, 34)}…"`, voiceBucket(t), 'offer');
+
+const bookings = [
+  "You're all set for Tuesday at 10",
+  'See you Saturday morning!',
+  'Got you down for 2pm Friday',
+  "Perfect, you're booked for tomorrow at 8:30",
+];
+for (const t of bookings) check(`booking: "${t.slice(0, 34)}…"`, voiceBucket(t), 'schedule');
+
+check('a price still beats a day', voiceBucket('Tuesday works, it would be $180 for the truck'), 'price');
+check('bad news still beats its own subject', voiceBucket("Sorry, I can't make Tuesday after all"), 'apology');
+check('an agreement with no time in it is not scheduling', voiceBucket('Sounds good, will do'), 'confirm');
+
+console.log('\n=== it learns from more of his texts than it used to ===');
+const perBucket = Number((SRC.match(/const VOICE_PER_BUCKET = (\d+)/) || [])[1]);
+const show = Number((SRC.match(/const VOICE_SHOW = (\d+)/) || [])[1]);
+check('the corpus keeps at least 120 per situation', perBucket >= 120, true);
+check('and shows the model at least 20 of them', show >= 20, true);
+check('it cannot show more than it keeps', show <= perBucket, true);
+
+console.log('\n=== the fingerprint cannot recommend a phrase the gate bans ===');
+// The live profile listed "Feel free to" among his recurring phrases while
+// AI_TELLS banned it outright, so obeying the style guide cost a wasted rewrite
+// on every draft that took the advice.
+const derive = lift('deriveVoiceFingerprint');
+check('every line is run past the tell-blocker', /findTell\(line\)/.test(derive), true);
+check('and the surviving lines are what gets returned', /kept\.join/.test(derive), true);
+
+console.log('\n=== the fingerprint keeps up with his writing on its own ===');
+const refresh = lift('maybeRefreshVoice');
+check('it only redoes it once the corpus has really moved', /VOICE_FP_DRIFT/.test(refresh), true);
+check('at most once a day', /v\.fpDay === today/.test(refresh), true);
+check('and not on every cron tick', /getUTCMinutes\(\) !== 7/.test(refresh), true);
+check('it never runs the expensive full rebuild', /buildVoiceProfile|loadThread/.test(refresh), false);
+check('the cron actually calls it', /await maybeRefreshVoice\(\)/.test(SRC), true);
+
 console.log(`\n================  ${PASS} passed, ${FAIL} failed  ================`);
 process.exit(FAIL ? 1 : 0);

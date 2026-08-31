@@ -76,7 +76,12 @@ console.log('\n-- and the buckets around it still hold --');
 // "my truck" inside a goodbye is a goodbye. This is the case that decides where
 // the vehicle check sits in the chain, so it is the one most worth pinning down.
 check('a goodbye that mentions a truck', voiceBucket('Thank you so much for replying. I ended up getting scheduled with someone else. However, I appreciate you making the effort to try to fit my truck in.'), 'closing');
-check('a day and time still schedules', voiceBucket('How does Friday morning sound? 10ish?'), 'schedule');
+// Offering a time and locking one in are separate buckets now, and this line is
+// the clearest example of why: "How does Friday morning sound?" is a question
+// that has to leave room for a no. Grouped with "you're all set for Friday" it
+// taught drafts to answer an open question with a booked one.
+check('a day and time proposed is an offer, not a booking', voiceBucket('How does Friday morning sound? 10ish?'), 'offer');
+check('...and a day and time confirmed is the booking', voiceBucket("You're all set for Friday at 10"), 'schedule');
 check('a bare yes still confirms',      voiceBucket('Perfect!'), 'confirm');
 check('a street address is not a car',  voiceBucket('2117 8th Pl Snohomish Stephen and Kayla Buerger'), 'general');
 check('nor is a 5-digit house number',  voiceBucket('Susan Rich 18740 Mountain View Rd NE Duvall WA.'), 'general');
