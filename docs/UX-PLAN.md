@@ -76,8 +76,14 @@ The progressive-disclosure mechanism already exists and is wired to nothing.
 ## 3. Target architecture — five tabs
 
 ```
-Today  ·  Chats  ·  Pipeline  ·  Money  ·  More
+Today  ·  Chats  ·  Work  ·  Money  ·  More
 ```
+
+> **Shipped 2026-08-31 (`2026-08-31·reorg`).** "Pipeline" shipped as **Work** —
+> the plan's own rule is task-based grouping in the customer's language, and he
+> calls all of it the work. Analytics left the bar as planned, came back as
+> "Stats" in navV3 on a hunch, and has now left again on measurement rather
+> than argument — see §10.
 
 The insight behind the biggest merge: for a detailing business,
 **lead → quote → booked job → done → paid** is *one* pipeline, not four
@@ -89,9 +95,9 @@ how the work actually flows.
 |---|---|---|
 | **Today** | The prioritized rundown, today's schedule, today's money | "What do I do next?" |
 | **Chats** | All conversations + filter chips | "Who needs a reply?" |
-| **Pipeline** | Leads → Quotes → Bookings → Run → Garage | "What work is coming?" |
+| **Work** | Booked → Leads → Quotes → Run → Pay → Garage | "What work is coming?" |
 | **Money** | Log, Owed, Report, Goals, Get paid | "Where do I stand?" |
-| **More** | AI, Analytics, Settings, Account | Everything weekly-or-rarer |
+| **More** | AI, Insights, Day tools, Settings, Account, Everything A–Z | Everything weekly-or-rarer |
 
 Analytics leaves the nav bar because it's a weekly/monthly review, not a daily
 action — it stays one tap away in More and reachable instantly by search.
@@ -271,3 +277,60 @@ every change is risky.
 | Top-level destinations | 53 | 5 |
 | Find a feature by name | ✗ | ✓ two keystrokes |
 | Separate page loads | 1 (`bookings.html`) | 0 |
+
+---
+
+## 10. What the usage tracker said (90 days, measured 2026-08-31)
+
+Everything above was reasoned from heuristics. This section is the first time
+the plan was checked against what actually happened, via `/api/use/export`.
+Where the two disagree, this section wins.
+
+**Where the time goes.** Of roughly 76 tracked minutes on screen, 59 were in a
+single conversation — **78%**. Nothing else is close. Every other screen in
+this app is a place he passes through on the way to a thread.
+
+| Screen | Opens | Minutes | Walked straight out |
+|---|---|---|---|
+| a conversation | 82 | 59 | 11 |
+| Tab · Today | 101 | 6 | **68** |
+| Tab · Chats | 118 | 4 | **92** |
+| Screen · money | 12 | 0 | **11** |
+| Stats (all 9 reports) | 9 | 2 | 7 |
+
+**The single most-pushed control in the whole app** was the Chats pill *on the
+Today tab* — 45 presses. He opens Today to find out who needs him, and then
+leaves to go and find them. That is why the "Needs your attention" rundown moved
+above the AI command center: Today was answering a question he wasn't asking
+first.
+
+**Stats.** Nine reports, opened nine times in a quarter between them. Four —
+Customers, Profit, Pulse, Map — were **never opened at all**. A nine-across
+segment bar on a 414px phone gives each report 46px, which is not a label
+anyone can read. This is what §2's Fitts's Law point predicted, and the fix is
+the same one the plan prescribes for the drawer: an index screen where each
+report says what it answers and shows the number it last read.
+
+**624 controls had never once been pushed.** A share of that is simply not
+knowing a screen exists, which is what "Everything, A–Z" is for — `FEATURES`
+was already a complete map of the app, but it only rendered as search results,
+and you have to know to search.
+
+**What the tracker did *not* justify.** Money bounces 92% (12 opens, 0 minutes,
+11 immediate exits), which reads as either a glance that succeeds or a trip
+that fails, and the data cannot tell those apart. It kept its pill. Worth
+watching, not worth acting on yet.
+
+**One caveat on all of the above:** the tracker started recording on
+2026-08-25, so this is 7 active days of data, not 90. It is enough to retire a
+hunch that was never measured at all; it is not enough to be precious about.
+
+### A note on the tracker's own keys
+
+The usage tracker still records `Stats · <view>` and `Pipeline · <view>`, not
+`Insights ·` and `Work ·`. That is deliberate. It is a measuring instrument
+with history in it, and renaming the keys would split every report into a
+before-row and an after-row and quietly end the comparison this whole
+reorganisation was argued from. The screen names in the export are not the
+screen names in the app, and `USE_OWNED` in `public/index.html` is where that
+is kept honest.

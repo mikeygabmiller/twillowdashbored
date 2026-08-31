@@ -143,8 +143,18 @@
     display:flex;align-items:center;justify-content:center;cursor:pointer;color:#fff;box-shadow:0 2px 9px rgba(0,0,0,.35)}
   .myavatar svg{width:23px;height:23px}
 
-  .filters{display:flex;gap:8px;padding:11px 14px;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--line2);flex:none}
-  .filters::-webkit-scrollbar{display:none}
+  /* Two rows, because these are two different questions. The top row picks the
+     lens — which pile of conversations — and the bottom row filters inside it.
+     They used to share one scrolling row of ten chips where three were views
+     and seven were filters, which read as one list of ten equal things and
+     behaved as two that quietly cancelled each other. */
+  .filters{display:flex;flex-direction:column;gap:7px;padding:10px 0 9px;border-bottom:1px solid var(--line2);flex:none}
+  .filters .frow{display:flex;gap:8px;padding:0 14px;overflow-x:auto;scrollbar-width:none}
+  .filters .frow::-webkit-scrollbar{display:none}
+  .filters .frow.lens .chip{font-weight:650}
+  /* The lens row is the stronger of the two: it says which pile you are in, so
+     its selected chip is filled rather than tinted. */
+  .filters .frow.lens .chip.active{background:var(--accent);border-color:var(--accent);color:#fff}
   .chip{white-space:nowrap;font-size:12.5px;padding:7px 13px;border-radius:20px;background:var(--panel2);
     border:1px solid var(--line);color:var(--muted);transition:all .15s}
   .chip:active{transform:scale(.95)}
@@ -1796,6 +1806,32 @@
   .gr-nav button .e{display:flex;line-height:1}.gr-nav button .e svg{width:20px;height:20px}
   .gr-nav button.active{color:var(--accent-text)}
 
+  /* The refresh chevron spins while the fetch is out. Without it a tap on a
+     conversation that has nothing new looks identical to a tap that missed. */
+  @keyframes thspin{to{transform:rotate(360deg)}}
+  #threadRefresh.spinning svg{animation:thspin .7s linear infinite}
+
+  /* ---- Insights index — nine reports as cards instead of nine tabs ----
+     A nine-across segment bar on a 414px phone gives each report 46px and no
+     room for a label anyone can read, which is how four of these nine went a
+     whole quarter without ever being opened. A card can say what the report
+     answers and show the number it last read, so the tap is a decision instead
+     of a guess. */
+  .ix-wrap{display:grid;gap:10px}
+  .ix-lead{color:var(--muted);font-size:13px;line-height:1.5;margin:2px 2px 6px}
+  .ix-card{display:flex;align-items:center;gap:13px;width:100%;text-align:left;background:var(--panel);border:1px solid var(--line);
+    border-radius:16px;padding:13px 14px;color:var(--text);cursor:pointer;transition:border-color .14s,transform .08s,background .14s}
+  .ix-card:hover{background:var(--panel2);border-color:var(--line2)}
+  .ix-card:active{transform:scale(.985)}
+  .ix-ic{flex:none;width:40px;height:40px;border-radius:13px;background:var(--panel3);display:flex;align-items:center;justify-content:center;color:var(--accent-text)}
+  .ix-txt{flex:1;min-width:0}
+  .ix-t{font-weight:750;font-size:14.5px}
+  .ix-q{color:var(--muted2);font-size:12.5px;margin-top:2px;line-height:1.35}
+  /* The live value only appears when the number is already in memory. Nine
+     cards must never mean nine fetches just to draw the menu. */
+  .ix-v{flex:none;text-align:right;font-weight:800;font-size:14px;color:var(--accent-text);max-width:38%}
+  .ix-v small{display:block;font-weight:600;font-size:10.5px;color:var(--muted2);margin-top:2px}
+
   /* ---- Analytics → Quotes (the QQC quote log over time) ---- */
   .qv-ranges{display:flex;gap:7px;margin-bottom:14px}
   .qv-range{flex:1;padding:8px 10px;border-radius:999px;border:1px solid var(--line2);background:var(--panel);color:var(--muted);font-size:12.5px;font-weight:750;cursor:pointer;user-select:none}
@@ -2719,9 +2755,8 @@
     <nav class="bottomnav" id="bottomnav">
       <button class="navitem active" data-tab="home"><span class="ic" data-ic="home"></span><span class="ndot" id="navHome"></span>Today</button>
       <button class="navitem" data-tab="messages"><span class="ic" data-ic="message-square"></span><span class="ndot" id="navUnread"></span>Chats</button>
-      <button class="navitem" data-tab="pipeline"><span class="ic" data-ic="route"></span><span class="ndot" id="navJobs"></span>Pipeline</button>
+      <button class="navitem" data-tab="work"><span class="ic" data-ic="route"></span><span class="ndot" id="navJobs"></span>Work</button>
       <button class="navitem" data-tab="money"><span class="ic" data-ic="dollar"></span><span class="ndot" id="navMoney"></span>Money</button>
-      <button class="navitem" data-tab="stats"><span class="ic" data-ic="bar-chart"></span><span class="ndot" id="navStats"></span>Stats</button>
       <button class="navitem" data-tab="more"><span class="ic" data-ic="menu"></span><span class="ndot" id="navMore"></span>More</button>
     </nav>
   </aside>
@@ -2743,6 +2778,7 @@
         <div class="num" id="hNum"></div>
       </div>
       <div class="head-actions">
+        <button class="btn icon" id="threadRefresh" data-ic="refresh-cw" title="Check for new messages now" aria-label="Check for new messages now"></button>
         <button class="btn icon" id="guideBtn" data-ic="help" title="How to run this conversation" aria-label="Conversation guide"></button>
         <button class="btn icon" id="threadSearchBtn" data-ic="search" title="Find in conversation" aria-label="Find in conversation"></button>
         <button class="btn icon" id="coachBtn" data-ic="bot" title="Coach me — what to say" aria-label="Coach me" style="display:none"></button>
@@ -2979,7 +3015,6 @@
     <button data-mv="history"><span class="e" data-ic="calendar-days" data-ic-size="21"></span>History</button>
     <button data-mv="report"><span class="e" data-ic="bar-chart" data-ic-size="21"></span>Report</button>
     <button data-mv="goals"><span class="e" data-ic="target" data-ic-size="21"></span>Goals</button>
-    <button data-mv="settings"><span class="e" data-ic="settings" data-ic-size="21"></span>Settings</button>
   </nav>
   <div class="mo-scrim" id="moScrim"></div>
   <div class="mo-sheet" id="moSheet"></div>
@@ -3037,9 +3072,13 @@
     <button class="btn icon" id="jdRefresh" data-ic="refresh-cw" aria-label="Refresh"></button>
   </div>
   <div class="jd-body" id="jdBody"></div>
-  <!-- One flow, left to right: a lead becomes a quote, becomes today's run,
-       becomes money owed, and the customer ends up in the garage. -->
+  <!-- One flow, left to right: someone books or asks, a lead becomes a quote,
+       becomes today's run, becomes money owed, and the customer ends up in the
+       garage. Bookings used to be the odd one out — a "Pipeline" row buried in
+       the More menu, pointing at a page, while the five stages either side of
+       it lived here. It is the front of this funnel, so it starts the row. -->
   <nav class="jd-nav" id="jdNav">
+    <button data-jv="booked"><span class="e" data-ic="calendar-days" data-ic-size="20"></span>Booked</button>
     <button data-jv="leads"><span class="e" data-ic="clipboard-list" data-ic-size="20"></span>Leads</button>
     <button data-jv="quotes"><span class="e" data-ic="file-text" data-ic-size="20"></span>Quotes</button>
     <button data-jv="run" class="active"><span class="e" data-ic="route" data-ic-size="20"></span>Run</button>
@@ -3080,6 +3119,8 @@
   // row is shown for each, and the Chats pill stays lit.
   var CHAT_TABS=["messages","followups","scheduled","archived"];
   var CHAT_VIEWS=[["followups","Follow-ups"],["scheduled","Scheduled"],["archived","Archived"]];
+  // The lens row, top of the pile first: everything, then the three cuts.
+  var CHAT_LENSES=[["messages","All chats"]].concat(CHAT_VIEWS);
   var LEAD_COLS=[["new","New leads","#3b82f6"],["active","Active","#22c55e"],["won","Won","#a855f7"],["lost","Lost","#8a93a3"]];
   var TEMPLATES=[
     ["Intro","Hey {name}! It's Mikey from Mikey's Mobile Detailing — got your request. When works best for a detail this week?"],
@@ -3108,7 +3149,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-25·see-it-all";
+  var APP_BUILD="2026-08-31·reorg";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -3513,7 +3554,13 @@
   // money) and it was a three-tap trip through More to reach. Nothing was
   // removed to make room — hide whatever you don't use in Customize → Tabs, and
   // the bar re-splits evenly over whatever is left.
-  var UI_TABLIST=[["home","Today","home"],["messages","Chats","message-square"],["pipeline","Pipeline","route"],["money","Money","dollar"],["stats","Stats","bar-chart"],["more","More","menu"]];
+  // Five pills, named for a moment in the day rather than for the table behind
+  // it. "Pipeline" was the schema talking; the work is Leads → Quotes → Run →
+  // Pay → Garage, and he calls all of that the work. Stats came out of the bar
+  // on the evidence: across 90 days it was opened 9 times, four of its nine
+  // reports were never opened at all, and every visit but one was a bounce. It
+  // is a weekly read living in a daily bar, so it is a screen inside More now.
+  var UI_TABLIST=[["home","Today","home"],["messages","Chats","message-square"],["work","Work","route"],["money","Money","dollar"],["more","More","menu"]];
   var UI_PRESETS=[ // id, name, accent, accentDark
     ["crimson","Crimson","#ff2e43","#c81e30"],["ocean","Ocean","#2f9bff","#1d5fd8"],
     ["mint","Mint","#22c55e","#15803d"],["grape","Grape","#a855f7","#7e22ce"],
@@ -3547,7 +3594,7 @@
     radius:"md", density:"comfy", textScale:100, font:"system", bg:"solid",
     mode:"simple", locked:false, tourSeen:false, listStyle:"compact",
     autoPolish:true,   // rewrite the draft in place when you pause typing (undo lives on the strip)
-    navV:3, tabsOrder:["home","messages","pipeline","money","stats","more"], tabsHidden:[],
+    navV:4, tabsOrder:["home","messages","work","money","more"], tabsHidden:[],
     mblocks:["hero","log","alerts","pulse","brain","today","pricing"], mblocksHidden:[],
     mkpis:["net","you","costs","savings","avg","jobs","margin","owed","best"],
     // Phase 2/3
@@ -3566,10 +3613,13 @@
   // ("leads", "jobs", "analytics") or can't express a slot that has since been
   // added, so the nav settings — and only those — go back to default. Colours,
   // widgets and everything else customised are kept.
-  // navV3 puts Stats in the bar: checking the website was a three-tap trip
-  // through More, and it is one of the three things this app gets opened for.
+  // navV4 renames Pipeline to Work and takes Stats back out. navV3 had put
+  // Stats in the bar on a hunch; the usage tracker then measured the hunch and
+  // found it wrong, so this migration is that hunch being retired. Anyone whose
+  // saved bar still names "pipeline" or "stats" gets the new default bar — and
+  // only the bar; colours, widgets and everything else customised are kept.
   function migrateUI(u){
-    if(u.navV!==3){var d=defaultUI();u.navV=3;u.tabsOrder=d.tabsOrder.slice();u.tabsHidden=d.tabsHidden.slice()}
+    if(u.navV!==4){var d=defaultUI();u.navV=4;u.tabsOrder=d.tabsOrder.slice();u.tabsHidden=d.tabsHidden.slice()}
     // Widgets shipped after this layout was saved were being switched ON for
     // everyone: the render appended any unknown widget to the order and only
     // ever consulted the saved hidden list, which of course couldn't mention a
@@ -3605,7 +3655,14 @@
   // Follow-ups / Scheduled / Archived have no pill of their own — they are
   // lenses on Chats, so they light the Chats pill. Without this, closing a
   // full-screen section while on one of them leaves the bar with nothing lit.
-  function navPillFor(tab){return CHAT_TABS.indexOf(tab)>=0?"messages":tab}
+  // Insights has no pill of its own any more — it lives inside More, so that is
+  // the pill it lights. Without this the bar goes blank on the Insights screen.
+  function navPillFor(tab){
+    if(CHAT_TABS.indexOf(tab)>=0)return "messages";
+    if(tab==="stats"||tab==="insights")return "more";
+    if(tab==="pipeline")return "work";
+    return tab;
+  }
   function setNavActive(tab){
     var want=navPillFor(tab);
     Array.prototype.forEach.call(document.querySelectorAll(".navitem"),function(b){
@@ -4032,6 +4089,14 @@
   // `awaitingReply` is undefined on index rows written before that check shipped,
   // so anything but an explicit false counts as waiting (old behavior).
   function awaitingReply(t){return t.lastDir==="in"&&t.awaitingReply!==false}
+  // "Waiting on you" had two definitions, and they disagreed. The Chats list
+  // dropped anyone he had deliberately parked ("doing her car in August"); the
+  // chip count, the nav badge, the Today rundown and the summary bar all kept
+  // them. So the badge said 3, the chip said 3, and the list showed 2 — with
+  // no way to tell which of those was lying. Parked is parked: if he has said
+  // "not now" about someone, they are not waiting on him right now, and every
+  // surface that counts or lists them goes through here to say so.
+  function waitingOnMe(t){return awaitingReply(t)&&!(t.heldUntil&&t.heldUntil>Date.now())}
 
   // ---- counts ----
   function counts(){
@@ -4040,7 +4105,7 @@
       all:active.length,
       unread:active.reduce(function(a,t){return a+(t.unread>0?1:0)},0),
       sched:active.reduce(function(a,t){return a+(t.scheduledCount>0?1:0)},0),
-      needs:active.filter(awaitingReply).length,
+      needs:active.filter(waitingOnMe).length,
       follow:active.filter(function(t){return t.followupDue}).length,
       arch:state.threads.filter(function(t){return t.archived}).length
     };
@@ -4085,12 +4150,15 @@
     el("filters").style.display=onChats?"flex":"none";
     if(!onChats)return;
     var f=el("filters");f.innerHTML="";var c=counts();
+    var lensRow=document.createElement("div");lensRow.className="frow lens";
+    var statRow=document.createElement("div");statRow.className="frow stat";
+    f.appendChild(lensRow);f.appendChild(statRow);
     function addViewChip(v){
       var chip=document.createElement("div");chip.className="chip"+(state.tab===v[0]?" active":"");
-      var n=v[0]==="followups"?c.follow:v[0]==="scheduled"?c.sched:c.arch;
+      var n=v[0]==="messages"?0:v[0]==="followups"?c.follow:v[0]==="scheduled"?c.sched:c.arch;
       chip.innerHTML=esc(v[1])+(n?'<span class="cnt">'+n+'</span>':'');
       chip.onclick=function(){setTab(v[0])};
-      f.appendChild(chip);
+      lensRow.appendChild(chip);
     }
     // In team mode, lead with "Mine" / "Unassigned" so a helper can zero in on
     // their own queue. Tapping an active chip again clears back to everyone.
@@ -4103,40 +4171,60 @@
           : state.threads.filter(function(t){return !t.archived&&!t.assignedTo}).length;
         chip.innerHTML=esc(p[1])+(n?'<span class="cnt">'+n+'</span>':'');
         chip.onclick=function(){state.assign=(state.assign===p[0]?"all":p[0]);renderFilters();renderMain()};
-        f.appendChild(chip);
+        statRow.appendChild(chip);
       });
     }
+    // Top row: which pile. "All chats" is a lens like the other three, so it
+    // gets a chip of its own rather than being the absence of one.
+    CHAT_LENSES.forEach(addViewChip);
+    // Bottom row: filter inside that pile. Live on every lens now, so the
+    // counts have to come from the lens you are actually in rather than always
+    // from the un-archived pile — otherwise Archived offers "Won 12" and then
+    // lists two.
+    var pool=state.tab==="archived"?state.threads.filter(function(t){return t.archived})
+      :state.tab==="scheduled"?state.threads.filter(function(t){return !t.archived&&t.scheduledCount>0})
+      :state.tab==="followups"?state.threads.filter(function(t){return !t.archived&&t.followupDue&&t.fu})
+      :state.threads.filter(function(t){return !t.archived});
     FILTERS.forEach(function(p){
       var chip=document.createElement("div");
-      chip.className="chip"+((state.tab==="messages"&&state.filter===p[0])?" active":"");
-      var n=p[0]==="unread"?c.unread:p[0]==="waiting"?c.needs:(p[0]==="all"?0:state.threads.filter(function(t){return !t.archived&&t.status===p[0]}).length);
+      chip.className="chip"+((state.filter===p[0])?" active":"");
+      var n=p[0]==="all"?0
+        :p[0]==="unread"?pool.filter(function(t){return t.unread>0}).length
+        :p[0]==="waiting"?pool.filter(waitingOnMe).length
+        :pool.filter(function(t){return t.status===p[0]}).length;
       chip.innerHTML=esc(p[1])+((p[0]!=="all"&&n)?'<span class="cnt">'+n+'</span>':'');
+      // Tapping the live chip clears back to All, so there is always a way out
+      // of a filter without hunting for the one that undoes it.
       chip.onclick=function(){
-        state.filter=p[0];
-        if(state.tab!=="messages")setTab("messages");    // setTab re-renders
-        else{renderFilters();renderMain()}
+        state.filter=(state.filter===p[0]&&p[0]!=="all")?"all":p[0];
+        renderFilters();renderMain();
       };
-      f.appendChild(chip);
-      // The lens chips sit right after the attention ones, before the statuses.
-      if(p[0]==="unread")CHAT_VIEWS.forEach(addViewChip);
+      statRow.appendChild(chip);
     });
   }
 
-  function passFilter(t){
-    if(t.archived)return false;
-    if(teamOn()){
-      if(state.assign==="mine"&&(!currentMe()||t.assignedTo!==currentMe()))return false;
-      if(state.assign==="unassigned"&&t.assignedTo)return false;
-    }
+  function passTeam(t){
+    if(!teamOn())return true;
+    if(state.assign==="mine"&&(!currentMe()||t.assignedTo!==currentMe()))return false;
+    if(state.assign==="unassigned"&&t.assignedTo)return false;
+    return true;
+  }
+  // The status/attention filter on its own, with no opinion about which lens
+  // you're looking through. These two used to be welded together: the chips
+  // sat in one row, and picking a lens silently threw the status away, so
+  // "archived, and won" — what did I actually close last season — was a
+  // question the filter row could show you but not answer.
+  function passStatus(t){
     var f=state.filter;
     if(f==="all")return true;
     if(f==="unread")return t.unread>0;
     // Someone is waiting on Mikey when they spoke last AND something is actually
     // open (a thread that ended on "Thanks!" isn't) — unless he has parked them
     // on purpose, in which case they are not his problem right now.
-    if(f==="waiting")return awaitingReply(t)&&!(t.heldUntil&&t.heldUntil>Date.now());
+    if(f==="waiting")return waitingOnMe(t);
     return t.status===f;
   }
+  function passFilter(t){return !t.archived&&passTeam(t)&&passStatus(t)}
   // Search operators: status:won  tag:ceramic  is:unread  is:dnt  is:scheduled  +free text.
   function parseSearch(raw){
     var out={text:"",status:null,tag:null,unread:false,dnt:false,scheduled:false};
@@ -4197,24 +4285,25 @@
     {id:"archived",t:"Archived",g:"Chats",ic:"archive",k:"hidden old done filed",run:function(){setTab("archived")}},
     {id:"newmsg",t:"New message",g:"Chats",ic:"plus",k:"compose text someone start write",run:function(){var f=el("fab");if(f)f.click()}},
     // — work
-    {id:"leads",t:"Leads pipeline",g:"Pipeline",ic:"clipboard-list",k:"prospects enquiries board stages funnel won lost",run:function(){openJobs("leads")}},
-    {id:"run",t:"Today's run",g:"Pipeline",ic:"route",k:"jobs schedule route day work appointments",run:function(){openJobs("run")}},
-    {id:"quotes",t:"Quote builder",g:"Pipeline",ic:"file-text",k:"estimate bid proposal price pricing quote",run:function(){openJobs("quotes")}},
-    {id:"garage",t:"Customer garage",g:"Pipeline",ic:"car",k:"vehicles cars customers history clients",run:function(){openJobs("garage")}},
-    {id:"bookings",t:"Bookings",g:"Pipeline",ic:"calendar-days",k:"calendar appointments online booked diary",run:function(){location.href="/bookings.html"}},
+    {id:"leads",t:"Leads pipeline",g:"Work",ic:"clipboard-list",k:"prospects enquiries board stages funnel won lost",run:function(){openJobs("leads")}},
+    {id:"run",t:"Today's run",g:"Work",ic:"route",k:"jobs schedule route day work appointments",run:function(){openJobs("run")}},
+    {id:"quotebuild",t:"Quote builder",g:"Work",ic:"file-text",k:"estimate bid proposal price pricing quote write new",run:function(){openJobs("quotes")}},
+    {id:"garage",t:"Customer garage",g:"Work",ic:"car",k:"vehicles cars customers history clients",run:function(){openJobs("garage")}},
+    {id:"bookings",t:"Bookings",g:"Work",ic:"calendar-days",k:"calendar appointments online booked diary",run:function(){location.href="/bookings.html"}},
     // — money
     {id:"money",t:"Money tracker",g:"Money",ic:"dollar",k:"income earnings revenue cash log takings",run:function(){openMoney()}},
-    {id:"pay",t:"Get paid",g:"Money",ic:"credit-card",k:"invoice charge bill payment request stripe venmo deposit",run:function(){openJobs("pay")}},
+    {id:"pay",t:"Get paid",g:"Work",ic:"credit-card",k:"invoice charge bill payment request stripe venmo deposit",run:function(){openJobs("pay")}},
     {id:"paysetup",t:"Payment setup",g:"Money",ic:"wallet",k:"venmo cashapp paypal zelle card terms configure",run:function(){openPaySetup()}},
-    {id:"mreport",t:"Money report",g:"Money",ic:"file-text",k:"profit tax accounting summary month costs expenses",run:function(){openMoney();moSetView("report")}},
-    {id:"mgoals",t:"Budgets & goals",g:"Money",ic:"target",k:"target savings budget goal split",run:function(){openMoney();moSetView("goals")}},
-    {id:"mhistory",t:"Money history",g:"Money",ic:"clock",k:"past months previous earlier entries",run:function(){openMoney();moSetView("history")}},
+    {id:"mreport",t:"Money report",g:"Money",ic:"file-text",k:"profit tax accounting summary month costs expenses",run:function(){openMoney("report")}},
+    {id:"mgoals",t:"Budgets & goals",g:"Money",ic:"target",k:"target savings budget goal split",run:function(){openMoney("goals")}},
+    {id:"mhistory",t:"Money history",g:"Money",ic:"clock",k:"past months previous earlier entries",run:function(){openMoney("history")}},
     {id:"owed",t:"Owed to you",g:"Money",ic:"alert",k:"unpaid outstanding debt chase overdue",run:function(){openMoney()}},
     // — insight
-    {id:"analytics",t:"Analytics",g:"Insights",ic:"bar-chart",k:"stats numbers reports overview business",run:function(){openAnalytics("overview")}},
+    {id:"insights",t:"Insights — all reports",g:"Insights",ic:"bar-chart",k:"stats numbers reports index everything analytics",run:function(){openAnalytics("index")}},
+    {id:"analytics",t:"Business overview",g:"Insights",ic:"activity",k:"stats numbers overview business kpis",run:function(){openAnalytics("overview")}},
     {id:"journey",t:"Customer journey",g:"Insights",ic:"route",k:"path pages visited what they did before texting replay story",run:function(){openAnalytics("journey")}},
     {id:"website",t:"Website analytics",g:"Insights",ic:"activity",k:"traffic visitors ga4 clarity seo google site stats",run:function(){openAnalytics("analytics")}},
-    {id:"quotes",t:"Quotes over time",g:"Insights",ic:"clipboard-list",k:"qqc quote form submissions leads history value average month",run:function(){openAnalytics("quotes")}},
+    {id:"quoteresults",t:"Quote results",g:"Insights",ic:"clipboard-list",k:"qqc quote form submissions leads history value average month over time",run:function(){openAnalytics("quotes")}},
     {id:"customers",t:"Who your customers are",g:"Insights",ic:"users",k:"repeat churn slipping loyal segments",run:function(){openAnalytics("customers")}},
     {id:"profit",t:"Profit per job",g:"Insights",ic:"dollar",k:"margin worth value service profitability",run:function(){openAnalytics("profit")}},
     {id:"map",t:"Map & rankings",g:"Insights",ic:"pin",k:"geogrid local rank area territory places",run:function(){openAnalytics("map")}},
@@ -4223,8 +4312,14 @@
     {id:"trainai",t:"Train AI",g:"AI",ic:"sparkles",k:"teach voice tone style learn writing sound like me",run:function(){openTrainAI()}},
     {id:"voice",t:"Talk to your dashboard",g:"AI",ic:"mic",k:"hands free speak dictate voice control",run:function(){vxOpen()}},
     {id:"playbook",t:"Business playbook",g:"AI",ic:"file-text",k:"rules standing instructions brain knowledge facts",run:function(){openPlaybook()}},
+    // — the day tools, which used to exist only as Home widgets
+    {id:"tasks",t:"To-do list",g:"Day tools",ic:"check-circle",k:"todo task list remember jot note checklist",run:function(){openDayTool("tasks")}},
+    {id:"promises",t:"Promises you made",g:"Day tools",ic:"bell",k:"owe said promised commitment waiting callback",run:function(){openDayTool("promises")}},
+    {id:"weather",t:"Weather planner",g:"Day tools",ic:"cloud-sun",k:"rain forecast sky week outside wash",run:function(){openDayTool("weather")}},
     // — settings
+    {id:"everything",t:"Everything, A–Z",g:"Settings",ic:"list-checks",k:"index all screens list browse map directory what can this do",run:function(){openMore("index")}},
     {id:"customize",t:"Customize everything",g:"Settings",ic:"sliders",k:"appearance theme colour color layout tabs widgets look font dark light",run:function(){openCustomize()}},
+    {id:"mosettings",t:"Money settings",g:"Settings",ic:"dollar",k:"split tax recurring bills categories export import nudge recap",run:function(){openMoney("settings")}},
     {id:"push",t:"Phone notifications",g:"Settings",ic:"bell",k:"alerts push notify ping mobile",run:function(){jdPushSheet()}},
     {id:"health",t:"Connection",g:"Settings",ic:"activity",k:"status online offline health diagnostics",run:function(){openMore("account");checkHealth()}},
     {id:"alerttest",t:"Send test alert",g:"Settings",ic:"bell",k:"try alert check notification email",run:function(){sendTestAlert()}},
@@ -4367,7 +4462,7 @@
     var box=el("scroll");
     if(!state.loadedOnce&&!state.threads.length){box.innerHTML='<div class="home">'+skeletonList(5)+'</div>';return}
     var active=state.threads.filter(function(t){return !t.archived});
-    var waiting=active.filter(awaitingReply).sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
+    var waiting=active.filter(waitingOnMe).sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
     var fu=active.filter(function(t){return t.followupDue}).sort(function(a,b){return fuUrg(b)-fuUrg(a)||((a.fu&&a.fu.dueAt)||0)-((b.fu&&b.fu.dueAt)||0)});
     var reminders=active.filter(function(t){return t.reminderDue}).sort(function(a,b){return (a.reminderAt||0)-(b.reminderAt||0)});
     var ins=state.insights||{};
@@ -4422,9 +4517,14 @@
     var dateLine=new Date().toLocaleDateString([],{weekday:"long",month:"long",day:"numeric"});
     var h='<div class="home"><div class="home-head"><div class="hh-greet">'+greeting()+', Mikey</div><div class="hh-sub">'+esc(dateLine)+'</div></div>';
     h+=homeNextWidget();          // where you're going — always first, never hidden
+    // Who is waiting comes before the ask-anything box, on the evidence: over
+    // 90 days Today was opened 101 times and walked straight back out of 68 of
+    // them, and its single most-pushed control — the most-pushed control in the
+    // whole app — was the Chats pill. He opens Today to find out who needs him,
+    // then leaves to go find them. That answer belongs above the fold.
+    h+=homeNeeds(waiting,fu,reminders);
     if(!simple)h+=W.aicenter;     // the ask-anything box is a Pro surface; search still reaches the AI in Simple
     h+=homePushWidget();          // one-time "turn on notifications" nudge
-    h+=homeNeeds(waiting,fu,reminders);
     order.forEach(function(k){if(hidden.indexOf(k)<0)h+=(W[k]||"")});
     // The way out, at the bottom of the short screen rather than buried in
     // settings. A trimmed Home should never leave you wondering where a widget
@@ -4941,7 +5041,7 @@
         if(act==="snooze")payload.hours=24;
         b.disabled=true;
         post("/api/promise",payload).then(function(d){
-          if(d&&d.ok){PR.list=d.promises||[];PR.loaded=true;renderHome();
+          if(d&&d.ok){PR.list=d.promises||[];PR.loaded=true;homeRepaint();
             toast(act==="done"?"Nice — marked done":act==="snooze"?"Pushed to tomorrow":"Cleared")}
           else{b.disabled=false;toast("Couldn’t update that",{bad:true})}
         }).catch(function(){b.disabled=false;toast("Network error",{bad:true})});
@@ -4949,6 +5049,14 @@
     });
   }
   function dstrOf(d){var p=function(x){return (x<10?"0":"")+x};return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())}
+  // The to-do list, the promises and the weather each render in two places now
+  // — the Home widget and their own screen under More → Day tools. Ticking a
+  // box has to repaint whichever one you are looking at, so every handler that
+  // changes something calls this instead of homeRepaint() directly.
+  function homeRepaint(){
+    homeRepaint();
+    if(MORE.view==="daytool"&&el("moreApp").classList.contains("show"))mrRender();
+  }
   // Wire up the interactive widgets after Home renders.
   function wireHomeWidgets(box){
     // Weather: kick off the fetch lazily the first time the widget is on screen.
@@ -4972,7 +5080,7 @@
       if(v==null)return;var n=Math.round(+String(v).replace(/[^0-9.]/g,""));
       if(n>0){try{localStorage.setItem(homeGoalKey(),String(n));localStorage.setItem("mkd-goal-last",String(n))}catch(e){}toast("Goal set to "+fmtMoney(n))}
       else{try{localStorage.removeItem(homeGoalKey())}catch(e){}}
-      renderHome();
+      homeRepaint();
     };
     // Quick actions.
     Array.prototype.forEach.call(box.querySelectorAll("[data-qa]"),function(b){b.onclick=function(){vibrate(6);
@@ -4986,11 +5094,11 @@
     };});
     // To-do list.
     var tkAdd=box.querySelector("#tkAdd"),tkInput=box.querySelector("#tkInput");
-    function addTask(){var v=(tkInput.value||"").trim();if(!v)return;var t=homeTasks();t.unshift({text:v.slice(0,120),done:false});homeSaveTasks(t);tkInput.value="";renderHome();setTimeout(function(){var n=el("tkInput");if(n)n.focus()},30);}
+    function addTask(){var v=(tkInput.value||"").trim();if(!v)return;var t=homeTasks();t.unshift({text:v.slice(0,120),done:false});homeSaveTasks(t);tkInput.value="";homeRepaint();setTimeout(function(){var n=el("tkInput");if(n)n.focus()},30);}
     if(tkAdd)tkAdd.onclick=addTask;
     if(tkInput)tkInput.addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();addTask()}});
-    Array.prototype.forEach.call(box.querySelectorAll("[data-tk-toggle]"),function(b){b.onclick=function(){var i=+b.getAttribute("data-tk-toggle");var t=homeTasks();if(t[i]){t[i].done=!t[i].done;homeSaveTasks(t);renderHome()}};});
-    Array.prototype.forEach.call(box.querySelectorAll("[data-tk-del]"),function(b){b.onclick=function(){var i=+b.getAttribute("data-tk-del");var t=homeTasks();t.splice(i,1);homeSaveTasks(t);renderHome()};});
+    Array.prototype.forEach.call(box.querySelectorAll("[data-tk-toggle]"),function(b){b.onclick=function(){var i=+b.getAttribute("data-tk-toggle");var t=homeTasks();if(t[i]){t[i].done=!t[i].done;homeSaveTasks(t);homeRepaint()}};});
+    Array.prototype.forEach.call(box.querySelectorAll("[data-tk-del]"),function(b){b.onclick=function(){var i=+b.getAttribute("data-tk-del");var t=homeTasks();t.splice(i,1);homeSaveTasks(t);homeRepaint()};});
   }
   // ---- Home AI command center ----
   var AIC_CHIPS=["What needs my attention?","Rank my leads by priority","Label my leads","How much did I make this month?"];
@@ -5166,12 +5274,12 @@
     var box=el("scroll");
     if(!state.loadedOnce&&!state.threads.length){box.innerHTML=skeletonList(7);return}
     var items;
-    if(mode==="archived")items=state.threads.filter(function(t){return t.archived});
-    else if(mode==="scheduled")items=state.threads.filter(function(t){return !t.archived&&t.scheduledCount>0});
+    if(mode==="archived")items=state.threads.filter(function(t){return t.archived&&passTeam(t)&&passStatus(t)});
+    else if(mode==="scheduled")items=state.threads.filter(function(t){return !t.archived&&t.scheduledCount>0&&passTeam(t)&&passStatus(t)});
     else items=state.threads.filter(passFilter);
     items=items.filter(passSearch);
     // Longest wait first — the operating rule is that every hour cold costs a booking.
-    if(state.filter==="waiting"&&mode==="messages")items=items.slice().sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
+    if(state.filter==="waiting")items=items.slice().sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
 
     var head=(mode==="messages"&&!state.search)?summaryBar():"";
     if(!items.length){
@@ -5196,7 +5304,7 @@
   // ---- compact "Today" summary (top of messages list, mobile-friendly) ----
   function summaryBar(){
     var active=state.threads.filter(function(t){return !t.archived});
-    var needs=active.filter(awaitingReply).sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
+    var needs=active.filter(waitingOnMe).sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
     var unread=active.reduce(function(a,t){return a+(t.unread>0?1:0)},0);
     var sched=active.reduce(function(a,t){return a+(t.scheduledCount>0?1:0)},0);
     var collapsed=localStorage.getItem("mkd-sum")==="0";
@@ -5286,7 +5394,7 @@
   function growOverview(box){
     box=box||el("grBody");
     var active=state.threads.filter(function(t){return !t.archived});
-    var needs=active.filter(awaitingReply).sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
+    var needs=active.filter(waitingOnMe).sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
     var ins=state.insights||{};
     var avg=ins.avgReplyMs!=null?fmtDur(ins.avgReplyMs):"—";
     var won=active.filter(function(t){return t.status==="won"}).length;
@@ -5378,7 +5486,7 @@
   function renderFollowups(){
     var box=el("scroll");
     var ur={high:3,normal:2,low:1};
-    var items=state.threads.filter(function(t){return !t.archived&&t.followupDue&&t.fu})
+    var items=state.threads.filter(function(t){return !t.archived&&t.followupDue&&t.fu&&passTeam(t)&&passStatus(t)})
       .sort(function(a,b){return (ur[b.fu.urgency]||2)-(ur[a.fu.urgency]||2)||(a.fu.dueAt||0)-(b.fu.dueAt||0)});
     var auto=state.config&&state.config.autopilot;
     var engineOff=state.config&&state.config.followupsEnabled===false;
@@ -8333,20 +8441,35 @@
       {t:"Business playbook",ic:"file-text",into:"playbook"}
     ]},
     {g:"Insights",rows:[
-      {t:"Analytics — website & business",ic:"bar-chart",go:function(){closeMore();openAnalytics()}}
+      // Nine reports behind one door. It lost its nav pill on the evidence and
+      // gained an index in exchange, so this row is now the main way in.
+      {t:"Insights — nine reports",ic:"bar-chart",go:function(){closeMore();openAnalytics("index")}}
     ]},
-    {g:"Pipeline",rows:[
-      {t:"Bookings",ic:"calendar-days",go:function(){location.href="/bookings.html"}}
+    {g:"Day tools",rows:[
+      // These three were only ever reachable as Home widgets, which meant
+      // switching a widget off deleted the feature from the app. A widget
+      // should be a shortcut to a screen, never the only door to one.
+      {t:"To-do list",ic:"check-circle",go:function(){DAYTOOL.key="tasks";mrSet("daytool")}},
+      {t:"Promises you made",ic:"bell",go:function(){DAYTOOL.key="promises";mrSet("daytool")}},
+      {t:"Weather planner",ic:"cloud-sun",go:function(){DAYTOOL.key="weather";mrSet("daytool")}}
     ]},
     {g:"Setup",rows:[
       {t:"Settings",ic:"sliders",into:"settings"},
       {t:"Tools & account",ic:"activity",into:"account"}
+    ]},
+    {g:"Everything",rows:[
+      // Recognition over recall, as a browsable list rather than only as search
+      // results. 624 controls had never once been pushed — a fair share of that
+      // is simply not knowing a screen exists.
+      {t:"Everything, A–Z",ic:"list-checks",into:"index"}
     ]}
   ];
   var MORE_TITLES={root:["More","Mikey's Mobile Detailing"],
-    settings:["Settings","Alerts, team, and how it looks"],
+    settings:["Settings","Every setting in the app, one screen"],
     account:["Tools & account","Connection, backups and signing out"],
-    playbook:["Business playbook","What the AI knows about your business"]};
+    playbook:["Business playbook","What the AI knows about your business"],
+    daytool:["Day tools","Today's list, promises and the weather"],
+    index:["Everything, A–Z","Every screen in this app, grouped"]};
   // Park the JS-filled panels back in the holding div before wiping the body,
   // so re-rendering never destroys them.
   function mrStash(){
@@ -8381,16 +8504,30 @@
     el("mrTitle").textContent=ttl[0];el("mrSub").textContent=ttl[1];
     if(MORE.view==="settings")return mrSettings(b);
     if(MORE.view==="account")return mrAccount(b);
+    if(MORE.view==="index")return mrIndex(b);
+    if(MORE.view==="daytool")return mrDayTool(b);
     if(MORE.view==="playbook"){b.appendChild(el("playbookPanel"));return}
+    // Your own most-recent jumps, above the fixed menu. The list already exists
+    // — it is what the empty search box offers — and putting it here means the
+    // menu gets shorter to read the more it is used, not longer.
+    var rec=fxRecent().map(fxById).filter(Boolean).slice(0,3);
+    if(rec.length)b.appendChild(mrGroup("Recently used",rec.map(function(f){
+      return {t:f.t,ic:f.ic,go:function(){closeMore();runFeature(f)}};
+    })));
     MORE_MENU.forEach(function(sec){b.appendChild(mrGroup(sec.g,sec.rows))});
     var f=document.createElement("div");f.className="mr-foot";
     f.innerHTML="Mikey's Mobile Detailing<br>Dashboard · auto-refresh on";
     b.appendChild(f);
   }
+  // One settings door. Money kept its own Settings segment in its own bottom
+  // bar, and "Customize" sat as a peer of the whole app, so a setting could be
+  // in any of three places and you had to remember which. They are rows here
+  // now; both screens still exist, they just have one entrance.
   function mrSettings(b){
     b.appendChild(mrGroup("",[
       {t:"Phone notifications",ic:"bell",noteId:"pushState",go:function(){closeMore();jdPushSheet()}},
-      {t:"Customize everything",ic:"sliders",go:function(){closeMore();openCustomize()}}
+      {t:"Customize everything",ic:"sliders",go:function(){closeMore();openCustomize()}},
+      {t:"Money settings",ic:"dollar",go:function(){closeMore();openMoney("settings")}}
     ]));
     b.appendChild(mrLabel("Auto follow-ups & calls"));b.appendChild(el("fuSettings"));
     b.appendChild(mrLabel("Team"));b.appendChild(el("teamPanel"));
@@ -8398,6 +8535,50 @@
     b.appendChild(mrLabel("Accent color"));b.appendChild(el("accentRow"));
     updatePushBadge();
   }
+  // ---- Everything, A–Z ----------------------------------------------------
+  // FEATURES is already a complete, keyworded map of every screen in here, but
+  // it only ever rendered as search results — which you have to know to search
+  // for. Same list, browsable, grouped the way the app is grouped.
+  function mrIndex(b){
+    var by={},order=[];
+    FEATURES.forEach(function(f){
+      // Two entries once shared the id "quotes" — the builder and the report.
+      // Anything still doubled up would show twice here, so key on title.
+      if(!by[f.g]){by[f.g]=[];order.push(f.g)}
+      if(!by[f.g].some(function(x){return x.t===f.t}))by[f.g].push(f);
+    });
+    order.forEach(function(g){
+      var rows=by[g].slice().sort(function(x,y){return x.t.localeCompare(y.t)});
+      b.appendChild(mrGroup(g,rows.map(function(f){
+        return {t:f.t,ic:f.ic,go:function(){closeMore();runFeature(f)}};
+      })));
+    });
+  }
+
+  // ---- Day tools ----------------------------------------------------------
+  // The three Home widgets that had no screen behind them. This borrows the
+  // widget's own renderer rather than growing a second copy of each — one
+  // place to keep honest, which is the whole reason the widgets are functions.
+  var DAYTOOL={key:"tasks"};
+  var DAYTOOL_META={tasks:["To-do list","Everything you told yourself to do"],
+    promises:["Promises you made","What you said you'd do, and who's waiting"],
+    weather:["Weather planner","What the sky is doing to your week"]};
+  function openDayTool(key){DAYTOOL.key=key||"tasks";openMore("daytool")}
+  function mrDayTool(b){
+    var m=DAYTOOL_META[DAYTOOL.key]||DAYTOOL_META.tasks;
+    el("mrTitle").textContent=m[0];el("mrSub").textContent=m[1];
+    var w=document.createElement("div");
+    w.className="home";                       // the widgets are styled for Home
+    w.innerHTML='<div data-hwidget="'+esc(DAYTOOL.key)+'">'+
+      (DAYTOOL.key==="promises"?homePromisesWidget()
+        :DAYTOOL.key==="weather"?homeWeatherWidget()
+        :homeTasksWidget())+'</div>';
+    b.appendChild(w);
+    // Same wiring the Home screen gives them, so the buttons inside work here.
+    wireHomeWidgets(w);
+    if(DAYTOOL.key==="promises")wirePromises(w);
+  }
+
   function mrAccount(b){
     b.appendChild(mrGroup("",[
       {t:"Connection",ic:"activity",go:checkHealth},
@@ -8476,6 +8657,11 @@
     });
   }
   function startPoll(){paused=false;lastActivity=Date.now();pollInterval=POLL_MIN;lastSig=sig();scheduleNext()}
+  // Read-only view of the back-off, for the UI tests to assert against. The
+  // refresh button's real job is resetting this, and a test that could only see
+  // the fetch would pass on a button that fetched once and left the interval
+  // sitting at four minutes.
+  window.__poll=function(){return{interval:pollInterval,min:POLL_MIN,max:POLL_MAX,paused:paused}};
   function markActivity(){lastActivity=Date.now();if(paused&&!document.hidden){paused=false;pollInterval=POLL_MIN;runPoll()}}
   document.addEventListener("visibilitychange",function(){
     if(document.hidden){stopPoll()}
@@ -8536,6 +8722,31 @@
   el("detailsBtn").onclick=function(){el("details").classList.contains("open")?closeDetails():openDetails()};
   el("detailsClose").onclick=closeDetails;
   el("threadSearchBtn").onclick=function(){toggleFind()};
+  // ---- "show me now" ----------------------------------------------------
+  // The poll starts at 30s and backs off ×1.6 to five minutes whenever nothing
+  // has changed — which is exactly the state you are in while waiting on a
+  // reply, so the longer you wait the staler the screen gets. Sitting in a
+  // conversation is 78% of the time spent in this app; it should never be the
+  // place with no way to say "check now".
+  el("threadRefresh").onclick=function(){
+    var b=el("threadRefresh");
+    if(b.disabled)return;
+    vibrate(6);
+    b.disabled=true;b.classList.add("spinning");
+    // Reset the back-off too, not just this one fetch. Asking for new messages
+    // is a statement that you are waiting for one, so the next automatic check
+    // should be 30 seconds out, not four minutes.
+    lastActivity=Date.now();paused=false;pollInterval=POLL_MIN;
+    var started=Date.now();
+    loadThread().catch(function(){}).then(function(){
+      // Hold the spin for a beat on a fast reply, or it flickers and reads as
+      // nothing having happened at all.
+      setTimeout(function(){
+        b.disabled=false;b.classList.remove("spinning");
+      },Math.max(0,320-(Date.now()-started)));
+      lastSig=sig();scheduleNext();
+    });
+  };
   el("findClose").onclick=function(){toggleFind(false)};
   el("findPrev").onclick=function(){stepFind(-1)};
   el("findNext").onclick=function(){stepFind(1)};
@@ -8652,8 +8863,7 @@
       vibrate(6);
       var tb=b.getAttribute("data-tab");
       if(tb==="money")return openMoney();
-      if(tb==="pipeline")return openJobs();
-      if(tb==="stats")return openAnalytics("analytics");
+      if(tb==="work")return openJobs();
       if(tb==="more")return openMore();
       setTab(tb);
     };
@@ -8700,7 +8910,7 @@
   //               into one command center (live visitors, funnel, UX).
   // Reuses the former Grow shell (#growApp / grBody / grNav).
   // ============================================================
-  var GROW={view:"overview",wired:false,
+  var GROW={view:"index",wired:false,
     web:{range:"7d",data:null,loading:false,err:"",settings:false,status:null,ai:"",aiRange:"",aiLoading:false,savingGa:false,savingCl:false},
     // `steps` is a per-visitor cache: the board is one cheap list call, but each
     // replay is its own fetch, so re-collapsing a card must not re-fetch it.
@@ -8722,8 +8932,9 @@
   // Each view names itself. Six of these used to be titled "Analytics", so the
   // header said the same thing everywhere and the only way to tell which screen
   // you were on was to read the chart.
-  var GROW_VIEWS={overview:["Overview","Business overview · Mikey's Mobile Detailing"],
-    quotes:["Quotes","Every QQC quote, over time"],
+  var GROW_VIEWS={index:["Insights","Nine reports · open one"],
+    overview:["Overview","Business overview · Mikey's Mobile Detailing"],
+    quotes:["Quote results","Every QQC quote, over time"],
     customers:["Customers","Who your customers are — and who's slipping away"],
     profit:["Profit","What each job is really worth"],
     pulse:["Pulse","Where the month lands, and what just changed"],
@@ -8731,14 +8942,19 @@
     journey:["Journey","What one customer actually did"],
     usage:["Usage","How you actually use this dashboard"],
     map:["Map","Where the work and the rankings are"]};
-  // view is optional: the Stats tab opens straight onto the website numbers,
-  // which is what "check my stats" means day to day. Everything else lands on
-  // the overview as before.
+  // view is optional. With no view named this lands on the index — the screen
+  // that says what the nine reports are — because the tracker showed four of
+  // them had never been opened at all. Naming a view (a search hit, a deep
+  // link, a card) still goes straight there.
   function openAnalytics(view){
     if(view)GROW.view=view;
     el("growApp").classList.add("show");
     setNavActive("stats");
     navOpen("analytics",closeAnalytics);
+    // A report opened directly is still one level above the index, so the back
+    // chevron and the phone's back gesture both land on the index rather than
+    // dropping out of Insights altogether.
+    if(GROW.view!=="index")navOpen("grview",function(){GROW.view="index";growSyncNav();growRender()});
     if(!GROW.wired){growWire();GROW.wired=true;}
     if(!MO.summary&&!MO._homeFetch){MO._homeFetch=1;api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.today=d.today;MO.entries=d.entries||[];MO.cfg=d.config;MO.owed=d.owed||[];MO.week=d.week;MO.allTime=d.allTime;if(el("growApp").classList.contains("show"))growRender();}}).catch(function(){});}
     if(!state.insights)fetchInsights();
@@ -8746,18 +8962,30 @@
     growRender();
   }
   function closeAnalytics(){navDrop("analytics");el("growApp").classList.remove("show");setNavActive(state.tab);}
+  // Back goes up one level, not out: a report returns to the index, and only
+  // the index closes Insights.
+  function grBackOne(){if(GROW.view!=="index")return growSet("index");closeAnalytics()}
   // Light the segment that's actually showing. Opening straight onto a view
   // (the Stats tab does) skips growSet, so the bar has to be synced on open too
   // or it points at the overview while the website numbers are on screen.
   function growSyncNav(){
     var nv=el("grNav");if(!nv)return;
+    // Hidden on the index: the cards below are the way in, and a segment bar
+    // under them would be the same nine destinations offered twice.
+    nv.style.display=(GROW.view==="index")?"none":"";
     Array.prototype.forEach.call(nv.querySelectorAll("[data-gv]"),function(b){b.classList.toggle("active",b.getAttribute("data-gv")===GROW.view)});
     var on=nv.querySelector("[data-gv].active");
     if(on&&on.scrollIntoView)try{on.scrollIntoView({block:"nearest",inline:"center"})}catch(e){}
   }
-  function growSet(v){GROW.view=v;growSyncNav();growRender();el("grBody").scrollTop=0;}
+  function growSet(v){
+    // Index → report is a layer, so back comes back here. Report → report is
+    // not: hopping along the segment bar shouldn't build a history to unwind.
+    if(v==="index")navDrop("grview");
+    else navOpen("grview",function(){GROW.view="index";growSyncNav();growRender()});
+    GROW.view=v;growSyncNav();growRender();el("grBody").scrollTop=0;
+  }
   function growWire(){
-    el("grBack").onclick=closeAnalytics;
+    el("grBack").onclick=grBackOne;
     // Flag real overflow so the edge fade (and the scroll hint it gives) only
     // appears when a segment is actually cut off.
     var nv=el("grNav");
@@ -8769,8 +8997,10 @@
   function growRender(){
     var meta=GROW_VIEWS[GROW.view]||GROW_VIEWS.overview;
     el("grTitle").textContent=meta[0];el("grSub").textContent=meta[1];
-    el("grRefresh").style.visibility="visible";
+    // Nothing to refresh on a menu.
+    el("grRefresh").style.visibility=(GROW.view==="index")?"hidden":"visible";
     var b=el("grBody");
+    if(GROW.view==="index")return growIndex(b);
     if(GROW.view==="analytics")return growAnalytics(b);
     if(GROW.view==="journey")return growJourney(b);
     if(GROW.view==="usage")return growUsage(b);
@@ -8780,6 +9010,56 @@
     if(GROW.view==="profit")return ivRender(b,"profit");
     if(GROW.view==="pulse")return ivRender(b,"pulse");
     return growOverview(b);
+  }
+
+  // ---- the Insights index ------------------------------------------------
+  // Each card says what its report answers, in the question he'd actually ask,
+  // and carries the current number when we already have it. The "when we
+  // already have it" is the whole design: drawing this menu must never fire
+  // nine requests, so a card with nothing loaded yet simply shows no value and
+  // fetches when it's opened, exactly as before.
+  var IX_CARDS=[
+    ["overview","Overview","activity","How's the business doing right now?"],
+    ["analytics","Website","bar-chart","Who's visiting the site, and from where?"],
+    ["quotes","Quote results","clipboard-list","How many quotes came in, and what were they worth?"],
+    ["customers","Customers","users","Who comes back, and who's slipping away?"],
+    ["profit","Profit","trending-up","Which jobs are actually worth doing?"],
+    ["pulse","Pulse","activity","Where does this month land if nothing changes?"],
+    ["journey","Journey","route","What did one customer do before they texted?"],
+    ["map","Map & rankings","pin","Where's the work, and where do you rank?"],
+    ["usage","Usage","target","Which parts of this dashboard do you actually use?"]
+  ];
+  // Read-only: pull from caches other screens filled, never trigger a load.
+  function ixValue(key){
+    var ins=state.insights||{};
+    if(key==="overview"&&ins.open!=null)return[String(ins.open),"open"];
+    if(key==="analytics"){var g=GROW.web.data&&GROW.web.data.ga;if(g&&g.totals&&g.totals.sessions!=null)return[String(g.totals.sessions),"visitors · "+GROW.web.range]}
+    if(key==="quotes"){var q=GROW.quotes.data;if(q&&q.summary&&q.summary.count!=null)return[String(q.summary.count),"quotes"]}
+    if(key==="customers"){var c=IV.customers.data;if(c&&c.totals&&c.totals.customers!=null)return[String(c.totals.customers),"customers"]}
+    if(key==="profit"){var pf=IV.profit.data;if(pf&&pf.totals&&pf.totals.netMargin!=null)return[Math.round(pf.totals.netMargin)+"%","net margin"]}
+    if(key==="pulse"){var s2=MO.summary;if(s2&&s2.net!=null)return[fmtMoney(s2.net),"net this month"]}
+    if(key==="journey"){var j=GROW.journey;if(j.total)return[String(j.total),"visitors"]}
+    // Map is a scan you run, not a number that stands between visits — there is
+    // nothing honest to show here until a scan has happened, so it shows nothing.
+    if(key==="usage"){var u=GROW.usage.data;if(u&&u.totals&&u.totals.taps!=null)return[String(u.totals.taps),"taps"]}
+    return null;
+  }
+  function growIndex(box){
+    var h='<div class="ix-lead">Everything the numbers can tell you, one report at a time. '+
+      'Values shown are whatever has already been loaded this session — open a report for the live figure.</div><div class="ix-wrap">';
+    IX_CARDS.forEach(function(c){
+      var v=ixValue(c[0]);
+      h+='<button class="ix-card" data-ix="'+esc(c[0])+'">'+
+        '<span class="ix-ic">'+ic(c[2],20)+'</span>'+
+        '<span class="ix-txt"><span class="ix-t">'+esc(c[1])+'</span><span class="ix-q">'+esc(c[3])+'</span></span>'+
+        (v?'<span class="ix-v">'+esc(v[0])+'<small>'+esc(v[1])+'</small></span>':'')+
+        '</button>';
+    });
+    h+='</div>';
+    box.innerHTML=h;
+    Array.prototype.forEach.call(box.querySelectorAll("[data-ix]"),function(b){
+      b.onclick=function(){vibrate(6);growSet(b.getAttribute("data-ix"))};
+    });
   }
 
   // ============================================================
@@ -10740,7 +11020,24 @@
     return new Date(+dstr.slice(0,4),+dstr.slice(5,7)-1,+dstr.slice(8,10)).toLocaleDateString([],{weekday:"short",month:"short",day:"numeric"});
   }
 
-  function openMoney(){MO.open=true;el("moneyApp").style.display="flex";setNavActive("money");navOpen("money",closeMoney);if(!MO.loadedOnce||MO.month!==moCurMonth()){moRender();loadMoney()}else moRender()}
+  function openMoney(view){
+    MO.open=true;el("moneyApp").style.display="flex";setNavActive("money");navOpen("money",closeMoney);
+    // The pill means "show me the money", so a stale settings view never
+    // survives a close and re-open; a caller that explicitly asks for one wins.
+    MO.view=view||(MO.view==="settings"?"log":MO.view||"log");
+    moSyncNav();
+    // One load decision, not two: moSetView would fire its own fetch for a
+    // stale month and then this would fire a second one for the same month.
+    if(!MO.loadedOnce||MO.month!==moCurMonth()){moRender();loadMoney()}else moRender();
+  }
+  function moSyncNav(){
+    var nv=el("moNav");if(!nv)return;
+    // Settings has no segment of its own any more, so the bar would sit there
+    // with nothing lit and no way back to the money. Hide it and let the back
+    // chevron be the single, obvious way out.
+    nv.style.display=(MO.view==="settings")?"none":"";
+    Array.prototype.forEach.call(nv.querySelectorAll("[data-mv]"),function(b){b.classList.toggle("active",b.getAttribute("data-mv")===MO.view)});
+  }
   function closeMoney(){navDrop("money");MO.open=false;el("moneyApp").style.display="none";setNavActive(state.tab);closeMoSheet()}
   function refreshMoBadge(){var n=el("navMoney");if(n){var c=(MO.cfg&&MO.cfg.wonNudge!==false)?(MO.nudges||[]).length:0;n.textContent=c;n.className="ndot"+(c?" show":"")}}
   function loadMoney(month){
@@ -10751,8 +11048,7 @@
     }).catch(function(){});
   }
   function moSetView(v){
-    MO.view=v;
-    Array.prototype.forEach.call(el("moNav").querySelectorAll("[data-mv]"),function(b){b.classList.toggle("active",b.getAttribute("data-mv")===v)});
+    MO.view=v;moSyncNav();
     if((v==="log"||v==="goals")&&MO.month!==moCurMonth()){loadMoney();return}
     moRender();
   }
@@ -12220,7 +12516,7 @@
 
   function openJobs(view){
     el("jdApp").classList.add("show");
-    setNavActive("pipeline");
+    setNavActive("work");
     navOpen("jobs",closeJobs);
     if(!JD.wired){jdWire();JD.wired=true}
     if(!JD.date)JD.date=jdToday();
@@ -12236,6 +12532,10 @@
   function closeJobs(){navDrop("jobs");el("jdApp").classList.remove("show");setNavActive(state.tab);jdSheetClose();jdTrackDetach()}
   function jdSyncNav(){Array.prototype.forEach.call(el("jdNav").querySelectorAll("[data-jv]"),function(b){b.classList.toggle("active",b.getAttribute("data-jv")===JD.view)})}
   function jdSet(v){
+    // Bookings is a separate page, not a view in this shell. Leaving JD.view
+    // alone matters: store "booked" and coming back from the browser's back
+    // button renders an empty body with no segment lit.
+    if(v==="booked"){location.href="/bookings.html";return}
     JD.view=v;jdSyncNav();jdRender();el("jdBody").scrollTop=0;
     if(v==="run"&&!JD.day)jdLoadDay();
     if(v==="quotes"&&!JD.qcfg)jdLoadQuotes();
@@ -13839,7 +14139,12 @@
   var USE_SCAN_CAP=1200;        // …and how much of a very large DOM one pass will walk
   var USE_Q_KEY="mkd-use-q";    // events stranded by a dead network
   var USE_SEEN_KEY="mkd-use-seen";
-  var USE_OWNED={analytics:1,jobs:1,more:1,moreView:1}; // named by their own hook, with the view
+  // Named by their own hook, with the view. "grview" is the layer an Insights
+  // report sits on above the index; without it here every report would record
+  // as the generic "Screen · grview" and the per-report counts — the numbers
+  // that showed four of the nine were never opened, and got Stats taken out of
+  // the nav bar — would stop existing.
+  var USE_OWNED={analytics:1,grview:1,jobs:1,more:1,moreView:1};
   var USE={q:[],seen:{},pending:{},screen:"",at:0,acts:0,actAt:0,timer:null,scan:0,on:true};
 
   function useNow(){return Date.now()}
@@ -14094,7 +14399,12 @@
     var _navDrop=navDrop;
     navDrop=function(){var r=_navDrop.apply(this,arguments);useAfterDrop();return r};
     var _openAnalytics=openAnalytics;
-    openAnalytics=function(v){var r=_openAnalytics.apply(this,arguments);useScreen("Stats · "+(GROW.view||"overview"));return r};
+    // These two prefixes stay "Stats ·" and "Pipeline ·" even though the tabs
+    // are called Insights and Work now. This is a measuring instrument with 90
+    // days of history in it; renaming the keys would split every report into a
+    // before row and an after row and quietly end the comparison that this
+    // whole reorganisation was argued from.
+    openAnalytics=function(v){var r=_openAnalytics.apply(this,arguments);useScreen("Stats · "+(GROW.view||"index"));return r};
     var _growSet=growSet;
     growSet=function(v){useScreen("Stats · "+v);return _growSet.apply(this,arguments)};
     var _openJobs=openJobs;

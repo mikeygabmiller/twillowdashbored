@@ -71,8 +71,8 @@ await back();
 ok('back closed money', (await page.locator('#moneyApp').evaluate((e) => e.style.display)) === 'none');
 
 section('Analytics opens and backs out');
-// Analytics is reached by name now, not from the nav bar.
-await page.locator('#search').fill('analytics');
+// Insights is reached by name now, not from the nav bar.
+await page.locator('#search').fill('insights');
 await page.waitForTimeout(300);
 await page.locator('#search').press('Enter');
 await page.waitForTimeout(700);
@@ -87,7 +87,7 @@ section('The menu race: More closes itself, then opens a screen');
 await page.locator('#menuBtn').click();
 await page.waitForTimeout(400);
 ok('More opened', await page.locator('#moreApp').evaluate((e) => e.classList.contains('show')));
-await page.locator('#mrBody .mr-row', { hasText: 'Analytics' }).first().click();
+await page.locator('#mrBody .mr-row', { hasText: 'Insights' }).first().click();
 await page.waitForTimeout(700);
 ok('More closed', !(await page.locator('#moreApp').evaluate((e) => e.classList.contains('show'))));
 ok('analytics opened', await page.locator('#growApp').evaluate((e) => e.classList.contains('show')));
@@ -119,7 +119,7 @@ const agrees = () => page.evaluate(() => {
 ok('agrees while idle', await agrees());
 await page.locator('#menuBtn').click(); await page.waitForTimeout(350);
 ok('agrees with More open', await agrees());
-await page.locator('#mrBody .mr-row', { hasText: 'Analytics' }).first().click(); await page.waitForTimeout(700);
+await page.locator('#mrBody .mr-row', { hasText: 'Insights' }).first().click(); await page.waitForTimeout(700);
 ok('agrees after close-then-open in one tap', await agrees(), await nav());
 await back();
 ok('agrees after backing out', await agrees(), await nav());
