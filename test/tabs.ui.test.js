@@ -59,12 +59,17 @@ const visibleTabs = () => page.$$eval('.navitem', (ns) => ns
     .filter((c) => c.nodeType === 3).map((c) => c.textContent).join('').trim()));
 const activeTab = () => page.$eval('.navitem.active', (n) => n.getAttribute('data-tab')).catch(() => null);
 
-section('Five destinations, all real');
+section('The default bar, all real destinations');
 const tabs = await visibleTabs();
-ok('exactly five tabs', tabs.length === 5, tabs);
-ok('they are Today/Chats/Work/Money/More',
-  JSON.stringify(tabs) === JSON.stringify(['Today', 'Chats', 'Work', 'Money', 'More']), tabs);
-ok('Stats no longer has a pill', !tabs.includes('Stats'), tabs);
+ok('they are Today/Chats/Calls/Work/Money/More',
+  JSON.stringify(tabs) === JSON.stringify(['Today', 'Chats', 'Calls', 'Work', 'Money', 'More']), tabs);
+// Hidden, not removed: Stats is still a pill in Customize → Tabs, one tap from
+// coming back. It is off by default on measurement — 9 opens in a quarter,
+// four of its nine reports never opened at all — now that its nine reports
+// have an index screen of their own inside More.
+ok('Stats is off the default bar', !tabs.includes('Stats'), tabs);
+const allPills = await page.$$eval('.navitem', (ns) => ns.map((n) => n.getAttribute('data-tab')));
+ok('but it is still a real pill the bar can show', allPills.includes('stats'), allPills);
 
 section('The nav bar says where you actually are');
 ok('starts on Today', (await activeTab()) === 'home');
@@ -186,7 +191,7 @@ ok('the old drawer is gone', (await page.locator('#drawer').count()) === 0);
 const groups = await page.$$eval('#mrBody .mr-gh', (ns) => ns.map((n) => n.textContent.trim()));
 // "Recently used" only appears once something has been jumped to, so match on
 // the fixed groups rather than the whole list.
-['AI', 'Insights', 'Day tools', 'Setup', 'Everything'].forEach((g) =>
+['AI', 'Phone', 'Insights', 'Day tools', 'Setup', 'Everything'].forEach((g) =>
   ok('"' + g + '" is a group', groups.includes(g), groups));
 ok('the old "Pipeline" group is gone — Bookings went to the Work bar',
   !groups.includes('Pipeline'), groups);

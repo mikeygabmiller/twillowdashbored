@@ -224,6 +224,12 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   send*, this answers *what's my next word*. Rebuilt twice a day, with a
   **Relearn how I text** button and an on/off switch in the menu; the local half
   keeps working even with no AI key configured.
+- **The message box is never behind the keyboard.** A hard rule on a phone: while
+  you're typing, the box and the send button stay on screen. The chat pane tracks
+  the visible window (including iOS, which answers a keyboard by sliding the page
+  down rather than shrinking it), the box itself can never be squeezed, and the
+  informational banners — job, hold, quote, reminder, scheduled, follow-up — step
+  aside for as long as the keyboard is up and come straight back when it goes.
 - **Auto-polish:** you don't press anything. Stop typing for a beat and your draft
   is polished in the background — but nothing is ever swapped into the box behind
   your back and nothing covers the screen. A slim **"Polished version ready"** bar
@@ -519,6 +525,52 @@ curl -X POST https://texting.mikeysdetailingsnohomish.workers.dev/api/quotes/imp
 Re-running it is safe — the same phone + total inside 10 minutes is skipped as a
 duplicate. Backfilled rows carry the date, name and amount only; vehicle,
 condition and services lived in the email body and are left blank.
+
+## Which clicks did I pay for? (ads vs. organic, and the email when one lands)
+
+A Google **ad** click and a free Google **search** click arrive from the same
+place — both carry the referrer `google.com` — so every visit used to read
+"Found you on Google" on the Journey board whether it cost $2.60 or nothing.
+
+The only proof is the click id the ad platform staples onto its own landing URL
+(`gclid`, `gbraid`/`wbraid`, `msclkid`, `fbclid`), which lives in the landing
+page's **query string**. Three things feed it, in this order:
+
+1. a query string riding on the tracker's `p` parameter,
+2. a dedicated `q` parameter, for a tracker that would rather keep the path clean,
+3. the referrer host — `googleadservices.com` and `doubleclick.net` only ever
+   appear on a click somebody paid for.
+
+`utm_medium=cpc` (and `ppc`, `paid…`, `display`, `retargeting`) also counts as
+paid; `utm_medium=email` does not — a tagged newsletter is not an ad.
+**First touch wins:** page four of the same visit carries no `gclid` and must
+never erase the ad that paid for page one.
+
+⚠️ **The site has to send the query string.** The snippet in Grow → Website now
+sends `location.pathname + location.search`; a tracker still sending the
+pathname alone (which is what `site-stats.js` on the marketing site does today)
+can never label a paid click, and everything falls back to rule 3. Update the
+site's tracker to send `location.pathname + location.search` on both the GIF
+ping and the event beacon, and the labels start arriving with the next visit.
+
+**Where it shows up:** a gold *"Google ad"* badge on each Journey row, the
+visitor's **city** (straight off the Cloudflare edge — no lookup, no key, city
+level only), a *Clicks you paid for* tile on both the Journey board and the
+Website tab, the "how they found you" line in the quote-abandon email, and
+`adClicks` / `freeVisits` / `topAds` on `/api/analytics`.
+
+### The email when a click lands
+One email the moment a **new** visitor arrives — a visitor id the tracker has
+never sent before. Not per page view: someone reading four pages is one click.
+It says whether the click was paid or free, what city their phone was in, and
+which page they landed on, and links straight to their replay. Nothing is ever
+sent to them; they haven't given you a number.
+
+**Settings** (☰ → the follow-up settings screen): *Email me when somebody lands
+on my site* — **Every new visitor** (default), **Only clicks I paid for**, or
+**Never**. It stops itself after 20 a day so a busy morning can't bury the
+alerts that matter, and the daily counter rides inside the analytics day doc
+that the pixel was already writing, so it costs no extra KV write.
 
 ## Saw the price and left (the email you get about a lead that never existed)
 Someone builds a quote on the site, reaches the estimate, and closes the tab

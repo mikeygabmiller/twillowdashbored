@@ -79,6 +79,10 @@ const CODE = [
   lift('loadQuoteWatch'), lift('saveQuoteWatch'),
   lift('armQuoteWatch'), lift('clearQuoteWatch'),
   lift('cleanVid'), lift('journeyMeta'), lift('journeyHotLabel'),
+  // Paid-vs-organic rides along on the same steps — see adsource.test.js for
+  // the feature's own suite; these are here because journeyStep stamps them.
+  constant('AD_CLICK_IDS'), constant('AD_REF_HOSTS'), constant('AD_PAID_MEDIUM'), constant('AD_NAMES'),
+  lift('refHostOf'), lift('adFromLanding'), lift('adLabel'), lift('visitorCity'), lift('stampJourneyInfo'),
   lift('blankJourney'), lift('appendStep'), lift('journeyStep'), lift('journeyLink'),
   lift('handlePixelEvents'), lift('pxOk'),
   lift('journeyPageTitle'), lift('journeyRefLabel'), lift('journeyReadStep'),
@@ -262,6 +266,20 @@ ok('it knows pages and actions separately', act1.pages === 1 && act1.acts === 5,
 ok('and surfaces the loudest thing that happened', /Tapped to CALL/.test(act1.hot), act1.hot);
 const plain = board2.journeys.find((r) => r.vid === 'vis2');
 ok('a path with nothing loud on it has no badge', !plain.hot, plain.hot);
+
+section('An ad click does not turn one page into two');
+// The tracker snippet now sends location.search, so an ad click arrives as
+// "/?gclid=…" on the GIF ping and as plain "/" on the event beacon. If the
+// query survived, those two reports of ONE page load would stop collapsing —
+// every replay of a paid visit would print "Home page" twice — and Top Pages
+// would grow a new row per click, because no two gclids are alike.
+const AT = now - 90 * min;
+await J.journeyStep('adv1', { t: AT, p: '/', r: 'google.com' }, { ad: 'google', camp: '', city: '' });
+await beacon('adv1', '/?gclid=EAIaIQobChMI', [{ t: AT + 500, k: 'v', l: 'Landed on the page', d: 'google.com' }]);
+const adDoc = await KV.get('journey:adv1', { type: 'json' });
+ok('the two reports of one landing stay one step', adDoc.steps.length === 1, adDoc.steps);
+ok('and the click id is not stored as part of the page', adDoc.steps[0].p === '/', adDoc.steps[0].p);
+ok('the ad it came from is still on the visitor', adDoc.ad === 'google', adDoc.ad);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -8,9 +8,10 @@
  *   - Cron:    Netlify schedule -> Cloudflare Cron Trigger (scheduled handler)
  *   - Static dashboard (public/index.html) served via Workers static assets.
  *
- * Public webhooks:  /submit /sms /call /voicemail /voicemail-done
+ * Public webhooks:  /submit /sms /call /call-screen /voicemail /voicemail-done
  * Dashboard API:    /api/health /api/threads /api/thread /api/send /api/meta
  *                   /api/schedule /api/unschedule /api/call /api/read
+ *                   /api/calls /api/calls/seen /api/calls/backfill
  *                   /api/insights /api/ai/summary /api/ai/draft /api/ai/triage
  *                   /api/money/* (profit tracker — see the Money module)
  *
@@ -310,12 +311,17 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/booking-settings') return apiSaveBookingSettings(request);
   if (request.method === 'POST' && pathname === '/api/booking-cal-test') return apiCalTest(request);
   if (request.method === 'POST' && pathname === '/api/block')      return apiBlock(request);
+  // ---- Calls (the phone log Google Voice used to be the only place to see) ----
+  if (request.method === 'GET'  && pathname === '/api/calls')      return apiCalls();
+  if (request.method === 'POST' && pathname === '/api/calls/seen') return apiCallsSeen();
+  if (request.method === 'POST' && pathname === '/api/calls/backfill') return apiCallsBackfill();
   if (request.method === 'GET'  && pathname === '/api/migrate')    return apiMigrate(url);
   if (request.method === 'GET'  && pathname === '/api/templates')  return apiGetTemplates();
   if (request.method === 'POST' && pathname === '/api/templates')  return apiSaveTemplates(request);
   if (request.method === 'POST' && pathname === '/api/ai/summary') return apiAiSummary(request);
   if (request.method === 'POST' && pathname === '/api/ai/recap')   return apiAiRecap(request);
   if (request.method === 'POST' && pathname === '/api/ai/draft')   return apiAiDraft(request);
+  if (request.method === 'POST' && pathname === '/api/ai/answer')  return apiAiAnswer(request);
   if (request.method === 'POST' && pathname === '/api/ai/triage')  return apiAiTriage();
   if (request.method === 'POST' && pathname === '/api/ai/coach')   return apiAiCoach(request);
   if (request.method === 'POST' && pathname === '/api/ai/photo-quote') return apiAiPhotoQuote(request);
@@ -465,7 +471,10 @@ async function handleSubmit(request) {
     await kv().put(rlKey, String(n + 1), { expirationTtl: 3600 });
   }
 
-  const { name, phone, email, location, total, vehicle, condition, services, notes, smsConsent } = body;
+  const { phone, email, location, total, vehicle, condition, services, notes, smsConsent } = body;
+  // Straighten "MIKE JONES" / "mike jones" before it reaches the customer's text,
+  // the thread, or the quote log — see tidyName.
+  const name = tidyName(body.name);
   // Only auto-text the client if they ticked the SMS consent box on the form
   // (A2P/compliance). Mikey's lead alert + the dashboard lead always go through.
   const consent = smsConsent === true || smsConsent === 'true';
@@ -489,11 +498,6 @@ async function handleSubmit(request) {
     notes ? `Notes: ${notes}` : null, ``, `Open the dashboard to reply to ${name.split(' ')[0]}.`,
   ].filter((s) => s !== null).join('\n');
 
-  // Hold the customer's first auto-reply for a few minutes so it reads like Mikey
-  // personally texting back, not an instant bot. Mikey's own lead alert still goes
-  // out immediately below.
-  const FIRST_REACHOUT_DELAY_MS = 210000; // 3.5 minutes
-
   const mikeyAlert = await notifyMikey(`🔔 New quote — ${name}`, mikeyMsg);
 
   // Start the conversation, tag as a new lead, store form details as a note.
@@ -509,13 +513,15 @@ async function handleSubmit(request) {
   ].filter(Boolean).join('\n');
   if (detail && !thread.notes) thread.notes = `Quote request (${new Date().toLocaleDateString()}):\n${detail}`;
   // Queue the first reach-out (if they consented) instead of sending it now. The
-  // scheduled-send cron delivers it ~3.5 min later and records it in the thread;
-  // until then it shows as "scheduled to send" so Mikey can cancel and reply himself.
+  // scheduled-send cron delivers it ~3.5 min later — or at 5am for an overnight
+  // submission, see firstReachoutAt — and records it in the thread; until then it
+  // shows as "scheduled to send" so Mikey can cancel and reply himself.
   // `alertOnSend` makes the cron text him the moment it actually lands, so the 3.5
   // minutes of silence after the lead alert isn't a mystery — see dispatchDueScheduled.
   let clientSms = 'skipped';
   if (consent) {
-    thread.scheduled.push({ id: genId(), body: clientMsg, sendAt: Date.now() + FIRST_REACHOUT_DELAY_MS, alertOnSend: true });
+    const cfg = await loadConfig();
+    thread.scheduled.push({ id: genId(), body: clientMsg, sendAt: firstReachoutAt(Date.now(), cfg), alertOnSend: true });
     thread.scheduled.sort((a, b) => a.sendAt - b.sendAt);
     clientSms = 'scheduled';
   }
@@ -541,6 +547,7 @@ async function handleSubmit(request) {
 //   1. Text Mikey immediately:  🔔 NEW QUOTE — name, phone, $total, vehicle, services
 //   2. ~3.5 min later, text the customer the first reach-out — but only when they
 //      consented (Make's filter: smsConsent != "false") and the phone is a valid +1.
+//      An overnight submission waits for 5am instead (firstReachoutAt).
 // Improvements over Make: the delayed text goes through the reserve-then-send cron
 // (at-most-once, opt-out aware, delivery-tracked), the lead is recorded in the
 // dashboard, and Mikey gets a second text confirming the reach-out actually landed
@@ -556,7 +563,7 @@ async function handleQqcText(request) {
   // Bot honeypot — real customers never fill these hidden fields.
   if (body.website || body._gotcha || body.hp) return cors(json({ ok: true, clientSms: 'skipped', mikeyAlert: false }, 200));
 
-  const name = String(body.name || '').trim();
+  const name = tidyName(body.name);   // "MIKE JONES" -> "Mike Jones", see tidyName
   const clientPhone = normalizePhone(body.phone);
   if (!name || !clientPhone) return cors(json({ ok: false, error: 'missing_fields' }, 422));
 
@@ -597,7 +604,9 @@ async function handleQqcText(request) {
   if (detail && !thread.notes) thread.notes = `QQC quote (${new Date().toLocaleDateString()}):\n${detail}`;
   let clientSms = 'skipped';
   if (consent) {
-    thread.scheduled.push({ id: genId(), body: clientMsg, sendAt: Date.now() + 210000, alertOnSend: true }); // 3.5 min, like Make's Sleep
+    // 3.5 min, like Make's Sleep — except overnight, which Make couldn't do.
+    const cfg = await loadConfig();
+    thread.scheduled.push({ id: genId(), body: clientMsg, sendAt: firstReachoutAt(Date.now(), cfg), alertOnSend: true });
     thread.scheduled.sort((a, b) => a.sendAt - b.sendAt);
     clientSms = 'scheduled';
   }
@@ -967,6 +976,40 @@ async function assistDraftTarget(index, forcedPhone) {
   return null;
 }
 
+// "YES" means "send the reply you showed me". The danger is that the alert he's
+// answering is not the newest thing that happened — he reads it on the drive
+// home, the customer has since texted twice, or he already answered from the
+// dashboard. Sending the old draft then is worse than sending nothing: it answers
+// a question nobody is asking any more, in his name.
+//
+// Returns the sentence to send back instead, or '' when the draft is still good.
+function assistDraftStale(thread) {
+  const s = thread.suggested || {};
+  const forTs = Number(s.forTs || s.ts || 0);
+  const who = thread.name || thread.phone;
+  const msgs = thread.messages || [];
+  const newerIn = msgs.filter((m) => m.dir === 'in' && (m.ts || 0) > forTs);
+  if (newerIn.length) {
+    const last = newerIn[newerIn.length - 1];
+    return `I didn't send it — ${who} texted again after I wrote that:\n"${String(last.body || '').slice(0, 140)}"\n\n` +
+      `Answering the old message would have read wrong. Reply with the facts for the NEW one and I'll write that instead.`;
+  }
+  // He already answered them himself somewhere else. Sending again would be him
+  // saying the same thing twice, a minute apart, for no reason.
+  const newerOut = msgs.filter((m) => m.dir === 'out' && (m.ts || 0) > forTs);
+  if (newerOut.length) {
+    return `I didn't send it — you've already replied to ${who} since I wrote that one:\n"${String(newerOut[newerOut.length - 1].body || '').slice(0, 140)}"\n\n` +
+      `Nothing went out. Tell me what else you want said and I'll write it.`;
+  }
+  // A draft that's been sitting for a day is answering yesterday's conversation.
+  if (Number(s.ts) && Date.now() - Number(s.ts) > ASSIST_DRAFT_MAX_AGE_MS) {
+    return `I didn't send it — I wrote that reply for ${who} ${humanAgo(Date.now() - Number(s.ts))} ago, and that's too long to fire it off without you looking again. ` +
+      `Open the dashboard, or tell me the facts and I'll write a fresh one.`;
+  }
+  return '';
+}
+const ASSIST_DRAFT_MAX_AGE_MS = 18 * 3600 * 1000;
+
 async function assistAnswerDraft(yes, { index, cfg, reply, channel, forcedPhone }) {
   const thread = await assistDraftTarget(index, forcedPhone);
   if (!thread) {
@@ -977,6 +1020,14 @@ async function assistAnswerDraft(yes, { index, cfg, reply, channel, forcedPhone 
   }
   const who = thread.name || thread.phone;
   const draft = thread.suggested.text;
+  if (yes) {
+    const stale = assistDraftStale(thread);
+    if (stale) {
+      await assistHealthMark({ skippedAt: Date.now(), skippedWhy: `a YES for ${who} was held back — the conversation had moved on` });
+      await reply(stale);
+      return;
+    }
+  }
   if (!yes) {
     thread.suggested = null;
     await saveThread(thread);
@@ -995,6 +1046,75 @@ async function assistAnswerDraft(yes, { index, cfg, reply, channel, forcedPhone 
     await saveThread(after);
     await updateIndexEntry(after);
   }
+}
+
+// ---------------------------------------------------------------------------
+// The last gate before a real customer's phone buzzes
+// ---------------------------------------------------------------------------
+// Two different fears, two different checks.
+//
+// The first is plumbing escaping into a text. A reply that didn't get quoted the
+// way we expected can leave the cut marker, a [ref:] line or a whole quoted alert
+// sitting in what we're about to send — and "--- reply above this line ---" going
+// out to a customer under his name is the single most embarrassing thing this
+// feature could do. Cheap to spot, so spot it and refuse.
+function assistOutboundBlocked(text) {
+  const t = String(text || '');
+  if (t.includes(ASSIST_CUT)) return 'it still had the "reply above this line" marker in it';
+  if (/\[ref:/i.test(t)) return 'it still had the routing line ([ref:…]) in it';
+  if (/^\s*On .{0,120}\bwrote:\s*$/m.test(t) || /^\s*>/m.test(t) || /^\s*From:\s.+@/m.test(t)) {
+    return 'it looked like a quoted email had come along for the ride';
+  }
+  if (t.length > 900) return `it was ${t.length} characters — far too long for a text`;
+  return '';
+}
+
+// The second fear is the one he actually said out loud: it saying something he
+// never said. Every fact in an assist reply is supposed to come from HIM — the AI
+// is only doing the wording. So before it goes out, any money, and any day of the
+// week, in the finished text has to be traceable to what he typed or to the
+// conversation itself. A number that appears from nowhere is the AI quoting a
+// price off the playbook, and a price he didn't agree to is a price he has to
+// honour. Returns what's wrong in his words, or ''.
+const ASSIST_DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+function assistFactDrift(out, hint, thread) {
+  const t = String(out || '');
+  // Placeholders are a straight template leak — "Hi [name]" needs no further
+  // reasoning to be wrong.
+  const ph = t.match(/\[[a-z][a-z ._-]{1,20}\]|\{\{?[a-z][a-z ._-]{1,20}\}?\}|<[a-z][a-z ._-]{1,20}>|\bXXX+\b/i);
+  if (ph) return `it still has a fill-in-the-blank in it (${ph[0]})`;
+
+  // Everything he's allowed to be repeating back: what he just typed, plus the
+  // conversation both sides can already see.
+  const msgs = (thread && thread.messages) || [];
+  const supplied = [String(hint || '')]
+    .concat(msgs.slice(-12).map((m) => String(m.body || '')))
+    .join(' \n ')
+    .toLowerCase();
+  const digitsIn = (s) => (s.match(/\d[\d,]*(?:\.\d+)?/g) || []).map((n) => n.replace(/[,]/g, '').replace(/\.0+$/, ''));
+  const known = new Set(digitsIn(supplied));
+
+  // Money only. Times ("9am", "3:30") and years are deliberately not treated as
+  // money, because they trip constantly and a wrong time is visible to him in the
+  // confirmation anyway — a wrong price is the one that costs money.
+  const money = [];
+  const reDollar = /\$\s?(\d[\d,]*(?:\.\d{2})?)/g;
+  let m;
+  while ((m = reDollar.exec(t))) money.push(m[1].replace(/,/g, '').replace(/\.00$/, ''));
+  const reBare = /(?<![\d$.:])(\d{2,4})(?![\d:]|\s*(?:am|pm|a\.m|p\.m))/gi;
+  while ((m = reBare.exec(t))) {
+    const n = Number(m[1]);
+    if (n >= 20 && n <= 2000) money.push(String(n));
+  }
+  for (const n of money) {
+    if (!known.has(n) && !known.has(`${n}.00`)) {
+      return `it quotes $${n}, and you didn't say that — it isn't anywhere in what you told me or in the conversation`;
+    }
+  }
+
+  const day = ASSIST_DAYS.find((d) => new RegExp(`\\b${d}\\b`, 'i').test(t) && !supplied.includes(d));
+  if (day) return `it commits you to ${day[0].toUpperCase()}${day.slice(1)}, and that day isn't in what you told me or in the conversation`;
+  return '';
 }
 
 // ---------------------------------------------------------------------------
@@ -1107,6 +1227,36 @@ async function runAssist({ text, cfg, reply, channel, forcedPhone }) {
   out = String(out || '').trim();
   if (!out) { await reply('That came back empty — try again, or use "send: <your exact message>".'); return; }
 
+  // Plumbing check runs on every path, his own words included: if a quoted alert
+  // survived the strip, "send:" would put it in front of a customer verbatim.
+  const blocked = assistOutboundBlocked(out);
+  if (blocked) {
+    await assistHealthMark({ skippedAt: Date.now(), skippedWhy: `a reply to ${assistWho(target)} was blocked — ${blocked}` });
+    await reply(`I didn't send that one — ${blocked}.\n\nNothing went to ${assistWho(target)}. Send it again with just the words you want them to read.`);
+    return;
+  }
+
+  // Fact check on the AI-worded path only. "send:" is his exact words and needs
+  // no second-guessing; a draft isn't going anywhere yet.
+  if (mode === 'ai' && cfg.assistFactCheck !== false) {
+    const drift = assistFactDrift(out, body, thread);
+    if (drift) {
+      // Held, not thrown away — parked as the thread's draft so one word ("yes")
+      // sends it as written once he's read it. That keeps the escape hatch as
+      // short as the happy path.
+      const last = thread.messages[thread.messages.length - 1];
+      thread.suggested = { text: out, ts: Date.now(), forTs: last ? last.ts : Date.now() };
+      await saveThread(thread);
+      await updateIndexEntry(thread);
+      await assistHealthMark({ skippedAt: Date.now(), skippedWhy: `a reply to ${assistWho(target)} was held — ${drift}` });
+      await reply(
+        `I stopped short of sending this one, because ${drift}:\n"${out}"\n\n` +
+        `Nothing went to ${assistWho(target)}. Reply YES and it goes out exactly as written, or tell me the right wording and I'll redo it.`,
+      );
+      return;
+    }
+  }
+
   if (mode === 'draft') {
     const last = thread.messages[thread.messages.length - 1];
     thread.suggested = { text: out, ts: Date.now(), forTs: last ? last.ts : Date.now() };
@@ -1138,6 +1288,7 @@ async function runAssist({ text, cfg, reply, channel, forcedPhone }) {
   thread.dateRequest = null;
   await saveThread(thread);
   await updateIndexEntry(thread);
+  if (channel === 'email') await assistHealthMark({ sentAt: Date.now(), sentWho: assistWho(target) });
   const when = delaySec >= 60 ? `~${Math.round(delaySec / 60)} min` : delaySec ? `~${delaySec}s` : 'on the next tick (~1 min)';
   await reply(
     `→ ${assistWho(target)}:\n"${out}"\n\n` +
@@ -1447,25 +1598,110 @@ function emailAddr(s) {
   return String(m ? m[1] : s || '').trim().toLowerCase();
 }
 
-// Is this ingested email Mikey answering a customer alert? Requires the sender
-// to be the alert mailbox AND the mail to reference a conversation — so ordinary
-// customer email flowing through the same ingest is never mistaken for a command.
-function assistIsOwnerReply(cfg, email) {
-  if (cfg.assistEmail === false) return '';
-  const owner = emailAddr(ENV.ALERT_EMAIL);
-  if (!owner || emailAddr(email.from) !== owner) return '';
-  return assistRefPhone(email.body);
+// The same mailbox, written any of the ways a mail client might write it. Gmail
+// ignores dots and everything after a "+", and "Mikey <M.Ikey+dash@Gmail.com>"
+// really is the same person as "mikey@gmail.com" — comparing the raw strings was
+// quietly turning his own replies into ordinary inbox mail, which looks exactly
+// like the feature being broken because nothing anywhere says it happened.
+function emailKey(s) {
+  const a = emailAddr(s);
+  const at = a.lastIndexOf('@');
+  if (at < 1) return a;
+  let local = a.slice(0, at), domain = a.slice(at + 1);
+  const plus = local.indexOf('+');
+  if (plus > 0) local = local.slice(0, plus);
+  if (domain === 'gmail.com' || domain === 'googlemail.com') { local = local.replace(/\./g, ''); domain = 'gmail.com'; }
+  return `${local}@${domain}`;
 }
 
-async function handleAssistEmail(cfg, email, phone) {
-  const text = assistStripQuoted(email.body);
-  if (!text) return;
+// Every address allowed to answer an alert: the alert mailbox itself, plus any
+// send-as alias he's added on the setup screen (Gmail sends from whichever alias
+// the thread was addressed to, so a one-address rule locks him out of his own
+// feature the first time he answers from an alias).
+function assistOwnerKeys(cfg) {
+  const keys = [emailKey(ENV.ALERT_EMAIL)];
+  for (const extra of (cfg && Array.isArray(cfg.assistFrom) ? cfg.assistFrom : [])) {
+    const k = emailKey(extra);
+    if (k && !keys.includes(k)) keys.push(k);
+  }
+  return keys.filter(Boolean);
+}
+
+// Is this ingested email Mikey answering a customer alert? Requires the sender
+// to be an address of his AND the mail to reference a conversation — so ordinary
+// customer email flowing through the same ingest is never mistaken for a command.
+// `ref` is the routing phone the Gmail script found in the thread; it only gets a
+// say when his own reply carries no [ref:] of its own, which happens whenever a
+// client sends a reply without quoting what it's replying to.
+function assistIsOwnerReply(cfg, email, ref) {
+  if (cfg.assistEmail === false) return '';
+  const from = emailKey(email.from);
+  if (!from || !assistOwnerKeys(cfg).includes(from)) return '';
+  return assistRefPhone(email.body) || normalizePhone(ref || '') || '';
+}
+
+// ---------------------------------------------------------------------------
+// Is the loop actually running?  (assist:health)
+// ---------------------------------------------------------------------------
+// The old failure mode wasn't a wrong answer, it was silence: the Gmail trigger
+// stops (a revoked permission, a paused script, a quota) and NOTHING anywhere
+// says so. He keeps replying to alerts, customers keep not hearing back, and the
+// first sign is an unhappy phone call. So the script checks in, we remember when,
+// and the setup screen says "checked 40 seconds ago" or "hasn't checked in since
+// Tuesday" in those words.
+//
+// Throttled hard on purpose. A minute trigger would be 1,440 KV writes a day for
+// a number that only needs to be roughly right, so a check-in that carries no
+// news only earns a write every 20 minutes.
+const HEALTH_KEY = 'assist:health';
+const HEALTH_QUIET_MS = 20 * 60000;
+async function assistHealth() {
+  return (await kv().get(HEALTH_KEY, { type: 'json' })) || {};
+}
+// `patch` is merged over what's there. `quiet` means "nothing happened, this is
+// just the heartbeat" — those are dropped unless the stored one has gone stale.
+async function assistHealthMark(patch, quiet) {
+  try {
+    const cur = await assistHealth();
+    if (quiet && cur.at && Date.now() - cur.at < HEALTH_QUIET_MS) return cur;
+    const next = Object.assign({}, cur, patch, { at: Date.now() });
+    await kv().put(HEALTH_KEY, JSON.stringify(next));
+    return next;
+  } catch { return {}; }
+}
+
+// A sent-folder reply older than this is history, not an instruction. The Gmail
+// script already refuses to look further back than its own install, but a
+// re-installed script, a restored backup or a hand-run POST can still hand us
+// something from last week — and rewriting a week-old "yes, thursday" into a text
+// to a customer is exactly the thing he's afraid of.
+const ASSIST_MAX_AGE_MS = 6 * 3600 * 1000;
+
+async function handleAssistEmail(cfg, email, phone, ver) {
   const subject = 'Re: ' + String(email.subject || 'your reply').replace(/^(re:\s*)+/i, '');
+  const say = (msg) => sendEmail(subject, `${ASSIST_CUT}\n${msg}\n\n[ref:${phone}]`).catch(() => {});
+  const age = Date.now() - (Number(email.date) || Date.now());
+  if (age > ASSIST_MAX_AGE_MS) {
+    await assistHealthMark({ skippedAt: Date.now(), skippedWhy: `a reply from ${humanAgo(age)} ago was left alone — too old to act on` });
+    return;
+  }
+  const text = assistStripQuoted(email.body);
+  // Silence used to be the answer to a reply we couldn't read — he'd assume it
+  // sent. Say so instead; it's a free email and it's the difference between
+  // "it's broken" and "oh, my signature ate it".
+  if (!text) {
+    await assistHealthMark({ skippedAt: Date.now(), skippedWhy: 'a reply came through with no words in it' });
+    await say("Your reply came through, but I couldn't find any words in it — nothing was sent.\n\nWrite your answer above the quoted text and send it again.");
+    return;
+  }
+  // The version tells the setup screen whether he's still on the old script — the
+  // one that answers fine but has no way to say when it has stopped.
+  await assistHealthMark({ replyAt: Date.now(), replyWords: text.slice(0, 80), scriptVer: String(ver || '1').slice(0, 8), lastError: '', lastErrorAt: 0 });
   await runAssist({
     text, cfg, channel: 'email', forcedPhone: phone,
     // The confirmation carries the marker and the ref too, so replying "cancel"
     // to IT routes back here instead of landing in the inbox as ordinary mail.
-    reply: (msg) => sendEmail(subject, `${ASSIST_CUT}\n${msg}\n\n[ref:${phone}]`).catch(() => {}),
+    reply: say,
   });
 }
 
@@ -1493,6 +1729,12 @@ const PRACTICE_SCENARIOS = [
     body: 'Do you do ceramic coating? And do you come to my place or do I drop it off?' },
   { id: 'escalate', name: 'Practice · Ken',   vehicle: 'Tacoma',
     body: "I just looked at the truck and there's a scratch on the hood that wasn't there this morning. Pretty unhappy about this." },
+  // The one that deliberately can't be answered without him. Nothing in the
+  // playbook says which hour of Thursday he's free, so this is the scenario
+  // that exercises "Needs you" end to end: the draft is held, the question
+  // comes back with tappable answers, and the reply is written from his tap.
+  { id: 'askme',    name: 'Practice · Sam',   vehicle: 'Highlander',
+    body: 'Perfect, Thursday works for me. What time can you come by?' },
 ];
 
 async function apiAssistPractice(request) {
@@ -1521,9 +1763,18 @@ async function apiAssistPractice(request) {
   // the practice thread so answering YES walks the same path a real one would
   // (and stops at the practice guard instead of texting anyone).
   let draft = '';
+  let needsYou = null;
   if (aiConfigured() && !(ask && (ask.kind === 'escalate' || ask.kind === 'chitchat'))) {
-    try { draft = String(await generateReply(thread, cfg, '') || '').trim(); } catch { draft = ''; }
-    if (draft) thread.suggested = { text: draft, ts: Date.now(), forTs: thread.messages[0].ts };
+    // Same order as a real inbound: ask him first, and only draft if there is
+    // nothing to ask. Otherwise the practice run wouldn't be practising the
+    // thing it's meant to be showing him.
+    try { needsYou = await askOwnerChoices(thread, cfg); } catch { needsYou = null; }
+    if (needsYou) {
+      thread.needsYou = { question: needsYou.question, options: needsYou.options, ts: Date.now(), forTs: thread.messages[0].ts };
+    } else {
+      try { draft = String(await generateReply(thread, cfg, '') || '').trim(); } catch { draft = ''; }
+      if (draft) thread.suggested = { text: draft, ts: Date.now(), forTs: thread.messages[0].ts };
+    }
   }
   await saveThread(thread);
   await updateIndexEntry(thread);
@@ -1531,89 +1782,392 @@ async function apiAssistPractice(request) {
   const note = `🧪 THIS IS A PRACTICE MESSAGE — ${sc.name} is not a real customer.\nNothing you reply here will ever be sent to anyone.`;
   const body = assistAlertBody(cfg, { phone: PRACTICE_PHONE, who: sc.name, msg: sc.body, ask, draft, note });
   const sent = await notifyMikey(`🧪 Practice · ${sc.name}: "${String(sc.body).slice(0, 52)}${String(sc.body).length > 52 ? '…' : ''}"`, body);
-  return json({ ok: !!sent, scenario: sc.id, ask, emailed: !!sent, previewBody: body.text, previewHtml: body.html });
+  return json({ ok: !!sent, scenario: sc.id, ask, needsYou, phone: PRACTICE_PHONE, emailed: !!sent, previewBody: body.text, previewHtml: body.html });
 }
 
 // The Gmail script that feeds this. Deliberately reads his SENT mail rather than
 // his inbox: whatever address the alert came from, his reply is in Sent, so this
 // needs no inbound-mail infrastructure, no custom domain and no third-party
 // automation — just a free 1-minute trigger on his own account.
-function assistAppsScript(url, token) {
+//
+// Version 2. Version 1 worked when it worked and told you nothing when it didn't,
+// which for a thing you only use a few times a week is the same as broken. Every
+// change below is one of the four ways it actually failed:
+//
+//   1. It aborted the whole run whenever Google returned a blank address for the
+//      signed-in user — which it does, inside a trigger, on plenty of accounts.
+//      One `return` and the feature was dead with a log line nobody reads.
+//   2. It treated ANY HTTP response as success, so a bad token or a deploy blip
+//      swallowed his answer permanently: marked handled, never sent, no error.
+//   3. It saved the handled list only at the very end, so an execution killed
+//      halfway re-sent everything it had already sent — to real customers.
+//   4. It had no starting line, so installing it answered up to two days of
+//      backlog at once, including conversations he'd already finished by hand.
+//
+// It also now checks in with the dashboard, which is what makes the setup screen
+// able to say "working, last checked 40 seconds ago" instead of nothing at all.
+function assistAppsScript(url, token, alertFrom) {
   return `/**
- * Mikey's Dashboard — "Answer by email".
+ * Mikey's Dashboard — "Answer by email"  (v2)
  * Reply to a new-text alert with the facts and the dashboard writes the
  * customer reply in your voice and sends it.
  *
- * SETUP (once, ~2 minutes)
+ * SETUP (once, about 2 minutes)
  *  1. Go to script.google.com -> New project
- *  2. Delete what's there, paste ALL of this, hit Save
- *  3. Run -> mikeyAssistSync  (approve the permission prompt the first time)
- *  4. Triggers (clock icon) -> Add Trigger -> mikeyAssistSync ->
- *     Time-driven -> Minutes timer -> Every minute -> Save
- * That's it. Replying to an alert now answers the customer.
+ *  2. Delete what is there, paste ALL of this, hit Save
+ *  3. In the function dropdown pick mikeyAssistSetUp, press Run,
+ *     and approve the permission prompt (your own script, your own account —
+ *     click Advanced -> Go to...)
+ * That is it. It installs its own every-minute trigger; there is no Deploy step,
+ * ever.
+ *
+ * IF IT EVER GOES QUIET: pick mikeyAssistCheck and press Run. It prints, in
+ * plain English, whether the trigger is on, whether Gmail will let it read, and
+ * whether the dashboard is answering.
+ *
+ * mikeyAssistReset draws a new starting line — it forgets everything before now,
+ * so nothing old can go out. Safe to run any time.
  */
-var DASH_URL   = ${JSON.stringify(url)};
-var DASH_TOKEN = ${JSON.stringify(token)};
+var DASH_URL    = ${JSON.stringify(url)};
+var DASH_TOKEN  = ${JSON.stringify(token)};
+var ALERT_FROM  = ${JSON.stringify(String(alertFrom || '').toLowerCase())};
+var VER         = '2';
+var LOOKBACK    = '1d';      // how far back in Sent to look at all
+var MAX_THREADS = 25;
+var PING_EVERY_MS = 20 * 60 * 1000;   // quiet check-ins, so the dashboard knows we are alive
 
-function mikeyAssistSync() {
-  // Who am I? A search for 'from:me' returns THREADS, and each thread holds both
-  // the dashboard's alert and my reply — so every message still has to be checked
-  // individually. If Google won't tell us the address (it can come back empty in
-  // some trigger contexts) we stop rather than treat every message as ours.
-  var me = '';
-  try { me = (Session.getActiveUser().getEmail() || '').toLowerCase(); } catch (e) {}
-  if (!me) { Logger.log('Could not read your Gmail address — re-run this once from the editor to re-approve.'); return; }
-
+// ---------------------------------------------------------------------------
+// Setup
+// ---------------------------------------------------------------------------
+function mikeyAssistSetUp() {
   var props = PropertiesService.getScriptProperties();
-  var seen = JSON.parse(props.getProperty('seen') || '[]');
-  var threads = GmailApp.search('from:me newer_than:2d', 0, 30);
-  var sent = 0;
+  // Draw the starting line HERE. Without it the first run finds every alert reply
+  // from the last day and answers all of them at once — a burst of texts to real
+  // customers about conversations that are already over.
+  props.setProperty('since', String(Date.now()));
+  props.deleteProperty('seen');
+  var killed = 0, all = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < all.length; i++) {
+    if (all[i].getHandlerFunction() === 'mikeyAssistSync') { ScriptApp.deleteTrigger(all[i]); killed++; }
+  }
+  ScriptApp.newTrigger('mikeyAssistSync').timeBased().everyMinutes(1).create();
+  Logger.log('Set up. From now on your replies to alerts get answered within a minute.'
+    + (killed ? (' (Replaced ' + killed + ' old trigger' + (killed === 1 ? '' : 's') + '.)') : ''));
+  return mikeyAssistCheck();
+}
+
+// Draw a fresh starting line. Everything sent before right now is forgotten, so
+// running this can only ever make it send less, never more.
+function mikeyAssistReset() {
+  var props = PropertiesService.getScriptProperties();
+  props.setProperty('since', String(Date.now()));
+  props.deleteProperty('seen');
+  Logger.log('Starting line reset. Only replies you send from now on will be answered.');
+  return 'Starting line reset.';
+}
+
+// The "why is it quiet?" button. Everything that can be wrong, checked in order,
+// in words that say what to do about it.
+function mikeyAssistCheck() {
+  var out = [], props = PropertiesService.getScriptProperties();
+  out.push('Dashboard: ' + DASH_URL);
+  out.push(DASH_TOKEN ? 'Token: set' : 'Token: MISSING - copy the script again from the dashboard');
+
+  var trig = 0, all = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < all.length; i++) if (all[i].getHandlerFunction() === 'mikeyAssistSync') trig++;
+  out.push(trig ? ('Trigger: ON (' + trig + ')') : 'Trigger: OFF - run mikeyAssistSetUp to install it');
+
+  var me = myAddrs_();
+  out.push(me.length
+    ? ('Signed in as: ' + me.join(', '))
+    : 'Signed in as: Google would not say - that is fine, it falls back to "anything that is not the dashboard"');
+
+  try {
+    var th = GmailApp.search(searchQuery_(), 0, 5);
+    out.push('Alert replies in your sent mail (last ' + LOOKBACK + '): ' + th.length);
+  } catch (e) {
+    out.push('Gmail: CANNOT READ - ' + e + ' (re-run mikeyAssistSetUp and approve the prompt)');
+  }
+
+  var r = post_({ ping: true, ver: VER, check: true });
+  out.push(r.ok ? 'Dashboard answered: OK' : ('Dashboard answered: ' + r.code + ' ' + String(r.text).slice(0, 140)));
+
+  var since = Number(props.getProperty('since') || 0);
+  out.push(since
+    ? ('Answering replies you sent after ' + new Date(since))
+    : 'No starting line yet - run mikeyAssistSetUp');
+
+  var msg = out.join('\\n');
+  Logger.log(msg);
+  return msg;
+}
+
+// ---------------------------------------------------------------------------
+// The every-minute job
+// ---------------------------------------------------------------------------
+function mikeyAssistSync() {
+  var lock = LockService.getScriptLock();
+  // A slow run must never overlap the next one: both would read the same handled
+  // list before either wrote it, and the customer would get the same text twice.
+  if (!lock.tryLock(3000)) return;
+  try { syncOnce_(); } finally { try { lock.releaseLock(); } catch (e) {} }
+}
+
+// Only threads you sent in, only recent ones, and only ones that actually carry a
+// dashboard routing line. Version 1 pulled 30 whole conversations a minute and
+// read every message in them; this reads almost nothing on a normal day.
+function searchQuery_() {
+  return 'in:sent newer_than:' + LOOKBACK + ' "[ref:" -in:drafts -in:chats';
+}
+
+function syncOnce_() {
+  var props = PropertiesService.getScriptProperties();
+  var since = Number(props.getProperty('since') || 0);
+  if (!since) { since = Date.now(); props.setProperty('since', String(since)); }
+  var seen = readSeen_(props);
+
+  var threads;
+  try { threads = GmailApp.search(searchQuery_(), 0, MAX_THREADS); }
+  catch (e) { ping_({ error: 'could not read Gmail: ' + e }); return; }
+
+  var mine = myAddrs_(), scanned = 0, sent = 0, failed = 0, err = '';
 
   for (var t = 0; t < threads.length; t++) {
     var msgs = threads[t].getMessages();
+    // The routing line lives in the alert. Reading it off the THREAD rather than
+    // off his reply is what makes this work with mail clients that send a reply
+    // without quoting the original at all — that used to look like the feature
+    // ignoring him.
+    var ref = threadRef_(msgs);
     for (var i = 0; i < msgs.length; i++) {
-      var m = msgs[i];
-      var id = m.getId();
-      if (seen.indexOf(id) !== -1) continue;                      // already sent
-      var from = m.getFrom();
-      if (from.toLowerCase().indexOf(me) === -1) continue;         // the alert, not my reply
+      var m = msgs[i], id = m.getId();
+      if (seen[id]) continue;
+      if (!isMine_(m, mine)) continue;
+      var when = m.getDate().getTime();
+      // Before the starting line = history. Mark it handled so we stop looking at
+      // it, but never act on it.
+      if (when <= since) { seen[id] = when; continue; }
       var body = m.getPlainBody() || '';
-      if (body.indexOf('[ref:') === -1) continue;                  // not a reply to a dashboard alert
+      if (body.indexOf('[ref:') === -1 && !ref) continue;
 
-      try {
-        UrlFetchApp.fetch(DASH_URL, {
-          method: 'post',
-          contentType: 'application/json',
-          headers: { 'X-Ingest-Token': DASH_TOKEN },
-          muteHttpExceptions: true,
-          payload: JSON.stringify({
-            token: DASH_TOKEN,
-            from: from,
-            subject: m.getSubject(),
-            body: body,
-            messageId: id,
-            date: m.getDate().getTime()
-          })
-        });
-        seen.push(id);
+      scanned++;
+      var r = post_({
+        token: DASH_TOKEN, from: m.getFrom(), subject: m.getSubject(),
+        body: body, messageId: id, date: when, ref: ref, ver: VER
+      });
+      if (r.ok) {
+        // Saved immediately, not at the end of the run. Apps Script kills long
+        // executions without warning, and the old code lost the whole list when
+        // it did — so the next run re-sent every answer it had already sent.
+        seen[id] = Date.now();
+        saveSeen_(props, seen);
         sent++;
-      } catch (err) { /* leave it unseen and try again next run */ }
+      } else {
+        // Deliberately left UNHANDLED so the next run tries again. A bad token or
+        // a dashboard hiccup must never quietly eat an answer he believes he sent.
+        failed++;
+        err = 'dashboard said ' + r.code + (r.text ? (': ' + String(r.text).slice(0, 120)) : '');
+      }
     }
   }
-  if (seen.length > 300) seen = seen.slice(-300);
-  props.setProperty('seen', JSON.stringify(seen));
-  Logger.log('Checked ' + threads.length + ' recent conversations, sent ' + sent + ' answer(s).');
+
+  saveSeen_(props, seen);
+  ping_({ scanned: scanned, sent: sent, failed: failed, error: err }, !(scanned || failed));
+  Logger.log('Looked at ' + threads.length + ' conversation(s); ' + sent + ' answer(s) sent'
+    + (failed ? (', ' + failed + ' failed - ' + err) : '') + '.');
+}
+
+// ---------------------------------------------------------------------------
+// Plumbing
+// ---------------------------------------------------------------------------
+function addr_(s) {
+  var m = String(s || '').match(/<([^>]+)>/);
+  return String(m ? m[1] : (s || '')).trim().toLowerCase();
+}
+
+// Every address that counts as you: the signed-in user, the account the script
+// runs as, and any send-as alias. Gmail sends a reply from whichever alias the
+// thread was addressed to, so aliases are not an edge case.
+function myAddrs_() {
+  var list = [];
+  var add = function (a) { a = addr_(a); if (a && list.indexOf(a) === -1) list.push(a); };
+  try { add(Session.getEffectiveUser().getEmail()); } catch (e) {}
+  try { add(Session.getActiveUser().getEmail()); } catch (e) {}
+  try { GmailApp.getAliases().forEach(add); } catch (e) {}
+  return list;
+}
+
+function isMine_(m, mine) {
+  var from = addr_(m.getFrom());
+  if (!from) return false;
+  if (mine.length) return mine.indexOf(from) !== -1;
+  // Google would not tell us who we are — which used to abort the entire run.
+  // Fall back to "anyone who is not the dashboard": the search already limited us
+  // to threads you sent in, and the dashboard checks the sender again before it
+  // acts, so being generous here cannot make anything go out that should not.
+  return !ALERT_FROM || from !== ALERT_FROM;
+}
+
+function threadRef_(msgs) {
+  for (var i = 0; i < msgs.length; i++) {
+    var m = String(msgs[i].getPlainBody() || '').match(/\\[ref:\\s*([+\\d(][\\d\\s()+.-]{6,})\\]/);
+    if (m) return m[1].replace(/[^\\d+]/g, '');
+  }
+  return '';
+}
+
+function post_(payload) {
+  try {
+    var res = UrlFetchApp.fetch(DASH_URL, {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { 'X-Ingest-Token': DASH_TOKEN },
+      muteHttpExceptions: true,
+      payload: JSON.stringify(payload)
+    });
+    var code = res.getResponseCode();
+    // Version 1 never looked at this number, which is how a 401 became "sent".
+    return { ok: code >= 200 && code < 300, code: code, text: res.getContentText() };
+  } catch (e) {
+    return { ok: false, code: 0, text: String(e) };
+  }
+}
+
+// Tell the dashboard we are alive, so the setup screen can say so. A check-in
+// with no news only goes out every 20 minutes — a minute trigger phoning home
+// 1,440 times a day would cost more than the feature.
+function ping_(info, quiet) {
+  var props = PropertiesService.getScriptProperties();
+  var last = Number(props.getProperty('pingAt') || 0);
+  if (quiet && last && (Date.now() - last) < PING_EVERY_MS) return;
+  info = info || {};
+  info.ping = true;
+  info.ver = VER;
+  info.token = DASH_TOKEN;
+  var r = post_(info);
+  if (r.ok) props.setProperty('pingAt', String(Date.now()));
+}
+
+// The handled list, as { messageId: whenHandled }. Pruned by age and then by
+// count, so it cannot grow into the 9 KB property limit and start throwing.
+function readSeen_(props) {
+  var raw = props.getProperty('seen');
+  if (!raw) return {};
+  try {
+    var v = JSON.parse(raw);
+    if (Array.isArray(v)) { var o = {}; for (var i = 0; i < v.length; i++) o[v[i]] = Date.now(); return o; }
+    return v && typeof v === 'object' ? v : {};
+  } catch (e) { return {}; }
+}
+
+function saveSeen_(props, seen) {
+  var cutoff = Date.now() - 4 * 24 * 3600 * 1000;
+  var keys = Object.keys(seen).filter(function (k) { return Number(seen[k]) > cutoff; });
+  keys.sort(function (a, b) { return Number(seen[b]) - Number(seen[a]); });
+  if (keys.length > 400) keys = keys.slice(0, 400);
+  var out = {};
+  for (var i = 0; i < keys.length; i++) out[keys[i]] = seen[keys[i]];
+  props.setProperty('seen', JSON.stringify(out));
 }
 `;
 }
 
-// Small TwiML fragment that rings Mikey's cell and then falls through to
-// voicemail — shared by the direct path and the post-screening path.
-function dialMikeyTwiml() {
-  const mikeyPhone = normalizePhone(ENV.MIKEY_PHONE) || '+13607975831';
+// ───────────────────────────── THE CALL LOG ─────────────────────────────
+// Google Voice had exactly one thing this dashboard didn't: somewhere to SEE a
+// call. Who rang, who got missed, what the voicemail said — one list, in order.
+// Twilio knows all of that and nothing here was writing it down: a voicemail
+// landed as a bubble inside a text thread, and a plain missed call left no trace
+// at all. This is the ledger that fixes that.
+//
+// It is deliberately ONE KV doc, not a key per call. The write budget (see the
+// box at the top of this file) cannot take a key per ring, and a capped array we
+// rewrite in place costs one write per webhook no matter how busy the phone is.
+const CALLS_KEY = 'calls';
+const CALLS_MAX = 200;
+
+async function loadCalls() {
+  const raw = await kv().get(CALLS_KEY, { type: 'json' });
+  const doc = raw && typeof raw === 'object' ? raw : {};
+  return { calls: Array.isArray(doc.calls) ? doc.calls : [], seenTs: doc.seenTs || 0 };
+}
+
+// ⚠ KV WRITE — budgeted. Only ever called from a Twilio webhook or a deliberate
+// tap, never from the minute cron and never inside a loop.
+async function saveCalls(doc) {
+  doc.calls = (doc.calls || []).slice(0, CALLS_MAX);
+  await kv().put(CALLS_KEY, JSON.stringify(doc));
+}
+
+// One ring reaches us through up to four separate webhooks (/call → /call-screen
+// → /voicemail → /voicemail-done → /voicemail-tx). They all have to land on the
+// SAME row, or a single missed call reads as five entries. Twilio's CallSid is
+// that identity; RecordingSid is the backstop for a callback that arrives with
+// the recording but no call.
+async function recordCall(patch) {
+  const doc = await loadCalls();
+  let row = null;
+  if (patch.sid) row = doc.calls.find((c) => c.sid === patch.sid) || null;
+  if (!row && patch.recordingSid) row = doc.calls.find((c) => c.recordingSid === patch.recordingSid) || null;
+  if (!row) {
+    row = { id: genId(), ts: Date.now() };
+    doc.calls.unshift(row);
+  }
+  // Undefined means "I don't know this field", not "clear it". The transcript
+  // callback in particular arrives without a recording URL half the time, and a
+  // plain Object.assign would wipe the playable recording we already stored.
+  for (const k in patch) if (patch[k] !== undefined) row[k] = patch[k];
+  await saveCalls(doc);
+  return row;
+}
+
+// Who is this, in the customer's language rather than a raw +1? Read off the
+// thread index (memoized, already loaded on most of these paths) and stamped
+// onto the call row at write time, so the calls screen never has to load a
+// thread just to put a name on a row.
+async function callerName(fromNorm) {
+  try {
+    const index = await loadIndex();
+    const row = (index || []).find((r) => r.phone === fromNorm);
+    return (row && row.name) || '';
+  } catch { return ''; }
+}
+
+// A robo-dialer that redials the same number all afternoon shouldn't each time
+// cost a KV write. If this number already sat out the screening greeting in the
+// last half hour, that's the same story already on the board — skip it.
+function recentlyScreened(doc, fromNorm) {
+  const cut = Date.now() - 30 * 60000;
+  return (doc.calls || []).some((c) => c.fromNorm === fromNorm && c.outcome === 'screened' && (c.ts || 0) > cut);
+}
+
+// Where an inbound call actually rings. Settable in the app (☰ → Settings →
+// Calls) so the handset can change without a deploy; falls back to the same
+// handset dashboard click-to-call uses.
+function callForwardPhone(cfg) {
+  return normalizePhone((cfg && cfg.callForwardTo) || '') || callBridgePhone();
+}
+
+// Ring the handset, then bridge — the same shape as dashboard click-to-call.
+//
+// This used to dial MIKEY_PHONE, and that one line is why no voicemail ever
+// reached this dashboard. MIKEY_PHONE is the Google Voice number, and Google
+// Voice ANSWERS a forwarded call with its own greeting. From Twilio's side the
+// call was therefore `completed`, <Record> never ran, and the message, the
+// transcript and the missed-call trail all stayed locked inside Google Voice
+// where nothing here could read them.
+//
+// Dialing the cell directly puts Twilio back in charge of the unanswered case.
+// Keep `timeout` under ~25s on purpose: the carrier's own voicemail picks up
+// around then, and whichever voicemail answers first is the one that owns the
+// message. Twilio has to win that race or we are back to square one.
+//
+// answerOnBridge keeps the caller hearing a real ringback instead of dead air
+// until the handset actually picks up.
+function dialMikeyTwiml(cfg) {
+  const handset = callForwardPhone(cfg);
   return `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
-  <Dial timeout="20" action="/voicemail" method="POST"><Number>${escapeXml(mikeyPhone)}</Number></Dial>
+  <Dial timeout="20" answerOnBridge="true" action="/voicemail" method="POST"><Number>${escapeXml(handset)}</Number></Dial>
 </Response>`;
 }
 
@@ -1631,11 +2185,15 @@ async function handleInboundCall(request) {
   if (!(await verifyTwilio(request, params))) return forbidden();
   const from = params.From || 'Unknown';
   const fromNorm = normalizePhone(from) || from;
+  const sid = params.CallSid || '';
   const cfg = await loadConfig();
+  const name = await callerName(fromNorm);
 
   // 1. Blocked number → reject with a rejected tone. No forward, no voicemail,
-  //    no alert. Costs Mikey nothing and the spammer gets a dead end.
+  //    no alert. Costs Mikey nothing and the spammer gets a dead end. Still
+  //    written to the log: "I blocked 6 of these" is worth being able to see.
   if (Array.isArray(cfg.blockedNumbers) && cfg.blockedNumbers.includes(fromNorm)) {
+    await recordCall({ sid, from, fromNorm, name, ts: Date.now(), outcome: 'blocked' });
     return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response><Reject reason="rejected"/></Response>');
   }
 
@@ -1643,6 +2201,14 @@ async function handleInboundCall(request) {
   //    the timeout, Twilio falls through to <Hangup/> and the call is dropped
   //    without ever forwarding to Mikey — which is what defeats the robo-dialers.
   if (cfg.callScreening !== false) {
+    // Logged as `screened` up front, before we know how it ends, because a caller
+    // who gives up during the greeting is a lead that otherwise vanished without
+    // trace. /call-screen overwrites this row the moment a key is pressed.
+    const doc = await loadCalls();
+    if (!recentlyScreened(doc, fromNorm)) {
+      doc.calls.unshift({ id: genId(), sid, from, fromNorm, name, ts: Date.now(), outcome: 'screened' });
+      await saveCalls(doc);
+    }
     const gate = `<?xml version="1.0" encoding="UTF-8"?>
 <Response>
   <Gather numDigits="1" action="/call-screen" method="POST" timeout="8">
@@ -1653,9 +2219,10 @@ async function handleInboundCall(request) {
     return xmlResponse(gate);
   }
 
-  // Screening off → original behavior: forward straight to Mikey.
-  notifyMikey(`📞 Incoming call from ${from}`, `Incoming call from ${from} to your Mikey's Detailing number.`).catch(() => {});
-  return xmlResponse(dialMikeyTwiml());
+  // Screening off → forward straight to the handset.
+  await recordCall({ sid, from, fromNorm, name, ts: Date.now(), outcome: 'ringing' });
+  notifyMikey(`📞 Incoming call from ${name || from}`, `${name || from} is calling your Mikey's Detailing number right now.`).catch(() => {});
+  return xmlResponse(dialMikeyTwiml(cfg));
 }
 
 // Screening gate result. Only reached when a caller actually pressed a key, so
@@ -1665,11 +2232,18 @@ async function handleCallScreen(request) {
   const params = await formParams(request);
   if (!(await verifyTwilio(request, params))) return forbidden();
   const from = params.From || 'Unknown';
+  const fromNorm = normalizePhone(from) || from;
+  const sid = params.CallSid || '';
   const digits = params.Digits || '';
+  const cfg = await loadConfig();
   if (digits === '1') {
-    notifyMikey(`📞 Incoming call from ${from}`, `Incoming call from ${from} to your Mikey's Detailing number (passed screening).`).catch(() => {});
-    return xmlResponse(dialMikeyTwiml());
+    const name = await callerName(fromNorm);
+    await recordCall({ sid, from, fromNorm, name, outcome: 'ringing' });
+    notifyMikey(`📞 Incoming call from ${name || from}`, `${name || from} pressed 1 and is ringing your phone now.`).catch(() => {});
+    return xmlResponse(dialMikeyTwiml(cfg));
   }
+  // Pressed something that isn't 1 — a human, but not one being put through.
+  await recordCall({ sid, from, fromNorm, outcome: 'declined' });
   return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response><Say voice="alice">Sorry, I didn\'t get that. Goodbye.</Say><Hangup/></Response>');
 }
 
@@ -1677,25 +2251,45 @@ async function handleVoicemail(request) {
   const params = await formParams(request);
   if (!(await verifyTwilio(request, params))) return forbidden();
   const from = params.From || 'Unknown';
+  const fromNorm = normalizePhone(from) || from;
+  const sid = params.CallSid || '';
   const dialStatus = params.DialCallStatus || '';
-  if (dialStatus === 'completed') return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+  // This webhook is where a call's ending is finally known: `completed` means the
+  // handset picked up and the two of them talked, anything else means it rang out.
+  // Both belong on the board — "he answered, 4 minutes" is as much a record as a
+  // missed call, and it's the half Google Voice was keeping to itself.
+  if (dialStatus === 'completed') {
+    await recordCall({ sid, from, fromNorm, outcome: 'answered', talkSec: Number(params.DialCallDuration || 0) || 0 });
+    return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+  }
+  await recordCall({ sid, from, fromNorm, outcome: 'missed', dialStatus });
 
   // Missed-call instant text-back — the #1 lead-recovery move for a solo mobile
   // business. Fire a friendly SMS to the caller so a missed call converts into a
-  // text thread Mikey can answer from the driveway. Opt-out aware, and throttled so
-  // a caller who rings twice in a row doesn't get spammed.
+  // text thread Mikey can answer from the driveway. Opt-out aware, and it only ever
+  // goes to a number this dashboard has never texted.
   const cfg = await loadConfig();
+  let textedBack = false;
   if (cfg.missedCallTextback !== false) {
     const caller = normalizePhone(from);
     if (caller && caller !== normalizePhone(ENV.MIKEY_PHONE) && !isOptedOut(cfg, caller)) {
       const thread = await loadThread(caller);
-      const recent = (thread.messages || []).some((m) => m.kind === 'missed-call' && Date.now() - m.ts < 30 * 60000);
-      if (!recent) {
+      // Cold numbers only. The common lead does BOTH — fills out the quote form and
+      // then calls a minute later — and was getting the form's reach-out and this
+      // one inside the same few minutes, two "personal" texts from Mikey that
+      // obviously weren't. Anything already sent, or still queued to send, means
+      // this caller is mid-conversation and a canned apology only makes it read
+      // like a robot. It also subsumes the old twice-in-a-row throttle: the first
+      // missed-call text is itself an outbound message.
+      const alreadyReachedOut = (thread.messages || []).some((m) => m.dir === 'out') ||
+                                (thread.scheduled || []).length > 0;
+      if (!alreadyReachedOut) {
         const body = (cfg.missedCallText && cfg.missedCallText.trim()) ||
           `Hey, it's Mikey with Mikey's Mobile Detailing — sorry I missed your call! Text me right here and I'll get back to you as quick as I can. 🚗`;
         try {
           const r = await sendSms(caller, body);
           thread.messages.push({ id: genId(), dir: 'out', body, ts: Date.now(), kind: 'missed-call', status: 'sent', sid: (r && r.sid) || undefined });
+          textedBack = true;
         } catch (err) {
           thread.messages.push({ id: genId(), dir: 'out', body, ts: Date.now(), kind: 'missed-call', error: String(err.message || err) });
         }
@@ -1711,7 +2305,10 @@ async function handleVoicemail(request) {
   <Say voice="alice">Hey, you've reached Mikey's Mobile Detailing. Leave a message and Mikey will text or call you right back.</Say>
   <Record maxLength="120" action="/voicemail-done" method="POST" playBeep="true" transcribe="true" transcribeCallback="/voicemail-tx" />
 </Response>`;
-  notifyMikey(`📵 Missed call from ${from}`, `Missed call from ${from} — I sent them an instant text back, and they may leave a voicemail now.`).catch(() => {});
+  notifyMikey(`📵 Missed call from ${from}`, `Missed call from ${from} — ` +
+    (textedBack ? 'I sent them an instant text back, and they may leave a voicemail now.'
+                : "you've already texted them, so I left the auto text-back alone. They may leave a voicemail now.") +
+    " It's on the Calls screen in your dashboard.").catch(() => {});
   return xmlResponse(xml);
 }
 
@@ -1747,7 +2344,14 @@ async function handleVoicemailDone(request) {
       await saveThread(thread);
       await updateIndexEntry(thread);
     }
-    await notifyMikey(`🎙️ Voicemail from ${from}`, `Voicemail from ${from} (${duration}s). Open the dashboard to listen.`);
+    // Same voicemail, second home: the thread bubble keeps it in the conversation,
+    // the call row keeps it on the Calls screen next to the ring it came from.
+    await recordCall({
+      sid: params.CallSid || '', from, fromNorm, outcome: 'voicemail',
+      recording: recordingUrl + '.mp3', recordingSid: recordingSid || undefined,
+      vmSec: Number(duration) || 0,
+    });
+    await notifyMikey(`🎙️ Voicemail from ${from}`, `Voicemail from ${from} (${duration}s). Play it on the Calls screen in your dashboard.`);
   }
   return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
 }
@@ -1782,6 +2386,7 @@ async function handleVoicemailTranscription(request) {
       await saveThread(thread);
       await updateIndexEntry(thread);
     }
+    await recordCall({ sid: params.CallSid || '', recordingSid: recordingSid || undefined, transcriptFailed: true });
     return new Response('', { status: 204 });
   }
 
@@ -1808,6 +2413,14 @@ async function handleVoicemailTranscription(request) {
     await saveThread(thread);
     await updateIndexEntry(thread);
   }
+  // The transcript is the whole reason Google Voice felt better than this app.
+  // Mirrored onto the call row so the Calls screen can show what was said without
+  // opening a conversation, or playing anything.
+  await recordCall({
+    sid: params.CallSid || '', recordingSid: recordingSid || undefined,
+    outcome: 'voicemail', transcript: text, transcriptFailed: false,
+    recording: recording ? recording + '.mp3' : undefined,
+  });
   notifyMikey(`🎙️ Voicemail transcript from ${from}`, `"${text}"\n\nOpen the dashboard to reply.`).catch(() => {});
   return new Response('', { status: 204 });
 }
@@ -2032,6 +2645,7 @@ async function apiMeta(request) {
   }
   if (typeof data.reminderNote === 'string') thread.reminderNote = data.reminderNote.slice(0, 200);
   if (data.clearSuggested) thread.suggested = null; // Mikey dismissed the pre-drafted reply
+  if (data.clearNeedsYou) thread.needsYou = null;   // he'd rather just write it himself
   if (Array.isArray(data.linked)) {
     thread.linked = [...new Set(data.linked.map((p) => normalizePhone(p) || p).filter(Boolean))]
       .filter((p) => p !== thread.phone).slice(0, 20);
@@ -2078,6 +2692,119 @@ async function apiCall(request) {
   if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
   await placeBridgeCall(phone);
   return json({ ok: true });
+}
+
+// The Calls screen. Names are re-read from the index on the way out rather than
+// trusted from the row: a caller who was a bare +1 when they rang is usually a
+// named customer by the time you look at the log.
+async function apiCalls() {
+  const doc = await loadCalls();
+  const cfg = await loadConfig();
+  let index = [];
+  try { index = (await loadIndex()) || []; } catch { /* names are a nicety */ }
+  const names = new Map(index.map((r) => [r.phone, r.name || '']));
+  const blocked = new Set(Array.isArray(cfg.blockedNumbers) ? cfg.blockedNumbers : []);
+  const calls = doc.calls.map((c) => Object.assign({}, c, {
+    name: names.get(c.fromNorm) || c.name || '',
+    blocked: blocked.has(c.fromNorm),
+  }));
+  // "Needs you" is the badge number: a missed call or a voicemail you haven't
+  // looked at yet. A screened-out robo-dialer is history, not a to-do.
+  const unseen = calls.filter((c) => (c.ts || 0) > (doc.seenTs || 0) &&
+    (c.outcome === 'missed' || c.outcome === 'voicemail')).length;
+  return json({
+    ok: true, calls, seenTs: doc.seenTs || 0, unseen,
+    forwardTo: callForwardPhone(cfg), screening: cfg.callScreening !== false,
+  });
+}
+
+// Day one of the Calls screen is otherwise an empty screen: the log only knows
+// about calls that rang after it shipped, and the history Mikey actually wants to
+// see already happened. Twilio kept all of it. This pulls the recent inbound
+// calls (plus any recording and transcript attached to them) into the log in one
+// pass and ONE KV write.
+//
+// Backfilled rows are marked `past` rather than guessed into answered/missed.
+// Twilio's own call status can't tell "he picked up and talked" from "the caller
+// sat through the screening greeting and hung up" — both are `completed` — and a
+// log that quietly makes things up is worse than one that says "earlier call".
+async function apiCallsBackfill() {
+  const sid = ENV.TWILIO_ACCOUNT_SID, token = ENV.TWILIO_AUTH_TOKEN;
+  if (!sid || !token) return json({ ok: false, error: 'twilio_not_configured' }, 500);
+  const auth = `Basic ${btoa(`${sid}:${token}`)}`;
+  const api = (path) => fetch(`https://api.twilio.com${path}`, { headers: { Authorization: auth } });
+  const acct = `/2010-04-01/Accounts/${sid}`;
+  const grab = async (path, key) => {
+    const r = await api(path);
+    if (!r.ok) throw new Error(`${r.status}: ${(await r.text()).slice(0, 200)}`);
+    return (await r.json())[key] || [];
+  };
+
+  let calls, recs, txs;
+  try {
+    const to = ENV.TWILIO_FROM || '';
+    calls = await grab(`${acct}/Calls.json?To=${encodeURIComponent(to)}&PageSize=50`, 'calls');
+    recs = await grab(`${acct}/Recordings.json?PageSize=30`, 'recordings');
+    txs = await grab(`${acct}/Transcriptions.json?PageSize=30`, 'transcriptions');
+  } catch (e) {
+    return json({ ok: false, error: `twilio_list_failed: ${String((e && e.message) || e)}` }, 502);
+  }
+
+  const txByRec = new Map();
+  for (const t of txs) if (t.status === 'completed' && t.transcription_text) txByRec.set(t.recording_sid, (t.transcription_text || '').trim());
+  const recByCall = new Map();
+  for (const r of recs) if (r.call_sid) recByCall.set(r.call_sid, r);
+
+  const doc = await loadCalls();
+  let index = [];
+  try { index = (await loadIndex()) || []; } catch { /* names are a nicety */ }
+  const names = new Map(index.map((r) => [r.phone, r.name || '']));
+  const mikey = normalizePhone(ENV.MIKEY_PHONE);
+  const known = new Set(doc.calls.map((c) => c.sid).filter(Boolean));
+
+  let added = 0;
+  for (const c of calls) {
+    if (c.direction && !/inbound/i.test(c.direction)) continue;
+    if (!c.sid || known.has(c.sid)) continue;
+    const fromNorm = normalizePhone(c.from || '');
+    if (!fromNorm || fromNorm === mikey) continue;
+    const rec = recByCall.get(c.sid);
+    const row = {
+      id: genId(), sid: c.sid, from: c.from || fromNorm, fromNorm,
+      name: names.get(fromNorm) || '',
+      ts: c.start_time ? new Date(c.start_time).getTime() : Date.now(),
+      outcome: rec ? 'voicemail' : 'past',
+      talkSec: Number(c.duration || 0) || 0,
+      backfilled: true,
+    };
+    if (rec) {
+      row.recordingSid = rec.sid;
+      row.recording = `https://api.twilio.com${String(rec.uri).replace(/\.json$/, '')}.mp3`;
+      row.vmSec = Number(rec.duration || 0) || 0;
+      const tx = txByRec.get(rec.sid);
+      if (tx) row.transcript = tx; else row.transcriptFailed = true;
+    }
+    doc.calls.push(row);
+    added++;
+  }
+  if (added) {
+    doc.calls.sort((a, b) => (b.ts || 0) - (a.ts || 0));
+    // Backfilled history is history — it must not light up the "needs you" badge
+    // with calls from last week the moment it lands.
+    doc.seenTs = Math.max(doc.seenTs || 0, Date.now());
+    await saveCalls(doc);
+  }
+  return json({ ok: true, added });
+}
+
+// One write, on a deliberate tap: opening the Calls screen clears its badge.
+async function apiCallsSeen() {
+  const doc = await loadCalls();
+  const newest = (doc.calls[0] || {}).ts || 0;
+  if ((doc.seenTs || 0) >= newest) return json({ ok: true, seenTs: doc.seenTs || 0 });
+  doc.seenTs = Math.max(newest, Date.now());
+  await saveCalls(doc);
+  return json({ ok: true, seenTs: doc.seenTs });
 }
 
 async function apiRead(request) {
@@ -2164,6 +2891,95 @@ async function fnv1aHex(str) {
 }
 function analyticsDayKey(d) { return 'analytics:day:' + d; }
 function utcDayStr(ts) { return new Date(ts).toISOString().slice(0, 10); }
+
+// ===========================================================================
+// Paid or organic — the one thing a referrer can never tell you
+// ---------------------------------------------------------------------------
+// A Google ad click and a free Google search click arrive from the same place:
+// both carry the referrer "google.com". So every visit landed on the Journey
+// board reading "Found you on Google" whether it cost $2.60 or nothing, and
+// there was no honest way to answer "which of this morning's clicks did I pay
+// for" from inside this app.
+//
+// The only proof is the click id the ad platform staples onto its own landing
+// URL — `gclid` for Google, `msclkid` for Microsoft, `fbclid` for Meta. Those
+// live in the QUERY STRING of the page they land on, which means this can only
+// see them if the site sends the query string along with the path. site-stats.js
+// historically sent `location.pathname` alone, so three things feed this:
+//
+//   1. a query string riding on `p` (the snippet in the app now sends
+//      location.pathname + location.search),
+//   2. a dedicated `q` parameter, for a tracker that would rather keep the
+//      path clean,
+//   3. the referrer host, which is all there is until the site ships either of
+//      those — googleadservices.com and doubleclick.net only ever appear on a
+//      click somebody paid for.
+//
+// FIRST TOUCH WINS, same rule as markSource() on a conversation: the ad is what
+// brought them, and page four of the same visit carrying no gclid must never
+// erase that.
+// ===========================================================================
+const AD_CLICK_IDS = { gclid: 'google', gbraid: 'google', wbraid: 'google', dclid: 'google', msclkid: 'bing', fbclid: 'facebook', ttclid: 'tiktok', li_fat_id: 'linkedin' };
+// Hosts that only ever appear on a paid click. The plain search hosts are
+// deliberately absent — google.com is exactly the ambiguity this exists to fix.
+const AD_REF_HOSTS = [[/googleadservices|googlesyndication|doubleclick/, 'google'], [/bat\.bing|adsyndication/, 'bing']];
+// utm_medium values that mean money changed hands. A newsletter is tagged too,
+// and is not an ad.
+const AD_PAID_MEDIUM = /^(cpc|ppc|paid|paidsearch|paid_search|paid-search|paidsocial|paid-social|display|retargeting)$/i;
+const AD_NAMES = { google: 'Google', bing: 'Microsoft', facebook: 'Facebook', instagram: 'Instagram', tiktok: 'TikTok', linkedin: 'LinkedIn', ads: 'paid' };
+
+// A referrer (full URL or bare host) reduced to its hostname.
+function refHostOf(ref) {
+  const s = String(ref || '').trim();
+  if (!s) return '';
+  try { return new URL(s).hostname.replace(/^www\./, ''); } catch (e) { return s.replace(/^www\./, '').slice(0, 60); }
+}
+
+// { ad, camp } for one landing. `ad` is the platform that got paid, '' when
+// nothing here says anyone did.
+function adFromLanding(landing, refHost) {
+  const out = { ad: '', camp: '' };
+  const s = String(landing || '');
+  const q = s.indexOf('?') >= 0 ? s.slice(s.indexOf('?') + 1) : s;
+  let p = null;
+  try { p = new URLSearchParams(q); } catch (e) { p = null; }
+  if (p) {
+    for (const id of Object.keys(AD_CLICK_IDS)) {
+      if (p.get(id)) { out.ad = AD_CLICK_IDS[id]; break; }
+    }
+    if (!out.ad && AD_PAID_MEDIUM.test(String(p.get('utm_medium') || ''))) {
+      const src = String(p.get('utm_source') || '').toLowerCase().replace(/[^a-z]/g, '');
+      out.ad = AD_NAMES[src] ? src : 'ads';
+    }
+    // Kept whether or not it's paid: "Snohomish Detailing - Search - 2026" is
+    // the answer to "which campaign", and he named them himself.
+    out.camp = String(p.get('utm_campaign') || '').replace(/[^\w .-]+/g, ' ').trim().slice(0, 40);
+  }
+  if (!out.ad) {
+    const h = String(refHost || '').toLowerCase();
+    for (const row of AD_REF_HOSTS) if (row[0].test(h)) { out.ad = row[1]; break; }
+  }
+  return out;
+}
+
+// "Clicked your Google ad" — the whole point of the feature, in his words.
+function adLabel(ad, camp) {
+  if (!ad) return '';
+  return 'Clicked your ' + (AD_NAMES[ad] || 'paid') + ' ad' + (camp ? ' · ' + camp : '');
+}
+
+// City-level only, straight off the Cloudflare edge — no lookup, no key, no
+// call. This is the answer to "why is one of this morning's clicks in Seattle":
+// until now nothing in the app recorded WHERE a visitor was, so a click from
+// out of the service area looked exactly like one from next door. Nothing finer
+// than a city is stored, on purpose — same bargain as hashing the IP.
+function visitorCity(request) {
+  const cf = (request && request.cf) || {};
+  const city = String(cf.city || '').slice(0, 40);
+  const region = String(cf.regionCode || cf.region || '').slice(0, 12);
+  if (!city) return '';
+  return region && region.length <= 3 ? city + ', ' + region : city;
+}
 async function handlePixel(url, request) {
   try {
     const now = Date.now();
@@ -2172,8 +2988,18 @@ async function handlePixel(url, request) {
     try { path = decodeURIComponent(path); } catch (e) {}
     let ref = (url.searchParams.get('r') || '').slice(0, 200);
     // Reduce a referrer to its hostname so the top-referrers list stays tidy.
-    let refHost = '';
-    if (ref) { try { refHost = new URL(ref).hostname.replace(/^www\./, ''); } catch (e) { refHost = ref.slice(0, 60); } }
+    const refHost = refHostOf(ref);
+    // Did he pay for this click? The query string is on `p` when the site sends
+    // location.search with it, and on `q` when it sends it separately.
+    const ad = adFromLanding(url.searchParams.get('q') || path, refHost);
+    const city = visitorCity(request);
+    // …and then the query goes, before anything counts or stores it. Every ad
+    // click carries a gclid nobody has ever seen before, so leaving it on would
+    // turn one home page into a hundred rows in Top Pages, split the count that
+    // matters, and stop the GIF ping's step from collapsing into the beacon's
+    // (which only ever sends the bare path) — printing "Home page" twice on
+    // every replay.
+    path = path.split('?')[0] || '/';
     const ip = request.headers.get('CF-Connecting-IP') || '';
     const ua = request.headers.get('User-Agent') || '';
     const doc = (await kv().get(analyticsDayKey(day), { type: 'json' })) || { views: 0, visitors: 0, paths: {}, refs: {} };
@@ -2181,6 +3007,9 @@ async function handlePixel(url, request) {
     doc.paths = doc.paths || {}; doc.refs = doc.refs || {};
     if (path) doc.paths[path] = (doc.paths[path] || 0) + 1;
     if (refHost && !/mikeysdetailingsnohomish/i.test(refHost)) doc.refs[refHost] = (doc.refs[refHost] || 0) + 1;
+    // Paid clicks counted per platform, in the doc that was going to be written
+    // anyway — so "how many of today's visits did I buy" costs nothing extra.
+    if (ad.ad) { doc.ads = doc.ads || {}; doc.ads[ad.ad] = (doc.ads[ad.ad] || 0) + 1; }
     // Same-day unique-visitor de-dupe: hash IP+UA, keep a 26h TTL marker.
     if (ip) {
       const vh = await fnv1aHex(ip + '|' + ua + '|' + day);
@@ -2191,12 +3020,17 @@ async function handlePixel(url, request) {
     // Keep the maps bounded so a busy day can't bloat the doc.
     doc.paths = trimCountMap(doc.paths, 60);
     doc.refs = trimCountMap(doc.refs, 40);
-    await kv().put(analyticsDayKey(day), JSON.stringify(doc));
     // Same ping, second job: append this page to that visitor's own path so the
     // Journey board can replay it. `v` is only there if the browser could store
     // an id — no id, no journey, and the counts above are unaffected either way.
+    // Ordered ahead of the day-doc write so the "somebody just landed" alert can
+    // stamp its own counter into the same put() instead of buying a second one.
     const vid = url.searchParams.get('v');
-    if (vid) await journeyStep(vid, { t: now, p: path, r: refHost });
+    if (vid) {
+      const step = await journeyStep(vid, { t: now, p: path, r: refHost }, { ad: ad.ad, camp: ad.camp, city });
+      if (step && step.isNew) await alertNewClick(step.doc, { ad, city, path, refHost, day, doc });
+    }
+    await kv().put(analyticsDayKey(day), JSON.stringify(doc));
   } catch (e) { /* never let analytics break the pixel */ }
   return pxResponse();
 }
@@ -2206,21 +3040,124 @@ function trimCountMap(m, max) {
   const top = keys.sort((a, b) => m[b] - m[a]).slice(0, max);
   const out = {}; for (const k of top) out[k] = m[k]; return out;
 }
+
+// ===========================================================================
+// "Somebody just landed on your site"
+// ---------------------------------------------------------------------------
+// Every other alert in this app fires on a person he can answer: a text, a
+// missed call, a quote. This one fires on a stranger, and it exists because he
+// is paying Google by the click and had no way to see one arrive — the ad
+// platform's own app tells him a number at the end of the day, not that anybody
+// is on his site right now.
+//
+// WHAT MAKES IT A CLICK. A visitor id the browser has never sent before. Not a
+// page view: someone reading four pages is one click, because the id is already
+// on file by page two. A cleared browser looks like a new click, and that's the
+// honest answer — it's a new arrival either way.
+//
+// COST is the reason for the shape of this. The config read only happens for a
+// brand-new id (a handful a day, not once per page view), the daily counter
+// lives in the analytics day doc that handlePixel was already writing, and the
+// send is awaited on purpose: a 1×1 GIF nobody is waiting for can afford to sit
+// on a Resend call, and an alert fired into a promise the isolate may discard
+// is an alert that doesn't arrive.
+//
+// THE CAP is the thing that keeps this from being a mistake. He gets ~8 visits
+// a day; a link that goes around a Facebook group could put 400 in an hour, and
+// 400 emails would bury the alerts that actually matter. After CLICK_ALERT_MAX
+// in one UTC day it goes quiet on its own — the Website tab still counts every
+// one of them.
+// ===========================================================================
+const CLICK_ALERT_MAX = 20;
+
+// 'all' (every new visitor) | 'ads' (only clicks he paid for) | 'off'.
+function clickAlertMode(cfg) {
+  const v = (cfg || {}).clickAlert;
+  return (v === 'off' || v === 'ads' || v === 'all') ? v : 'all';
+}
+
+// Called with the freshly-created journey doc. `state.doc` is the live day doc,
+// mutated here and written by the caller.
+async function alertNewClick(journey, state) {
+  const dayDoc = state.doc || {};
+  if ((dayDoc.alerts || 0) >= CLICK_ALERT_MAX) return false;
+  const cfg = await loadConfig();
+  const mode = clickAlertMode(cfg);
+  const ad = (state.ad || {}).ad || '';
+  if (mode === 'off') return false;
+  if (mode === 'ads' && !ad) return false;
+  dayDoc.alerts = (dayDoc.alerts || 0) + 1;
+  const mail = newClickEmail(journey, state, dayDoc.alerts);
+  await notifyMikey(newClickSubject(state), mail).catch(() => {});
+  return true;
+}
+
+function newClickSubject(state) {
+  const ad = (state.ad || {}).ad || '';
+  const where = state.city ? ' — ' + state.city : '';
+  return ad ? `💸 New ${AD_NAMES[ad] || 'ad'} ad click${where}` : `👋 Somebody just landed on your site${where}`;
+}
+
+// Short on purpose. There is nobody to text and nothing to decide — this is a
+// "your money is doing something" note, so it says who, from where, on what
+// page, and gets out of the way.
+function newClickEmail(journey, state, nth) {
+  const base = publicBase();
+  const ad = (state.ad || {}).ad || '';
+  const camp = (state.ad || {}).camp || '';
+  const how = ad ? adLabel(ad, camp) : journeyRefLabel(state.refHost, '');
+  const facts = [
+    how,
+    state.city ? `Where they are: ${state.city}` : '',
+    `Landed on: ${journeyPageTitle(state.path)}`,
+    `That's visit #${nth} today that I've told you about.`,
+  ].filter(Boolean).join('\n');
+  const link = base ? `${base}/?journey=${encodeURIComponent(journey.vid || '')}` : '';
+
+  const text =
+    `${how}.\n\n${facts}\n\n` +
+    `Nothing has been sent to them — they haven't given you a number. This is just so you can see the click land.\n\n` +
+    (link ? `Watch what they do: ${link}\n` : '');
+
+  const B = [];
+  B.push(mailCard(
+    mailLabel(ad ? 'A click you paid for' : 'A new visitor', ad ? MAILC.blue : MAILC.mute) +
+    `<div style="font-family:${MAILF};font-size:26px;line-height:1.2;font-weight:800;color:${MAILC.ink};margin:0;">${htmlEsc(how)}</div>` +
+    (state.city ? `<div style="font:400 15px/1.55 ${MAILF};color:${MAILC.mute};margin-top:8px;">${htmlEsc(state.city)}</div>` : ''),
+    { bg: MAILC.blueBg, border: '#bfdbfe', edge: MAILC.blue, pad: '18px' }));
+  B.push(mailCard(mailLabel('Where they landed', MAILC.blue) + mailBody(journeyPageTitle(state.path), MAILC.ink)));
+  B.push(mailCard(
+    (link ? mailBtn(link, 'Watch what they do', MAILC.ink) : '') +
+    `<div style="font:400 13px/1.6 ${MAILF};color:${MAILC.mute};margin-top:${link ? '12px' : '0'};">Nothing was sent to them. Too many of these? Turn them off — or narrow them to ad clicks only — in ☰ → follow-up settings.</div>`));
+
+  return {
+    text,
+    html: mailShell(newClickSubject(state), B.join('')),
+    sms: `${how}${state.city ? ' · ' + state.city : ''} — landed on ${journeyPageTitle(state.path)}.`,
+  };
+}
 async function pixelRollup(days) {
   const now = Date.now();
   const series = [];
-  const paths = {}; const refs = {};
-  let totalViews = 0, totalVisitors = 0;
+  const paths = {}; const refs = {}; const ads = {};
+  let totalViews = 0, totalVisitors = 0, adClicks = 0;
   for (let i = days - 1; i >= 0; i--) {
     const day = utcDayStr(now - i * 86400000);
     const doc = (await kv().get(analyticsDayKey(day), { type: 'json' })) || { views: 0, visitors: 0, paths: {}, refs: {} };
-    series.push({ day, views: doc.views || 0, visitors: doc.visitors || 0 });
-    totalViews += doc.views || 0; totalVisitors += doc.visitors || 0;
+    const dayAds = Object.values(doc.ads || {}).reduce((a, b) => a + b, 0);
+    series.push({ day, views: doc.views || 0, visitors: doc.visitors || 0, ads: dayAds });
+    totalViews += doc.views || 0; totalVisitors += doc.visitors || 0; adClicks += dayAds;
     for (const [k, v] of Object.entries(doc.paths || {})) paths[k] = (paths[k] || 0) + v;
     for (const [k, v] of Object.entries(doc.refs || {})) refs[k] = (refs[k] || 0) + v;
+    for (const [k, v] of Object.entries(doc.ads || {})) ads[k] = (ads[k] || 0) + v;
   }
   const topList = (m) => Object.keys(m).sort((a, b) => m[b] - m[a]).slice(0, 8).map((k) => ({ k, n: m[k] }));
-  return { ok: true, days, totalViews, totalVisitors, series, topPaths: topList(paths), topRefs: topList(refs), origin: BASE_URL };
+  // Paid vs the rest, split here rather than in the browser so the daily brief
+  // and the Website tab can never disagree about what "an ad click" means.
+  return { ok: true, days, totalViews, totalVisitors, adClicks,
+    freeVisits: Math.max(0, totalViews - adClicks),
+    topAds: topList(ads).map((r) => ({ k: AD_NAMES[r.k] || r.k, n: r.n })),
+    series, topPaths: topList(paths), topRefs: topList(refs), origin: BASE_URL };
 }
 async function apiAnalytics(url) {
   const days = Math.min(60, Math.max(7, parseInt(url.searchParams.get('days') || '14', 10)));
@@ -2267,6 +3204,12 @@ function journeyMeta(doc) {
     phone: doc.phone || '', name: String(doc.name || '').slice(0, 40),
     last: String(lastLabel).slice(0, 60),
     ref: String((doc.steps[0] || {}).r || '').slice(0, 40),
+    // Paid-or-not and roughly where, mirrored here for the same reason as
+    // everything else in this object: the board must be able to say "Google ad ·
+    // Seattle" without opening a single doc.
+    ad: String(doc.ad || '').slice(0, 12),
+    camp: String(doc.camp || '').slice(0, 40),
+    city: String(doc.city || '').slice(0, 40),
     // Split so the board can say "5 pages · 12 actions" without opening a doc.
     pages: doc.steps.filter((x) => !x.k).length,
     acts: doc.steps.filter((x) => x.k && x.k !== 'lead').length,
@@ -2302,13 +3245,33 @@ function appendStep(doc, step) {
   return doc;
 }
 
-async function journeyStep(vid, step) {
+// `info` is what the visit itself says about the visitor — which ad brought
+// them, which campaign, what city the edge put them in. FIRST TOUCH WINS on all
+// three (see markSource): page four of the same visit carries no gclid, and must
+// not erase the ad that paid for page one.
+//
+// Returns { doc, isNew } rather than the doc alone because "this id has never
+// been seen before" is the definition of a new click, and the read that answers
+// it has already happened here — asking again from the caller would be a second
+// KV read for a fact this function had in its hand.
+async function journeyStep(vid, step, info) {
   vid = cleanVid(vid);
   if (!vid) return null;
   const key = journeyKey(vid);
-  const doc = (await kv().get(key, { type: 'json' })) || blankJourney(vid, step.t);
+  const had = await kv().get(key, { type: 'json' });
+  const doc = had || blankJourney(vid, step.t);
+  stampJourneyInfo(doc, info);
   appendStep(doc, step);
   await kv().put(key, JSON.stringify(doc), { expirationTtl: JOURNEY_TTL, metadata: journeyMeta(doc) });
+  return { doc, isNew: !had };
+}
+
+// First-touch stamping, shared by the GIF ping and the event beacon.
+function stampJourneyInfo(doc, info) {
+  const i = info || {};
+  if (i.ad && !doc.ad) doc.ad = String(i.ad).slice(0, 12);
+  if (i.camp && !doc.camp) doc.camp = String(i.camp).slice(0, 40);
+  if (i.city && !doc.city) doc.city = String(i.city).slice(0, 40);
   return doc;
 }
 
@@ -2328,6 +3291,12 @@ async function handlePixelEvents(request) {
     const vid = cleanVid(body && body.v);
     if (!vid) return pxOk();
     let page = String((body && body.p) || '/').slice(0, 120);
+    // Whatever the ad left in the URL is read here…
+    const landed = adFromLanding(String((body && body.q) || '') || page, '');
+    // …and then the query goes, so a gclid can never split one page into two
+    // steps or two rows. The GIF ping normalises the same way — the two reports
+    // of one page load have to end up identical or they stop collapsing.
+    page = page.split('?')[0] || '/';
     const list = Array.isArray(body && body.e) ? body.e.slice(0, 80) : [];
     if (!list.length) return pxOk();
 
@@ -2347,7 +3316,13 @@ async function handlePixelEvents(request) {
         l: String(raw2.l || '').slice(0, 60), d: String(raw2.d || '').slice(0, 80) };
       // A landing IS a page step — same shape the GIF ping writes — so the two
       // reports of the same page load collapse into one instead of doubling up.
-      if (k === 'v') { step.r = step.d; delete step.l; delete step.d; }
+      if (k === 'v') {
+        step.r = step.d; delete step.l; delete step.d;
+        // The landing is the only event that can say who paid for it: the query
+        // string read above, or failing that the referrer this event carries.
+        const byRef = landed.ad ? landed : adFromLanding('', refHostOf(step.r));
+        stampJourneyInfo(doc, { ad: byRef.ad, camp: byRef.camp || landed.camp, city: visitorCity(request) });
+      }
       else step.k = k;
       appendStep(doc, step);
       // A price landing on someone's screen is the one event here that starts a
@@ -2550,7 +3525,10 @@ function quoteAbandonEmail(w, doc, now = Date.now()) {
     w.what ? `Picked: ${w.what}` : '',
     `Quoting from: ${journeyPageTitle(w.page)}`,
     pages ? `On the site: ${pages} page${pages === 1 ? '' : 's'} · ${mins} min` : '',
-    journeyRefLabel(String((steps[0] || {}).r || '')),
+    journeyRefLabel(String((steps[0] || {}).r || ''), (doc && doc.ad) || '', (doc && doc.camp) || ''),
+    // A price walked away from is worth more when you know it was a click you
+    // bought, and whether they were even in the service area.
+    (doc && doc.city) ? `Where they are: ${doc.city}` : '',
   ].filter(Boolean).join('\n');
   const link = base ? `${base}/?journey=${encodeURIComponent(w.vid)}` : '';
 
@@ -2591,8 +3569,11 @@ function journeyPageTitle(p) {
   return seg.replace(/[-_]+/g, ' ').replace(/\.html?$/i, '').replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-// Where they came from, said the way Mikey would say it.
-function journeyRefLabel(r) {
+// Where they came from, said the way Mikey would say it. `ad` wins over the
+// referrer whenever it's set, because "Found you on Google" is actively
+// misleading about a click he was billed for.
+function journeyRefLabel(r, ad, camp) {
+  if (ad) return adLabel(ad, camp);
   const h = String(r || '').replace(/^www\./, '').toLowerCase();
   if (!h) return 'Came straight to you';
   if (/google/.test(h)) return 'Found you on Google';
@@ -2616,6 +3597,10 @@ async function apiJourneys(url) {
         steps: m.n || 0, pages: m.pages || 0, acts: m.acts || 0,
         phone: m.phone || '', name: m.name || '',
         last: m.last || '', ref: m.ref || '', hot: m.hot || '',
+        // Paid or not, and roughly where — the two things he asked the board to
+        // answer at a glance. Both ride in metadata, so this still costs no reads.
+        ad: m.ad || '', camp: m.camp || '', city: m.city || '',
+        found: journeyRefLabel(m.ref || '', m.ad || '', m.camp || ''),
       });
     }
     cursor = page.list_complete ? null : page.cursor;
@@ -2641,7 +3626,11 @@ async function apiJourney(url) {
   // The very first PAGE view is also the "how they found you" moment. It has to
   // be the first page specifically — events carry no referrer.
   const firstPage = ((doc && doc.steps) || []).find((s) => !s.k);
-  if (firstPage) steps.push({ t: (firstPage.t || 0) - 1, kind: 'found', title: journeyRefLabel(firstPage.r), detail: '' });
+  if (firstPage) {
+    steps.push({ t: (firstPage.t || 0) - 1, kind: 'found',
+      title: journeyRefLabel(firstPage.r, (doc && doc.ad) || '', (doc && doc.camp) || ''),
+      detail: (doc && doc.city) ? 'Their phone was in ' + doc.city : '' });
+  }
 
   let thread = null;
   if (who) {
@@ -2653,6 +3642,7 @@ async function apiJourney(url) {
   return json({
     ok: true, vid: vid || '', phone: who,
     name: (thread && thread.name) || (doc && doc.name) || '',
+    ad: (doc && doc.ad) || '', camp: (doc && doc.camp) || '', city: (doc && doc.city) || '',
     hasWeb: !!(doc && (doc.steps || []).length), hasThread: !!thread,
     pages: ((doc && doc.steps) || []).filter((s) => !s.k).length,
     acts: ((doc && doc.steps) || []).filter((s) => s.k && s.k !== 'lead').length,
@@ -4710,6 +5700,21 @@ async function handleEmailIn(request) {
   const cfg = await loadConfig();
   const authed = (ENV.EMAIL_INGEST_TOKEN && token === ENV.EMAIL_INGEST_TOKEN) || (cfg.emailToken && token === cfg.emailToken);
   if (!token || !authed) return json({ ok: false, error: 'unauthorized' }, 401);
+
+  // A check-in from the Gmail script. Carries no mail — it exists so the setup
+  // screen can tell "working" from "stopped three days ago", which is the whole
+  // difference between a feature he trusts and one he keeps testing by hand.
+  if (data.ping) {
+    const err = String(data.error || '').slice(0, 200);
+    const patch = { pingAt: Date.now(), ver: String(data.ver || '').slice(0, 8) };
+    if (data.scanned != null) patch.lastScanned = Number(data.scanned) || 0;
+    if (err) { patch.lastError = err; patch.lastErrorAt = Date.now(); }
+    else if (data.check || data.sent) { patch.lastError = ''; patch.lastErrorAt = 0; }
+    // A newsless heartbeat is throttled; anything that actually happened is not.
+    const h = await assistHealthMark(patch, !(err || data.check || data.sent || data.failed));
+    return json({ ok: true, pong: true, assistEmail: cfg.assistEmail !== false, at: h.at || Date.now() });
+  }
+
   const rawDate = data.date;
   const email = {
     id: genId(),
@@ -4731,10 +5736,18 @@ async function handleEmailIn(request) {
   // Checked AFTER the de-dupe so a retrying forwarder can't send the same reply
   // twice; the assist itself is queued, so a stray double would surface as a
   // second queued message he can cancel rather than a second text going out.
-  const assistPhone = assistIsOwnerReply(cfg, email);
+  const assistPhone = assistIsOwnerReply(cfg, email, data.ref);
+  // A reply that carries a routing line but came from an address we don't know is
+  // the one failure that used to be completely invisible: it lands in the inbox
+  // feed as ordinary mail and the customer never hears back. Remember it so the
+  // setup screen can say "a reply came from this address — is that you?" and let
+  // him add it in one tap.
+  if (!assistPhone && assistRefPhone(email.body)) {
+    await assistHealthMark({ strangerAt: Date.now(), strangerFrom: emailAddr(email.from).slice(0, 120) });
+  }
   if (assistPhone) {
     if (mid) { list.unshift({ id: email.id, mid, assist: true, date: email.date, unread: 0, from: email.from, subject: email.subject, snippet: '' }); if (list.length > 60) list.length = 60; await kv().put('emails', JSON.stringify(list)); }
-    await handleAssistEmail(cfg, email, assistPhone);
+    await handleAssistEmail(cfg, email, assistPhone, data.ver);
     return json({ ok: true, assist: true });
   }
   list.unshift(email);
@@ -4765,8 +5778,11 @@ async function apiEmailSetup(request) {
     connected: list.length > 0, count: list.length, lastAt: list[0] ? list[0].date : null,
     // Ready to paste into script.google.com — this is what turns "reply to the
     // alert" into an answered customer.
-    script: assistAppsScript(url, token),
+    script: assistAppsScript(url, token, emailAddr(ENV.ALERT_FROM || 'onboarding@resend.dev')),
     assistReady: !!(ENV.RESEND_API_KEY && ENV.ALERT_EMAIL),
+    alertEmail: emailAddr(ENV.ALERT_EMAIL || ''),
+    assistFrom: Array.isArray(cfg.assistFrom) ? cfg.assistFrom : [],
+    health: await assistHealth(),
   });
 }
 async function apiEmailRead(request) {
@@ -5044,6 +6060,15 @@ async function generateReply(thread, cfg, hint) {
   // Resolve the async context blocks once, then reuse them across attempts.
   const rulesCtx = await rulesContext();
   const editsCtx = await editsContext(bucket);
+  // The quote reply is a different shape from every other text he sends, and
+  // asking for "1-3 short sentences" was quietly guaranteeing a bad one: his real
+  // quote replies run 3-5 sentences and 171-313 characters, because naming the
+  // services and then the total simply takes that long. His overall median of 104
+  // characters comes from "Ready!" and "Be there in 20!" - the wrong target here.
+  const quoting = bucket === 'price';
+  const shape = quoting
+    ? `Write ONE reply (2-5 sentences, roughly 170-320 characters, no greeting line, no signature, ready to send). `
+    : `Write ONE reply (1-3 short complete sentences, no greeting line, no signature, ready to send). `;
   const build = (extra) =>
     businessContext(cfg) +
     rulesCtx +
@@ -5051,10 +6076,14 @@ async function generateReply(thread, cfg, hint) {
     voiceContext(voice, bucket, situation) +
     editsCtx +
     `You are replying to a customer by text for Mikey's Mobile Detailing. ` +
-    `Write ONE reply (1-3 short complete sentences, no greeting line, no signature, ready to send). ` +
+    shape +
     `It must be indistinguishable from the real texts above — same length, same rhythm, same punctuation habits. ` +
     `Ground it in the business playbook — use the real services, pricing ranges and voice, and never contradict them. ` +
-    `Do not make up a specific price or appointment time on your own. ` +
+    `Mikey works alone: always "I", never "we". ` +
+    `Every dollar figure you write must come from the playbook above, from this conversation, or from the goal below — ` +
+    `never a number you worked out yourself, and never one rounded up or down to look tidier. ` +
+    `If the playbook does not price this vehicle, ask for what you're missing instead of guessing at a total. ` +
+    `Do not make up an appointment time on your own. ` +
     `BUT if the goal below already specifies details the owner has decided — a price, a day, a time, an answer — use those exactly as given; that is the owner telling you what to say. ` +
     `Write it the way a busy person texts, not the way an assistant writes. Finish every sentence. ` +
     (hint ? `Goal of this reply (write a text that accomplishes exactly this): ${hint}. ` : '') +
@@ -5067,10 +6096,18 @@ async function generateReply(thread, cfg, hint) {
   // shape outside his measured habits (far too long, an emoji he'd never use, a
   // greeting he never writes). Naming the exact offence beats asking again nicely,
   // because it can't fix what it hasn't been told is wrong.
+  // Anything a price may legitimately be built from: the playbook's own numbers,
+  // whatever Mikey typed as the goal, and figures already agreed in this thread.
+  const priceSources = [businessContext(cfg), hint || '', transcript(thread)];
   const tell = findTell(text);
+  const madeUp = tell ? '' : findInventedPrice(text, priceSources);
   const off = tell
     ? `used the phrase "${tell}", which is a dead giveaway that a machine wrote it`
-    : styleViolation(text, voice && voice.style);
+    : madeUp
+      ? `quoted ${madeUp}, and that number appears nowhere in the playbook, this conversation, or anything Mikey told you. ` +
+        `Quoting a customer an invented price is the worst mistake you can make here. Use a price that is actually written down, ` +
+        `or ask for what you need instead of naming a total`
+      : styleViolation(text, voice && voice.style, bucket);
   if (off) {
     try {
       const retry = await aiGenerate(
@@ -5096,6 +6133,87 @@ function cleanReply(raw) {
   t = t.replace(/\s*–\s*/g, ' - ');   // en-dash, same
   t = t.replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n');
   return t.trim();
+}
+
+// ---- "Ask me first" ------------------------------------------------------
+// Some questions can't be answered by reading the thread, because the answer
+// only lives in Mikey's head: what time he can be there, what he'll charge for
+// this one, whether he'll give up his Saturday. Drafting those anyway produces
+// a confident wrong answer in his voice, which is worse than no draft at all —
+// "10:25 works for me" is a real promise made to a real person by a machine
+// that had no way of knowing. A 1-in-20 chance of being right is not a draft.
+//
+// So when the customer's last message hinges on one of those, we hold the
+// draft and put the decision to him instead — one short question with a few
+// tappable answers. He taps, and THEN we write the text, grounded in the fact
+// he just supplied. One tap replaces typing a whole reply, and the reply is
+// right, because the only thing the AI was missing came from him.
+
+// The cheap gate. Only messages that look like they're asking him to decide
+// something ever cost an AI call — everything else drafts exactly as before.
+// Deliberately loose: the AI call below is what says no, and a false positive
+// there costs one cheap call, while a false negative costs a wrong promise.
+const OWNER_DECISION_RE = /(what time|when can|when could|when are|when will|when do|when would|how soon|what day|which day|are you (free|available|open)|you (free|available|open)|any (openings|availability|time|spots|room)|do you have (any|anything|time|room|openings)|how much|what.{0,14}cost|what do you charge|\bprice\b|\bquote\b|estimate|can you (come|do|make|fit|get|be|swing|squeeze)|(would|does) (that|this|it|monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|today|morning|afternoon)[^?.!]{0,24}work|how long|what.{0,10}time work|book me|get.{0,12}scheduled|reschedule|move.{0,12}appointment)/i;
+
+// Ask the model one narrow question: is the only thing standing between us and
+// a good reply a decision the owner has to make? Returns the question to put to
+// him plus a few realistic one-tap answers, or null when the thread already has
+// everything it needs (in which case we draft as normal).
+async function askOwnerChoices(thread, cfg) {
+  const msgs = thread.messages || [];
+  const last = [...msgs].reverse().find((m) => m.dir === 'in');
+  if (!last || !OWNER_DECISION_RE.test(String(last.body || ''))) return null;
+  const prompt =
+    businessContext(cfg) +
+    `You are helping the OWNER of this business answer a customer's text.\n` +
+    `Decide ONE thing: does answering this message require a decision or a fact that only the owner can supply — ` +
+    `a specific time or day HE is free, a price HE has to set for this particular job, a yes/no HE has to make? ` +
+    `If the business playbook above already answers it (a service he does offer, an area he does cover, a published price range, a policy), then it does NOT need him.\n\n` +
+    `Return ONLY JSON:\n` +
+    `{"needed": true|false, "question": "the short question to put to the owner, max 60 characters, plain and direct, e.g. \\"What time works Thursday?\\" or \\"What are you charging for this?\\"", ` +
+    `"options": ["3 to 5 SHORT tappable answers, 1-4 words each, realistic for THIS conversation, e.g. \\"9am\\", \\"Thursday 2pm\\", \\"$375\\", \\"Can't this week\\". They are choices for the OWNER to pick from, not messages to the customer."]}\n\n` +
+    `Set needed=false (and leave question/options empty) for anything else, including complaints, thank-yous, and questions the playbook answers.\n\n` +
+    `Conversation:\n${transcript(thread, AI_CLASSIFY_TURNS)}`;
+  const raw = await geminiGenerate(prompt, { surface: 'ask me first', json: true, maxTokens: 400, temperature: 0.3 });
+  const p = JSON.parse(raw);
+  if (!p || p.needed !== true) return null;
+  const question = String(p.question || '').trim().slice(0, 90);
+  const options = (Array.isArray(p.options) ? p.options : [])
+    .map((o) => String(o).trim().slice(0, 40)).filter(Boolean).slice(0, 5);
+  // A question with nothing to tap is just a slower version of typing, so we
+  // only hold the draft when we can actually offer him the shortcut.
+  if (!question || options.length < 2) return null;
+  return { question, options };
+}
+
+// He tapped one. Now — and only now — write the reply, with his answer handed
+// in as the goal so the draft states it exactly rather than approximating it.
+async function apiAiAnswer(request) {
+  const data = await readJson(request);
+  const phone = normalizePhone(data.phone);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  const choice = String(data.choice || '').trim().slice(0, 300);
+  if (!choice) return json({ ok: false, error: 'no_choice' }, 422);
+  const thread = await loadThread(phone);
+  const cfg = await loadConfig();
+  const asked = (thread.needsYou && thread.needsYou.question) || '';
+  // Phrased as an instruction rather than a fact, because generateReply treats
+  // the hint as "the owner telling you what to say" — which is exactly what a
+  // tap is. Without the "use it exactly", it likes to soften a bare "$375".
+  const hint = asked
+    ? `${asked} The owner's answer is: ${choice}. Tell the customer that, using it exactly as given.`
+    : `Answer the customer with this, exactly as given: ${choice}.`;
+  try {
+    const text = await generateReply(thread, cfg, hint);
+    const last = thread.messages[thread.messages.length - 1];
+    thread.needsYou = null;                                 // the question is answered
+    if (text) thread.suggested = { text, ts: Date.now(), forTs: last ? last.ts : Date.now() };
+    await saveThread(thread);
+    await updateIndexEntry(thread);
+    return json({ ok: true, draft: text, thread });
+  } catch (err) {
+    return json({ ok: false, error: String(err.message || err) }, 502);
+  }
 }
 
 async function apiAiDraft(request) {
@@ -6393,9 +7511,85 @@ function inQuietHours(ts, cfg) {
   return (qs > qe) ? (h >= qs || h < qe) : (h >= qs && h < qe);
 }
 
+// Hold a new lead's first auto-reply for a few minutes so it reads like Mikey
+// personally texting back, not an instant bot. His own lead alert is unaffected —
+// that one goes out the second the form posts.
+const FIRST_REACHOUT_DELAY_MS = 210000; // 3.5 minutes
+
+// ---- the overnight hold on a brand-new lead's first text -------------------
+// Deliberately NOT cfg.quietStart/quietEnd. Those guard the autopilot nudge,
+// which can wait for morning without costing anything, so they're set wide
+// (8pm–8am). The quote-form reach-out is the opposite trade: someone filling out
+// the form at 9pm is sitting there waiting on a price, and making them wait till
+// 8am loses the lead. Only the genuinely dead hours get held.
+const NIGHT_HOLD_START = 23;  // 11pm — anything landing from here…
+const NIGHT_HOLD_END   = 5;   // …until 5am waits for 5am local
+
+function localMinute(ts, tz) {
+  const f = tzFmt('min', tz);
+  return f ? parseInt(f.format(new Date(ts)), 10) % 60 : new Date(ts).getUTCMinutes();
+}
+
+// Milliseconds from `ts` forward to the next time the local wall clock in `tz`
+// reads exactly `hour`:00.
+function msUntilLocalHour(ts, tz, hour) {
+  const h = localHour(ts, tz), m = localMinute(ts, tz);
+  let ahead = (hour - h + 24) % 24;
+  if (ahead === 0) ahead = 24;                 // already inside that hour — take tomorrow's
+  // Minutes and seconds past the hour tick identically in every zone, so they can
+  // come off the UTC timestamp directly.
+  let t = ts + ahead * 3600000 - m * 60000 - (ts % 60000);
+  // A DST jump between here and there leaves the arithmetic an hour off twice a
+  // year. Correct once rather than trying to predict it.
+  const got = localHour(t, tz);
+  if (got !== hour) t += ((hour - got + 24) % 24 === 23 ? -1 : 1) * 3600000;
+  return t - ts;
+}
+
+// When a new lead's first reach-out should actually go out. Normally a few
+// minutes after they submit, so it reads like Mikey picking up his phone rather
+// than a bot firing on the webhook. A 1am submission instead gets answered at
+// 5am — a text at 1:04am is the other way a real person gives themselves away.
+function firstReachoutAt(now, cfg) {
+  const at = now + FIRST_REACHOUT_DELAY_MS;
+  const h = localHour(at, cfg && cfg.tz);
+  if (h < NIGHT_HOLD_START && h >= NIGHT_HOLD_END) return at;
+  return at + msUntilLocalHour(at, cfg && cfg.tz, NIGHT_HOLD_END);
+}
+
 // ---- wording ---------------------------------------------------------------
+// People type their name however their phone keyboard happened to be set —
+// "MIKE JONES" in caps lock, "mike jones" in none. Echoing that straight back
+// ("Hey MIKE, it's Mikey") is the single loudest tell that a machine wrote the
+// text, so straighten the case before it goes anywhere a customer can see.
+//
+// Anything already mixed-case is left exactly as typed: that's a real person's
+// own capitalization (McRae, DeShawn, O'Neal, van Dyke) and "fixing" it would
+// only ever make it worse.
+function tidyName(raw) {
+  const s = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (!s) return '';
+  if (s !== s.toUpperCase() && s !== s.toLowerCase()) return s;
+  const low = s.toLowerCase();
+  return low.replace(/[a-z]+/g, (w, at) => {
+    const prev = at > 0 ? low[at - 1] : '';
+    if (prev === "'") {
+      // "O'Neal" and "D'Angelo" want the second half capitalized; a possessive
+      // or contraction ("john's") does not. A one- or two-letter stem is the
+      // tell that the apostrophe is part of the surname.
+      const stem = (low.slice(0, at - 1).match(/[a-z]+$/) || [''])[0];
+      if (stem.length > 2) return w;
+    } else if (prev && prev !== '-' && prev !== ' ' && prev !== '.') {
+      return w;
+    }
+    return w.charAt(0).toUpperCase() + w.slice(1);
+  });
+}
+
 function firstName(thread) {
-  const n = (thread.name || '').trim().split(/\s+/)[0];
+  // tidyName here as well as at intake, so threads saved before that existed
+  // stop shouting the customer's name back at them.
+  const n = tidyName(thread.name).split(' ')[0];
   return n || 'there';
 }
 // Plain-English "why now" shown to Mikey.
@@ -6733,17 +7927,26 @@ async function apiSaveConfig(request) {
   if (data.quietEnd != null && !isNaN(+data.quietEnd)) next.quietEnd = Math.max(0, Math.min(23, Math.round(+data.quietEnd)));
   if (typeof data.tz === 'string' && data.tz) next.tz = data.tz.slice(0, 64);
   if (typeof data.callScreening === 'boolean') next.callScreening = data.callScreening;
+  if (typeof data.callForwardTo === 'string') next.callForwardTo = normalizePhone(data.callForwardTo) || '';
   if (typeof data.missedCallTextback === 'boolean') next.missedCallTextback = data.missedCallTextback;
   if (typeof data.missedCallText === 'string') next.missedCallText = data.missedCallText.slice(0, 320);
   if (typeof data.autoReplyAlert === 'boolean') next.autoReplyAlert = data.autoReplyAlert;
   if (typeof data.quoteAbandon === 'boolean') next.quoteAbandon = data.quoteAbandon;
   if (data.quoteAbandonMin != null && !isNaN(+data.quoteAbandonMin)) next.quoteAbandonMin = Math.max(1, Math.min(60, Math.round(+data.quoteAbandonMin)));
+  if (data.clickAlert === 'all' || data.clickAlert === 'ads' || data.clickAlert === 'off') next.clickAlert = data.clickAlert;
   if (typeof data.predictive === 'boolean') next.predictive = data.predictive;
   if (typeof data.predictiveAi === 'boolean') next.predictiveAi = data.predictiveAi;
   if (typeof data.assistSms === 'boolean') next.assistSms = data.assistSms;
   if (data.assistDelaySec != null && !isNaN(+data.assistDelaySec)) next.assistDelaySec = Math.max(0, Math.min(600, Math.round(+data.assistDelaySec)));
   if (typeof data.assistEmail === 'boolean') next.assistEmail = data.assistEmail;
   if (data.assistEmailDelaySec != null && !isNaN(+data.assistEmailDelaySec)) next.assistEmailDelaySec = Math.max(0, Math.min(900, Math.round(+data.assistEmailDelaySec)));
+  if (typeof data.assistFactCheck === 'boolean') next.assistFactCheck = data.assistFactCheck;
+  // The extra addresses allowed to answer an alert. Stored as bare addresses so
+  // the comparison never depends on a display name, and capped because this is a
+  // one-man business, not a mailing list.
+  if (Array.isArray(data.assistFrom)) {
+    next.assistFrom = data.assistFrom.map((a) => emailAddr(a)).filter((a) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a)).slice(0, 5);
+  }
   if (typeof data.teamMode === 'boolean') next.teamMode = data.teamMode;
   if (typeof data.briefEnabled === 'boolean') next.briefEnabled = data.briefEnabled;
   if (typeof data.dailyEmailsPaused === 'boolean') next.dailyEmailsPaused = data.dailyEmailsPaused;
@@ -6946,6 +8149,7 @@ function tzFmt(kind, tz) {
   try {
     f = kind === 'date' ? new Intl.DateTimeFormat('en-CA', { timeZone: zone })
       : kind === 'dow' ? new Intl.DateTimeFormat('en-US', { timeZone: zone, weekday: 'short' })
+      : kind === 'min' ? new Intl.DateTimeFormat('en-US', { timeZone: zone, minute: '2-digit' })
       : new Intl.DateTimeFormat('en-US', { timeZone: zone, hour12: false, hour: '2-digit' });
   } catch { f = null; }
   TZFMT.set(key, f);
@@ -8025,6 +9229,10 @@ function defaultConfig() {
     quietStart: 20,          // 8pm — no autopilot sends after this local hour…
     quietEnd: 8,             // …until 8am (suggestions still surface anytime)
     tz: 'America/Los_Angeles',
+    callForwardTo: '',       // handset an inbound call rings (blank = CALL_BRIDGE_PHONE).
+                             // Deliberately NOT MIKEY_PHONE: that's the Google Voice
+                             // number, and Google Voice answering a forwarded call is
+                             // what used to swallow every voicemail — see dialMikeyTwiml.
     callScreening: true,     // press-1 gate on inbound calls — stops robocall/spam
                              // auto-dialers before they ring your phone or hit voicemail
     blockedNumbers: [],      // normalized numbers that get rejected instantly (no ring)
@@ -8053,6 +9261,14 @@ function defaultConfig() {
                              // and the reply already knows which customer it's about
     assistEmailDelaySec: 180,// longer hold on the email path: a "cancel" reply has to make
                              // another trip through the inbox before it reaches us
+    assistFrom: [],          // extra addresses allowed to answer an alert. Gmail sends from
+                             // whichever send-as alias the thread was addressed to, and a
+                             // one-address rule quietly locked him out of his own feature
+                             // the first time he answered from one.
+    assistFactCheck: true,   // hold an AI-worded reply instead of sending it when it contains
+                             // a price or a day that he never gave and the conversation never
+                             // mentioned. The promise of this feature is that every FACT came
+                             // from him; this is what actually enforces it.
     teamMode: false,         // when on: conversations can be assigned, and each reply is
                              // attributed to the sender. Turn off to go back to solo.
     team: [],                // [{ id, name, role }] — the people who help answer texts
@@ -8072,6 +9288,13 @@ function defaultConfig() {
                              // and closes it without leaving a name or number —
                              // the only lead that never shows up anywhere else
     quoteAbandonMin: 2,      // minutes of silence after the price before it fires
+    clickAlert: 'all',       // email him the moment a NEW visitor lands on the site:
+                             // 'all' = every new arrival, 'ads' = only the clicks he
+                             // paid for, 'off' = none. Defaults to 'all' because the
+                             // ad-click half only works once the site sends its query
+                             // string (see adFromLanding), and a switch that silently
+                             // does nothing until then is worse than a little noise.
+                             // Capped at CLICK_ALERT_MAX a day regardless.
     detect: detDefaults(),   // auto-detecting appointments out of text conversations
     promise: promDefaults(), // catching "I'll get back to you Monday" and reminding him
   };
@@ -8084,7 +9307,7 @@ function defaultConfig() {
 function defaultPlaybook() {
   return {
     about: "Mikey's Mobile Detailing is an owner-run mobile car detailing service for the Snohomish and Monroe, WA areas — Mikey comes to your driveway. It's always Mikey himself: personal, friendly work that's tailored to you, and you don't pay until you love it. 300+ cars detailed, 5-star rated.",
-    services: "- Interior Detail — starts at $160 (deep interior clean: full vacuum, carpets & seats, all interior surfaces wiped down, interior windows, door jambs, pet-hair removal and stain treatment; about 1½ hours)\n" +
+    services: "- Interior Detail — starts at $200 (deep interior clean: full vacuum, carpets & seats, all interior surfaces wiped down, interior windows, door jambs, pet-hair removal and stain treatment; about 1½ hours)\n" +
       "- Exterior Detail — starts at $130 (hand wash, wheels & tires, bug & tar removal, polish, and a spray wax/sealant so the paint really shines)\n" +
       "- Full Detail, In & Out — starts at $260 (everything inside and out; a first-time full detail runs about 3–4 hours)\n" +
       "Trucks and heavily-soiled vehicles are priced a bit higher. Every price is a \"starting at\" — the exact price depends on the vehicle's year, make, model and condition, and always gets confirmed before booking.\n" +
@@ -8100,11 +9323,55 @@ function defaultPlaybook() {
       "Deposit: none. Cancellation: no cancellation fee.\n" +
       "Payment: cash, Venmo, Zelle, or check.\n" +
       "Lead time: usually booking about a week out.",
+    quoting: "THE QUOTE REPLY — the text Mikey sends the moment a customer answers the intro message with their vehicle. " +
+      "This is where the job is won or lost, and it has its own shape. Follow it:\n\n" +
+      "1. OPEN with one beat of warmth and nothing more: \"Awesome!\", \"Sounds good!\", \"Great!\", \"Thanks for the info!\", " +
+      "\"Perfect, thanks for that info!\". Never greet them by name again — the intro text already did that.\n" +
+      "2. CALL THE VEHICLE what they'd call it: \"your Ram\", \"the truck\", \"your Jeep\". Never read the full " +
+      "\"2024 Ram 3500 crew cab diesel\" back at them.\n" +
+      "3. NAME THE SERVICES, THEN ONE FIRM TOTAL. Not a range — an actual number, with the package spelled out beside it: " +
+      "\"For a Full Detail, Exterior Polish, Carpet Shampoo, Ceramic Wax, and RainX Window treatment, it'll be $400.\" " +
+      "The number must come from the worked quotes below or from Mikey. Never invent one.\n" +
+      "4. CLOSE BY ASKING FOR THE ADDRESS — not for a time: \"If you send over your address or general street area, I can let " +
+      "you know how soon I can come by.\" The address comes first because it decides whether he can take the job at all. " +
+      "He once quoted a Mountain View that turned out to be Duvall, 40 minutes out, and had to walk the booking back.\n\n" +
+      "DON'T QUOTE YET IF YOU CAN'T SEE THE CONDITION. A year, make and model alone is not enough to price. Ask, and make it " +
+      "easy to answer: \"Could you also let me know the general condition of the truck? Either a photo or just a quick " +
+      "explanation is fine. Doesn't have to be super detailed, just want to know if there's anything out of the ordinary " +
+      "from normal use. Thanks!\"\n\n" +
+      "SAY THE HONEST CAVEAT BEFORE THE PRICE, not after, and never only when asked: \"I can't guarantee how much of the " +
+      "stains I can get out, but I'll go over all the surfaces and get out as much as I can.\"\n\n" +
+      "ANSWER THEIR SIDE QUESTION FIRST, and say so plainly when something costs nothing extra: \"That service is included " +
+      "with the carpet shampoo add-on, so it won't add to the price at all.\"\n\n" +
+      "MATCH URGENCY, DON'T DEFLECT IT. Someone in a hurry gets a hedged yes, not a policy: \"I can probably squeeze in that " +
+      "detail for your Ram tomorrow. If you send over your address, I'll let you know for sure if I can come by.\" " +
+      "Hedge with probably / likely / might — never a hard promise, never a flat no.\n\n" +
+      "WORKED QUOTES — real jobs, real numbers. Use these as the reference points for a similar vehicle and package; " +
+      "if nothing here is close, ask rather than interpolate:\n" +
+      "- 2024 Ram 3500 crew cab diesel — Interior Detail, Exterior Detail, Carpet Shampoo, Exterior Polish, Ceramic Wax: $450\n" +
+      "- 2022 Ford F450 — Full Detail, Exterior Polish, Carpet Shampoo, Ceramic Wax, RainX Window treatment: $400\n" +
+      "- 2009 Acura RDX — Full Detail, Carpet Shampoo: $380\n" +
+      "- 2013 Jeep Wrangler — Full Interior Detail, Carpet Shampoo (cloth seats): $300\n" +
+      "- 2012 Ford Fusion — flat-rate pre-sale detail, interior + exterior + basic engine wipe-down: $300\n\n" +
+      "SERVICE NAMES he actually quotes in: Interior Detail, Exterior Detail, Full Detail, Carpet Shampoo, Exterior Polish, " +
+      "Ceramic Wax, RainX Window treatment, headlight restoration, paint correction, and the flat-rate pre-sale detail " +
+      "(interior + exterior + a basic engine wipe-down, for a car being sold).\n\n" +
+      "HOW THESE READ END TO END — match this exactly:\n" +
+      "- \"Awesome! So for your Ram, an Interior Detail, Exterior Detail, Carpet Shampoo, Exterior Polish, and Ceramic Wax " +
+      "will be $450. Feel free to send over your address or general street location, and I'll get you a spot on my schedule.\"\n" +
+      "- \"Sounds good! I can do a full interior detail and carpet shampoo for you. I can't guarantee how much of the stains " +
+      "I can get out, but I'll go over all the surfaces and get out as much as I can. I can do that for $300. If you send over " +
+      "your address or general street area, I can let you know how soon I can come by.\"\n" +
+      "- \"Great! My flat-rate pre-sale detail is $300. That includes a full interior and exterior detail, plus a basic engine " +
+      "wipe-down, to get your car ready to sell. I might even be able to squeeze you in this week if you like. Let me know how " +
+      "that sounds.\"\n" +
+      "- \"Thanks for the info! I can definitely clean that seatbelt for you. That service is included with the carpet shampoo " +
+      "add-on, so it won't add to the price at all. How soon are you looking to get it detailed?\"",
     tone: "Friendly and warm, a confident pro, easygoing with a little humor, low-pressure, local and personable. " +
       "Keep it short and casual like a real text. No emoji graphics (no 🚗✨) — but a simple \":)\" now and then is on-brand; that's how Mikey texts. " +
       "Sometimes sign off with \"- Mikey\", but not on every text.",
     faqs: "Q: How much does it cost?\n" +
-      "A: Interior details start at $160, exterior at $130, and a full in-and-out starts at $260. Trucks and really dirty vehicles are a bit more. Send me your car's year, make and model plus what you're after and I'll lock in an exact price — and you don't pay until you love it.\n\n" +
+      "A: Interior details start at $200, exterior at $130, and a full in-and-out starts at $260. Trucks and really dirty vehicles are a bit more. Send me your car's year, make and model plus what you're after and I'll lock in an exact price — and you don't pay until you love it.\n\n" +
       "Q: Do you come to me?\n" +
       "A: Yes, I come to you! All I need is power and water within 20 ft of the vehicle.\n\n" +
       "Q: How long does a full detail take?\n" +
@@ -8140,8 +9407,13 @@ function defaultPlaybook() {
       "  \"I'm on my way, just running into a little traffic — ETA is about [time].\"\n\n" +
       "- Unhappy with the result / a complaint (always stay warm and fix it):\n" +
       "  \"I'm so sorry to hear that! I'd be more than happy to come back ASAP and make it right for you.\"",
-    rules: "Never promise an exact price or exact appointment time on your own — give the \"starts at\" range and say you'll confirm the exact price.\n" +
-      "Never invent details, prices, or policies you don't know.\n" +
+    rules: "NEVER write a dollar figure that isn't in this playbook, already agreed in the conversation, or given to you by Mikey. " +
+      "Do not add prices up into a new total, do not round one to look tidier, and do not guess a number because it seems about right. " +
+      "If this playbook doesn't price the vehicle in front of you, ask for what's missing instead of naming a total — " +
+      "a customer who's been quoted a number has been quoted it, and it can't be taken back.\n" +
+      "Never promise an exact appointment time on your own — offer to check and come back with a day.\n" +
+      "Never invent details or policies you don't know.\n" +
+      "Mikey works alone. Always \"I\", never \"we\".\n" +
       "Only recommend add-ons lightly and when they genuinely fit the car — never pushy.\n" +
       "Always be respectful, low-pressure, and never pushy.\n" +
       "If someone texts STOP, don't text them again.\n" +
@@ -8160,11 +9432,17 @@ function defaultPlaybook() {
   };
 }
 
-const PLAYBOOK_KEYS = ['about', 'services', 'area', 'booking', 'tone', 'faqs', 'scenarios', 'rules', 'examples'];
+const PLAYBOOK_KEYS = ['about', 'services', 'area', 'booking', 'quoting', 'tone', 'faqs', 'scenarios', 'rules', 'examples'];
+// 6000, up from 4000. The cap is only here to stop one runaway paste from bloating
+// the config value, and 4000 had become a real trap: the quote-reply section is
+// 4.2k on its own, so saving the playbook from the dashboard would have silently
+// cut it off mid-sentence — and a truncated instruction still reads as an
+// instruction to the model. The whole playbook is ~11k, nowhere near KV's limit.
+const PLAYBOOK_FIELD_MAX = 6000;
 function sanitizePlaybook(next, prev) {
   const out = Object.assign(defaultPlaybook(), prev || {});
   for (const k of PLAYBOOK_KEYS) {
-    if (typeof next[k] === 'string') out[k] = next[k].slice(0, 4000);
+    if (typeof next[k] === 'string') out[k] = next[k].slice(0, PLAYBOOK_FIELD_MAX);
   }
   return out;
 }
@@ -8372,6 +9650,11 @@ function buildIndexSummary(thread, cfg) {
     scheduledCount: (thread.scheduled || []).length,
     nextScheduledAt: (thread.scheduled && thread.scheduled.length) ? thread.scheduled[0].sendAt : null,
     replyReady: !!(thread.suggested && thread.suggested.text),
+    // The AI held its draft because only he can answer this one. Mirrored so the
+    // list row can say "needs you" without loading the thread — and reading a
+    // thread clears unread, which is exactly what a badge must not do.
+    needsYou: !!(thread.needsYou && thread.needsYou.question),
+    needsYouAsk: (thread.needsYou && thread.needsYou.question) || '',
     dateRequested: !!thread.dateRequest,
     // Cheap content flags so the AI advisor/agent can filter on "has a voicemail"
     // or "sent a photo" without loading every thread body.
@@ -8440,8 +9723,10 @@ async function appendMessage(phone, message, opts = {}) {
     thread.followup.holdReason = '';
     thread.followup.heldAt = 0;
   }
-  // Once Mikey replies, any pre-drafted suggestion is answered — clear it.
-  if (message.dir === 'out') thread.suggested = null;
+  // Once Mikey replies, any pre-drafted suggestion is answered — clear it, and
+  // with it any question we were holding the draft for: he just answered it the
+  // long way round.
+  if (message.dir === 'out') { thread.suggested = null; thread.needsYou = null; }
   await saveThread(thread);
   await updateIndexEntry(thread);
   return thread;
@@ -8634,6 +9919,21 @@ const VOICE_BUCKETS = ['price', 'schedule', 'confirm', 'answer', 'apology', 'clo
 //     confirmation. "You're all set for Tuesday" and "Perfect, let's shoot for
 //     10:45" are the same kind of message and must not be split apart; `confirm`
 //     is for agreements with no time in them ("Sounds good!", "Yep, will do").
+// Does this message name a vehicle? Two strengths, because one rule can't do both:
+//   - A model year or a make is decisive at any length, so "Thanks! It's a 2009
+//     Acura RDX" still reads as the quote moment and not as a thank-you.
+//   - A bare body type ("Truck") is far too common a word to trust inside a long
+//     message - Kate's "I appreciate you making the effort to try to fit my truck
+//     in" is a goodbye, not a quote request - so it only counts on its own.
+const VEHICLE_MAKES = /\b(ford|chevy|chevrolet|dodge|ram|jeep|toyota|honda|nissan|subaru|mazda|hyundai|kia|gmc|bmw|mercedes|benz|audi|vw|volkswagen|lexus|acura|infiniti|tesla|volvo|cadillac|buick|chrysler|lincoln|mitsubishi|porsche|jaguar|land rover|range rover|mini cooper|genesis|rivian|sprinter|f150|f250|f350|f450|silverado|sierra|tacoma|tundra|4runner|wrangler|escalade|suburban|tahoe)\b/;
+function mentionsVehicle(t) {
+  if (/\b(19|20)\d{2}\b/.test(t)) return true;          // a model year
+  if (VEHICLE_MAKES.test(t)) return true;
+  // Body type alone, only when that is essentially the whole message.
+  return t.trim().length <= 25 &&
+    /^(a |an |it'?s a |its a |just a )?(truck|suv|sedan|van|car|coupe|wagon|crossover|pickup|minivan)\b/.test(t.trim());
+}
+
 function voiceBucket(text) {
   const t = String(text || '').toLowerCase();
   if (!t) return 'general';
@@ -8642,6 +9942,14 @@ function voiceBucket(text) {
   // Bare clock times ("10:30", "let's shoot for 10:45") are how he actually writes
   // times — an am/pm suffix is the exception, not the rule.
   if (/\b(mon|tues|wednes|thurs|fri|satur|sun)day\b|\btomorrow\b|\btoday\b|\bnext week\b|\b\d{1,2}:\d{2}\b|\b\d{1,2}\s*(am|pm)\b|\bmorning\b|\bafternoon\b|\bslot\b|\bschedule\b|\bavailab/.test(t)) return 'schedule';
+  // The quote moment. When a customer answers the intro text with their vehicle,
+  // the reply Mikey writes is a QUOTE — so he must be shown his real quoting texts,
+  // not his one-word ones. Without this, "2024 Ram 3500 crew cab diesel." scored as
+  // `quick` and the model got handed "Ready!" and "Be there in 20!" as the examples
+  // to imitate, then wrote a one-liner for the most important text of the sale.
+  // Checked after `schedule` so an explicit day or time still wins, and before
+  // `closing` so "Thanks! It's a 2009 Acura RDX" doesn't read as a sign-off.
+  if (mentionsVehicle(t)) return 'price';
   if (/^(yes|yep|yeah|perfect|sounds good|you'?re all set|got it|ok|okay|will do)\b/.test(t)) return 'confirm';
   if (/\b(thank|thanks|appreciate|means a lot|no worries)\b/.test(t)) return 'closing';
   if (/\?/.test(t)) return 'answer';
@@ -9007,8 +10315,14 @@ function voiceContext(voice, bucket, query) {
 // Being spotted as AI is mostly about a handful of characteristic phrases, not
 // about missing warmth. Cheaper and more reliable to ban them outright than to
 // ask the model nicely.
+// "feel free to" used to sit in this list and had to come out: it is Mikey's own
+// phrase, not a machine's. It is in his measured fingerprint's recurring phrases,
+// it is in the intro text every customer gets, and he wrote "Feel free to send
+// over your address or general street location" by hand. Banning it meant the
+// gate fired on drafts that had got his voice exactly right and regenerated them
+// away from it.
 const AI_TELLS = [
-  /\bcertainly[!,.]/i, /\bi'?d be happy to\b/i, /\bhappy to assist\b/i, /\bfeel free to\b/i,
+  /\bcertainly[!,.]/i, /\bi'?d be happy to\b/i, /\bhappy to assist\b/i,
   /\brest assured\b/i, /\bat your earliest convenience\b/i, /\bplease don'?t hesitate\b/i,
   /\blet me know if you have any (other )?questions\b/i, /\bi hope this (message )?finds you\b/i,
   /\bthank you for reaching out\b/i, /\bi understand your concern\b/i, /\bgreat question\b/i,
@@ -9020,19 +10334,67 @@ function findTell(text) {
   return '';
 }
 
+// ---------------------------------------------------------------------------
+// The invented-price gate
+// ---------------------------------------------------------------------------
+// The single most expensive way this app can be wrong. Replaying six real quote
+// moments, the model produced $490 where Mikey charged $450, $399 where he
+// charged $380, and $429 for a truck whose condition it had never been told -
+// each one a confident, specific, sendable number that came from nowhere. A
+// customer who is quoted $429 has been quoted $429, and "the AI made it up" is
+// not a thing you get to say afterwards.
+//
+// So every dollar figure in a draft has to be traceable: it appears in the
+// playbook, in something Mikey typed as the goal, or already in this
+// conversation. Sums are allowed up to three parts, because a real quote is
+// genuinely built by adding a package to its add-ons.
+function priceFigures(text) {
+  const out = [];
+  for (const m of String(text || '').matchAll(/\$\s?(\d[\d,]*)/g)) {
+    const n = Number(m[1].replace(/,/g, ''));
+    if (n > 0) out.push(n);
+  }
+  return out;
+}
+// Every total reachable by adding up to three of the known figures. The base
+// figures are always included, so an exact playbook price passes untouched.
+function backedAmounts(sources) {
+  const base = [...new Set(sources.flatMap(priceFigures))];
+  const ok = new Set(base);
+  for (let i = 0; i < base.length; i++) {
+    for (let j = i; j < base.length; j++) {
+      ok.add(base[i] + base[j]);
+      for (let k = j; k < base.length; k++) ok.add(base[i] + base[j] + base[k]);
+    }
+  }
+  return ok;
+}
+// Returns the first unbacked figure as a string, or '' when every number checks out.
+function findInventedPrice(text, sources) {
+  const ok = backedAmounts(sources);
+  for (const n of priceFigures(text)) if (!ok.has(n)) return `$${n}`;
+  return '';
+}
+
 // The other half of the gate. A tell is a phrase; this catches drafts that use no
 // banned phrase but still don't read like him — three times his usual length, an
 // emoji when he almost never uses one, "Hi Sarah," when he never opens with a
 // greeting. Measured against his own counts, so the bar is his habits and not some
 // generic idea of a good text. Returns a fixable instruction, or ''.
-function styleViolation(text, st) {
+function styleViolation(text, st, bucket) {
   if (!st || !text) return '';
   const t = String(text).trim();
   const EMOJI = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/u;
+  // A quote reply is legitimately his longest text - itemising the services and
+  // then the total does not fit in two sentences - so it is measured against his
+  // real quote replies rather than against an average dragged down by "Ready!".
+  const quoting = bucket === 'price';
   // Generous ceiling: 1.6× his 90th percentile, floor 160, so only real bloat trips.
-  const ceiling = Math.max(Math.round((st.p90Len || 120) * 1.6), 160);
+  const ceiling = quoting ? 420 : Math.max(Math.round((st.p90Len || 120) * 1.6), 160);
   if (t.length > ceiling) {
-    return `it is ${t.length} characters, and his texts run about ${st.medLen}. Cut it to roughly ${st.medLen}–${st.p90Len} characters — say less`;
+    return quoting
+      ? `it is ${t.length} characters, and even his longest quote replies stop around 320. Cut it to roughly 170–320 characters`
+      : `it is ${t.length} characters, and his texts run about ${st.medLen}. Cut it to roughly ${st.medLen}–${st.p90Len} characters — say less`;
   }
   if (st.emojiPct <= 5 && EMOJI.test(t)) {
     return 'it uses an emoji, and he essentially never does. Remove it';
@@ -9041,7 +10403,9 @@ function styleViolation(text, st) {
     return 'it opens by greeting them by name, and he almost never does. Start with the actual answer';
   }
   const sentences = (t.match(/[.!?]+(\s|$)/g) || []).length || 1;
-  if (st.medSentences <= 2 && sentences >= 5) {
+  // 5 sentences is normal in a quote ("Sounds good! I can do X. I can't guarantee Y.
+  // I can do that for $300. If you send over your address...") - only 7+ is bloat.
+  if (st.medSentences <= 2 && sentences >= (quoting ? 7 : 5)) {
     return `it runs ${sentences} sentences and he usually writes ${st.medSentences}. Make it shorter`;
   }
   return '';
@@ -9508,11 +10872,23 @@ async function maybeSuggestReply(phone) {
     verdict = replyCheckFor(thread);
     if (replyOwed(thread)) {
       if (aiConfigured()) {
-        const text = await generateReply(thread, cfg, '');
-        if (text) { thread.suggested = { text, ts: Date.now(), forTs: last.ts }; changed = true; drafted = text; }
+        // Ask before guessing. If the reply hinges on something only he knows,
+        // hold the draft and hang the question on the thread instead — a wrong
+        // guessed time goes out in his voice and is his problem to walk back.
+        let ask = null;
+        try { ask = await askOwnerChoices(thread, cfg); } catch { ask = null; }
+        if (ask) {
+          thread.needsYou = { question: ask.question, options: ask.options, ts: Date.now(), forTs: last.ts };
+          thread.suggested = null;
+          changed = true;
+        } else {
+          thread.needsYou = null;
+          const text = await generateReply(thread, cfg, '');
+          if (text) { thread.suggested = { text, ts: Date.now(), forTs: last.ts }; changed = true; drafted = text; }
+        }
       }
-    } else if (thread.suggested) {
-      thread.suggested = null; changed = true;   // nothing owed — drop any stale draft
+    } else if (thread.suggested || thread.needsYou) {
+      thread.suggested = null; thread.needsYou = null; changed = true;   // nothing owed — drop any stale draft
     }
     if (changed) { await saveThread(thread); await updateIndexEntry(thread); }
   } catch { /* suggestions are a bonus — swallow errors so inbound never breaks */ }
@@ -9529,6 +10905,7 @@ const PLAYBOOK_SECTIONS = [
   ['services', 'Services & pricing'],
   ['area', 'Service area & hours'],
   ['booking', 'Booking & policies'],
+  ['quoting', 'The quote reply — the most important text he sends'],
   ['tone', 'Voice & tone'],
   ['examples', 'How Mikey texts (copy this voice exactly)'],
   ['faqs', 'Common questions (approved answers)'],
