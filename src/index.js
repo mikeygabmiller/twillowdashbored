@@ -132,7 +132,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-30·quote-reply';
+const BUILD = '2026-08-31·ask-me-first';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -321,6 +321,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/ai/summary') return apiAiSummary(request);
   if (request.method === 'POST' && pathname === '/api/ai/recap')   return apiAiRecap(request);
   if (request.method === 'POST' && pathname === '/api/ai/draft')   return apiAiDraft(request);
+  if (request.method === 'POST' && pathname === '/api/ai/answer')  return apiAiAnswer(request);
   if (request.method === 'POST' && pathname === '/api/ai/triage')  return apiAiTriage();
   if (request.method === 'POST' && pathname === '/api/ai/coach')   return apiAiCoach(request);
   if (request.method === 'POST' && pathname === '/api/ai/photo-quote') return apiAiPhotoQuote(request);
@@ -1728,6 +1729,12 @@ const PRACTICE_SCENARIOS = [
     body: 'Do you do ceramic coating? And do you come to my place or do I drop it off?' },
   { id: 'escalate', name: 'Practice · Ken',   vehicle: 'Tacoma',
     body: "I just looked at the truck and there's a scratch on the hood that wasn't there this morning. Pretty unhappy about this." },
+  // The one that deliberately can't be answered without him. Nothing in the
+  // playbook says which hour of Thursday he's free, so this is the scenario
+  // that exercises "Needs you" end to end: the draft is held, the question
+  // comes back with tappable answers, and the reply is written from his tap.
+  { id: 'askme',    name: 'Practice · Sam',   vehicle: 'Highlander',
+    body: 'Perfect, Thursday works for me. What time can you come by?' },
 ];
 
 async function apiAssistPractice(request) {
@@ -1756,9 +1763,18 @@ async function apiAssistPractice(request) {
   // the practice thread so answering YES walks the same path a real one would
   // (and stops at the practice guard instead of texting anyone).
   let draft = '';
+  let needsYou = null;
   if (aiConfigured() && !(ask && (ask.kind === 'escalate' || ask.kind === 'chitchat'))) {
-    try { draft = String(await generateReply(thread, cfg, '') || '').trim(); } catch { draft = ''; }
-    if (draft) thread.suggested = { text: draft, ts: Date.now(), forTs: thread.messages[0].ts };
+    // Same order as a real inbound: ask him first, and only draft if there is
+    // nothing to ask. Otherwise the practice run wouldn't be practising the
+    // thing it's meant to be showing him.
+    try { needsYou = await askOwnerChoices(thread, cfg); } catch { needsYou = null; }
+    if (needsYou) {
+      thread.needsYou = { question: needsYou.question, options: needsYou.options, ts: Date.now(), forTs: thread.messages[0].ts };
+    } else {
+      try { draft = String(await generateReply(thread, cfg, '') || '').trim(); } catch { draft = ''; }
+      if (draft) thread.suggested = { text: draft, ts: Date.now(), forTs: thread.messages[0].ts };
+    }
   }
   await saveThread(thread);
   await updateIndexEntry(thread);
@@ -1766,7 +1782,7 @@ async function apiAssistPractice(request) {
   const note = `🧪 THIS IS A PRACTICE MESSAGE — ${sc.name} is not a real customer.\nNothing you reply here will ever be sent to anyone.`;
   const body = assistAlertBody(cfg, { phone: PRACTICE_PHONE, who: sc.name, msg: sc.body, ask, draft, note });
   const sent = await notifyMikey(`🧪 Practice · ${sc.name}: "${String(sc.body).slice(0, 52)}${String(sc.body).length > 52 ? '…' : ''}"`, body);
-  return json({ ok: !!sent, scenario: sc.id, ask, emailed: !!sent, previewBody: body.text, previewHtml: body.html });
+  return json({ ok: !!sent, scenario: sc.id, ask, needsYou, phone: PRACTICE_PHONE, emailed: !!sent, previewBody: body.text, previewHtml: body.html });
 }
 
 // The Gmail script that feeds this. Deliberately reads his SENT mail rather than
@@ -2629,6 +2645,7 @@ async function apiMeta(request) {
   }
   if (typeof data.reminderNote === 'string') thread.reminderNote = data.reminderNote.slice(0, 200);
   if (data.clearSuggested) thread.suggested = null; // Mikey dismissed the pre-drafted reply
+  if (data.clearNeedsYou) thread.needsYou = null;   // he'd rather just write it himself
   if (Array.isArray(data.linked)) {
     thread.linked = [...new Set(data.linked.map((p) => normalizePhone(p) || p).filter(Boolean))]
       .filter((p) => p !== thread.phone).slice(0, 20);
@@ -6118,6 +6135,87 @@ function cleanReply(raw) {
   return t.trim();
 }
 
+// ---- "Ask me first" ------------------------------------------------------
+// Some questions can't be answered by reading the thread, because the answer
+// only lives in Mikey's head: what time he can be there, what he'll charge for
+// this one, whether he'll give up his Saturday. Drafting those anyway produces
+// a confident wrong answer in his voice, which is worse than no draft at all —
+// "10:25 works for me" is a real promise made to a real person by a machine
+// that had no way of knowing. A 1-in-20 chance of being right is not a draft.
+//
+// So when the customer's last message hinges on one of those, we hold the
+// draft and put the decision to him instead — one short question with a few
+// tappable answers. He taps, and THEN we write the text, grounded in the fact
+// he just supplied. One tap replaces typing a whole reply, and the reply is
+// right, because the only thing the AI was missing came from him.
+
+// The cheap gate. Only messages that look like they're asking him to decide
+// something ever cost an AI call — everything else drafts exactly as before.
+// Deliberately loose: the AI call below is what says no, and a false positive
+// there costs one cheap call, while a false negative costs a wrong promise.
+const OWNER_DECISION_RE = /(what time|when can|when could|when are|when will|when do|when would|how soon|what day|which day|are you (free|available|open)|you (free|available|open)|any (openings|availability|time|spots|room)|do you have (any|anything|time|room|openings)|how much|what.{0,14}cost|what do you charge|\bprice\b|\bquote\b|estimate|can you (come|do|make|fit|get|be|swing|squeeze)|(would|does) (that|this|it|monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|today|morning|afternoon)[^?.!]{0,24}work|how long|what.{0,10}time work|book me|get.{0,12}scheduled|reschedule|move.{0,12}appointment)/i;
+
+// Ask the model one narrow question: is the only thing standing between us and
+// a good reply a decision the owner has to make? Returns the question to put to
+// him plus a few realistic one-tap answers, or null when the thread already has
+// everything it needs (in which case we draft as normal).
+async function askOwnerChoices(thread, cfg) {
+  const msgs = thread.messages || [];
+  const last = [...msgs].reverse().find((m) => m.dir === 'in');
+  if (!last || !OWNER_DECISION_RE.test(String(last.body || ''))) return null;
+  const prompt =
+    businessContext(cfg) +
+    `You are helping the OWNER of this business answer a customer's text.\n` +
+    `Decide ONE thing: does answering this message require a decision or a fact that only the owner can supply — ` +
+    `a specific time or day HE is free, a price HE has to set for this particular job, a yes/no HE has to make? ` +
+    `If the business playbook above already answers it (a service he does offer, an area he does cover, a published price range, a policy), then it does NOT need him.\n\n` +
+    `Return ONLY JSON:\n` +
+    `{"needed": true|false, "question": "the short question to put to the owner, max 60 characters, plain and direct, e.g. \\"What time works Thursday?\\" or \\"What are you charging for this?\\"", ` +
+    `"options": ["3 to 5 SHORT tappable answers, 1-4 words each, realistic for THIS conversation, e.g. \\"9am\\", \\"Thursday 2pm\\", \\"$375\\", \\"Can't this week\\". They are choices for the OWNER to pick from, not messages to the customer."]}\n\n` +
+    `Set needed=false (and leave question/options empty) for anything else, including complaints, thank-yous, and questions the playbook answers.\n\n` +
+    `Conversation:\n${transcript(thread, AI_CLASSIFY_TURNS)}`;
+  const raw = await geminiGenerate(prompt, { surface: 'ask me first', json: true, maxTokens: 400, temperature: 0.3 });
+  const p = JSON.parse(raw);
+  if (!p || p.needed !== true) return null;
+  const question = String(p.question || '').trim().slice(0, 90);
+  const options = (Array.isArray(p.options) ? p.options : [])
+    .map((o) => String(o).trim().slice(0, 40)).filter(Boolean).slice(0, 5);
+  // A question with nothing to tap is just a slower version of typing, so we
+  // only hold the draft when we can actually offer him the shortcut.
+  if (!question || options.length < 2) return null;
+  return { question, options };
+}
+
+// He tapped one. Now — and only now — write the reply, with his answer handed
+// in as the goal so the draft states it exactly rather than approximating it.
+async function apiAiAnswer(request) {
+  const data = await readJson(request);
+  const phone = normalizePhone(data.phone);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  const choice = String(data.choice || '').trim().slice(0, 300);
+  if (!choice) return json({ ok: false, error: 'no_choice' }, 422);
+  const thread = await loadThread(phone);
+  const cfg = await loadConfig();
+  const asked = (thread.needsYou && thread.needsYou.question) || '';
+  // Phrased as an instruction rather than a fact, because generateReply treats
+  // the hint as "the owner telling you what to say" — which is exactly what a
+  // tap is. Without the "use it exactly", it likes to soften a bare "$375".
+  const hint = asked
+    ? `${asked} The owner's answer is: ${choice}. Tell the customer that, using it exactly as given.`
+    : `Answer the customer with this, exactly as given: ${choice}.`;
+  try {
+    const text = await generateReply(thread, cfg, hint);
+    const last = thread.messages[thread.messages.length - 1];
+    thread.needsYou = null;                                 // the question is answered
+    if (text) thread.suggested = { text, ts: Date.now(), forTs: last ? last.ts : Date.now() };
+    await saveThread(thread);
+    await updateIndexEntry(thread);
+    return json({ ok: true, draft: text, thread });
+  } catch (err) {
+    return json({ ok: false, error: String(err.message || err) }, 502);
+  }
+}
+
 async function apiAiDraft(request) {
   const data = await readJson(request);
   const phone = normalizePhone(data.phone);
@@ -9552,6 +9650,11 @@ function buildIndexSummary(thread, cfg) {
     scheduledCount: (thread.scheduled || []).length,
     nextScheduledAt: (thread.scheduled && thread.scheduled.length) ? thread.scheduled[0].sendAt : null,
     replyReady: !!(thread.suggested && thread.suggested.text),
+    // The AI held its draft because only he can answer this one. Mirrored so the
+    // list row can say "needs you" without loading the thread — and reading a
+    // thread clears unread, which is exactly what a badge must not do.
+    needsYou: !!(thread.needsYou && thread.needsYou.question),
+    needsYouAsk: (thread.needsYou && thread.needsYou.question) || '',
     dateRequested: !!thread.dateRequest,
     // Cheap content flags so the AI advisor/agent can filter on "has a voicemail"
     // or "sent a photo" without loading every thread body.
@@ -9620,8 +9723,10 @@ async function appendMessage(phone, message, opts = {}) {
     thread.followup.holdReason = '';
     thread.followup.heldAt = 0;
   }
-  // Once Mikey replies, any pre-drafted suggestion is answered — clear it.
-  if (message.dir === 'out') thread.suggested = null;
+  // Once Mikey replies, any pre-drafted suggestion is answered — clear it, and
+  // with it any question we were holding the draft for: he just answered it the
+  // long way round.
+  if (message.dir === 'out') { thread.suggested = null; thread.needsYou = null; }
   await saveThread(thread);
   await updateIndexEntry(thread);
   return thread;
@@ -10767,11 +10872,23 @@ async function maybeSuggestReply(phone) {
     verdict = replyCheckFor(thread);
     if (replyOwed(thread)) {
       if (aiConfigured()) {
-        const text = await generateReply(thread, cfg, '');
-        if (text) { thread.suggested = { text, ts: Date.now(), forTs: last.ts }; changed = true; drafted = text; }
+        // Ask before guessing. If the reply hinges on something only he knows,
+        // hold the draft and hang the question on the thread instead — a wrong
+        // guessed time goes out in his voice and is his problem to walk back.
+        let ask = null;
+        try { ask = await askOwnerChoices(thread, cfg); } catch { ask = null; }
+        if (ask) {
+          thread.needsYou = { question: ask.question, options: ask.options, ts: Date.now(), forTs: last.ts };
+          thread.suggested = null;
+          changed = true;
+        } else {
+          thread.needsYou = null;
+          const text = await generateReply(thread, cfg, '');
+          if (text) { thread.suggested = { text, ts: Date.now(), forTs: last.ts }; changed = true; drafted = text; }
+        }
       }
-    } else if (thread.suggested) {
-      thread.suggested = null; changed = true;   // nothing owed — drop any stale draft
+    } else if (thread.suggested || thread.needsYou) {
+      thread.suggested = null; thread.needsYou = null; changed = true;   // nothing owed — drop any stale draft
     }
     if (changed) { await saveThread(thread); await updateIndexEntry(thread); }
   } catch { /* suggestions are a bonus — swallow errors so inbound never breaks */ }
