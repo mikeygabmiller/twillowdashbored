@@ -134,9 +134,13 @@ await page.waitForTimeout(500);
 // Reading a thread hides the bottom nav, so come back out the way he would.
 await page.keyboard.press('Escape');
 await page.waitForTimeout(400);
-await page.locator('.navitem[data-tab="stats"]').click();
+// Stats lost its pill — nine reports live behind the Insights index in More,
+// and the segment bar only appears once you are inside one of them.
+await page.locator('.navitem[data-tab="more"]').click();
+await page.waitForTimeout(450);
+await page.locator('#mrBody .mr-row', { hasText: 'Insights' }).first().click();
 await page.waitForTimeout(700);
-await page.locator('#grNav [data-gv="usage"]').click();
+await page.locator('.ix-card[data-ix="usage"]').click();
 await page.waitForTimeout(3200);                       // sit on it, the way he would read it
 await page.locator('#grNav [data-gv="map"]').click();  // …then bounce straight off the next one
 await page.waitForTimeout(400);
@@ -155,7 +159,7 @@ ok('the app opening is on the record', evs().some((e) => e.k === 's'), evs().sli
 section('Controls name themselves, and are told apart by the screen they are on');
 const taps = labels('t');
 ok('the nav pills report their own words, not their ids',
-  taps.some((l) => /Chats$/.test(l)) && taps.some((l) => /Stats$/.test(l)), taps);
+  taps.some((l) => /Chats$/.test(l)) && taps.some((l) => /More$/.test(l)), taps);
 ok('every tap is qualified by the screen it happened on, so two "Send"s never merge',
   taps.length > 0 && taps.every((l) => l.indexOf(' · ') > 0), taps);
 ok('no label is a bare element id', !taps.some((l) => /·\s*#/.test(l)), taps);
@@ -280,9 +284,15 @@ section('It never breaks the app it is measuring');
 ok('no page errors anywhere in all of that', errs.length === 0, errs.slice(0, 3));
 ok('the nav still works after every screen function was wrapped',
   await page.locator('#grNav [data-gv="usage"].active').count() === 1);
+// Back goes up one level now: a report returns to the Insights index, and only
+// the index closes the hub.
 await page.locator('#grBack').click();
 await page.waitForTimeout(400);
-ok('and backing out of the hub still lands on the list', await page.locator('#growApp.show').count() === 0);
+ok('backing out of a report lands on the index, not out of the hub',
+  await page.locator('#growApp.show').count() === 1 && (await page.$$eval('.ix-card', (n) => n.length)) === 9);
+await page.locator('#grBack').click();
+await page.waitForTimeout(400);
+ok('and backing out of the index lands on the list', await page.locator('#growApp.show').count() === 0);
 
 await browser.close();
 console.log(`\n${pass} passed, ${fail} failed`);

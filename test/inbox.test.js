@@ -36,7 +36,13 @@ await page.locator('.navitem[data-tab="messages"]').click();await page.waitForTi
 console.log('\n=== "Waiting on me" filter (#14) ===');
 const chips=await page.locator('#filters .chip').allTextContents();
 check('the chip exists', chips.some(c=>/Waiting on me/.test(c)), true);
-check('it counts only who is owed', /Waiting on me3/.test(chips.join('')), true);
+// Two, not three. The fixture has three threads where the customer spoke last,
+// but one of them (Held Sabine) is parked until August with a hold reason on
+// her. The list has always excluded parked threads from this filter; the chip,
+// the nav badge and the Today rundown used to count them anyway, so the chip
+// read 3 and the list under it showed 2. They share one definition now
+// (waitingOnMe), and 2 is the number that matches what you can actually see.
+check('it counts only who is owed, and not who is parked', /Waiting on me2/.test(chips.join('')), true);
 await page.getByText(/^Waiting on me/).first().click();await page.waitForTimeout(400);
 const names=await page.evaluate(()=>[...document.querySelectorAll('#scroll .conv .nm')].map(x=>x.textContent.trim()));
 check('held customer excluded', names.includes('Held Sabine'), false);

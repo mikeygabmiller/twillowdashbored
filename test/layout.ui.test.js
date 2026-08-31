@@ -70,7 +70,7 @@ const attr = () => page.evaluate(() => window.__layout().attr);
 const goTab = async (t) => { await page.locator('.navitem[data-tab="' + t + '"]').click(); await page.waitForTimeout(500); };
 const box = (sel) => page.locator(sel).first().boundingBox();
 // Everything the shell must still be able to reach, in every layout.
-const LIVE = ['home', 'messages', 'pipeline', 'money', 'stats', 'more'];
+const LIVE = ['home', 'messages', 'calls', 'work', 'money', 'more'];
 const MODES = ['deck', 'air', 'bento', 'console'];
 
 section('Classic is untouched — no attribute, nav still in the sidebar');
@@ -134,24 +134,41 @@ for (const mode of MODES) {
   await page.locator('#backBtn').click();
   await page.waitForTimeout(400);
 
-  // 5. every sub-app still opens, lights its pill, reaches its views and closes
-  for (const [tab, appSel, navSel, backSel] of [
-    ['pipeline', '#jdApp', '#jdNav button', '#jdBack'],
-    ['money', '#moneyApp', '#moNav button', '#moBack'],
-    ['stats', '#growApp', '#grNav button', '#grBack'],
+  // 5. every sub-app still opens, lights its pill, reaches its views and closes.
+  // Insights has no pill in the default bar any more — its nine reports live
+  // behind an index inside More — so it is opened the way you actually reach
+  // it, and from a report, because the segment bar is deliberately hidden on
+  // the index itself.
+  const openStats = async () => {
+    await page.locator('.navitem[data-tab="more"]').click();
+    await page.waitForTimeout(450);
+    await page.locator('#mrBody .mr-row', { hasText: 'Insights' }).first().click();
+    await page.waitForTimeout(700);
+    await page.locator('.ix-card[data-ix="analytics"]').click();
+    await page.waitForTimeout(500);
+  };
+  for (const [tab, appSel, navSel, backSel, pill] of [
+    ['work', '#jdApp', '#jdNav button', '#jdBack', 'work'],
+    ['money', '#moneyApp', '#moNav button', '#moBack', 'money'],
+    ['stats', '#growApp', '#grNav button', '#grBack', 'more'],
   ]) {
-    await page.locator('.navitem[data-tab="' + tab + '"]').click();
+    if (tab === 'stats') await openStats();
+    else await page.locator('.navitem[data-tab="' + tab + '"]').click();
     await page.waitForTimeout(700);
     ok(tab + ' opens', await page.locator(appSel).evaluate((e) => e.classList.contains('show') || getComputedStyle(e).display !== 'none'));
-    ok(tab + ' lights its pill', await page.$eval('.navitem.active', (n) => n.getAttribute('data-tab')) === tab);
+    ok(tab + ' lights its pill', await page.$eval('.navitem.active', (n) => n.getAttribute('data-tab')) === pill);
     const segs = await page.$$eval(navSel, (ns) => ns.map((n) => n.getBoundingClientRect()).map((r) => ({ w: r.width, h: r.height, y: r.y })));
-    ok(tab + ' keeps every segment', segs.length >= 5, segs.length);
+    ok(tab + ' keeps every segment', segs.length >= 4, segs.length);
     ok(tab + ' segments are all laid out', segs.every((r) => r.w > 8 && r.h > 8), segs);
     // the primary nav stays visible over a section — that is the point of these layouts
     const nb3 = await box('#bottomnav');
     ok(tab + ' does not cover the tab bar', !!nb3 && nb3.height > 20, nb3);
     await page.locator(backSel).click();
     await page.waitForTimeout(450);
+    // Insights backs up one level at a time — a report returns to the index,
+    // and it takes a second press to leave the hub.
+    if (tab === 'stats') { await page.locator(backSel).click(); await page.waitForTimeout(450); }
+    ok(tab + ' closes again', await page.locator(appSel).evaluate((e) => !e.classList.contains('show') && getComputedStyle(e).display === 'none'));
   }
 
   // 6. More, and the picker itself, still work from inside the layout

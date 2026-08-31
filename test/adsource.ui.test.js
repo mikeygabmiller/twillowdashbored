@@ -97,9 +97,12 @@ const closeMore = async () => {
 };
 const openSettings = async () => {
   await closeMore();
-  // The Analytics shell sits over the bottom nav; leave it before reaching for
-  // a tab, or the click lands on a chart.
-  if (await page.locator('#growApp.show').count()) {
+  // The Insights shell sits over the bottom nav; leave it before reaching for
+  // a tab, or the click lands on a chart. Back goes up one level now — a report
+  // returns to the index — so press it until the hub is actually gone, the same
+  // way closeMore() above unwinds its own views.
+  for (let i = 0; i < 3; i++) {
+    if (!(await page.locator('#growApp.show').count())) break;
     await page.locator('#grBack').click();
     await page.waitForTimeout(400);
   }
@@ -143,7 +146,13 @@ const first = await page.locator('.jn-card.on .jn-step .jn-t').first().textConte
 ok('the story opens with the ad, not "Found you on Google"', /Clicked your Google ad/.test(first), first);
 
 section('The Website tab splits paid from free');
-await page.locator('#grNav [data-gv="analytics"]').click();
+// The segment bar only exists inside a report; from the index the way in is
+// the card. Take whichever is on screen.
+if (await page.locator('#grNav [data-gv="analytics"]').isVisible().catch(() => false)) {
+  await page.locator('#grNav [data-gv="analytics"]').click();
+} else {
+  await page.locator('.ix-card[data-ix="analytics"]').click();
+}
 await page.waitForTimeout(900);
 const webText = (await page.locator('#grBody').innerText()).replace(/\s+/g, ' ');
 ok('clicks he paid for are their own tile', /Clicks you paid for/.test(webText), webText.slice(0, 400));
