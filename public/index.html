@@ -530,6 +530,41 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     border-radius:16px;padding:6px 12px;font-size:12.5px;white-space:nowrap;max-width:62vw;
     overflow:hidden;text-overflow:ellipsis}
   .qreply button:active{background:var(--panel3)}
+  /* ---- photos going OUT -----------------------------------------------------
+     The camera sits left of the box, the same size as Send sits right of it: a
+     photo is half of how this business quotes, so it costs one tap, never a trip
+     through the Tools sheet. */
+  .photocircle{flex:none;width:46px;height:46px;border-radius:50%;background:var(--panel2);
+    border:1px solid var(--line);color:var(--muted);display:flex;align-items:center;justify-content:center;
+    transition:transform .1s,border-color .15s,color .15s}
+  .photocircle:active{transform:scale(.9)}
+  .photocircle:hover{border-color:var(--accent);color:var(--accent-text)}
+  .photocircle:disabled{opacity:.45}
+  .photocircle.has{border-color:var(--accent);color:var(--accent-text)}
+  /* The tray is the receipt for "did that photo actually attach?" — thumbnails,
+     an upload state on each, and an x that means what it says. */
+  .att-tray{display:flex;gap:7px;overflow-x:auto;padding:0 0 8px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .att-tray::-webkit-scrollbar{display:none}
+  .att{position:relative;flex:none;width:62px;height:62px;border-radius:12px;overflow:hidden;
+    background:var(--panel2);border:1px solid var(--line)}
+  .att img{width:100%;height:100%;object-fit:cover;display:block}
+  .att .x{position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;border:none;
+    background:rgba(0,0,0,.66);color:#fff;display:flex;align-items:center;justify-content:center;padding:0}
+  .att.up::after{content:"";position:absolute;inset:0;background:rgba(0,0,0,.45)}
+  .att.up .sp{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:2}
+  .att.err{border-color:#ef4444}
+  .att.err .retry{position:absolute;left:0;right:0;bottom:0;background:rgba(239,68,68,.9);color:#fff;
+    border:none;font-size:9.5px;font-weight:800;padding:3px 0;letter-spacing:.3px}
+  .att-more{flex:none;width:62px;height:62px;border-radius:12px;background:var(--panel2);border:1px dashed var(--line);
+    color:var(--muted2);display:flex;align-items:center;justify-content:center}
+  /* Drop a photo anywhere on the conversation, not just on a 62px target. */
+  .chat.dropping{outline:2px dashed var(--accent);outline-offset:-8px}
+  /* "Send it again" — the price sheet, the before/after, the one he sends weekly. */
+  .rc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:4px}
+  .rc-grid button{position:relative;padding:0;border:1px solid var(--line);background:var(--panel2);
+    border-radius:12px;overflow:hidden;aspect-ratio:1/1}
+  .rc-grid img{width:100%;height:100%;object-fit:cover;display:block}
+  .rc-grid button.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent) inset}
   .crow{display:flex;gap:9px;align-items:flex-end}
   .tawrap{flex:1;position:relative;display:flex}
   .crow textarea{flex:1;resize:none;height:46px;max-height:140px;background:var(--panel2);border:1px solid var(--line);
@@ -3056,7 +3091,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   :root[data-layout="deck"] .newmark{margin:10px 20px 4px}
   :root[data-layout="deck"] .composer{background:var(--panel);padding:10px 16px calc(10px + var(--safe-bottom))}
   :root[data-layout="deck"] .crow textarea{border-radius:9px;background:var(--panel2);padding:11px 14px}
-  :root[data-layout="deck"] .sendcircle{border-radius:9px;width:44px;height:44px}
+  :root[data-layout="deck"] .sendcircle,:root[data-layout="deck"] .photocircle{border-radius:9px;width:44px;height:44px}
   :root[data-layout="deck"] .qreply button{border-radius:7px}
   :root[data-layout="deck"] .details{border-left:1px solid var(--line);width:320px}
   :root[data-layout="deck"] .dt-id{flex-direction:row;text-align:left;align-items:center;flex-wrap:wrap}
@@ -3190,6 +3225,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   :root[data-layout="air"] .crow{background:var(--panel);border:1px solid var(--line2);border-radius:28px;
     padding:5px 5px 5px 6px;box-shadow:var(--elev-1)}
   :root[data-layout="air"] .crow textarea{background:transparent;border:none;border-radius:24px;padding:12px 12px}
+  /* Air puts the whole row inside one pill — the camera has to lose its own
+     border there or it reads as a second, nested control. */
+  :root[data-layout="air"] .photocircle{background:transparent;border:none;width:42px;height:42px}
   :root[data-layout="air"] .crow textarea:focus{border-color:transparent}
   :root[data-layout="air"] .qreply button{border-radius:999px;padding:8px 15px;background:var(--panel);
     border-color:var(--line2);box-shadow:var(--elev-1)}
@@ -3337,7 +3375,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   :root[data-layout="bento"] .composer{background:var(--panel);border-top:1px solid var(--line);
     padding:11px 14px calc(11px + var(--safe-bottom))}
   :root[data-layout="bento"] .crow textarea{border-radius:13px;background:var(--panel2)}
-  :root[data-layout="bento"] .sendcircle{border-radius:13px;width:46px;height:46px}
+  :root[data-layout="bento"] .sendcircle,:root[data-layout="bento"] .photocircle{border-radius:13px;width:46px;height:46px}
   :root[data-layout="bento"] .qreply button{border-radius:9px}
   :root[data-layout="bento"] .details{border-radius:0}
 
@@ -3527,7 +3565,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   :root[data-layout="console"] .crow textarea{border-radius:3px;background:var(--bg);padding:12px 12px 12px 26px;
     font-family:var(--mono);font-size:13px}
   :root[data-layout="console"] .pk-ghost{padding-left:26px!important;font-family:var(--mono)!important}
-  :root[data-layout="console"] .sendcircle{border-radius:3px;width:44px;height:44px}
+  :root[data-layout="console"] .sendcircle,:root[data-layout="console"] .photocircle{border-radius:3px;width:44px;height:44px}
   :root[data-layout="console"] .qreply button{border-radius:3px;font-family:var(--mono);font-size:11.5px}
   :root[data-layout="console"] .details{border-radius:0;border-left:1px solid var(--line)}
   :root[data-layout="console"] .dt-sec .lbl{font-family:var(--mono);letter-spacing:.12em}
@@ -3760,7 +3798,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       <div class="qreply" id="qReply" style="display:none"></div>
       <!-- predictive keyboard: next-word chips learned from how you text -->
       <div class="predbar" id="predBar" style="display:none"></div>
+      <!-- photos waiting to go out with the next text -->
+      <div class="att-tray" id="attTray" style="display:none"></div>
       <div class="crow">
+        <button class="photocircle" id="photoBtn" title="Send a photo" aria-label="Send a photo"></button>
         <div class="tawrap">
           <div class="pk-ghost" id="msgGhost" aria-hidden="true"></div>
           <textarea id="msgInput" placeholder="Text message" rows="1"></textarea>
@@ -3769,6 +3810,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M3.4 20.4 21 12 3.4 3.6 3.39 10.1 15 12l-11.61 1.9z"/></svg>
         </button>
       </div>
+      <input type="file" id="photoInput" accept="image/*" multiple style="display:none">
     </div>
 
     <!-- Details: side-panel on desktop, bottom-sheet on mobile -->
@@ -4054,7 +4096,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-31·claude-voice";
+  var APP_BUILD="2026-09-01·claude-photos";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -8121,6 +8163,15 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     }).catch(function(){toast("Network error",{bad:true})})
       .then(function(){if(btn){btn.disabled=false;btn.innerHTML=orig}});
   }
+  // Where an attachment's bytes actually come from. Twilio's own URLs need the
+  // account credentials, so those go through the authenticated proxy; a photo HE
+  // sent already lives at /i/<id> on this origin, and the optimistic bubble is
+  // holding the local copy — both load as-is.
+  function mediaSrc(u){
+    u=String(u||"");
+    if(/^data:/.test(u)||/^\/i\//.test(u))return u;
+    return "/api/media?u="+encodeURIComponent(u);
+  }
   function openLightbox(src){
     var o=document.createElement("div");o.className="lightbox";
     o.innerHTML='<img src="'+src+'" alt="attachment"><button class="lb-close" aria-label="Close">'+ic("x",22)+'</button>';
@@ -8129,9 +8180,18 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     document.body.appendChild(o);
     navOpen("lightbox",shut);
   }
-  function resendMessage(body){
-    if(!state.phone||!body)return;
-    var payload={phone:state.phone,body:body};if(teamOn()&&meName())payload.by=meName();
+  // Resend takes the whole message, not just its words: a send that failed with a
+  // photo on it has to go back out WITH the photo, or "Resend" quietly drops the
+  // half that mattered. The photo is still in KV under the same /i/ URL, so this
+  // costs no re-upload.
+  function resendMessage(m){
+    var msg=(typeof m==="string")?{body:m}:(m||{});
+    var body=msg.body||"";
+    var media=(msg.media||[]).map(function(x){return x.url}).filter(function(u){return /^\/i\//.test(u||"")});
+    if(!state.phone||(!body&&!media.length))return;
+    var payload={phone:state.phone,body:body};
+    if(media.length)payload.media=media;
+    if(teamOn()&&meName())payload.by=meName();
     post("/api/send",payload).then(function(d){
       if(d&&d.ok){state.thread=d.thread;renderThread();refreshThreads();toast("Message resent")}
       else toast((d&&d.error)==="recipient_opted_out"?"They've opted out (texted STOP)":"Couldn't resend",{bad:true});
@@ -8226,6 +8286,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     el("sendBtn").disabled=blocked;
     el("msgInput").disabled=blocked;
     el("msgInput").placeholder=blocked?"Can't text — they opted out":"Text message";
+    var pb=el("photoBtn");if(pb)pb.disabled=blocked;
+    // Attachments belong to the conversation, not to the box — repaint them for
+    // whichever one is open now.
+    renderAtt();
 
     // A quote sitting unanswered is the most winnable money on the board — but
     // nothing ever said how long it had been sitting. Only once it's actually
@@ -8323,7 +8387,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       var shownBody=legacyAtt?(m.body||"").replace(/\n?\[\d+ attachment\(s\)\]/,"").trim():(m.body||"");
       var mediaHTML="";
       if(hasMedia){
-        mediaHTML='<div class="msg-media">'+m.media.map(function(mm){var pu="/api/media?u="+encodeURIComponent(mm.url);return (/^image\//.test(mm.type||"")||!mm.type)?'<img class="msg-img" src="'+pu+'" loading="lazy" alt="attachment">':'<a class="msg-file" href="'+pu+'" target="_blank" rel="noopener">'+ic("file-text",14)+' Attachment</a>'}).join("")+'</div>';
+        mediaHTML='<div class="msg-media">'+m.media.map(function(mm){var pu=mediaSrc(mm.url);return (/^image\//.test(mm.type||"")||!mm.type)?'<img class="msg-img" src="'+pu+'" loading="lazy" alt="attachment">':'<a class="msg-file" href="'+pu+'" target="_blank" rel="noopener">'+ic("file-text",14)+' Attachment</a>'}).join("")+'</div>';
         if(m.dir==="in"&&m.media.some(function(mm){return /^image\//.test(mm.type||"")||!mm.type}))mediaHTML+='<button class="pq-btn" data-photoquote="1">'+ic("sparkles",14)+' AI quote from photo</button>';
       }
       else if(legacyAtt){mediaHTML='<button class="load-media" data-loadmedia="1">'+ic("image",14)+' Load photo</button>';}
@@ -8336,7 +8400,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       box.appendChild(b);lastDir=m.dir;
     });
     Array.prototype.forEach.call(box.querySelectorAll("[data-resend]"),function(btn){
-      btn.onclick=function(){var mm=(t.messages||[]).find(function(x){return x.id===btn.getAttribute("data-resend")});if(mm)resendMessage(mm.body)};
+      btn.onclick=function(){var mm=(t.messages||[]).find(function(x){return x.id===btn.getAttribute("data-resend")});if(mm)resendMessage(mm)};
     });
     Array.prototype.forEach.call(box.querySelectorAll("[data-loadmedia]"),function(btn){btn.onclick=function(){backfillMedia(btn)}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-photoquote]"),function(btn){btn.onclick=function(){aiPhotoQuote(btn)}});
@@ -8775,6 +8839,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       {act:"pay",    ic:"receipt",         t:"Send a payment request", s:"Texts a link with the breakdown and every way to pay", accent:true},
       {act:"plan",   ic:"refresh-cw",      t:"Put them on a plan", s:"Every few weeks, on a rhythm — you get reminded, they get asked", accent:true},
       {act:"link",   ic:"share",           t:"Send their booking link", s:"Their own page — book, move, cancel, see past jobs. No texting you", accent:true},
+      {act:"photo",  ic:"image",           t:"Send a photo", s:"Camera roll, or one you've sent before — the price sheet, a before/after", accent:true},
       {act:"draft",  ic:"sparkles",       t:"AI draft a reply", s:"Let the AI suggest a full reply to send"},
       {act:"polish", ic:"wand",           t:"Polish my text now", s:"Don't wait for the pause — rewrite it this second"},
       {act:"tpl",    ic:"zap",            t:"Quick replies", s:"Insert one of your saved replies"},
@@ -8816,6 +8881,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         var act=row.getAttribute("data-act");
         sheet.style.display="none";
         var map={write:"writeBtn",draft:"draftBtn",polish:"polishBtn",tpl:"tplBtn",sched:"schedBtn",rem:"remBtn",mic:"micBtn"};
+        if(act==="photo"){photoRecentSheet();return}
         if(act==="reqdate"){requestDate();return}
         if(act==="plan"){planSheet();return}
         if(act==="link"){custLinkSheet();return}
@@ -9588,6 +9654,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // at that conversation, otherwise its draft so they're waiting when you return.
     if(state.phone===p.forPhone){var inp=el("msgInput");inp.value=p.body;autoGrow();updateCount();inp.focus()}
     else{drafts[p.forPhone]=p.body;saveDrafts()}
+    // The photos come back with the words. They're already uploaded, so putting
+    // them back on the tray costs nothing and losing them would cost a re-shoot.
+    if(p.atts&&p.atts.length){PHOTO.by[p.forPhone]=(PHOTO.by[p.forPhone]||[]).concat(p.atts);renderAtt()}
     if(p.payload.aiOriginal)state.lastAiText=p.payload.aiOriginal; // keep the AI-edit lesson
     toast("Held — put back in your box");
   }
@@ -9598,10 +9667,275 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   document.addEventListener("visibilitychange",function(){if(document.hidden)flushPendingSends()});
   window.addEventListener("pagehide",flushPendingSends);
 
+  // ---- photos, going out ---------------------------------------------------
+  // Half of what sells a detail is a picture — the swirl marks before, the paint
+  // after, the last truck he did that looks like theirs. Sending one has to cost
+  // exactly what typing costs: pick it, it's on the message, hit send.
+  //
+  // Three things make that true, and all three matter:
+  //   (1) The photo uploads THE MOMENT it's attached, not when Send is pressed.
+  //       A phone photo over a driveway's worth of signal takes seconds; those
+  //       seconds are spent while he's still typing, not while he's waiting.
+  //   (2) It's shrunk in the browser first. A 4MB camera photo isn't an MMS —
+  //       carriers drop or mangle anything much over half a megabyte, and the
+  //       customer sees nothing arrive with no error anywhere. See photoCompress.
+  //   (3) Attachments are held PER CONVERSATION. Tapping another thread while a
+  //       photo is queued doesn't quietly throw it away.
+  var PHOTO={by:{},seq:0,recents:null};
+  var PHOTO_MAX=10;             // Twilio's own cap on media per message
+  var PHOTO_TARGET=440000;      // bytes of base64 — ~330KB on the wire, safely under carrier limits
+  var PHOTO_RECENT_MAX=12;
+
+  function photoItems(phone){var p=phone||state.phone;if(!p)return [];return (PHOTO.by[p]=PHOTO.by[p]||[])}
+  function photoCanAdd(){return Math.max(0,PHOTO_MAX-photoItems().length)}
+
+  // Shrink to something a carrier will actually deliver. Long edge first (detail
+  // shots are wide), then quality, and it keeps stepping down rather than giving
+  // up — a photo that's too big is a photo that silently never arrives.
+  function photoCompress(file){
+    return new Promise(function(res,rej){
+      var img=new Image(),url=URL.createObjectURL(file);
+      img.onload=function(){
+        var w=img.width,h=img.height;
+        var edge=1400,q=.74,out="";
+        for(var pass=0;pass<6;pass++){
+          var sc=Math.min(1,edge/Math.max(w,h));
+          var c=document.createElement("canvas");
+          c.width=Math.max(1,Math.round(w*sc));c.height=Math.max(1,Math.round(h*sc));
+          c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+          out=c.toDataURL("image/jpeg",q);
+          if(out.length<=PHOTO_TARGET)break;
+          if(q>.44)q-=.12; else edge=Math.round(edge*.75);
+        }
+        URL.revokeObjectURL(url);
+        res(out);
+      };
+      img.onerror=function(){URL.revokeObjectURL(url);rej(new Error("bad image"))};
+      img.src=url;
+    });
+  }
+  // A postage stamp of the same photo, kept in localStorage so "send it again"
+  // can show what it is without a round trip. Deliberately tiny: twelve of these
+  // share one origin's storage with the drafts and the settings.
+  function photoThumb(dataUrl){
+    return new Promise(function(res){
+      var img=new Image();
+      img.onload=function(){
+        var sc=Math.min(1,150/Math.max(img.width,img.height));
+        var c=document.createElement("canvas");
+        c.width=Math.max(1,Math.round(img.width*sc));c.height=Math.max(1,Math.round(img.height*sc));
+        c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+        res(c.toDataURL("image/jpeg",.5));
+      };
+      img.onerror=function(){res("")};
+      img.src=dataUrl;
+    });
+  }
+
+  function photoAdd(files){
+    if(!state.phone)return;
+    var list=Array.prototype.slice.call(files||[]).filter(function(f){return f&&/^image\//.test(f.type||"")});
+    if(!list.length)return;
+    var room=photoCanAdd();
+    if(!room){toast("That's the "+PHOTO_MAX+"-photo limit for one text",{bad:true});return}
+    if(list.length>room){toast("Only "+room+" more photo"+(room===1?"":"s")+" fit on one text",{bad:true});list=list.slice(0,room)}
+    var forPhone=state.phone;
+    list.forEach(function(f){
+      var it={id:"a"+(++PHOTO.seq),state:"up",dataUrl:"",type:"image/jpeg",phone:forPhone};
+      photoItems(forPhone).push(it);
+      renderAtt();
+      photoCompress(f).then(function(dataUrl){
+        it.dataUrl=dataUrl;renderAtt();
+        return photoUpload(it);
+      }).catch(function(){it.state="err";renderAtt()});
+    });
+    renderAtt();
+  }
+
+  function photoUpload(it){
+    it.state="up";renderAtt();
+    return post("/api/send-photo",{data:it.dataUrl,type:"image/jpeg"}).then(function(d){
+      if(!d||!d.ok){
+        it.state="err";renderAtt();
+        toast(d&&d.error==="too_big"?"That photo is too big to text":"Photo didn't upload — tap it to retry",{bad:true});
+        return;
+      }
+      it.url=d.url;it.state="ok";renderAtt();
+      photoRemember(it);
+    }).catch(function(){it.state="err";renderAtt();toast("Photo didn't upload — tap it to retry",{bad:true})});
+  }
+
+  function photoDrop(id){
+    var arr=photoItems();
+    var i=arr.findIndex(function(x){return x.id===id});
+    if(i>=0)arr.splice(i,1);
+    renderAtt();
+  }
+  function photoClear(phone){if(phone)PHOTO.by[phone]=[];renderAtt()}
+
+  // Everything attached has to have landed in KV before the text can name it.
+  function photoReady(){
+    var arr=photoItems();
+    var waiting=arr.filter(function(x){return x.state==="up"});
+    if(!waiting.length)return Promise.resolve(true);
+    return new Promise(function(res){
+      var tries=0;
+      (function poll(){
+        var a=photoItems();
+        if(!a.some(function(x){return x.state==="up"}))return res(!a.some(function(x){return x.state==="err"}));
+        if(++tries>150)return res(false);   // 30s and it isn't coming
+        setTimeout(poll,200);
+      })();
+    });
+  }
+
+  function renderAtt(){
+    var tray=el("attTray");if(!tray)return;
+    var arr=photoItems();
+    var btn=el("photoBtn");if(btn)btn.classList.toggle("has",arr.length>0);
+    if(!arr.length){tray.style.display="none";tray.innerHTML="";updateCount();return}
+    tray.style.display="flex";
+    tray.innerHTML=arr.map(function(it){
+      return '<div class="att '+(it.state==="up"?"up":it.state==="err"?"err":"")+'" data-att="'+esc(it.id)+'">'+
+        (it.dataUrl?'<img src="'+esc(it.dataUrl)+'" alt="Attached photo">':"")+
+        (it.state==="up"?'<span class="sp"><span class="spin"></span></span>':"")+
+        (it.state==="err"?'<button class="retry" data-attretry="'+esc(it.id)+'">Retry</button>':"")+
+        '<button class="x" data-attx="'+esc(it.id)+'" aria-label="Remove photo">'+ic("x",12)+'</button>'+
+      '</div>';
+    }).join("")+(arr.length<PHOTO_MAX?'<button class="att-more" id="attMore" aria-label="Add another photo">'+ic("plus",18)+'</button>':"");
+    Array.prototype.forEach.call(tray.querySelectorAll("[data-attx]"),function(b){
+      b.onclick=function(e){e.stopPropagation();photoDrop(b.getAttribute("data-attx"))};
+    });
+    Array.prototype.forEach.call(tray.querySelectorAll("[data-attretry]"),function(b){
+      b.onclick=function(e){
+        e.stopPropagation();
+        var it=photoItems().find(function(x){return x.id===b.getAttribute("data-attretry")});
+        if(it&&it.dataUrl)photoUpload(it);
+      };
+    });
+    Array.prototype.forEach.call(tray.querySelectorAll(".att img"),function(im){
+      im.onclick=function(){openLightbox(im.src)};
+    });
+    var more=el("attMore");if(more)more.onclick=function(){photoPick()};
+    updateCount();
+  }
+
+  function photoPick(){
+    var inp=el("photoInput");if(!inp)return;
+    inp.value="";inp.click();
+  }
+
+  // ---- "send it again" ------------------------------------------------------
+  // The same three pictures go out every week: the price sheet, the ceramic
+  // before/after, the interior he's proudest of. They're already in KV under a
+  // URL that never expires for 13 months, so re-sending one costs no upload at
+  // all — the whole point of remembering them.
+  function photoRecents(){
+    if(PHOTO.recents)return PHOTO.recents;
+    try{PHOTO.recents=JSON.parse(localStorage.getItem("mkd-photo-recents")||"[]")||[]}catch(e){PHOTO.recents=[]}
+    return PHOTO.recents;
+  }
+  function photoRemember(it){
+    if(!it.url)return;
+    photoThumb(it.dataUrl).then(function(thumb){
+      var list=photoRecents().filter(function(x){return x.url!==it.url});
+      list.unshift({url:it.url,thumb:thumb,ts:Date.now()});
+      PHOTO.recents=list.slice(0,PHOTO_RECENT_MAX);
+      try{localStorage.setItem("mkd-photo-recents",JSON.stringify(PHOTO.recents))}
+      catch(e){ // storage full — drop the oldest half rather than lose the newest
+        PHOTO.recents=PHOTO.recents.slice(0,4);
+        try{localStorage.setItem("mkd-photo-recents",JSON.stringify(PHOTO.recents))}catch(e2){}
+      }
+    });
+  }
+  function photoRecentSheet(){
+    var list=photoRecents();
+    var h='<div class="jd-sh-title">Send a photo</div>';
+    h+='<button class="jd-btn pri" id="rcPick" style="width:100%">'+ic("image",17)+' Choose or take a photo</button>';
+    if(list.length){
+      h+='<div class="jd-sh-sub" style="margin-top:14px">Sent before — tap to put it on this text again. No upload, no waiting.</div>'+
+         '<div class="rc-grid">'+list.map(function(r,i){
+           return '<button data-rc="'+i+'" aria-label="Send this photo again"><img src="'+esc(r.thumb||r.url)+'" alt=""></button>';
+         }).join("")+'</div>';
+    }
+    var sh=jdSheetOpen(h);
+    sh.querySelector("#rcPick").onclick=function(){jdSheetClose();setTimeout(photoPick,60)};
+    Array.prototype.forEach.call(sh.querySelectorAll("[data-rc]"),function(b){
+      b.onclick=function(){
+        var r=photoRecents()[+b.getAttribute("data-rc")];if(!r)return;
+        if(!photoCanAdd())return toast("That's the "+PHOTO_MAX+"-photo limit for one text",{bad:true});
+        photoItems().push({id:"a"+(++PHOTO.seq),state:"ok",dataUrl:r.thumb||"",url:r.url,type:"image/jpeg",phone:state.phone});
+        renderAtt();jdSheetClose();vibrate(8);
+      };
+    });
+  }
+
+  function wirePhotos(){
+    var inp=el("photoInput"),btn=el("photoBtn");
+    if(btn){
+      btn.innerHTML=ic("image",21);
+      // A tap is the fast path: straight to the camera roll. Press and hold (or
+      // right-click on a desktop) opens the ones he's sent before, because the
+      // reuse case is the one that happens every week and shouldn't cost a tap
+      // that the common case doesn't.
+      var held=false,timer=null;
+      btn.onclick=function(){if(held){held=false;return}photoPick()};
+      btn.oncontextmenu=function(e){e.preventDefault();photoRecentSheet()};
+      btn.addEventListener("touchstart",function(){
+        held=false;timer=setTimeout(function(){held=true;vibrate(12);photoRecentSheet()},480);
+      },{passive:true});
+      ["touchend","touchmove","touchcancel"].forEach(function(ev){
+        btn.addEventListener(ev,function(){clearTimeout(timer)},{passive:true});
+      });
+    }
+    if(inp)inp.onchange=function(){photoAdd(inp.files);inp.value=""};
+    // Paste a screenshot straight into the box — the fastest path there is on a
+    // desktop, and it used to do nothing at all.
+    var ta=el("msgInput");
+    if(ta)ta.addEventListener("paste",function(e){
+      var items=(e.clipboardData&&e.clipboardData.items)||[];
+      var files=[];
+      for(var i=0;i<items.length;i++){
+        if(items[i].kind==="file"&&/^image\//.test(items[i].type||"")){var f=items[i].getAsFile();if(f)files.push(f)}
+      }
+      if(files.length){e.preventDefault();photoAdd(files)}
+    });
+    // Drag a photo onto the conversation from anywhere.
+    var chat=document.querySelector(".chat");
+    if(chat){
+      var depth=0;
+      chat.addEventListener("dragenter",function(e){e.preventDefault();if(++depth===1&&state.phone)chat.classList.add("dropping")});
+      chat.addEventListener("dragover",function(e){e.preventDefault()});
+      chat.addEventListener("dragleave",function(){if(--depth<=0){depth=0;chat.classList.remove("dropping")}});
+      chat.addEventListener("drop",function(e){
+        e.preventDefault();depth=0;chat.classList.remove("dropping");
+        if(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files.length)photoAdd(e.dataTransfer.files);
+      });
+    }
+  }
+
   function sendMessage(){
-    var inp=el("msgInput");var body=inp.value.trim();if(!body||!state.phone)return;
+    var inp=el("msgInput");var body=inp.value.trim();if(!state.phone)return;
+    var atts=photoItems().slice();
+    // "Here's what I did to the last one" needs no words at all — so the send is
+    // live as soon as there's either text or a photo.
+    if(!body&&!atts.length)return;
+    if(atts.some(function(x){return x.state==="err"})){
+      toast("A photo didn't upload — retry it or take it off",{bad:true});return;
+    }
+    // Attaching starts the upload, so by the time he's finished typing it has
+    // almost always landed. When it hasn't, wait for it rather than dropping it.
+    if(atts.some(function(x){return x.state==="up"})){
+      toast("Finishing your photo…");
+      photoReady().then(function(ok){
+        if(!ok)return toast("That photo didn't upload — retry it or take it off",{bad:true});
+        sendMessage();
+      });
+      return;
+    }
     if(!sendGuardsPass(body))return;
     var payload={phone:state.phone,body:body};
+    if(atts.length)payload.media=atts.map(function(x){return x.url});
     if(teamOn()&&meName())payload.by=meName(); // sign the reply with who's texting
     // If this send started from an AI draft/suggestion, pass the original so the
     // server can learn from how Mikey edited it. Used once, then cleared.
@@ -9610,12 +9944,17 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // then reconcile with the server — so a text feels instant even on slow signal.
     var tempId="tmp"+Date.now();var forPhone=state.phone;
     if(state.thread&&state.thread.phone===forPhone){
-      state.thread.messages.push({id:tempId,dir:"out",body:body,ts:Date.now(),kind:"manual",status:"sending",by:payload.by});
+      var opt={id:tempId,dir:"out",body:body,ts:Date.now(),kind:"manual",status:"sending",by:payload.by};
+      // Draw the photo from the copy already in the browser, so the bubble is
+      // there before the round trip — same reason the words are.
+      if(atts.length)opt.media=atts.map(function(x){return {url:x.dataUrl||x.url,type:x.type}});
+      state.thread.messages.push(opt);
       renderThread();
     }
-    inp.value="";clearDraft(forPhone);autoGrow();updateCount();hideAiReview();resetPolish();PK.asked="";pkOnType();
+    inp.value="";clearDraft(forPhone);autoGrow();hideAiReview();resetPolish();PK.asked="";pkOnType();
+    photoClear(forPhone);   // renderAtt() repaints the count for us
     noteSent(forPhone,body);
-    pendingSends[tempId]={payload:payload,forPhone:forPhone,body:body,
+    pendingSends[tempId]={payload:payload,forPhone:forPhone,body:body,atts:atts,
       timer:setTimeout(function(){dispatchSend(tempId)},UNDO_MS)};
     toast("Sending…",{undo:function(){cancelSend(tempId)},ms:UNDO_MS});
   }
@@ -9862,6 +10201,16 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   }
   function updateCount(){
     var v=el("msgInput").value,cc=el("charCount");
+    // A photo makes it an MMS, and segment counting stops being the truth — so
+    // say what it IS instead of quoting a per-160-character number that no longer
+    // applies to what's about to go out.
+    var np=photoItems().length;
+    if(np){
+      cc.textContent=np+" photo"+(np===1?"":"s")+" · MMS";
+      cc.style.color="var(--accent-text)";
+      cc.title="Photos send as MMS — one message, whatever you type with it.";
+      return;
+    }
     if(!v){cc.textContent="";cc.title="";cc.style.color="var(--muted2)";return}
     var s=smsInfo(v);
     cc.textContent=s.chars+" · "+s.segments+" SMS"+(s.unicode?" · unicode":"");
@@ -9917,7 +10266,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   function noteSent(phone,body){lastSentAt[phone]={body:body,ts:Date.now()}}
   function sendGuardsPass(body){
     var prev=lastSentAt[state.phone];
-    if(prev&&prev.body===body&&Date.now()-prev.ts<5*60000){
+    // No words means nothing to be a duplicate OF — two photos in a row are two
+    // different photos, not the same text sent twice.
+    if(body&&prev&&prev.body===body&&Date.now()-prev.ts<5*60000){
       if(!confirm("You just sent this exact text to "+displayName(state.thread)+".\n\nSend it again?"))return false;
     }
     var c=state.config||{},qs=c.quietStart==null?20:c.quietStart,qe=c.quietEnd==null?8:c.quietEnd;
@@ -10322,6 +10673,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   el("fab").onclick=newConversation;
   el("emptyNew").onclick=newConversation;
   el("sendBtn").onclick=sendMessage;
+  wirePhotos();
   function openDetails(){el("details").classList.add("open");el("sheetScrim").classList.add("show");navOpen("details",closeDetails)}
   function closeDetails(){navDrop("details");el("details").classList.remove("open");el("sheetScrim").classList.remove("show")}
   // Leaving a conversation: drop the thread layer (which takes the details
