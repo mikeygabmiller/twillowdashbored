@@ -132,7 +132,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-08-31·claude-voice';
+const BUILD = '2026-09-01·claude-photos';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -259,6 +259,9 @@ async function handle(request) {
   // /c/<token> — the customer's own page: what's booked, book a time, what I've done
   if (request.method === 'GET'  && pathname.startsWith('/c/'))      return custPage(pathname.slice(3).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80));
   if (request.method === 'GET'  && pathname === '/api/cust/state')  return apiCustState(url);
+  // /i/<id> — a photo he sent. Public on purpose: Twilio fetches this URL itself,
+  // with no cookie and no credentials, or the MMS never goes out. See servePhoto.
+  if (request.method === 'GET'  && pathname.startsWith('/i/'))      return servePhoto(pathname.slice(3));
   if (request.method === 'POST' && pathname === '/api/cust/action') return apiCustAction(request, url);
 
   if (request.method === 'GET'  && pathname === '/api/version')    return json({ ok: true, build: BUILD });
@@ -298,6 +301,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/ai/predict')         return apiAiPredict(request);
   if (request.method === 'GET'  && pathname === '/api/ai/usage')           return apiAiUsage(url);
   if (request.method === 'GET'  && pathname === '/api/media')      return apiMediaProxy(url);
+  if (request.method === 'POST' && pathname === '/api/send-photo') return apiSendPhotoUpload(request);
   if (request.method === 'POST' && pathname === '/api/media-backfill') return apiMediaBackfill(request);
   if (request.method === 'POST' && pathname === '/api/voicemail-backfill') return apiVoicemailBackfill(request);
   if (request.method === 'POST' && pathname === '/api/alert-test') return apiAlertTest();
@@ -2555,15 +2559,20 @@ async function apiSend(request) {
   const phone = normalizePhone(data.phone);
   const body = (data.body || '').trim();
   if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
-  if (!body) return json({ ok: false, error: 'empty_message' }, 422);
+  // A photo IS the message for a detailer — "here's what I did to the last one"
+  // needs no words. So an empty body is only empty when nothing is attached.
+  const media = await resolveOutMedia(data.media);
+  if (data.media && data.media.length && !media.length) return json({ ok: false, error: 'photo_missing' }, 422);
+  if (!body && !media.length) return json({ ok: false, error: 'empty_message' }, 422);
   // In team mode the sender's name rides along so the reply is attributed in the
   // thread ("— Alex"). Solo sends leave it blank and look exactly as before.
   const by = String(data.by || '').trim().slice(0, 40);
   const msg = { dir: 'out', body, ts: Date.now(), kind: 'manual' };
   if (by) msg.by = by;
+  if (media.length) msg.media = media;
   let r;
   try {
-    r = await sendSms(phone, body);
+    r = await sendSms(phone, body, { media });
   } catch (err) {
     const optedOut = /opted_out/.test(String((err && err.message) || err));
     return json({ ok: false, error: optedOut ? 'recipient_opted_out' : String((err && err.message) || err) }, optedOut ? 409 : 502);
@@ -2579,7 +2588,7 @@ async function apiSend(request) {
   // and it used to be dropped — the corpus only grew from drafts he accepted or
   // rewrote, so the way he opens a conversation cold was never learned until the
   // next full rebuild. Now every message he writes goes in as he sends it.
-  else if (voiceUsable(msg)) { try { await recordVoiceSample(body, 'sent'); } catch { /* non-fatal */ } }
+  else if (body && voiceUsable(msg)) { try { await recordVoiceSample(body, 'sent'); } catch { /* non-fatal */ } }
   // Two readings of the text he just sent: "see you Saturday at 10" is a job, and
   // "I'll get back to you Monday" is a promise that becomes a reminder with a
   // calendar invite. Both are best-effort, both gate on a free regex before any
@@ -5810,6 +5819,119 @@ async function apiMediaProxy(url) {
   if (!r.ok) return json({ ok: false, error: `twilio ${r.status}` }, 502);
   const ct = r.headers.get('Content-Type') || 'application/octet-stream';
   return new Response(r.body, { headers: { 'Content-Type': ct, 'Cache-Control': 'private, max-age=86400' } });
+}
+
+// ===========================================================================
+// Photos he sends — the outbound half of MMS
+// ===========================================================================
+// A detailer's whole pitch is a picture: the swirl marks before, the paint after,
+// the ceramic bottle he's about to use. Inbound photos have worked for a while
+// (see apiMediaProxy); this is the other direction.
+//
+// Twilio won't take bytes — it takes a URL that IT fetches, from the public
+// internet, with no credentials. So a photo has to be publicly readable for the
+// minute or so Twilio needs it, and it stays readable after that because the
+// same URL is what the thread bubble renders. That is why /i/<id> sits ABOVE the
+// dashboard password gate, and why the id is 128 bits of randomness rather than
+// anything countable: the URL IS the permission.
+//
+// Bytes live in KV next to the conversations. No R2 bucket to add, no second
+// binding to keep in sync, and one KV write per photo — the same budget a text
+// already costs.
+const PHOTO_TTL_DAYS = 400;      // ~13 months; a photo outlives the job it sold
+const PHOTO_MAX_BYTES = 3 * 1024 * 1024;  // Twilio's own cap is 5MB — carriers are much meaner
+const PHOTO_MAX_PER_MSG = 10;    // Twilio's limit on MediaUrl params
+const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
+function photoKey(id) { return `img:${id}`; }
+
+// Accept only ids we could have minted (jdToken alphabet), so a crafted id can
+// never reach past the img: prefix into a conversation key.
+function photoIdOk(id) { return /^[A-Za-z0-9_-]{16,40}$/.test(String(id || '')); }
+
+// Store one photo and hand back the URL Twilio will fetch it from.
+// The browser has already shrunk it (see photoCompress in the dashboard) — this
+// is the backstop for the case where it couldn't.
+async function apiSendPhotoUpload(request) {
+  const data = await readJson(request);
+  const raw = String(data.data || '');
+  // Accept either a bare base64 payload or a whole data: URL, because both are
+  // one line to produce in the browser and neither is worth a round trip to fix.
+  const m = raw.match(/^data:([^;,]+);base64,(.*)$/);
+  const type = String((m ? m[1] : data.type) || 'image/jpeg').toLowerCase();
+  const b64 = (m ? m[2] : raw).replace(/\s+/g, '');
+  if (!PHOTO_TYPES.includes(type)) return json({ ok: false, error: 'bad_type' }, 415);
+  if (!b64) return json({ ok: false, error: 'empty' }, 422);
+  let bytes;
+  try {
+    const bin = atob(b64);
+    bytes = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  } catch { return json({ ok: false, error: 'bad_data' }, 422); }
+  if (bytes.length > PHOTO_MAX_BYTES) return json({ ok: false, error: 'too_big', bytes: bytes.length }, 413);
+  const id = jdToken();
+  await kv().put(photoKey(id), bytes, {
+    metadata: { type, ts: Date.now(), name: String(data.name || '').slice(0, 80) },
+    expirationTtl: PHOTO_TTL_DAYS * 86400,
+  });
+  return json({ ok: true, id, url: `/i/${id}`, type, bytes: bytes.length });
+}
+
+// Public, unauthenticated, and deliberately so: Twilio fetches this URL from its
+// own servers with no way to carry the dashboard cookie. Immutable caching — the
+// id is minted per upload, so the bytes behind one never change.
+async function servePhoto(id) {
+  if (!photoIdOk(id)) return new Response('Not found', { status: 404 });
+  const got = await kv().getWithMetadata(photoKey(id), { type: 'arrayBuffer' });
+  if (!got || !got.value) return new Response('Not found', { status: 404 });
+  const type = (got.metadata && got.metadata.type) || 'image/jpeg';
+  return new Response(got.value, {
+    headers: {
+      'Content-Type': type,
+      'Cache-Control': 'public, max-age=31536000, immutable',
+      // A photo of someone's driveway shouldn't turn up in a search engine.
+      'X-Robots-Tag': 'noindex, noimageindex',
+    },
+  });
+}
+
+// Pull the id out of anything the dashboard might send us for a photo: "/i/<id>",
+// the absolute form, or the bare id. Anything else returns null — the point of
+// this function is that a URL the browser hands us NEVER reaches Twilio unless we
+// minted it ourselves. Otherwise "send this to a customer" would be a way to make
+// the Worker's credentials fetch an arbitrary host.
+function photoIdFromUrl(u) {
+  const s = String(u || '').trim();
+  const m = s.match(/^(?:https?:\/\/[^/]+)?\/i\/([A-Za-z0-9_-]{16,40})$/) || s.match(/^([A-Za-z0-9_-]{16,40})$/);
+  return m ? m[1] : null;
+}
+
+// Turn what the composer sent into the media list a message carries, dropping
+// anything that isn't a photo we're actually holding. A URL that 404s when Twilio
+// fetches it fails the WHOLE message (error 12300), so a missing photo is worth
+// one KV read each to catch here, where we can still say so.
+async function resolveOutMedia(list) {
+  const out = [];
+  for (const item of (Array.isArray(list) ? list : []).slice(0, PHOTO_MAX_PER_MSG)) {
+    const id = photoIdFromUrl(item && item.url ? item.url : item);
+    if (!id) continue;
+    // list(), not get(): "is it there, and what is it" without pulling a megabyte
+    // of JPEG through the Worker just to decide whether to name it in a form post.
+    const found = await kv().list({ prefix: photoKey(id), limit: 1 });
+    const row = (found.keys || [])[0];
+    if (!row || row.name !== photoKey(id)) continue;
+    out.push({ url: `/i/${id}`, type: (row.metadata && row.metadata.type) || 'image/jpeg' });
+  }
+  return out;
+}
+
+// The absolute URL Twilio has to be given. Relative is what we store (so the
+// thread keeps rendering if the worker ever moves hosts); absolute is what goes
+// out the wire.
+function photoAbsolute(u) {
+  const id = photoIdFromUrl(u);
+  const base = publicBase();
+  return (id && base) ? `${base}/i/${id}` : '';
 }
 
 // Recover attachments for messages that arrived before inbound media was captured
@@ -9671,13 +9793,19 @@ function buildIndexSummary(thread, cfg) {
     // Cheap content flags so the AI advisor/agent can filter on "has a voicemail"
     // or "sent a photo" without loading every thread body.
     hasVoicemail: (thread.messages || []).some((m) => m.kind === 'voicemail'),
-    hasMedia: (thread.messages || []).some((m) => Array.isArray(m.media) && m.media.length),
+    // Inbound only, deliberately. This flag is what makes the AI advisor say
+    // "has-photo", and it means "they showed me the car" — evidence to quote off.
+    // Photos MIKEY sends are not that, and counting them would put the flag on
+    // every conversation he ever sent a before/after to.
+    hasMedia: (thread.messages || []).some((m) => m.dir === 'in' && Array.isArray(m.media) && m.media.length),
     // One-line "what happened", mirrored so the peek renders it instantly and
     // only pays for an AI call the first time a conversation reaches a new
     // state. Goes empty the moment a new message lands, which is what makes the
     // front end ask for a fresh one — see recapFor().
     recap: (recapFor(thread) || {}).text || '',
-    lastBody: last ? preview(last.body) : '',
+    // A text that is nothing but a photo has no words to preview — say so, or the
+    // list row goes blank and the last thing that happened looks like nothing.
+    lastBody: last ? (preview(last.body) || (Array.isArray(last.media) && last.media.length ? '\uD83D\uDCF7 Photo' : '')) : '',
     lastDir: last ? last.dir : '',
     lastTs: last ? last.ts : (thread.updatedAt || Date.now()),
     awaitingReply: awaiting,
@@ -11558,13 +11686,21 @@ async function sendSms(to, body, opts = {}) {
   // Attach a delivery StatusCallback so failures surface (see handleStatusCallback).
   const base = publicBase();
   if (base && !opts.skipOptOut) form.StatusCallback = `${base}/status`;
+  const params = new URLSearchParams(form);
+  // Photos ride as repeated MediaUrl params — Twilio fetches each one itself, so
+  // every URL here must be publicly readable (that's what /i/<id> is for) and must
+  // be one WE minted. resolveOutMedia is the gate; this only carries what it passed.
+  for (const u of (opts.media || []).slice(0, PHOTO_MAX_PER_MSG)) {
+    const abs = photoAbsolute(u && u.url ? u.url : u);
+    if (abs) params.append('MediaUrl', abs);
+  }
   const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Messages.json`, {
     method: 'POST',
     headers: {
       'Authorization': `Basic ${btoa(`${sid}:${token}`)}`,
       'Content-Type': 'application/x-www-form-urlencoded',
     },
-    body: new URLSearchParams(form),
+    body: params,
   });
   if (!res.ok) throw new Error(`Twilio ${res.status}: ${await res.text()}`);
   return res.json();
