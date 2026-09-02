@@ -798,6 +798,48 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     --nx-when:#8a5312;--nx-ab:#fdefdd;--nx-ad:#e2bc92;--nx-af:#75430f;
     --nx-gb:#f7f1fc;--nx-gd:#d8c5e9;--nx-gf:#57376f;--nx-ga:#8354ad;
     --nx-cb:#f4f6f8;--nx-cd:#d7dbe2;--nx-wb:#fdecee;--nx-wd:#f0c4ca;--nx-wf:#9c2436}
+  /* ---- "That's the day" — the wind-down, in the next-stop card's slot ----
+     Every other surface in this app exists to say what still needs him. When
+     the run is finished the honest answer is "nothing", and Home used to
+     answer that by going blank — which reads like something failed to load,
+     not like permission to stop. Cool where the next-stop card is warm, and
+     nothing on it moves: this is the one card that isn't asking for anything. */
+  .done-card{--dn-bg:linear-gradient(160deg,#101a19,#141416 62%);--dn-bd:#20423c;--dn-ac:#6fd3b8;
+    --dn-ti:var(--text);--dn-su:var(--muted);--dn-when:#a9e6d3;
+    --dn-cb:#1a2124;--dn-cd:#2e3b3b;--dn-qb:#122120;--dn-qd:#26463f;--dn-qf:#cdeee1;
+    background:var(--dn-bg);border:1px solid var(--dn-bd);
+    border-radius:18px;padding:15px 15px 13px;margin-bottom:12px}
+  .done-card .dn-h{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:800;
+    letter-spacing:.1em;text-transform:uppercase;color:var(--dn-ac);margin-bottom:10px}
+  .done-card .dn-h .dn-when{margin-left:auto;letter-spacing:0;text-transform:none;font-size:12px;
+    font-weight:700;color:var(--dn-when)}
+  .done-card .dn-big{font-size:19px;font-weight:800;letter-spacing:-.02em;color:var(--dn-ti);line-height:1.15}
+  .done-card .dn-sub{font-size:12.5px;color:var(--dn-su);margin-top:3px}
+  .done-card .dn-quiet{display:flex;align-items:center;gap:11px;width:100%;margin-top:12px;
+    background:var(--dn-qb);border:1px solid var(--dn-qd);border-radius:13px;padding:13px 14px;
+    text-align:left;color:var(--dn-qf);font-size:13.5px;font-weight:600;line-height:1.35}
+  .done-card .dn-quiet .dn-qi{color:var(--dn-ac);flex:none;display:flex}
+  .done-card .dn-quiet .dn-qt{flex:1;min-width:0}
+  .done-card .dn-quiet .dn-qt b{font-weight:800}
+  .done-card .dn-quiet .dn-qg{flex:none;font-size:11px;font-weight:800;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--dn-ac)}
+  .done-card .dn-next{display:flex;align-items:flex-start;gap:8px;margin-top:11px;
+    font-size:12.5px;color:var(--dn-su);line-height:1.4}
+  .done-card .dn-next .ic-svg{flex:none;margin-top:1px;color:var(--dn-ac)}
+  .done-card .dn-next b{color:var(--dn-ti);font-weight:700}
+  .done-card .dn-acts{display:flex;gap:7px;margin-top:11px}
+  .done-card .dn-acts button{flex:1;background:var(--dn-cb);border:1px solid var(--dn-cd);
+    color:var(--dn-ti);border-radius:10px;padding:9px;font-size:12.5px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;gap:6px}
+  /* Daylight, same as its warm twin — a 4pm finish is read in the sun. */
+  @media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .done-card{
+    --dn-bg:linear-gradient(160deg,#eef7f2,#fdfefd 62%);--dn-bd:#cde2d8;--dn-ac:#16755a;
+    --dn-when:#1a6650;--dn-cb:#f4f6f8;--dn-cd:#d7dbe2;
+    --dn-qb:#e7f4ee;--dn-qd:#bbdecf;--dn-qf:#17513f}}
+  :root[data-theme="light"] .done-card{
+    --dn-bg:linear-gradient(160deg,#eef7f2,#fdfefd 62%);--dn-bd:#cde2d8;--dn-ac:#16755a;
+    --dn-when:#1a6650;--dn-cb:#f4f6f8;--dn-cd:#d7dbe2;
+    --dn-qb:#e7f4ee;--dn-qd:#bbdecf;--dn-qf:#17513f}
   /* The same facts, compacted, at the top of that customer's conversation. */
   .job-banner{--jb-bg:#1c1610;--jb-bd:#46331f;--jb-ac:#f0a35e;--jb-fg:#f0dcc6;--jb-ti:#ffe9d2;
     --jb-gb:#4a3218;--jb-gd:#6b4a24;
@@ -4096,7 +4138,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-01·claude-photos";
+  var APP_BUILD="2026-09-02·claude-winddown";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -5712,6 +5754,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var dateLine=new Date().toLocaleDateString([],{weekday:"long",month:"long",day:"numeric"});
     var h='<div class="home"><div class="home-head"><div class="hh-greet">'+greeting()+', Mikey</div><div class="hh-sub">'+esc(dateLine)+'</div></div>';
     h+=homeNextWidget();          // where you're going — always first, never hidden
+    h+=homeWindDown(waiting);     // ...and when there is nowhere left to go, that the day is done
     // Who is waiting comes before the ask-anything box, on the evidence: over
     // 90 days Today was opened 101 times and walked straight back out of 68 of
     // them, and its single most-pushed control — the most-pushed control in the
@@ -5819,6 +5862,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       }});
     Array.prototype.forEach.call(box.querySelectorAll("[data-next-run]"),function(b){
       b.onclick=function(){vibrate(6);openJobs("run")}});
+    // The wind-down's one new control: tomorrow's board, on tomorrow's date.
+    // JD.day is cleared so the run view refetches instead of drawing today's.
+    Array.prototype.forEach.call(box.querySelectorAll("[data-wd-tom]"),function(b){
+      b.onclick=function(){vibrate(6);JD.date=b.getAttribute("data-wd-tom");JD.day=null;openJobs("run")}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-save-addr]"),function(b){
       b.onclick=function(){
         b.disabled=true;b.textContent="Saving…";
@@ -5838,6 +5885,106 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       g.address=address;
       return post("/api/meta",{phone:phone,garage:g});
     }).then(function(r){then(!!(r&&r.ok))}).catch(function(){then(false)});
+  }
+
+  // ===== "That's the day" — the wind-down ====================================
+  // The other half of the next-stop card, in the same slot. All day this screen
+  // answers "where am I going"; when there's nowhere left to go it used to
+  // answer with nothing at all, and a blank space at 6pm reads like a failed
+  // fetch rather than a finished day. So the board being clear gets said out
+  // loud, with the two things he'd otherwise pick the phone back up to check:
+  // what today actually came to, and whether anybody is still waiting on him.
+  //
+  // Tomorrow costs a second /api/day, so it's only fetched once this card is
+  // already on screen — a normal working day never pays for it.
+  var TOM={date:"",day:null,fetching:false};
+  function tomorrowStr(){return jdDstr(new Date(Date.now()+86400000))}
+  function tomorrowDay(){return TOM.date===tomorrowStr()?TOM.day:null}
+  function loadTomorrow(){
+    if(TOM.fetching||tomorrowDay())return;
+    var ds=tomorrowStr();
+    TOM.fetching=true;
+    api("/api/day?date="+encodeURIComponent(ds)).then(function(d){
+      TOM.fetching=false;
+      if(d&&d.ok&&d.jobs){TOM.date=ds;TOM.day=d;if(state.tab==="home")renderHome()}
+    }).catch(function(){TOM.fetching=false});
+  }
+  // The stop tomorrow starts on — same rule as nextStop(), one day over.
+  function tomorrowFirst(){
+    var d=tomorrowDay();if(!d||!d.jobs)return null;
+    for(var i=0;i<d.jobs.length;i++){var j=d.jobs[i];if(j.state!=="done"&&j.state!=="skipped")return j}
+    return null;
+  }
+  function tomorrowLine(){
+    var d=tomorrowDay();
+    if(!d)return "";                    // still loading — better silent than wrong
+    var j=tomorrowFirst();
+    if(!j)return '<div class="dn-next">'+ic("sun",14)+'<span>Tomorrow is clear.</span></div>';
+    var n=d.jobs.filter(function(x){return x.state!=="skipped"}).length,t=jd12(j.slot);
+    return '<div class="dn-next">'+ic("sun",14)+'<span>Tomorrow: <b>'+n+' stop'+(n===1?"":"s")+
+      '</b>, starting <b>'+esc(t[0]+" "+t[1])+'</b> with <b>'+esc(j.name||"a job")+'</b>'+
+      (j.city?' in '+esc(j.city):'')+'.</span></div>';
+  }
+  // The question that keeps a phone in his hand at 9pm. Follow-ups, rebook
+  // nudges and cold-lead revivals deliberately don't count here: those are the
+  // app's own suggestions, and a suggestion can wait for morning. Only somebody
+  // who actually said something and hasn't been answered is really waiting.
+  function windDownQuiet(waiting){
+    var w=waiting||[];
+    if(!w.length)return '<div class="dn-quiet"><span class="dn-qi">'+ic("moon",18)+'</span>'+
+      '<span class="dn-qt">Nobody is waiting on you. It will all keep till morning.</span></div>';
+    var t=w[0],more=w.length-1;
+    return '<button class="dn-quiet" data-open="'+esc(t.phone)+'"><span class="dn-qi">'+ic("message-square",18)+'</span>'+
+      '<span class="dn-qt"><b>'+esc(displayName(t))+'</b> is still waiting on a reply'+
+      (more?', and '+more+' other'+(more===1?"":"s"):"")+'. Everything else can keep till morning.</span>'+
+      '<span class="dn-qg">Open</span></button>';
+  }
+  function homeWindDown(waiting){
+    if(!NEXT.day)return "";             // the next-stop card owns the loading state
+    if(nextStop())return "";            // there's still a stop to make — not this card's slot
+    var jobs=NEXT.day.jobs||[],sum=NEXT.day.summary||{};
+    var done=jobs.filter(function(j){return j.state==="done"});
+    loadTomorrow();
+    var first=tomorrowFirst(),ds=tomorrowStr();
+    var tomBtn=first?'<button data-wd-tom="'+esc(ds)+'">'+ic("sun",15)+'Tomorrow</button>':'';
+
+    // A day with nothing on the board was never finished — there's nothing to
+    // close out. It still gets the useful half: where tomorrow starts. And if
+    // tomorrow is empty too there is genuinely nothing to say, so say nothing.
+    if(!jobs.length){
+      if(!first)return "";
+      var ft=jd12(first.slot);
+      return '<div class="done-card">'+
+        '<div class="dn-h">'+ic("moon",14)+'Nothing on the board today<span class="dn-when">Next up</span></div>'+
+        '<div class="dn-big">'+esc(first.name||"Job")+', tomorrow at '+esc(ft[0]+" "+ft[1])+'</div>'+
+        (first.city?'<div class="dn-sub">'+esc(first.city)+'</div>':'')+
+        windDownQuiet(waiting)+
+        '<div class="dn-acts">'+tomBtn+'</div></div>';
+    }
+
+    // When he ran the board, the day has a shape: when he started, when he
+    // finished, and what it came to. Times come off the run states he already
+    // tapped, so nothing new has to be recorded to get them.
+    var startTs=0,endTs=0;
+    done.forEach(function(j){
+      var s=j.startedAt||j.enrouteAt||0;
+      if(s&&(!startTs||s<startTs))startTs=s;
+      if(j.doneAt>endTs)endTs=j.doneAt;
+    });
+    var clock=function(ts){return new Date(ts).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})};
+    var bits=[];
+    if(sum.earned>0)bits.push(fmtMoney(sum.earned)+" in");
+    if(startTs&&endTs&&endTs>startTs)bits.push(clock(startTs)+" to "+clock(endTs));
+    var big=done.length
+      ? done.length+' stop'+(done.length===1?"":"s")+', finished.'
+      : 'The board is clear.';
+    return '<div class="done-card">'+
+      '<div class="dn-h">'+ic("check-circle",14)+"That's the day"+'</div>'+
+      '<div class="dn-big">'+esc(big)+'</div>'+
+      (bits.length?'<div class="dn-sub">'+esc(bits.join(" · "))+'</div>':'')+
+      windDownQuiet(waiting)+
+      tomorrowLine()+
+      '<div class="dn-acts"><button data-next-run="1">'+ic("route",15)+"Today's board"+'</button>'+tomBtn+'</div></div>';
   }
 
   // Job Day pieces that live on Home: the brief card and the push nudge.
@@ -5923,8 +6070,14 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   var COLD={data:null,fetching:false,at:0,group:"all"};
   function loadCold(force){
     if(COLD.fetching)return;
-    if(!force&&COLD.data&&Date.now()-COLD.at<180000)return;
-    COLD.fetching=true;
+    // The hold has to be on the ATTEMPT, not on the answer. Home redraws every
+    // time any fetch lands, this is called from that redraw, and an answer that
+    // fails the shape-check below never moved COLD.at — so the older Worker the
+    // comment below anticipates didn't just blank the widget, it put the screen
+    // in a fetch/render loop firing hundreds of requests a second for as long as
+    // Home was open. A rejected answer now buys a quiet minute like any other.
+    if(!force&&COLD.at&&Date.now()-COLD.at<(COLD.data?180000:60000))return;
+    COLD.fetching=true;COLD.at=Date.now();
     api("/api/cold").then(function(d){
       COLD.fetching=false;
       // Shape-check, not just ok-check: a rolling deploy can answer ok from an
@@ -15816,8 +15969,11 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   var BRIEF={data:null,at:0,loading:false};
   function loadBrief(force,then){
     if(BRIEF.loading)return;
-    if(BRIEF.data&&!force&&Date.now()-BRIEF.at<600000){if(then)then();return}
-    BRIEF.loading=true;
+    // Attempt-held, not answer-held — same reason as loadCold: the card asks for
+    // a brief every time it draws, and a brief that comes back without one used
+    // to make every draw ask again, forever.
+    if(!force&&BRIEF.at&&Date.now()-BRIEF.at<(BRIEF.data?600000:60000)){if(then)then();return}
+    BRIEF.loading=true;BRIEF.at=Date.now();
     api("/api/brief").then(function(d){
       BRIEF.loading=false;
       if(d&&d.ok){BRIEF.data=d.brief;BRIEF.text=d.text;BRIEF.at=Date.now()}
@@ -16012,7 +16168,14 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Home nudge — shown once until enabled or dismissed.
   function homePushWidget(){
     if(!pushSupported()||PUSH.state==="on"||PUSH.state==="unsupported"||pushDismissed())return "";
-    if(PUSH.state==="unknown"){pushRefresh();return ""}
+    // Asking once per repaint is asking hundreds of times a second. The state
+    // stays "unknown" for as long as the service worker registration never
+    // arrives — a private window, a failed install — so the ask is spaced out
+    // rather than tied to the draw.
+    if(PUSH.state==="unknown"){
+      if(!PUSH.askedAt||Date.now()-PUSH.askedAt>20000){PUSH.askedAt=Date.now();pushRefresh()}
+      return "";
+    }
     return '<div class="pn-card"><div class="t">'+ic("bell",18)+' Get texts the second they land</div>'+
       '<div class="s">'+(PUSH.state==="blocked"
         ? 'Notifications are blocked for this app. Turn them on in your phone settings, then tap below.'
