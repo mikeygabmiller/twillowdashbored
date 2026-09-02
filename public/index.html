@@ -1123,6 +1123,22 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .wx-day .wd-e{font-size:21px;margin:3px 0}
   .wx-day .wd-t{font-size:11.5px;font-weight:700}
   .wx-day .wd-dot{width:6px;height:6px;border-radius:50%;margin:5px auto 0}
+  .wx-day .wd-j{font-size:9.5px;font-weight:800;color:var(--muted2);margin-top:4px;letter-spacing:-.01em}
+  .wx-day .wd-j.none{opacity:.35}
+  .wx-day .wd-j.risk{color:#fb7185}
+  /* A day with a job in the rain is the one thing on this card worth a ring. */
+  .wx-day.atrisk{background:rgba(251,113,133,.10);box-shadow:inset 0 0 0 1px rgba(251,113,133,.38)}
+  .wx-alert{background:rgba(251,113,133,.10);border:1px solid rgba(251,113,133,.32);
+    border-radius:13px;padding:11px 12px;margin-bottom:13px}
+  .wx-alert .wa-h{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:800;color:#fb7185;margin-bottom:9px}
+  .wx-risk-row{display:flex;align-items:center;gap:9px;padding:6px 0;border-top:1px solid rgba(251,113,133,.18)}
+  .wx-risk-row .wr-when{font-size:11px;font-weight:800;color:var(--muted2);flex:none;min-width:74px;font-variant-numeric:tabular-nums}
+  .wx-risk-row .wr-who{font-size:12.5px;font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .wx-risk-row .wr-pct{font-size:12px;font-weight:800;color:#fb7185;flex:none;font-variant-numeric:tabular-nums}
+  .wx-risk-row .wr-btn{flex:none;display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:800;
+    color:var(--accent-text);background:var(--accent-soft);border:0;border-radius:9px;padding:6px 9px;cursor:pointer;font-family:inherit}
+  .wx-risk-row .wr-btn:active{transform:scale(.95)}
+  .wx-alert .wa-note{font-size:11px;color:var(--muted2);margin-top:9px;line-height:1.45}
 
   /* Tasks / scratchpad */
   .tk-add{display:flex;gap:8px;margin-bottom:11px}
@@ -4096,7 +4112,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-01·claude-photos";
+  var APP_BUILD="2026-09-02·rain-check";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -6079,10 +6095,6 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Weather planner — a mobile detailer lives and dies by the sky. Free Open-Meteo
   // forecast (no key), scored for detailing (rain/wind = bad). Cached per session.
   var WX={data:null,loading:false,err:false};
-  function wxScore(code,pop,wind){ // WMO code, precip %, wind mph
-    if(code>=61||code>=71&&code<=86||[95,96,99].indexOf(code)>=0)return 0;
-    if(pop>=55||wind>=22)return 1; if(pop>=30||code>=51||wind>=15)return 2; return 3;
-  }
   // WMO weather code → Lucide icon name + a tint that suits it.
   function wxIcon(code,size){size=size||20;
     var n="cloud-sun",c="var(--gold)";
@@ -6096,34 +6108,83 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     return '<span class="wx-i" style="color:'+c+'">'+ic(n,size)+'</span>';
   }
   function homeWeatherWidget(){
-    var head='<div class="wc-h"><span class="wc-ic">'+ic("activity",18)+'</span><span class="wc-t">Weather planner</span><span class="wc-badge">Snohomish</span></div>';
+    var head='<div class="wc-h"><span class="wc-ic">'+ic("activity",18)+'</span><span class="wc-t">Weather planner</span><span class="wc-badge">'+esc((WX.data&&WX.data.place)||"Snohomish")+'</span></div>';
     if(WX.err)return '<div class="wcard">'+head+'<div class="wc-empty">'+ic("info",15)+' Couldn’t load the forecast right now.</div></div>';
     if(!WX.data)return '<div class="wcard">'+head+'<div class="wc-empty"><span class="spin"></span> Loading forecast…</div></div>';
     var d=WX.data;var sc=["bad","bad","ok","good"];var lbl=["Not today","Poor","Fair","Great day to detail"];
-    var s0=wxScore(d.today.code,d.today.pop,d.today.wind);
-    var days=d.days.map(function(day){var sc2=wxScore(day.code,day.pop,day.wind);var col=["#fb7185","#fb7185","#fbbf24","#34d399"][sc2];
-      return '<div class="wx-day"><div class="wd-d">'+esc(day.dow)+'</div><div class="wd-e">'+wxIcon(day.code,22)+'</div><div class="wd-t">'+Math.round(day.hi)+'°/'+Math.round(day.lo)+'°</div><div class="wd-dot" style="background:'+col+'"></div></div>';}).join("");
-    return '<div class="wcard">'+head+
-      '<div class="wx-today"><span class="wx-emoji">'+wxIcon(d.today.code,34)+'</span><div class="wx-tb"><div class="wx-temp">'+Math.round(d.today.temp)+'°F</div>'+
-      '<div class="wx-desc">'+esc(d.today.desc)+' · '+d.today.pop+'% rain · '+Math.round(d.today.wind)+' mph wind</div></div>'+
-      '<span class="wx-score '+sc[s0]+'">'+lbl[s0]+'</span></div>'+
+    var days=(d.days||[]).map(function(day){var col=["#fb7185","#fb7185","#fbbf24","#34d399"][day.score];
+      // The job count is the whole point of the strip now: a bad day with
+      // nothing on it is weather, a bad day with a job on it is a decision.
+      var pip=day.jobs.length?'<div class="wd-j'+(day.atRisk?" risk":"")+'">'+day.jobs.length+(day.jobs.length>1?" jobs":" job")+'</div>':'<div class="wd-j none">—</div>';
+      return '<div class="wx-day'+(day.atRisk?" atrisk":"")+'"><div class="wd-d">'+esc(day.dow)+'</div><div class="wd-e">'+wxIcon(day.code,22)+'</div><div class="wd-t">'+Math.round(day.hi)+'°/'+Math.round(day.lo)+'°</div>'+pip+'<div class="wd-dot" style="background:'+col+'"></div></div>';}).join("");
+    // Rain over a booked job comes first, above the pretty forecast — it is the
+    // only part of the sky that costs money, and it is the only part he can act
+    // on. Every button here only ever DRAFTS a text; nothing is sent from a
+    // forecast.
+    var risk=wxRiskBlock(d.atRisk);
+    return '<div class="wcard">'+head+risk+
+      '<div class="wx-today"><span class="wx-emoji">'+wxIcon(d.current.code,34)+'</span><div class="wx-tb"><div class="wx-temp">'+Math.round(d.current.temp)+'°F</div>'+
+      '<div class="wx-desc">'+esc(d.current.desc)+' · '+d.current.pop+'% rain · '+Math.round(d.current.wind)+' mph wind</div></div>'+
+      '<span class="wx-score '+sc[d.current.score]+'">'+lbl[d.current.score]+'</span></div>'+
       '<div class="wx-days">'+days+'</div></div>';
   }
-  function wxLoad(){
-    if(WX.data||WX.loading)return;WX.loading=true;
-    // Snohomish, WA. Open-Meteo is free + keyless + CORS-enabled.
-    var u="https://api.open-meteo.com/v1/forecast?latitude=47.913&longitude=-122.098&current=temperature_2m,weather_code,precipitation_probability,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America%2FLos_Angeles&forecast_days=5";
-    fetch(u).then(function(r){return r.json()}).then(function(j){
-      if(!j||!j.daily){WX.err=true;WX.loading=false;if(state.tab==="home")renderHome();return}
-      var wc=WMO_DESC;var c=j.current||{};
-      WX.data={today:{temp:c.temperature_2m,code:c.weather_code,pop:c.precipitation_probability||j.daily.precipitation_probability_max[0]||0,wind:c.wind_speed_10m||0,desc:(wc[c.weather_code]||"—")},days:[]};
-      var dn=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-      for(var i=0;i<j.daily.time.length;i++){var dt=new Date(j.daily.time[i]+"T12:00:00");
-        WX.data.days.push({dow:i===0?"Today":dn[dt.getDay()],code:j.daily.weather_code[i],hi:j.daily.temperature_2m_max[i],lo:j.daily.temperature_2m_min[i],pop:j.daily.precipitation_probability_max[i]||0,wind:j.daily.wind_speed_10m_max[i]||0});}
-      WX.loading=false;if(state.tab==="home")renderHome();
-    }).catch(function(){WX.err=true;WX.loading=false;if(state.tab==="home")renderHome();});
+  // The at-risk rows render on the weather card, on the Home brief and in the
+  // day-brief sheet, so they are written once. Both feeds are the same server
+  // logic, which is why looking a phone number up across either is safe.
+  function wxRiskRows(list){
+    return (list||[]).map(function(r){
+      var t=r.slot?jd12(r.slot):null;
+      return '<div class="wx-risk-row"><div class="wr-when">'+esc(r.dow||"")+(t?' · '+t[0]+' '+t[1]:'')+'</div>'+
+        '<div class="wr-who">'+esc(r.name||r.phone||"Job")+'</div>'+
+        '<div class="wr-pct">'+r.rainRisk+'%</div>'+
+        (r.phone?'<button class="wr-btn" data-wx-text="'+esc(r.phone)+'">'+ic("message-square",14)+' Heads-up</button>':'')+'</div>';
+    }).join("");
   }
-  var WMO_DESC={0:"Clear sky",1:"Mostly clear",2:"Partly cloudy",3:"Overcast",45:"Fog",48:"Rime fog",51:"Light drizzle",53:"Drizzle",55:"Heavy drizzle",61:"Light rain",63:"Rain",65:"Heavy rain",71:"Light snow",73:"Snow",75:"Heavy snow",80:"Rain showers",81:"Rain showers",82:"Violent showers",95:"Thunderstorm",96:"Storm w/ hail",99:"Storm w/ hail"};
+  function wxRiskBlock(list){
+    if(!list||!list.length)return "";
+    return '<div class="wx-alert">'+
+      '<div class="wa-h">'+ic("cloud-rain",16)+' Rain on '+list.length+' booked job'+(list.length>1?"s":"")+'</div>'+
+      wxRiskRows(list)+
+      '<div class="wa-note">Tapping one opens the conversation with a heads-up already typed. Nothing sends on its own.</div>'+
+    '</div>';
+  }
+  // Rain on a booked job → the conversation, with the heads-up already typed.
+  // Seeding the box is as far as this ever goes: he reads it, edits it, sends
+  // it. A forecast is not consent to text somebody.
+  function wireWxRisk(box){
+    Array.prototype.forEach.call(box.querySelectorAll("[data-wx-text]"),function(btn){
+      btn.onclick=function(){
+        var ph=btn.getAttribute("data-wx-text");
+        var row=wxRiskFind(ph);
+        if(row&&row.draft)seedDraft(ph,row.draft);
+        vibrate(6);jdSheetClose();closeJobs();closeMore();setTab("messages");openThread(ph);
+      };
+    });
+  }
+  // Whichever feed has it — the weather card fetches the week itself, the brief
+  // carries the same list so Home can warn him without the card being on screen.
+  function wxRiskFind(phone){
+    var all=((WX.data&&WX.data.atRisk)||[]).concat((BRIEF.data&&BRIEF.data.weekRisk)||[]);
+    return all.filter(function(r){return r.phone===phone})[0]||null;
+  }
+  // The forecast now comes back through the Worker rather than straight from
+  // the browser, because the browser has no idea who is booked on Thursday. The
+  // server joins the two and caches the Open-Meteo call at the edge, so the
+  // widget, the day brief and the 6am email can never quote different numbers.
+  function wxLoad(force){
+    if((WX.data&&!force)||WX.loading)return;WX.loading=true;
+    api("/api/weather/outlook?days=7").then(function(j){
+      WX.loading=false;
+      if(!j||!j.ok||!j.outlook){WX.err=true;wxRepaint();return}
+      WX.err=false;WX.data=j.outlook;wxRepaint();
+    }).catch(function(){WX.err=true;WX.loading=false;wxRepaint()});
+  }
+  // It renders in two places (Home and More -> Day tools); repaint whichever
+  // one is actually on screen.
+  function wxRepaint(){
+    if(state.tab==="home")renderHome();
+    if(MORE&&MORE.view==="daytool"&&DAYTOOL.key==="weather"&&el("moreApp")&&el("moreApp").classList.contains("show"))mrRender();
+  }
   // To-do list — a persistent daily checklist (localStorage). Simple, used daily.
   function homeTasks(){try{return JSON.parse(localStorage.getItem("mkd-tasks")||"[]")}catch(e){return[]}}
   function homeSaveTasks(t){try{localStorage.setItem("mkd-tasks",JSON.stringify(t))}catch(e){}}
@@ -6249,13 +6310,14 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // box has to repaint whichever one you are looking at, so every handler that
   // changes something calls this instead of homeRepaint() directly.
   function homeRepaint(){
-    homeRepaint();
+    renderHome();
     if(MORE.view==="daytool"&&el("moreApp").classList.contains("show"))mrRender();
   }
   // Wire up the interactive widgets after Home renders.
   function wireHomeWidgets(box){
     // Weather: kick off the fetch lazily the first time the widget is on screen.
     if(box.querySelector('[data-hwidget="weather"]'))wxLoad();
+    wireWxRisk(box);
     // Money on the table: open the whole list, or jump straight into one person
     // with the text already in the box.
     var ca=box.querySelector("#coldAll");
@@ -15836,13 +15898,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       '<div class="br-tile"><div class="v">'+b.counts.waiting+'</div><div class="l">Waiting</div></div>'+
       '<div class="br-tile"><div class="v">'+b.counts.followups+'</div><div class="l">Nudges</div></div></div>';
     if(b.weather)h+='<div class="br-wx">'+ic("cloud-sun",15)+esc(b.weather.line)+'</div>';
-    if(b.risky&&b.risky.length){
-      h+='<div class="jd-sec">'+ic("cloud-rain",14)+' Rain risk today</div>';
-      b.risky.forEach(function(r){
-        h+='<div class="jd-item"><div class="av" style="background:var(--blue)">'+ic("cloud-rain",17)+'</div>'+
-          '<div class="mid"><div class="nm">'+esc(r.name||"Job")+'</div><div class="sb">'+jd12(r.slot)[0]+' '+jd12(r.slot)[1]+' — '+r.risk+'% chance of rain</div></div></div>';
-      });
-      h+='<div class="jd-note">Worth a heads-up text so nobody\'s surprised. Interior-only work is usually still fine.</div>';
+    if(b.weekRisk&&b.weekRisk.length){
+      h+='<div class="jd-sec">'+ic("cloud-rain",14)+' Rain on the jobs you\'ve booked</div>'+wxRiskBlock(b.weekRisk)+
+        '<div class="jd-note">Interior-only work is usually still fine — this is about the ones where the paint has to dry.</div>';
     }
     h+='<div class="jd-sec">'+ic("dollar",14)+' Money</div>'+
       '<div class="br-tiles"><div class="br-tile"><div class="v">$'+b.money.yesterday+'</div><div class="l">Yesterday</div></div>'+
@@ -15854,6 +15912,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var s=jdSheetOpen(h);
     s.querySelector("#brClose").onclick=jdSheetClose;
     s.querySelector("#brCopy").onclick=function(){jdCopy(BRIEF.text||"","Brief copied")};
+    wireWxRisk(s);
   }
 
   // Home widget — the brief, inline, where he already looks first.
@@ -15870,12 +15929,15 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       '<div class="br-tile"><div class="v">$'+b.summary.booked+'</div><div class="l">Booked</div></div>'+
       '<div class="br-tile"><div class="v">'+b.counts.waiting+'</div><div class="l">Waiting</div></div>'+
       '<div class="br-tile"><div class="v">$'+b.money.owed+'</div><div class="l">Owed</div></div></div>';
+    // The weather planner is a widget he has to go and open; this is the card
+    // that is always on Home. A job in the rain three days out belongs here.
+    h+=wxRiskBlock(b.weekRisk);
     if(b.jobs.length){
       h+='<div class="br-jobs">';
       b.jobs.slice(0,4).forEach(function(j){
         var t=jd12(j.slot);
         h+='<div class="br-job"><span class="tm">'+t[0]+' '+t[1]+'</span><span class="nm">'+esc(j.name||"Job")+(j.city?' · '+esc(j.city):'')+'</span>'+
-          (j.rainRisk>=45?'<span class="rn">'+j.rainRisk+'% rain</span>':(j.price?'<span class="rn" style="color:var(--muted2)">$'+j.price+'</span>':''))+'</div>';
+          (j.rainRisk>=(b.riskAt||45)?'<span class="rn">'+j.rainRisk+'% rain</span>':(j.price?'<span class="rn" style="color:var(--muted2)">$'+j.price+'</span>':''))+'</div>';
       });
       h+='</div>';
     }

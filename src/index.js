@@ -132,7 +132,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-01·claude-photos';
+const BUILD = '2026-09-02·rain-check';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -452,7 +452,9 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/photos/img')     return apiPhotoImg(url);
   if (request.method === 'POST' && pathname === '/api/photos/delete')  return apiPhotoDelete(request);
   // Daily brief
-  if (request.method === 'GET'  && pathname === '/api/brief')          return apiBrief(url);
+  if (request.method === 'GET'  && pathname === '/api/brief')          return apiBrief();
+  // Rain check — the week's forecast read against the jobs on the books
+  if (request.method === 'GET'  && pathname === '/api/weather/outlook') return apiWeatherOutlook(url);
 
   // Static assets (the dashboard at "/") are served by Cloudflare's asset
   // layer before the Worker, so anything reaching here is an unknown route.
@@ -14535,7 +14537,198 @@ function jobRainRisk(wx, date, slot, durationMin) {
   } catch { return 0; }
 }
 
-async function buildBrief(kind = 'day') {
+// ===========================================================================
+// 10b · RAIN CHECK — the forecast, read against the jobs he already booked
+// ===========================================================================
+// The weather planner used to tell him it was going to rain Thursday. It could
+// not tell him that Thursday is the day Jenna is booked at 10, which is the
+// only reason the rain matters. A wet detail is a job that has to be redone or
+// refunded, and finding out on the morning of costs the drive as well.
+//
+// So this reads the same free Open-Meteo forecast against the booking list and
+// the appointments locked in over text, scores the risk over the hours each job
+// actually occupies, and hands back the days ahead with the jobs sitting on
+// them. Nothing here writes to KV, and nothing here texts anybody: the most it
+// produces is a *drafted* heads-up he taps to send. Weather is a reason to ask
+// a customer, never a reason to move their day for them.
+
+// The line between "watch it" and "do something about it". The brief has always
+// used 45%; the planner and the brief now read it from the same place, so they
+// can't disagree about which jobs are the risky ones.
+const WX_RISK_AT = 45;
+
+// Same shape of judgement the day strip has always made, moved to the server so
+// that "which day should I offer them instead" and the dot on the strip are one
+// answer. 3 = great day to detail, 0 = don't bother.
+function wxDayScore(code, pop, wind) {
+  if (code >= 61 || (code >= 71 && code <= 86) || [95, 96, 99].includes(code)) return 0;
+  if (pop >= 55 || wind >= 22) return 1;
+  if (pop >= 30 || code >= 51 || wind >= 15) return 2;
+  return 3;
+}
+
+// Every job on the books between two dates, from both places a *booked* job can
+// come from. One bookings read and one index read (already memoized) covers the
+// whole week — the run board's buildDay() is per-day and loads a thread per
+// customer for addresses, which is the right cost for the day you're driving and
+// the wrong one for a glance at the week.
+//
+// What this deliberately does not cover: jobs Mikey adds to a day by hand. Those
+// live in that day's own doc, so pulling a week of them is seven more KV reads
+// for jobs that are usually same-day cash and often carry no phone to text. The
+// day board and the brief still score today's hand-added jobs for rain — they
+// just don't get a heads-up button, because there's nobody on the other end of
+// it.
+async function outlookJobs(cfg, from, to) {
+  const jobs = [];
+  for (const b of await loadBookings()) {
+    if (!b.date || b.date < from || b.date > to) continue;
+    if (b.status === 'declined' || b.status === 'cancelled') continue;
+    jobs.push({
+      id: 'b:' + b.id, date: b.date, slot: b.slot || '', durationMin: b.durationMin || 180,
+      name: b.name || '', phone: b.phone || '', city: b.city || '',
+      service: b.serviceName || '', price: b.estimate || b.base || 0,
+      pending: b.status === 'pending',
+    });
+  }
+  for (const t of await loadIndex()) {
+    if (!t.appointmentAt || t.archived) continue;
+    const date = localDateStr(t.appointmentAt, cfg.tz);
+    if (date < from || date > to) continue;
+    if (jobs.some((j) => j.phone === t.phone && j.date === date)) continue;
+    jobs.push({
+      id: 't:' + t.phone, date, slot: localTimeHm(t.appointmentAt, cfg.tz), durationMin: 150,
+      name: t.name || '', phone: t.phone, city: '', service: '', price: 0, pending: false,
+    });
+  }
+  return jobs;
+}
+
+// A date string's weekday, without building a formatter — these run once per
+// forecast day inside a loop, and rule 2 of the CPU box up top exists because a
+// bare .toLocaleDateString({timeZone}) builds a new Intl formatter every call.
+// The dates here are already local calendar days, so noon UTC pins them safely
+// away from any DST edge and plain UTC arithmetic is exact.
+const WX_DOW_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const WX_DOW_LONG = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+function wxDow(date, names) { return names[new Date(date + 'T12:00:00Z').getUTCDay()] || ''; }
+// The day after a given calendar day, as a date string.
+function wxNextDay(date) {
+  const t = new Date(date + 'T12:00:00Z');
+  t.setUTCDate(t.getUTCDate() + 1);
+  return t.toISOString().slice(0, 10);
+}
+
+// "Thursday", but "today" and "tomorrow" when that's what a person would say.
+// Walked off the date string rather than the clock, so the wording can't drift
+// from the day the rest of the outlook was built for.
+function wxDayWord(date, today) {
+  if (date === today) return 'today';
+  if (date === wxNextDay(today)) return 'tomorrow';
+  return wxDow(date, WX_DOW_LONG);
+}
+
+// The heads-up text, from a fixed template filled in from the booking record —
+// deliberately not AI-written, for the same reason the booking texts aren't: a
+// model that can invent a time or a price has no business writing to a customer
+// about the one already on the calendar. It is only ever put in his message box.
+function wxHeadsUpDraft(job, date, risk, moveTo, today) {
+  const first = jdFirst(job.name) || 'there';
+  const when = wxDayWord(date, today);
+  const at = job.slot ? ` around ${bkFmt12(job.slot)}` : '';
+  const move = moveTo
+    ? `${wxDayWord(moveTo, today)} is looking clear if you'd rather move it — otherwise I'll plan on ${when} as-is.`
+    : `Want to move it, or should I plan on ${when} as-is?`;
+  return `Hey ${first}, it's Mikey. Heads up — they're calling for rain ${when}${at} (${risk}% chance), ` +
+    `and it's hard to get a finish I'm happy with in the wet. ${move} Just let me know. - Mikey`;
+}
+
+// The whole read, with no I/O in it — a forecast and a list of jobs go in, the
+// week goes out. Pure on purpose: the brief already has the forecast in hand and
+// shouldn't pay for a second one, and a function with no network in it is one
+// the tests can hold still.
+function outlookFrom(wx, cfg, jobs, today) {
+  const daily = wx.daily || {};
+  const times = daily.time || [];
+
+  for (const j of jobs) j.rainRisk = jobRainRisk(wx, j.date, j.slot, j.durationMin);
+
+  const out = times.map((date, i) => {
+    const code = daily.weather_code[i], pop = daily.precipitation_probability_max[i] || 0;
+    const wind = daily.wind_speed_10m_max[i] || 0;
+    const mine = jobs.filter((j) => j.date === date).sort((a, b) => String(a.slot).localeCompare(String(b.slot)));
+    return {
+      date, dow: date === today ? 'Today' : wxDow(date, WX_DOW_SHORT),
+      code, desc: WX_TEXT[code] || '—', pop, wind,
+      hi: daily.temperature_2m_max[i], lo: daily.temperature_2m_min[i],
+      score: wxDayScore(code, pop, wind),
+      jobs: mine.map((j) => ({ id: j.id, name: j.name, phone: j.phone, slot: j.slot, city: j.city, service: j.service, price: j.price, pending: j.pending, rainRisk: j.rainRisk })),
+      booked: mine.reduce((s, j) => s + (j.price || 0), 0),
+      atRisk: mine.filter((j) => j.rainRisk >= WX_RISK_AT).length,
+    };
+  });
+
+  // Where to offer instead: the soonest clear day AFTER the one in trouble.
+  // Pushing a booked customer later is a reschedule; asking them to come in
+  // earlier than the day they picked is asking them to rearrange their week, so
+  // an earlier dry day is not offered even when there is one. A day he's
+  // already full on still counts — how full he is, is his call to make, and
+  // withholding the only dry day of the week helps nobody.
+  const clear = out.filter((d) => d.score === 3).map((d) => d.date);
+  const atRisk = [];
+  for (const d of out) {
+    for (const j of d.jobs) {
+      if (j.rainRisk < WX_RISK_AT) continue;
+      const moveTo = clear.find((c) => c > d.date) || '';
+      atRisk.push({
+        id: j.id, phone: j.phone, name: j.name, date: d.date, dow: d.dow, slot: j.slot,
+        rainRisk: j.rainRisk, moveTo,
+        moveToLabel: moveTo ? wxDayWord(moveTo, today) : '',
+        draft: j.phone ? wxHeadsUpDraft(j, d.date, j.rainRisk, moveTo, today) : '',
+      });
+    }
+  }
+  atRisk.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : String(a.slot).localeCompare(String(b.slot))));
+
+  const c = wx.current || {};
+  return {
+    today, tz: cfg.tz, place: 'Snohomish',
+    current: {
+      temp: c.temperature_2m, code: c.weather_code, desc: WX_TEXT[c.weather_code] || '—',
+      pop: c.precipitation_probability || (daily.precipitation_probability_max || [])[0] || 0,
+      wind: c.wind_speed_10m || 0,
+      score: wxDayScore(c.weather_code, c.precipitation_probability || 0, c.wind_speed_10m || 0),
+    },
+    days: out, atRisk, riskAt: WX_RISK_AT,
+  };
+}
+
+// The window the outlook covers, given the forecast that came back.
+function outlookRange(wx, today) {
+  const times = (wx.daily && wx.daily.time) || [];
+  return { from: today, to: times.length ? times[times.length - 1] : today };
+}
+
+async function buildOutlook(days = 7) {
+  const cfg = await loadConfig();
+  const today = jdToday(cfg);
+  const wx = await fetchWeather(Math.max(2, Math.min(14, days)));
+  const r = outlookRange(wx, today);
+  return outlookFrom(wx, cfg, await outlookJobs(cfg, r.from, r.to), today);
+}
+
+async function apiWeatherOutlook(url) {
+  const days = Math.max(2, Math.min(14, parseInt(url.searchParams.get('days'), 10) || 7));
+  try {
+    return json({ ok: true, outlook: await buildOutlook(days) });
+  } catch (e) {
+    // A forecast we couldn't reach is not an error worth breaking Home over —
+    // the widget says so and everything else on the screen still renders.
+    return json({ ok: false, error: 'weather_unavailable', detail: String(e && e.message || e) });
+  }
+}
+
+async function buildBrief() {
   const cfg = await loadConfig();
   const today = jdToday(cfg);
   const day = await buildDay(today);
@@ -14546,16 +14739,23 @@ async function buildBrief(kind = 'day') {
   const reminders = active.filter((t) => t.reminderDue);
   const unread = active.reduce((s, t) => s + (t.unread || 0), 0);
 
-  let wx = null, wxLine = '', risky = [];
+  // One forecast, read twice: today's run board (which has his hand-added jobs
+  // on it, so it can't come from the booking list) and the rest of the week's
+  // bookings. The week costs one more KV read and no second network call, and
+  // it means the brief warns him about Thursday on Monday — which is the only
+  // day the warning is worth anything.
+  let wx = null, wxLine = '', risky = [], weekRisk = [];
   try {
-    wx = await fetchWeather(kind === 'week' ? 7 : 3);
+    wx = await fetchWeather(7);
     const c = wx.current || {};
     wxLine = `${Math.round(c.temperature_2m)}°F, ${WX_TEXT[c.weather_code] || '—'}, ${c.precipitation_probability || 0}% rain, ${Math.round(c.wind_speed_10m || 0)} mph wind`;
     for (const j of day.jobs) {
       const risk = jobRainRisk(wx, today, j.slot, j.durationMin);
-      if (risk >= 45) risky.push({ id: j.id, name: j.name, slot: j.slot, risk });
+      if (risk >= WX_RISK_AT) risky.push({ id: j.id, name: j.name, slot: j.slot, risk });
       j.rainRisk = risk;
     }
+    const r = outlookRange(wx, today);
+    weekRisk = outlookFrom(wx, cfg, await outlookJobs(cfg, r.from, r.to), today).atRisk;
   } catch { /* the brief is still useful without weather */ }
 
   // Yesterday's money + this month so far.
@@ -14581,7 +14781,7 @@ async function buildBrief(kind = 'day') {
     jobs: day.jobs.map((j) => ({ id: j.id, name: j.name, slot: j.slot, city: j.city, service: j.service, price: j.price, state: j.state, rainRisk: j.rainRisk || 0 })),
     summary: day.summary,
     weather: wx ? { line: wxLine, current: wx.current, daily: wx.daily } : null,
-    risky,
+    risky, weekRisk, riskAt: WX_RISK_AT,
     waiting: waiting.slice(0, 6).map((t) => ({ phone: t.phone, name: t.name || '', lastBody: t.lastBody, lastTs: t.lastTs })),
     counts: { unread, waiting: waiting.length, followups: followups.length, reminders: reminders.length },
     money: { yesterday: yGross, monthNet: month.net, monthGross: month.gross, monthJobs: month.jobs, owed: owedTotal, openInvoices: invoices.length },
@@ -14598,14 +14798,20 @@ function briefText(b) {
   if (b.jobs.length) {
     L.push(`TODAY — ${b.jobs.length} job${b.jobs.length > 1 ? 's' : ''}, $${b.summary.booked} booked`);
     for (const j of b.jobs) {
-      L.push(`  ${j.slot ? bkFmt12(j.slot) : '—'}  ${j.name || 'Job'}${j.city ? ' · ' + j.city : ''}${j.price ? ' · $' + j.price : ''}${j.rainRisk >= 45 ? `  ⚠ ${j.rainRisk}% rain` : ''}`);
+      L.push(`  ${j.slot ? bkFmt12(j.slot) : '—'}  ${j.name || 'Job'}${j.city ? ' · ' + j.city : ''}${j.price ? ' · $' + j.price : ''}${j.rainRisk >= WX_RISK_AT ? `  ⚠ ${j.rainRisk}% rain` : ''}`);
     }
   } else {
     L.push('TODAY — nothing booked.');
   }
   L.push('');
   if (b.weather) L.push(`WEATHER: ${b.weather.line}`);
-  if (b.risky.length) L.push(`⚠ Rain risk on ${b.risky.length} job${b.risky.length > 1 ? 's' : ''} — consider a heads-up text.`);
+  // Naming the customer and the day is the difference between a weather report
+  // and something he can act on before he's standing in it.
+  for (const r of (b.weekRisk || [])) {
+    L.push(`⚠ ${r.rainRisk}% rain on ${r.name || r.phone || 'a job'} — ${r.dow}${r.slot ? ' at ' + bkFmt12(r.slot) : ''}` +
+      (r.moveToLabel ? ` (${r.moveToLabel} is clear)` : ''));
+  }
+  if ((b.weekRisk || []).length) L.push('Open the dashboard to send a heads-up — nothing goes out on its own.');
   L.push('');
   L.push(`INBOX: ${b.counts.waiting} waiting on you · ${b.counts.followups} follow-ups ready · ${b.counts.unread} unread`);
   for (const w of b.waiting.slice(0, 3)) L.push(`  • ${w.name || w.phone}: ${String(w.lastBody || '').slice(0, 70)}`);
@@ -14617,9 +14823,8 @@ function briefText(b) {
   return L.join('\n');
 }
 
-async function apiBrief(url) {
-  const kind = url.searchParams.get('kind') === 'week' ? 'week' : 'day';
-  const b = await buildBrief(kind);
+async function apiBrief() {
+  const b = await buildBrief();
   return json({ ok: true, brief: b, text: briefText(b) });
 }
 
@@ -14638,14 +14843,14 @@ async function maybeDailyBrief() {
   if (stamp === today) return;
   await kv().put('brief:last', today, { expirationTtl: 3 * 86400 });   // ⚠ 1 write/day
   try {
-    const b = await buildBrief('day');
+    const b = await buildBrief();
     await notifyMikey(`☀️ Your day — ${b.jobs.length} job${b.jobs.length === 1 ? '' : 's'}, ${b.counts.waiting} waiting`, briefText(b));
   } catch { /* never let the brief break the cron */ }
   await pushNotify().catch(() => {});
 }
 
-// Sunday-evening recap. The weekly brief already existed (buildBrief('week'))
-// and was only reachable by asking for it — nothing ever sent it. Same shape as
+// Sunday-evening recap. The brief already existed and was only reachable by
+// asking for it — nothing ever sent it on a Sunday. Same shape as
 // the daily one: a 3-hour window so a cold start can't fire it early, and exactly
 // one KV write a week.
 async function maybeWeeklyRecap() {
@@ -14664,7 +14869,7 @@ async function maybeWeeklyRecap() {
   if (stamp === week) return;
   await kv().put('recap:last', week, { expirationTtl: 14 * 86400 });   // ⚠ 1 write/week
   try {
-    const b = await buildBrief('week');
+    const b = await buildBrief();
     await notifyMikey(
       `🗓️ Week ahead — ${b.counts.waiting} waiting, ${b.counts.followups} follow-up${b.counts.followups === 1 ? '' : 's'} due`,
       briefText(b));

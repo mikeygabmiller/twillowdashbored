@@ -243,7 +243,8 @@ campaigns/reporting/referral.)
   *near that address* to batch by location. Made for a mobile business.
 - 🌟 **Live "on my way" ETA tracking link** (DoorDash-style).
 - 🌟 **Talk to your dashboard** — voice commands ("text the Camaro guy I'm 15 late").
-- Weather-aware scheduling; optimized daily route/map; Sunday AI business brief; cold-lead
+- ~~Weather-aware scheduling~~ (shipped — see "Rain check" in the README);
+  optimized daily route/map; Sunday AI business brief; cold-lead
   radar; writes-in-your-voice AI; branded book-Mikey page + deposit; auto before/after
   **Canva** social posts (Canva MCP is connected); digital customer "garage"; 2-way Google
   Calendar sync (Calendar MCP connected).
