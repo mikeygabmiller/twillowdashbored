@@ -1956,7 +1956,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-02·alert-email-fixes";
+  var APP_BUILD="2026-09-02·reply-by-text";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -3603,6 +3603,13 @@
       '<div class="fu-row"><span class="lbl2">Missed-call text-back <span style="color:var(--muted2);font-weight:400">· never lose a missed call</span></span><span class="sw'+(c.missedCallTextback!==false?" on":"")+'" id="cfgMct"></span></div>'+
       '<div class="fu-col"><input type="text" id="cfgMctText" placeholder="Sorry I missed your call! Text me here and I\'ll get right back to you." value="'+esc(c.missedCallText||"")+'"></div>'+
       '<div class="hint">When a call goes unanswered, the caller instantly gets a friendly text so the lead turns into a conversation you can answer from anywhere. Leave the message blank to use the default.</div>'+
+      '<div class="fu-row"><span class="lbl2">Reply by text <span style="color:var(--muted2);font-weight:400">· answer customers without opening the app</span></span><span class="sw'+(c.replyByText!==false?" on":"")+'" id="cfgRbt"></span></div>'+
+      '<div class="hint">Text <b>your own business number</b> and it relays to the customer. Two ways:<br>• <b>3821 running 20 min late</b> — last 4 digits of their number, then your message. Sends right away.<br>• <b>tell the guy asking about price the exterior is $200</b> — plain English. You get a "Send to Jake? Y/N" text back before anything reaches them.</div>'+
+      (c.replyByText!==false?'<div class="fu-row"><span class="lbl2">Confirm each send <span style="color:var(--muted2);font-weight:400">· costs 1 text</span></span><span class="sw'+(c.replyByTextConfirm!==false?" on":"")+'" id="cfgRbtC"></span></div>'+
+      '<div class="hint">Texts you back "✓ Sent to Jake" so you know it went. Turn off to save a text per reply — the plain-English Y/N confirmation still always happens.</div>'+
+      '<div class="fu-col"><span class="lbl2">Your other numbers</span><span style="display:flex;gap:6px"><input type="text" id="cfgOwnNum" placeholder="Google Voice number, +1425…" style="flex:1"><button id="cfgOwnBtn" class="btn" style="white-space:nowrap">Add</button></span></div>'+
+      '<div class="hint">Your main cell already works. Add a Google Voice or second line here so texting from it commands the line too. Only these numbers can send commands.</div>'+
+      ownerListHtml(c.ownerNumbers):'')+
       '<div class="fu-col"><span class="lbl2">Voicemails</span><button id="cfgVmRecover" class="btn" style="white-space:nowrap;align-self:flex-start">'+ic("mic",14)+' Recover past voicemails</button></div>'+
       '<div class="hint">Pulls your recent voicemails from Twilio into the right conversations so you can play them right here. Safe to run anytime.</div>'+
       '<div class="fu-col"><span class="lbl2">Block a number</span><span style="display:flex;gap:6px"><input type="text" id="cfgBlockNum" placeholder="+1425…" style="flex:1"><button id="cfgBlockBtn" class="btn" style="white-space:nowrap">Block</button></span></div>'+
@@ -3616,11 +3623,30 @@
     el("cfgScreen").onclick=function(){saveConfig({callScreening:!(c.callScreening!==false)})};
     el("cfgMct").onclick=function(){saveConfig({missedCallTextback:!(c.missedCallTextback!==false)})};
     el("cfgMctText").onchange=function(){saveConfig({missedCallText:el("cfgMctText").value})};
+    el("cfgRbt").onclick=function(){saveConfig({replyByText:!(c.replyByText!==false)})};
+    if(el("cfgRbtC"))el("cfgRbtC").onclick=function(){saveConfig({replyByTextConfirm:!(c.replyByTextConfirm!==false)})};
+    if(el("cfgOwnBtn"))el("cfgOwnBtn").onclick=function(){
+      var v=el("cfgOwnNum").value.trim();if(!v)return;
+      var list=(c.ownerNumbers||[]).slice();list.push(v);
+      saveConfig({ownerNumbers:list});
+    };
+    Array.prototype.forEach.call(document.querySelectorAll("[data-ownrm]"),function(b){
+      b.onclick=function(){
+        var n=b.getAttribute("data-ownrm");
+        saveConfig({ownerNumbers:(c.ownerNumbers||[]).filter(function(x){return x!==n})});
+      };
+    });
     el("cfgVmRecover").onclick=function(){recoverVoicemails(el("cfgVmRecover"))};
     el("cfgBlockBtn").onclick=function(){var v=el("cfgBlockNum").value.trim();if(v)blockNumber(v,"block")};
     Array.prototype.forEach.call(document.querySelectorAll("[data-unblock]"),function(b){
       b.onclick=function(){blockNumber(b.getAttribute("data-unblock"),"unblock")};
     });
+  }
+  function ownerListHtml(list){
+    if(!list||!list.length)return '<div class="hint">No extra numbers yet — just your main cell.</div>';
+    return '<div class="fu-col"><span class="lbl2">Added</span>'+list.map(function(n){
+      return '<div class="fu-row" style="padding:4px 0"><span>'+esc(n)+'</span><button class="btn" data-ownrm="'+esc(n)+'" style="margin-left:auto">Remove</button></div>';
+    }).join("")+'</div>';
   }
   function blockedListHtml(list){
     if(!list||!list.length)return '<div class="hint">No blocked numbers yet.</div>';

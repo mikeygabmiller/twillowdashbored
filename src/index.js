@@ -83,7 +83,7 @@ function withThreadLink(body, phone) {
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-02·alert-email-fixes';
+const BUILD = '2026-09-02·reply-by-text';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -602,7 +602,15 @@ async function handleInboundSms(request) {
   const text = params.Body || '';
   const numMedia = parseInt(params.NumMedia || '0', 10);
   const fromNorm = normalizePhone(from) || from;
-  if (fromNorm === normalizePhone(ENV.MIKEY_PHONE)) return twiml('');
+  // A text from one of YOUR numbers isn't a customer message — it's a command.
+  // This used to be a silent drop, which meant texting your own business line did
+  // nothing, and texting it from a second number of yours (Google Voice) created a
+  // bogus "customer" thread with yourself.
+  const cfgEarly = await loadConfig();
+  if (isOwnerNumber(cfgEarly, fromNorm)) {
+    if (cfgEarly.replyByText === false) return twiml('');
+    return handleOwnerCommand(fromNorm, text, numMedia, cfgEarly);
+  }
 
   // STOP / START compliance. Record the opt-out state ourselves so scheduled sends,
   // autopilot nudges and blasts all honor it — Twilio blocks at the API but never
@@ -643,6 +651,173 @@ async function handleInboundSms(request) {
   await maybeSuggestReply(fromNorm);
   // No auto-reply to the customer — Mikey replies personally from the dashboard.
   return twiml('');
+}
+
+// ===========================================================================
+// Reply by text — answer a customer from any phone, without opening the app
+// ---------------------------------------------------------------------------
+// You get an alert that a customer texted. You reply by texting YOUR OWN business
+// number, and the Worker relays it to that customer. Two ways to say who:
+//
+//   "3821 yes Tuesday at 9 works"        → exact. Last 4 digits of their number.
+//                                          Sends immediately, no AI, no guessing.
+//   "tell the guy who asked about the    → plain English. The AI works out who you
+//    price the exterior is $200"           mean, then texts you back to confirm
+//                                          BEFORE anything reaches the customer.
+//
+// The plain-English path never sends on its own. Picking the wrong customer is the
+// one mistake that actually costs you, so it always costs one confirmation text.
+// ===========================================================================
+
+// Which numbers may drive this. MIKEY_PHONE always counts; add a Google Voice or
+// second line under Settings so texting from it commands the line too.
+function isOwnerNumber(cfg, phone) {
+  const p = normalizePhone(phone) || phone;
+  if (!p) return false;
+  if (p === normalizePhone(ENV.MIKEY_PHONE)) return true;
+  const extra = String(ENV.OWNER_NUMBERS || '').split(',').map((x) => normalizePhone(x.trim())).filter(Boolean);
+  if (extra.includes(p)) return true;
+  const fromCfg = Array.isArray(cfg && cfg.ownerNumbers) ? cfg.ownerNumbers : [];
+  return fromCfg.map((x) => normalizePhone(x) || x).includes(p);
+}
+
+const CMD_PENDING = (owner) => 'cmd:pending:' + owner;
+const CMD_HELP =
+  'Reply by text:\n' +
+  '• "3821 your message" — last 4 digits of their number, then what to say.\n' +
+  '• Or just say it plainly ("tell the guy asking about price the exterior is $200") ' +
+  'and I\'ll ask you to confirm who before sending.';
+
+async function handleOwnerCommand(owner, rawText, numMedia, cfg) {
+  const text = String(rawText || '').trim();
+  if (numMedia > 0) {
+    return twiml('Photos can\'t be relayed by text yet — open the dashboard to send a picture. Text is fine though.');
+  }
+  if (!text) return twiml(CMD_HELP);
+  if (/^(help|\?|commands)$/i.test(text)) return twiml(CMD_HELP);
+
+  // --- A pending plain-English command is waiting on a yes/no ---
+  const pending = await kv().get(CMD_PENDING(owner), { type: 'json' });
+  if (pending && pending.phone) {
+    if (/^(y|yes|yep|yeah|ok|okay|send|confirm|do it)\b/i.test(text)) {
+      await kv().delete(CMD_PENDING(owner));
+      return twiml(await relayToCustomer(pending.phone, pending.body, cfg));
+    }
+    if (/^(n|no|nope|cancel|stop|nvm|never ?mind)\b/i.test(text)) {
+      await kv().delete(CMD_PENDING(owner));
+      return twiml('Cancelled — nothing was sent.');
+    }
+    // Anything else replaces the pending command rather than silently dropping it.
+    await kv().delete(CMD_PENDING(owner));
+  }
+
+  // --- Exact path: leading digits name the customer ---
+  const m = text.match(/^(\d{4,11})\s+([\s\S]+)$/);
+  if (m) {
+    const digits = m[1];
+    const body = m[2].trim();
+    if (!body) return twiml('That had a number but no message. Try: 3821 running about 20 min late');
+    const matches = await findThreadsByDigits(digits);
+    if (!matches.length) {
+      return twiml(`No conversation ends in ${digits.slice(-4)}. Check the number, or open the dashboard to start a new one.`);
+    }
+    if (matches.length > 1) {
+      const list = matches.slice(0, 4).map((t) => `${t.name || 'Unknown'} ${t.phone}`).join('\n');
+      return twiml(`More than one conversation ends in ${digits.slice(-4)}:\n${list}\n\nText the full 10-digit number instead.`);
+    }
+    return twiml(await relayToCustomer(matches[0].phone, body, cfg));
+  }
+
+  // --- Plain-English path: let the AI work out who, then confirm ---
+  if (!ENV.GEMINI_API_KEY) {
+    return twiml('Start with the last 4 digits of their number, like: 3821 yes Tuesday works');
+  }
+  let pick;
+  try {
+    pick = await resolveOwnerCommand(text);
+  } catch {
+    return twiml('Couldn\'t work out who you meant. Try: 3821 your message');
+  }
+  if (!pick || !pick.phone || !pick.body) {
+    return twiml(`Not sure who you meant${pick && pick.why ? ' — ' + pick.why : ''}. Try the last 4 digits of their number, like: 3821 your message`);
+  }
+  const thread = await loadThread(pick.phone);
+  const who = thread.name || pick.phone;
+  await kv().put(
+    CMD_PENDING(owner),
+    JSON.stringify({ phone: pick.phone, body: pick.body, at: Date.now() }),
+    { expirationTtl: 900 },
+  );
+  return twiml(
+    `Send to ${who} (${pick.phone.slice(-4)})?\n\n"${pick.body}"\n\nReply Y to send, N to cancel.`,
+  );
+}
+
+// Find conversations whose number ends in the given digits. 4 digits = a suffix
+// match; a full 10/11-digit number is matched exactly.
+async function findThreadsByDigits(digits) {
+  const index = await loadIndex();
+  if (digits.length >= 10) {
+    const want = normalizePhone(digits);
+    return index.filter((t) => t.phone === want);
+  }
+  const suffix = digits.slice(-4);
+  return index.filter((t) => String(t.phone || '').endsWith(suffix));
+}
+
+// Actually relay to the customer and record it in the thread exactly like a send
+// from the dashboard, so the conversation reads the same either way.
+async function relayToCustomer(phone, body, cfg) {
+  const msg = { dir: 'out', body, ts: Date.now(), kind: 'manual', by: 'text' };
+  let r;
+  try {
+    r = await sendSms(phone, body);
+  } catch (err) {
+    const e = String((err && err.message) || err);
+    if (/opted_out/.test(e)) return `${phone.slice(-4)} texted STOP, so I can't message them. Nothing was sent.`;
+    return `Couldn't send that (${e.slice(0, 80)}). Nothing went out.`;
+  }
+  msg.status = 'sent';
+  if (r && r.sid) msg.sid = r.sid;
+  const thread = await appendMessage(phone, msg);
+  if (cfg && cfg.replyByTextConfirm === false) return '';
+  return `✓ Sent to ${thread.name || phone.slice(-4)}`;
+}
+
+// Ask the AI which conversation the owner meant and what to say. Returns a phone
+// that MUST already exist in the index — the model never gets to invent a number.
+async function resolveOwnerCommand(text) {
+  const index = await loadIndex();
+  const recent = index
+    .filter((t) => !t.archived)
+    .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0))
+    .slice(0, 25);
+  if (!recent.length) return null;
+  const now = Date.now();
+  const roster = recent.map((t, i) => {
+    const mins = Math.round((now - (t.lastTs || now)) / 60000);
+    const ago = mins < 60 ? `${mins}m ago` : (mins < 1440 ? `${Math.round(mins / 60)}h ago` : `${Math.round(mins / 1440)}d ago`);
+    return `${i + 1}. phone=${t.phone} name=${t.name || 'unknown'} status=${t.status || 'none'} last${t.lastDir === 'in' ? 'FromThem' : 'FromUs'}="${(t.lastBody || '').slice(0, 120)}" (${ago})`;
+  }).join('\n');
+  const prompt =
+    'You route a detailing business owner\'s spoken-style instruction to ONE existing text conversation.\n\n' +
+    'Conversations (most recent first):\n' + roster + '\n\n' +
+    'Owner said: "' + text + '"\n\n' +
+    'Work out which ONE conversation he means and the exact message to send that customer. ' +
+    'If he quoted the message, use his quoted wording verbatim. Otherwise write the short, ' +
+    'friendly text he clearly intends — no greeting padding, no signature.\n' +
+    'Return JSON only: {"phone":"<exact phone from the list>","body":"<message to send>","why":"<6 words on why this one>"}\n' +
+    'If you cannot tell which conversation with real confidence, return {"phone":"","body":"","why":"<what is ambiguous>"}.';
+  const out = await geminiGenerate(prompt, { json: true, temperature: 0.2, maxTokens: 400 });
+  let parsed;
+  try { parsed = JSON.parse(out); } catch { return null; }
+  if (!parsed || !parsed.phone) return { phone: '', body: '', why: (parsed && parsed.why) || '' };
+  // Hard guard: only a number already in the index is allowed through.
+  const known = recent.find((t) => t.phone === parsed.phone);
+  if (!known) return { phone: '', body: '', why: 'that customer is not in your recent list' };
+  const body = String(parsed.body || '').trim().slice(0, 1200);
+  if (!body) return { phone: '', body: '', why: 'no message to send' };
+  return { phone: known.phone, body, why: String(parsed.why || '').slice(0, 60) };
 }
 
 // Small TwiML fragment that rings Mikey's cell and then falls through to
@@ -3189,6 +3364,15 @@ async function apiSaveConfig(request) {
   if (typeof data.missedCallTextback === 'boolean') next.missedCallTextback = data.missedCallTextback;
   if (typeof data.missedCallText === 'string') next.missedCallText = data.missedCallText.slice(0, 320);
   if (typeof data.teamMode === 'boolean') next.teamMode = data.teamMode;
+  if (typeof data.replyByText === 'boolean') next.replyByText = data.replyByText;
+  if (typeof data.replyByTextConfirm === 'boolean') next.replyByTextConfirm = data.replyByTextConfirm;
+  // Extra numbers you text FROM (Google Voice, a second line). Normalized and
+  // de-duped here so a typo'd format can't quietly fail to match at webhook time.
+  if (Array.isArray(data.ownerNumbers)) {
+    next.ownerNumbers = Array.from(new Set(
+      data.ownerNumbers.map((x) => normalizePhone(x)).filter(Boolean),
+    )).slice(0, 10);
+  }
   if (Array.isArray(data.team)) next.team = sanitizeTeam(data.team);
   if (data.playbook && typeof data.playbook === 'object') next.playbook = sanitizePlaybook(data.playbook, next.playbook);
   await kv().put('config', JSON.stringify(next));
@@ -3944,6 +4128,10 @@ function defaultConfig() {
     callScreening: true,     // press-1 gate on inbound calls — stops robocall/spam
                              // auto-dialers before they ring your phone or hit voicemail
     blockedNumbers: [],      // normalized numbers that get rejected instantly (no ring)
+    ownerNumbers: [],        // extra numbers YOU text from (e.g. Google Voice) that may
+                             // send reply-by-text commands. MIKEY_PHONE always counts.
+    replyByText: true,       // master switch for the reply-by-text command channel
+    replyByTextConfirm: true,// text back "sent to X" after each command (costs 1 SMS)
     optedOut: [],            // normalized numbers that texted STOP — never messaged again
     emailToken: '',          // shared secret for the /email-in ingest (generated in-app)
     missedCallTextback: true,// auto-text a caller we missed so the lead becomes a text thread

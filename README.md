@@ -60,6 +60,7 @@ database. All secrets come from **Worker secrets** — never in the code.
 | `DASHBOARD_PASSWORD` | *(optional)* PIN/password to lock the dashboard. If unset, the dashboard is open to anyone with the link. |
 | `GEMINI_API_KEY` | *(optional)* Google AI Studio key — powers AI summary / draft / briefing |
 | `GEMINI_MODEL` | *(optional)* model id, defaults to `gemini-2.5-flash` |
+| `OWNER_NUMBERS` | *(optional)* comma-separated extra numbers you text FROM (e.g. a Google Voice line) that may send reply-by-text commands. `MIKEY_PHONE` always counts. Also editable in-app under Settings → Reply by text |
 | `RESEND_API_KEY` | *(optional)* [Resend](https://resend.com) API key — turns on **email alerts** for new texts/calls/voicemails/quotes instead of paying Twilio to text yourself |
 | `ALERT_EMAIL` | *(optional)* where alerts are sent, e.g. `mikeysdetailing4u@gmail.com`. Required for email alerts. If unset, alerts fall back to SMS to `MIKEY_PHONE` |
 | `ALERT_FROM` | *(optional)* verified sender, e.g. `Mikeys Dashboard <alerts@yourdomain.com>`. Defaults to Resend's `onboarding@resend.dev` (which can only send to your own Resend account email until you verify a domain) |
