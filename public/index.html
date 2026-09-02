@@ -1956,7 +1956,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-07-21·booking+redesign";
+  var APP_BUILD="2026-09-02·alert-email-fixes";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4543,7 +4543,8 @@
   el("alertTestItem").onclick=function(){
     toast("Sending test alert…");
     post("/api/alert-test",{}).then(function(d){
-      if(d&&d.ok)toast(d.channel==="email"?("Test email sent to "+(d.alertEmail||"your inbox")):"Test alert sent by text");
+      if(d&&d.ok&&d.emailError)toast("Email alerts are failing — sent by text instead. ("+d.emailError+")",{bad:true});
+      else if(d&&d.ok)toast(d.channel==="email"?("Test email sent to "+(d.alertEmail||"your inbox")):"Test alert sent by text");
       else toast("Test alert failed — check your alert settings");
     }).catch(function(){toast("Test alert failed")});
     closeDrawer();

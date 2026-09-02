@@ -62,12 +62,28 @@ let BASE_URL = null;
 function kv() { return ENV.MESSAGES; }
 function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').replace(/\/+$/, ''); }
 
+// One-tap link straight to a conversation. The dashboard already understands
+// ?c=<phone> (it opens that thread on load), so every alert about a person can
+// carry a link that lands on their chat instead of "open your dashboard" and a
+// hunt through the list.
+function threadLink(phone) {
+  const base = publicBase();
+  const p = normalizePhone(phone) || phone;
+  return base && p ? `${base}/?c=${encodeURIComponent(p)}` : '';
+}
+
+// Append that link to an alert body when we have one.
+function withThreadLink(body, phone) {
+  const link = threadLink(phone);
+  return link ? `${body}\n\n${link}` : body;
+}
+
 // Deploy fingerprint. BUMP THIS on every change, and keep APP_BUILD in
 // public/index.html identical. The dashboard footer shows "app <build> · server
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-07-21·booking+redesign';
+const BUILD = '2026-09-02·alert-email-fixes';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -621,7 +637,7 @@ async function handleInboundSms(request) {
   if (params.MessageSid) inMsg.sid = params.MessageSid;
   await appendMessage(fromNorm, inMsg);
   await notifyMikey(`📱 New ${numMedia > 0 ? 'photo/text' : 'text'} from ${from}`,
-    `New message from ${from}:\n"${text || (numMedia > 0 ? '[photo]' : '')}"\n\nReply in your dashboard.`);
+    withThreadLink(`New message from ${from}:\n"${text || (numMedia > 0 ? '[photo]' : '')}"\n\nTap to reply:`, fromNorm));
   // Pre-draft a reply in Mikey's voice so it's already waiting when he opens the
   // thread. Best-effort — never blocks or fails the inbound webhook.
   await maybeSuggestReply(fromNorm);
@@ -733,7 +749,8 @@ async function handleVoicemail(request) {
   <Say voice="alice">Hey, you've reached Mikey's Mobile Detailing. Leave a message and Mikey will text or call you right back.</Say>
   <Record maxLength="120" action="/voicemail-done" method="POST" playBeep="true" transcribe="true" transcribeCallback="/voicemail-tx" />
 </Response>`;
-  notifyMikey(`📵 Missed call from ${from}`, `Missed call from ${from} — I sent them an instant text back, and they may leave a voicemail now.`).catch(() => {});
+  notifyMikey(`📵 Missed call from ${from}`,
+    withThreadLink(`Missed call from ${from} — I sent them an instant text back, and they may leave a voicemail now.`, fromNorm)).catch(() => {});
   return xmlResponse(xml);
 }
 
@@ -768,7 +785,8 @@ async function handleVoicemailDone(request) {
       await saveThread(thread);
       await updateIndexEntry(thread);
     }
-    await notifyMikey(`🎙️ Voicemail from ${from}`, `Voicemail from ${from} (${duration}s). Open the dashboard to listen.`);
+    await notifyMikey(`🎙️ Voicemail from ${from}`,
+      withThreadLink(`Voicemail from ${from} (${duration}s). Tap to listen — the transcript appears here too, usually within a minute:`, fromNorm));
   }
   return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
 }
@@ -829,7 +847,14 @@ async function handleVoicemailTranscription(request) {
     await saveThread(thread);
     await updateIndexEntry(thread);
   }
-  notifyMikey(`🎙️ Voicemail transcript from ${from}`, `"${text}"\n\nOpen the dashboard to reply.`).catch(() => {});
+  // /voicemail-done already sent an alert for this same voicemail, and the
+  // transcript has just been merged into that bubble. Sending a second email
+  // about one event was pure noise — only alert when this callback is the
+  // first thing to know about the voicemail at all.
+  if (!existing) {
+    notifyMikey(`🎙️ Voicemail from ${from}`,
+      withThreadLink(`"${text}"\n\nTap to reply:`, fromNorm)).catch(() => {});
+  }
   return new Response('', { status: 204 });
 }
 
@@ -856,7 +881,7 @@ async function handleStatusCallback(request) {
   await updateIndexEntry(thread);
   if (bad) {
     notifyMikey('⚠️ A text failed to deliver',
-      `Your message to ${thread.name || to} could not be delivered (${status}${params.ErrorCode ? ', code ' + params.ErrorCode : ''}). Open the dashboard to resend.`).catch(() => {});
+      withThreadLink(`Your message to ${thread.name || to} could not be delivered (${status}${params.ErrorCode ? ', code ' + params.ErrorCode : ''}). Tap to resend:`, to)).catch(() => {});
   }
   return new Response('', { status: 204 });
 }
@@ -886,6 +911,8 @@ async function apiHealth() {
     whitespaceInSid: /\s/.test(sid),
     whitespaceInToken: /\s/.test(token),
   };
+  const health = (await kv().get('emailHealth', { type: 'json' }).catch(() => null)) || {};
+  const emailHealthy = Boolean(ENV.RESEND_API_KEY && ENV.ALERT_EMAIL) && !health.error;
   return json({
     ok: true, routing: 'worker-reached', build: BUILD,
     env: {
@@ -895,10 +922,14 @@ async function apiHealth() {
       MIKEY_PHONE: ENV.MIKEY_PHONE || null,
     }, twilio, storage,
     alerts: {
-      channel: (ENV.RESEND_API_KEY && ENV.ALERT_EMAIL) ? 'email' : 'sms',
+      channel: emailHealthy ? 'email' : 'sms',
       emailConfigured: Boolean(ENV.RESEND_API_KEY && ENV.ALERT_EMAIL),
       alertEmail: ENV.ALERT_EMAIL || null,
       alertFrom: ENV.ALERT_FROM || 'onboarding@resend.dev',
+      // Non-null when the last email attempt failed and alerts silently fell
+      // back to billed SMS. This is the bit that used to be invisible.
+      emailError: health.error || null,
+      emailErrorAt: health.at || null,
     },
   });
 }
@@ -910,8 +941,13 @@ async function apiAlertTest() {
     '✅ Test alert — Mikey\'s Dashboard',
     'This is a test alert from your dashboard. If you got this, inbound-text notifications are working.',
   );
-  const channel = (ENV.RESEND_API_KEY && ENV.ALERT_EMAIL) ? 'email' : 'sms';
-  return json({ ok, channel, alertEmail: ENV.ALERT_EMAIL || null });
+  // Report the channel that actually carried this alert, not the one the config
+  // implies. Reading emailHealth AFTER the send means a failed email shows up
+  // here as "sms" plus the reason — previously the dashboard cheerfully said
+  // "test email sent" while the alert had gone out as a billed text.
+  const health = (await kv().get('emailHealth', { type: 'json' }).catch(() => null)) || {};
+  const channel = (ENV.RESEND_API_KEY && ENV.ALERT_EMAIL && !health.error) ? 'email' : 'sms';
+  return json({ ok, channel, alertEmail: ENV.ALERT_EMAIL || null, emailError: health.error || null });
 }
 
 async function apiThreads(url) {
@@ -4289,11 +4325,43 @@ async function geminiGenerate(prompt, opts = {}) {
 // an alert always lands somewhere. Returns true if any channel succeeded.
 async function notifyMikey(subject, body) {
   if (ENV.RESEND_API_KEY && ENV.ALERT_EMAIL) {
-    try { await sendEmail(subject, body); return true; }
-    catch { /* fall through to SMS so the alert still reaches Mikey */ }
+    // Resend rate-limits bursts and, like any API, has the occasional 5xx. A
+    // single hiccup used to drop us straight onto a paid Twilio SMS, so retry
+    // once on a transient failure before spending money.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        await sendEmail(subject, body);
+        await recordEmailHealth(null);
+        return true;
+      } catch (err) {
+        const transient = /\b(429|5\d\d)\b/.test(String(err && err.message));
+        if (transient && attempt === 0) { await sleep(1200); continue; }
+        // Remember why email stopped working. Without this the dashboard kept
+        // reporting "channel: email" while every alert quietly went out as a
+        // billed text, and nothing anywhere said so.
+        await recordEmailHealth(String((err && err.message) || err));
+        break;
+      }
+    }
   }
   try { await sendSms(ENV.MIKEY_PHONE, body, { skipOptOut: true }); return true; }
   catch { return false; }
+}
+
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+// Track the health of email alerts so a silent fallback to paid SMS is visible.
+// Only writes when the state actually changes, so a healthy dashboard costs no
+// KV writes at all.
+async function recordEmailHealth(error) {
+  try {
+    const prev = (await kv().get('emailHealth', { type: 'json' })) || {};
+    if (!error && !prev.error) return;
+    if (error && prev.error === error) return;
+    await kv().put('emailHealth', JSON.stringify(
+      error ? { error: error.slice(0, 300), at: Date.now() } : {},
+    ));
+  } catch { /* health tracking must never break an alert */ }
 }
 
 // Send an alert email via Resend (https://resend.com). Plain text is plenty for
@@ -4310,7 +4378,7 @@ async function sendEmail(subject, text) {
       'Authorization': `Bearer ${ENV.RESEND_API_KEY}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ from, to: [to], subject, text }),
+    body: JSON.stringify({ from, to: [to], subject, text, reply_to: to }),
   });
   if (!res.ok) throw new Error(`Resend ${res.status}: ${(await res.text()).slice(0, 300)}`);
   return res.json();
