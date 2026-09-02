@@ -113,7 +113,15 @@ const cat = () => JSON.parse(STORE.get('use:catalog').value);
 // The tape lives inside the day doc now — one KV write per flush, not two.
 const tape = (ts) => day(ts || now).tape;
 
-const now = Date.UTC(2026, 7, 25, 14, 30, 0);
+// Anchored to the clock, not to a date on the calendar. apiUseIngest deliberately
+// rejects the phone's own timestamp when it is more than a day off the server's
+// and files the event under "now" instead — so a hard-coded `now` here doesn't
+// age gracefully, it turns half this suite red the day after it is written, for
+// a reason that has nothing to do with the code under test. Three hours back on
+// the half hour keeps a burst of events comfortably inside the gate's window and
+// well clear of a midnight rollover, which would scatter one flush across two
+// day docs and break the counts.
+const now = (() => { const d = new Date(Date.now() - 3 * 3600000); d.setUTCMinutes(30, 0, 0); return d.getTime(); })();
 const min = 60000;
 
 // The app gets ~1,000 KV writes a DAY in total (see the budget warning at the
@@ -167,7 +175,10 @@ ok('an open is counted', d0.s['Stats · usage'] === 1, d0.s);
 ok('so is the time actually spent on it', d0.ms['Stats · usage'] === 30000, d0.ms);
 ok('a screen opened and abandoned is recorded as a bail', d0.b['Pipeline · garage'] === 1, d0.b);
 ok('and a bail is NOT counted as time on the screen', !d0.ms['Pipeline · garage'], d0.ms);
-ok('the hour of the day is kept, so "when is he in here" is answerable', d0.h[14] > 0, d0.h);
+// The hour comes off `now`, which moves with the clock — asserting a literal
+// hour here is the same trap as asserting a literal date.
+const nowHour = new Date(now).getUTCHours();
+ok('the hour of the day is kept, so "when is he in here" is answerable', d0.h[nowHour] > 0, d0.h);
 
 section('A screen-exit can never inflate the clock');
 await U.useFlush([{ t: now, k: 'x', l: 'Bogus', d: 99 * 3600000 }], []);
