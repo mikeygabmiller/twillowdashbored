@@ -1956,7 +1956,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-02·reply-by-text";
+  var APP_BUILD="2026-09-02·reply-by-text-2";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -3604,9 +3604,9 @@
       '<div class="fu-col"><input type="text" id="cfgMctText" placeholder="Sorry I missed your call! Text me here and I\'ll get right back to you." value="'+esc(c.missedCallText||"")+'"></div>'+
       '<div class="hint">When a call goes unanswered, the caller instantly gets a friendly text so the lead turns into a conversation you can answer from anywhere. Leave the message blank to use the default.</div>'+
       '<div class="fu-row"><span class="lbl2">Reply by text <span style="color:var(--muted2);font-weight:400">· answer customers without opening the app</span></span><span class="sw'+(c.replyByText!==false?" on":"")+'" id="cfgRbt"></span></div>'+
-      '<div class="hint">Text <b>your own business number</b> and it relays to the customer. Two ways:<br>• <b>3821 running 20 min late</b> — last 4 digits of their number, then your message. Sends right away.<br>• <b>tell the guy asking about price the exterior is $200</b> — plain English. You get a "Send to Jake? Y/N" text back before anything reaches them.</div>'+
+      '<div class="hint">Get an alert, text <b>your own business number</b> back, and it goes to that customer. <b>No number to look up.</b><br>• <b>running 20 min late</b> — goes to whoever just texted you.<br>• If two people texted, it asks "who\'s this for?" and you reply 1 or 2.<br>• <b>3821 your message</b> — last 4 digits to pick someone else directly.<br>• <b>tell the guy asking about price it\'s $200</b> — name them in plain English; you get a Y/N to confirm first.</div>'+
       (c.replyByText!==false?'<div class="fu-row"><span class="lbl2">Confirm each send <span style="color:var(--muted2);font-weight:400">· costs 1 text</span></span><span class="sw'+(c.replyByTextConfirm!==false?" on":"")+'" id="cfgRbtC"></span></div>'+
-      '<div class="hint">Texts you back "✓ Sent to Jake" so you know it went. Turn off to save a text per reply — the plain-English Y/N confirmation still always happens.</div>'+
+      '<div class="hint">Texts you back "✓ Sent to Jake" so you know where it landed. Turn off to save a text per reply — the questions it asks when the target is unclear still always happen.</div>'+
       '<div class="fu-col"><span class="lbl2">Your other numbers</span><span style="display:flex;gap:6px"><input type="text" id="cfgOwnNum" placeholder="Google Voice number, +1425…" style="flex:1"><button id="cfgOwnBtn" class="btn" style="white-space:nowrap">Add</button></span></div>'+
       '<div class="hint">Your main cell already works. Add a Google Voice or second line here so texting from it commands the line too. Only these numbers can send commands.</div>'+
       ownerListHtml(c.ownerNumbers):'')+

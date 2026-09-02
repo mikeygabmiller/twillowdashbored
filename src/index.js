@@ -83,7 +83,7 @@ function withThreadLink(body, phone) {
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-02·reply-by-text';
+const BUILD = '2026-09-02·reply-by-text-2';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -644,8 +644,9 @@ async function handleInboundSms(request) {
   else if (numMedia > 0) inMsg.body = text + `\n[${numMedia} attachment(s)]`;
   if (params.MessageSid) inMsg.sid = params.MessageSid;
   await appendMessage(fromNorm, inMsg);
-  await notifyMikey(`📱 New ${numMedia > 0 ? 'photo/text' : 'text'} from ${from}`,
-    withThreadLink(`New message from ${from}:\n"${text || (numMedia > 0 ? '[photo]' : '')}"\n\nTap to reply:`, fromNorm));
+  const alertWho = (await loadThread(fromNorm)).name || from;
+  await notifyMikey(`📱 ${alertWho} (${fromNorm.slice(-4)}): ${(text || (numMedia > 0 ? '[photo]' : '')).slice(0, 60)}`,
+    withThreadLink(`${alertWho} (${fromNorm.slice(-4)}) texted:\n"${text || (numMedia > 0 ? '[photo]' : '')}"\n\nJust text me back to reply to them. Or tap:`, fromNorm), fromNorm);
   // Pre-draft a reply in Mikey's voice so it's already waiting when he opens the
   // thread. Best-effort — never blocks or fails the inbound webhook.
   await maybeSuggestReply(fromNorm);
@@ -657,16 +658,24 @@ async function handleInboundSms(request) {
 // Reply by text — answer a customer from any phone, without opening the app
 // ---------------------------------------------------------------------------
 // You get an alert that a customer texted. You reply by texting YOUR OWN business
-// number, and the Worker relays it to that customer. Two ways to say who:
+// number, and the Worker relays it to that customer.
 //
-//   "3821 yes Tuesday at 9 works"        → exact. Last 4 digits of their number.
-//                                          Sends immediately, no AI, no guessing.
-//   "tell the guy who asked about the    → plain English. The AI works out who you
-//    price the exterior is $200"           mean, then texts you back to confirm
-//                                          BEFORE anything reaches the customer.
+// The normal case needs NO number and NO confirmation. You're answering the alert
+// that's on your screen, so a bare message goes to the person it was about:
 //
-// The plain-English path never sends on its own. Picking the wrong customer is the
-// one mistake that actually costs you, so it always costs one confirmation text.
+//   "running about 20 min late"          → straight to whoever just texted you.
+//
+// You only get asked something when there's genuine doubt:
+//
+//   Someone ELSE texted in between       → "Reply to Jake or Dana?" — because now
+//                                          "whoever just texted" means two people.
+//   "tell the guy who asked about the    → the AI works out who, and confirms
+//    price the exterior is $200"           first, since it made a judgment call.
+//   "3821 yes Tuesday works"             → last 4 digits override everything and
+//                                          send immediately.
+//
+// The rule: send without asking when the target is obvious, ask when it isn't.
+// Texting the wrong customer is the only mistake here that really costs you.
 // ===========================================================================
 
 // Which numbers may drive this. MIKEY_PHONE always counts; add a Google Voice or
@@ -684,9 +693,9 @@ function isOwnerNumber(cfg, phone) {
 const CMD_PENDING = (owner) => 'cmd:pending:' + owner;
 const CMD_HELP =
   'Reply by text:\n' +
-  '• "3821 your message" — last 4 digits of their number, then what to say.\n' +
-  '• Or just say it plainly ("tell the guy asking about price the exterior is $200") ' +
-  'and I\'ll ask you to confirm who before sending.';
+  '• Just text what you want to say — it goes to whoever last texted you.\n' +
+  '• "3821 your message" to pick someone else by the last 4 digits of their number.\n' +
+  '• Or name them plainly ("tell the guy asking about price it\'s $200").';
 
 async function handleOwnerCommand(owner, rawText, numMedia, cfg) {
   const text = String(rawText || '').trim();
@@ -698,6 +707,19 @@ async function handleOwnerCommand(owner, rawText, numMedia, cfg) {
 
   // --- A pending plain-English command is waiting on a yes/no ---
   const pending = await kv().get(CMD_PENDING(owner), { type: 'json' });
+  // "Who's this for?" was asked — a bare 1/2/3 picks from that short list.
+  if (pending && Array.isArray(pending.choices)) {
+    const n = text.match(/^([1-9])\b/);
+    if (n) {
+      const phone = pending.choices[+n[1] - 1];
+      if (phone) {
+        await kv().delete(CMD_PENDING(owner));
+        await clearLastAlertedContest(phone);
+        return twiml(await relayToCustomer(phone, pending.body, cfg));
+      }
+    }
+    await kv().delete(CMD_PENDING(owner));
+  }
   if (pending && pending.phone) {
     if (/^(y|yes|yep|yeah|ok|okay|send|confirm|do it)\b/i.test(text)) {
       await kv().delete(CMD_PENDING(owner));
@@ -728,19 +750,47 @@ async function handleOwnerCommand(owner, rawText, numMedia, cfg) {
     return twiml(await relayToCustomer(matches[0].phone, body, cfg));
   }
 
-  // --- Plain-English path: let the AI work out who, then confirm ---
-  if (!ENV.GEMINI_API_KEY) {
-    return twiml('Start with the last 4 digits of their number, like: 3821 yes Tuesday works');
+  // --- No digits. Who is this for? ---
+  const last = await getLastAlerted();
+
+  // Nothing to reply to and no number given — say so plainly.
+  if (!last) {
+    return twiml('Nobody\'s texted recently, so I don\'t know who that\'s for. Start with the last 4 digits of their number, like: 3821 your message');
   }
+
+  // No AI available: a bare message can still go to whoever just texted, as long
+  // as nobody else has texted since.
+  if (!ENV.GEMINI_API_KEY) {
+    if (last.contested) return twiml(await askWhichRecent(owner, text));
+    return twiml(await relayToCustomer(last.phone, text, cfg));
+  }
+
   let pick;
   try {
-    pick = await resolveOwnerCommand(text);
+    pick = await resolveOwnerCommand(text, last.phone);
   } catch {
-    return twiml('Couldn\'t work out who you meant. Try: 3821 your message');
+    // AI is down — fall back to the obvious target rather than losing the message.
+    if (last.contested) return twiml(await askWhichRecent(owner, text));
+    return twiml(await relayToCustomer(last.phone, text, cfg));
   }
+
   if (!pick || !pick.phone || !pick.body) {
-    return twiml(`Not sure who you meant${pick && pick.why ? ' — ' + pick.why : ''}. Try the last 4 digits of their number, like: 3821 your message`);
+    if (last.contested) return twiml(await askWhichRecent(owner, text));
+    return twiml(await relayToCustomer(last.phone, text, cfg));
   }
+
+  // The AI landed on the obvious target, meaning your words didn't single anyone
+  // out — you're just answering the alert.
+  if (pick.phone === last.phone) {
+    // Nobody else texted since: send it, no questions.
+    if (!last.contested) return twiml(await relayToCustomer(pick.phone, pick.body, cfg));
+    // Someone else did: a yes/no about one guess would make you retype on "no",
+    // so offer the short list instead and let one keystroke settle it.
+    return twiml(await askWhichRecent(owner, pick.body));
+  }
+
+  // The AI picked someone OTHER than the obvious target — your words named a
+  // person, and that's a judgment call worth confirming before it goes out.
   const thread = await loadThread(pick.phone);
   const who = thread.name || pick.phone;
   await kv().put(
@@ -751,6 +801,24 @@ async function handleOwnerCommand(owner, rawText, numMedia, cfg) {
   return twiml(
     `Send to ${who} (${pick.phone.slice(-4)})?\n\n"${pick.body}"\n\nReply Y to send, N to cancel.`,
   );
+}
+
+// Two different people texted since you last replied, so "whoever just texted"
+// is ambiguous. Show both and hold the message until you pick.
+async function askWhichRecent(owner, body) {
+  const index = await loadIndex();
+  const recent = index
+    .filter((t) => !t.archived && t.lastDir === 'in')
+    .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0))
+    .slice(0, 3);
+  if (!recent.length) return 'Not sure who that\'s for. Try: 3821 your message';
+  await kv().put(
+    CMD_PENDING(owner),
+    JSON.stringify({ choices: recent.map((t) => t.phone), body, at: Date.now() }),
+    { expirationTtl: 900 },
+  );
+  const list = recent.map((t, i) => `${i + 1}. ${t.name || 'Unknown'} (${String(t.phone).slice(-4)})`).join('\n');
+  return `A few people texted — who's this for?\n${list}\n\nReply with the number (1, 2\u2026) and I'll send it.`;
 }
 
 // Find conversations whose number ends in the given digits. 4 digits = a suffix
@@ -780,13 +848,15 @@ async function relayToCustomer(phone, body, cfg) {
   msg.status = 'sent';
   if (r && r.sid) msg.sid = r.sid;
   const thread = await appendMessage(phone, msg);
+  // You've answered, so "whoever just texted" is unambiguous again.
+  await clearLastAlertedContest(phone);
   if (cfg && cfg.replyByTextConfirm === false) return '';
   return `✓ Sent to ${thread.name || phone.slice(-4)}`;
 }
 
 // Ask the AI which conversation the owner meant and what to say. Returns a phone
 // that MUST already exist in the index — the model never gets to invent a number.
-async function resolveOwnerCommand(text) {
+async function resolveOwnerCommand(text, defaultPhone) {
   const index = await loadIndex();
   const recent = index
     .filter((t) => !t.archived)
@@ -802,6 +872,7 @@ async function resolveOwnerCommand(text) {
   const prompt =
     'You route a detailing business owner\'s spoken-style instruction to ONE existing text conversation.\n\n' +
     'Conversations (most recent first):\n' + roster + '\n\n' +
+    (defaultPhone ? 'He was just alerted about phone=' + defaultPhone + '. Unless his words clearly point at someone else, that is who he means.\n\n' : '') +
     'Owner said: "' + text + '"\n\n' +
     'Work out which ONE conversation he means and the exact message to send that customer. ' +
     'If he quoted the message, use his quoted wording verbatim. Otherwise write the short, ' +
@@ -925,7 +996,7 @@ async function handleVoicemail(request) {
   <Record maxLength="120" action="/voicemail-done" method="POST" playBeep="true" transcribe="true" transcribeCallback="/voicemail-tx" />
 </Response>`;
   notifyMikey(`📵 Missed call from ${from}`,
-    withThreadLink(`Missed call from ${from} — I sent them an instant text back, and they may leave a voicemail now.`, fromNorm)).catch(() => {});
+    withThreadLink(`Missed call from ${from} — I sent them an instant text back, and they may leave a voicemail now.`, fromNorm), fromNorm).catch(() => {});
   return xmlResponse(xml);
 }
 
@@ -961,7 +1032,7 @@ async function handleVoicemailDone(request) {
       await updateIndexEntry(thread);
     }
     await notifyMikey(`🎙️ Voicemail from ${from}`,
-      withThreadLink(`Voicemail from ${from} (${duration}s). Tap to listen — the transcript appears here too, usually within a minute:`, fromNorm));
+      withThreadLink(`Voicemail from ${from} (${duration}s). Tap to listen — the transcript appears here too, usually within a minute:`, fromNorm), fromNorm);
   }
   return xmlResponse('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
 }
@@ -1028,7 +1099,7 @@ async function handleVoicemailTranscription(request) {
   // first thing to know about the voicemail at all.
   if (!existing) {
     notifyMikey(`🎙️ Voicemail from ${from}`,
-      withThreadLink(`"${text}"\n\nTap to reply:`, fromNorm)).catch(() => {});
+      withThreadLink(`"${text}"\n\nJust text me back to reply. Or tap:`, fromNorm), fromNorm).catch(() => {});
   }
   return new Response('', { status: 204 });
 }
@@ -4511,7 +4582,11 @@ async function geminiGenerate(prompt, opts = {}) {
 // configured we email it (free) instead of paying Twilio to text ourselves.
 // SMS is the automatic fallback when email isn't set up or the send fails, so
 // an alert always lands somewhere. Returns true if any channel succeeded.
-async function notifyMikey(subject, body) {
+async function notifyMikey(subject, body, aboutPhone) {
+  // Remember who the last alert was about. This is what lets you fire back a bare
+  // reply — you're answering the alert on your screen, so the obvious target is
+  // the person it was about, and you shouldn't have to look up their number.
+  if (aboutPhone) await recordLastAlerted(aboutPhone);
   if (ENV.RESEND_API_KEY && ENV.ALERT_EMAIL) {
     // Resend rate-limits bursts and, like any API, has the occasional 5xx. A
     // single hiccup used to drop us straight onto a paid Twilio SMS, so retry
@@ -4537,6 +4612,36 @@ async function notifyMikey(subject, body) {
 }
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+// The customer your most recent alert was about, plus whether anyone else has
+// texted since. If someone else has, a bare reply is genuinely ambiguous and we
+// ask instead of guessing.
+const LAST_ALERTED = 'cmd:lastAlerted';
+async function recordLastAlerted(phone) {
+  const p = normalizePhone(phone) || phone;
+  if (!p) return;
+  try {
+    const prev = (await kv().get(LAST_ALERTED, { type: 'json' })) || {};
+    // A second alert about the SAME person doesn't muddy anything; a different
+    // person does, and that's what we need to notice.
+    const contested = !!(prev.phone && prev.phone !== p);
+    await kv().put(LAST_ALERTED, JSON.stringify({ phone: p, at: Date.now(), contested }));
+  } catch { /* never break an alert over this */ }
+}
+// Clear the ambiguity flag once a reply lands — answering resets the context.
+async function clearLastAlertedContest(phone) {
+  try {
+    const cur = (await kv().get(LAST_ALERTED, { type: 'json' })) || {};
+    if (cur.phone) await kv().put(LAST_ALERTED, JSON.stringify({ phone: normalizePhone(phone) || cur.phone, at: Date.now(), contested: false }));
+  } catch { /* non-fatal */ }
+}
+async function getLastAlerted() {
+  const v = (await kv().get(LAST_ALERTED, { type: 'json' })) || null;
+  if (!v || !v.phone) return null;
+  // Older than 6 hours and it's no longer "the one on your screen".
+  if (Date.now() - (v.at || 0) > 6 * 3600 * 1000) return null;
+  return v;
+}
 
 // Track the health of email alerts so a silent fallback to paid SMS is visible.
 // Only writes when the state actually changes, so a healthy dashboard costs no
