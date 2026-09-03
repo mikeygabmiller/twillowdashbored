@@ -411,6 +411,22 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .pb-w.mine{background:rgba(127,127,127,.12);border-color:var(--line);color:var(--muted)}
   .pb-w.mine .pb-wl{text-decoration:none}
   .pb-w svg{width:11px;height:11px;flex:none;opacity:.75}
+  /* A warning is not a rewrite. Anything it can't fix without knowing what he
+     knows — which day "tomorrow" actually is — and anything that is a judgement
+     call about tone lands here as one line he can ignore, instead of quietly
+     changing his words for him. */
+  .pb-note{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:650;color:var(--gold);line-height:1.35}
+  .pb-note svg{width:12px;height:12px;flex:none}
+  /* Past the change cap it stops swapping and shows you the version instead, so
+     a rewrite big enough to be a different message is always your call. */
+  .polish-bar.offer{border-left-color:var(--gold)}
+  .polish-bar.offer .pb-ic{color:var(--gold)}
+  .pb-prev{font-size:12px;color:var(--muted);line-height:1.4;max-height:3.4em;overflow:hidden}
+  .pb-use{flex:none;display:inline-flex;align-items:center;gap:4px;background:var(--purple);border:1px solid var(--purple);
+    color:#fff;border-radius:999px;padding:5px 10px;font-size:11.5px;font-weight:800;cursor:pointer}
+  .pb-no{flex:none;background:none;border:0;color:var(--muted2);cursor:pointer;display:flex;padding:4px;border-radius:8px}
+  .pb-no:hover{color:var(--text);background:rgba(127,127,127,.14)}
+  .pb-no svg{width:15px;height:15px}
   /* Text changing by itself is startling if nothing marks the moment. */
   @keyframes polishFlash{0%{background:rgba(124,92,255,.22)}100%{background:transparent}}
   .just-polished{animation:polishFlash .7s ease}
@@ -4054,7 +4070,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-31·claude-voice";
+  var APP_BUILD="2026-09-03·polish-playbook";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -9234,18 +9250,25 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // =========================================================================
   var POLISH_IDLE=2400;      // ms of "you stopped typing" before we rewrite (was 1600 when it only offered)
   var POLISH_COOLDOWN=6000;  // ms minimum between two automatic runs
-  var POLISH_MIN=15;         // don't bother with "ok", "on my way", etc.
-  var polish={timer:null,busy:false,at:0,applied:false,before:"",after:"",parts:[],phone:"",undone:""};
+  // 10 chars / 2 words, down from 15 / 3. The texts most likely to come off
+  // badly are the short blunt ones — "cant do thurs." never used to clear the
+  // old floor, and that is exactly the message worth a word about tone.
+  var POLISH_MIN=10;         // still not worth a call for "ok" or "yep"
+  var POLISH_MAX_CHANGE=.4;  // past this share of the words it asks instead of swapping
+  var polish={timer:null,busy:false,at:0,applied:false,before:"",after:"",parts:[],phone:"",undone:"",
+              note:"",noteFor:"",offer:null};
   var polishCache={};        // exact draft text -> polished text ("" = nothing to suggest)
+  var polishNotes={};        // exact draft text -> the one warning it had ("" = none)
   var polishDeclined={};     // exact draft text -> true (already your call — never re-polish this)
   function autoPolishOn(){return UI.autoPolish!==false}
   function curDraft(){var i=el("msgInput");return i?(i.value||"").trim():""}
   function polishWorthIt(text){
-    return !!(state.thread&&text.length>=POLISH_MIN&&text.split(/\s+/).length>=3);
+    return !!(state.thread&&text.length>=POLISH_MIN&&text.split(/\s+/).length>=2);
   }
   function prunePolishCache(){
     var k=Object.keys(polishCache);if(k.length>60)k.slice(0,30).forEach(function(x){delete polishCache[x]});
     var d=Object.keys(polishDeclined);if(d.length>80)d.slice(0,40).forEach(function(x){delete polishDeclined[x]});
+    var t=Object.keys(polishNotes);if(t.length>60)t.slice(0,30).forEach(function(x){delete polishNotes[x]});
   }
   function polishDecide(text){if(text)polishDeclined[text]=true}
 
@@ -9292,6 +9315,18 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     for(var i=0;i<parts.length;i++)s+=(parts[i].eq||!parts[i].mine)?parts[i].to:parts[i].from;
     return s.replace(/^\s+/,"");
   }
+  // How much of the message it actually rewrote. Word-level chips are a real way
+  // back for six changed words and useless for thirty — so this is the number
+  // that decides whether a rewrite lands on its own or waits to be asked for.
+  function polishChangeRatio(parts){
+    var chg=0,tot=0,i,p,w;
+    for(i=0;i<parts.length;i++){
+      p=parts[i];
+      w=Math.max(p.from?p.from.trim().split(/\s+/).length:0,p.to?p.to.trim().split(/\s+/).length:0);
+      tot+=w;if(!p.eq)chg+=w;
+    }
+    return tot?chg/tot:0;
+  }
   function polishChanges(){
     var out=[];
     for(var i=0;i<polish.parts.length;i++)if(!polish.parts[i].eq)out.push(i);
@@ -9305,6 +9340,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // You typed after a rewrite, so the chips no longer point at anything real.
     if(polish.applied&&text!==polish.after)clearApplied();
     if(polish.undone&&text!==polish.undone)polish.undone="";
+    // An offer is about one exact draft. Type another word and it isn't that
+    // draft any more, so the version on the strip is no longer the one on offer.
+    if(polish.offer&&polish.offer.src!==text)polish.offer=null;
     if(!state.thread){renderPolishBar();return}
     if(!autoPolishOn()||!polishWorthIt(text)||polishDeclined[text]){renderPolishBar();return}
     if(polishCache[text]!==undefined){applyPolish(text,polishCache[text],state.thread.phone);return}
@@ -9323,15 +9361,16 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     return post("/api/ai/draft",{phone:forPhone,text:text}).then(function(d){
       if(d&&d.ok&&d.draft){
         var out=d.draft.trim();
+        polishNotes[text]=String(d.note||"").trim();
         polishCache[text]=(out===text)?"":out;prunePolishCache();
         applyPolish(text,polishCache[text],forPhone);
-        if(manual&&!polishCache[text])toast("Already reads well — nothing to change");
+        if(manual&&!polishCache[text]&&!polishNotes[text])toast("Already reads well — nothing to change");
       } else {
-        polishCache[text]="";  // remember the miss so auto-polish can't hammer a failing API
+        polishCache[text]="";polishNotes[text]="";  // remember the miss so auto-polish can't hammer a failing API
         if(manual)toast("Polish failed: "+((d&&d.error)||"error"),{bad:true});
       }
     }).catch(function(){
-      polishCache[text]="";
+      polishCache[text]="";polishNotes[text]="";
       if(manual)toast("Network error",{bad:true});
     }).then(function(){
       polish.busy=false;
@@ -9342,16 +9381,28 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // The swap itself. Bails unless the box still holds exactly the text we sent
   // and you're still in the same conversation, so a rewrite can never land on
   // top of words you typed while waiting — or in someone else's thread.
-  function applyPolish(src,out,forPhone){
-    if(!out||!state.thread||state.thread.phone!==forPhone||curDraft()!==src){renderPolishBar();return}
+  function applyPolish(src,out,forPhone,force){
+    if(!state.thread||state.thread.phone!==forPhone||curDraft()!==src){renderPolishBar();return}
+    var note=polishNotes[src]||"";
+    // Nothing to rewrite is a real answer now, not a dead end: the playbook lets
+    // it say "this is fine" and still hand back one thing worth a look.
+    if(!out){polish.note=note;polish.noteFor=src;renderPolishBar();return}
     var parts=polishDiff(src,out);
-    if(!parts||!polishChangesIn(parts).length){polishCache[src]="";renderPolishBar();return}
+    if(!parts||!polishChangesIn(parts).length){polishCache[src]="";polish.note=note;polish.noteFor=src;renderPolishBar();return}
+    // Past the cap this stopped being a polish and started being a different
+    // message. Swapping that in silently would leave a row of chips nobody can
+    // reason about, so it waits to be asked instead.
+    if(!force&&polishChangeRatio(parts)>POLISH_MAX_CHANGE){
+      polish.offer={src:src,out:out,phone:forPhone};polish.note=note;polish.noteFor=src;
+      renderPolishBar();return;
+    }
     var inp=el("msgInput");
     inp.value=out;autoGrow();updateCount();
     if(typeof stashDraft==="function")stashDraft(state.phone);
     if(document.activeElement===inp&&inp.setSelectionRange){try{inp.setSelectionRange(out.length,out.length)}catch(e){}}
     inp.classList.add("just-polished");setTimeout(function(){inp.classList.remove("just-polished")},700);
     polish.applied=true;polish.before=src;polish.after=out;polish.parts=parts;polish.phone=forPhone;
+    polish.offer=null;polish.note=note;polish.noteFor=out;
     // Its own output is never a candidate again — that's the loop-guard.
     polishCache[out]="";polishDecide(out);
     if(typeof vibrate==="function")vibrate(8);
@@ -9367,19 +9418,29 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var bar=el("polishBar");if(!bar)return;
     var text=curDraft(),paused=!autoPolishOn();
     var undone=!!(polish.undone&&text&&text===polish.undone);
-    var show=!!state.thread&&(polish.applied||polish.busy||undone||(polishWorthIt(text)&&!polishDeclined[text]));
-    if(paused&&!polish.applied&&!polishWorthIt(text))show=false;
+    var offer=(polish.offer&&polish.offer.src===text)?polish.offer:null;
+    var note=(polish.note&&polish.noteFor===text)?polish.note:"";
+    var show=!!state.thread&&(polish.applied||polish.busy||offer||note||undone||(polishWorthIt(text)&&!polishDeclined[text]));
+    if(paused&&!polish.applied&&!offer&&!note&&!polishWorthIt(text))show=false;
     if(!show){hidePolishBar();return}
     var icon,label;
-    if(polish.applied){icon="wand";label="Polished — tap to undo a word";}
+    if(offer){icon="wand";label="That's a big rewrite — your call";}
+    else if(polish.applied){icon="wand";label="Polished — tap to undo a word";}
     else if(polish.busy){icon="wand";label="Polishing…";}
     else if(undone){icon="undo";label=paused?"Your words are back · paused":"Your words are back — this one is left alone";}
+    else if(note){icon="alert-triangle";label="Reads fine — one thing to look at";}
     else if(paused){icon="pause";label="Auto Polish paused";}
     else {icon="wand";label="Polishes when you pause";}
     var h='<div class="pb-top"><span class="pb-ic">'+ic(icon,15)+'</span><span class="pb-t">'+esc(label)+'</span>';
+    if(offer)h+='<button class="pb-use" id="pbUse">'+ic("check",13)+'Use it</button>'+
+                '<button class="pb-no" id="pbNo" aria-label="Keep my wording" title="Keep my wording">'+ic("x",15)+'</button>';
     if(polish.applied)h+='<button class="pb-undo" id="pbUndo">'+ic("undo",13)+'Undo</button>';
     h+='<button class="pb-pp" id="pbPP" aria-label="'+(paused?"Resume Auto Polish":"Pause Auto Polish")+'" '+
        'title="'+(paused?"Resume Auto Polish":"Pause Auto Polish")+'">'+ic(paused?"play":"pause",16)+'</button></div>';
+    // The offered version, in full where it fits. "Use it" with nothing to read
+    // is a coin flip, and this is the one state where the words aren't in the box.
+    if(offer)h+='<div class="pb-prev" id="pbPrev">'+esc(polishClip(offer.out,220))+'</div>';
+    if(note)h+='<div class="pb-note" id="pbNote">'+ic("alert-triangle",12)+'<span>'+esc(note)+'</span></div>';
     if(polish.applied){
       var ch=polishChanges();
       if(ch.length){
@@ -9395,6 +9456,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     }
     bar.innerHTML=h;bar.className="polish-bar show"+(polish.applied?" applied":"")+(paused?" paused":"");
     var u=bar.querySelector("#pbUndo");if(u)u.onclick=function(e){e.stopPropagation();polishUndoAll()};
+    var yes=bar.querySelector("#pbUse");if(yes)yes.onclick=function(e){e.stopPropagation();polishUseOffer()};
+    var no=bar.querySelector("#pbNo");if(no)no.onclick=function(e){e.stopPropagation();polishRefuseOffer()};
     bar.querySelector("#pbPP").onclick=function(e){e.stopPropagation();setAutoPolish(!autoPolishOn())};
     Array.prototype.forEach.call(bar.querySelectorAll(".pb-w"),function(b){
       b.onclick=function(e){e.stopPropagation();polishToggleWord(Number(b.getAttribute("data-i")))};
@@ -9407,7 +9470,25 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(!cur)return "put back “"+polishClip(other)+"”";
     return polishClip(cur);
   }
-  function polishClip(s){s=String(s||"").replace(/\s+/g," ");return s.length>26?s.slice(0,25)+"…":s}
+  function polishClip(s,n){n=n||26;s=String(s||"").replace(/\s+/g," ");return s.length>n?s.slice(0,n-1)+"…":s}
+
+  // ---- the two answers to a big rewrite ----
+  // "Use it" is the same swap an automatic polish does — chips, undo and all —
+  // just asked for rather than assumed.
+  function polishUseOffer(){
+    var o=polish.offer;if(!o)return;
+    polish.offer=null;
+    applyPolish(o.src,o.out,o.phone,true);
+  }
+  // "No thanks" has to be final. Without marking the draft decided, the identical
+  // rewrite gets offered again the moment he stops typing, which is worse than
+  // never offering it at all.
+  function polishRefuseOffer(){
+    var o=polish.offer;if(!o)return;
+    polish.offer=null;polishDecide(o.src);
+    if(typeof vibrate==="function")vibrate(5);
+    renderPolishBar();
+  }
   function hidePolishBar(){var bar=el("polishBar");if(bar){bar.className="polish-bar";bar.innerHTML=""}}
 
   // Undo: your exact words back, and they stay yours — the same draft is never
@@ -9419,6 +9500,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(typeof stashDraft==="function")stashDraft(state.phone);
     polishDecide(src);
     clearApplied();
+    // The warning was about what he wrote, not about the rewrite — taking the
+    // rewrite back is no reason to stop telling him the text reads curt.
+    polish.noteFor=src;
     polish.undone=src;
     if(typeof vibrate==="function")vibrate(6);
     renderPolishBar();
@@ -9432,7 +9516,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var out=polishJoin(polish.parts),inp=el("msgInput");
     inp.value=out;autoGrow();updateCount();
     if(typeof stashDraft==="function")stashDraft(state.phone);
-    polish.after=out;polishCache[out]="";polishDecide(out);
+    polish.after=out;polish.noteFor=out;polishCache[out]="";polishDecide(out);
     if(typeof vibrate==="function")vibrate(5);
     renderPolishBar();
   }
@@ -9440,7 +9524,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // leak from one customer's draft into another's.
   function resetPolish(){
     if(polish.timer){clearTimeout(polish.timer);polish.timer=null}
-    clearApplied();polish.undone="";
+    clearApplied();polish.undone="";polish.offer=null;polish.note="";polish.noteFor="";
     hidePolishBar();
   }
   function setAutoPolish(on){
@@ -9457,7 +9541,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Read-only view for the UI tests (and for debugging a rewrite that surprised you).
   window.__polish=function(){
     return {on:autoPolishOn(),applied:polish.applied,busy:polish.busy,before:polish.before,after:polish.after,
-            idle:POLISH_IDLE,changes:polish.parts.filter(function(p){return !p.eq}).map(function(p){
+            idle:POLISH_IDLE,min:POLISH_MIN,cap:POLISH_MAX_CHANGE,
+            note:(polish.note&&polish.noteFor===curDraft())?polish.note:"",
+            offer:polish.offer?{src:polish.offer.src,out:polish.offer.out}:null,
+            changes:polish.parts.filter(function(p){return !p.eq}).map(function(p){
               return {from:p.from.trim(),to:p.to.trim(),mine:p.mine}})};
   };
   // The Polish tool means "don't wait for the pause" — same rewrite, right now.

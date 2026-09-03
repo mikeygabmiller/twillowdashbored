@@ -109,6 +109,74 @@ const polish = lift('apiAiDraft');
 check('polish uses the measured counts', /measuredStyleRules\(/.test(polish), true);
 check('polish uses the derived fingerprint', /fingerprint/.test(polish), true);
 check('polish still refuses to invent facts', /Do NOT add, remove, or change any facts/.test(polish), true);
+// His own corrections are the strongest block in the prompt — "the AI wrote X,
+// Mikey sent Y" — and polish was the last writing path not being shown them.
+check('polish learns from how he edits', /editsContext\(/.test(polish), true);
+
+console.log('\n=== the polish playbook names the defects instead of asking for "great" ===');
+const PB = (SRC.match(/const POLISH_PLAYBOOK =[\s\S]*?;\n/) || [''])[0];
+check('there is a playbook at all', PB.length > 400, true);
+check('polish is handed it', /POLISH_PLAYBOOK/.test(polish), true);
+// The old instruction was an adjective ("reads clearly and sounds great"), which
+// guarantees a rewrite every time because there is always a better version.
+check('the adjective is gone', /sounds great/.test(polish), false);
+check('it is allowed to change nothing', /EXACTLY as written/.test(PB), true);
+// The four lists, each doing a different job.
+check('a fix list', /FIX SILENTLY/.test(PB), true);
+check('a flag list it must not act on', /FLAG, NEVER FIX/.test(PB), true);
+check('a tone list it must not act on', /TONE RISK/.test(PB), true);
+check('a hands-off list', /NEVER TOUCH/.test(PB), true);
+// The one that costs him a customer if it gets fixed: his signature opener is
+// not a missing apostrophe, and a generic proofreader "corrects" it every time.
+check('his opener is protected', /its Mikey/.test(PB), true);
+check('lowercase starts are protected', /starts lowercase/.test(PB), true);
+check('soft prices are protected', /never sharpen/.test(PB), true);
+check('sounding like a company is a tone risk', /one guy with a van/.test(PB), true);
+check('tone is never silently rewritten', /NEVER rewrite these, only mention/.test(PB), true);
+
+console.log('\n=== the warning comes back as a note, not as a rewrite ===');
+check('polish asks for text and note', /"text"[\s\S]{0,80}"note"/.test(polish), true);
+check('the note is capped short', /60 characters/.test(polish), true);
+check('the response carries it', /note: out\.note/.test(polish), true);
+
+// lift() counts braces, which a function holding a "{" inside a string literal
+// defeats. Both of these are top level, so their closing brace is the first one
+// sitting in column zero.
+const liftFlat = (name) => {
+  const start = SRC.indexOf(`function ${name}(`);
+  if (start < 0) throw new Error(`function ${name} not found`);
+  return SRC.slice(start, SRC.indexOf('\n}\n', start) + 2);
+};
+const pctx = {};
+// eslint-disable-next-line no-new-func
+new Function('ctx', liftFlat('parsePolishOut') + liftFlat('polishNumbers') +
+  'ctx.parsePolishOut = parsePolishOut; ctx.polishNumbers = polishNumbers;')(pctx);
+const { parsePolishOut, polishNumbers } = pctx;
+
+check('plain JSON comes apart',
+  parsePolishOut('{"text":"Thursday works. Ill see you then.","note":"reads a bit curt"}', 'x'),
+  { text: 'Thursday works. Ill see you then.', note: 'reads a bit curt' });
+check('a fenced reply still comes apart',
+  parsePolishOut('```json\n{"text":"All good","note":""}\n```', 'x').text, 'All good');
+check('an empty note stays empty',
+  parsePolishOut('{"text":"All good","note":""}', 'x').note, '');
+// A model that ignores the JSON instruction has still written him a message.
+check('prose is treated as the message',
+  parsePolishOut('Thursday works for me.', 'orig').text, 'Thursday works for me.');
+check('quotes around it are stripped',
+  parsePolishOut('"Thursday works for me."', 'orig').text, 'Thursday works for me.');
+// The one that would be visible to a customer: never paste a JSON fragment into
+// his message box because the reply got truncated.
+check('broken JSON falls back to his own words',
+  parsePolishOut('{"text":"Thursday wo', 'my original text').text, 'my original text');
+check('a long note is trimmed',
+  parsePolishOut(JSON.stringify({ text: 'a', note: 'x'.repeat(200) }), 'a').note.length, 70);
+
+console.log('\n=== a rewrite is never allowed to move a number ===');
+check('same numbers, any order', polishNumbers('be there at 9, $130') === polishNumbers('$130 at 9'), true);
+check('a changed price is caught', polishNumbers('around $130') === polishNumbers('around $150'), false);
+check('an added time is caught', polishNumbers('see you tomorrow') === polishNumbers('see you at 9'), false);
+check('the refusal keeps his text', /out\.text = draftText/.test(polish), true);
 
 console.log('\n=== offering a time and locking one in are different jobs ===');
 // This was the worst-scoring situation on the Train AI board — 50% against 100%
