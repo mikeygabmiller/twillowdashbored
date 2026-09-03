@@ -132,7 +132,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-02·rain-check';
+const BUILD = '2026-09-03·polish-playbook';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -6343,6 +6343,90 @@ async function apiAiAnswer(request) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The polish playbook
+// ---------------------------------------------------------------------------
+// Polish used to be told to make the message "read clearly and sound great".
+// That is an adjective, not a test, and a model handed an adjective always finds
+// something to change — which is why the "already reads well" path almost never
+// fired and perfectly good texts came back reworded.
+//
+// So the instruction is now a list of NAMED defects. Three things follow from
+// that which the adjective version could never do:
+//   1. It can decide nothing is wrong. Nothing on the list, nothing to change.
+//   2. It can catch what he actually worries about — "does this come off bad?" —
+//      which no proofreading prompt was ever going to look for.
+//   3. It can be told which of his "errors" are him. A generic proofreader
+//      "fixes" his own signature opener ("its Mikey") into "it's Mikey" every
+//      single time, because it has no way to know that one is deliberate.
+//
+// The split between fix / flag / mention matters as much as the list itself. A
+// rewrite lands in his message box automatically, so only the mechanical stuff
+// is allowed to rewrite. Anything needing a fact he has and the model doesn't —
+// which day "tomorrow" is — and anything that is a judgement call about tone
+// comes back as a short note instead, and he decides.
+const POLISH_PLAYBOOK =
+  'POLISH PLAYBOOK — work this list and nothing else.\n\n' +
+  'FIX SILENTLY (mechanical, no judgement needed):\n' +
+  '- Run-on sentences and comma splices from typing fast. Split them into two short sentences.\n' +
+  '- A missing full stop or question mark at the end of a sentence.\n' +
+  '- Real typos and dropped words ("tomorow", "I be there at 9").\n' +
+  '- "it" / "that" / "they" with nothing to point at — name the thing, but ONLY if the message already says what it is.\n' +
+  '- The question buried in the middle. A question goes last, where they will answer it.\n' +
+  '- Two questions in one text. Keep the one that has to be answered first, drop the other.\n' +
+  '- A sentence you have to read twice because the clauses are in a strange order.\n\n' +
+  'FLAG, NEVER FIX — you do not have the facts to fix these, so mention them in the note:\n' +
+  '- "tomorrow" or "next week" where naming the actual day would be clearer.\n' +
+  '- A price with no service attached, or a service with no price.\n' +
+  '- A commitment harder than he probably meant ("I will be there at 9" when he means about 9).\n' +
+  '- A promise about the result he cannot guarantee ("it will look brand new").\n\n' +
+  'TONE RISK — NEVER rewrite these, only mention them in the note:\n' +
+  '- Reads cold or curt: a bare no, no reason, no softener.\n' +
+  '- Reads defensive: sentences justifying himself after a complaint.\n' +
+  '- Reads pushy: a deadline plus a second ask in the same text.\n' +
+  '- Over-apologising. Stacked sorries read weak and invite a discount request.\n' +
+  '- Sounds like a company instead of one guy with a van: "our team", "we will get you scheduled", "your service window".\n\n' +
+  'NEVER TOUCH — these are him, not mistakes:\n' +
+  '- "its Mikey" — his opener. Leave the apostrophe out.\n' +
+  '- A sentence that starts lowercase.\n' +
+  '- "around $X" — never sharpen it to "$X".\n' +
+  '- A soft time commit ("probably around 10") — never harden it.\n' +
+  '- Any price, number, date, day, time, name, address or vehicle. Ever.\n' +
+  '- Emoji, greetings and sign-offs that are already there — and never add ones that are not.\n\n' +
+  'If nothing on the FIX list is wrong, return his message EXACTLY as written, character for character. ' +
+  'A message with no defect on that list is a finished message.\n\n';
+
+// Pull the message and the warning back out. The model is asked for JSON, but a
+// polish reply lands straight in his message box, so this never guesses: a reply
+// that parses gives us both halves, a reply that is plainly prose is the message
+// itself, and a reply that is broken JSON gets thrown away rather than pasted
+// into a customer's text as "{"text": ...".
+function parsePolishOut(raw, original) {
+  let s = String(raw || '').trim();
+  const fence = s.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (fence) s = fence[1].trim();
+  const clean = (t) => String(t || '').replace(/^["']|["']$/g, '').trim();
+  if (s.startsWith('{')) {
+    try {
+      const p = JSON.parse(s);
+      const text = clean(p.text || p.message || p.polished);
+      const note = String(p.note || '').replace(/\s+/g, ' ').trim().slice(0, 70);
+      if (text) return { text, note };
+    } catch { /* fall through */ }
+    return { text: original, note: '' };   // broken JSON is not a text message
+  }
+  return { text: clean(s), note: '' };
+}
+
+// Every digit-run in the message. The playbook forbids touching a number, and
+// this is the check that it didn't: a price or a time is the one thing in one of
+// these texts that costs real money when it changes, and it is cheap to verify
+// rather than trust. Time formats and money both reduce to the same tokens, so
+// "10:30" and "$130" compare as themselves.
+function polishNumbers(s) {
+  return (String(s || '').match(/\d+/g) || []).sort().join(',');
+}
+
 async function apiAiDraft(request) {
   const data = await readJson(request);
   const phone = normalizePhone(data.phone);
@@ -6353,11 +6437,9 @@ async function apiAiDraft(request) {
   const draftText = (data.text || '').trim();
   try {
     if (draftText) {
-      // Polish mode = clean up and reword for clarity while keeping the sender's
-      // meaning, facts and casual voice. We include just the voice/tone (not the
-      // whole playbook) so it sounds like Mikey, and forbid changing any facts so
-      // it can't invent prices/times. This actually rewrites awkward phrasing —
-      // it's not a bare proofread.
+      // Polish mode = fix the named defects in POLISH_PLAYBOOK while keeping his
+      // meaning, his facts and his casual voice. We include just the voice/tone
+      // (not the whole playbook config) so it sounds like Mikey.
       const voice = (cfg.playbook && cfg.playbook.tone) ? `Write in this texting voice:\n${cfg.playbook.tone}\n\n` : '';
       // Polish had the hand-written tone paragraph and nothing else, while the
       // measured counts and the derived fingerprint — both already computed, both
@@ -6366,21 +6448,37 @@ async function apiAiDraft(request) {
       // more obvious here than anywhere: it gets the same grounding as drafting.
       const pv = await loadVoice();
       const measured = pv ? measuredStyleRules(pv.style) : '';
+      // And his own corrections, which drafting has had all along. "The AI wrote
+      // X, Mikey shipped Y" is the highest-signal block in the whole prompt, and
+      // polish — the one surface where his words are already on the page — was
+      // the only writing path not getting it.
+      const edits = await editsContext(voiceBucket(draftText));
       const prompt =
         voice +
         (measured ? measured + '\n\n' : '') +
         (pv && pv.fingerprint ? 'HOW MIKEY WRITES (derived from his real texts):\n' + pv.fingerprint + '\n\n' : '') +
+        edits +
         (await rulesContext()) +
-        `You are polishing a short text message the user is about to send a customer. ` +
-        `Rewrite it so it reads clearly and sounds great: fix spelling, grammar and punctuation, and reword any awkward, clunky or confusing phrasing so every sentence makes sense and flows naturally. ` +
-        `KEEP the user's exact meaning and intent. Keep it casual and friendly like a real text — never stiff, formal or corporate — and keep it about the same length (it's a text, so stay concise). ` +
-        `Do NOT add, remove, or change any facts, prices, dates, times, names or details, and do NOT invent anything the user didn't say. ` +
-        `Do NOT add greetings, sign-offs, or emojis that aren't already there. ` +
-        `Return ONLY the polished message — no quotes, no explanation, no preamble. ` +
-        (hint ? `Also follow this instruction: ${hint}. ` : '') +
-        `\n\nMessage to polish:\n${draftText}\n\nPolished message:`;
-      const text = await aiGenerate(prompt, { surface: 'auto polish', tier: 'voice', temperature: 0.4, maxTokens: 800 });
-      return json({ ok: true, draft: text.replace(/^["']|["']$/g, '').trim() });
+        `You are polishing a short text message Mikey is about to send a customer. ` +
+        `KEEP his exact meaning and intent. Keep it casual and friendly like a real text — never stiff, formal or corporate — and keep it about the same length (it's a text, so stay concise). ` +
+        `Do NOT add, remove, or change any facts, prices, dates, times, names or details, and do NOT invent anything he didn't say.\n\n` +
+        POLISH_PLAYBOOK +
+        `Return JSON, exactly: {"text": "the message", "note": "one short warning, or empty"}\n` +
+        `- "text" is the message, ready to send: the FIX list applied and nothing else. Unchanged if nothing on that list was wrong.\n` +
+        `- "note" is at most 60 characters of plain ASCII, spoken to Mikey, about ONE thing from the FLAG or TONE lists — the worst one. ` +
+        `Examples: "reads a little curt", "tomorrow - name the day?", "that is a hard promise". ` +
+        `Never describe a fix you already made, never praise the message, and use "" when there is nothing worth saying.\n` +
+        (hint ? `Also follow this instruction: ${hint}.\n` : '') +
+        `\nMessage to polish:\n${draftText}`;
+      const raw = await aiGenerate(prompt, { surface: 'auto polish', tier: 'voice', json: true, temperature: 0.4, maxTokens: 800 });
+      const out = parsePolishOut(raw, draftText);
+      // A rewrite that moved a number is refused outright — the note survives, so
+      // he still hears about it, but his own price goes back in the box.
+      if (out.text !== draftText && polishNumbers(out.text) !== polishNumbers(draftText)) {
+        out.note = out.note || 'left it alone - it moved a number';
+        out.text = draftText;
+      }
+      return json({ ok: true, draft: out.text, note: out.note });
     }
     const text = await generateReply(thread, cfg, hint);
     return json({ ok: true, draft: text });
