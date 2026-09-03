@@ -32,6 +32,22 @@ function lift(name) {
   throw new Error(`could not find end of ${name}`);
 }
 
+
+// Every window this suite reads back through apiQuotes is "the last N months,
+// counted from today", so a fixture pinned to a calendar month silently falls
+// out of it — which is exactly how this file went red on its own, months after
+// it was written and with nothing about the code having changed. Months are
+// relative from here on, and derived the way the Worker derives them: off the
+// LOCAL (Pacific) date, never UTC, or for the seven hours the two disagree the
+// first of a month reads as the previous one.
+const MONTH = (back) => {
+  const [y, m] = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' }).split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1 - back, 1)).toISOString().slice(0, 7);
+};
+const DAY = (back, day) => MONTH(back) + '-' + String(day).padStart(2, '0');
+// 18:00Z is 10 or 11am Pacific — the same calendar day on either side of DST.
+const TS = (back, day, time = '18:00:00') => Date.parse(DAY(back, day) + 'T' + time + 'Z');
+
 let PASS = 0, FAIL = 0;
 const check = (name, got, want) => {
   const ok = JSON.stringify(got) === JSON.stringify(want);
@@ -105,16 +121,16 @@ console.log('\n=== a quote belongs to Mikey\'s calendar day, not UTC\'s ===');
   // Aug 7. Bucketing it by UTC would file it in the wrong day — and, at a month
   // boundary, the wrong month entirely.
   const w = world(); const M = build(w);
-  await M.logQuote(quote({ ts: Date.parse('2026-08-08T02:46:26Z') }));
+  await M.logQuote(quote({ ts: TS(1, 8, '02:46:26') }));
   const d = (await M.apiQuotes(url('/api/quotes?months=3')))._json;
-  check('filed on the local date', d.entries[0].date, '2026-08-07');
-  check('and in the local month',  d.months.map((m) => m.month).includes('2026-08'), true);
+  check('filed on the local date', d.entries[0].date, DAY(1, 7));
+  check('and in the local month',  d.months.map((m) => m.month).includes(MONTH(1)), true);
 }
 
 console.log('\n=== the double-fire guard ===');
 {
   const w = world(); const M = build(w);
-  const ts = Date.parse('2026-07-04T18:00:00Z');
+  const ts = TS(1, 4);
   await M.logQuote(quote({ ts }));
   await M.logQuote(quote({ ts: ts + 60000 }));           // re-tapped a minute later
   let d = (await M.apiQuotes(url('/api/quotes')))._json;
@@ -143,10 +159,10 @@ console.log('\n=== logging can never cost a submission ===');
 console.log('\n=== the rollup the Quotes view draws ===');
 {
   const w = world(); const M = build(w);
-  const at = (iso, over) => M.logQuote(quote(Object.assign({ ts: Date.parse(iso) }, over)));
-  await at('2026-06-10T18:00:00Z', { total: 200, phone: '+1360555001' });
-  await at('2026-06-20T18:00:00Z', { total: 300, phone: '+1360555002' });
-  await at('2026-07-05T18:00:00Z', { total: 400, phone: '+1360555003' });
+  const at = (ts, over) => M.logQuote(quote(Object.assign({ ts }, over)));
+  await at(TS(1, 10), { total: 200, phone: '+1360555001' });
+  await at(TS(1, 20), { total: 300, phone: '+1360555002' });
+  await at(TS(0, 1),  { total: 400, phone: '+1360555003' });
   const d = (await M.apiQuotes(url('/api/quotes?months=3')))._json;
   check('every quote comes back',   d.summary.count, 3);
   check('summed',                   d.summary.value, 900);
@@ -154,8 +170,8 @@ console.log('\n=== the rollup the Quotes view draws ===');
   check('best one surfaced',        d.summary.best, 400);
   check('newest first',             d.entries.map((e) => e.total), [400, 300, 200]);
   const by = Object.fromEntries(d.months.map((m) => [m.month, m]));
-  check('June bucketed',            [by['2026-06'].count, by['2026-06'].value], [2, 500]);
-  check('July bucketed',            [by['2026-07'].count, by['2026-07'].value], [1, 400]);
+  check('last month bucketed',      [by[MONTH(1)].count, by[MONTH(1)].value], [2, 500]);
+  check('this month bucketed',      [by[MONTH(0)].count, by[MONTH(0)].value], [1, 400]);
   check('months plot oldest→newest', d.months[0].month < d.months[d.months.length - 1].month, true);
   check('a quiet month is a zero',  d.months.some((m) => m.count === 0), true);
 }
@@ -163,8 +179,8 @@ console.log('\n=== the rollup the Quotes view draws ===');
 console.log('\n=== a booking with no price must not drag the average down ===');
 {
   const w = world(); const M = build(w);
-  await M.logQuote(quote({ ts: Date.parse('2026-07-05T18:00:00Z'), total: 300, phone: '+1360555001' }));
-  await M.logQuote(quote({ ts: Date.parse('2026-07-06T18:00:00Z'), total: 0, phone: '+1360555002', type: 'booking', appointment: 'Fri, Aug 7 at 3:30 PM' }));
+  await M.logQuote(quote({ ts: TS(1, 5), total: 300, phone: '+1360555001' }));
+  await M.logQuote(quote({ ts: TS(1, 6), total: 0, phone: '+1360555002', type: 'booking', appointment: 'Fri, Aug 7 at 3:30 PM' }));
   const d = (await M.apiQuotes(url('/api/quotes')))._json;
   check('both are listed',        d.summary.count, 2);
   check('average ignores the $0', d.summary.avg, 300);
@@ -175,20 +191,20 @@ console.log('\n=== the backfill import ===');
 {
   const w = world(); const M = build(w);
   const entries = [
-    { date: '2026-06-02T22:41:48Z', name: 'Surrey McEwen', total: 310 },
-    { date: '2026-06-13T17:55:51Z', name: 'Maxine Rogalski', total: 290 },
-    { date: '2026-07-06T23:14:28Z', name: 'Brian Richards', total: 449 },
+    { date: DAY(1, 2) + 'T22:41:48Z', name: 'Surrey McEwen', total: 310 },
+    { date: DAY(1, 13) + 'T17:55:51Z', name: 'Maxine Rogalski', total: 290 },
+    { date: DAY(0, 1) + 'T23:14:28Z', name: 'Brian Richards', total: 449 },
     // No date: it would otherwise be filed under today, inventing a date.
     { name: 'undated row', total: 100 },
     // No name: nothing to show in the list.
-    { date: '2026-06-05T18:00:00Z', total: 120 },
+    { date: DAY(1, 5) + 'T18:00:00Z', total: 120 },
   ];
   const r = (await M.apiQuotesImport(req({ entries })))._json;
   check('the real rows store',      r.stored, 3);
   check('undated + nameless go',    r.skipped, 2);
   check('two months touched',       r.months, 2);
   check('one write per month',      w.writes, 2);
-  check('today was not invented',   [...w.store.keys()].sort(), ['quotes:m:2026-06', 'quotes:m:2026-07']);
+  check('today was not invented',   [...w.store.keys()].sort(), ['quotes:m:' + MONTH(1), 'quotes:m:' + MONTH(0)].sort());
 
   const before = w.writes;
   const again = (await M.apiQuotesImport(req({ entries })))._json;
@@ -198,7 +214,7 @@ console.log('\n=== the backfill import ===');
   check('rewrites are bounded',     w.writes - before <= 2, true);
 
   // A bare YYYY-MM-DD has to work too — that's what a spreadsheet paste looks like.
-  const plain = (await M.apiQuotesImport(req({ entries: [{ date: '2026-05-08', name: 'adam hineline', total: 390 }] })))._json;
+  const plain = (await M.apiQuotesImport(req({ entries: [{ date: DAY(2, 8), name: 'adam hineline', total: 390 }] })))._json;
   check('a plain date imports',     plain.stored, 1);
 }
 
@@ -223,7 +239,7 @@ console.log('\n=== the window is clamped so a URL cannot ask for 500 months ==='
 console.log('\n=== CSV export ===');
 {
   const w = world(); const M = build(w);
-  await M.logQuote(quote({ ts: Date.parse('2026-07-05T18:00:00Z'), name: 'Rogers, Maxine', services: 'Full Detail, Wax' }));
+  await M.logQuote(quote({ ts: TS(1, 5), name: 'Rogers, Maxine', services: 'Full Detail, Wax' }));
   const csv = (await M.apiQuotesExport(url('/api/quotes/export?months=3'))).body;
   const lines = csv.trim().split('\n');
   check('header + one row',       lines.length, 2);

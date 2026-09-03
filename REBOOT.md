@@ -243,7 +243,8 @@ campaigns/reporting/referral.)
   *near that address* to batch by location. Made for a mobile business.
 - 🌟 **Live "on my way" ETA tracking link** (DoorDash-style).
 - 🌟 **Talk to your dashboard** — voice commands ("text the Camaro guy I'm 15 late").
-- Weather-aware scheduling; optimized daily route/map; Sunday AI business brief; cold-lead
+- ~~Weather-aware scheduling~~ (shipped — see "Rain check" in the README);
+  optimized daily route/map; Sunday AI business brief; cold-lead
   radar; writes-in-your-voice AI; branded book-Mikey page + deposit; auto before/after
   **Canva** social posts (Canva MCP is connected); digital customer "garage"; 2-way Google
   Calendar sync (Calendar MCP connected).
@@ -276,6 +277,13 @@ bottom sheet (`#jdSheet` / `#jdScrim`, z-index 90–91, `jdSheetOpen(html)` /
 - `push:vapid` (keypair, written once ever) · `push:subs` (≤6 devices).
 - `quotes` (≤200) · `pay:index` (≤300) · `pay:config` · `blast:log` (≤40).
 - `ph:idx:<jobId>` + `ph:img:<id>` — before/after photos (same shape as `money:rc:`).
+- `img:<token>` — a photo he **texted** a customer. Raw JPEG bytes (the browser
+  shrinks to ~330KB first), content type in the KV metadata, 400-day TTL, one
+  write per photo. Served at **`/i/<token>`, which is PUBLIC and above the `/api`
+  password gate** — Twilio fetches the URL itself with no credentials, so the
+  128-bit token *is* the permission. Only `resolveOutMedia()` decides what an
+  outbound message may name, and it resolves every candidate back to a token we
+  minted; nothing else can reach Twilio's `MediaUrl`.
 - `brief:last` — the "already sent today" stamp (1 write/day).
 - `thread.garage` — vehicles + access notes, patched through `/api/meta`.
 
