@@ -1266,6 +1266,11 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .toast.bad{background:#3a1518;color:#ffd0d0}
   .toast .undo{color:var(--accent);font-weight:700;background:none;border:none;font-size:13.5px;flex:none}
   .toast.bad .undo{color:#ff8a93}
+  /* "Send now" is the impatient tap — a filled chip so it reads as the action,
+     while Undo stays the plain word on the right where the thumb already knows
+     to find it. accent-dark, not accent: white on the green accent is too pale. */
+  .toast .now{color:#fff;background:var(--accent-dark);font-weight:700;border:none;font-size:13px;
+    flex:none;border-radius:999px;padding:6px 12px;line-height:1}
 
   /* ---------- Insights ---------- */
   .ins{padding:14px 14px 0;display:flex;flex-direction:column;gap:16px}
@@ -4054,7 +4059,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-08-31·claude-voice";
+  var APP_BUILD="2026-09-04·send-now";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4410,12 +4415,20 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   function fmtTime(ts){if(!ts)return"";var d=new Date(ts),n=new Date();if(d.toDateString()===n.toDateString())return d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});var diff=(n-d)/86400000;if(diff<7)return d.toLocaleDateString([],{weekday:"short"});return d.toLocaleDateString([],{month:"short",day:"numeric"})}
   function fmtFull(ts){return new Date(ts).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}
 
+  // opts.undo -> "Undo" on the right, the way back.
+  // opts.now  -> a filled button before it, for skipping the wait instead of
+  //              taking it back. Both dismiss the strip before they run, so a
+  //              second tap on a fading toast can't fire the same thing twice.
   function toast(msg,opts){
     opts=opts||{};var t=el("toast");
-    t.innerHTML='<span>'+esc(msg)+'</span>'+(opts.undo?'<button class="undo">Undo</button>':'');
+    t.innerHTML='<span>'+esc(msg)+'</span>'+
+      (opts.now?'<button class="now">'+esc(opts.nowLabel||"Send now")+'</button>':'')+
+      (opts.undo?'<button class="undo">Undo</button>':'');
     t.className="toast show"+(opts.bad?" bad":"");
-    clearTimeout(t._h);t._h=setTimeout(function(){t.className="toast"+(opts.bad?" bad":"")},opts.ms||(opts.undo?5000:2800));
-    if(opts.undo){t.querySelector(".undo").onclick=function(){clearTimeout(t._h);t.className="toast"+(opts.bad?" bad":"");opts.undo()}}
+    var hide=function(){clearTimeout(t._h);t.className="toast"+(opts.bad?" bad":"")};
+    clearTimeout(t._h);t._h=setTimeout(hide,opts.ms||((opts.undo||opts.now)?5000:2800));
+    if(opts.undo){t.querySelector(".undo").onclick=function(){hide();opts.undo()}}
+    if(opts.now){t.querySelector(".now").onclick=function(){hide();opts.now()}}
   }
 
   // ---- accent + light/dark theme ----
@@ -9617,7 +9630,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     noteSent(forPhone,body);
     pendingSends[tempId]={payload:payload,forPhone:forPhone,body:body,
       timer:setTimeout(function(){dispatchSend(tempId)},UNDO_MS)};
-    toast("Sending…",{undo:function(){cancelSend(tempId)},ms:UNDO_MS});
+    // The ten-second hold is a safety net, not a delivery delay: "Send now" skips
+    // straight to the wire for the times you're standing there watching for a
+    // reply. dispatchSend() clears the parked timer itself, so it can't go twice.
+    toast("Sending…",{undo:function(){cancelSend(tempId)},now:function(){dispatchSend(tempId)},ms:UNDO_MS});
   }
   function placeCall(){
     if(!state.phone)return;
