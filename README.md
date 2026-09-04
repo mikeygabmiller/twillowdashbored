@@ -245,6 +245,22 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   activity list and every charge and deposit comes back as a checklist —
   categories guessed, deposits matched to the customer who paid, anything
   already logged flagged. Nothing is written until you confirm.
+- **Rain check — the forecast read against the jobs you've already booked.**
+  The weather planner used to tell him it was going to rain Thursday. It could
+  not tell him Thursday is the day Jenna is booked at 10, which is the only
+  reason the rain matters. Now every booked job for the week — online bookings
+  and appointments locked in over text alike — is scored against the **hourly**
+  forecast **over the hours that job actually occupies**, so a 90% chance at 6pm
+  never flags a 9am detail. Anything at **45% or worse** shows up by name, day
+  and time — on the **Home brief card** (where he already looks), on the day
+  brief, and on the **Weather planner**, whose week strip now says how many jobs
+  sit on each day so he can book around the weather instead of into it.
+  One tap on a flagged job opens that conversation with a **heads-up already
+  typed**: the day, the time, the odds, and the next clear day offered by name.
+  The text is a fixed template filled from the booking record — no AI writes it,
+  for the same reason none writes the booking texts — and **nothing is ever sent
+  automatically. A forecast is not permission to text somebody.** Free and
+  keyless (Open-Meteo), cached at the edge, and it writes nothing to KV.
 - **Editable quick-reply templates**, contact rename, pin, and archive.
 - **Free-tier friendly:** adaptive polling that backs off and pauses when idle/hidden.
 
@@ -387,7 +403,9 @@ app the day actually runs on. All of it lives under the new **Jobs** tab
    answer back. Anything that would change data still needs a deliberate tap.
 10. **Daily brief** — a 6am rundown (push + email): today's stops, per-job rain
     risk from the hourly forecast, who's waiting, yesterday's money and the one
-    thing to do first. Also inline on Home and on demand any time.
+    thing to do first. Also inline on Home and on demand any time. It carries
+    the **rain check** below, so the warning about Thursday reaches him on
+    Monday rather than on Thursday morning.
 
 Cost discipline: none of this writes to KV on a read. The only clock-driven
 writes are the brief (1/day) and the invoice sweep (only when something is
@@ -639,4 +657,4 @@ Job Day suite: `/api/day` `/api/day/state` `/api/day/job` `/api/day/remove`
 Bank scan: `/api/money/scan` `/api/money/scan/commit` ·
 Money on the table: `/api/cold` `/api/cold/action` · Plans: `/api/plan` ·
 Customer page: `/api/cust/link` · Pricing: `/api/pricing` ·
-`/api/photos` `/api/photos/img` `/api/photos/delete` · `/api/brief`
+`/api/photos` `/api/photos/img` `/api/photos/delete` · `/api/brief` `/api/weather/outlook`

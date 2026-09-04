@@ -411,6 +411,22 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .pb-w.mine{background:rgba(127,127,127,.12);border-color:var(--line);color:var(--muted)}
   .pb-w.mine .pb-wl{text-decoration:none}
   .pb-w svg{width:11px;height:11px;flex:none;opacity:.75}
+  /* A warning is not a rewrite. Anything it can't fix without knowing what he
+     knows — which day "tomorrow" actually is — and anything that is a judgement
+     call about tone lands here as one line he can ignore, instead of quietly
+     changing his words for him. */
+  .pb-note{display:flex;align-items:center;gap:6px;font-size:11.5px;font-weight:650;color:var(--gold);line-height:1.35}
+  .pb-note svg{width:12px;height:12px;flex:none}
+  /* Past the change cap it stops swapping and shows you the version instead, so
+     a rewrite big enough to be a different message is always your call. */
+  .polish-bar.offer{border-left-color:var(--gold)}
+  .polish-bar.offer .pb-ic{color:var(--gold)}
+  .pb-prev{font-size:12px;color:var(--muted);line-height:1.4;max-height:3.4em;overflow:hidden}
+  .pb-use{flex:none;display:inline-flex;align-items:center;gap:4px;background:var(--purple);border:1px solid var(--purple);
+    color:#fff;border-radius:999px;padding:5px 10px;font-size:11.5px;font-weight:800;cursor:pointer}
+  .pb-no{flex:none;background:none;border:0;color:var(--muted2);cursor:pointer;display:flex;padding:4px;border-radius:8px}
+  .pb-no:hover{color:var(--text);background:rgba(127,127,127,.14)}
+  .pb-no svg{width:15px;height:15px}
   /* Text changing by itself is startling if nothing marks the moment. */
   @keyframes polishFlash{0%{background:rgba(124,92,255,.22)}100%{background:transparent}}
   .just-polished{animation:polishFlash .7s ease}
@@ -530,6 +546,41 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     border-radius:16px;padding:6px 12px;font-size:12.5px;white-space:nowrap;max-width:62vw;
     overflow:hidden;text-overflow:ellipsis}
   .qreply button:active{background:var(--panel3)}
+  /* ---- photos going OUT -----------------------------------------------------
+     The camera sits left of the box, the same size as Send sits right of it: a
+     photo is half of how this business quotes, so it costs one tap, never a trip
+     through the Tools sheet. */
+  .photocircle{flex:none;width:46px;height:46px;border-radius:50%;background:var(--panel2);
+    border:1px solid var(--line);color:var(--muted);display:flex;align-items:center;justify-content:center;
+    transition:transform .1s,border-color .15s,color .15s}
+  .photocircle:active{transform:scale(.9)}
+  .photocircle:hover{border-color:var(--accent);color:var(--accent-text)}
+  .photocircle:disabled{opacity:.45}
+  .photocircle.has{border-color:var(--accent);color:var(--accent-text)}
+  /* The tray is the receipt for "did that photo actually attach?" — thumbnails,
+     an upload state on each, and an x that means what it says. */
+  .att-tray{display:flex;gap:7px;overflow-x:auto;padding:0 0 8px;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .att-tray::-webkit-scrollbar{display:none}
+  .att{position:relative;flex:none;width:62px;height:62px;border-radius:12px;overflow:hidden;
+    background:var(--panel2);border:1px solid var(--line)}
+  .att img{width:100%;height:100%;object-fit:cover;display:block}
+  .att .x{position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;border:none;
+    background:rgba(0,0,0,.66);color:#fff;display:flex;align-items:center;justify-content:center;padding:0}
+  .att.up::after{content:"";position:absolute;inset:0;background:rgba(0,0,0,.45)}
+  .att.up .sp{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;z-index:2}
+  .att.err{border-color:#ef4444}
+  .att.err .retry{position:absolute;left:0;right:0;bottom:0;background:rgba(239,68,68,.9);color:#fff;
+    border:none;font-size:9.5px;font-weight:800;padding:3px 0;letter-spacing:.3px}
+  .att-more{flex:none;width:62px;height:62px;border-radius:12px;background:var(--panel2);border:1px dashed var(--line);
+    color:var(--muted2);display:flex;align-items:center;justify-content:center}
+  /* Drop a photo anywhere on the conversation, not just on a 62px target. */
+  .chat.dropping{outline:2px dashed var(--accent);outline-offset:-8px}
+  /* "Send it again" — the price sheet, the before/after, the one he sends weekly. */
+  .rc-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:4px}
+  .rc-grid button{position:relative;padding:0;border:1px solid var(--line);background:var(--panel2);
+    border-radius:12px;overflow:hidden;aspect-ratio:1/1}
+  .rc-grid img{width:100%;height:100%;object-fit:cover;display:block}
+  .rc-grid button.on{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent) inset}
   .crow{display:flex;gap:9px;align-items:flex-end}
   .tawrap{flex:1;position:relative;display:flex}
   .crow textarea{flex:1;resize:none;height:46px;max-height:140px;background:var(--panel2);border:1px solid var(--line);
@@ -763,6 +814,48 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     --nx-when:#8a5312;--nx-ab:#fdefdd;--nx-ad:#e2bc92;--nx-af:#75430f;
     --nx-gb:#f7f1fc;--nx-gd:#d8c5e9;--nx-gf:#57376f;--nx-ga:#8354ad;
     --nx-cb:#f4f6f8;--nx-cd:#d7dbe2;--nx-wb:#fdecee;--nx-wd:#f0c4ca;--nx-wf:#9c2436}
+  /* ---- "That's the day" — the wind-down, in the next-stop card's slot ----
+     Every other surface in this app exists to say what still needs him. When
+     the run is finished the honest answer is "nothing", and Home used to
+     answer that by going blank — which reads like something failed to load,
+     not like permission to stop. Cool where the next-stop card is warm, and
+     nothing on it moves: this is the one card that isn't asking for anything. */
+  .done-card{--dn-bg:linear-gradient(160deg,#101a19,#141416 62%);--dn-bd:#20423c;--dn-ac:#6fd3b8;
+    --dn-ti:var(--text);--dn-su:var(--muted);--dn-when:#a9e6d3;
+    --dn-cb:#1a2124;--dn-cd:#2e3b3b;--dn-qb:#122120;--dn-qd:#26463f;--dn-qf:#cdeee1;
+    background:var(--dn-bg);border:1px solid var(--dn-bd);
+    border-radius:18px;padding:15px 15px 13px;margin-bottom:12px}
+  .done-card .dn-h{display:flex;align-items:center;gap:7px;font-size:11px;font-weight:800;
+    letter-spacing:.1em;text-transform:uppercase;color:var(--dn-ac);margin-bottom:10px}
+  .done-card .dn-h .dn-when{margin-left:auto;letter-spacing:0;text-transform:none;font-size:12px;
+    font-weight:700;color:var(--dn-when)}
+  .done-card .dn-big{font-size:19px;font-weight:800;letter-spacing:-.02em;color:var(--dn-ti);line-height:1.15}
+  .done-card .dn-sub{font-size:12.5px;color:var(--dn-su);margin-top:3px}
+  .done-card .dn-quiet{display:flex;align-items:center;gap:11px;width:100%;margin-top:12px;
+    background:var(--dn-qb);border:1px solid var(--dn-qd);border-radius:13px;padding:13px 14px;
+    text-align:left;color:var(--dn-qf);font-size:13.5px;font-weight:600;line-height:1.35}
+  .done-card .dn-quiet .dn-qi{color:var(--dn-ac);flex:none;display:flex}
+  .done-card .dn-quiet .dn-qt{flex:1;min-width:0}
+  .done-card .dn-quiet .dn-qt b{font-weight:800}
+  .done-card .dn-quiet .dn-qg{flex:none;font-size:11px;font-weight:800;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--dn-ac)}
+  .done-card .dn-next{display:flex;align-items:flex-start;gap:8px;margin-top:11px;
+    font-size:12.5px;color:var(--dn-su);line-height:1.4}
+  .done-card .dn-next .ic-svg{flex:none;margin-top:1px;color:var(--dn-ac)}
+  .done-card .dn-next b{color:var(--dn-ti);font-weight:700}
+  .done-card .dn-acts{display:flex;gap:7px;margin-top:11px}
+  .done-card .dn-acts button{flex:1;background:var(--dn-cb);border:1px solid var(--dn-cd);
+    color:var(--dn-ti);border-radius:10px;padding:9px;font-size:12.5px;font-weight:700;
+    display:flex;align-items:center;justify-content:center;gap:6px}
+  /* Daylight, same as its warm twin — a 4pm finish is read in the sun. */
+  @media (prefers-color-scheme:light){:root:not([data-theme="dark"]) .done-card{
+    --dn-bg:linear-gradient(160deg,#eef7f2,#fdfefd 62%);--dn-bd:#cde2d8;--dn-ac:#16755a;
+    --dn-when:#1a6650;--dn-cb:#f4f6f8;--dn-cd:#d7dbe2;
+    --dn-qb:#e7f4ee;--dn-qd:#bbdecf;--dn-qf:#17513f}}
+  :root[data-theme="light"] .done-card{
+    --dn-bg:linear-gradient(160deg,#eef7f2,#fdfefd 62%);--dn-bd:#cde2d8;--dn-ac:#16755a;
+    --dn-when:#1a6650;--dn-cb:#f4f6f8;--dn-cd:#d7dbe2;
+    --dn-qb:#e7f4ee;--dn-qd:#bbdecf;--dn-qf:#17513f}
   /* The same facts, compacted, at the top of that customer's conversation. */
   .job-banner{--jb-bg:#1c1610;--jb-bd:#46331f;--jb-ac:#f0a35e;--jb-fg:#f0dcc6;--jb-ti:#ffe9d2;
     --jb-gb:#4a3218;--jb-gd:#6b4a24;
@@ -1088,6 +1181,22 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .wx-day .wd-e{font-size:21px;margin:3px 0}
   .wx-day .wd-t{font-size:11.5px;font-weight:700}
   .wx-day .wd-dot{width:6px;height:6px;border-radius:50%;margin:5px auto 0}
+  .wx-day .wd-j{font-size:9.5px;font-weight:800;color:var(--muted2);margin-top:4px;letter-spacing:-.01em}
+  .wx-day .wd-j.none{opacity:.35}
+  .wx-day .wd-j.risk{color:#fb7185}
+  /* A day with a job in the rain is the one thing on this card worth a ring. */
+  .wx-day.atrisk{background:rgba(251,113,133,.10);box-shadow:inset 0 0 0 1px rgba(251,113,133,.38)}
+  .wx-alert{background:rgba(251,113,133,.10);border:1px solid rgba(251,113,133,.32);
+    border-radius:13px;padding:11px 12px;margin-bottom:13px}
+  .wx-alert .wa-h{display:flex;align-items:center;gap:7px;font-size:13px;font-weight:800;color:#fb7185;margin-bottom:9px}
+  .wx-risk-row{display:flex;align-items:center;gap:9px;padding:6px 0;border-top:1px solid rgba(251,113,133,.18)}
+  .wx-risk-row .wr-when{font-size:11px;font-weight:800;color:var(--muted2);flex:none;min-width:74px;font-variant-numeric:tabular-nums}
+  .wx-risk-row .wr-who{font-size:12.5px;font-weight:700;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .wx-risk-row .wr-pct{font-size:12px;font-weight:800;color:#fb7185;flex:none;font-variant-numeric:tabular-nums}
+  .wx-risk-row .wr-btn{flex:none;display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:800;
+    color:var(--accent-text);background:var(--accent-soft);border:0;border-radius:9px;padding:6px 9px;cursor:pointer;font-family:inherit}
+  .wx-risk-row .wr-btn:active{transform:scale(.95)}
+  .wx-alert .wa-note{font-size:11px;color:var(--muted2);margin-top:9px;line-height:1.45}
 
   /* Tasks / scratchpad */
   .tk-add{display:flex;gap:8px;margin-bottom:11px}
@@ -3061,7 +3170,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   :root[data-layout="deck"] .newmark{margin:10px 20px 4px}
   :root[data-layout="deck"] .composer{background:var(--panel);padding:10px 16px calc(10px + var(--safe-bottom))}
   :root[data-layout="deck"] .crow textarea{border-radius:9px;background:var(--panel2);padding:11px 14px}
-  :root[data-layout="deck"] .sendcircle{border-radius:9px;width:44px;height:44px}
+  :root[data-layout="deck"] .sendcircle,:root[data-layout="deck"] .photocircle{border-radius:9px;width:44px;height:44px}
   :root[data-layout="deck"] .qreply button{border-radius:7px}
   :root[data-layout="deck"] .details{border-left:1px solid var(--line);width:320px}
   :root[data-layout="deck"] .dt-id{flex-direction:row;text-align:left;align-items:center;flex-wrap:wrap}
@@ -3195,6 +3304,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   :root[data-layout="air"] .crow{background:var(--panel);border:1px solid var(--line2);border-radius:28px;
     padding:5px 5px 5px 6px;box-shadow:var(--elev-1)}
   :root[data-layout="air"] .crow textarea{background:transparent;border:none;border-radius:24px;padding:12px 12px}
+  /* Air puts the whole row inside one pill — the camera has to lose its own
+     border there or it reads as a second, nested control. */
+  :root[data-layout="air"] .photocircle{background:transparent;border:none;width:42px;height:42px}
   :root[data-layout="air"] .crow textarea:focus{border-color:transparent}
   :root[data-layout="air"] .qreply button{border-radius:999px;padding:8px 15px;background:var(--panel);
     border-color:var(--line2);box-shadow:var(--elev-1)}
@@ -3342,7 +3454,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   :root[data-layout="bento"] .composer{background:var(--panel);border-top:1px solid var(--line);
     padding:11px 14px calc(11px + var(--safe-bottom))}
   :root[data-layout="bento"] .crow textarea{border-radius:13px;background:var(--panel2)}
-  :root[data-layout="bento"] .sendcircle{border-radius:13px;width:46px;height:46px}
+  :root[data-layout="bento"] .sendcircle,:root[data-layout="bento"] .photocircle{border-radius:13px;width:46px;height:46px}
   :root[data-layout="bento"] .qreply button{border-radius:9px}
   :root[data-layout="bento"] .details{border-radius:0}
 
@@ -3532,7 +3644,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   :root[data-layout="console"] .crow textarea{border-radius:3px;background:var(--bg);padding:12px 12px 12px 26px;
     font-family:var(--mono);font-size:13px}
   :root[data-layout="console"] .pk-ghost{padding-left:26px!important;font-family:var(--mono)!important}
-  :root[data-layout="console"] .sendcircle{border-radius:3px;width:44px;height:44px}
+  :root[data-layout="console"] .sendcircle,:root[data-layout="console"] .photocircle{border-radius:3px;width:44px;height:44px}
   :root[data-layout="console"] .qreply button{border-radius:3px;font-family:var(--mono);font-size:11.5px}
   :root[data-layout="console"] .details{border-radius:0;border-left:1px solid var(--line)}
   :root[data-layout="console"] .dt-sec .lbl{font-family:var(--mono);letter-spacing:.12em}
@@ -3765,7 +3877,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       <div class="qreply" id="qReply" style="display:none"></div>
       <!-- predictive keyboard: next-word chips learned from how you text -->
       <div class="predbar" id="predBar" style="display:none"></div>
+      <!-- photos waiting to go out with the next text -->
+      <div class="att-tray" id="attTray" style="display:none"></div>
       <div class="crow">
+        <button class="photocircle" id="photoBtn" title="Send a photo" aria-label="Send a photo"></button>
         <div class="tawrap">
           <div class="pk-ghost" id="msgGhost" aria-hidden="true"></div>
           <textarea id="msgInput" placeholder="Text message" rows="1"></textarea>
@@ -3774,6 +3889,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M3.4 20.4 21 12 3.4 3.6 3.39 10.1 15 12l-11.61 1.9z"/></svg>
         </button>
       </div>
+      <input type="file" id="photoInput" accept="image/*" multiple style="display:none">
     </div>
 
     <!-- Details: side-panel on desktop, bottom-sheet on mobile -->
@@ -5683,6 +5799,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var dateLine=new Date().toLocaleDateString([],{weekday:"long",month:"long",day:"numeric"});
     var h='<div class="home"><div class="home-head"><div class="hh-greet">'+greeting()+', Mikey</div><div class="hh-sub">'+esc(dateLine)+'</div></div>';
     h+=homeNextWidget();          // where you're going — always first, never hidden
+    h+=homeWindDown(waiting);     // ...and when there is nowhere left to go, that the day is done
     // Who is waiting comes before the ask-anything box, on the evidence: over
     // 90 days Today was opened 101 times and walked straight back out of 68 of
     // them, and its single most-pushed control — the most-pushed control in the
@@ -5790,6 +5907,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       }});
     Array.prototype.forEach.call(box.querySelectorAll("[data-next-run]"),function(b){
       b.onclick=function(){vibrate(6);openJobs("run")}});
+    // The wind-down's one new control: tomorrow's board, on tomorrow's date.
+    // JD.day is cleared so the run view refetches instead of drawing today's.
+    Array.prototype.forEach.call(box.querySelectorAll("[data-wd-tom]"),function(b){
+      b.onclick=function(){vibrate(6);JD.date=b.getAttribute("data-wd-tom");JD.day=null;openJobs("run")}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-save-addr]"),function(b){
       b.onclick=function(){
         b.disabled=true;b.textContent="Saving…";
@@ -5809,6 +5930,106 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       g.address=address;
       return post("/api/meta",{phone:phone,garage:g});
     }).then(function(r){then(!!(r&&r.ok))}).catch(function(){then(false)});
+  }
+
+  // ===== "That's the day" — the wind-down ====================================
+  // The other half of the next-stop card, in the same slot. All day this screen
+  // answers "where am I going"; when there's nowhere left to go it used to
+  // answer with nothing at all, and a blank space at 6pm reads like a failed
+  // fetch rather than a finished day. So the board being clear gets said out
+  // loud, with the two things he'd otherwise pick the phone back up to check:
+  // what today actually came to, and whether anybody is still waiting on him.
+  //
+  // Tomorrow costs a second /api/day, so it's only fetched once this card is
+  // already on screen — a normal working day never pays for it.
+  var TOM={date:"",day:null,fetching:false};
+  function tomorrowStr(){return jdDstr(new Date(Date.now()+86400000))}
+  function tomorrowDay(){return TOM.date===tomorrowStr()?TOM.day:null}
+  function loadTomorrow(){
+    if(TOM.fetching||tomorrowDay())return;
+    var ds=tomorrowStr();
+    TOM.fetching=true;
+    api("/api/day?date="+encodeURIComponent(ds)).then(function(d){
+      TOM.fetching=false;
+      if(d&&d.ok&&d.jobs){TOM.date=ds;TOM.day=d;if(state.tab==="home")renderHome()}
+    }).catch(function(){TOM.fetching=false});
+  }
+  // The stop tomorrow starts on — same rule as nextStop(), one day over.
+  function tomorrowFirst(){
+    var d=tomorrowDay();if(!d||!d.jobs)return null;
+    for(var i=0;i<d.jobs.length;i++){var j=d.jobs[i];if(j.state!=="done"&&j.state!=="skipped")return j}
+    return null;
+  }
+  function tomorrowLine(){
+    var d=tomorrowDay();
+    if(!d)return "";                    // still loading — better silent than wrong
+    var j=tomorrowFirst();
+    if(!j)return '<div class="dn-next">'+ic("sun",14)+'<span>Tomorrow is clear.</span></div>';
+    var n=d.jobs.filter(function(x){return x.state!=="skipped"}).length,t=jd12(j.slot);
+    return '<div class="dn-next">'+ic("sun",14)+'<span>Tomorrow: <b>'+n+' stop'+(n===1?"":"s")+
+      '</b>, starting <b>'+esc(t[0]+" "+t[1])+'</b> with <b>'+esc(j.name||"a job")+'</b>'+
+      (j.city?' in '+esc(j.city):'')+'.</span></div>';
+  }
+  // The question that keeps a phone in his hand at 9pm. Follow-ups, rebook
+  // nudges and cold-lead revivals deliberately don't count here: those are the
+  // app's own suggestions, and a suggestion can wait for morning. Only somebody
+  // who actually said something and hasn't been answered is really waiting.
+  function windDownQuiet(waiting){
+    var w=waiting||[];
+    if(!w.length)return '<div class="dn-quiet"><span class="dn-qi">'+ic("moon",18)+'</span>'+
+      '<span class="dn-qt">Nobody is waiting on you. It will all keep till morning.</span></div>';
+    var t=w[0],more=w.length-1;
+    return '<button class="dn-quiet" data-open="'+esc(t.phone)+'"><span class="dn-qi">'+ic("message-square",18)+'</span>'+
+      '<span class="dn-qt"><b>'+esc(displayName(t))+'</b> is still waiting on a reply'+
+      (more?', and '+more+' other'+(more===1?"":"s"):"")+'. Everything else can keep till morning.</span>'+
+      '<span class="dn-qg">Open</span></button>';
+  }
+  function homeWindDown(waiting){
+    if(!NEXT.day)return "";             // the next-stop card owns the loading state
+    if(nextStop())return "";            // there's still a stop to make — not this card's slot
+    var jobs=NEXT.day.jobs||[],sum=NEXT.day.summary||{};
+    var done=jobs.filter(function(j){return j.state==="done"});
+    loadTomorrow();
+    var first=tomorrowFirst(),ds=tomorrowStr();
+    var tomBtn=first?'<button data-wd-tom="'+esc(ds)+'">'+ic("sun",15)+'Tomorrow</button>':'';
+
+    // A day with nothing on the board was never finished — there's nothing to
+    // close out. It still gets the useful half: where tomorrow starts. And if
+    // tomorrow is empty too there is genuinely nothing to say, so say nothing.
+    if(!jobs.length){
+      if(!first)return "";
+      var ft=jd12(first.slot);
+      return '<div class="done-card">'+
+        '<div class="dn-h">'+ic("moon",14)+'Nothing on the board today<span class="dn-when">Next up</span></div>'+
+        '<div class="dn-big">'+esc(first.name||"Job")+', tomorrow at '+esc(ft[0]+" "+ft[1])+'</div>'+
+        (first.city?'<div class="dn-sub">'+esc(first.city)+'</div>':'')+
+        windDownQuiet(waiting)+
+        '<div class="dn-acts">'+tomBtn+'</div></div>';
+    }
+
+    // When he ran the board, the day has a shape: when he started, when he
+    // finished, and what it came to. Times come off the run states he already
+    // tapped, so nothing new has to be recorded to get them.
+    var startTs=0,endTs=0;
+    done.forEach(function(j){
+      var s=j.startedAt||j.enrouteAt||0;
+      if(s&&(!startTs||s<startTs))startTs=s;
+      if(j.doneAt>endTs)endTs=j.doneAt;
+    });
+    var clock=function(ts){return new Date(ts).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})};
+    var bits=[];
+    if(sum.earned>0)bits.push(fmtMoney(sum.earned)+" in");
+    if(startTs&&endTs&&endTs>startTs)bits.push(clock(startTs)+" to "+clock(endTs));
+    var big=done.length
+      ? done.length+' stop'+(done.length===1?"":"s")+', finished.'
+      : 'The board is clear.';
+    return '<div class="done-card">'+
+      '<div class="dn-h">'+ic("check-circle",14)+"That's the day"+'</div>'+
+      '<div class="dn-big">'+esc(big)+'</div>'+
+      (bits.length?'<div class="dn-sub">'+esc(bits.join(" · "))+'</div>':'')+
+      windDownQuiet(waiting)+
+      tomorrowLine()+
+      '<div class="dn-acts"><button data-next-run="1">'+ic("route",15)+"Today's board"+'</button>'+tomBtn+'</div></div>';
   }
 
   // Job Day pieces that live on Home: the brief card and the push nudge.
@@ -5894,8 +6115,14 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   var COLD={data:null,fetching:false,at:0,group:"all"};
   function loadCold(force){
     if(COLD.fetching)return;
-    if(!force&&COLD.data&&Date.now()-COLD.at<180000)return;
-    COLD.fetching=true;
+    // The hold has to be on the ATTEMPT, not on the answer. Home redraws every
+    // time any fetch lands, this is called from that redraw, and an answer that
+    // fails the shape-check below never moved COLD.at — so the older Worker the
+    // comment below anticipates didn't just blank the widget, it put the screen
+    // in a fetch/render loop firing hundreds of requests a second for as long as
+    // Home was open. A rejected answer now buys a quiet minute like any other.
+    if(!force&&COLD.at&&Date.now()-COLD.at<(COLD.data?180000:60000))return;
+    COLD.fetching=true;COLD.at=Date.now();
     api("/api/cold").then(function(d){
       COLD.fetching=false;
       // Shape-check, not just ok-check: a rolling deploy can answer ok from an
@@ -6049,11 +6276,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   }
   // Weather planner — a mobile detailer lives and dies by the sky. Free Open-Meteo
   // forecast (no key), scored for detailing (rain/wind = bad). Cached per session.
-  var WX={data:null,loading:false,err:false};
-  function wxScore(code,pop,wind){ // WMO code, precip %, wind mph
-    if(code>=61||code>=71&&code<=86||[95,96,99].indexOf(code)>=0)return 0;
-    if(pop>=55||wind>=22)return 1; if(pop>=30||code>=51||wind>=15)return 2; return 3;
-  }
+  var WX={data:null,at:0,loading:false,err:false};
   // WMO weather code → Lucide icon name + a tint that suits it.
   function wxIcon(code,size){size=size||20;
     var n="cloud-sun",c="var(--gold)";
@@ -6067,34 +6290,91 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     return '<span class="wx-i" style="color:'+c+'">'+ic(n,size)+'</span>';
   }
   function homeWeatherWidget(){
-    var head='<div class="wc-h"><span class="wc-ic">'+ic("activity",18)+'</span><span class="wc-t">Weather planner</span><span class="wc-badge">Snohomish</span></div>';
+    var head='<div class="wc-h"><span class="wc-ic">'+ic("activity",18)+'</span><span class="wc-t">Weather planner</span><span class="wc-badge">'+esc((WX.data&&WX.data.place)||"Snohomish")+'</span></div>';
     if(WX.err)return '<div class="wcard">'+head+'<div class="wc-empty">'+ic("info",15)+' Couldn’t load the forecast right now.</div></div>';
     if(!WX.data)return '<div class="wcard">'+head+'<div class="wc-empty"><span class="spin"></span> Loading forecast…</div></div>';
     var d=WX.data;var sc=["bad","bad","ok","good"];var lbl=["Not today","Poor","Fair","Great day to detail"];
-    var s0=wxScore(d.today.code,d.today.pop,d.today.wind);
-    var days=d.days.map(function(day){var sc2=wxScore(day.code,day.pop,day.wind);var col=["#fb7185","#fb7185","#fbbf24","#34d399"][sc2];
-      return '<div class="wx-day"><div class="wd-d">'+esc(day.dow)+'</div><div class="wd-e">'+wxIcon(day.code,22)+'</div><div class="wd-t">'+Math.round(day.hi)+'°/'+Math.round(day.lo)+'°</div><div class="wd-dot" style="background:'+col+'"></div></div>';}).join("");
-    return '<div class="wcard">'+head+
-      '<div class="wx-today"><span class="wx-emoji">'+wxIcon(d.today.code,34)+'</span><div class="wx-tb"><div class="wx-temp">'+Math.round(d.today.temp)+'°F</div>'+
-      '<div class="wx-desc">'+esc(d.today.desc)+' · '+d.today.pop+'% rain · '+Math.round(d.today.wind)+' mph wind</div></div>'+
-      '<span class="wx-score '+sc[s0]+'">'+lbl[s0]+'</span></div>'+
+    var days=(d.days||[]).map(function(day){var col=["#fb7185","#fb7185","#fbbf24","#34d399"][day.score];
+      // The job count is the whole point of the strip now: a bad day with
+      // nothing on it is weather, a bad day with a job on it is a decision.
+      var pip=day.jobs.length?'<div class="wd-j'+(day.atRisk?" risk":"")+'">'+day.jobs.length+(day.jobs.length>1?" jobs":" job")+'</div>':'<div class="wd-j none">—</div>';
+      return '<div class="wx-day'+(day.atRisk?" atrisk":"")+'"><div class="wd-d">'+esc(day.dow)+'</div><div class="wd-e">'+wxIcon(day.code,22)+'</div><div class="wd-t">'+Math.round(day.hi)+'°/'+Math.round(day.lo)+'°</div>'+pip+'<div class="wd-dot" style="background:'+col+'"></div></div>';}).join("");
+    // Rain over a booked job comes first, above the pretty forecast — it is the
+    // only part of the sky that costs money, and it is the only part he can act
+    // on. Every button here only ever DRAFTS a text; nothing is sent from a
+    // forecast.
+    var risk=wxRiskBlock(d.atRisk);
+    return '<div class="wcard">'+head+risk+
+      '<div class="wx-today"><span class="wx-emoji">'+wxIcon(d.current.code,34)+'</span><div class="wx-tb"><div class="wx-temp">'+Math.round(d.current.temp)+'°F</div>'+
+      '<div class="wx-desc">'+esc(d.current.desc)+' · '+d.current.pop+'% rain · '+Math.round(d.current.wind)+' mph wind</div></div>'+
+      '<span class="wx-score '+sc[d.current.score]+'">'+lbl[d.current.score]+'</span></div>'+
       '<div class="wx-days">'+days+'</div></div>';
   }
-  function wxLoad(){
-    if(WX.data||WX.loading)return;WX.loading=true;
-    // Snohomish, WA. Open-Meteo is free + keyless + CORS-enabled.
-    var u="https://api.open-meteo.com/v1/forecast?latitude=47.913&longitude=-122.098&current=temperature_2m,weather_code,precipitation_probability,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_max&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=America%2FLos_Angeles&forecast_days=5";
-    fetch(u).then(function(r){return r.json()}).then(function(j){
-      if(!j||!j.daily){WX.err=true;WX.loading=false;if(state.tab==="home")renderHome();return}
-      var wc=WMO_DESC;var c=j.current||{};
-      WX.data={today:{temp:c.temperature_2m,code:c.weather_code,pop:c.precipitation_probability||j.daily.precipitation_probability_max[0]||0,wind:c.wind_speed_10m||0,desc:(wc[c.weather_code]||"—")},days:[]};
-      var dn=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-      for(var i=0;i<j.daily.time.length;i++){var dt=new Date(j.daily.time[i]+"T12:00:00");
-        WX.data.days.push({dow:i===0?"Today":dn[dt.getDay()],code:j.daily.weather_code[i],hi:j.daily.temperature_2m_max[i],lo:j.daily.temperature_2m_min[i],pop:j.daily.precipitation_probability_max[i]||0,wind:j.daily.wind_speed_10m_max[i]||0});}
-      WX.loading=false;if(state.tab==="home")renderHome();
-    }).catch(function(){WX.err=true;WX.loading=false;if(state.tab==="home")renderHome();});
+  // The at-risk rows render on the weather card, on the Home brief and in the
+  // day-brief sheet, so they are written once. Both feeds are the same server
+  // logic, which is why looking a phone number up across either is safe.
+  function wxRiskRows(list){
+    return (list||[]).map(function(r){
+      var t=r.slot?jd12(r.slot):null;
+      return '<div class="wx-risk-row"><div class="wr-when">'+esc(r.dow||"")+(t?' · '+t[0]+' '+t[1]:'')+'</div>'+
+        '<div class="wr-who">'+esc(r.name||r.phone||"Job")+'</div>'+
+        '<div class="wr-pct">'+r.rainRisk+'%</div>'+
+        (r.phone?'<button class="wr-btn" data-wx-text="'+esc(r.phone)+'">'+ic("message-square",14)+' Heads-up</button>':'')+'</div>';
+    }).join("");
   }
-  var WMO_DESC={0:"Clear sky",1:"Mostly clear",2:"Partly cloudy",3:"Overcast",45:"Fog",48:"Rime fog",51:"Light drizzle",53:"Drizzle",55:"Heavy drizzle",61:"Light rain",63:"Rain",65:"Heavy rain",71:"Light snow",73:"Snow",75:"Heavy snow",80:"Rain showers",81:"Rain showers",82:"Violent showers",95:"Thunderstorm",96:"Storm w/ hail",99:"Storm w/ hail"};
+  function wxRiskBlock(list){
+    if(!list||!list.length)return "";
+    return '<div class="wx-alert">'+
+      '<div class="wa-h">'+ic("cloud-rain",16)+' Rain on '+list.length+' booked job'+(list.length>1?"s":"")+'</div>'+
+      wxRiskRows(list)+
+      '<div class="wa-note">Tapping one opens the conversation with a heads-up already typed. Nothing sends on its own.</div>'+
+    '</div>';
+  }
+  // Rain on a booked job → the conversation, with the heads-up already typed.
+  // Seeding the box is as far as this ever goes: he reads it, edits it, sends
+  // it. A forecast is not consent to text somebody.
+  function wireWxRisk(box){
+    Array.prototype.forEach.call(box.querySelectorAll("[data-wx-text]"),function(btn){
+      btn.onclick=function(){
+        var ph=btn.getAttribute("data-wx-text");
+        var row=wxRiskFind(ph);
+        if(row&&row.draft)seedDraft(ph,row.draft);
+        vibrate(6);jdSheetClose();closeJobs();closeMore();setTab("messages");openThread(ph);
+      };
+    });
+  }
+  // Whichever feed has it — the weather card fetches the week itself, the brief
+  // carries the same list so Home can warn him without the card being on screen.
+  function wxRiskFind(phone){
+    var all=((WX.data&&WX.data.atRisk)||[]).concat((BRIEF.data&&BRIEF.data.weekRisk)||[]);
+    return all.filter(function(r){return r.phone===phone})[0]||null;
+  }
+  // The forecast now comes back through the Worker rather than straight from
+  // the browser, because the browser has no idea who is booked on Thursday. The
+  // server joins the two and caches the Open-Meteo call at the edge, so the
+  // widget, the day brief and the 6am email can never quote different numbers.
+  function wxLoad(force){
+    if(WX.loading)return;
+    // Attempt-held, not answer-held — the same trap loadBrief and loadCold fell
+    // into. This card asks for the week every time it draws and repaints when
+    // the answer lands, so a forecast that doesn't come back (the Worker is
+    // mid-deploy, Open-Meteo is having a day) would have every draw ask again,
+    // forever. A refusal buys a quiet minute; a good answer holds for fifteen,
+    // which is well inside the half hour the edge caches the forecast for.
+    if(!force&&WX.at&&Date.now()-WX.at<(WX.data?900000:60000))return;
+    WX.loading=true;WX.at=Date.now();
+    api("/api/weather/outlook?days=7").then(function(j){
+      WX.loading=false;
+      if(!j||!j.ok||!j.outlook){WX.err=true;wxRepaint();return}
+      WX.err=false;WX.data=j.outlook;wxRepaint();
+    }).catch(function(){WX.err=true;WX.loading=false;wxRepaint()});
+  }
+  // It renders in two places (Home and More -> Day tools); repaint whichever
+  // one is actually on screen.
+  function wxRepaint(){
+    if(state.tab==="home")renderHome();
+    if(MORE&&MORE.view==="daytool"&&DAYTOOL.key==="weather"&&el("moreApp")&&el("moreApp").classList.contains("show"))mrRender();
+  }
   // To-do list — a persistent daily checklist (localStorage). Simple, used daily.
   function homeTasks(){try{return JSON.parse(localStorage.getItem("mkd-tasks")||"[]")}catch(e){return[]}}
   function homeSaveTasks(t){try{localStorage.setItem("mkd-tasks",JSON.stringify(t))}catch(e){}}
@@ -6220,13 +6500,14 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // box has to repaint whichever one you are looking at, so every handler that
   // changes something calls this instead of homeRepaint() directly.
   function homeRepaint(){
-    homeRepaint();
+    renderHome();
     if(MORE.view==="daytool"&&el("moreApp").classList.contains("show"))mrRender();
   }
   // Wire up the interactive widgets after Home renders.
   function wireHomeWidgets(box){
     // Weather: kick off the fetch lazily the first time the widget is on screen.
     if(box.querySelector('[data-hwidget="weather"]'))wxLoad();
+    wireWxRisk(box);
     // Money on the table: open the whole list, or jump straight into one person
     // with the text already in the box.
     var ca=box.querySelector("#coldAll");
@@ -8134,6 +8415,15 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     }).catch(function(){toast("Network error",{bad:true})})
       .then(function(){if(btn){btn.disabled=false;btn.innerHTML=orig}});
   }
+  // Where an attachment's bytes actually come from. Twilio's own URLs need the
+  // account credentials, so those go through the authenticated proxy; a photo HE
+  // sent already lives at /i/<id> on this origin, and the optimistic bubble is
+  // holding the local copy — both load as-is.
+  function mediaSrc(u){
+    u=String(u||"");
+    if(/^data:/.test(u)||/^\/i\//.test(u))return u;
+    return "/api/media?u="+encodeURIComponent(u);
+  }
   function openLightbox(src){
     var o=document.createElement("div");o.className="lightbox";
     o.innerHTML='<img src="'+src+'" alt="attachment"><button class="lb-close" aria-label="Close">'+ic("x",22)+'</button>';
@@ -8142,9 +8432,18 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     document.body.appendChild(o);
     navOpen("lightbox",shut);
   }
-  function resendMessage(body){
-    if(!state.phone||!body)return;
-    var payload={phone:state.phone,body:body};if(teamOn()&&meName())payload.by=meName();
+  // Resend takes the whole message, not just its words: a send that failed with a
+  // photo on it has to go back out WITH the photo, or "Resend" quietly drops the
+  // half that mattered. The photo is still in KV under the same /i/ URL, so this
+  // costs no re-upload.
+  function resendMessage(m){
+    var msg=(typeof m==="string")?{body:m}:(m||{});
+    var body=msg.body||"";
+    var media=(msg.media||[]).map(function(x){return x.url}).filter(function(u){return /^\/i\//.test(u||"")});
+    if(!state.phone||(!body&&!media.length))return;
+    var payload={phone:state.phone,body:body};
+    if(media.length)payload.media=media;
+    if(teamOn()&&meName())payload.by=meName();
     post("/api/send",payload).then(function(d){
       if(d&&d.ok){state.thread=d.thread;renderThread();refreshThreads();toast("Message resent")}
       else toast((d&&d.error)==="recipient_opted_out"?"They've opted out (texted STOP)":"Couldn't resend",{bad:true});
@@ -8239,6 +8538,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     el("sendBtn").disabled=blocked;
     el("msgInput").disabled=blocked;
     el("msgInput").placeholder=blocked?"Can't text — they opted out":"Text message";
+    var pb=el("photoBtn");if(pb)pb.disabled=blocked;
+    // Attachments belong to the conversation, not to the box — repaint them for
+    // whichever one is open now.
+    renderAtt();
 
     // A quote sitting unanswered is the most winnable money on the board — but
     // nothing ever said how long it had been sitting. Only once it's actually
@@ -8336,7 +8639,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       var shownBody=legacyAtt?(m.body||"").replace(/\n?\[\d+ attachment\(s\)\]/,"").trim():(m.body||"");
       var mediaHTML="";
       if(hasMedia){
-        mediaHTML='<div class="msg-media">'+m.media.map(function(mm){var pu="/api/media?u="+encodeURIComponent(mm.url);return (/^image\//.test(mm.type||"")||!mm.type)?'<img class="msg-img" src="'+pu+'" loading="lazy" alt="attachment">':'<a class="msg-file" href="'+pu+'" target="_blank" rel="noopener">'+ic("file-text",14)+' Attachment</a>'}).join("")+'</div>';
+        mediaHTML='<div class="msg-media">'+m.media.map(function(mm){var pu=mediaSrc(mm.url);return (/^image\//.test(mm.type||"")||!mm.type)?'<img class="msg-img" src="'+pu+'" loading="lazy" alt="attachment">':'<a class="msg-file" href="'+pu+'" target="_blank" rel="noopener">'+ic("file-text",14)+' Attachment</a>'}).join("")+'</div>';
         if(m.dir==="in"&&m.media.some(function(mm){return /^image\//.test(mm.type||"")||!mm.type}))mediaHTML+='<button class="pq-btn" data-photoquote="1">'+ic("sparkles",14)+' AI quote from photo</button>';
       }
       else if(legacyAtt){mediaHTML='<button class="load-media" data-loadmedia="1">'+ic("image",14)+' Load photo</button>';}
@@ -8349,7 +8652,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       box.appendChild(b);lastDir=m.dir;
     });
     Array.prototype.forEach.call(box.querySelectorAll("[data-resend]"),function(btn){
-      btn.onclick=function(){var mm=(t.messages||[]).find(function(x){return x.id===btn.getAttribute("data-resend")});if(mm)resendMessage(mm.body)};
+      btn.onclick=function(){var mm=(t.messages||[]).find(function(x){return x.id===btn.getAttribute("data-resend")});if(mm)resendMessage(mm)};
     });
     Array.prototype.forEach.call(box.querySelectorAll("[data-loadmedia]"),function(btn){btn.onclick=function(){backfillMedia(btn)}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-photoquote]"),function(btn){btn.onclick=function(){aiPhotoQuote(btn)}});
@@ -8788,6 +9091,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       {act:"pay",    ic:"receipt",         t:"Send a payment request", s:"Texts a link with the breakdown and every way to pay", accent:true},
       {act:"plan",   ic:"refresh-cw",      t:"Put them on a plan", s:"Every few weeks, on a rhythm — you get reminded, they get asked", accent:true},
       {act:"link",   ic:"share",           t:"Send their booking link", s:"Their own page — book, move, cancel, see past jobs. No texting you", accent:true},
+      {act:"photo",  ic:"image",           t:"Send a photo", s:"Camera roll, or one you've sent before — the price sheet, a before/after", accent:true},
       {act:"draft",  ic:"sparkles",       t:"AI draft a reply", s:"Let the AI suggest a full reply to send"},
       {act:"polish", ic:"wand",           t:"Polish my text now", s:"Don't wait for the pause — rewrite it this second"},
       {act:"tpl",    ic:"zap",            t:"Quick replies", s:"Insert one of your saved replies"},
@@ -8829,6 +9133,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         var act=row.getAttribute("data-act");
         sheet.style.display="none";
         var map={write:"writeBtn",draft:"draftBtn",polish:"polishBtn",tpl:"tplBtn",sched:"schedBtn",rem:"remBtn",mic:"micBtn"};
+        if(act==="photo"){photoRecentSheet();return}
         if(act==="reqdate"){requestDate();return}
         if(act==="plan"){planSheet();return}
         if(act==="link"){custLinkSheet();return}
@@ -9247,18 +9552,25 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // =========================================================================
   var POLISH_IDLE=2400;      // ms of "you stopped typing" before we rewrite (was 1600 when it only offered)
   var POLISH_COOLDOWN=6000;  // ms minimum between two automatic runs
-  var POLISH_MIN=15;         // don't bother with "ok", "on my way", etc.
-  var polish={timer:null,busy:false,at:0,applied:false,before:"",after:"",parts:[],phone:"",undone:""};
+  // 10 chars / 2 words, down from 15 / 3. The texts most likely to come off
+  // badly are the short blunt ones — "cant do thurs." never used to clear the
+  // old floor, and that is exactly the message worth a word about tone.
+  var POLISH_MIN=10;         // still not worth a call for "ok" or "yep"
+  var POLISH_MAX_CHANGE=.4;  // past this share of the words it asks instead of swapping
+  var polish={timer:null,busy:false,at:0,applied:false,before:"",after:"",parts:[],phone:"",undone:"",
+              note:"",noteFor:"",offer:null};
   var polishCache={};        // exact draft text -> polished text ("" = nothing to suggest)
+  var polishNotes={};        // exact draft text -> the one warning it had ("" = none)
   var polishDeclined={};     // exact draft text -> true (already your call — never re-polish this)
   function autoPolishOn(){return UI.autoPolish!==false}
   function curDraft(){var i=el("msgInput");return i?(i.value||"").trim():""}
   function polishWorthIt(text){
-    return !!(state.thread&&text.length>=POLISH_MIN&&text.split(/\s+/).length>=3);
+    return !!(state.thread&&text.length>=POLISH_MIN&&text.split(/\s+/).length>=2);
   }
   function prunePolishCache(){
     var k=Object.keys(polishCache);if(k.length>60)k.slice(0,30).forEach(function(x){delete polishCache[x]});
     var d=Object.keys(polishDeclined);if(d.length>80)d.slice(0,40).forEach(function(x){delete polishDeclined[x]});
+    var t=Object.keys(polishNotes);if(t.length>60)t.slice(0,30).forEach(function(x){delete polishNotes[x]});
   }
   function polishDecide(text){if(text)polishDeclined[text]=true}
 
@@ -9305,6 +9617,18 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     for(var i=0;i<parts.length;i++)s+=(parts[i].eq||!parts[i].mine)?parts[i].to:parts[i].from;
     return s.replace(/^\s+/,"");
   }
+  // How much of the message it actually rewrote. Word-level chips are a real way
+  // back for six changed words and useless for thirty — so this is the number
+  // that decides whether a rewrite lands on its own or waits to be asked for.
+  function polishChangeRatio(parts){
+    var chg=0,tot=0,i,p,w;
+    for(i=0;i<parts.length;i++){
+      p=parts[i];
+      w=Math.max(p.from?p.from.trim().split(/\s+/).length:0,p.to?p.to.trim().split(/\s+/).length:0);
+      tot+=w;if(!p.eq)chg+=w;
+    }
+    return tot?chg/tot:0;
+  }
   function polishChanges(){
     var out=[];
     for(var i=0;i<polish.parts.length;i++)if(!polish.parts[i].eq)out.push(i);
@@ -9318,6 +9642,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // You typed after a rewrite, so the chips no longer point at anything real.
     if(polish.applied&&text!==polish.after)clearApplied();
     if(polish.undone&&text!==polish.undone)polish.undone="";
+    // An offer is about one exact draft. Type another word and it isn't that
+    // draft any more, so the version on the strip is no longer the one on offer.
+    if(polish.offer&&polish.offer.src!==text)polish.offer=null;
     if(!state.thread){renderPolishBar();return}
     if(!autoPolishOn()||!polishWorthIt(text)||polishDeclined[text]){renderPolishBar();return}
     if(polishCache[text]!==undefined){applyPolish(text,polishCache[text],state.thread.phone);return}
@@ -9336,15 +9663,16 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     return post("/api/ai/draft",{phone:forPhone,text:text}).then(function(d){
       if(d&&d.ok&&d.draft){
         var out=d.draft.trim();
+        polishNotes[text]=String(d.note||"").trim();
         polishCache[text]=(out===text)?"":out;prunePolishCache();
         applyPolish(text,polishCache[text],forPhone);
-        if(manual&&!polishCache[text])toast("Already reads well — nothing to change");
+        if(manual&&!polishCache[text]&&!polishNotes[text])toast("Already reads well — nothing to change");
       } else {
-        polishCache[text]="";  // remember the miss so auto-polish can't hammer a failing API
+        polishCache[text]="";polishNotes[text]="";  // remember the miss so auto-polish can't hammer a failing API
         if(manual)toast("Polish failed: "+((d&&d.error)||"error"),{bad:true});
       }
     }).catch(function(){
-      polishCache[text]="";
+      polishCache[text]="";polishNotes[text]="";
       if(manual)toast("Network error",{bad:true});
     }).then(function(){
       polish.busy=false;
@@ -9355,16 +9683,28 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // The swap itself. Bails unless the box still holds exactly the text we sent
   // and you're still in the same conversation, so a rewrite can never land on
   // top of words you typed while waiting — or in someone else's thread.
-  function applyPolish(src,out,forPhone){
-    if(!out||!state.thread||state.thread.phone!==forPhone||curDraft()!==src){renderPolishBar();return}
+  function applyPolish(src,out,forPhone,force){
+    if(!state.thread||state.thread.phone!==forPhone||curDraft()!==src){renderPolishBar();return}
+    var note=polishNotes[src]||"";
+    // Nothing to rewrite is a real answer now, not a dead end: the playbook lets
+    // it say "this is fine" and still hand back one thing worth a look.
+    if(!out){polish.note=note;polish.noteFor=src;renderPolishBar();return}
     var parts=polishDiff(src,out);
-    if(!parts||!polishChangesIn(parts).length){polishCache[src]="";renderPolishBar();return}
+    if(!parts||!polishChangesIn(parts).length){polishCache[src]="";polish.note=note;polish.noteFor=src;renderPolishBar();return}
+    // Past the cap this stopped being a polish and started being a different
+    // message. Swapping that in silently would leave a row of chips nobody can
+    // reason about, so it waits to be asked instead.
+    if(!force&&polishChangeRatio(parts)>POLISH_MAX_CHANGE){
+      polish.offer={src:src,out:out,phone:forPhone};polish.note=note;polish.noteFor=src;
+      renderPolishBar();return;
+    }
     var inp=el("msgInput");
     inp.value=out;autoGrow();updateCount();
     if(typeof stashDraft==="function")stashDraft(state.phone);
     if(document.activeElement===inp&&inp.setSelectionRange){try{inp.setSelectionRange(out.length,out.length)}catch(e){}}
     inp.classList.add("just-polished");setTimeout(function(){inp.classList.remove("just-polished")},700);
     polish.applied=true;polish.before=src;polish.after=out;polish.parts=parts;polish.phone=forPhone;
+    polish.offer=null;polish.note=note;polish.noteFor=out;
     // Its own output is never a candidate again — that's the loop-guard.
     polishCache[out]="";polishDecide(out);
     if(typeof vibrate==="function")vibrate(8);
@@ -9380,19 +9720,29 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var bar=el("polishBar");if(!bar)return;
     var text=curDraft(),paused=!autoPolishOn();
     var undone=!!(polish.undone&&text&&text===polish.undone);
-    var show=!!state.thread&&(polish.applied||polish.busy||undone||(polishWorthIt(text)&&!polishDeclined[text]));
-    if(paused&&!polish.applied&&!polishWorthIt(text))show=false;
+    var offer=(polish.offer&&polish.offer.src===text)?polish.offer:null;
+    var note=(polish.note&&polish.noteFor===text)?polish.note:"";
+    var show=!!state.thread&&(polish.applied||polish.busy||offer||note||undone||(polishWorthIt(text)&&!polishDeclined[text]));
+    if(paused&&!polish.applied&&!offer&&!note&&!polishWorthIt(text))show=false;
     if(!show){hidePolishBar();return}
     var icon,label;
-    if(polish.applied){icon="wand";label="Polished — tap to undo a word";}
+    if(offer){icon="wand";label="That's a big rewrite — your call";}
+    else if(polish.applied){icon="wand";label="Polished — tap to undo a word";}
     else if(polish.busy){icon="wand";label="Polishing…";}
     else if(undone){icon="undo";label=paused?"Your words are back · paused":"Your words are back — this one is left alone";}
+    else if(note){icon="alert-triangle";label="Reads fine — one thing to look at";}
     else if(paused){icon="pause";label="Auto Polish paused";}
     else {icon="wand";label="Polishes when you pause";}
     var h='<div class="pb-top"><span class="pb-ic">'+ic(icon,15)+'</span><span class="pb-t">'+esc(label)+'</span>';
+    if(offer)h+='<button class="pb-use" id="pbUse">'+ic("check",13)+'Use it</button>'+
+                '<button class="pb-no" id="pbNo" aria-label="Keep my wording" title="Keep my wording">'+ic("x",15)+'</button>';
     if(polish.applied)h+='<button class="pb-undo" id="pbUndo">'+ic("undo",13)+'Undo</button>';
     h+='<button class="pb-pp" id="pbPP" aria-label="'+(paused?"Resume Auto Polish":"Pause Auto Polish")+'" '+
        'title="'+(paused?"Resume Auto Polish":"Pause Auto Polish")+'">'+ic(paused?"play":"pause",16)+'</button></div>';
+    // The offered version, in full where it fits. "Use it" with nothing to read
+    // is a coin flip, and this is the one state where the words aren't in the box.
+    if(offer)h+='<div class="pb-prev" id="pbPrev">'+esc(polishClip(offer.out,220))+'</div>';
+    if(note)h+='<div class="pb-note" id="pbNote">'+ic("alert-triangle",12)+'<span>'+esc(note)+'</span></div>';
     if(polish.applied){
       var ch=polishChanges();
       if(ch.length){
@@ -9408,6 +9758,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     }
     bar.innerHTML=h;bar.className="polish-bar show"+(polish.applied?" applied":"")+(paused?" paused":"");
     var u=bar.querySelector("#pbUndo");if(u)u.onclick=function(e){e.stopPropagation();polishUndoAll()};
+    var yes=bar.querySelector("#pbUse");if(yes)yes.onclick=function(e){e.stopPropagation();polishUseOffer()};
+    var no=bar.querySelector("#pbNo");if(no)no.onclick=function(e){e.stopPropagation();polishRefuseOffer()};
     bar.querySelector("#pbPP").onclick=function(e){e.stopPropagation();setAutoPolish(!autoPolishOn())};
     Array.prototype.forEach.call(bar.querySelectorAll(".pb-w"),function(b){
       b.onclick=function(e){e.stopPropagation();polishToggleWord(Number(b.getAttribute("data-i")))};
@@ -9420,7 +9772,25 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(!cur)return "put back “"+polishClip(other)+"”";
     return polishClip(cur);
   }
-  function polishClip(s){s=String(s||"").replace(/\s+/g," ");return s.length>26?s.slice(0,25)+"…":s}
+  function polishClip(s,n){n=n||26;s=String(s||"").replace(/\s+/g," ");return s.length>n?s.slice(0,n-1)+"…":s}
+
+  // ---- the two answers to a big rewrite ----
+  // "Use it" is the same swap an automatic polish does — chips, undo and all —
+  // just asked for rather than assumed.
+  function polishUseOffer(){
+    var o=polish.offer;if(!o)return;
+    polish.offer=null;
+    applyPolish(o.src,o.out,o.phone,true);
+  }
+  // "No thanks" has to be final. Without marking the draft decided, the identical
+  // rewrite gets offered again the moment he stops typing, which is worse than
+  // never offering it at all.
+  function polishRefuseOffer(){
+    var o=polish.offer;if(!o)return;
+    polish.offer=null;polishDecide(o.src);
+    if(typeof vibrate==="function")vibrate(5);
+    renderPolishBar();
+  }
   function hidePolishBar(){var bar=el("polishBar");if(bar){bar.className="polish-bar";bar.innerHTML=""}}
 
   // Undo: your exact words back, and they stay yours — the same draft is never
@@ -9432,6 +9802,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(typeof stashDraft==="function")stashDraft(state.phone);
     polishDecide(src);
     clearApplied();
+    // The warning was about what he wrote, not about the rewrite — taking the
+    // rewrite back is no reason to stop telling him the text reads curt.
+    polish.noteFor=src;
     polish.undone=src;
     if(typeof vibrate==="function")vibrate(6);
     renderPolishBar();
@@ -9445,7 +9818,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var out=polishJoin(polish.parts),inp=el("msgInput");
     inp.value=out;autoGrow();updateCount();
     if(typeof stashDraft==="function")stashDraft(state.phone);
-    polish.after=out;polishCache[out]="";polishDecide(out);
+    polish.after=out;polish.noteFor=out;polishCache[out]="";polishDecide(out);
     if(typeof vibrate==="function")vibrate(5);
     renderPolishBar();
   }
@@ -9453,7 +9826,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // leak from one customer's draft into another's.
   function resetPolish(){
     if(polish.timer){clearTimeout(polish.timer);polish.timer=null}
-    clearApplied();polish.undone="";
+    clearApplied();polish.undone="";polish.offer=null;polish.note="";polish.noteFor="";
     hidePolishBar();
   }
   function setAutoPolish(on){
@@ -9470,7 +9843,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Read-only view for the UI tests (and for debugging a rewrite that surprised you).
   window.__polish=function(){
     return {on:autoPolishOn(),applied:polish.applied,busy:polish.busy,before:polish.before,after:polish.after,
-            idle:POLISH_IDLE,changes:polish.parts.filter(function(p){return !p.eq}).map(function(p){
+            idle:POLISH_IDLE,min:POLISH_MIN,cap:POLISH_MAX_CHANGE,
+            note:(polish.note&&polish.noteFor===curDraft())?polish.note:"",
+            offer:polish.offer?{src:polish.offer.src,out:polish.offer.out}:null,
+            changes:polish.parts.filter(function(p){return !p.eq}).map(function(p){
               return {from:p.from.trim(),to:p.to.trim(),mine:p.mine}})};
   };
   // The Polish tool means "don't wait for the pause" — same rewrite, right now.
@@ -9601,6 +9977,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // at that conversation, otherwise its draft so they're waiting when you return.
     if(state.phone===p.forPhone){var inp=el("msgInput");inp.value=p.body;autoGrow();updateCount();inp.focus()}
     else{drafts[p.forPhone]=p.body;saveDrafts()}
+    // The photos come back with the words. They're already uploaded, so putting
+    // them back on the tray costs nothing and losing them would cost a re-shoot.
+    if(p.atts&&p.atts.length){PHOTO.by[p.forPhone]=(PHOTO.by[p.forPhone]||[]).concat(p.atts);renderAtt()}
     if(p.payload.aiOriginal)state.lastAiText=p.payload.aiOriginal; // keep the AI-edit lesson
     toast("Held — put back in your box");
   }
@@ -9611,10 +9990,275 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   document.addEventListener("visibilitychange",function(){if(document.hidden)flushPendingSends()});
   window.addEventListener("pagehide",flushPendingSends);
 
+  // ---- photos, going out ---------------------------------------------------
+  // Half of what sells a detail is a picture — the swirl marks before, the paint
+  // after, the last truck he did that looks like theirs. Sending one has to cost
+  // exactly what typing costs: pick it, it's on the message, hit send.
+  //
+  // Three things make that true, and all three matter:
+  //   (1) The photo uploads THE MOMENT it's attached, not when Send is pressed.
+  //       A phone photo over a driveway's worth of signal takes seconds; those
+  //       seconds are spent while he's still typing, not while he's waiting.
+  //   (2) It's shrunk in the browser first. A 4MB camera photo isn't an MMS —
+  //       carriers drop or mangle anything much over half a megabyte, and the
+  //       customer sees nothing arrive with no error anywhere. See photoCompress.
+  //   (3) Attachments are held PER CONVERSATION. Tapping another thread while a
+  //       photo is queued doesn't quietly throw it away.
+  var PHOTO={by:{},seq:0,recents:null};
+  var PHOTO_MAX=10;             // Twilio's own cap on media per message
+  var PHOTO_TARGET=440000;      // bytes of base64 — ~330KB on the wire, safely under carrier limits
+  var PHOTO_RECENT_MAX=12;
+
+  function photoItems(phone){var p=phone||state.phone;if(!p)return [];return (PHOTO.by[p]=PHOTO.by[p]||[])}
+  function photoCanAdd(){return Math.max(0,PHOTO_MAX-photoItems().length)}
+
+  // Shrink to something a carrier will actually deliver. Long edge first (detail
+  // shots are wide), then quality, and it keeps stepping down rather than giving
+  // up — a photo that's too big is a photo that silently never arrives.
+  function photoCompress(file){
+    return new Promise(function(res,rej){
+      var img=new Image(),url=URL.createObjectURL(file);
+      img.onload=function(){
+        var w=img.width,h=img.height;
+        var edge=1400,q=.74,out="";
+        for(var pass=0;pass<6;pass++){
+          var sc=Math.min(1,edge/Math.max(w,h));
+          var c=document.createElement("canvas");
+          c.width=Math.max(1,Math.round(w*sc));c.height=Math.max(1,Math.round(h*sc));
+          c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+          out=c.toDataURL("image/jpeg",q);
+          if(out.length<=PHOTO_TARGET)break;
+          if(q>.44)q-=.12; else edge=Math.round(edge*.75);
+        }
+        URL.revokeObjectURL(url);
+        res(out);
+      };
+      img.onerror=function(){URL.revokeObjectURL(url);rej(new Error("bad image"))};
+      img.src=url;
+    });
+  }
+  // A postage stamp of the same photo, kept in localStorage so "send it again"
+  // can show what it is without a round trip. Deliberately tiny: twelve of these
+  // share one origin's storage with the drafts and the settings.
+  function photoThumb(dataUrl){
+    return new Promise(function(res){
+      var img=new Image();
+      img.onload=function(){
+        var sc=Math.min(1,150/Math.max(img.width,img.height));
+        var c=document.createElement("canvas");
+        c.width=Math.max(1,Math.round(img.width*sc));c.height=Math.max(1,Math.round(img.height*sc));
+        c.getContext("2d").drawImage(img,0,0,c.width,c.height);
+        res(c.toDataURL("image/jpeg",.5));
+      };
+      img.onerror=function(){res("")};
+      img.src=dataUrl;
+    });
+  }
+
+  function photoAdd(files){
+    if(!state.phone)return;
+    var list=Array.prototype.slice.call(files||[]).filter(function(f){return f&&/^image\//.test(f.type||"")});
+    if(!list.length)return;
+    var room=photoCanAdd();
+    if(!room){toast("That's the "+PHOTO_MAX+"-photo limit for one text",{bad:true});return}
+    if(list.length>room){toast("Only "+room+" more photo"+(room===1?"":"s")+" fit on one text",{bad:true});list=list.slice(0,room)}
+    var forPhone=state.phone;
+    list.forEach(function(f){
+      var it={id:"a"+(++PHOTO.seq),state:"up",dataUrl:"",type:"image/jpeg",phone:forPhone};
+      photoItems(forPhone).push(it);
+      renderAtt();
+      photoCompress(f).then(function(dataUrl){
+        it.dataUrl=dataUrl;renderAtt();
+        return photoUpload(it);
+      }).catch(function(){it.state="err";renderAtt()});
+    });
+    renderAtt();
+  }
+
+  function photoUpload(it){
+    it.state="up";renderAtt();
+    return post("/api/send-photo",{data:it.dataUrl,type:"image/jpeg"}).then(function(d){
+      if(!d||!d.ok){
+        it.state="err";renderAtt();
+        toast(d&&d.error==="too_big"?"That photo is too big to text":"Photo didn't upload — tap it to retry",{bad:true});
+        return;
+      }
+      it.url=d.url;it.state="ok";renderAtt();
+      photoRemember(it);
+    }).catch(function(){it.state="err";renderAtt();toast("Photo didn't upload — tap it to retry",{bad:true})});
+  }
+
+  function photoDrop(id){
+    var arr=photoItems();
+    var i=arr.findIndex(function(x){return x.id===id});
+    if(i>=0)arr.splice(i,1);
+    renderAtt();
+  }
+  function photoClear(phone){if(phone)PHOTO.by[phone]=[];renderAtt()}
+
+  // Everything attached has to have landed in KV before the text can name it.
+  function photoReady(){
+    var arr=photoItems();
+    var waiting=arr.filter(function(x){return x.state==="up"});
+    if(!waiting.length)return Promise.resolve(true);
+    return new Promise(function(res){
+      var tries=0;
+      (function poll(){
+        var a=photoItems();
+        if(!a.some(function(x){return x.state==="up"}))return res(!a.some(function(x){return x.state==="err"}));
+        if(++tries>150)return res(false);   // 30s and it isn't coming
+        setTimeout(poll,200);
+      })();
+    });
+  }
+
+  function renderAtt(){
+    var tray=el("attTray");if(!tray)return;
+    var arr=photoItems();
+    var btn=el("photoBtn");if(btn)btn.classList.toggle("has",arr.length>0);
+    if(!arr.length){tray.style.display="none";tray.innerHTML="";updateCount();return}
+    tray.style.display="flex";
+    tray.innerHTML=arr.map(function(it){
+      return '<div class="att '+(it.state==="up"?"up":it.state==="err"?"err":"")+'" data-att="'+esc(it.id)+'">'+
+        (it.dataUrl?'<img src="'+esc(it.dataUrl)+'" alt="Attached photo">':"")+
+        (it.state==="up"?'<span class="sp"><span class="spin"></span></span>':"")+
+        (it.state==="err"?'<button class="retry" data-attretry="'+esc(it.id)+'">Retry</button>':"")+
+        '<button class="x" data-attx="'+esc(it.id)+'" aria-label="Remove photo">'+ic("x",12)+'</button>'+
+      '</div>';
+    }).join("")+(arr.length<PHOTO_MAX?'<button class="att-more" id="attMore" aria-label="Add another photo">'+ic("plus",18)+'</button>':"");
+    Array.prototype.forEach.call(tray.querySelectorAll("[data-attx]"),function(b){
+      b.onclick=function(e){e.stopPropagation();photoDrop(b.getAttribute("data-attx"))};
+    });
+    Array.prototype.forEach.call(tray.querySelectorAll("[data-attretry]"),function(b){
+      b.onclick=function(e){
+        e.stopPropagation();
+        var it=photoItems().find(function(x){return x.id===b.getAttribute("data-attretry")});
+        if(it&&it.dataUrl)photoUpload(it);
+      };
+    });
+    Array.prototype.forEach.call(tray.querySelectorAll(".att img"),function(im){
+      im.onclick=function(){openLightbox(im.src)};
+    });
+    var more=el("attMore");if(more)more.onclick=function(){photoPick()};
+    updateCount();
+  }
+
+  function photoPick(){
+    var inp=el("photoInput");if(!inp)return;
+    inp.value="";inp.click();
+  }
+
+  // ---- "send it again" ------------------------------------------------------
+  // The same three pictures go out every week: the price sheet, the ceramic
+  // before/after, the interior he's proudest of. They're already in KV under a
+  // URL that never expires for 13 months, so re-sending one costs no upload at
+  // all — the whole point of remembering them.
+  function photoRecents(){
+    if(PHOTO.recents)return PHOTO.recents;
+    try{PHOTO.recents=JSON.parse(localStorage.getItem("mkd-photo-recents")||"[]")||[]}catch(e){PHOTO.recents=[]}
+    return PHOTO.recents;
+  }
+  function photoRemember(it){
+    if(!it.url)return;
+    photoThumb(it.dataUrl).then(function(thumb){
+      var list=photoRecents().filter(function(x){return x.url!==it.url});
+      list.unshift({url:it.url,thumb:thumb,ts:Date.now()});
+      PHOTO.recents=list.slice(0,PHOTO_RECENT_MAX);
+      try{localStorage.setItem("mkd-photo-recents",JSON.stringify(PHOTO.recents))}
+      catch(e){ // storage full — drop the oldest half rather than lose the newest
+        PHOTO.recents=PHOTO.recents.slice(0,4);
+        try{localStorage.setItem("mkd-photo-recents",JSON.stringify(PHOTO.recents))}catch(e2){}
+      }
+    });
+  }
+  function photoRecentSheet(){
+    var list=photoRecents();
+    var h='<div class="jd-sh-title">Send a photo</div>';
+    h+='<button class="jd-btn pri" id="rcPick" style="width:100%">'+ic("image",17)+' Choose or take a photo</button>';
+    if(list.length){
+      h+='<div class="jd-sh-sub" style="margin-top:14px">Sent before — tap to put it on this text again. No upload, no waiting.</div>'+
+         '<div class="rc-grid">'+list.map(function(r,i){
+           return '<button data-rc="'+i+'" aria-label="Send this photo again"><img src="'+esc(r.thumb||r.url)+'" alt=""></button>';
+         }).join("")+'</div>';
+    }
+    var sh=jdSheetOpen(h);
+    sh.querySelector("#rcPick").onclick=function(){jdSheetClose();setTimeout(photoPick,60)};
+    Array.prototype.forEach.call(sh.querySelectorAll("[data-rc]"),function(b){
+      b.onclick=function(){
+        var r=photoRecents()[+b.getAttribute("data-rc")];if(!r)return;
+        if(!photoCanAdd())return toast("That's the "+PHOTO_MAX+"-photo limit for one text",{bad:true});
+        photoItems().push({id:"a"+(++PHOTO.seq),state:"ok",dataUrl:r.thumb||"",url:r.url,type:"image/jpeg",phone:state.phone});
+        renderAtt();jdSheetClose();vibrate(8);
+      };
+    });
+  }
+
+  function wirePhotos(){
+    var inp=el("photoInput"),btn=el("photoBtn");
+    if(btn){
+      btn.innerHTML=ic("image",21);
+      // A tap is the fast path: straight to the camera roll. Press and hold (or
+      // right-click on a desktop) opens the ones he's sent before, because the
+      // reuse case is the one that happens every week and shouldn't cost a tap
+      // that the common case doesn't.
+      var held=false,timer=null;
+      btn.onclick=function(){if(held){held=false;return}photoPick()};
+      btn.oncontextmenu=function(e){e.preventDefault();photoRecentSheet()};
+      btn.addEventListener("touchstart",function(){
+        held=false;timer=setTimeout(function(){held=true;vibrate(12);photoRecentSheet()},480);
+      },{passive:true});
+      ["touchend","touchmove","touchcancel"].forEach(function(ev){
+        btn.addEventListener(ev,function(){clearTimeout(timer)},{passive:true});
+      });
+    }
+    if(inp)inp.onchange=function(){photoAdd(inp.files);inp.value=""};
+    // Paste a screenshot straight into the box — the fastest path there is on a
+    // desktop, and it used to do nothing at all.
+    var ta=el("msgInput");
+    if(ta)ta.addEventListener("paste",function(e){
+      var items=(e.clipboardData&&e.clipboardData.items)||[];
+      var files=[];
+      for(var i=0;i<items.length;i++){
+        if(items[i].kind==="file"&&/^image\//.test(items[i].type||"")){var f=items[i].getAsFile();if(f)files.push(f)}
+      }
+      if(files.length){e.preventDefault();photoAdd(files)}
+    });
+    // Drag a photo onto the conversation from anywhere.
+    var chat=document.querySelector(".chat");
+    if(chat){
+      var depth=0;
+      chat.addEventListener("dragenter",function(e){e.preventDefault();if(++depth===1&&state.phone)chat.classList.add("dropping")});
+      chat.addEventListener("dragover",function(e){e.preventDefault()});
+      chat.addEventListener("dragleave",function(){if(--depth<=0){depth=0;chat.classList.remove("dropping")}});
+      chat.addEventListener("drop",function(e){
+        e.preventDefault();depth=0;chat.classList.remove("dropping");
+        if(e.dataTransfer&&e.dataTransfer.files&&e.dataTransfer.files.length)photoAdd(e.dataTransfer.files);
+      });
+    }
+  }
+
   function sendMessage(){
-    var inp=el("msgInput");var body=inp.value.trim();if(!body||!state.phone)return;
+    var inp=el("msgInput");var body=inp.value.trim();if(!state.phone)return;
+    var atts=photoItems().slice();
+    // "Here's what I did to the last one" needs no words at all — so the send is
+    // live as soon as there's either text or a photo.
+    if(!body&&!atts.length)return;
+    if(atts.some(function(x){return x.state==="err"})){
+      toast("A photo didn't upload — retry it or take it off",{bad:true});return;
+    }
+    // Attaching starts the upload, so by the time he's finished typing it has
+    // almost always landed. When it hasn't, wait for it rather than dropping it.
+    if(atts.some(function(x){return x.state==="up"})){
+      toast("Finishing your photo…");
+      photoReady().then(function(ok){
+        if(!ok)return toast("That photo didn't upload — retry it or take it off",{bad:true});
+        sendMessage();
+      });
+      return;
+    }
     if(!sendGuardsPass(body))return;
     var payload={phone:state.phone,body:body};
+    if(atts.length)payload.media=atts.map(function(x){return x.url});
     if(teamOn()&&meName())payload.by=meName(); // sign the reply with who's texting
     // If this send started from an AI draft/suggestion, pass the original so the
     // server can learn from how Mikey edited it. Used once, then cleared.
@@ -9623,12 +10267,17 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // then reconcile with the server — so a text feels instant even on slow signal.
     var tempId="tmp"+Date.now();var forPhone=state.phone;
     if(state.thread&&state.thread.phone===forPhone){
-      state.thread.messages.push({id:tempId,dir:"out",body:body,ts:Date.now(),kind:"manual",status:"sending",by:payload.by});
+      var opt={id:tempId,dir:"out",body:body,ts:Date.now(),kind:"manual",status:"sending",by:payload.by};
+      // Draw the photo from the copy already in the browser, so the bubble is
+      // there before the round trip — same reason the words are.
+      if(atts.length)opt.media=atts.map(function(x){return {url:x.dataUrl||x.url,type:x.type}});
+      state.thread.messages.push(opt);
       renderThread();
     }
-    inp.value="";clearDraft(forPhone);autoGrow();updateCount();hideAiReview();resetPolish();PK.asked="";pkOnType();
+    inp.value="";clearDraft(forPhone);autoGrow();hideAiReview();resetPolish();PK.asked="";pkOnType();
+    photoClear(forPhone);   // renderAtt() repaints the count for us
     noteSent(forPhone,body);
-    pendingSends[tempId]={payload:payload,forPhone:forPhone,body:body,
+    pendingSends[tempId]={payload:payload,forPhone:forPhone,body:body,atts:atts,
       timer:setTimeout(function(){dispatchSend(tempId)},UNDO_MS)};
     // The ten-second hold is a safety net, not a delivery delay: "Send now" skips
     // straight to the wire for the times you're standing there watching for a
@@ -9878,6 +10527,16 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   }
   function updateCount(){
     var v=el("msgInput").value,cc=el("charCount");
+    // A photo makes it an MMS, and segment counting stops being the truth — so
+    // say what it IS instead of quoting a per-160-character number that no longer
+    // applies to what's about to go out.
+    var np=photoItems().length;
+    if(np){
+      cc.textContent=np+" photo"+(np===1?"":"s")+" · MMS";
+      cc.style.color="var(--accent-text)";
+      cc.title="Photos send as MMS — one message, whatever you type with it.";
+      return;
+    }
     if(!v){cc.textContent="";cc.title="";cc.style.color="var(--muted2)";return}
     var s=smsInfo(v);
     cc.textContent=s.chars+" · "+s.segments+" SMS"+(s.unicode?" · unicode":"");
@@ -9933,7 +10592,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   function noteSent(phone,body){lastSentAt[phone]={body:body,ts:Date.now()}}
   function sendGuardsPass(body){
     var prev=lastSentAt[state.phone];
-    if(prev&&prev.body===body&&Date.now()-prev.ts<5*60000){
+    // No words means nothing to be a duplicate OF — two photos in a row are two
+    // different photos, not the same text sent twice.
+    if(body&&prev&&prev.body===body&&Date.now()-prev.ts<5*60000){
       if(!confirm("You just sent this exact text to "+displayName(state.thread)+".\n\nSend it again?"))return false;
     }
     var c=state.config||{},qs=c.quietStart==null?20:c.quietStart,qe=c.quietEnd==null?8:c.quietEnd;
@@ -10338,6 +10999,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   el("fab").onclick=newConversation;
   el("emptyNew").onclick=newConversation;
   el("sendBtn").onclick=sendMessage;
+  wirePhotos();
   function openDetails(){el("details").classList.add("open");el("sheetScrim").classList.add("show");navOpen("details",closeDetails)}
   function closeDetails(){navDrop("details");el("details").classList.remove("open");el("sheetScrim").classList.remove("show")}
   // Leaving a conversation: drop the thread layer (which takes the details
@@ -15480,8 +16142,11 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   var BRIEF={data:null,at:0,loading:false};
   function loadBrief(force,then){
     if(BRIEF.loading)return;
-    if(BRIEF.data&&!force&&Date.now()-BRIEF.at<600000){if(then)then();return}
-    BRIEF.loading=true;
+    // Attempt-held, not answer-held — same reason as loadCold: the card asks for
+    // a brief every time it draws, and a brief that comes back without one used
+    // to make every draw ask again, forever.
+    if(!force&&BRIEF.at&&Date.now()-BRIEF.at<(BRIEF.data?600000:60000)){if(then)then();return}
+    BRIEF.loading=true;BRIEF.at=Date.now();
     api("/api/brief").then(function(d){
       BRIEF.loading=false;
       if(d&&d.ok){BRIEF.data=d.brief;BRIEF.text=d.text;BRIEF.at=Date.now()}
@@ -15500,13 +16165,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       '<div class="br-tile"><div class="v">'+b.counts.waiting+'</div><div class="l">Waiting</div></div>'+
       '<div class="br-tile"><div class="v">'+b.counts.followups+'</div><div class="l">Nudges</div></div></div>';
     if(b.weather)h+='<div class="br-wx">'+ic("cloud-sun",15)+esc(b.weather.line)+'</div>';
-    if(b.risky&&b.risky.length){
-      h+='<div class="jd-sec">'+ic("cloud-rain",14)+' Rain risk today</div>';
-      b.risky.forEach(function(r){
-        h+='<div class="jd-item"><div class="av" style="background:var(--blue)">'+ic("cloud-rain",17)+'</div>'+
-          '<div class="mid"><div class="nm">'+esc(r.name||"Job")+'</div><div class="sb">'+jd12(r.slot)[0]+' '+jd12(r.slot)[1]+' — '+r.risk+'% chance of rain</div></div></div>';
-      });
-      h+='<div class="jd-note">Worth a heads-up text so nobody\'s surprised. Interior-only work is usually still fine.</div>';
+    if(b.weekRisk&&b.weekRisk.length){
+      h+='<div class="jd-sec">'+ic("cloud-rain",14)+' Rain on the jobs you\'ve booked</div>'+wxRiskBlock(b.weekRisk)+
+        '<div class="jd-note">Interior-only work is usually still fine — this is about the ones where the paint has to dry.</div>';
     }
     h+='<div class="jd-sec">'+ic("dollar",14)+' Money</div>'+
       '<div class="br-tiles"><div class="br-tile"><div class="v">$'+b.money.yesterday+'</div><div class="l">Yesterday</div></div>'+
@@ -15518,6 +16179,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var s=jdSheetOpen(h);
     s.querySelector("#brClose").onclick=jdSheetClose;
     s.querySelector("#brCopy").onclick=function(){jdCopy(BRIEF.text||"","Brief copied")};
+    wireWxRisk(s);
   }
 
   // Home widget — the brief, inline, where he already looks first.
@@ -15534,12 +16196,15 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       '<div class="br-tile"><div class="v">$'+b.summary.booked+'</div><div class="l">Booked</div></div>'+
       '<div class="br-tile"><div class="v">'+b.counts.waiting+'</div><div class="l">Waiting</div></div>'+
       '<div class="br-tile"><div class="v">$'+b.money.owed+'</div><div class="l">Owed</div></div></div>';
+    // The weather planner is a widget he has to go and open; this is the card
+    // that is always on Home. A job in the rain three days out belongs here.
+    h+=wxRiskBlock(b.weekRisk);
     if(b.jobs.length){
       h+='<div class="br-jobs">';
       b.jobs.slice(0,4).forEach(function(j){
         var t=jd12(j.slot);
         h+='<div class="br-job"><span class="tm">'+t[0]+' '+t[1]+'</span><span class="nm">'+esc(j.name||"Job")+(j.city?' · '+esc(j.city):'')+'</span>'+
-          (j.rainRisk>=45?'<span class="rn">'+j.rainRisk+'% rain</span>':(j.price?'<span class="rn" style="color:var(--muted2)">$'+j.price+'</span>':''))+'</div>';
+          (j.rainRisk>=(b.riskAt||45)?'<span class="rn">'+j.rainRisk+'% rain</span>':(j.price?'<span class="rn" style="color:var(--muted2)">$'+j.price+'</span>':''))+'</div>';
       });
       h+='</div>';
     }
@@ -15676,7 +16341,14 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Home nudge — shown once until enabled or dismissed.
   function homePushWidget(){
     if(!pushSupported()||PUSH.state==="on"||PUSH.state==="unsupported"||pushDismissed())return "";
-    if(PUSH.state==="unknown"){pushRefresh();return ""}
+    // Asking once per repaint is asking hundreds of times a second. The state
+    // stays "unknown" for as long as the service worker registration never
+    // arrives — a private window, a failed install — so the ask is spaced out
+    // rather than tied to the draw.
+    if(PUSH.state==="unknown"){
+      if(!PUSH.askedAt||Date.now()-PUSH.askedAt>20000){PUSH.askedAt=Date.now();pushRefresh()}
+      return "";
+    }
     return '<div class="pn-card"><div class="t">'+ic("bell",18)+' Get texts the second they land</div>'+
       '<div class="s">'+(PUSH.state==="blocked"
         ? 'Notifications are blocked for this app. Turn them on in your phone settings, then tap below.'

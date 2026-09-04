@@ -30,9 +30,17 @@ page.on('console', (m) => { if (m.type() === 'error' && !/favicon|manifest|sw\.j
 // Every draft the polisher is asked about, in order. This is the list that
 // proves it can't loop: its own output must never show up here.
 const polishAsks = [];
-// Deterministic stand-in for Gemini: fixes one word and adds a sign-off, so the
-// diff has both a replacement and an insertion to make chips out of.
-const fakePolish = (t) => t.replace(/\bthurs\b/i, 'Thursday').replace(/\byea\b/i, 'Yes') + ' Thanks!';
+// Deterministic stand-in for the model. Three shapes, because polish now has
+// three answers rather than one: a small fix (swap a word, add a sign-off — a
+// replacement and an insertion, so there are chips to tap), a rewrite so large
+// it has to be offered instead of applied, and "this is fine, but look at this"
+// — a note with no rewrite at all.
+const BIG = 'Thursday morning works great for me. Want me to put you down?';
+const fakePolish = (t) => {
+  if (/^so basically/i.test(t)) return { draft: BIG, note: '' };
+  if (/^cant do thurs/i.test(t)) return { draft: t, note: 'reads a little curt' };
+  return { draft: t.replace(/\bthurs\b/i, 'Thursday').replace(/\byea\b/i, 'Yes') + ' Thanks!', note: '' };
+};
 
 await page.route('**/*', async (route) => {
   const req = route.request();
@@ -49,7 +57,8 @@ await page.route('**/*', async (route) => {
     let body = {}; try { body = JSON.parse(req.postData() || '{}'); } catch (_) {}
     if (!body.text) return json({ ok: true, draft: 'Written for you.' });
     polishAsks.push(body.text);
-    return json({ ok: true, draft: fakePolish(body.text) });
+    const out = fakePolish(body.text);
+    return json({ ok: true, draft: out.draft, note: out.note });
   }
   if (path === '/api/money') return json({ ok: true, month: '2026-08', today: '2026-08-15', entries: [], nudges: [], owed: [], summary: {}, config: {} });
   if (path === '/api/day') return json({ ok: true, date: '2026-08-15', jobs: [], manual: [], order: [], summary: { total: 0, done: 0, remaining: 0, booked: 0, earned: 0, hours: 0 } });
@@ -83,6 +92,10 @@ const openThread = async (name) => {
 // regression back to the old 1600ms would still pass — the wait itself is
 // asserted separately, off the constant.
 const settle = () => page.waitForTimeout(3600);
+// Back-to-back rewrites are held apart by POLISH_COOLDOWN (6s), so a section
+// that polishes right after another one has to outwait the cooldown, not just
+// the idle pause.
+const settleAfterOne = () => page.waitForTimeout(7200);
 
 section('It waits noticeably longer than it did when it only offered');
 const idle = (await P()).idle;
@@ -164,6 +177,60 @@ const beforeShort = polishAsks.length;
 await type('ok');
 await settle();
 ok('two letters are left alone', polishAsks.length === beforeShort, polishAsks);
+
+section('A message with nothing wrong gets a word about tone instead of a rewrite');
+// 14 characters — under the old 15-char floor, which is the point: the texts
+// most likely to land badly are the short blunt ones, and they were the ones
+// polish never looked at.
+await openThread('Dale Hobart');
+const beforeNote = polishAsks.length;
+await type('cant do thurs.');
+await settleAfterOne();
+st = await P();
+ok('the short one was looked at now', polishAsks.length === beforeNote + 1, polishAsks);
+ok('his words are untouched', (await box()) === 'cant do thurs.', await box());
+ok('nothing was applied', st.applied === false);
+ok('but it said the one thing', st.note === 'reads a little curt', st.note);
+ok('and the strip shows it', (await page.locator('#polishBar .pb-note').innerText()).includes('curt'));
+ok('the label says it reads fine', (await page.locator('#polishBar .pb-t').innerText()).includes('one thing to look at'));
+
+section('A rewrite big enough to be a different message waits to be asked for');
+const beforeBig = polishAsks.length;
+await type('so basically i was thinking maybe thursday could work if your around');
+await settleAfterOne();
+st = await P();
+ok('it did ask the model', polishAsks.length === beforeBig + 1, polishAsks);
+ok('but your words are still in the box', (await box()).startsWith('so basically'), await box());
+ok('nothing was applied behind your back', st.applied === false);
+ok('it is holding a version for you', !!st.offer && st.offer.out === BIG, st.offer);
+ok('the strip says whose call it is', (await page.locator('#polishBar .pb-t').innerText()).includes('your call'));
+ok('and shows you the version before you take it', (await page.locator('#pbPrev').innerText()).includes('put you down'));
+ok('the cap is 40% of the words', (await P()).cap === 0.4, (await P()).cap);
+
+section('Take it and it behaves exactly like an ordinary polish');
+await page.locator('#pbUse').click();
+await page.waitForTimeout(300);
+ok('the rewrite is in the box', (await box()) === BIG, await box());
+st = await P();
+ok('it is applied now', st.applied === true);
+ok('your original is remembered', st.before.startsWith('so basically'), st.before);
+ok('there are chips to put words back', (await page.locator('#polishBar .pb-w').count()) > 0);
+await page.locator('#pbUndo').click();
+await page.waitForTimeout(250);
+ok('undo still gives you your exact draft', (await box()).startsWith('so basically'), await box());
+
+section('Turn it down and it stays turned down');
+await type('so basically thursday morning could work for me if your around then');
+await settleAfterOne();
+ok('it offered again on a new draft', !!(await P()).offer);
+await page.locator('#pbNo').click();
+await page.waitForTimeout(250);
+ok('your words are what is left', (await box()).startsWith('so basically thursday morning'), await box());
+ok('the offer is gone', (await P()).offer === null);
+const afterNo = polishAsks.length;
+await settleAfterOne();
+ok('and it is never offered again', polishAsks.length === afterNo && (await P()).offer === null, polishAsks);
+ok('the strip got out of the way', await page.locator('#polishBar.show').count() === 0);
 
 section('Nothing broke');
 ok('no page errors', errs.length === 0, errs);
