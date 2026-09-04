@@ -4170,7 +4170,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-03·polish-playbook";
+  var APP_BUILD="2026-09-04·quote-funnel";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -11476,7 +11476,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         html+='<div class="qv-row">'+
           '<div class="qv-date">'+esc(qvDayLabel(e.date))+'</div>'+
           '<div class="qv-who">'+
-            '<b>'+esc(e.name||"—")+(e.type==="booking"?' <span class="qv-tag">Booked</span>':'')+'</b>'+
+            /* A quote can come in with a number and no name now — the row falls back
+               to the number rather than printing a dash for a real lead. */
+            '<b>'+esc(e.name||prettyPhone(e.phone)||"—")+(e.type==="booking"?' <span class="qv-tag">Booked</span>':'')+'</b>'+
             (sub?'<small>'+esc(sub)+'</small>':'')+
             (e.services?'<small class="qv-svc">'+esc(e.services)+'</small>':'')+
           '</div>'+
