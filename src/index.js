@@ -487,32 +487,42 @@ async function handleSubmit(request) {
   // Only auto-text the client if they ticked the SMS consent box on the form
   // (A2P/compliance). Mikey's lead alert + the dashboard lead always go through.
   const consent = smsConsent === true || smsConsent === 'true';
-  if (!name || !phone) return cors(json({ ok: false, error: 'missing_fields' }, 422));
+  // Only the number is required. The quote screen stopped asking for a name, and
+  // a number with no name is still a lead — turning it away at 422 would throw
+  // out exactly the submissions this change exists to win.
+  if (!phone) return cors(json({ ok: false, error: 'missing_fields' }, 422));
   const clientPhone = normalizePhone(phone);
   if (!clientPhone) return cors(json({ ok: false, error: 'bad_phone' }, 422));
 
   const serviceList = Array.isArray(services) ? services.join(', ') : (services || '');
   const quoteLine = total ? `$${total}` : 'TBD';
+  // What identifies this person on Mikey's side: the name when there is one, the
+  // number when there isn't. "NEW QUOTE — " with nothing after it helps nobody.
+  const who = name || clientPhone;
 
+  // When they didn't leave a name, the first text is also where he gets it — so
+  // it asks, in the same breath as the car, instead of needing a second round.
   const clientMsg =
-    `Hey ${name.split(' ')[0]}, it's Mikey. I got your quote submission on my site. ` +
-    `Whenever you have a minute, feel free to send over the year, make, and model of the car ` +
+    `Hey ${greetName(name)}, it's Mikey. I got your quote submission on my site. ` +
+    `Whenever you have a minute, feel free to send over ${name ? '' : 'your name and '}the year, make, and model of the car ` +
     `you'd like detailed, and I'll confirm that price. Talk soon!`;
 
   const mikeyMsg = [
-    `🔔 NEW QUOTE — ${name}`, `Phone: ${clientPhone}`,
+    `🔔 NEW QUOTE — ${who}`, `Phone: ${clientPhone}`,
     email ? `Email: ${email}` : null, location ? `City: ${location}` : null,
     `Quote: ${quoteLine}`, vehicle ? `Vehicle: ${vehicle}` : null,
     condition ? `Condition: ${condition}` : null, serviceList ? `Services: ${serviceList}` : null,
-    notes ? `Notes: ${notes}` : null, ``, `Open the dashboard to reply to ${name.split(' ')[0]}.`,
+    notes ? `Notes: ${notes}` : null, ``,
+    `Open the dashboard to reply to ${name ? name.split(' ')[0] : 'them'}.`,
   ].filter((s) => s !== null).join('\n');
 
-  const mikeyAlert = await notifyMikey(`🔔 New quote — ${name}`, mikeyMsg);
+  const mikeyAlert = await notifyMikey(`🔔 New quote — ${who}`, mikeyMsg);
 
   // Start the conversation, tag as a new lead, store form details as a note.
   const thread = await loadThread(clientPhone);
   markSource(thread, 'quote');
-  if (!thread.name) thread.name = name;
+  // Never overwrite a name he already has with the blank a nameless lead brings.
+  if (name && !thread.name) thread.name = name;
   if (!thread.status) { thread.status = 'new'; thread.statusAt = thread.statusAt || Date.now(); }
   const detail = [
     vehicle ? `Vehicle: ${vehicle}` : null, condition ? `Condition: ${condition}` : null,
@@ -574,7 +584,9 @@ async function handleQqcText(request) {
 
   const name = tidyName(body.name);   // "MIKE JONES" -> "Mike Jones", see tidyName
   const clientPhone = normalizePhone(body.phone);
-  if (!name || !clientPhone) return cors(json({ ok: false, error: 'missing_fields' }, 422));
+  // Name optional here too — same reason as /submit, and the two endpoints have
+  // to behave identically or the site's fallback path quietly loses leads.
+  if (!clientPhone) return cors(json({ ok: false, error: 'missing_fields' }, 422));
 
   const total = body.total;
   const vehicle = body.vehicle ? String(body.vehicle).trim() : '';
@@ -583,19 +595,19 @@ async function handleQqcText(request) {
   // Make's filter: send to the customer UNLESS smsConsent is explicitly "false".
   const consent = String(body.smsConsent).toLowerCase() !== 'false';
 
-  const first = name.split(/\s+/)[0];
+  const who = name || clientPhone;
   const clientMsg =
-    `Hey ${first}, it's Mikey. I got your quote submission on my site. ` +
-    `Whenever you have a minute, feel free to send over the year, make, and model of the car ` +
+    `Hey ${greetName(name)}, it's Mikey. I got your quote submission on my site. ` +
+    `Whenever you have a minute, feel free to send over ${name ? '' : 'your name and '}the year, make, and model of the car ` +
     `you'd like detailed, and I'll confirm that price. Talk soon!`;
-  const mikeyMsg = `🔔 NEW QUOTE — ${name}, ${clientPhone}, ${quoteLine}` +
+  const mikeyMsg = `🔔 NEW QUOTE — ${who}${name ? `, ${clientPhone}` : ''}, ${quoteLine}` +
     (vehicle ? `, ${vehicle}` : '') + (services ? `, ${services}` : '');
 
-  const mikeyAlert = await notifyMikey(`🔔 New quote — ${name}`, mikeyMsg);
+  const mikeyAlert = await notifyMikey(`🔔 New quote — ${who}`, mikeyMsg);
 
   // Record the lead and queue the delayed reach-out via the existing scheduler.
   const thread = await loadThread(clientPhone);
-  if (!thread.name) thread.name = name;
+  if (name && !thread.name) thread.name = name;
   if (!thread.status) { thread.status = 'new'; thread.statusAt = Date.now(); }
   const email = body.email ? String(body.email).trim() : '';
   const location = body.location ? String(body.location).trim() : '';
@@ -3234,9 +3246,30 @@ function journeyMeta(doc) {
 }
 
 // The one step on this path most worth Mikey's attention, if there is one.
+// The one line the board prints for "how far did this person actually get".
+//
+// This used to take the FIRST step matching any of these patterns, which read
+// the funnel backwards. Someone who opened the calculator and pushed all the
+// way to a price came up "Quote form — step 2" — the first form step they
+// happened to fire — and someone who tapped CALL after building a $379 quote
+// lost the quote from the badge entirely. Reading the drop-off off this label
+// put it three steps earlier than it really was, and three steps earlier is a
+// different problem with a different fix. So: the DEEPEST form step wins, and a
+// contact tap rides alongside it instead of hiding it.
 function journeyHotLabel(steps) {
-  const hit = (re) => (steps.find((x) => re.test(String(x.l || ''))) || {}).l || '';
-  return hit(/^BOOKED/) || hit(/Tapped to CALL/) || hit(/Tapped to TEXT/) || hit(/^Quote form/) || '';
+  const labels = (steps || []).map((x) => String((x && x.l) || ''));
+  const booked = labels.find((l) => /^BOOKED/.test(l));
+  if (booked) return booked;
+  let form = '', deepest = 0;
+  for (const l of labels) {
+    // Dash-agnostic on purpose: the site sends an em dash today, and the badge
+    // is not worth a silent regression the day that punctuation changes.
+    const m = /^Quote form\b.*?\bstep\s*(\d+)/i.exec(l);
+    if (m && Number(m[1]) > deepest) { deepest = Number(m[1]); form = l; }
+  }
+  const contact = labels.find((l) => /^Tapped to (CALL|TEXT)/.test(l)) || '';
+  const out = form && contact ? form + ' · ' + contact : (form || contact);
+  return out.slice(0, 80);
 }
 
 function blankJourney(vid, t) { return { vid, phone: '', name: '', firstAt: t, lastAt: t, steps: [] }; }
@@ -7819,6 +7852,14 @@ function tidyName(raw) {
     return w.charAt(0).toUpperCase() + w.slice(1);
   });
 }
+
+// A lead can arrive with a phone number and nothing else. The site's quote
+// screen asks for the number alone now — the name field beside it was costing
+// more submissions than the name was worth — so every customer-facing string on
+// the intake path has to read right with that blank. "there" is the same
+// fallback firstName() has always used, so a nameless lead sounds like every
+// other conversation instead of like a bug.
+function greetName(name) { return String(name || '').trim().split(' ')[0] || 'there'; }
 
 function firstName(thread) {
   // tidyName here as well as at intake, so threads saved before that existed

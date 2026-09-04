@@ -91,7 +91,7 @@ const CODE = [
 
 const factory = new Function(...Object.keys(ctx), CODE + `
   return { journeyStep, journeyLink, journeyPageTitle, journeyRefLabel, journeyReadStep,
-           apiJourneys, apiJourney, journeyThreadSteps, handlePixelEvents,
+           apiJourneys, apiJourney, journeyThreadSteps, handlePixelEvents, journeyHotLabel,
            cleanVid, JOURNEY_MAX_STEPS };`);
 const J = factory(...Object.values(ctx));
 
@@ -266,6 +266,30 @@ ok('it knows pages and actions separately', act1.pages === 1 && act1.acts === 5,
 ok('and surfaces the loudest thing that happened', /Tapped to CALL/.test(act1.hot), act1.hot);
 const plain = board2.journeys.find((r) => r.vid === 'vis2');
 ok('a path with nothing loud on it has no badge', !plain.hot, plain.hot);
+
+section('The badge says how far they got, not how far they first got');
+// This is the bug that made the drop-off unreadable. The badge used to print
+// the FIRST form step it found, so someone who walked all the way to the price
+// was filed under "step 2" — and a tap-to-call erased the quote behind it. Both
+// readings sent you looking for the leak three steps too early.
+const hotOf = (...labels) => J.journeyHotLabel(labels.map((l) => ({ l })));
+ok('the deepest step wins, not the first one',
+  hotOf('Quote form — step 2', 'Quote form — step 3', 'Quote form — step 5') === 'Quote form — step 5',
+  hotOf('Quote form — step 2', 'Quote form — step 3', 'Quote form — step 5'));
+ok('going back a step does not undo how far they got',
+  hotOf('Quote form — step 4', 'Quote form — step 3') === 'Quote form — step 4',
+  hotOf('Quote form — step 4', 'Quote form — step 3'));
+ok('a call tap rides along instead of hiding the quote',
+  hotOf('Quote form — step 5', 'Tapped to CALL') === 'Quote form — step 5 · Tapped to CALL',
+  hotOf('Quote form — step 5', 'Tapped to CALL'));
+ok('a call with no form behind it still reads as a call',
+  hotOf('Tapped to CALL') === 'Tapped to CALL', hotOf('Tapped to CALL'));
+ok('a booking still outranks everything',
+  hotOf('Quote form — step 5', 'Tapped to CALL', 'BOOKED Fri 9am') === 'BOOKED Fri 9am',
+  hotOf('Quote form — step 5', 'Tapped to CALL', 'BOOKED Fri 9am'));
+ok('a plain hyphen reads the same as an em dash',
+  hotOf('Quote form - step 5') === 'Quote form - step 5', hotOf('Quote form - step 5'));
+ok('nothing worth badging is still no badge', hotOf('Landed on the page') === '', hotOf('Landed on the page'));
 
 section('An ad click does not turn one page into two');
 // The tracker snippet now sends location.search, so an ad click arrives as

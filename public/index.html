@@ -11492,7 +11492,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         html+='<div class="qv-row">'+
           '<div class="qv-date">'+esc(qvDayLabel(e.date))+'</div>'+
           '<div class="qv-who">'+
-            '<b>'+esc(e.name||"—")+(e.type==="booking"?' <span class="qv-tag">Booked</span>':'')+'</b>'+
+            /* A quote can come in with a number and no name now — the row falls back
+               to the number rather than printing a dash for a real lead. */
+            '<b>'+esc(e.name||prettyPhone(e.phone)||"—")+(e.type==="booking"?' <span class="qv-tag">Booked</span>':'')+'</b>'+
             (sub?'<small>'+esc(sub)+'</small>':'')+
             (e.services?'<small class="qv-svc">'+esc(e.services)+'</small>':'')+
           '</div>'+
