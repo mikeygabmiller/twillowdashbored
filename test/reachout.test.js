@@ -164,5 +164,24 @@ for (const fn of ['handleSubmit', 'handleQqcText']) {
   check(`${fn} no longer hardcodes the send time`, /sendAt: Date\.now\(\) \+/.test(body), false);
 }
 
+console.log('\n=== a lead with a number and no name is still a lead ===');
+// The site's quote screen asks for the phone number alone — the name field
+// beside it was losing more submissions than the name was worth. A 422 on the
+// way in would have thrown away every one of those, so the name is optional at
+// both endpoints and every string that used to interpolate it has a fallback.
+const greet = eval(`(${lift('greetName')})`);
+check('a name still greets by first name', greet('Scott Beebe'), 'Scott');
+check('a blank greets like a person, not a gap', greet(''), 'there');
+check('so does undefined', greet(undefined), 'there');
+for (const fn of ['handleSubmit', 'handleQqcText']) {
+  const body = lift(fn);
+  check(`${fn} no longer refuses a nameless lead`, /if \(!name \|\| !(phone|clientPhone)\)/.test(body), false);
+  check(`${fn} still refuses one with no number`, /!(phone|clientPhone)\) return cors\(json\(\{ ok: false, error: 'missing_fields'/.test(body), true);
+  check(`${fn} greets through the fallback`, /greetName\(name\)/.test(body), true);
+  check(`${fn} asks for the name it did not get`, /your name and /.test(body), true);
+  check(`${fn} identifies the lead by number when it has no name`, /name \|\| clientPhone/.test(body), true);
+  check(`${fn} never overwrites a known name with a blank`, /if \(name && !thread\.name\)/.test(body), true);
+}
+
 console.log(`\n${PASS} passed, ${FAIL} failed`);
 process.exit(FAIL ? 1 : 0);
