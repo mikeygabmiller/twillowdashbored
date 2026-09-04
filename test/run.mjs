@@ -26,7 +26,7 @@ const UI = [
   'detect.ui', 'pay.ui', 'nav.ui', 'search.ui', 'tabs.ui', 'snapshot.ui', 'place.ui',
   'newmsg.ui', 'peek.ui', 'polish.ui', 'journey.ui', 'scan.ui', 'aidiet.ui', 'use.ui', 'layout.ui', 'stale.ui',
   'keyboard.ui', 'assist.ui', 'calls.ui', 'adsource.ui', 'askme.ui', 'photo.ui',
-  'winddown.ui', 'homeloop.ui', 'rain.ui',
+  'winddown.ui', 'homeloop.ui', 'rain.ui', 'sendnow.ui',
 ].map((n) => `${n}.test.js`);
 
 const mode = (process.argv[2] || 'unit').toLowerCase();
