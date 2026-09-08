@@ -479,6 +479,43 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .fu-flag{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:700;color:#f5c563;background:rgba(245,184,66,.13);padding:2px 6px;border-radius:8px}
   .fu-flag.high{color:#ff8388;background:rgba(255,90,95,.14)}
   .reply-flag{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:700;color:#34d399;background:rgba(34,197,94,.14);padding:2px 6px;border-radius:8px}
+  .sum-pill.tapme{cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .sum-pill.tapme:active{transform:scale(.95)}
+  .chat-head .num.addname{display:inline-flex;align-items:center;gap:3px;color:var(--accent-text);
+    font-weight:600;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .chat-head .num.addname svg{width:11px;height:11px}
+  .chat-head .num.addname:active{opacity:.6}
+  /* Clearing the pile used to mean back, find the next one, tap in — three moves
+     between every reply. This is the third move on its own. It sits above the box
+     rather than in the header: six 44px icon targets up there already leave the
+     customer's own name about fifty pixels on a phone. */
+  .nextwait-bar{display:flex;align-items:center;gap:8px;width:100%;flex:none;
+    padding:8px 14px;border-top:1px solid var(--line);background:var(--panel2);
+    color:var(--text);font:inherit;font-size:12.5px;text-align:left;cursor:pointer}
+  .nextwait-bar:active{background:var(--panel3)}
+  .nextwait-bar svg{color:var(--accent);flex:none}
+  .nextwait-bar .nw-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .nextwait-bar .nw-t b{font-weight:700}
+  .nextwait-bar .nw-n{flex:none;min-width:19px;height:19px;padding:0 5px;border-radius:10px;
+    background:var(--accent);color:#fff;font-size:10.5px;font-weight:800;line-height:19px;text-align:center}
+  /* Reading back up a long thread had no way down except flicking, and any poll
+     that landed while you were up there threw you to the bottom anyway. This is
+     the way back — and it says what arrived while you were reading. */
+  .jump-new{position:absolute;left:50%;transform:translateX(-50%);bottom:8px;z-index:6;
+    display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border-radius:999px;
+    border:1px solid var(--line);background:var(--panel3);color:var(--text);
+    font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.28)}
+  .jump-new svg{width:14px;height:14px;color:var(--accent)}
+  .jump-new.has-new{background:var(--accent);color:#fff;border-color:transparent}
+  .jump-new.has-new svg{color:#fff}
+  .jump-new:active{transform:translateX(-50%) scale(.96)}
+  .mo-again{display:flex;align-items:center;gap:9px;width:100%;margin-top:8px;padding:9px 11px;border-radius:11px;
+    border:1px solid var(--line);background:var(--panel2);color:var(--text);font:inherit;text-align:left;cursor:pointer}
+  .mo-again:active{transform:scale(.99)}
+  .mo-again svg{color:var(--accent);flex:none}
+  .mo-again b{display:block;font-size:13px}
+  .mo-again small{display:block;color:var(--muted2);font-size:11.5px;margin-top:1px}
+  .draft-flag{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:700;color:#c4b5fd;background:rgba(167,139,250,.15);padding:2px 6px;border-radius:8px}
 
   /* per-contact follow-up controls in details */
   #dtFollowup .fu-row{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:13px}
@@ -529,7 +566,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   html.kb-up .chat>.followup-banner,
   html.kb-up .chat>.date-banner,
   html.kb-up .chat>.team-id-bar,
-  html.kb-up .chat>.coach-panel{display:none!important}
+  html.kb-up .chat>.coach-panel,
+  html.kb-up .chat>.nextwait-bar{display:none!important}
   /* The draft-review panels are about what he's writing, so they stay — capped
      to a slice of what's actually on screen (--vvh), never the window height. */
   html.kb-up .chat>.ai-review,
@@ -3827,6 +3865,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     <div class="sched-banner" id="schedBanner" style="display:none"></div>
     <div class="followup-banner" id="fuBanner" style="display:none"></div>
     <div class="messages" id="messages"></div>
+    <button class="jump-new" id="jumpNew" style="display:none" aria-label="Jump to the newest message"></button>
+    <button class="nextwait-bar" id="nextWaitBtn" style="display:none"></button>
     <div class="coach-panel" id="coachPanel" style="display:none"></div>
     <div class="team-id-bar" id="teamIdentityBar" style="display:none"></div>
     <div class="date-banner" id="dateBanner" style="display:none"></div>
@@ -4175,7 +4215,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-04·send-now";
+  var APP_BUILD="2026-09-08·quality-of-life";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4344,6 +4384,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     "chevron-up":'<path d="m18 15-6-6-6 6"/>',
     "chevron-down":'<path d="m6 9 6 6 6-6"/>',
     "chevron-right":'<path d="m9 18 6-6-6-6"/>',
+    "chevrons-right":'<path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/>',
     "home":'<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
     "rocket":'<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>',
     "download":'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
@@ -5499,7 +5540,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   function passFilter(t){return !t.archived&&passTeam(t)&&passStatus(t)}
   // Search operators: status:won  tag:ceramic  is:unread  is:dnt  is:scheduled  +free text.
   function parseSearch(raw){
-    var out={text:"",status:null,tag:null,unread:false,dnt:false,scheduled:false};
+    var out={text:"",status:null,tag:null,unread:false,dnt:false,scheduled:false,draft:false};
     (raw||"").trim().split(/\s+/).forEach(function(tok){
       var lt=tok.toLowerCase();
       if(lt.indexOf("status:")===0)out.status=lt.slice(7);
@@ -5507,9 +5548,24 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       else if(lt==="is:unread")out.unread=true;
       else if(lt==="is:dnt"||lt==="is:optedout")out.dnt=true;
       else if(lt==="is:scheduled")out.scheduled=true;
+      else if(lt==="is:draft"||lt==="is:drafts")out.draft=true;
       else if(tok)out.text+=(out.text?" ":"")+tok;
     });
     return out;
+  }
+  // Everything the list row already knows, as one lowercase haystack. The row
+  // carries the vehicle, the city, the street and the one-line recap precisely so
+  // the board can read them without loading a thread — but search was only ever
+  // looking at the name, the number and the last text, so "silverado" or "monroe"
+  // found nobody even though both were sitting right there on the row.
+  function searchHay(t){
+    if(t._hay&&t._hayTs===t.lastTs)return t._hay;
+    var p=t.plan||{};
+    var h=[displayName(t),t.phone,t.lastBody,(t.tags||[]).join(" "),
+      t.vehicleLabel,t.city,t.address,t.recap,t.reminderNote,t.holdReason,t.needsYouAsk,p.service]
+      .filter(Boolean).join(" ").toLowerCase();
+    try{t._hay=h;t._hayTs=t.lastTs}catch(e){}
+    return h;
   }
   function passSearch(t){
     if(!state.search)return true;
@@ -5519,23 +5575,58 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(q.unread&&!(t.unread>0))return false;
     if(q.dnt&&!t.optedOut)return false;
     if(q.scheduled&&!(t.scheduledCount>0))return false;
+    if(q.draft&&!hasDraft(t.phone))return false;
     if(!q.text)return true;
-    var s=q.text.toLowerCase();
-    return(displayName(t)+" "+t.phone+" "+(t.lastBody||"")+" "+(t.tags||[]).join(" ")).toLowerCase().indexOf(s)>=0;
+    return searchHay(t).indexOf(q.text.toLowerCase())>=0;
   }
 
   // ---- main view dispatch ----
+  // Every render replaces the whole scroller's contents, which silently sends you
+  // back to the top — so scrolling forty conversations down, opening one, and
+  // coming back put you at the top again, and so did any poll that landed while
+  // you were reading. The position is remembered per view (tab + filter + search),
+  // because "where I was in Won" is a different place from "where I was in All".
+  var scrollMem={},scrollMemKey="",scrollMemReset=false;
+  function scrollKey(){return state.tab+"|"+state.filter+"|"+state.assign+"|"+(state.search||"")}
+  // Recorded from the scroll itself, never at render time: a phone hides the whole
+  // list while a conversation is open, and a hidden element's scrollTop reads 0 —
+  // so a render-time save would write "top" the instant you tapped into a thread
+  // and throw away the very position it is trying to keep.
+  (function watchScroll(){
+    var sc=el("scroll");if(!sc)return;
+    var f=null;
+    sc.addEventListener("scroll",function(){
+      if(f)return;
+      f=requestAnimationFrame(function(){
+        f=null;
+        // Hiding the list zeroes its scrollTop and can fire a scroll of its own.
+        // A scroller with no height on screen is not somebody scrolling.
+        if(scrollMemKey&&sc.clientHeight>0)scrollMem[scrollMemKey]=sc.scrollTop;
+      });
+    },{passive:true});
+  })();
   function renderMain(){
+    var sc=el("scroll");
     renderFilters();refreshBadges();
     // Bento turns the list into a card board, but Home and the leads columns lay
     // themselves out — so stamp which one is in there and let CSS pick.
-    var sc=el("scroll");
     if(sc)sc.setAttribute("data-view",(state.tab==="home"&&!state.search)?"home":(state.tab==="leads"?"leads":"list"));
     var r=renderMainInner();
     // Searching also searches the app itself, not just the conversations —
     // matching features are listed above whatever the current tab found, and
     // an empty box offers somewhere to go rather than sitting there blank.
     if(state.search||state.searchFocus)renderFeatureHits();
+    scrollMemKey=scrollKey();
+    // Deliberately reaching a tab from the nav means "start at the top" — only a
+    // re-render of the view you were already on gets put back where it was.
+    if(scrollMemReset){scrollMemReset=false;delete scrollMem[scrollMemKey]}
+    var want=scrollMem[scrollMemKey]||0;
+    if(sc&&sc.scrollTop!==want)sc.scrollTop=want;
+    // Rows can still be laying out (avatars, icons hydrating), so a tall restore
+    // can land short. Ask once more after the frame rather than half way up.
+    if(sc&&want>0)requestAnimationFrame(function(){
+      if(scrollMemKey===scrollKey()&&sc.scrollTop<want)sc.scrollTop=want;
+    });
     return r;
   }
   function renderMainInner(){
@@ -6611,6 +6702,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
           (t.optedOut?'<span class="dnt">'+ic("ban",10)+'Do not text</span>':'')+
           ((teamOn()&&t.assignedTo)?assignBadge(t.assignedTo):'')+
           (t.sendFailed?'<span class="dnt">'+ic("alert",10)+'not sent</span>':'')+
+          (hasDraft(t.phone)?'<span class="draft-flag">'+ic("pencil",11)+'draft</span>':'')+
           (t.replyReady?'<span class="reply-flag">'+ic("sparkles",11)+'reply ready</span>':'')+
           (t.needsYou?'<span class="reply-flag" style="color:#a78bfa;background:rgba(167,139,250,.16)">'+ic("help-circle",11)+'needs you</span>':'')+
           (t.dateRequested?'<span class="reply-flag" style="color:#eab308;background:rgba(234,179,8,.14)">'+ic("calendar-days",11)+'date needed</span>':'')+
@@ -6676,7 +6768,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     document.addEventListener("keydown",ctxKey,true);
     m.addEventListener("click",function(e){
       var chip=e.target.closest("[data-st]");
-      if(chip){var st=chip.getAttribute("data-st");closeCtxMenu();metaFor(t,{status:t.status===st?"":st},"Status updated");return}
+      if(chip){var st=chip.getAttribute("data-st");closeCtxMenu();setStatusWithUndo(t,t.status===st?"":st);return}
       var it=e.target.closest("[data-a]");if(!it)return;closeCtxMenu();ctxAction(it.getAttribute("data-a"),t);
     });
   }
@@ -6698,6 +6790,26 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     o.addEventListener("click",function(e){if(e.target===o)o.remove()});
     el("rmSave").onclick=function(){var v=el("rmDate").value;if(!v){toast("Pick a date & time",{bad:true});return}var at=new Date(v).getTime();metaFor(t,{reminderAt:at,reminderNote:el("rmNote").value.trim()},"Reminder set for "+fmtFull(at));o.remove()};
     var rc=el("rmClear");if(rc)rc.onclick=function(){metaFor(t,{reminderAt:null,reminderNote:""},"Reminder cleared");o.remove()};
+  }
+  // A stage is one tap away in three places, which also makes it one mis-tap away
+  // — and a lead quietly moved to "Lost" drops off the board, out of the
+  // follow-up engine, and out of the money you were still chasing. So the change
+  // says what it did and hands back the way out, like archiving already does.
+  function setStatusWithUndo(t,next){
+    var was=t.status||"";
+    if(was===next)return;
+    var label=next?(stageMeta(next).label):"No stage";
+    post("/api/meta",{phone:t.phone,status:next}).then(function(d){
+      if(!(d&&d.ok)){toast("Couldn't update",{bad:true});return}
+      if(state.phone===t.phone&&d.thread)state.thread=d.thread;
+      refreshThreads();
+      toast(displayName(t)+" \u2192 "+label,{undo:function(){
+        post("/api/meta",{phone:t.phone,status:was}).then(function(r){
+          if(state.phone===t.phone&&r&&r.thread)state.thread=r.thread;
+          refreshThreads();toast("Put back to "+(was?stageMeta(was).label:"no stage"));
+        });
+      }});
+    });
   }
   function metaFor(t,patch,msg){
     post("/api/meta",Object.assign({phone:t.phone},patch)).then(function(d){
@@ -6755,14 +6867,16 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var needs=active.filter(waitingOnMe).sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
     var unread=active.reduce(function(a,t){return a+(t.unread>0?1:0)},0);
     var sched=active.reduce(function(a,t){return a+(t.scheduledCount>0?1:0)},0);
+    var drafted=draftCount();
     var collapsed=localStorage.getItem("mkd-sum")==="0";
     var h='<div class="sumbar" id="sumbar">'+
       '<div class="sum-head" id="sumHead">'+
         '<span class="sum-title"><span class="ic-inline" data-ic-skip>'+ic("clipboard-list",14)+'</span> Today</span>'+
         '<span class="sum-pills">'+
-          '<span class="sum-pill'+(needs.length?" hot":"")+'">'+needs.length+' waiting</span>'+
-          (unread?'<span class="sum-pill">'+unread+' unread</span>':'')+
-          (sched?'<span class="sum-pill">'+sched+' scheduled</span>':'')+
+          '<span class="sum-pill tapme'+(needs.length?" hot":"")+'" data-sum="waiting">'+needs.length+' waiting</span>'+
+          (unread?'<span class="sum-pill tapme" data-sum="is:unread">'+unread+' unread</span>':'')+
+          (sched?'<span class="sum-pill tapme" data-sum="is:scheduled">'+sched+' scheduled</span>':'')+
+          (drafted?'<span class="sum-pill tapme" data-sum="is:draft">'+drafted+' draft'+(drafted>1?"s":"")+'</span>':'')+
         '</span>'+
         '<span class="sum-tog">'+(collapsed?ic("chevron-right",15):ic("chevron-down",15))+'</span>'+
       '</div>';
@@ -6785,6 +6899,19 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   function wireSummary(){
     var head=el("sumHead");if(!head)return;
     head.onclick=function(){var c=localStorage.getItem("mkd-sum")==="0";localStorage.setItem("mkd-sum",c?"1":"0");vibrate(6);renderMain()};
+    // Each pill counted something and then left you to go find it. Tapping one
+    // narrows the list to exactly what it just counted — "waiting" is a status
+    // chip the app already owns, the rest are search fields it already parses.
+    Array.prototype.forEach.call(head.querySelectorAll("[data-sum]"),function(pill){
+      pill.onclick=function(e){
+        e.stopPropagation();vibrate(6);
+        var q=pill.getAttribute("data-sum");
+        if(q==="waiting"){state.filter=state.filter==="waiting"?"all":"waiting";state.search="";el("search").value="";setTab("messages");return}
+        var si=el("search");
+        si.value=(si.value.trim()===q)?"":q;state.search=si.value;
+        setTab("messages");renderMain();
+      };
+    });
     Array.prototype.forEach.call(document.querySelectorAll(".sum-row"),function(r){r.onclick=function(){openThread(r.getAttribute("data-phone"))}});
     var more=el("sumMore");if(more)more.onclick=function(){openAnalytics()};
   }
@@ -8499,8 +8626,23 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var t=state.thread;if(!t)return;
     el("chatHead").style.display="flex";el("composer").style.display="block";
     el("hAvatar").textContent=initials(t);el("hAvatar").style.background=colorFor(t.phone);
+    // An unnamed conversation printed the phone number twice — once as the title
+    // and once underneath it — and every downstream thing (the {first_name} in a
+    // template, the money entry, the board) stayed generic until you dug into the
+    // details sheet to type a name. Put the ask where the duplicate number was.
     el("hName").textContent=displayName(t);
-    el("hNum").textContent=prettyPhone(t.phone);
+    var hn=el("hNum");
+    if((t.name||"").trim()){hn.className="num";hn.textContent=prettyPhone(t.phone);hn.onclick=null}
+    else{
+      hn.className="num addname";
+      hn.innerHTML=ic("plus",11)+"Add a name";
+      hn.onclick=function(e){
+        e.stopPropagation();                       // the header itself opens Details
+        var v=prompt("Who is "+prettyPhone(t.phone)+"?");
+        if(v==null)return;v=v.trim();if(!v)return;
+        saveMeta({name:v});toast("Saved as "+v);
+      };
+    }
     el("hPin").innerHTML=ic("pin",14);el("hPin").style.display=t.pinned?"inline-block":"none";
     var dnt=isDnt(t.phone);el("hDnt").innerHTML=dnt?ic("ban",10)+'Do not text':'';el("hDnt").style.display=dnt?"inline-flex":"none";
 
@@ -8560,6 +8702,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     }else{qb.style.display="none"}
 
     renderQuickReplies(t);
+    renderNextWaiting(t);
 
     // With team mode on, outgoing texts get signed. Show whose name goes on it.
     var sa=el("signAs"),who=teamOn()?meName():"";
@@ -8612,7 +8755,19 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var cp=el("coachPanel");if(cp._phone!==t.phone){cp.style.display="none";cp.innerHTML="";cp._phone=t.phone}
     renderTeamBits();
 
-    var box=el("messages");box.innerHTML="";var lastDay="";var lastDir="";
+    var box=el("messages");
+    // Where the reader was BEFORE this repaint. A poll lands every thirty seconds
+    // and rebuilds every bubble; snapping to the newest one each time yanked you
+    // out of whatever you had scrolled up to read. Same conversation and you were
+    // away from the bottom → you stay where you were, and the pill says what
+    // arrived while you were up there.
+    var sameThread=box._phone===t.phone;
+    var wasAway=sameThread&&(box.scrollHeight-box.scrollTop-box.clientHeight)>JUMP_SLACK;
+    var keepTop=box.scrollTop, prevCount=sameThread?(box._count||0):0;
+    box._phone=t.phone;box._count=(t.messages||[]).length;
+    if(!sameThread)jumpNew=0;
+    else if(wasAway)jumpNew+=Math.max(0,box._count-prevCount);
+    box.innerHTML="";var lastDay="";var lastDir="";
     // Which message to land on: the oldest one that came in while Mikey was away.
     var firstUnreadId="";
     if((t.unread||0)>0){
@@ -8657,7 +8812,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     Array.prototype.forEach.call(box.querySelectorAll("[data-loadmedia]"),function(btn){btn.onclick=function(){backfillMedia(btn)}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-photoquote]"),function(btn){btn.onclick=function(){aiPhotoQuote(btn)}});
     Array.prototype.forEach.call(box.querySelectorAll(".msg-img"),function(im){im.onclick=function(){openLightbox(im.src)}});
-    if((state.threadFind||"").trim()){focusFind(state.findIdx||0,true)}
+    if(wasAway){box.scrollTop=keepTop;renderJumpNew()}
+    else if((state.threadFind||"").trim()){focusFind(state.findIdx||0,true)}
     else if(firstUnreadId&&box.querySelector('[data-mid="'+cssEsc(firstUnreadId)+'"]')){
       // Came back to a thread with several new texts — start where you left off,
       // not at the bottom with the newest one and no idea what you missed.
@@ -8667,8 +8823,188 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       box.scrollTop=Math.max(0,fu.offsetTop-24);
     }
     else {box.scrollTop=box.scrollHeight}
+    if(!wasAway){jumpNew=0;renderJumpNew()}
     renderDetails();
   }
+  // ---- "next one waiting" ---------------------------------------------------
+  // Answering the pile meant back out to the list, find who is next, tap in —
+  // three moves for every reply, and the list re-sorts under you as you go. The
+  // app already knows exactly who is owed a reply (it draws the "waiting" chip
+  // off the same rule), so it can just hand you the next one. Longest wait first,
+  // because the person who has been sitting there since Tuesday is the one about
+  // to give up on you.
+  function waitingQueue(exceptPhone){
+    return (state.threads||[]).filter(function(t){
+      return !t.archived&&waitingOnMe(t)&&t.phone!==exceptPhone&&passTeam(t);
+    }).sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
+  }
+  function renderNextWaiting(t){
+    var b=el("nextWaitBtn");if(!b)return;
+    var q=waitingQueue(t&&t.phone);
+    if(!q.length){b.style.display="none";b.innerHTML="";return}
+    var next=q[0];
+    b.style.display="flex";
+    b.innerHTML=ic("chevrons-right",16)+
+      '<span class="nw-t">Next waiting: <b>'+esc(displayName(next))+'</b> \u00b7 '+esc(ago(next.lastTs))+'</span>'+
+      '<span class="nw-n">'+(q.length>9?"9+":q.length)+'</span>';
+    b.title="Next waiting: "+displayName(next)+" \u00b7 "+ago(next.lastTs);
+    b.setAttribute("aria-label",b.title);
+    b.onclick=function(){
+      // Re-read the queue at tap time — you have been typing, and somebody may
+      // have replied since this button was drawn.
+      var again=waitingQueue(state.phone);
+      if(!again.length){toast("Nobody else is waiting on you");renderNextWaiting(state.thread);return}
+      vibrate(6);stashDraft(state.phone);openThread(again[0].phone);
+    };
+  }
+  // ---- "jump to the newest" -------------------------------------------------
+  // Sixty pixels of slack: a thumb resting one line off the bottom is still "at
+  // the bottom" as far as a reader is concerned.
+  var JUMP_SLACK=60,jumpNew=0;
+  function msgsAtBottom(){
+    var box=el("messages");if(!box)return true;
+    return (box.scrollHeight-box.scrollTop-box.clientHeight)<=JUMP_SLACK;
+  }
+  function renderJumpNew(){
+    var b=el("jumpNew"),box=el("messages");if(!b||!box)return;
+    if(!state.thread||!document.body.classList.contains("viewing")||msgsAtBottom()){
+      b.style.display="none";return;
+    }
+    b.className="jump-new"+(jumpNew?" has-new":"");
+    b.innerHTML=ic("chevron-down",14)+(jumpNew?(jumpNew+" new message"+(jumpNew>1?"s":"")):"Jump to newest");
+    b.style.display="inline-flex";
+    // Sit just above whatever the composer stack has grown to, not at the bottom
+    // of the pane — the banners and the box both change height as you type.
+    var chat=box.parentElement;
+    if(chat)b.style.bottom=Math.max(8,Math.round(chat.getBoundingClientRect().bottom-box.getBoundingClientRect().bottom)+8)+"px";
+  }
+  function jumpToNewest(){
+    var box=el("messages");if(!box)return;
+    jumpNew=0;vibrate(6);
+    box.scrollTo?box.scrollTo({top:box.scrollHeight,behavior:"smooth"}):(box.scrollTop=box.scrollHeight);
+    setTimeout(renderJumpNew,340);
+  }
+  (function wireJumpNew(){
+    var box=el("messages"),b=el("jumpNew");if(!box||!b)return;
+    b.onclick=jumpToNewest;
+    var t=null;
+    box.addEventListener("scroll",function(){
+      if(t)return;                                  // one repaint per frame, not one per scroll event
+      t=requestAnimationFrame(function(){t=null;if(msgsAtBottom())jumpNew=0;renderJumpNew()});
+    },{passive:true});
+  })();
+
+  // ---- what a single text is good for --------------------------------------
+  // A bubble was the one thing in the app you could not act on. The address a
+  // customer sent, the price you quoted, the line you wrote that landed — all of
+  // it was read-only, so it got retyped or hand-selected on a phone screen.
+  // Long-press (or right-click) one and it offers the four things you actually
+  // do with a text you are looking at.
+  var MSG_MONEY=/\$\s?(\d{1,5}(?:\.\d{2})?)\b/;
+  function msgById(id){
+    var ms=(state.thread&&state.thread.messages)||[];
+    for(var i=0;i<ms.length;i++)if(ms[i].id===id)return ms[i];
+    return null;
+  }
+  function msgPlainText(m){
+    // Strip the "[2 attachment(s)]" tail the old MMS path left behind — nobody
+    // wants that pasted into a note.
+    return String((m&&m.body)||"").replace(/\n?\[\d+ attachment\(s\)\]/,"").trim();
+  }
+  function copyText(text,okMsg){
+    if(!text)return;
+    if(navigator.clipboard&&navigator.clipboard.writeText)
+      navigator.clipboard.writeText(text).then(function(){toast(okMsg||"Copied")},function(){manualCopy(text,function(){toast(okMsg||"Copied")})});
+    else manualCopy(text,function(){toast(okMsg||"Copied")});
+  }
+  function openMsgMenu(x,y,m){
+    closeCtxMenu();
+    var t=state.thread;if(!t)return;
+    var text=msgPlainText(m),out=m.dir==="out";
+    var money=MSG_MONEY.exec(text);
+    var amt=money?Math.round(parseFloat(money[1])*100)/100:0;
+    var who=out?(m.by||"You"):displayName(t);
+    var scrim=document.createElement("div");scrim.className="ctx-scrim";
+    var menu=document.createElement("div");menu.className="ctx-menu";
+    menu.innerHTML=
+      '<div class="ctx-name">'+esc(who)+'<small>'+esc(new Date(m.ts).toLocaleString([],{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}))+'</small></div>'+
+      (text?'<div class="ctx-item" data-m="copy">'+ic("copy",17)+'Copy this text</div>':'')+
+      (text?'<div class="ctx-item" data-m="reuse">'+ic("pencil",17)+'Put it in the box</div>':'')+
+      ((text&&out)?'<div class="ctx-item" data-m="tpl">'+ic("plus",17)+'Save as a quick reply</div>':'')+
+      ((amt>0)?'<div class="ctx-sep"></div><div class="ctx-item" data-m="money">'+ic("dollar",17)+'Log '+esc(fmtMoney(amt))+' in the tracker</div>':'')+
+      (m.media&&m.media.length?'<div class="ctx-item" data-m="photo">'+ic("image",17)+'Open the photo</div>':'');
+    scrim.appendChild(menu);document.body.appendChild(scrim);ctxScrim=scrim;
+    var mw=menu.offsetWidth,mh=menu.offsetHeight,vw=window.innerWidth,vh=window.innerHeight;
+    menu.style.left=Math.max(8,Math.min(x,vw-mw-8))+"px";
+    menu.style.top=Math.max(8,Math.min(y,vh-mh-8))+"px";
+    var down=function(e){if(e.target===scrim)closeCtxMenu()};
+    scrim.addEventListener("mousedown",down);
+    scrim.addEventListener("touchstart",down,{passive:true});
+    document.addEventListener("keydown",ctxKey,true);
+    menu.addEventListener("click",function(e){
+      var it=e.target.closest("[data-m]");if(!it)return;
+      closeCtxMenu();msgAction(it.getAttribute("data-m"),m,text,amt);
+    });
+  }
+  function msgAction(a,m,text,amt){
+    var t=state.thread;if(!t)return;
+    if(a==="copy")return copyText(text,"Copied that text");
+    if(a==="reuse"){
+      var inp=el("msgInput");
+      // Append rather than replace — a half-written reply is not something to
+      // throw away because you reached for an old line to paste into it.
+      inp.value=inp.value.trim()?(inp.value.replace(/\s+$/,"")+" "+text):text;
+      autoGrow();updateCount();stashDraft(t.phone);inp.focus();
+      try{inp.selectionStart=inp.selectionEnd=inp.value.length}catch(e){}
+      return;
+    }
+    if(a==="tpl"){
+      var label=prompt("Name this quick reply",text.split(/\s+/).slice(0,3).join(" ").slice(0,24));
+      if(label==null)return;
+      label=label.trim();if(!label)return;
+      state.templates.push([label,text]);saveTemplates();buildTplMenu();
+      toast('Saved as "'+label+'"');
+      return;
+    }
+    if(a==="money"){
+      openMoney();
+      setTimeout(function(){openMoSheet("job",{phone:t.phone,name:displayName(t),amt:amt},null)},120);
+      return;
+    }
+    if(a==="photo"){
+      var im=(m.media||[]).filter(function(x){return /^image\//.test(x.type||"")||!x.type})[0];
+      if(im)openLightbox(mediaSrc(im.url));
+      return;
+    }
+  }
+  // One delegated pair of listeners on the message list rather than a handler per
+  // bubble — a long thread is hundreds of bubbles, rebuilt on every poll.
+  (function wireMsgMenu(){
+    var box=el("messages");if(!box)return;
+    var bubbleAt=function(node){var b=node&&node.closest?node.closest(".bubble[data-mid]"):null;return b},
+        timer=null,sx=0,sy=0;
+    box.addEventListener("contextmenu",function(e){
+      var b=bubbleAt(e.target);if(!b)return;
+      var m=msgById(b.getAttribute("data-mid"));if(!m)return;
+      e.preventDefault();openMsgMenu(e.clientX,e.clientY,m);
+    });
+    var clear=function(){if(timer){clearTimeout(timer);timer=null}};
+    box.addEventListener("touchstart",function(e){
+      if(e.touches.length!==1)return;
+      var b=bubbleAt(e.target);if(!b)return;
+      var p=e.touches[0];sx=p.clientX;sy=p.clientY;
+      timer=setTimeout(function(){
+        timer=null;var m=msgById(b.getAttribute("data-mid"));if(!m)return;
+        // Selecting text by hand is still the other reason to hold a bubble, so
+        // drop the browser's own selection before putting a menu over it.
+        try{var sel=window.getSelection();if(sel)sel.removeAllRanges()}catch(_){}
+        vibrate(16);openMsgMenu(sx,sy,m);
+      },520);
+    },{passive:true});
+    box.addEventListener("touchmove",function(e){var p=e.touches[0];if(!p)return;if(Math.abs(p.clientX-sx)>10||Math.abs(p.clientY-sy)>10)clear()},{passive:true});
+    box.addEventListener("touchend",clear);box.addEventListener("touchcancel",clear);
+    box.addEventListener("scroll",clear,{passive:true});
+  })();
 
   function renderDetails(){
     var t=state.thread;if(!t)return;
@@ -10357,14 +10693,30 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // ---- templates & schedule ----
   // Merge variables — expanded at insert time so Mikey sees/edits the real text before sending.
   //   {first_name}/{name} · {full_name} · {appt}/{appt_time} · {review}
+  // The four that were here covered who they are and when. These cover WHAT —
+  // the vehicle you are quoting, where you are driving, what you already told
+  // them it costs. Every one of them is already on the thread or its index row,
+  // so a template can finally say "your Silverado" without you retyping it.
+  // Anything the thread doesn't know stays neutral rather than leaving a hole:
+  // "your vehicle", "your place" — a sentence that still reads right.
   function expandVars(text){
-    var t=state.thread||{};var c=state.config||{};
+    var t=state.thread||{};var c=state.config||{};var g=t.garage||{};
     var first=((t.name||"").trim().split(/\s+/)[0])||"there";
     var appt=t.appointmentAt?fmtFull(t.appointmentAt):"your appointment time";
+    var veh=garageVehicleLine(g)||t.vehicleLabel||"your vehicle";
+    var addr=g.address||"your place";
+    var city=g.city||t.city||"your area";
+    var price=(t.quote&&t.quote.total)?fmtMoney(t.quote.total):"the quoted price";
+    var day=t.appointmentAt?new Date(t.appointmentAt).toLocaleDateString([],{weekday:"long"}):"that day";
     return String(text||"")
       .replace(/\{first_name\}|\{name\}/gi,first)
       .replace(/\{full_name\}/gi,(t.name||"there"))
       .replace(/\{appt(?:_time)?\}/gi,appt)
+      .replace(/\{day\}/gi,day)
+      .replace(/\{vehicle\}|\{car\}/gi,veh)
+      .replace(/\{address\}/gi,addr)
+      .replace(/\{city\}/gi,city)
+      .replace(/\{price\}|\{quote\}/gi,price)
       .replace(/\{review\}/gi,(c.reviewUrl||""));
   }
   function fillTemplate(text){el("msgInput").value=expandVars(text);el("msgInput").focus();autoGrow();updateCount();stashDraft(state.phone)}
@@ -10424,7 +10776,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     });
     var add=document.createElement("div");add.className="it tpl-new";add.innerHTML='<span class="ic-btn">'+ic("plus",15)+'<span>New quick reply</span></span>';
     add.onclick=function(){addTemplate()};m.appendChild(add);
-    var hint=document.createElement("div");hint.className="tpl-hint";hint.innerHTML="Tap a reply to insert it. Variables: <b>{first_name}</b>, <b>{appt}</b>, <b>{review}</b> — filled in automatically.";m.appendChild(hint);
+    var hint=document.createElement("div");hint.className="tpl-hint";hint.innerHTML="Tap a reply to insert it. Variables: <b>{first_name}</b>, <b>{vehicle}</b>, <b>{price}</b>, <b>{appt}</b>, <b>{day}</b>, <b>{address}</b>, <b>{city}</b>, <b>{review}</b> — filled in automatically.";m.appendChild(hint);
   }
   function loadTemplates(){return api("/api/templates").then(function(d){if(d&&d.ok&&d.templates&&d.templates.length)state.templates=d.templates;buildTplMenu()})}
   function saveTemplates(){post("/api/templates",{templates:state.templates}).then(function(d){if(!d||!d.ok)toast("Couldn't save template",{bad:true})})}
@@ -10583,6 +10935,20 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   }
   function loadDraft(phone){var inp=el("msgInput");inp.value=(phone&&drafts[phone])||"";autoGrow();updateCount()}
   function clearDraft(phone){if(phone&&drafts[phone]!=null){delete drafts[phone];saveDrafts()}}
+  // A half-written reply was perfectly safe and completely invisible: it only
+  // existed once you happened to open that conversation again. The row says so
+  // now, and `is:draft` gathers them, because an unfinished reply is a promise
+  // you made to yourself and forgot.
+  function hasDraft(phone){
+    if(!phone)return false;
+    // The open conversation's words are still in the box, not in the store yet.
+    if(phone===state.phone){var i=el("msgInput");if(i)return !!i.value.trim()}
+    return !!(drafts[phone]&&drafts[phone].trim());
+  }
+  function draftCount(){
+    var n=0;(state.threads||[]).forEach(function(t){if(!t.archived&&hasDraft(t.phone))n++});
+    return n;
+  }
 
   // ---- guards on the way out ----------------------------------------------
   // Two things worth a second of friction: the same text going twice because of
@@ -10677,9 +11043,12 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     el("emptyState").style.display="flex";el("chatHead").style.display="none";el("composer").style.display="none";el("schedBanner").style.display="none";el("fuBanner").style.display="none";el("remindBanner").style.display="none";el("jobBanner").style.display="none";el("planChipWrap").innerHTML="";pkHide();
     el("coachPanel").style.display="none";el("coachPanel")._phone=null;el("teamIdentityBar").style.display="none";
     hideAiReview();resetPolish();
-    el("messages").innerHTML="";
+    el("messages").innerHTML="";el("messages")._phone=null;
+    var jnb=el("jumpNew");if(jnb)jnb.style.display="none";jumpNew=0;
+    var nwb=el("nextWaitBtn");if(nwb)nwb.style.display="none";
     setNavActive(tab);
     el("scroll").scrollTop=0;
+    scrollMemKey="";scrollMemReset=true;
     renderMain();
     if(tab==="home")fetchInsights();
     if(tab==="followups")refreshThreads();
@@ -11007,6 +11376,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   function closeThread(){
     navDrop("thread");
     closeDetails();
+    var jn=el("jumpNew");if(jn)jn.style.display="none";
+    var nw=el("nextWaitBtn");if(nw)nw.style.display="none";
+    jumpNew=0;el("messages")._phone=null;
     stashDraft(state.phone);
     document.body.classList.remove("viewing");
     state.phone=null;
@@ -13725,7 +14097,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   }
   function openMoSheet(kind,preset,editEntry){
     preset=preset||{};
-    MOS={kind:kind,amt:"",method:"",service:"",sub:"",phone:preset.phone||"",name:preset.name||"",custQ:"",date:moTodayStr(),id:null,origDate:null,veh:"",rcImg:null,hadRc:false};
+    // A preset amount is how another screen hands this sheet a number it already
+    // knows (the $220 you texted, the last job for this customer) — the keypad is
+    // still right there to change it.
+    MOS={kind:kind,amt:preset.amt?String(preset.amt):"",method:preset.method||"",service:preset.service||"",sub:"",phone:preset.phone||"",name:preset.name||"",custQ:"",date:moTodayStr(),id:null,origDate:null,veh:preset.veh||"",rcImg:null,hadRc:false};
     if(editEntry){
       MOS.id=editEntry.id;MOS.origDate=editEntry.date;MOS.date=editEntry.date;MOS.amt=String(editEntry.amount);
       MOS.method=editEntry.method||"";MOS.service=editEntry.service||"";MOS.sub=editEntry.sub||"";
@@ -13734,7 +14109,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     }
     var ki=moKindInfo(kind);
     var h='<div class="sh-hd"><span class="e">'+ki.e+'</span><b>'+esc((MOS.id?"Edit · ":"")+ki.t)+'</b><button class="sh-x" id="moShX">'+ic("x",20)+'</button></div><div class="sh-body">';
-    h+='<div class="mo-amt zero" id="moAmt"><small>$</small>0</div>';
+    h+='<div class="mo-amt'+((!MOS.amt||+MOS.amt===0)?" zero":"")+'" id="moAmt"><small>$</small>'+esc(MOS.amt||"0")+'</div>';
     // one-tap common amounts (your own most-used for this kind, else presets)
     var qa=moQuickAmts(kind);
     if(qa.length)h+='<div class="mo-quickamts" id="moQA">'+qa.map(function(a){return '<button type="button" class="mo-qa" data-qa="'+a+'">$'+a+'</button>'}).join("")+'</div>';
@@ -13813,8 +14188,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   function moRenderCust(){
     var box=el("moCust");if(!box)return;
     if(MOS.phone){
-      box.innerHTML='<div class="mo-chips"><span class="mo-chip on" id="moCustClr">'+esc(MOS.name||prettyPhone(MOS.phone))+' ✕</span></div>';
+      box.innerHTML='<div class="mo-chips"><span class="mo-chip on" id="moCustClr">'+esc(MOS.name||prettyPhone(MOS.phone))+' ✕</span></div>'+
+        '<div id="moAgain"></div>';
       el("moCustClr").onclick=function(){MOS.phone="";MOS.name="";moRenderCust()};
+      moRenderAgain(MOS.phone);
       return;
     }
     var q=(MOS.custQ||"").toLowerCase();
@@ -13824,6 +14201,47 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var inp=el("moCustQ");
     inp.oninput=function(){MOS.custQ=inp.value;moRenderCust();var ni=el("moCustQ");if(ni){ni.focus();try{ni.setSelectionRange(ni.value.length,ni.value.length)}catch(e){}}};
     Array.prototype.forEach.call(box.querySelectorAll("[data-cust]"),function(c){c.onclick=function(){var ph=c.getAttribute("data-cust");var t=threadByPhone(ph);MOS.phone=ph;MOS.name=t?displayName(t):"";moRenderCust()}});
+  }
+  // A repeat customer is the same job again far more often than not — the same
+  // package on the same truck in the same town for the same price. Logging it
+  // meant retyping all four. Their last job is already one cheap read away
+  // (/api/money/by-phone, which the conversation's "Won but nothing logged"
+  // banner is calling anyway), so offer it as one chip instead.
+  function moRenderAgain(phone){
+    var box=el("moAgain");if(!box||!MOS||MOS.kind!=="job"||MOS.id)return;   // editing an entry already has its values
+    var paint=function(d){
+      var box2=el("moAgain");if(!box2||!MOS||MOS.phone!==phone)return;
+      var last=((d&&d.entries)||[]).filter(function(e){return e.type==="job"&&e.amount>0})[0];
+      if(!last){box2.innerHTML="";return}
+      var bits=[fmtMoney(last.amount),last.service,last.veh].filter(Boolean).join(" \u00b7 ");
+      box2.innerHTML='<button type="button" class="mo-again" id="moAgainBtn">'+ic("undo",14)+
+        '<span><b>Same as last time</b><small>'+esc(bits)+'</small></span></button>';
+      el("moAgainBtn").onclick=function(){
+        vibrate(6);
+        MOS.amt=String(last.amount);
+        if(last.method)MOS.method=last.method;
+        if(last.service)MOS.service=last.service;
+        if(last.veh)MOS.veh=last.veh;
+        moUpdateAmt();
+        // Repaint the chip rows the values just moved into.
+        [["moMeth","meth",MOS.method],["moSvc","svc",MOS.service],["moVeh","veh",MOS.veh]].forEach(function(r){
+          var row=el(r[0]);if(!row)return;
+          Array.prototype.forEach.call(row.querySelectorAll("[data-"+r[1]+"]"),function(c){
+            c.classList.toggle("on",c.getAttribute("data-"+r[1])===r[2]);
+          });
+        });
+        var city=el("moCity");if(city&&last.city&&!city.value)city.value=last.city;
+        toast("Filled in from "+moDayLabel(last.date));
+      };
+    };
+    var cached=dtMoneyCache[phone];
+    if(cached){paint(cached);return}
+    if(cached===null)return;                       // already in flight for this number
+    dtMoneyCache[phone]=null;
+    api("/api/money/by-phone?phone="+encodeURIComponent(phone)).then(function(d){
+      dtMoneyCache[phone]=(d&&d.ok)?d:{jobs:0,total:0,entries:[]};
+      paint(dtMoneyCache[phone]);
+    }).catch(function(){dtMoneyCache[phone]={jobs:0,total:0,entries:[]}});
   }
   // Common amounts for one-tap entry: your own most-frequent for this kind
   // (rounded, whole-dollar), topped up with sensible detailing presets.
