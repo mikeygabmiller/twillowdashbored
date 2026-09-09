@@ -1956,7 +1956,7 @@
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-02·reply-by-text-2";
+  var APP_BUILD="2026-09-09·alert-channel";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -3603,6 +3603,15 @@
       '<div class="fu-row"><span class="lbl2">Missed-call text-back <span style="color:var(--muted2);font-weight:400">· never lose a missed call</span></span><span class="sw'+(c.missedCallTextback!==false?" on":"")+'" id="cfgMct"></span></div>'+
       '<div class="fu-col"><input type="text" id="cfgMctText" placeholder="Sorry I missed your call! Text me here and I\'ll get right back to you." value="'+esc(c.missedCallText||"")+'"></div>'+
       '<div class="hint">When a call goes unanswered, the caller instantly gets a friendly text so the lead turns into a conversation you can answer from anywhere. Leave the message blank to use the default.</div>'+
+      '<div class="fu-col"><span class="lbl2">How you get alerted</span><select id="cfgAlertCh">'+
+        ['email|Email only — free','text|Text me instead — about 1.3\u00a2 each','both|Both — email + text'].map(function(o){
+          var v=o.split("|")[0];
+          return '<option value="'+v+'"'+((c.alertChannel||"email")===v?" selected":"")+'>'+o.split("|")[1]+'</option>';
+        }).join("")+'</select></div>'+
+      '<div class="hint">Email alerts cost nothing and your phone still shows a banner with the name and message. Switching to <b>text</b> adds one billed SMS (~1.3\u00a2) per incoming message \u2014 at 300 messages a month that\u2019s about <b>$4</b>. Pick <b>both</b> only if you want a paper trail in email too.</div>'+
+      ((c.alertChannel==="text"||c.alertChannel==="both")?
+        '<div class="fu-row"><span class="lbl2">Daily limit on alert texts</span><input type="number" id="cfgAlertCap" min="0" max="500" value="'+(c.alertTextCap==null?40:c.alertTextCap)+'"></div>'+
+        '<div class="hint">A spend ceiling. Once you hit it, the rest of the day\u2019s alerts go to email instead of stopping. At 40/day the very worst case is about <b>$16/month</b> in alert texts.</div>':'')+
       '<div class="fu-row"><span class="lbl2">Reply by text <span style="color:var(--muted2);font-weight:400">· answer customers without opening the app</span></span><span class="sw'+(c.replyByText!==false?" on":"")+'" id="cfgRbt"></span></div>'+
       '<div class="hint">Get an alert, text <b>your own business number</b> back, and it goes to that customer. <b>No number to look up.</b><br>• <b>running 20 min late</b> — goes to whoever just texted you.<br>• If two people texted, it asks "who\'s this for?" and you reply 1 or 2.<br>• <b>3821 your message</b> — last 4 digits to pick someone else directly.<br>• <b>tell the guy asking about price it\'s $200</b> — name them in plain English; you get a Y/N to confirm first.</div>'+
       (c.replyByText!==false?'<div class="fu-row"><span class="lbl2">Confirm each send <span style="color:var(--muted2);font-weight:400">· costs 1 text</span></span><span class="sw'+(c.replyByTextConfirm!==false?" on":"")+'" id="cfgRbtC"></span></div>'+
@@ -3623,6 +3632,8 @@
     el("cfgScreen").onclick=function(){saveConfig({callScreening:!(c.callScreening!==false)})};
     el("cfgMct").onclick=function(){saveConfig({missedCallTextback:!(c.missedCallTextback!==false)})};
     el("cfgMctText").onchange=function(){saveConfig({missedCallText:el("cfgMctText").value})};
+    el("cfgAlertCh").onchange=function(){saveConfig({alertChannel:el("cfgAlertCh").value})};
+    if(el("cfgAlertCap"))el("cfgAlertCap").onchange=function(){saveConfig({alertTextCap:+el("cfgAlertCap").value})};
     el("cfgRbt").onclick=function(){saveConfig({replyByText:!(c.replyByText!==false)})};
     if(el("cfgRbtC"))el("cfgRbtC").onclick=function(){saveConfig({replyByTextConfirm:!(c.replyByTextConfirm!==false)})};
     if(el("cfgOwnBtn"))el("cfgOwnBtn").onclick=function(){

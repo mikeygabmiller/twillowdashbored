@@ -83,7 +83,7 @@ function withThreadLink(body, phone) {
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-02·reply-by-text-2';
+const BUILD = '2026-09-09·alert-channel';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -3435,6 +3435,8 @@ async function apiSaveConfig(request) {
   if (typeof data.missedCallTextback === 'boolean') next.missedCallTextback = data.missedCallTextback;
   if (typeof data.missedCallText === 'string') next.missedCallText = data.missedCallText.slice(0, 320);
   if (typeof data.teamMode === 'boolean') next.teamMode = data.teamMode;
+  if (data.alertChannel === 'email' || data.alertChannel === 'text' || data.alertChannel === 'both') next.alertChannel = data.alertChannel;
+  if (data.alertTextCap != null && Number.isFinite(+data.alertTextCap)) next.alertTextCap = Math.max(0, Math.min(500, Math.round(+data.alertTextCap)));
   if (typeof data.replyByText === 'boolean') next.replyByText = data.replyByText;
   if (typeof data.replyByTextConfirm === 'boolean') next.replyByTextConfirm = data.replyByTextConfirm;
   // Extra numbers you text FROM (Google Voice, a second line). Normalized and
@@ -4201,6 +4203,8 @@ function defaultConfig() {
     blockedNumbers: [],      // normalized numbers that get rejected instantly (no ring)
     ownerNumbers: [],        // extra numbers YOU text from (e.g. Google Voice) that may
                              // send reply-by-text commands. MIKEY_PHONE always counts.
+    alertChannel: 'email',   // 'email' (free) | 'text' (billed SMS) | 'both'
+    alertTextCap: 40,        // max billed alert texts per day — a spend ceiling
     replyByText: true,       // master switch for the reply-by-text command channel
     replyByTextConfirm: true,// text back "sent to X" after each command (costs 1 SMS)
     optedOut: [],            // normalized numbers that texted STOP — never messaged again
@@ -4587,6 +4591,27 @@ async function notifyMikey(subject, body, aboutPhone) {
   // reply — you're answering the alert on your screen, so the obvious target is
   // the person it was about, and you shouldn't have to look up their number.
   if (aboutPhone) await recordLastAlerted(aboutPhone);
+
+  // Channel choice. 'email' (default) is free. 'text' and 'both' spend a billed
+  // SMS per alert, so they're metered against a daily cap you set.
+  const acfg = await loadConfig();
+  const channel = (acfg.alertChannel === 'text' || acfg.alertChannel === 'both') ? acfg.alertChannel : 'email';
+  let sentText = false, cappedOut = false;
+
+  if (channel !== 'email') {
+    if (await claimAlertTextBudget(acfg)) {
+      // Lead with the subject — that's the line your lock screen shows.
+      try { await sendSms(ENV.MIKEY_PHONE, `${subject}\n${body}`, { skipOptOut: true }); sentText = true; }
+      catch { /* try email below rather than losing the alert */ }
+    } else {
+      // You set a ceiling and it's reached. A cap that quietly spends anyway is
+      // worse than useless, so this holds even when there's no email to fall
+      // back to — the rest of today's alerts go to email, or nowhere.
+      cappedOut = true;
+    }
+    if (channel === 'text' && sentText) return true;
+  }
+
   if (ENV.RESEND_API_KEY && ENV.ALERT_EMAIL) {
     // Resend rate-limits bursts and, like any API, has the occasional 5xx. A
     // single hiccup used to drop us straight onto a paid Twilio SMS, so retry
@@ -4607,11 +4632,40 @@ async function notifyMikey(subject, body, aboutPhone) {
       }
     }
   }
+
+  // Last resort so an alert is never simply lost — but never in defiance of a
+  // cap you set, and never a second text when one already went out.
+  if (cappedOut || sentText) return sentText;
   try { await sendSms(ENV.MIKEY_PHONE, body, { skipOptOut: true }); return true; }
   catch { return false; }
 }
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+
+// Daily allowance for billed alert texts. Returns true if this alert may spend
+// one. Resets on local-date change, so "40 a day" means a day you'd recognize.
+const ALERT_BUDGET = 'cmd:alertBudget';
+async function claimAlertTextBudget(cfg) {
+  const cap = Number.isFinite(+cfg.alertTextCap) ? Math.max(0, +cfg.alertTextCap) : 40;
+  if (!cap) return false;
+  const today = localDateStr(Date.now(), cfg.tz);
+  try {
+    const cur = (await kv().get(ALERT_BUDGET, { type: 'json' })) || {};
+    const used = cur.day === today ? (cur.used || 0) : 0;
+    if (used >= cap) return false;
+    await kv().put(ALERT_BUDGET, JSON.stringify({ day: today, used: used + 1 }));
+    return true;
+  } catch {
+    return true; // a KV blip shouldn't silence an alert you're paying for
+  }
+}
+// How much of today's alert-text allowance is left (for the dashboard).
+async function alertBudgetState(cfg) {
+  const cap = Number.isFinite(+cfg.alertTextCap) ? Math.max(0, +cfg.alertTextCap) : 40;
+  const cur = (await kv().get(ALERT_BUDGET, { type: 'json' }).catch(() => null)) || {};
+  const used = cur.day === localDateStr(Date.now(), cfg.tz) ? (cur.used || 0) : 0;
+  return { cap, used, left: Math.max(0, cap - used) };
+}
 
 // The customer your most recent alert was about, plus whether anyone else has
 // texted since. If someone else has, a bare reply is genuinely ambiguous and we

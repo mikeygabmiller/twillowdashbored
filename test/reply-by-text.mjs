@@ -178,5 +178,34 @@ r = await sms(OWNER, 'hey sorry for the delay');
 check('refuses to guess after 6h', !r.sent.some((x) => x.to === CUSTOMER), r.sent);
 check('asks for digits instead', /last 4 digits/.test(r.reply), r.reply);
 
+
+console.log('\n--- alert channel: email is free and stays free ---');
+ENV.RESEND_API_KEY = 'rk_test'; ENV.ALERT_EMAIL = 'owner@example.com';
+store.delete('cmd:pending:' + OWNER);
+let cfgA = JSON.parse(store.get('config')); cfgA.alertChannel = 'email'; cfgA.optedOut = [];
+store.set('config', JSON.stringify(cfgA));
+r = await sms(CUSTOMER, 'email channel test');
+check('no billed text to owner', !r.sent.some((x) => x.to === OWNER), r.sent);
+
+console.log('\n--- alert channel: text ---');
+cfgA = JSON.parse(store.get('config')); cfgA.alertChannel = 'text'; cfgA.alertTextCap = 3;
+store.set('config', JSON.stringify(cfgA));
+store.delete('cmd:alertBudget');
+r = await sms(CUSTOMER, 'text channel test');
+check('owner gets a text alert', r.sent.some((x) => x.to === OWNER), r.sent);
+check('alert leads with who it is', r.sent.some((x) => x.to === OWNER && /Jake \(3821\)/.test(x.body)), r.sent);
+
+console.log('\n--- the daily cap actually stops the spend ---');
+store.set('cmd:alertBudget', JSON.stringify({ day: new Date().toLocaleDateString('en-CA', { timeZone: 'America/Los_Angeles' }), used: 3 }));
+r = await sms(CUSTOMER, 'this one is over the cap');
+check('no alert text once capped', !r.sent.some((x) => x.to === OWNER), r.sent);
+check('customer message still stored', JSON.parse(store.get('thread:' + CUSTOMER)).messages.some((m) => m.body === 'this one is over the cap'), 'missing');
+
+console.log('\n--- a zero cap means never spend ---');
+cfgA = JSON.parse(store.get('config')); cfgA.alertTextCap = 0;
+store.set('config', JSON.stringify(cfgA)); store.delete('cmd:alertBudget');
+r = await sms(CUSTOMER, 'zero cap test');
+check('no alert text at all', !r.sent.some((x) => x.to === OWNER), r.sent);
+
 console.log('\n' + (fails ? fails + ' FAILING' : 'ALL PASS'));
 process.exit(fails ? 1 : 0);
