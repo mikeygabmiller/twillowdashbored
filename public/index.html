@@ -285,6 +285,15 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .lead-card .body{min-width:0;flex:1}
   .lead-card .nm{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .lead-card .prev{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+  .lead-col .lc-head .lc-money{margin-left:auto;color:var(--green);font-size:12px;font-weight:700}
+  .lead-col .lc-head .lc-owed{color:var(--accent-text);font-size:11.5px;font-weight:700}
+  .lead-card{align-items:flex-start}
+  .lead-card .avatar{margin-top:1px}
+  .lead-marks{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
+  .lead-marks .lm{font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:8px;background:var(--panel3);color:var(--muted)}
+  .lead-marks .lm-q{color:#34d399;background:rgba(34,197,94,.14)}
+  .lead-marks .lm-w{color:var(--accent-text);background:var(--accent-soft)}
+  .lead-marks .lm-old{color:#f5c563;background:rgba(245,184,66,.13)}
 
   /* ---------- Bottom nav ---------- */
   .bottomnav{position:absolute;left:0;right:0;bottom:0;height:calc(var(--nav-h) + var(--safe-bottom));padding-bottom:var(--safe-bottom);
@@ -509,6 +518,38 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .jump-new.has-new{background:var(--accent);color:#fff;border-color:transparent}
   .jump-new.has-new svg{color:#fff}
   .jump-new:active{transform:translateX(-50%) scale(.96)}
+  .dtp-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+  .dtp{position:relative;aspect-ratio:1;padding:0;border:1px solid var(--line2);border-radius:9px;
+    overflow:hidden;background:var(--panel2);cursor:pointer}
+  .dtp img{width:100%;height:100%;object-fit:cover;display:block}
+  .dtp:active{transform:scale(.95)}
+  .dtp-you{position:absolute;left:3px;bottom:3px;padding:0 4px;border-radius:5px;background:rgba(0,0,0,.6);
+    color:#fff;font-size:8.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+  .sched-item .e{background:transparent;border:none;color:var(--muted2);cursor:pointer;padding:2px;display:inline-flex;align-items:center}
+  .sched-item .e:hover{color:var(--text)}
+  .sched-item .e:active{transform:scale(.9)}
+  .sx-hd{font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted2);font-weight:800;padding:2px 2px 7px}
+  .sx-row{display:flex;flex-wrap:wrap;gap:6px;padding:0 2px 10px}
+  .sx-chip{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:999px;
+    border:1px solid var(--line);background:var(--panel2);color:var(--text);font-size:12px;font-weight:600;cursor:pointer}
+  .sx-chip.dim{color:var(--muted);border-style:dashed}
+  .sx-chip svg{width:12px;height:12px;color:var(--muted2)}
+  .sx-chip:active{transform:scale(.95)}
+  .tagadd.tag-sug{color:var(--muted2);cursor:pointer}
+  .tagadd.tag-sug:hover{color:var(--accent-text);border-color:var(--accent)}
+  .callrow .ctx{position:relative;padding-right:30px}
+  .ctx-copy{position:absolute;top:5px;right:4px;width:24px;height:24px;display:inline-flex;align-items:center;
+    justify-content:center;border-radius:7px;background:transparent;border:none;color:var(--muted2);cursor:pointer}
+  .ctx-copy:hover{background:var(--panel3);color:var(--text)}
+  .ctx-copy:active{transform:scale(.9)}
+  .cl-name{display:inline-flex;align-items:center;gap:2px;margin-left:7px;padding:1px 6px 1px 4px;border-radius:8px;
+    border:1px dashed var(--line);background:transparent;color:var(--muted2);font-size:10.5px;font-weight:700;cursor:pointer}
+  .cl-name:hover{color:var(--accent-text);border-color:var(--accent)}
+  .cl-name svg{width:11px;height:11px}
+  .mo-chat{flex:none;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;
+    border-radius:9px;background:transparent;border:none;color:var(--muted2);cursor:pointer}
+  .mo-chat:hover{background:var(--panel3);color:var(--text)}
+  .mo-chat:active{transform:scale(.9)}
   .mo-again{display:flex;align-items:center;gap:9px;width:100%;margin-top:8px;padding:9px 11px;border-radius:11px;
     border:1px solid var(--line);background:var(--panel2);color:var(--text);font:inherit;text-align:left;cursor:pointer}
   .mo-again:active{transform:scale(.99)}
@@ -2860,6 +2901,12 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .pk-said .sh{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2);margin-bottom:6px}
   .pk-said .sb{font-size:14px;line-height:1.5}
   .pk-said .st{font-size:11.5px;color:var(--muted2);margin-top:6px}
+  .pk-do{display:flex;gap:7px;margin:0 0 10px}
+  .pk-d{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+    padding:10px 4px;border-radius:13px;background:var(--panel2);border:1px solid var(--line);
+    color:var(--text);font-size:11.5px;font-weight:600;cursor:pointer}
+  .pk-d svg{color:var(--muted)}
+  .pk-d:active{transform:scale(.96)}
   .pk-acts{display:flex;gap:8px;align-items:center}
   .pk-step{flex:none;width:46px;height:46px;border-radius:14px;background:var(--panel2);border:1px solid var(--line);
     color:var(--text);display:flex;align-items:center;justify-content:center;transition:all .13s}
@@ -3980,6 +4027,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
           <div class="lbl">Linked conversations</div>
           <div id="dtLinked"></div>
         </div>
+        <div class="dt-sec" id="dtPhotoSec" style="display:none">
+          <div class="lbl">Photos in this conversation</div>
+          <div id="dtPhotos"></div>
+        </div>
         <div class="dt-sec">
           <div class="lbl">Jobs &amp; money</div>
           <div id="dtMoney"></div>
@@ -4215,7 +4266,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-08·quality-of-life";
+  var APP_BUILD="2026-09-10·quality-of-life-2";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -5763,7 +5814,22 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var hits=typed?featureSearch(state.search):fxSuggestions();
     if(!hits.length)return;
     var w=document.createElement("div");w.className="fx-wrap";
-    w.innerHTML='<div class="fx-hd">'+(typed?"Features":"Jump to")+'</div>';
+    // An empty box is the moment to say what search can do. The `is:` grammar has
+    // been in here the whole time and nothing has ever mentioned it, and the last
+    // few things you looked for are the likeliest next thing you want.
+    if(!typed){
+      var recents=sxRecent(),chips="";
+      recents.forEach(function(q){chips+='<button class="sx-chip" data-sx="'+esc(q)+'">'+ic("clock",12)+esc(q)+'</button>'});
+      SX_CUTS.forEach(function(c){
+        if(recents.indexOf(c[0])>=0)return;
+        chips+='<button class="sx-chip dim" data-sx="'+esc(c[0])+'" title="'+esc(c[0])+'">'+ic(c[2],12)+esc(c[1])+'</button>';
+      });
+      // Its own heading class, not .fx-hd — "Jump to" is the panel's first
+      // heading and a suite asserts as much, because that list is the promise
+      // the panel has always made about what Enter and a tap will do.
+      w.innerHTML='<div class="sx-hd">'+(recents.length?"Recent &amp; ready-made":"Try one of these")+'</div><div class="sx-row">'+chips+'</div>';
+    }
+    w.innerHTML+='<div class="fx-hd">'+(typed?"Features":"Jump to")+'</div>';
     hits.forEach(function(f,i){
       var r=document.createElement("button");
       // Only a typed query has a "top hit" that Enter will run — highlighting
@@ -5776,7 +5842,29 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       r.onclick=function(){runFeature(f);renderMain()};
       w.appendChild(r);
     });
+    Array.prototype.forEach.call(w.querySelectorAll("[data-sx]"),function(c){
+      c.onclick=function(){
+        var q=c.getAttribute("data-sx");
+        vibrate(6);
+        var si=el("search");si.value=q;state.search=q;sxRemember(q);
+        setTab("messages");si.focus();
+      };
+    });
     box.insertBefore(w,box.firstChild);
+  }
+  // ---- searches worth offering back --------------------------------------
+  // The ready-made cuts are the field grammar passSearch already understands,
+  // written the way you'd say them out loud.
+  var SX_KEY="mkd-sx",SX_MAX=4;
+  var SX_CUTS=[["is:unread","Unread","bell"],["is:draft","Half-written","pencil"],
+    ["is:scheduled","Scheduled","calendar-clock"],["status:won","Won","check-circle"],["is:dnt","Do not text","ban"]];
+  function sxRecent(){try{var a=JSON.parse(localStorage.getItem(SX_KEY)||"[]");return Array.isArray(a)?a.slice(0,SX_MAX):[]}catch(e){return []}}
+  function sxRemember(q){
+    q=String(q||"").trim();if(q.length<2)return;
+    try{
+      var a=sxRecent().filter(function(x){return x.toLowerCase()!==q.toLowerCase()});
+      a.unshift(q);localStorage.setItem(SX_KEY,JSON.stringify(a.slice(0,SX_MAX)));
+    }catch(e){}
   }
 
   // ---- Home (landing) ----
@@ -7060,13 +7148,19 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       h+='<div class="callrow'+(fresh?" fresh":"")+'" data-cid="'+esc(c.id||"")+'" data-phone="'+esc(c.fromNorm||"")+'">'+
         '<div class="avatar" style="background:'+colorFor(c.fromNorm||"")+'">'+esc(callInitials(c))+'</div>'+
         '<div class="cbody">'+
-          '<div class="row1"><span class="nm">'+esc(callName(c))+'</span><span class="tm">'+esc(fmtTime(c.ts))+'</span></div>'+
+          '<div class="row1"><span class="nm">'+esc(callName(c))+'</span>'+
+            (c.name?'':'<button class="cl-name" data-clname="'+esc(c.fromNorm||"")+'" aria-label="Name this caller">'+ic("plus",11)+'name</button>')+
+            '<span class="tm">'+esc(fmtTime(c.ts))+'</span></div>'+
           '<div class="cwhat"><span class="cbadge cb-'+esc(m[2])+'">'+ic(m[1],11)+esc(m[0])+'</span>'+
             (sub.length?'<span>'+esc(sub.join(" · "))+'</span>':'')+'</div>';
 
       if(o==="voicemail"){
+        // The transcript is the address, the plate, the callback number they
+        // rattled off — and it was the one piece of text in this app you could
+        // only re-type. Now it copies, or goes into the reply box as your notes.
         h+=c.transcript
-          ? '<div class="ctx">'+ic("voicemail",12)+' '+esc(c.transcript)+'</div>'
+          ? '<div class="ctx">'+ic("voicemail",12)+' '+esc(c.transcript)+
+            '<button class="ctx-copy" data-vmcopy="'+esc(c.id||"")+'" aria-label="Copy this transcript" title="Copy this transcript">'+ic("copy",13)+'</button></div>'
           : '<div class="ctx pending">'+(c.transcriptFailed
               ?'No transcript for this one — too quiet, too noisy, or not English. Play it below.'
               :'Transcribing… the text lands here on its own in a minute.')+'</div>';
@@ -7101,6 +7195,28 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       Array.prototype.forEach.call(row.querySelectorAll(".cacts button"),function(b){
         b.onclick=function(e){e.stopPropagation();callAction(b.getAttribute("data-act"),phone,row)};
       });
+    });
+    Array.prototype.forEach.call(box.querySelectorAll("[data-vmcopy]"),function(b){
+      b.onclick=function(e){
+        e.stopPropagation();
+        var c=(CALLS.list||[]).filter(function(x){return x.id===b.getAttribute("data-vmcopy")})[0];
+        if(c&&c.transcript)copyText(c.transcript,"Voicemail copied");
+      };
+    });
+    Array.prototype.forEach.call(box.querySelectorAll("[data-clname]"),function(b){
+      b.onclick=function(e){
+        e.stopPropagation();
+        var ph=b.getAttribute("data-clname");if(!ph)return;
+        var v=prompt("Who called from "+prettyPhone(ph)+"?");
+        if(v==null)return;v=v.trim();if(!v)return;
+        post("/api/meta",{phone:ph,name:v}).then(function(d){
+          if(!(d&&d.ok)){toast("Couldn't save that",{bad:true});return}
+          // The calls list carries its own copy of the name; patch it rather than
+          // re-pulling the whole log for one word.
+          (CALLS.list||[]).forEach(function(c){if((c.fromNorm||"")===ph)c.name=v});
+          refreshThreads();renderMain();toast("Saved as "+v);
+        });
+      };
     });
   }
 
@@ -7156,11 +7272,27 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       if(!rows.length)return;
       any=true;
       var sm=stageMeta(col[0]); // custom label + color from Customize → Leads
-      html+='<div class="lead-col"><div class="lc-head"><span class="d" style="background:'+sm.color+'"></span><span class="lbl">'+esc(sm.label)+'</span><span class="n">'+rows.length+'</span></div>';
+      // A pipeline board with no dollars on it is half a pipeline. The open quote
+      // is already mirrored onto the index row (quoteTotal), so the column can say
+      // what it is worth without loading a single thread.
+      var money=rows.reduce(function(a,t){return a+(t.quoteTotal||0)},0);
+      var owedN=rows.filter(waitingOnMe).length;
+      html+='<div class="lead-col"><div class="lc-head"><span class="d" style="background:'+sm.color+'"></span><span class="lbl">'+esc(sm.label)+'</span><span class="n">'+rows.length+'</span>'+
+        (money>0?'<span class="lc-money">'+esc(fmtMoney(money))+' quoted</span>':'')+
+        (owedN?'<span class="lc-owed">'+owedN+' waiting on you</span>':'')+'</div>';
       rows.forEach(function(t){
+        // How long it has sat in THIS stage, not how long since the last text —
+        // a lead that has been "New" for nine days is the thing worth seeing.
+        var since=t.statusAt||t.lastTs||0;
+        var stale=since&&(Date.now()-since)>3*86400000;
+        var marks=[];
+        if(t.quoteTotal>0)marks.push('<span class="lm lm-q">'+esc(fmtMoney(t.quoteTotal))+'</span>');
+        if(waitingOnMe(t))marks.push('<span class="lm lm-w">waiting '+esc(ago(t.lastTs))+'</span>');
+        else if(since)marks.push('<span class="lm'+(stale?" lm-old":"")+'">'+esc(ago(since))+' in '+esc(sm.label.toLowerCase())+'</span>');
         html+='<div class="lead-card" data-phone="'+esc(t.phone)+'">'+
           '<div class="avatar" style="width:38px;height:38px;font-size:14px;background:'+colorFor(t.phone)+'">'+esc(initials(t))+'</div>'+
-          '<div class="body"><div class="nm">'+esc(displayName(t))+'</div><div class="prev">'+(t.lastDir==="out"?"You: ":"")+esc(t.lastBody||"")+'</div></div>'+
+          '<div class="body"><div class="nm">'+esc(displayName(t))+'</div><div class="prev">'+(t.lastDir==="out"?"You: ":"")+esc(t.lastBody||"")+'</div>'+
+          (marks.length?'<div class="lead-marks">'+marks.join("")+'</div>':'')+'</div>'+
           (t.unread>0?'<span class="unread-pill">'+t.unread+'</span>':'')+
         '</div>';
       });
@@ -7950,6 +8082,14 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
          '<div class="st">'+esc(fmtTime(t.lastTs)+" · "+ago(t.lastTs)+" ago")+'</div></div>';
     }
 
+    // The whole point of a peek is triage WITHOUT reading the thread, because
+    // reading it clears unread. Until now the only thing you could do from here
+    // was Open — which clears it. These are the three verdicts that don't.
+    h+='<div class="pk-do">'+
+       '<button class="pk-d" data-pk="call"'+(t.optedOut?'':'')+'>'+ic("phone",16)+'Call</button>'+
+       '<button class="pk-d" data-pk="remind">'+ic("clock",16)+'Remind me</button>'+
+       '<button class="pk-d" data-pk="archive">'+ic(t.archived?"undo":"archive",16)+(t.archived?"Unarchive":"Archive")+'</button>'+
+       '</div>';
     h+='<div class="pk-acts">'+
        '<button class="pk-step" id="pkPrev"'+(at>0?"":" disabled")+' aria-label="Previous conversation">'+ic("chevron-left",20)+'</button>'+
        '<button class="jd-btn pri pk-open" id="pkOpen">'+ic("message-square",17)+' Open</button>'+
@@ -7960,6 +8100,24 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     card.innerHTML=h;hydrateIcons(card);
     if(!rec&&!asked&&t.lastBody)recapFetch(t.phone,rk);
     card.querySelector("#pkOpen").onclick=function(){jdSheetClose();setTab("messages");openThread(PEEK.phone)};
+    Array.prototype.forEach.call(card.querySelectorAll("[data-pk]"),function(b){
+      b.onclick=function(){
+        var a=b.getAttribute("data-pk");vibrate(6);
+        // Step to the next one after a verdict — triage is a pile you work
+        // through, and stopping to reopen the peek for each is the friction.
+        var after=function(){
+          var ord=peekOrder(),i=ord.indexOf(PEEK.phone);
+          if(i>=0&&i<ord.length-1){PEEK.phone=ord[i+1];peekRender()}else jdSheetClose();
+        };
+        if(a==="call"){
+          if(!confirm("Call "+displayName(t)+"?\nYour cell rings first — answer it to connect."))return;
+          post("/api/call",{phone:t.phone}).then(function(d){toast(d&&d.ok?"Calling your phone — answer to connect":"Call failed",{bad:!(d&&d.ok)})});
+          return;
+        }
+        if(a==="remind"){jdSheetClose();openReminderModal(t);return}
+        if(a==="archive"){doArchiveToggle(t);after();return}
+      };
+    });
     var step=function(id,to){
       var b=card.querySelector(id);if(!b||b.disabled)return;
       b.onclick=function(){PEEK.phone=order[to];vibrate(5);peekRender()};
@@ -7998,6 +8156,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // reset any in-thread find when moving to a different conversation
     state.threadFind="";state.findIdx=0;var fb=el("findBar");if(fb)fb.style.display="none";var fi=el("findInput");if(fi)fi.value="";
     state.lastAiText=null;
+    if(switching)DTP.open=false;   // "all photos" belongs to the conversation you opened it on
     hideAiReview();resetPolish();pkHide();pkLoadStyle(false);
     var sbx=el("suggestBox");if(sbx){sbx.style.display="none";sbx.innerHTML=""}
     var dbx=el("dateBanner");if(dbx){dbx.style.display="none";dbx.innerHTML=""}
@@ -8741,10 +8900,16 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       rb.querySelector(".rb-edit").onclick=function(){openReminderModal(t)};
       rb.querySelector(".rb-x").onclick=function(){metaFor(t,{reminderAt:null,reminderNote:""},"Reminder cleared")};
     }else{rb.style.display="none"}
+    // A scheduled text used to be all-or-nothing: cancel it and type the whole
+    // thing again to change one word or push it an hour. Editing is that same
+    // cancel, except the words and the time come back with it.
     var sb=el("schedBanner");var sc=(t.scheduled||[]);
     if(sc.length){sb.style.display="block";sb.innerHTML='<div class="sb-title">'+ic("calendar-clock",13)+' Scheduled to send</div>'+sc.map(function(s){
-      return '<div class="sched-item"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(s.body.slice(0,60))+(s.body.length>60?'…':'')+'</span><span style="color:#7dd3fc;margin:0 8px">'+fmtFull(s.sendAt)+'</span><button class="x" data-id="'+s.id+'">'+ic("x",16)+'</button></div>'}).join('');
+      return '<div class="sched-item"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(s.body.slice(0,60))+(s.body.length>60?'…':'')+'</span><span style="color:#7dd3fc;margin:0 8px">'+fmtFull(s.sendAt)+'</span>'+
+        '<button class="e" data-edit="'+s.id+'" aria-label="Edit this scheduled message" title="Edit">'+ic("pencil",15)+'</button>'+
+        '<button class="x" data-id="'+s.id+'" aria-label="Cancel this scheduled message">'+ic("x",16)+'</button></div>'}).join('');
       Array.prototype.forEach.call(sb.querySelectorAll(".x"),function(b){b.onclick=function(){post("/api/unschedule",{phone:t.phone,id:b.getAttribute("data-id")}).then(function(d){if(d.ok){state.thread=d.thread;renderThread();refreshThreads();toast("Scheduled message canceled")}})}});
+      Array.prototype.forEach.call(sb.querySelectorAll(".e"),function(b){b.onclick=function(){editScheduled(t,b.getAttribute("data-edit"))}});
     }else sb.style.display="none";
     renderFuBanner(t);
     renderDateBanner(t);
@@ -8825,6 +8990,29 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     else {box.scrollTop=box.scrollHeight}
     if(!wasAway){jumpNew=0;renderJumpNew()}
     renderDetails();
+  }
+  // Pull a queued send back into the composer — words in the box, time in the
+  // schedule picker, ready to go out again with whatever you changed. It is
+  // unscheduled first, so a slow edit can never race the cron and send twice.
+  function editScheduled(t,id){
+    var s=(t.scheduled||[]).filter(function(x){return x.id===id})[0];
+    if(!s)return;
+    var inp=el("msgInput");
+    if(inp.value.trim()&&!confirm("Replace what's in the box with this scheduled message?"))return;
+    post("/api/unschedule",{phone:t.phone,id:id}).then(function(d){
+      if(!(d&&d.ok)){toast("Couldn't pull that back",{bad:true});return}
+      state.thread=d.thread;renderThread();refreshThreads();
+      var i=el("msgInput");
+      i.value=s.body;autoGrow();updateCount();stashDraft(t.phone);
+      // Don't let the polisher rewrite something you already approved once.
+      resetPolish();polishDecide(s.body);
+      i.focus();try{i.selectionStart=i.selectionEnd=i.value.length}catch(e){}
+      closePops("schedPop");
+      var pop=el("schedPop");pop.style.display="block";
+      el("schedTime").value=toLocalInput(new Date(s.sendAt));
+      buildQuickset();
+      toast("Pulled back — edit it and schedule again");
+    });
   }
   // ---- "next one waiting" ---------------------------------------------------
   // Answering the pile meant back out to the list, find who is next, tap in —
@@ -9006,6 +9194,28 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     box.addEventListener("scroll",clear,{passive:true});
   })();
 
+  // Every tag on every conversation, most-used first, minus the ones this one
+  // already has. Read straight off the index rows — no extra call.
+  function tagsInUse(t){
+    var mine={},freq={};
+    (t.tags||[]).forEach(function(x){mine[x.toLowerCase()]=1});
+    (state.threads||[]).forEach(function(x){
+      (x.tags||[]).forEach(function(tag){
+        if(mine[String(tag).toLowerCase()])return;
+        freq[tag]=(freq[tag]||0)+1;
+      });
+    });
+    return Object.keys(freq).sort(function(a,b){return freq[b]-freq[a]||a.localeCompare(b)});
+  }
+  // A new tag that only differs from an existing one by case IS that tag —
+  // otherwise "ceramic" quietly starts a second list nobody ever filters to.
+  function canonTag(v){
+    var low=v.toLowerCase(),hit="";
+    (state.threads||[]).forEach(function(x){
+      (x.tags||[]).forEach(function(tag){if(!hit&&String(tag).toLowerCase()===low)hit=tag});
+    });
+    return hit||v;
+  }
   function renderDetails(){
     var t=state.thread;if(!t)return;
     el("dtAvatar").textContent=initials(t);el("dtAvatar").style.background=colorFor(t.phone);
@@ -9025,7 +9235,21 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
 
     var tw=el("dtTags");tw.innerHTML="";
     (t.tags||[]).forEach(function(tag){var s=document.createElement("span");s.className="tag rm";s.innerHTML=esc(tag)+' <span class="ic-inline">'+ic("x",10)+'</span>';s.title="Remove tag";s.onclick=function(){saveMeta({tags:(t.tags||[]).filter(function(x){return x!==tag})})};tw.appendChild(s)});
-    var add=document.createElement("button");add.className="tagadd";add.textContent="+ Tag";add.onclick=function(){var v=prompt("Add tag (e.g. VIP, Ceramic, Truck):");if(v&&v.trim())saveMeta({tags:(t.tags||[]).concat([v.trim()])})};tw.appendChild(add);
+    // Typing a tag blind is how you end up with "Ceramic", "ceramic" and
+    // "ceramic coat" all meaning the same thing and none of them filtering to the
+    // same list. Offer the ones already in use first, most-used first; the
+    // prompt is still there for a genuinely new one.
+    tagsInUse(t).slice(0,6).forEach(function(tag){
+      var s=document.createElement("button");s.className="tagadd tag-sug";
+      s.innerHTML='+ '+esc(tag);s.title="Add this tag";
+      s.onclick=function(){saveMeta({tags:(t.tags||[]).concat([tag])})};
+      tw.appendChild(s);
+    });
+    var add=document.createElement("button");add.className="tagadd";add.textContent="+ New tag";
+    add.onclick=function(){var v=prompt("Add tag (e.g. VIP, Ceramic, Truck):");if(v&&v.trim())saveMeta({tags:(t.tags||[]).concat([canonTag(v.trim())])})};
+    tw.appendChild(add);
+
+    renderDtPhotos(t);
 
     var n=el("dtNotes");if(document.activeElement!==n)n.value=t.notes||"";
     el("dtPhone").textContent=prettyPhone(t.phone);
@@ -11341,6 +11565,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // blur-then-focus would clear the state right after it was set.
   si.addEventListener("blur",function(){
     sp.classList.remove("focus");
+    // Remembered when you stop typing, not on every keystroke — otherwise the
+    // recent list fills with "s", "si", "sil" on the way to "silverado".
+    sxRemember(state.search);
     setTimeout(function(){
       if(document.activeElement===si)return;
       state.searchFocus=false;if(!state.search)renderMain();
@@ -13750,7 +13977,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(r==="today")return moSumEntries((MO.entries||[]).filter(function(e){return e.date===moTodayStr()}));
     if(r==="week")return MO.week||moSumEntries([]);
     if(MO.report12)return moAggMonths(MO.report12,r);
-    if(!MO._r12busy){MO._r12busy=true;api("/api/money/report?months=12").then(function(d){MO._r12busy=false;if(d&&d.ok){MO.report12=d.months;if(MO.open&&MO.view==="log")moRender()}}).catch(function(){MO._r12busy=false})}
+    if(!MO._r12busy){MO._r12busy=true;api("/api/money/report?months=12").then(function(d){MO._r12busy=false;if(d&&d.ok){MO.report12=d.months||[];if(MO.open&&MO.view==="log")moRender()}}).catch(function(){MO._r12busy=false})}
     return null;
   }
   function moCatInfo(id){for(var i=0;i<MO_CATS.length;i++)if(MO_CATS[i][0]===id)return MO_CATS[i];return [id||"misc",id||"Misc","package"]}
@@ -13967,7 +14194,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var ph=el("moPulseHd");if(ph)ph.onclick=function(){MO.pulseOpen=!MO.pulseOpen;el("moPulse").classList.toggle("open",MO.pulseOpen)};
     var pmore=el("moPulseMore");if(pmore)pmore.onclick=function(){moSetView("report")};
     // lazily fetch the 6-mo trend so the hero sparkline fills in
-    if(!MO.report)api("/api/money/report?months=6").then(function(d){if(d&&d.ok){MO.report=d.months;if(MO.open&&MO.view==="log")moRender()}}).catch(function(){});
+    // `MO.report` doubles as "have we asked yet", so it must end up truthy even
+    // when the answer is "no months" — otherwise the repaint this triggers asks
+    // again, and again, forever.
+    if(!MO.report)api("/api/money/report?months=6").then(function(d){if(d&&d.ok){MO.report=d.months||[];if(MO.open&&MO.view==="log")moRender()}}).catch(function(){});
     Array.prototype.forEach.call(box.querySelectorAll("[data-owepaid]"),function(b){b.onclick=function(){
       var p=b.getAttribute("data-owepaid").split("|");b.disabled=true;
       post("/api/money/entry",{id:p[0],date:p[1],clearOwed:true}).then(function(d){
@@ -13990,10 +14220,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // the price is too low.
   var PRICING={data:null,fetching:false};
   function loadPricing(){
-    if(PRICING.fetching||PRICING.data)return;
+    if(PRICING.fetching||PRICING.data||PRICING.tried)return;
     PRICING.fetching=true;
     api("/api/pricing?months=12").then(function(d){
-      PRICING.fetching=false;
+      PRICING.fetching=false;PRICING.tried=true;   // an answer we can't use is still an answer
       if(d&&d.ok&&d.overall&&d.bands&&d.advice){PRICING.data=d;if(MO.open&&MO.view==="log")moRender()}
     }).catch(function(){PRICING.fetching=false});
   }
@@ -14057,14 +14287,25 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     else{var c=moCatInfo(e.cat);icon=c[2];l1=esc(c[1])+(e.sub?" · "+esc(e.sub):"");if(e.note)l2.push(esc(e.note))}
     return '<div class="mo-row" data-eid="'+esc(e.id)+'"><span class="ee">'+ic(icon,19)+'</span>'+
       '<div class="bd"><div class="l1">'+l1+'</div>'+(l2.length?'<div class="l2">'+l2.join(" · ")+'</div>':'')+extra+'</div>'+
+      (e.phone?'<button class="mo-chat" data-mochat="'+esc(e.phone)+'" aria-label="Open their texts" title="Open their texts">'+ic("message-square",14)+'</button>':"")+
       (e.rc?'<a class="mo-rc-clip" href="/api/money/receipt?id='+esc(e.id)+'" target="_blank" onclick="event.stopPropagation()" aria-label="View receipt">'+ic("image",14)+'</a>':"")+
       '<span class="amt'+amtCls+'">'+(e.type==="job"?"+":"−")+fmtMoney(e.amount)+'</span>'+
       (withDel?'<button class="del" data-edel="'+esc(e.id)+'|'+esc(e.date)+'" aria-label="Delete">'+ic("trash",15)+'</button>':'')+'</div>';
   }
   function moWireRows(box){
+    // $220 with a name on it, and no way from here to see what you actually said
+    // to earn it. The entry has carried the phone number all along.
+    Array.prototype.forEach.call(box.querySelectorAll("[data-mochat]"),function(b){
+      b.onclick=function(ev){
+        ev.stopPropagation();
+        var ph=b.getAttribute("data-mochat");
+        if(!threadByPhone(ph)){toast("No conversation with that number",{bad:true});return}
+        vibrate(6);closeMoSheet();closeMoney();setTab("messages");openThread(ph);
+      };
+    });
     Array.prototype.forEach.call(box.querySelectorAll(".mo-row[data-eid]"),function(r){
       r.onclick=function(ev){
-        if(ev.target.closest("[data-edel]"))return;
+        if(ev.target.closest("[data-edel]")||ev.target.closest("[data-mochat]"))return;
         var id=r.getAttribute("data-eid");
         var e=(MO.entries||[]).filter(function(x){return x.id===id})[0];
         if(e)openMoSheet(e.type==="exp"?(e.cat||"misc"):e.type,null,e);
@@ -14074,8 +14315,17 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       b.onclick=function(ev){ev.stopPropagation();var p=b.getAttribute("data-edel").split("|");moDeleteEntry(p[0],p[1])};
     });
   }
+  // What is about to be deleted, in the words on the row. "Delete this entry?" is
+  // not a question anyone can answer — a $220 job and a $12 car wash asked it
+  // identically, and only one of them is a mistake you can't get back.
+  function moEntryLabel(id){
+    var e=(MO.entries||[]).filter(function(x){return x.id===id})[0];
+    if(!e)return "this entry";
+    var who=e.type==="job"?(e.name||"a detail job"):e.type==="jp"?("pay to "+jpName()):(moCatInfo(e.cat)[1]);
+    return fmtMoney(e.amount)+" \u00b7 "+who+" \u00b7 "+moDayLabel(e.date);
+  }
   function moDeleteEntry(id,date){
-    if(!confirm("Delete this entry?"))return;
+    if(!confirm("Delete "+moEntryLabel(id)+"?\n\nThis can't be undone."))return;
     post("/api/money/delete",{id:id,date:date}).then(function(d){
       if(d&&d.ok){toast("Entry deleted");MO.report=null;dtMoneyCache={};closeMoSheet();loadMoney(MO.view==="log"?null:MO.month)}
       else toast("Couldn't delete: "+((d&&d.error)||"error"),{bad:true});
@@ -15232,6 +15482,36 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     };
   }
 
+  // Every picture in the conversation, in one grid. Photos are how a detail gets
+  // quoted and how it gets proved — the swirl marks they sent, the before/after
+  // you sent back — and finding one meant thumbing up through a hundred texts.
+  // Newest first, because the one you want is almost always the last one.
+  function renderDtPhotos(t){
+    var sec=el("dtPhotoSec"),box=el("dtPhotos");if(!sec||!box)return;
+    var shots=[];
+    (t.messages||[]).forEach(function(m){
+      (m.media||[]).forEach(function(mm){
+        if(!(/^image\//.test(mm.type||"")||!mm.type))return;
+        shots.push({url:mm.url,ts:m.ts,dir:m.dir});
+      });
+    });
+    if(!shots.length){sec.style.display="none";box.innerHTML="";return}
+    shots.reverse();
+    sec.style.display="";
+    var shown=shots.slice(0,DTP.open?shots.length:8);
+    box.innerHTML='<div class="dtp-grid">'+shown.map(function(sh,i){
+      return '<button class="dtp" data-dtp="'+i+'" title="'+esc((sh.dir==="in"?"They sent":"You sent")+" \u00b7 "+fmtFull(sh.ts))+'">'+
+        '<img src="'+esc(mediaSrc(sh.url))+'" loading="lazy" alt="">'+
+        (sh.dir==="out"?'<span class="dtp-you">you</span>':'')+'</button>';
+    }).join("")+'</div>'+
+      (shots.length>8?'<button class="tagadd" id="dtpMore" style="margin-top:8px">'+(DTP.open?"Show fewer":"All "+shots.length+" photos")+'</button>':'');
+    Array.prototype.forEach.call(box.querySelectorAll("[data-dtp]"),function(b){
+      b.onclick=function(){openLightbox(mediaSrc(shown[+b.getAttribute("data-dtp")].url))};
+    });
+    var more=el("dtpMore");if(more)more.onclick=function(){DTP.open=!DTP.open;renderDtPhotos(t)};
+  }
+  var DTP={open:false};
+
   // ---- cross-link: "Jobs & money" in the conversation details panel ----
   function renderDtMoney(){
     var t=state.thread;var box=el("dtMoney");if(!box||!t)return;
@@ -15629,6 +15909,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(j.state==="done"||j.state==="skipped")h+='<button data-jdreset="'+esc(j.id)+'">'+ic("undo",15)+' Reopen</button>';
     if(j.mapQuery)h+='<button data-jdnav="'+esc(j.mapQuery)+'">'+ic("map-pin",15)+' Navigate</button>';
     if(j.phone)h+='<button data-jdchat="'+esc(j.phone)+'">'+ic("message-square",15)+' Text</button>';
+    // Driving to somebody's house is exactly when a text is the wrong tool —
+    // "I'm out front and the gate's locked" is a phone call. Text was here from
+    // the start; the call it half the time needs was not.
+    if(j.phone)h+='<button data-jdcall="'+esc(j.phone)+'">'+ic("phone",15)+' Call</button>';
     h+='<button data-jdmore="'+esc(j.id)+'">'+ic("sliders",15)+' More</button>';
     h+='</div></div>';
     return h;
@@ -15647,6 +15931,12 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     q("[data-jdreset]",function(b){b.onclick=function(){jdSetState(b.getAttribute("data-jdreset"),"queued",{text:false})}});
     q("[data-jdnav]",function(b){b.onclick=function(){jdNavigate(b.getAttribute("data-jdnav"))}});
     q("[data-jdchat]",function(b){b.onclick=function(){closeJobs();openThread(b.getAttribute("data-jdchat"))}});
+    q("[data-jdcall]",function(b){b.onclick=function(){
+      var ph=b.getAttribute("data-jdcall");
+      if(!confirm("Call "+prettyPhone(ph)+"?\nYour phone rings first — answer it to connect."))return;
+      vibrate(8);
+      post("/api/call",{phone:ph}).then(function(d){toast(d&&d.ok?"Calling your phone — answer to connect":"Call failed",{bad:!(d&&d.ok)})});
+    }});
     q("[data-jdmore]",function(b){b.onclick=function(){jdJobSheet(b.getAttribute("data-jdmore"))}});
     q("[data-jdcopy]",function(b){b.onclick=function(){jdCopy(location.origin+"/t/"+b.getAttribute("data-jdcopy"),"Tracking link copied")}});
     q("[data-jdadd]",function(b){b.onclick=function(){jdJobForm(null)}});
