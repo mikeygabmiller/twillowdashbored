@@ -23,6 +23,14 @@ import fs from 'fs';
 const HTML = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
 const now = Date.now();
 const MIN = 60000, HOUR = 3600000, DAY = 86400000;
+// Dates come off the real clock, never a literal. A hardcoded '2026-09-10' passes
+// on the day it was written and quietly stops exercising anything the next
+// morning — the day board asks for TODAY, and the money log only lists today's
+// entries, so both would just find nothing and the assertions would blame the
+// feature. (portal.test.js failed this exact way earlier in the week.)
+const dstr = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+const TODAY = dstr(new Date());
+const MONTH = TODAY.slice(0, 7);
 
 const rows = [
   // First in the list on purpose: the peek section archives whatever is on top,
@@ -115,15 +123,15 @@ await page.route('**/*', async (route) => {
   if (path === '/api/calls') return json({ ok: true, calls, forwardTo: '+14255550000', screening: true });
   if (path === '/api/money/by-phone') return json({ ok: true, phone: u.searchParams.get('phone'), jobs: 0, total: 0, entries: [] });
   if (path === '/api/money') {
-    return json({ ok: true, month: '2026-09', today: '2026-09-10', nudges: [], owed: [], summary: { gross: 220, net: 180 },
+    return json({ ok: true, month: MONTH, today: TODAY, nudges: [], owed: [], summary: { gross: 220, net: 180 },
       config: { serviceTypes: ['Full detail'] },
       entries: moneyEntries.length ? moneyEntries : [
-        { id: 'me1', type: 'job', amount: 220, date: '2026-09-10', method: 'Venmo', service: 'Full detail',
+        { id: 'me1', type: 'job', amount: 220, date: TODAY, method: 'Venmo', service: 'Full detail',
           phone: '+14255550001', name: 'Dale Hobart', ts: now - DAY },
-        { id: 'me2', type: 'exp', cat: 'supplies', amount: 12, date: '2026-09-10', ts: now - DAY },
+        { id: 'me2', type: 'exp', cat: 'supplies', amount: 12, date: TODAY, ts: now - DAY },
       ] });
   }
-  if (path === '/api/day') return json({ ok: true, date: '2026-09-10', order: [], manual: [],
+  if (path === '/api/day') return json({ ok: true, date: u.searchParams.get('date') || TODAY, order: [], manual: [],
     jobs: [{ id: 'j1', slot: '10:00', name: 'Dale Hobart', phone: '+14255550001', service: 'Full detail',
       state: 'queued', price: 220, mapQuery: '148 Fir St, Monroe' }],
     summary: { total: 1, done: 0, remaining: 1, booked: 220, earned: 0, hours: 0 } });

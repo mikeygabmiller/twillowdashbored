@@ -22,6 +22,12 @@ import fs from 'fs';
 const HTML = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
 const now = Date.now();
 const MIN = 60000, HOUR = 3600000, DAY = 86400000;
+// Off the real clock, never a literal — a hardcoded date passes the day it is
+// written and silently stops exercising anything the next morning.
+const dstr = (d) => d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+const TODAY = dstr(new Date());
+const MONTH = TODAY.slice(0, 7);
+const LAST_JOB_DATE = dstr(new Date(Date.now() - 7 * 86400000));
 
 // Enough rows that the list actually scrolls, and three of them genuinely
 // waiting on a reply so "next waiting" has an order to get right.
@@ -109,10 +115,10 @@ await page.route('**/*', async (route) => {
     const who = u.searchParams.get('phone');
     byPhone[who] = (byPhone[who] || 0) + 1;
     return json({ ok: true, phone: u.searchParams.get('phone'), jobs: 1, total: 240,
-      entries: [{ id: 'e1', type: 'job', amount: 240, date: '2026-09-01', method: 'Venmo', service: 'Full detail', veh: 'Truck', city: 'Monroe', ts: now - 7 * DAY }] });
+      entries: [{ id: 'e1', type: 'job', amount: 240, date: LAST_JOB_DATE, method: 'Venmo', service: 'Full detail', veh: 'Truck', city: 'Monroe', ts: now - 7 * DAY }] });
   }
-  if (path === '/api/money') return json({ ok: true, month: '2026-09', today: '2026-09-08', entries: [], nudges: [], owed: [], summary: {}, config: { serviceTypes: ['Full detail', 'Maintenance'] } });
-  if (path === '/api/day') return json({ ok: true, date: '2026-09-08', jobs: [], manual: [], order: [], summary: { total: 0, done: 0, remaining: 0, booked: 0, earned: 0, hours: 0 } });
+  if (path === '/api/money') return json({ ok: true, month: MONTH, today: TODAY, entries: [], nudges: [], owed: [], summary: {}, config: { serviceTypes: ['Full detail', 'Maintenance'] } });
+  if (path === '/api/day') return json({ ok: true, date: u.searchParams.get('date') || TODAY, jobs: [], manual: [], order: [], summary: { total: 0, done: 0, remaining: 0, booked: 0, earned: 0, hours: 0 } });
   if (path === '/api/detections') return json({ ok: true, detections: [], config: { enabled: true } });
   if (path === '/api/ai/draft') return json({ ok: false, error: 'off' });
   if (path === '/api/version') return json({ ok: true, build: 'test' });
