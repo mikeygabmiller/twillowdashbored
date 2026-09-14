@@ -1426,6 +1426,12 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .dt-id .avatar{width:72px;height:72px;font-size:26px}
   .dt-id .nm{font-weight:700;font-size:18px}
   .dt-id .num{color:var(--muted);font-size:13px}
+  /* The name was worked out from what the customer said, not typed by Mikey. It
+     says so, right under the name, with the one-tap way to keep it — a guess
+     that can't be confirmed or corrected in place is a guess nobody trusts. */
+  .nameauto{display:flex;align-items:center;gap:7px;justify-content:center;flex-wrap:wrap;font-size:12px;color:var(--muted2);margin-top:3px}
+  .nameauto .na-ok{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:999px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer}
+  .nameauto .na-ok:active{transform:scale(.96)}
   .dt-quick{display:flex;gap:10px;justify-content:center;margin-top:4px}
   .dt-quick .qb{display:flex;flex-direction:column;align-items:center;gap:5px;font-size:11px;color:var(--muted);background:none;border:none;padding:0}
   .dt-quick .qb .c{width:48px;height:48px;border-radius:50%;background:var(--panel2);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;color:var(--text);transition:transform .1s}
@@ -3990,6 +3996,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
           <div>
             <div class="nm" id="dtName"></div>
             <div class="num" id="dtNum"></div>
+            <div class="nameauto" id="dtNameAuto" style="display:none"></div>
           </div>
           <div class="dt-quick">
             <button class="qb" id="dtCall"><span class="c" data-ic="phone"></span>Call</button>
@@ -4266,7 +4273,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-10·quality-of-life-2";
+  var APP_BUILD="2026-09-14·auto-name";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -9082,6 +9089,21 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     },{passive:true});
   })();
 
+  // Where a name came from, when it wasn't typed. "Looks right" just saves the
+  // same name back through /api/meta, which is what promotes it to a name Mikey
+  // stands behind — nothing we work out later can overwrite it after that.
+  function renderNameAuto(t){
+    var box=el("dtNameAuto");if(!box)return;
+    var src=t.nameAuto||"";
+    if(!src||!(t.name||"").trim()){box.style.display="none";box.innerHTML="";return}
+    box.style.display="";
+    box.innerHTML='<span>'+esc(src==="email"?"Guessed from their email address":"Picked up from what they said")+'</span>'+
+      '<button class="na-ok" id="dtNameOk">Looks right</button>'+
+      '<button class="na-ok" id="dtNameFix">Fix</button>';
+    el("dtNameOk").onclick=function(){saveMeta({name:t.name});toast("Saved as "+t.name)};
+    el("dtNameFix").onclick=function(){var v=prompt("Contact name:",t.name||"");if(v!==null)saveMeta({name:v.trim()})};
+  }
+
   // ---- what a single text is good for --------------------------------------
   // A bubble was the one thing in the app you could not act on. The address a
   // customer sent, the price you quoted, the line you wrote that landed — all of
@@ -9220,6 +9242,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var t=state.thread;if(!t)return;
     el("dtAvatar").textContent=initials(t);el("dtAvatar").style.background=colorFor(t.phone);
     el("dtName").textContent=displayName(t);el("dtNum").textContent=prettyPhone(t.phone);
+    renderNameAuto(t);
     el("dtPinTxt").textContent=t.pinned?"Unpin":"Pin";
     el("dtArchTxt").textContent=t.archived?"Restore":"Archive";
 
