@@ -2666,6 +2666,68 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .nd-sig.fu.high{color:#ff8388;background:var(--accent-soft)}
   .nd-sig.rem{color:#38bdf8;background:rgba(56,189,248,.14)}
 
+  /* ---- Readiness: what would stop this job happening the way it's booked ----
+     Two levels and no more. Red is don't-leave-the-house; amber is
+     know-before-you-go. A third level would turn this into the follow-up list,
+     which he stopped reading precisely because everything in it looked equal. */
+  .rdy{margin-top:16px;background-color:var(--panel);background-image:var(--sheen);
+    border:1px solid color-mix(in srgb,var(--red,#ef4444) 30%,var(--line2));border-radius:20px;
+    padding:5px 7px 9px;box-shadow:var(--elev-2)}
+  .rdy.warnonly{border-color:color-mix(in srgb,#eab308 30%,var(--line2))}
+  .rdy .rd-head{display:flex;align-items:center;gap:7px;padding:11px 11px 7px;font-size:13.5px;font-weight:800;letter-spacing:-.01em}
+  .rdy .rd-head svg{color:var(--red,#ef4444)}
+  .rdy.warnonly .rd-head svg{color:#eab308}
+  .rdy .rd-n{margin-left:auto;font-size:12px;font-weight:800;color:#fff;background:var(--red,#ef4444);
+    min-width:22px;height:22px;border-radius:11px;display:inline-flex;align-items:center;justify-content:center;padding:0 6px;font-variant-numeric:tabular-nums}
+  .rdy.warnonly .rd-n{background:#eab308;color:#1c1917}
+  .rd-job{padding:9px 11px;border-radius:13px;cursor:pointer;transition:background .12s,transform .08s}
+  .rd-job:hover{background:var(--panel2)}
+  .rd-job:active{transform:scale(.994)}
+  .rd-job+.rd-job{margin-top:2px}
+  .rd-when{display:flex;align-items:baseline;gap:7px;font-size:14.5px;font-weight:750}
+  .rd-when .rd-t{margin-left:auto;font-size:12px;font-weight:700;color:var(--muted);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .rd-b{display:flex;align-items:flex-start;gap:7px;margin-top:5px;font-size:12.5px;line-height:1.45}
+  .rd-b svg{flex:none;margin-top:2px}
+  .rd-b.stop{color:var(--red,#ef4444)}
+  .rd-b.stop svg{color:var(--red,#ef4444)}
+  .rd-b.check{color:var(--muted)}
+  .rd-b.check svg{color:#eab308}
+  .rd-b .rd-fix{color:var(--accent-text);font-weight:700;white-space:nowrap}
+  .rd-b .rd-fix:before{content:"· "}
+  /* The same two levels on the next-stop card, where he is already looking. */
+  .next-card .nx-chip.stop{background:color-mix(in srgb,var(--red,#ef4444) 16%,transparent);
+    color:var(--red,#ef4444);font-weight:800}
+
+  /* ---- Needs your attention, grouped by what the next move actually is ----
+     It used to be one undifferentiated run of names, which made "somebody is
+     waiting on a text" and "the app has a rebook idea" look like the same job.
+     The heading is the verb now, so the list can be acted on a group at a time. */
+  .nd-grp{display:flex;align-items:center;gap:8px;padding:10px 11px 4px;font-size:11px;
+    font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .nd-grp:first-child{padding-top:4px}
+  .nd-grp .nd-gn{color:var(--muted2);letter-spacing:0}
+  .nd-more{padding:6px 11px 2px;font-size:12px;font-weight:700;color:var(--accent-text);cursor:pointer}
+  .nd-fu{display:flex;align-items:center;gap:8px;margin:6px 4px 0;padding:9px 10px;border-radius:12px;
+    font-size:12.5px;color:var(--muted);cursor:pointer;background:var(--panel2);transition:color .12s}
+  .nd-fu:hover{color:var(--fg)}
+  .nd-fu svg{flex:none;color:var(--muted2)}
+  .nd-fu .nd-fu-go{margin-left:auto;font-weight:700;color:var(--accent-text)}
+  .nd-sig.date{color:#a78bfa;background:rgba(167,139,250,.15)}
+  .nd-sig.stop{color:var(--red,#ef4444);background:color-mix(in srgb,var(--red,#ef4444) 15%,transparent)}
+
+  /* ---- Peek: the things he actually does, on the card that told him about it --- */
+  .pk-blk{margin-top:10px;display:flex;flex-direction:column;gap:6px}
+  .pk-blk .pk-bl{display:flex;align-items:flex-start;gap:8px;font-size:12.5px;line-height:1.45;
+    padding:8px 10px;border-radius:11px}
+  .pk-blk .pk-bl.stop{color:var(--red,#ef4444);background:color-mix(in srgb,var(--red,#ef4444) 12%,transparent)}
+  .pk-blk .pk-bl.check{color:var(--muted);background:var(--panel2)}
+  .pk-blk .pk-bl svg{flex:none;margin-top:2px}
+  /* A fourth verdict made the row too tight to hit at 414px, so it wraps to a
+     grid instead of a flex line. Disabled is dimmed rather than hidden: a greyed
+     Navigate says "no address on file", and a button that vanishes says nothing. */
+  .pk-do{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+  .pk-do .pk-d:disabled{opacity:.38;cursor:default}
+
   /* Analytics section labels + gold "train your AI" nudge (theme-aware). */
   .an-lbl{display:flex;align-items:center;gap:8px;margin:22px 2px 11px;font-size:13.5px;font-weight:800;letter-spacing:-.01em}
   .an-lbl svg{color:var(--accent-text)}
@@ -5950,33 +6012,84 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // The single, always-on "what needs my help" rundown — the heart of the Home screen.
   // Merges people waiting on a reply, follow-ups that are due, and today's reminders
   // into one prioritized, de-duplicated list (waiting > follow-up > reminder).
-  function homeNeeds(waiting,fu,reminders){
-    var seen={},items=[];
-    (waiting||[]).forEach(function(t){if(seen[t.phone])return;seen[t.phone]=1;
-      items.push({t:t,sub:(t.lastBody||"Sent you a message"),sig:'<span class="nd-sig wait">'+ic("clock",12)+esc(ago(t.lastTs))+'</span>'});});
-    (fu||[]).forEach(function(t){if(seen[t.phone])return;seen[t.phone]=1;
-      items.push({t:t,sub:((t.fu&&t.fu.reason)||"Follow-up ready"),sig:'<span class="nd-sig fu'+((t.fu&&t.fu.urgency==="high")?" high":"")+'">'+ic("list-checks",12)+'Follow-up</span>'});});
-    (reminders||[]).forEach(function(t){if(seen[t.phone])return;seen[t.phone]=1;
-      items.push({t:t,sub:(t.reminderNote||"Reminder set for today"),sig:'<span class="nd-sig rem">'+ic("bell",12)+'Reminder</span>'});});
-    // A promise whose time has come outranks nothing and gets forgotten by
-    // everything, so it joins the same one list as the rest.
-    prOpen().filter(function(p){return p.due}).forEach(function(p){if(seen[p.phone])return;seen[p.phone]=1;
-      items.push({t:prThreadFor(p),sub:('You said: "'+(p.quote||"")+'"'),sig:'<span class="nd-sig rem">'+ic("bell",12)+'Promised</span>'});});
-    if(!items.length){
-      return '<div class="needs ok"><span class="nd-ok">'+ic("check-circle",26)+'</span>'+
-        '<div><div class="nd-ok-t">You\'re all caught up</div><div class="nd-ok-s">Nobody\'s waiting and nothing\'s due right now. Nice work.</div></div></div>';
-    }
-    var head='<div class="nd-head"><span class="nd-h-l">'+ic("alert",15)+'Needs your attention</span><span class="nd-h-n">'+items.length+'</span></div>';
-    var rows="";
-    items.slice(0,6).forEach(function(it){var t=it.t;
-      rows+='<div class="nd-row" data-open="'+esc(t.phone)+'">'+
-        '<div class="avatar" style="width:40px;height:40px;font-size:14px;background:'+colorFor(t.phone)+'">'+esc(initials(t))+'</div>'+
-        '<div class="nd-b"><div class="nd-nm">'+esc(displayName(t))+'</div><div class="nd-sub">'+esc(it.sub)+'</div></div>'+
-        it.sig+'</div>';
-    });
-    var more=items.length>6?'<div class="home-more" data-more="messages">See all '+items.length+' in Chats</div>':'';
-    return '<div class="needs">'+head+'<div class="nd-list">'+rows+'</div>'+more+'</div>';
+  // Who needs a date out of you. This is the question the whole app gets opened
+  // to answer and it never had a name: somebody you quoted, or who asked when
+  // you're free, and who still isn't on the calendar. Read entirely off the
+  // index row — no thread loads, nothing marked read.
+  function needsADate(t){
+    if(t.archived||t.optedOut||t.heldUntil)return false;
+    if(t.status==="lost"||t.status==="won")return false;
+    if(t.closedReason)return false;
+    // Booked counts right through the end of the job, not up to the minute it starts.
+    if(t.appointmentAt&&t.appointmentAt>Date.now()-6*3600000)return false;
+    return !!(t.dateRequested||t.quoteAt);
   }
+  // The rundown, grouped by what the next move actually is.
+  //
+  // It used to be one flat run of names where "this person texted you four
+  // hours ago" and "the app has a rebook idea about someone from July" looked
+  // identical, and the follow-up engine outnumbers real work about thirty to
+  // one — so the whole block got ignored, which is the worst thing a board like
+  // this can do. Nothing about the follow-up engine changes here (it still
+  // decides its own nudges and still fires its own sends); it just stops being
+  // allowed to crowd out the four things that are genuinely waiting on a human.
+  function homeNeeds(waiting,fu,reminders){
+    var seen={},G=[];
+    var grp=function(key,label,sig){return {key:key,label:label,sig:sig,rows:[]}};
+    var gWait=grp("wait","Waiting on your reply",function(t){
+      return '<span class="nd-sig wait">'+ic("clock",12)+esc(ago(t.lastTs))+'</span>'});
+    var gDate=grp("date","Needs a date from you",function(){
+      return '<span class="nd-sig date">'+ic("calendar-days",12)+'Schedule</span>'});
+    var gProm=grp("promise","You promised",function(){
+      return '<span class="nd-sig rem">'+ic("bell",12)+'Promised</span>'});
+    var gRem=grp("remind","Your reminders",function(){
+      return '<span class="nd-sig rem">'+ic("bell",12)+'Reminder</span>'});
+
+    (waiting||[]).forEach(function(t){if(seen[t.phone])return;seen[t.phone]=1;
+      gWait.rows.push({t:t,sub:(t.lastBody||"Sent you a message")})});
+    // A promise with its time up outranks a quote sitting quietly, so it is
+    // claimed before the date bucket gets a look at the same person.
+    prOpen().filter(function(p){return p.due}).forEach(function(p){if(seen[p.phone])return;seen[p.phone]=1;
+      gProm.rows.push({t:prThreadFor(p),sub:'You said: "'+(p.quote||"")+'"'})});
+    (state.threads||[]).filter(function(t){return !t.archived&&needsADate(t)}).
+      sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)}).
+      forEach(function(t){if(seen[t.phone])return;seen[t.phone]=1;
+        gDate.rows.push({t:t,sub:(t.quoteTotal?("Quoted "+fmtMoney(t.quoteTotal)+" · no date set"):"Asked when you're free")})});
+    (reminders||[]).forEach(function(t){if(seen[t.phone])return;seen[t.phone]=1;
+      gRem.rows.push({t:t,sub:(t.reminderNote||"Reminder set for today")})});
+
+    [gWait,gDate,gProm,gRem].forEach(function(g){if(g.rows.length)G.push(g)});
+    var total=G.reduce(function(n,g){return n+g.rows.length},0);
+    // The engine's own suggestions, counted but never mixed in.
+    var fuN=(fu||[]).filter(function(t){return !seen[t.phone]}).length;
+
+    if(!total){
+      var okBody=fuN?('Nobody is waiting and nothing is due. '+fuN+' follow-up idea'+(fuN===1?"":"s")+' are parked in Chats when you want them.')
+                    :"Nobody's waiting and nothing's due right now. Nice work.";
+      return '<div class="needs ok"><span class="nd-ok">'+ic("check-circle",26)+'</span>'+
+        '<div><div class="nd-ok-t">You\'re all caught up</div><div class="nd-ok-s">'+esc(okBody)+'</div></div></div>';
+    }
+    var h='<div class="needs"><div class="nd-head"><span class="nd-h-l">'+ic("alert",15)+
+      'Needs your attention</span><span class="nd-h-n">'+total+'</span></div>';
+    // Four per group, so no one group can bury another the way follow-ups did.
+    G.forEach(function(g){
+      h+='<div class="nd-grp">'+esc(g.label)+'<span class="nd-gn">'+g.rows.length+'</span></div><div class="nd-list">';
+      g.rows.slice(0,4).forEach(function(it){var t=it.t;
+        h+='<div class="nd-row" data-open="'+esc(t.phone)+'">'+
+          '<div class="avatar" style="width:40px;height:40px;font-size:14px;background:'+colorFor(t.phone)+'">'+esc(initials(t))+'</div>'+
+          '<div class="nd-b"><div class="nd-nm">'+esc(displayName(t))+'</div><div class="nd-sub">'+esc(it.sub)+'</div></div>'+
+          g.sig(t)+'</div>';
+      });
+      h+='</div>';
+      if(g.rows.length>4)h+='<div class="nd-more" data-more="messages">'+(g.rows.length-4)+' more '+esc(g.label.toLowerCase())+'</div>';
+    });
+    // One quiet line, at the bottom, off the critical path. He can still get to
+    // them; they just can't pretend to be the thing that needs him.
+    if(fuN)h+='<div class="nd-fu" data-more="messages">'+ic("list-checks",14)+
+      '<span>'+fuN+' follow-up idea'+(fuN===1?"":"s")+' from the app</span><span class="nd-fu-go">Look</span></div>';
+    return h+'</div>';
+  }
+
   function renderHome(){
     // A search owns the list while it is running, Home tab or not. A dozen
     // async callbacks (money, insights, weather, polling) repaint Home the
@@ -6042,6 +6155,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var dateLine=new Date().toLocaleDateString([],{weekday:"long",month:"long",day:"numeric"});
     var h='<div class="home"><div class="home-head"><div class="hh-greet">'+greeting()+', Mikey</div><div class="hh-sub">'+esc(dateLine)+'</div></div>';
     h+=homeNextWidget();          // where you're going — always first, never hidden
+    h+=homeNotReady();            // ...and anything that would stop you getting there
     h+=homeWindDown(waiting);     // ...and when there is nowhere left to go, that the day is done
     // Who is waiting comes before the ask-anything box, on the evidence: over
     // 90 days Today was opened 101 times and walked straight back out of 68 of
@@ -6065,6 +6179,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       toast(simple?"Showing everything — trim it any time in Customize → Home":"Simple — Home trimmed to the essentials");};
     Array.prototype.forEach.call(box.querySelectorAll("[data-open]"),function(c){c.onclick=function(){openThread(c.getAttribute("data-open"))}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-more]"),function(c){c.onclick=function(){setTab(c.getAttribute("data-more"))}});
+    Array.prototype.forEach.call(box.querySelectorAll("[data-more-day]"),function(c){c.onclick=function(){vibrate(6);openJobs("run")}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-open-money]"),function(c){c.onclick=function(){openMoney()}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-open-analytics]"),function(c){c.onclick=function(){openAnalytics()}});
     wireNext(box);
@@ -6100,6 +6215,67 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     }
     return null;
   }
+  // ===== Readiness — "can I actually do this job the way it's booked?" ======
+  // The server does the judging (jobBlockers in src/index.js); this only knows
+  // how to say it out loud. Both halves of the day he already fetches carry
+  // blockers now, so nothing here costs an extra call — today comes from NEXT,
+  // tomorrow from TOM, and that is deliberately as far ahead as this looks. A
+  // problem four days out is not something he can act on standing in a kitchen
+  // at 7am; a problem tomorrow is the whole point.
+  var RD_IC={no_address:"map-pin",window:"clock",dark:"moon",rain:"droplet",overlap:"calendar-clock",access:"key",unconfirmed:"help"};
+  function rdyJobs(){
+    var out=[];
+    var push=function(day,label){
+      if(!day||!day.jobs)return;
+      day.jobs.forEach(function(j){
+        if(!j.blockers||!j.blockers.length)return;
+        if(j.state==="done"||j.state==="skipped")return;
+        out.push({j:j,dayLabel:label});
+      });
+    };
+    push(NEXT.day,"Today");
+    push(tomorrowDay(),"Tomorrow");
+    // Worst first: a job you can't do outranks a job you should ask about.
+    out.sort(function(a,b){
+      var sa=a.j.ready?1:0,sb=b.j.ready?1:0;
+      return sa-sb||((a.j.at||0)-(b.j.at||0));
+    });
+    return out;
+  }
+  function rdyBlockerRow(b){
+    return '<div class="rd-b '+(b.level==="stop"?"stop":"check")+'">'+ic(RD_IC[b.code]||"alert-triangle",14)+
+      '<span>'+esc(b.text)+(b.fix?'<span class="rd-fix">'+esc(b.fix)+'</span>':'')+'</span></div>';
+  }
+  function homeNotReady(){
+    // Tomorrow costs a second /api/day, and the wind-down card established that
+    // a normal working day must not pay it (test/winddown.ui.test.js). That
+    // rule is kept exactly: while there is still a stop to make, readiness is
+    // about today. The moment the board is finished — which is both when he
+    // actually plans the next day and when the app already fetches it for the
+    // wind-down — tomorrow comes into range for free. On the evening this
+    // feature was written his board was empty, so the job it was built to catch
+    // is caught, and a Tuesday morning still costs one call.
+    // NEXT.day must be IN before this can mean anything: nextStop() is also null
+    // while today is still loading, and asking it too early reads as "the day is
+    // over" and pays for tomorrow on every cold open.
+    if(NEXT.day&&!nextStop())loadTomorrow();
+    var rows=rdyJobs();
+    if(!rows.length)return "";
+    var anyStop=rows.some(function(r){return !r.j.ready});
+    var h='<div class="rdy'+(anyStop?"":" warnonly")+'"><div class="rd-head">'+
+      ic(anyStop?"alert-triangle":"help",15)+
+      (anyStop?'Not ready to roll':'Worth checking before you go')+
+      '<span class="rd-n">'+rows.length+'</span></div>';
+    rows.slice(0,4).forEach(function(r){
+      var j=r.j,t=j.slot?jd12(j.slot):null;
+      h+='<div class="rd-job"'+(j.phone?' data-open="'+esc(j.phone)+'"':'')+'>'+
+        '<div class="rd-when">'+esc(j.name||"Job")+
+        '<span class="rd-t">'+esc(r.dayLabel+(t?" "+t[0]+" "+t[1]:""))+'</span></div>'+
+        j.blockers.map(rdyBlockerRow).join("")+'</div>';
+    });
+    if(rows.length>4)h+='<div class="nd-more" data-more-day="1">See the rest on your day board</div>';
+    return h+'</div>';
+  }
   function homeNextWidget(){
     if(!NEXT.day){loadNext();return ""}
     var j=nextStop();
@@ -6130,6 +6306,12 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(j.water===false)chips.push('<span class="nx-chip warn">'+ic("droplet",12)+'No water</span>');
     if(j.power===false)chips.push('<span class="nx-chip warn">'+ic("zap",12)+'No power</span>');
     if(j.avoid)chips.push('<span class="nx-chip warn">'+ic("alert-triangle",12)+esc(j.avoid)+'</span>');
+    // The stop he is about to drive to is the last honest moment to mention
+    // that it can't be done — after this he is in the van.
+    (j.blockers||[]).forEach(function(b){
+      chips.push('<span class="nx-chip '+(b.level==="stop"?"stop":"warn")+'">'+
+        ic(RD_IC[b.code]||"alert-triangle",12)+esc(b.text)+'</span>');
+    });
     if(chips.length)h+='<div class="nx-chips">'+chips.join("")+'</div>';
     h+='<div class="nx-acts">'+
       (j.phone?'<button data-next-open="'+esc(j.phone)+'">'+ic("message-square",15)+'Text</button>':'')+
@@ -8169,6 +8351,22 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       .then(function(d){done(d&&d.ok?d.recap:"")})
       .catch(function(){done("")});
   }
+  // That person's booked job, if it happens to be today or tomorrow — the two
+  // days Home already has in hand. Peeking must never cost a fetch: the rule
+  // that nothing is loaded and nothing is marked read is the only reason this
+  // card is safe to open twenty times going down a list.
+  function peekJob(phone){
+    var days=[NEXT.day,tomorrowDay()];
+    for(var d=0;d<days.length;d++){
+      var day=days[d];if(!day||!day.jobs)continue;
+      for(var i=0;i<day.jobs.length;i++){
+        var j=day.jobs[i];
+        if(j.phone===phone&&j.state!=="done"&&j.state!=="skipped")
+          return {job:j,label:d?"Tomorrow":"Today"};
+      }
+    }
+    return null;
+  }
   function peekOrder(){
     var o=(state.listOrder||[]).filter(function(p){return !!threadByPhone(p)});
     if(o.indexOf(PEEK.phone)<0&&PEEK.phone)o=[PEEK.phone].concat(o);
@@ -8246,11 +8444,30 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
          '<div class="st">'+esc(fmtTime(t.lastTs)+" · "+ago(t.lastTs)+" ago")+'</div></div>';
     }
 
+    // If they're on the board in the next two days, whatever would stop that job
+    // belongs here — this card is where he decides whether to bother opening it.
+    var pj=peekJob(t.phone);
+    if(pj&&pj.job.blockers&&pj.job.blockers.length){
+      h+='<div class="pk-blk">';
+      pj.job.blockers.forEach(function(b){
+        h+='<div class="pk-bl '+(b.level==="stop"?"stop":"check")+'">'+ic(RD_IC[b.code]||"alert-triangle",14)+
+           '<span><b>'+esc(pj.label+(pj.job.slot?" "+jd12(pj.job.slot).join(" "):""))+'</b> — '+esc(b.text)+
+           (b.fix?'. '+esc(b.fix)+'.':'')+'</span></div>';
+      });
+      h+='</div>';
+    }
+
     // The whole point of a peek is triage WITHOUT reading the thread, because
     // reading it clears unread. Until now the only thing you could do from here
-    // was Open — which clears it. These are the three verdicts that don't.
+    // was Open — which clears it. These are the verdicts that don't.
+    //
+    // Navigate joined them because the answer to "which one was this again?" is
+    // very often "the one I'm supposed to be driving to" — and the address is
+    // already on the card, one line up, with no way to act on it.
+    var navTo=(t.address?[t.address,t.city,t.city?"WA":""].filter(Boolean).join(", "):"");
     h+='<div class="pk-do">'+
        '<button class="pk-d" data-pk="call"'+(t.optedOut?'':'')+'>'+ic("phone",16)+'Call</button>'+
+       '<button class="pk-d" data-pk="nav"'+(navTo?'':' disabled')+'>'+ic("map-pin",16)+'Navigate</button>'+
        '<button class="pk-d" data-pk="remind">'+ic("clock",16)+'Remind me</button>'+
        '<button class="pk-d" data-pk="archive">'+ic(t.archived?"undo":"archive",16)+(t.archived?"Unarchive":"Archive")+'</button>'+
        '</div>';
@@ -8319,6 +8536,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       });
     }
     Array.prototype.forEach.call(card.querySelectorAll("[data-pk]"),function(b){
+      if(b.disabled)return;
       b.onclick=function(){
         var a=b.getAttribute("data-pk");vibrate(6);
         // Step to the next one after a verdict — triage is a pile you work
@@ -8332,6 +8550,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
           post("/api/call",{phone:t.phone}).then(function(d){toast(d&&d.ok?"Calling your phone — answer to connect":"Call failed",{bad:!(d&&d.ok)})});
           return;
         }
+        // Navigating is not a verdict — he is coming back to this pile the
+        // moment he parks, so the card stays exactly where he left it.
+        if(a==="nav"){vibrate(8);jdNavigate(navTo);return}
         if(a==="remind"){jdSheetClose();openReminderModal(t);return}
         if(a==="archive"){doArchiveToggle(t);after();return}
       };

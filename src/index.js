@@ -13019,6 +13019,19 @@ async function saveDay(doc) {
 
 const JOB_STATES = ['queued', 'enroute', 'onsite', 'done', 'skipped'];
 
+// Forecast for one day, or null. Open-Meteo only reaches about a fortnight out
+// and the response is edge-cached for half an hour by fetchWeather, so a board
+// opened ten times in a morning costs one call. Never throws: readiness without
+// a rain check is still readiness, and a weather outage is not his problem.
+async function jrDayWeather(date) {
+  try {
+    const today = jdToday(null);
+    const out = Math.round((Date.parse(date + 'T12:00:00Z') - Date.parse(today + 'T12:00:00Z')) / 86400000);
+    if (!(out >= 0 && out <= 13)) return null;
+    return await fetchWeather(Math.min(16, out + 2));
+  } catch { return null; }
+}
+
 // Merge bookings + appointments + manual jobs into one ordered run sheet.
 async function buildDay(date) {
   const cfg = await loadConfig();
@@ -13080,6 +13093,13 @@ async function buildDay(date) {
   const pos = (id) => { const i = doc.order.indexOf(id); return i < 0 ? 9999 : i; };
   jobs.sort((a, b) => (pos(a.id) - pos(b.id)) || (a.at - b.at) || String(a.slot).localeCompare(String(b.slot)));
 
+  // Readiness runs last, on the board in its FINAL order — "overlaps the stop
+  // before" only means anything once you know which stop that is. Weather is
+  // best-effort on purpose: a forecast that times out must never be the reason
+  // he can't see his own day.
+  for (const j of jobs) j.date = date;
+  jobBlockers(jobs, { now: Date.now(), wx: await jrDayWeather(date) });
+
   const done = jobs.filter((j) => j.state === 'done');
   const money = jobs.reduce((s, j) => s + (j.state === 'done' ? (j.price || 0) : 0), 0);
   const drive = jobs.filter((j) => j.state !== 'skipped').length;
@@ -13090,6 +13110,10 @@ async function buildDay(date) {
       booked: jobs.reduce((s, j) => s + (j.state === 'skipped' ? 0 : (j.price || 0)), 0),
       earned: jdMoney(money), hours: Math.round(jobs.reduce((s, j) => s + (j.durationMin || 0), 0) / 6) / 10,
       stops: drive,
+      // What the day board badges, and what Home reads to decide whether the
+      // "not ready" block is worth showing at all.
+      notReady: jobs.filter((j) => !j.ready).length,
+      checks: jobs.reduce((n, j) => n + (j.blockers || []).filter((x) => x.level === 'check').length, 0),
     },
     tz: cfg.tz,
     services: bcfg ? (bcfg.services || []).map((s) => ({ id: s.id, name: s.name })) : [],
@@ -13122,7 +13146,40 @@ async function attachPlace(jobs) {
       const found = findAddressInThread(t);
       if (found) { j.addressGuess = found.text; j.placeFrom = 'text'; }
     }
+    // The two constraints that only ever live in the conversation: a cutoff the
+    // customer stated in their own words, and "nobody's going to be here." Read
+    // off the thread this loop already has open, so knowing them costs nothing.
+    j.window = findWindowInThread(t);
+    j.access = findAccessNeedInThread(t);
   }
+}
+
+// Newest first, and only what the CUSTOMER said — what Mikey proposes is an
+// offer, and an offer can't be the thing that makes his own booking impossible.
+// The newest stated window wins: people move their own goalposts, and the last
+// word is the one they'll hold you to.
+const JR_SCAN_BACK = 40;
+function findWindowInThread(thread) {
+  const msgs = (thread && thread.messages) || [];
+  for (let i = msgs.length - 1, seen = 0; i >= 0 && seen < JR_SCAN_BACK; i--, seen++) {
+    const m = msgs[i];
+    if (!m || m.dir !== 'in') continue;
+    const w = jrWindow(m.body);
+    if (w) return { start: w.start, end: w.end, quote: w.quote, said: m.ts || 0, from: 'them' };
+  }
+  return null;
+}
+// Access, unlike a cutoff, is worth hearing from either side — he is as likely
+// to be the one who wrote "I'll grab the key from under the mat."
+function findAccessNeedInThread(thread) {
+  const msgs = (thread && thread.messages) || [];
+  for (let i = msgs.length - 1, seen = 0; i >= 0 && seen < JR_SCAN_BACK; i--, seen++) {
+    const m = msgs[i];
+    if (!m || !m.body) continue;
+    const a = jrAccessNeed(m.body);
+    if (a) return { need: true, keys: a.keys, quote: a.quote, said: m.ts || 0 };
+  }
+  return null;
 }
 
 function localTimeHm(ts, tz) {
@@ -14958,6 +15015,241 @@ function jobRainRisk(wx, date, slot, durationMin) {
     }
     return worst;
   } catch { return 0; }
+}
+
+
+// ===========================================================================
+// 10a · READINESS — can this job actually happen the way it's booked?
+// ===========================================================================
+// The dashboard has always been able to tell him WHAT is booked. It could not
+// tell him whether the booking was possible. Both halves of that sat in KV
+// already and were never put next to each other:
+//
+//   - A Tahoe confirmed for 2pm Monday with no address anywhere on the thread.
+//   - An Escalade offered a 1pm start by a customer who had already written
+//     "it's gotta be between 9-1:30, my wife has to get my kids at 2."
+//
+// Nothing was missing from the data. What was missing was a function that reads
+// a job and says "no." So this is that function, and the rules below are the
+// actual ways a mobile detail goes wrong: you don't know where it is, you can't
+// finish before their cutoff, you can't finish before dark, it's going to rain
+// on you, two jobs overlap, or nobody's home and no one wrote down where the
+// key is.
+//
+// Everything here is pure — jobs in, blockers out, no I/O, no KV, no clock
+// except the one passed in. That's what lets test/ready.test.js pin all six of
+// the real cases above without a network or a fixture server.
+
+// Blocker levels. "stop" is don't-leave-the-house; "check" is know-before-you-go.
+const JR_STOP = 'stop';
+const JR_CHECK = 'check';
+
+// How close to sunset counts as cutting it fine. A detail that ends inside this
+// window isn't blocked — the last half hour of light is real working light —
+// but he should know before he commits, not at 6:50 with the wax half on.
+const JR_DUSK_BUFFER_MIN = 30;
+
+// Sunrise/sunset without a network call, so the day board never waits on a
+// forecast to tell him it gets dark. NOAA's low-precision solar position, which
+// lands within ~3 minutes of the published time for this latitude — checked
+// against a week of real values in test/ready.test.js. Three minutes does not
+// matter against a 30-minute buffer, and it costs nothing to compute.
+const JR_LAT = 47.913;
+const JR_LON = -122.098;
+function jrSun(dateStr) {
+  const rad = Math.PI / 180;
+  const midUTC = Date.parse(dateStr + 'T00:00:00Z');
+  if (!isFinite(midUTC)) return null;
+  const n = Math.round(midUTC / 86400000 + 2440587.5 - 2451545.0 + 0.0008);
+  const jStar = n - JR_LON / 360;
+  const M = (357.5291 + 0.98560028 * jStar) % 360;
+  const C = 1.9148 * Math.sin(M * rad) + 0.02 * Math.sin(2 * M * rad) + 0.0003 * Math.sin(3 * M * rad);
+  const lam = (M + C + 180 + 102.9372) % 360;
+  const jTransit = 2451545.0 + jStar + 0.0053 * Math.sin(M * rad) - 0.0069 * Math.sin(2 * lam * rad);
+  const decl = Math.asin(Math.sin(lam * rad) * Math.sin(23.44 * rad));
+  const cosW = (Math.sin(-0.833 * rad) - Math.sin(JR_LAT * rad) * Math.sin(decl)) / (Math.cos(JR_LAT * rad) * Math.cos(decl));
+  if (!(cosW >= -1 && cosW <= 1)) return null;                 // no sunrise/sunset that day
+  const w = Math.acos(cosW) / rad;
+  const localMid = midUTC - bkLaOffsetMin(midUTC) * 60000;     // same offset math as booking
+  const toMin = (J) => Math.round((((J - 2440587.5) * 86400000) - localMid) / 60000);
+  return { rise: toMin(jTransit - w / 360), set: toMin(jTransit + w / 360) };
+}
+
+// ---- reading a time window out of what the customer actually typed ----------
+//
+// A bare hour in a text has no am/pm on it, but a detailing day runs about 8am
+// to 7pm — so 8 through 12 is morning and 1 through 7 is afternoon. That single
+// rule is what turns "between 9-1:30" into 9:00am–1:30pm instead of the
+// nine-hour 09:00–13:30-or-maybe-01:30 mush a literal read produces.
+function jrMinOf(h, min, ampm) {
+  h = +h; min = +(min || 0);
+  if (min > 59) return -1;
+  if (ampm === 'am') { if (h === 12) h = 0; }
+  else if (ampm === 'pm') { if (h !== 12) h += 12; }
+  else if (h >= 1 && h <= 7) h += 12;
+  if (h > 23) return -1;
+  return h * 60 + min;
+}
+const JR_T = '(\\d{1,2})(?::(\\d{2}))?\\s*(am|pm|a\\.m\\.|p\\.m\\.)?';
+const jrAmPm = (s) => { s = String(s || '').replace(/\./g, '').toLowerCase(); return s === 'am' || s === 'pm' ? s : ''; };
+
+// A stated window, from the customer's side of the conversation only. What he
+// tells THEM is a proposal; what they tell HIM is a constraint, and only the
+// constraint can make a booking impossible.
+function jrWindow(text) {
+  const s = String(text || '');
+  if (!s) return null;
+  // "$370", "9/13", "425-503-4731" — none of these are times. Strip the shapes
+  // that reliably aren't before looking for the shapes that are.
+  const t = s.replace(/\$\s*\d[\d,.]*/g, ' ').replace(/\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/g, ' ')
+             .replace(/\b\d{3}[-.\s]\d{3}[-.\s]\d{4}\b/g, ' ').replace(/\b\d{5}(?:-\d{4})?\b/g, ' ');
+  const noon = (m) => /noon|midday/i.test(m) ? 12 * 60 : -1;
+
+  let m = t.match(new RegExp('\\b(?:between\\s+|from\\s+)?' + JR_T + '\\s*(?:-|–|—|to|and|until|untill|til|till|thru|through)\\s*' + JR_T + '\\b', 'i'));
+  if (m) {
+    // An am/pm written on only one end applies to a bare hour on the other when
+    // that's the only reading that runs forwards ("9 to 1:30pm").
+    let a = jrMinOf(m[1], m[2], jrAmPm(m[3])), b = jrMinOf(m[4], m[5], jrAmPm(m[6]));
+    if (a >= 0 && b >= 0 && b <= a && !jrAmPm(m[3]) && jrAmPm(m[6]) === 'pm' && +m[1] >= 8) a = jrMinOf(m[1], m[2], 'am');
+    if (a >= 0 && b > a && (b - a) >= 30 && (b - a) <= 12 * 60) return { start: a, end: b, quote: m[0].trim() };
+  }
+  m = t.match(new RegExp('\\b(?:by|before|no later than|not after|done by|out by|finished? by|gone by|wrapped up by)\\s+(?:' + JR_T + '|(noon|midday))\\b', 'i'));
+  if (m) {
+    const e = m[4] ? noon(m[4]) : jrMinOf(m[1], m[2], jrAmPm(m[3]));
+    if (e > 0) return { start: null, end: e, quote: m[0].trim() };
+  }
+  m = t.match(new RegExp('\\b(?:after|any\\s*time after|not until|not til|not till|starting at|start(?:ing)? after)\\s+(?:' + JR_T + '|(noon|midday))\\b', 'i'));
+  if (m) {
+    const a = m[4] ? noon(m[4]) : jrMinOf(m[1], m[2], jrAmPm(m[3]));
+    if (a > 0) return { start: a, end: null, quote: m[0].trim() };
+  }
+  return null;
+}
+
+// "Nobody's going to be there." Worth catching because it turns a missing gate
+// note from a nice-to-have into the difference between doing the job and
+// standing in a driveway — see Martin, whose keys his wife was leaving out
+// somewhere nobody ever wrote down.
+function jrAccessNeed(text) {
+  const s = String(text || '');
+  if (!s) return null;
+  const away = s.match(/\b(?:i(?:'| a)?ll be (?:gone|out|away|at work|outta town|out of town)|i am (?:gone|away|out of town)|i'?m (?:gone|away|out of town|at a conference)|won'?t be (?:home|here|there|around)|will not be (?:home|here|there)|not (?:going to |gonna )?be (?:home|here|there)|nobody(?:'s| is| will be)? (?:home|here|there)|no one(?:'s| is| will be)? (?:home|here|there)|at a conference|since i will be gone)\b/i);
+  const keys = s.match(/\b(?:hide?(?:den|ing)? (?:the |my )?keys?|keys? (?:will be |are |somewhere )?hidden|leave (?:the |my )?keys?|keys? under|under the mat|spare keys?|leave (?:it|the (?:car|truck)) unlocked|keys? in it)\b/i);
+  if (!away && !keys) return null;
+  return { quote: (away || keys)[0].trim(), keys: !!keys };
+}
+
+// ---- the checks -----------------------------------------------------------
+//
+// Ordered by what it costs to find out late. Not knowing where you're going
+// wastes the whole slot; rain costs you the job twice. `jobs` is the day's run
+// sheet in order, so overlap can be judged without a second pass.
+function jobBlockers(jobs, ctx) {
+  const now = (ctx && ctx.now) || Date.now();
+  const wx = ctx && ctx.wx;
+  const list = Array.isArray(jobs) ? jobs : [];
+  const out = [];
+
+  for (let i = 0; i < list.length; i++) {
+    const j = list[i] || {};
+    const b = [];
+    const add = (code, level, text, fix) => b.push({ code, level, text, fix: fix || '' });
+    const done = j.state === 'done' || j.state === 'skipped';
+    const startMin = jrSlotMin(j.slot);
+    const dur = Math.max(15, Number(j.durationMin) || 150);
+    const endMin = startMin >= 0 ? startMin + dur : -1;
+    const hoursOut = j.at ? (j.at - now) / 3600000 : 999;
+    const soon = hoursOut <= 24 && hoursOut > -6;
+
+    if (done) { j.blockers = []; j.ready = true; out.push(j); continue; }
+
+    // 1 · Where is it. The one that wastes the entire slot.
+    if (!j.address && !j.addressGuess) {
+      add('no_address', soon ? JR_STOP : JR_CHECK,
+        soon ? 'No address, and this is ' + (hoursOut <= 0 ? 'now' : jrIn(hoursOut)) : 'No address yet',
+        'Ask them where to go');
+    }
+
+    // 2 · Their cutoff. They told you in their own words; the slot ignores it.
+    const w = j.window;
+    if (w && startMin >= 0) {
+      if (w.end != null && endMin > w.end) {
+        add('window', JR_STOP,
+          'They need you done by ' + jrHm(w.end) + ' — this runs to ' + jrHm(endMin),
+          'Start by ' + jrHm(Math.max(0, w.end - dur)));
+      } else if (w.start != null && startMin < w.start) {
+        add('window', JR_STOP,
+          'They said not before ' + jrHm(w.start) + ' — this starts ' + jrHm(startMin),
+          'Move it to ' + jrHm(w.start));
+      }
+    }
+
+    // 3 · Daylight. You cannot wax what you cannot see.
+    const sun = j.date ? jrSun(j.date) : null;
+    if (sun && endMin > 0) {
+      if (endMin > sun.set) {
+        add('dark', JR_STOP, 'Finishes ' + jrHm(endMin) + ', dark at ' + jrHm(sun.set),
+          'Start by ' + jrHm(Math.max(0, sun.set - dur)));
+      } else if (endMin > sun.set - JR_DUSK_BUFFER_MIN) {
+        add('dark', JR_CHECK, 'Finishes ' + jrHm(endMin) + ' with ' + (sun.set - endMin) + ' min of light left', '');
+      }
+      if (startMin >= 0 && startMin < sun.rise) {
+        add('dark', JR_CHECK, 'Starts ' + jrHm(startMin) + ', sunrise is ' + jrHm(sun.rise), '');
+      }
+    }
+
+    // 4 · Rain over the hours the job actually occupies — the same read the
+    //     rain check already makes, said here so it lands next to the rest.
+    if (wx && j.date && startMin >= 0) {
+      const risk = jobRainRisk(wx, j.date, j.slot, dur);
+      if (risk >= 70) add('rain', JR_STOP, risk + '% rain over these hours', 'Offer them another day');
+      else if (risk >= WX_RISK_AT) add('rain', JR_CHECK, risk + '% rain over these hours', '');
+    }
+
+    // 5 · Two jobs in the same hours. Only flagged when the blocks genuinely
+    //     collide — a guess at drive time between two addresses with no
+    //     coordinates would cry wolf, and this board already has enough of that.
+    const prev = list[i - 1];
+    if (prev && prev.state !== 'skipped' && prev.at && j.at) {
+      const pEnd = prev.at + (Math.max(15, Number(prev.durationMin) || 150)) * 60000;
+      if (pEnd > j.at) {
+        add('overlap', JR_STOP,
+          'Overlaps ' + (jdFirst(prev.name) || 'the stop before') + ' by ' + Math.round((pEnd - j.at) / 60000) + ' min',
+          'Move one of them');
+      }
+    }
+
+    // 6 · Nobody home. Only a problem when no one wrote down how to get in.
+    if (j.access && j.access.need && !j.gate && !j.parking && !j.prefs) {
+      add('access', JR_CHECK, 'Nobody home and no key spot written down', 'Ask where the key is');
+    }
+
+    // 7 · Still a maybe. A pending booking inside a day is a job that may not exist.
+    if (j.pending && soon) add('unconfirmed', JR_CHECK, "They haven't confirmed yet", 'Confirm it');
+
+    b.sort((x, y) => (x.level === JR_STOP ? 0 : 1) - (y.level === JR_STOP ? 0 : 1));
+    j.blockers = b;
+    j.ready = !b.some((x) => x.level === JR_STOP);
+    out.push(j);
+  }
+  return out;
+}
+
+function jrSlotMin(slot) {
+  const m = String(slot || '').match(/^(\d{1,2}):(\d{2})$/);
+  return m ? (+m[1]) * 60 + (+m[2]) : -1;
+}
+function jrHm(min) {
+  if (!(min >= 0)) return '';
+  let h = Math.floor(min / 60) % 24, mm = min % 60;
+  const ap = h >= 12 ? 'pm' : 'am';
+  h = h % 12; if (h === 0) h = 12;
+  return h + (mm ? ':' + String(mm).padStart(2, '0') : '') + ap;
+}
+function jrIn(hours) {
+  if (hours < 1) return 'in ' + Math.max(1, Math.round(hours * 60)) + ' min';
+  if (hours < 24) return 'in ' + Math.round(hours) + ' hours';
+  return 'in ' + Math.round(hours / 24) + ' days';
 }
 
 // ===========================================================================
