@@ -58,6 +58,10 @@ await page.route('**/*', async (route) => {
   if (path === '/api/money') return json({ ok: true, month: '2026-09', today: '2026-09-04', entries: [], nudges: [], owed: [], summary: {}, config: {} });
   if (path === '/api/day') return json({ ok: true, date: '2026-09-04', jobs: [], manual: [], order: [], summary: { total: 0, done: 0, remaining: 0, booked: 0, earned: 0, hours: 0 } });
   if (path === '/api/detections') return json({ ok: true, detections: [], config: { enabled: true } });
+  // A send inside quiet hours now stops to ask which way you want it to go, so
+  // this suite pins a config whose quiet hours never fire — it is about the
+  // ten-second hold, not about what time the runner happens to start.
+  if (path === '/api/config') return json({ ok: true, config: { quietStart: 0, quietEnd: 0 } });
   if (path === '/api/version') return json({ ok: true, build: 'test' });
   if (path.startsWith('/api/')) return json({ ok: true });
   return route.fulfill({ status: 200, contentType: 'text/plain', body: '' });

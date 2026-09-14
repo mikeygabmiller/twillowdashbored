@@ -966,6 +966,12 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .logjob-banner .lj-txt b{color:#e4f7ea;font-weight:650}
   .logjob-banner .lj-go{background:#1c6b3a;border:1px solid #2b8f50;color:#eafff1;border-radius:8px;
     padding:6px 11px;font-size:11.5px;font-weight:700;flex:none}
+  /* Three moves and a dismiss — they wrap onto a second line on a narrow phone
+     rather than squeezing the sentence that says which job this is. */
+  .logjob-banner .lj-acts{flex:none;display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+  .logjob-banner .lj-go.ghost{background:transparent;color:#bfe8cd}
+  .logjob-banner .lj-x{background:none;border:none;color:#7fae90;display:flex;padding:4px;flex:none}
+  @media (max-width:380px){.logjob-banner{flex-wrap:wrap}.logjob-banner .lj-acts{width:100%}}
   /* They texted STOP. Say so up front instead of letting the send bounce. */
   .optout-banner{margin:8px 14px 0;padding:10px 13px;background:#241417;border:1px solid #4d2229;border-radius:13px;
     display:flex;align-items:center;gap:10px;color:#f0c9ce;font-size:13px}
@@ -1429,6 +1435,57 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   /* The name was worked out from what the customer said, not typed by Mikey. It
      says so, right under the name, with the one-tap way to keep it — a guess
      that can't be confirmed or corrected in place is a guess nobody trusts. */
+  /* Select mode: the list becomes a pile you can act on ten rows at a time. */
+  .selbar{position:sticky;top:0;z-index:6;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    padding:10px 13px;background:var(--panel2);border-bottom:1px solid var(--line)}
+  .selbar .sb-n{flex:1;min-width:90px;font-size:12.5px;font-weight:700;color:var(--text)}
+  .selbar .sb-acts{display:flex;gap:6px;flex-wrap:wrap}
+  .selbar button{background:var(--panel3);border:1px solid var(--line);color:var(--text);
+    border-radius:999px;padding:6px 11px;font-size:12px;font-weight:600}
+  .selbar button[disabled]{opacity:.4}
+  .selbar .sb-done{background:var(--accent);border-color:var(--accent);color:#fff}
+  .conv.picking{padding-left:6px}
+  .conv .sel-dot{flex:none;width:22px;height:22px;border-radius:50%;border:2px solid var(--line);
+    display:flex;align-items:center;justify-content:center;color:#fff;margin-right:2px}
+  .conv.picked{background:var(--accent-soft)}
+  .conv.picked .sel-dot{background:var(--accent);border-color:var(--accent)}
+  /* Quiet hours: the hour is a decision, not a warning. */
+  .qh-msg{margin:2px 0 13px;padding:11px 12px;border-radius:11px;background:var(--panel2);
+    border:1px dashed var(--line);font-size:13.5px;line-height:1.45;max-height:120px;overflow:auto}
+  #qhCard .jd-btn{width:100%;margin-bottom:8px}
+  #qhCard .jd-btn.ghost{background:transparent;border-color:transparent;color:var(--muted)}
+  /* Reply straight from the peek — the verdict that used to cost you the thread. */
+  .pk-reply{display:flex;align-items:flex-end;gap:8px;margin-top:10px}
+  .pk-reply textarea{flex:1;min-width:0;resize:none;background:var(--panel2);border:1px solid var(--line);
+    color:var(--text);border-radius:14px;padding:10px 12px;font:inherit;font-size:14px;line-height:1.4;max-height:96px}
+  .pk-reply textarea:focus{outline:none;border-color:var(--accent)}
+  .pk-send{flex:none;width:40px;height:40px;border-radius:50%;border:none;background:var(--accent);color:#fff;
+    display:flex;align-items:center;justify-content:center;cursor:pointer}
+  .pk-send:active{transform:scale(.94)}
+  .pk-qr{display:flex;gap:6px;overflow-x:auto;margin-top:8px;scrollbar-width:none}
+  .pk-qr::-webkit-scrollbar{display:none}
+  .pk-qrb{flex:none;background:var(--panel2);border:1px solid var(--line);color:var(--muted);
+    border-radius:999px;padding:6px 11px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
+  /* "What's open" — the calendar, answered inside the conversation. */
+  .op-hd{margin-bottom:12px}
+  .op-hd b{display:block;font-size:17px;font-weight:700}
+  .op-hd span{display:block;color:var(--muted);font-size:12px;margin-top:3px;line-height:1.45}
+  .op-empty{text-align:center;color:var(--muted);font-size:13px;padding:22px 10px;line-height:1.5}
+  .op-empty b{display:block;color:var(--text);font-size:14px;margin-bottom:4px}
+  .op-day{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--line2)}
+  .op-dn{flex:none;width:104px;font-size:12.5px;font-weight:600;color:var(--muted)}
+  .op-slots{flex:1;display:flex;flex-wrap:wrap;gap:7px;min-width:0}
+  .op-slot{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:999px;
+    padding:7px 13px;font-size:13px;font-weight:600;cursor:pointer}
+  .op-slot.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .op-prev{margin:12px 0 10px;padding:11px 12px;border-radius:11px;background:var(--panel2);
+    border:1px dashed var(--line);font-size:13.5px;line-height:1.5}
+  .op-prev.empty{color:var(--muted2);font-style:italic}
+  .op-go{width:100%}
+  .op-go[disabled]{opacity:.45;pointer-events:none}
+  /* the calendar chip that shows up in the quick-reply row when they ask */
+  .qreply .qr-open{display:inline-flex;align-items:center;gap:6px;background:var(--accent-soft);
+    border-color:var(--accent);color:var(--accent-text);font-weight:700}
   .nameauto{display:flex;align-items:center;gap:7px;justify-content:center;flex-wrap:wrap;font-size:12px;color:var(--muted2);margin-top:3px}
   .nameauto .na-ok{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:999px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer}
   .nameauto .na-ok:active{transform:scale(.96)}
@@ -4273,7 +4330,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-14·auto-name";
+  var APP_BUILD="2026-09-14·five-more";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -6781,6 +6838,74 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   }
 
   // ---- email removed — texting-first dashboard (backend /api/emails left dormant) ----
+  // ---- picking several at once -------------------------------------------
+  // The pile is cleared one row at a time — swipe, swipe, swipe — and ten
+  // "thanks!" texts that need nothing are ten separate moves. Select mode makes
+  // them one. Everything it does is reversible (archive hands back an Undo,
+  // read is one tap back), which is why it is allowed to act on ten rows at once
+  // and status changes are not.
+  var SEL={on:false,set:{}};
+  function selCount(){return Object.keys(SEL.set).length}
+  function selExit(){SEL.on=false;SEL.set={};renderMain()}
+  function selToggle(phone){
+    if(SEL.set[phone])delete SEL.set[phone]; else SEL.set[phone]=1;
+    vibrate(5);renderMain();
+  }
+  function selStart(phone){
+    SEL.on=true;SEL.set={};
+    if(phone)SEL.set[phone]=1;
+    renderMain();
+  }
+  function selBar(){
+    var n=selCount();
+    return '<div class="selbar" id="selBar">'+
+      '<span class="sb-n">'+(n?n+" selected":"Tap the ones you want")+'</span>'+
+      '<span class="sb-acts">'+
+        '<button data-sb="all">'+esc(selAllPicked()?"None":"All")+'</button>'+
+        '<button data-sb="read"'+(n?"":" disabled")+'>Mark read</button>'+
+        '<button data-sb="archive"'+(n?"":" disabled")+'>Archive</button>'+
+        '<button class="sb-done" data-sb="done">Done</button>'+
+      '</span></div>';
+  }
+  function selAllPicked(){
+    var o=state.listOrder||[];
+    return o.length>0&&o.every(function(p){return !!SEL.set[p]});
+  }
+  function wireSelBar(){
+    var bar=el("selBar");if(!bar)return;
+    Array.prototype.forEach.call(bar.querySelectorAll("[data-sb]"),function(b){
+      b.onclick=function(){
+        var a=b.getAttribute("data-sb");vibrate(6);
+        if(a==="done")return selExit();
+        if(a==="all"){
+          var all=selAllPicked();SEL.set={};
+          if(!all)(state.listOrder||[]).forEach(function(p){SEL.set[p]=1});
+          return renderMain();
+        }
+        var phones=Object.keys(SEL.set);
+        if(!phones.length)return;
+        if(a==="read"){
+          Promise.all(phones.map(function(p){return post("/api/read",{phone:p,read:true})}))
+            .then(function(){toast(phones.length+" marked read");selExit();refreshThreads()});
+          return;
+        }
+        if(a==="archive"){
+          Promise.all(phones.map(function(p){return post("/api/meta",{phone:p,archived:true})}))
+            .then(function(){
+              // Ten rows off the board in one tap is exactly when you want the
+              // way back — same undo a single swipe-archive already gives you.
+              toast(phones.length+" archived",{undo:function(){
+                Promise.all(phones.map(function(p){return post("/api/meta",{phone:p,archived:false})}))
+                  .then(function(){toast("Back on the board");refreshThreads()});
+              }});
+              selExit();refreshThreads();
+            });
+          return;
+        }
+      };
+    });
+  }
+
   function convNode(t){
     var wrap=document.createElement("div");wrap.className="conv-wrap";
     wrap.innerHTML='<div class="swipe-bg">'+(t.archived?ic("undo",16)+' Unarchive':ic("check",16)+' Archive')+'</div>';
@@ -6808,9 +6933,19 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       '</div>'+
       ((rowHas("unread")&&t.unread>0)?'<span class="unread-pill">'+t.unread+'</span>':'')+
       '<span class="conv-hint">'+ic("chevron-left",13)+'</span>';
-    d.onclick=function(){if(ctxJustOpened){ctxJustOpened=false;return}openThread(t.phone)};
-    attachSwipe(d,t,wrap);
-    attachContextMenu(d,t);
+    if(SEL.on){
+      // A row in select mode is a checkbox, nothing else: no opening (which
+      // would clear unread), no swipe (which fights the tap it now needs).
+      d.className+=" picking"+(SEL.set[t.phone]?" picked":"");
+      var dot=document.createElement("span");
+      dot.className="sel-dot";dot.innerHTML=SEL.set[t.phone]?ic("check",13):"";
+      d.insertBefore(dot,d.firstChild);
+      d.onclick=function(){selToggle(t.phone)};
+    } else {
+      d.onclick=function(){if(ctxJustOpened){ctxJustOpened=false;return}openThread(t.phone)};
+      attachSwipe(d,t,wrap);
+      attachContextMenu(d,t);
+    }
     wrap.appendChild(d);
     return wrap;
   }
@@ -6842,6 +6977,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       '<div class="ctx-item" data-a="peek">'+ic("info",17)+'Quick summary</div>'+
       '<div class="ctx-item" data-a="pin">'+ic("pin",17)+(t.pinned?"Unpin":"Pin to top")+'</div>'+
       '<div class="ctx-item" data-a="read">'+ic("check-circle",17)+(t.unread>0?"Mark as read":"Mark as unread")+'</div>'+
+      '<div class="ctx-item" data-a="select">'+ic("list-checks",17)+'Select several\u2026</div>'+
       '<div class="ctx-item" data-a="remind">'+ic("clock",17)+(t.reminderAt?"Edit follow-up reminder…":"Remind me to follow up…")+'</div>'+
       '<div class="ctx-sep"></div><div class="ctx-lbl">Lead status</div>'+
       '<div class="ctx-status">'+STAT.map(function(s){return '<button class="ctx-chip'+(t.status===s[0]?" on":"")+'" data-st="'+s[0]+'"><span class="d" style="background:'+s[2]+'"></span>'+s[1]+'</button>'}).join("")+'</div>'+
@@ -6916,6 +7052,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(a==="open")return openThread(t.phone);
     if(a==="peek")return peekOpen(t.phone);   // the swipe, for anyone not on a touchscreen
     if(a==="pin")return metaFor(t,{pinned:!t.pinned},t.pinned?"Unpinned":"Pinned to top");
+    if(a==="select")return selStart(t.phone);
     if(a==="read")return post("/api/read",{phone:t.phone,read:t.unread>0}).then(function(d){if(d&&d.ok)refreshThreads()});
     if(a==="archive")return doArchiveToggle(t);
     if(a==="call"){if(confirm("Call "+displayName(t)+"?\nYour cell rings first — answer it to connect."))post("/api/call",{phone:t.phone}).then(function(d){toast(d&&d.ok?"Calling your phone — answer to connect":"Call failed",{bad:!(d&&d.ok)})});return}
@@ -6936,7 +7073,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // Longest wait first — the operating rule is that every hour cold costs a booking.
     if(state.filter==="waiting")items=items.slice().sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
 
-    var head=(mode==="messages"&&!state.search)?summaryBar():"";
+    // Select mode belongs to the chat list, and to a list with something in it —
+    // anywhere else, drop it rather than leave him in a mode with no way out.
+    if(SEL.on&&(mode!=="messages"||!items.length)){SEL.on=false;SEL.set={}}
+    var head=SEL.on?selBar():((mode==="messages"&&!state.search)?summaryBar():"");
     if(!items.length){
       var msg={messages:["No conversations","message-square","New texts from customers show up here."],
         scheduled:["Nothing scheduled","calendar-clock","Schedule a send from any conversation and it lands here."],
@@ -6952,8 +7092,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     items.forEach(function(t){box.appendChild(convNode(t))});
     // Remembered so the peek can step through the list you're actually looking
     // at — filtered and sorted the same way — instead of some other order.
+    // Select mode's "All" means all of THESE, for the same reason.
     state.listOrder=items.map(function(t){return t.phone});
-    wireSummary();
+    if(SEL.on)wireSelBar(); else wireSummary();
   }
 
   // ---- compact "Today" summary (top of messages list, mobile-friendly) ----
@@ -6972,6 +7113,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
           (unread?'<span class="sum-pill tapme" data-sum="is:unread">'+unread+' unread</span>':'')+
           (sched?'<span class="sum-pill tapme" data-sum="is:scheduled">'+sched+' scheduled</span>':'')+
           (drafted?'<span class="sum-pill tapme" data-sum="is:draft">'+drafted+' draft'+(drafted>1?"s":"")+'</span>':'')+
+          '<span class="sum-pill tapme" data-sum="select">Select</span>'+
         '</span>'+
         '<span class="sum-tog">'+(collapsed?ic("chevron-right",15):ic("chevron-down",15))+'</span>'+
       '</div>';
@@ -7001,6 +7143,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       pill.onclick=function(e){
         e.stopPropagation();vibrate(6);
         var q=pill.getAttribute("data-sum");
+        if(q==="select"){selStart("");return}
         if(q==="waiting"){state.filter=state.filter==="waiting"?"all":"waiting";state.search="";el("search").value="";setTab("messages");return}
         var si=el("search");
         si.value=(si.value.trim()===q)?"":q;state.search=si.value;
@@ -8046,6 +8189,20 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       card.addEventListener("touchend",function(){if(dy>90)jdSheetClose();y0=null;dy=0});
     }
   }
+  // Send what's in the peek's box, then step to the next one — a reply is a
+  // verdict like any other, and triage is a pile you work through.
+  function pkSendNow(){
+    var box=el("pkBox");if(!box)return;
+    var t=threadByPhone(PEEK.phone)||{phone:PEEK.phone};
+    var body=box.value.trim();
+    if(!body)return;
+    if(!queueSendTo(PEEK.phone,body,displayName(t)))return;
+    box.value="";delete drafts[PEEK.phone];saveDrafts();
+    var ord=peekOrder(),i=ord.indexOf(PEEK.phone);
+    if(i>=0&&i<ord.length-1){PEEK.phone=ord[i+1];peekRender()}
+    else jdSheetClose();
+  }
+
   function peekRender(){
     var card=el("pkCard");if(!card)return;
     var t=threadByPhone(PEEK.phone)||{phone:PEEK.phone};
@@ -8097,6 +8254,28 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
        '<button class="pk-d" data-pk="remind">'+ic("clock",16)+'Remind me</button>'+
        '<button class="pk-d" data-pk="archive">'+ic(t.archived?"undo":"archive",16)+(t.archived?"Unarchive":"Archive")+'</button>'+
        '</div>';
+
+    // The verdict he actually reaches for most is "say something back", and
+    // until now that one cost him the thread — which clears unread, loses his
+    // place in the list, and is the whole thing a peek exists to avoid. So the
+    // box comes to the card. Opted-out numbers get no box at all: there is
+    // nothing to type into it that would ever be delivered.
+    if(!t.optedOut){
+      var dft=drafts[t.phone]||"";
+      h+='<div class="pk-reply">'+
+         '<textarea id="pkBox" rows="1" placeholder="Reply to '+esc(firstNameOf(t))+'\u2026">'+esc(dft)+'</textarea>'+
+         '<button class="pk-send" id="pkSend" aria-label="Send">'+
+         '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M3.4 20.4 21 12 3.4 3.6 3.39 10.1 15 12l-11.61 1.9z"/></svg></button>'+
+         '</div>';
+      // His own saved replies, right under the box — most of what a peek reply
+      // needs to say is already one of them.
+      var qt=(state.templates||[]).slice(0,3);
+      if(qt.length){
+        h+='<div class="pk-qr">';
+        qt.forEach(function(tp,i){h+='<button class="pk-qrb" data-pkq="'+i+'">'+esc(tp[0])+'</button>'});
+        h+='</div>';
+      }
+    }
     h+='<div class="pk-acts">'+
        '<button class="pk-step" id="pkPrev"'+(at>0?"":" disabled")+' aria-label="Previous conversation">'+ic("chevron-left",20)+'</button>'+
        '<button class="jd-btn pri pk-open" id="pkOpen">'+ic("message-square",17)+' Open</button>'+
@@ -8107,6 +8286,38 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     card.innerHTML=h;hydrateIcons(card);
     if(!rec&&!asked&&t.lastBody)recapFetch(t.phone,rk);
     card.querySelector("#pkOpen").onclick=function(){jdSheetClose();setTab("messages");openThread(PEEK.phone)};
+
+    var box=card.querySelector("#pkBox");
+    if(box){
+      // Whatever is half-typed here IS the conversation's draft — the same one
+      // the row's "draft" chip counts and the composer picks up. Peeking at
+      // three people and typing a line into each has to leave three drafts, not
+      // three lost sentences.
+      var stash=function(){
+        var v=box.value;
+        if(v.trim())drafts[PEEK.phone]=v; else delete drafts[PEEK.phone];
+        saveDrafts();
+      };
+      box.addEventListener("input",function(){
+        box.style.height="auto";box.style.height=Math.min(96,box.scrollHeight)+"px";stash();
+      });
+      // Enter sends on a keyboard; on a phone the button is the only way, which
+      // is the same rule the composer follows.
+      box.addEventListener("keydown",function(e){
+        if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();pkSendNow()}
+      });
+      card.querySelector("#pkSend").onclick=pkSendNow;
+      Array.prototype.forEach.call(card.querySelectorAll("[data-pkq]"),function(b){
+        b.onclick=function(){
+          var tp=(state.templates||[])[+b.getAttribute("data-pkq")];if(!tp)return;
+          // expandVars reads the OPEN thread for {vehicle} and friends, and the
+          // peek deliberately hasn't loaded one — so the raw text goes in and he
+          // finishes the sentence himself rather than reading "your vehicle".
+          box.value=(box.value.trim()?box.value.replace(/\s*$/,"")+" ":"")+tp[1];
+          box.focus();box.dispatchEvent(new Event("input"));
+        };
+      });
+    }
     Array.prototype.forEach.call(card.querySelectorAll("[data-pk]"),function(b){
       b.onclick=function(){
         var a=b.getAttribute("data-pk");vibrate(6);
@@ -8878,24 +9089,54 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // Your own operating rules say a won job with nothing in the money tracker is
     // lost profit visibility. Make it a button here rather than a scolding in the
     // AI summary later.
+    // The end of a job is four moves — log the money, mark it Won, ask for the
+    // review, and get out — and the app only ever nagged about the FIRST one,
+    // and only after he'd already done the second. So the trigger moved to the
+    // thing that actually happened: the appointment time passed. One banner, in
+    // the conversation, with the moves on it.
+    //
+    // The review ask is written into the box, never sent. Nothing in this app
+    // texts a customer because a clock ticked past an appointment.
     var lj=el("logJobBanner");
-    if(t.status==="won"){
+    var appt=t.appointmentAt||0,now=Date.now();
+    // A month is the outer edge of "recent enough to still be wrapping up" —
+    // past that it's history, and a banner about it is just noise on the thread.
+    var justDone=appt&&appt<now&&(now-appt)<30*86400000;
+    var wrapKey=t.phone+":"+appt;
+    if((t.status==="won"||justDone)&&wrapDismissed()[wrapKey]!==1){
       var mc=dtMoneyCache[t.phone];
-      if(mc===undefined){
-        dtMoneyCache[t.phone]=null; // in flight — don't ask twice
-        api("/api/money/by-phone?phone="+encodeURIComponent(t.phone)).then(function(d){
-          dtMoneyCache[t.phone]=(d&&d.ok)?d:{jobs:0,total:0,entries:[]};
-          if(state.thread&&state.thread.phone===t.phone)renderThread();
-        }).catch(function(){dtMoneyCache[t.phone]={jobs:0,total:0,entries:[]}});
-      }
+      if(mc===undefined)fetchMoneyFor(t.phone);
       if(mc&&!mc.jobs){
+        var won=t.status==="won";
         lj.style.display="flex";
-        lj.innerHTML='<span class="lj-ic">'+ic("dollar",15)+'</span><div class="lj-txt"><b>Won — but nothing logged</b>'
-          +'<span class="hb-when">This job isn\'t in your money tracker yet.</span></div>'
-          +'<button class="lj-go">Log it</button>';
-        lj.querySelector(".lj-go").onclick=function(){
-          openMoney();setTimeout(function(){openMoSheet("job",{phone:t.phone,name:displayName(t)},null)},120);
-        };
+        lj.innerHTML='<span class="lj-ic">'+ic(won?"dollar":"check-circle",15)+'</span>'
+          +'<div class="lj-txt"><b>'+(won?"Won — but nothing logged":esc(wrapWhen(appt))+" job is done")+'</b>'
+          +'<span class="hb-when">'+(won?"This job isn't in your money tracker yet."
+             :"Log what you made, mark it won, and ask for the review while it's fresh.")+'</span></div>'
+          +'<div class="lj-acts">'
+          +'<button class="lj-go" data-wrap="money">'+(won?"Log it":"Log $")+'</button>'
+          +(won?"":'<button class="lj-go ghost" data-wrap="won">Won</button>')
+          +'<button class="lj-go ghost" data-wrap="review">Review</button>'
+          +'<button class="lj-x" data-wrap="skip" aria-label="Not this one">'+ic("x",14)+'</button>'
+          +'</div>';
+        hydrateIcons(lj);
+        Array.prototype.forEach.call(lj.querySelectorAll("[data-wrap]"),function(b){
+          b.onclick=function(){
+            var a=b.getAttribute("data-wrap");vibrate(6);
+            if(a==="money"){openMoney();setTimeout(function(){openMoSheet("job",{phone:t.phone,name:displayName(t)},null)},120);return}
+            if(a==="won"){saveMeta({status:"won"});return}
+            if(a==="review"){
+              var c=state.config||{};
+              if(!c.reviewUrl){toast("Add your review link first — More → Settings",{bad:true});return}
+              var inp=el("msgInput");
+              inp.value=(inp.value.trim()?inp.value.replace(/\s*$/,"")+" ":"")+expandVars(WRAP_REVIEW);
+              inp.focus();autoGrow();updateCount();stashDraft(state.phone);
+              toast("Written out — send it when you're happy with it");
+              return;
+            }
+            if(a==="skip"){var m=wrapDismissed();m[wrapKey]=1;try{localStorage.setItem(WRAP_KEY,JSON.stringify(m))}catch(e){}renderThread()}
+          };
+        });
       } else lj.style.display="none";
     } else lj.style.display="none";
 
@@ -9670,6 +9911,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var sheet=el("toolsSheet");if(!sheet)return;
     var rows=[
       {act:"write",  ic:"pencil",         t:"Write a reply for me", s:"Tell it what to say — it writes it in your voice", accent:true},
+      {act:"open",   ic:"calendar-days",  t:"What's open?", s:"Your next real openings \u2014 tap the times and they go in the box", accent:true},
       {act:"reqdate",ic:"calendar-days",  t:"Request a date from Mikey", s:"Emails Mikey for his next open date", accent:true},
       {act:"pay",    ic:"receipt",         t:"Send a payment request", s:"Texts a link with the breakdown and every way to pay", accent:true},
       {act:"plan",   ic:"refresh-cw",      t:"Put them on a plan", s:"Every few weeks, on a rhythm — you get reminded, they get asked", accent:true},
@@ -9717,6 +9959,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         sheet.style.display="none";
         var map={write:"writeBtn",draft:"draftBtn",polish:"polishBtn",tpl:"tplBtn",sched:"schedBtn",rem:"remBtn",mic:"micBtn"};
         if(act==="photo"){photoRecentSheet();return}
+        if(act==="open"){openingsOpen();return}
         if(act==="reqdate"){requestDate();return}
         if(act==="plan"){planSheet();return}
         if(act==="link"){custLinkSheet();return}
@@ -10820,6 +11063,24 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     }
   }
 
+  // Send to a conversation that is not the one on screen — the peek uses this.
+  // Deliberately the same machinery as the composer: the ten-second hold with
+  // Undo, the duplicate and quiet-hours guards, the failure note that surfaces
+  // on the board. A text sent from a card is still a text to a real person.
+  function queueSendTo(phone,body,who){
+    body=String(body||"").trim();
+    if(!phone||!body)return false;
+    if(!sendGuardsPass(body,phone,who))return false;
+    var payload={phone:phone,body:body};
+    if(teamOn()&&meName())payload.by=meName();
+    var tempId="tmp"+Date.now();
+    noteSent(phone,body);
+    pendingSends[tempId]={payload:payload,forPhone:phone,body:body,atts:[],
+      timer:setTimeout(function(){dispatchSend(tempId)},UNDO_MS)};
+    toast("Sending\u2026",{undo:function(){cancelSend(tempId)},now:function(){dispatchSend(tempId)},ms:UNDO_MS});
+    return true;
+  }
+
   function sendMessage(){
     var inp=el("msgInput");var body=inp.value.trim();if(!state.phone)return;
     var atts=photoItems().slice();
@@ -11001,8 +11262,20 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     }).sort(function(a,b){return b.score-a.score||a.idx-b.idx});
     var pick=scored.filter(function(x){return x.score>0}).slice(0,3);
     if(!pick.length)pick=scored.slice(0,3);           // nothing matched — offer his first few
-    if(!pick.length){box.style.display="none";return}
+    // They just asked about timing. That answer is not in a saved reply, it's in
+    // his calendar — so the calendar gets a chip of its own, first, in the row
+    // he is already looking at. (QR_CUES[1] is the same timing cue the quick
+    // replies score against; one definition, two uses.)
+    var asksTime=!fresh&&QR_CUES[1][0].test(body);
+    if(!pick.length&&!asksTime){box.style.display="none";return}
     box.style.display="flex";box.innerHTML="";
+    if(asksTime){
+      var ob=document.createElement("button");
+      ob.type="button";ob.className="qr-open";ob.innerHTML=ic("calendar-days",13)+" What's open?";
+      ob.title="Your next openings, straight off the booking calendar";
+      ob.onclick=function(){vibrate(6);openingsOpen()};
+      box.appendChild(ob);
+    }
     pick.forEach(function(x){
       var b=document.createElement("button");
       b.type="button";b.textContent=x.tp[0];b.title=x.tp[1];
@@ -11010,6 +11283,98 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       box.appendChild(b);
     });
   }
+  // ---- "What's open?" — his own calendar, inside the conversation ----------
+  // The question a texting business gets more than any other is "can you do
+  // Saturday?", and answering it meant leaving the conversation for the day
+  // board, reading it, coming back, and typing what he found. /api/openings
+  // answers it here off the SAME availability the customer booking page sells
+  // from — same buffers, same lead time, same calendar, same slots a job agreed
+  // over text is already holding. Two answers to "when am I free" is how you
+  // double-book yourself, so there is deliberately only one.
+  //
+  // It never sends anything. Tapping times writes a sentence into the box, in
+  // his words, for him to look at before it goes.
+  var OPEN={loading:false,days:null,err:false,pick:[]};
+  function openingsOpen(){
+    OPEN.pick=[];
+    jdSheetOpen('<div class="pk-card" id="opCard"></div>');
+    openingsRender();
+    openingsFetch();   // always fresh: a slot he offered an hour ago may be gone
+  }
+  function openingsFetch(){
+    OPEN.loading=true;OPEN.err=false;openingsRender();
+    api("/api/openings?days=10&want=3").then(function(d){
+      OPEN.loading=false;OPEN.err=!(d&&d.ok);
+      OPEN.days=(d&&d.ok&&d.days)?d.days:[];
+      openingsRender();
+    }).catch(function(){OPEN.loading=false;OPEN.err=true;OPEN.days=[];openingsRender()});
+  }
+  function op12(hm){
+    var p=String(hm).split(":"),h=+p[0],m=+p[1]||0,ap=h<12?"am":"pm",h12=h%12;if(!h12)h12=12;
+    return h12+(m?(":"+String(m).padStart(2,"0")):"")+ap;
+  }
+  // "Saturday", not "Sat, Sep 20" — this goes into a text message, and nobody
+  // writes a date like a spreadsheet to a customer.
+  function opDayWord(ds){
+    var n=jdNiceDate(ds);
+    if(n==="Today"||n==="Tomorrow")return n.toLowerCase();
+    return jdParse(ds).toLocaleDateString([],{weekday:"long"});
+  }
+  function opKey(ds,hm){return ds+" "+hm}
+  function openingsSentence(){
+    if(!OPEN.pick.length)return "";
+    var byDay={},order=[];
+    OPEN.pick.slice().sort().forEach(function(k){
+      var a=k.split(" ");
+      if(!byDay[a[0]]){byDay[a[0]]=[];order.push(a[0])}
+      byDay[a[0]].push(a[1]);
+    });
+    var parts=order.map(function(ds){return opDayWord(ds)+" at "+byDay[ds].map(op12).join(" or ")});
+    var list=parts.length>1?(parts.slice(0,-1).join(", ")+" or "+parts[parts.length-1]):parts[0];
+    return "I could do "+list+" \u2014 which works better for you?";
+  }
+  function openingsRender(){
+    var card=el("opCard");if(!card)return;
+    var h='<div class="op-hd"><b>What\'s open</b><span>Straight off your booking calendar \u2014 the same times the website would sell.</span></div>';
+    if(OPEN.loading&&!OPEN.days){h+='<div class="op-empty"><span class="spin"></span> Reading your calendar\u2026</div>'}
+    else if(OPEN.err){h+='<div class="op-empty"><b>Couldn\'t read your calendar</b>Check your connection and try again.</div>'}
+    else if(!(OPEN.days||[]).length){h+='<div class="op-empty"><b>Nothing open in the next 10 days</b>Either you\'re booked solid or the booking calendar has those days off \u2014 More \u2192 Booking settings.</div>'}
+    else{
+      (OPEN.days||[]).forEach(function(d){
+        h+='<div class="op-day"><div class="op-dn">'+esc(jdNiceDate(d.date))+'</div><div class="op-slots">';
+        d.slots.forEach(function(sl){
+          var on=OPEN.pick.indexOf(opKey(d.date,sl))>=0;
+          h+='<button class="op-slot'+(on?" on":"")+'" data-op="'+esc(opKey(d.date,sl))+'">'+esc(op12(sl))+'</button>';
+        });
+        h+='</div></div>';
+      });
+      h+='<div class="op-prev'+(OPEN.pick.length?"":" empty")+'">'+esc(OPEN.pick.length?openingsSentence():"Tap the times you want to offer \u2014 two or three reads better than one.")+'</div>';
+      h+='<button class="jd-btn pri op-go"'+(OPEN.pick.length?"":" disabled")+' id="opGo">'+ic("pencil",17)+' Put it in the box</button>';
+    }
+    card.innerHTML=h;hydrateIcons(card);
+    Array.prototype.forEach.call(card.querySelectorAll("[data-op]"),function(b){
+      b.onclick=function(){
+        var k=b.getAttribute("data-op"),i=OPEN.pick.indexOf(k);
+        // Three times is an offer; six is a scheduling problem for the customer.
+        if(i>=0)OPEN.pick.splice(i,1);
+        else if(OPEN.pick.length>=3)return toast("Three times is plenty to offer");
+        else OPEN.pick.push(k);
+        vibrate(6);openingsRender();
+      };
+    });
+    var go=el("opGo");
+    if(go)go.onclick=function(){
+      var line=openingsSentence();if(!line)return;
+      jdSheetClose();
+      var inp=el("msgInput");
+      // Append — a half-written reply is not something to throw away because he
+      // reached for his own calendar mid-sentence.
+      inp.value=(inp.value.trim()?inp.value.replace(/\s*$/,"")+" ":"")+line;
+      inp.focus();autoGrow();updateCount();stashDraft(state.phone);
+      toast("Added \u2014 send it when you're happy with it");
+    };
+  }
+
   function buildTplMenu(){
     var m=el("tplMenu");m.innerHTML='<div class="mh">Quick replies</div>';
     state.templates.forEach(function(tp,i){
@@ -11203,24 +11568,87 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // refuses to send at.
   var lastSentAt={};  // phone -> { body, ts }
   function noteSent(phone,body){lastSentAt[phone]={body:body,ts:Date.now()}}
-  function sendGuardsPass(body){
-    var prev=lastSentAt[state.phone];
+  function sendGuardsPass(body,phone,who){
+    phone=phone||state.phone;
+    who=who||displayName(state.thread||{phone:phone});
+    var prev=lastSentAt[phone];
     // No words means nothing to be a duplicate OF — two photos in a row are two
     // different photos, not the same text sent twice.
     if(body&&prev&&prev.body===body&&Date.now()-prev.ts<5*60000){
-      if(!confirm("You just sent this exact text to "+displayName(state.thread)+".\n\nSend it again?"))return false;
+      if(!confirm("You just sent this exact text to "+who+".\n\nSend it again?"))return false;
     }
-    var c=state.config||{},qs=c.quietStart==null?20:c.quietStart,qe=c.quietEnd==null?8:c.quietEnd;
-    var h=new Date().getHours();
-    var quiet=(qs>qe)?(h>=qs||h<qe):(h>=qs&&h<qe);
-    if(quiet&&!quietOk){
-      if(!confirm("It's "+new Date().toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})+" — inside your quiet hours.\n\nYour automatic follow-ups won't send right now. Text anyway?"))return false;
-      quietOk=true; // asked once; don't nag for the rest of this sitting
-      setTimeout(function(){quietOk=false},30*60000);
+    if(quietNow()&&!quietOk){
+      // The old version asked "text anyway?" and a No just dropped you back at a
+      // full box with nothing solved — so the honest answer, "not at this hour,
+      // but first thing", took six taps through the scheduler. It's a button now.
+      quietSheet(body,phone,who);
+      return false;
     }
     return true;
   }
   var quietOk=false;
+  function quietHours(){
+    var c=state.config||{};
+    return [c.quietStart==null?20:c.quietStart, c.quietEnd==null?8:c.quietEnd];
+  }
+  function quietNow(){
+    var q=quietHours(),h=new Date().getHours();
+    return (q[0]>q[1])?(h>=q[0]||h<q[1]):(h>=q[0]&&h<q[1]);
+  }
+  // The next time his own quiet hours are over. Tomorrow morning at 11pm; this
+  // morning at 6am — the point is the customer's phone doesn't buzz at night.
+  function quietUntil(){
+    var q=quietHours(),d=new Date();
+    d.setMinutes(0,0,0);
+    if(d.getHours()>=q[1])d.setDate(d.getDate()+1);   // still tonight → tomorrow
+    d.setHours(q[1]);
+    return d.getTime();
+  }
+  function quietSheet(body,phone,who){
+    var at=quietUntil();
+    var when=new Date(at).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});
+    var day=(new Date(at).toDateString()===new Date().toDateString())?"this morning":"tomorrow morning";
+    jdSheetOpen('<div class="pk-card" id="qhCard">'+
+      '<div class="op-hd"><b>It\'s '+esc(new Date().toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}))+'</b>'+
+      '<span>Inside your quiet hours \u2014 your automatic follow-ups won\'t go out right now either. A text at this hour is the kind a customer remembers for the wrong reason.</span></div>'+
+      '<div class="qh-msg">'+esc(body||"(photo)")+'</div>'+
+      '<button class="jd-btn pri" id="qhLater">'+ic("calendar-clock",17)+' Send it '+esc(day)+' at '+esc(when)+'</button>'+
+      '<button class="jd-btn" id="qhNow">'+ic("send",17)+' Send it now anyway</button>'+
+      '<button class="jd-btn ghost" id="qhNo">Leave it in the box</button></div>');
+    var card=el("qhCard");hydrateIcons(card);
+    // This sheet replaced whatever was on screen, so a peek it interrupted has to
+    // be put back — the words are safe either way (the peek box stashes them as
+    // that conversation's draft on every keystroke), but landing on nothing after
+    // saying "not yet" reads like the app lost them.
+    var fromPeek=!!phone&&phone!==state.phone;
+    el("qhNo").onclick=function(){jdSheetClose();if(fromPeek)peekOpen(phone)};
+    el("qhNow").onclick=function(){
+      jdSheetClose();
+      quietOk=true;                       // asked once; don't nag for this sitting
+      setTimeout(function(){quietOk=false},30*60000);
+      if(fromPeek){
+        // Straight to the queue: the card that held these words is gone, so
+        // re-running the peek's own send would find an empty box.
+        if(queueSendTo(phone,body,who)){clearDraft(phone);delete drafts[phone];saveDrafts()}
+      } else sendMessage();
+    };
+    el("qhLater").onclick=function(){
+      jdSheetClose();
+      var to=phone||state.phone;
+      if(!to)return;
+      post("/api/schedule",{phone:to,body:body,sendAt:at}).then(function(d){
+        if(!(d&&d.ok))return toast("Couldn't schedule: "+((d&&d.error)||"error"),{bad:true});
+        // The words are spoken for now — take them out of the box (and out of
+        // the draft) exactly the way a send would, or they go out twice.
+        if(to===state.phone){el("msgInput").value="";autoGrow();updateCount()}
+        var pb=el("pkBox");if(pb&&to===PEEK.phone)pb.value="";
+        clearDraft(to);delete drafts[to];saveDrafts();
+        if(state.thread&&state.thread.phone===to){state.thread=d.thread;renderThread()}
+        refreshThreads();
+        toast("Scheduled for "+fmtFull(at));
+      });
+    };
+  }
 
   // A send that fails while you're looking at another conversation used to be
   // invisible. Remember it so the board can show it.
@@ -13943,6 +14371,32 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   var MO={open:false,view:"log",month:null,today:null,entries:[],summary:null,allTime:null,cfg:null,nudges:[],report:null,loadedOnce:false};
   var MOS=null; // state of the open entry sheet
   var dtMoneyCache={};
+  // One lookup per customer per sitting, shared by the wrap-up banner and the
+  // job history in Details. `null` means "asked, still in flight" — the whole
+  // reason this cache exists is that a repainting thread used to ask again on
+  // every render.
+  function fetchMoneyFor(phone){
+    if(!phone||dtMoneyCache[phone]!==undefined)return;
+    dtMoneyCache[phone]=null;
+    api("/api/money/by-phone?phone="+encodeURIComponent(phone)).then(function(d){
+      dtMoneyCache[phone]=(d&&d.ok)?d:{jobs:0,total:0,entries:[]};
+      if(state.thread&&state.thread.phone===phone)renderThread();
+    }).catch(function(){dtMoneyCache[phone]={jobs:0,total:0,entries:[]}});
+  }
+  // Wrap-ups he waved off, per appointment, on this device — the same shape as
+  // drafts. Skipping one is a "not this job", not a setting worth a KV write.
+  var WRAP_KEY="mkd-wrapskip";
+  function wrapDismissed(){try{return JSON.parse(localStorage.getItem(WRAP_KEY))||{}}catch(e){return{}}}
+  function wrapWhen(ms){
+    var d=new Date(ms),D=86400000,days=Math.floor((Date.now()-ms)/D);
+    if(days<1)return "Today's";
+    if(days<2)return "Yesterday's";
+    if(days<7)return d.toLocaleDateString([],{weekday:"long"})+"'s";
+    return d.toLocaleDateString([],{month:"short",day:"numeric"})+" ";
+  }
+  // His wording, not a robot's — and {vehicle}/{review} are filled by expandVars
+  // off the same thread the rest of the templates read.
+  var WRAP_REVIEW="Thanks again for having me out for the {vehicle}! If you've got a minute, a quick review makes a big difference for a small business like mine: {review}";
   var MO_CATS=[["fuel","Fuel","fuel"],["supplies","Supplies","spray-can"],["equipment","Equipment","wrench"],["food","Food","utensils"],["bills","Bills","receipt"],["marketing","Marketing","megaphone"],["insurance","Insurance","credit-card"],["phone","Phone/net","phone"],["misc","Misc","package"]];
   // Icon (Lucide) for an entry — job/labor/personal each have their own; expenses
   // use their category icon. Kept separate so the buttons, rows, sheets all match.
@@ -15540,6 +15994,12 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var t=state.thread;var box=el("dtMoney");if(!box||!t)return;
     var c=dtMoneyCache[t.phone];
     var btn='<button class="btn ic-btn" id="dtMoneyLog" style="width:100%;margin-top:9px">'+ic("dollar",15)+'<span>Log a job $</span></button>';
+    // null means the wrap-up banner already asked and is waiting on the answer —
+    // asking again would be the same request twice for the same panel.
+    if(c===null){
+      box.innerHTML='<div style="color:var(--muted2);font-size:12px;padding:2px 0 4px">Loading…</div>'+btn;
+      wireDtMoneyLog();return;
+    }
     if(!c){
       box.innerHTML='<div style="color:var(--muted2);font-size:12px;padding:2px 0 4px">Loading…</div>'+btn;
       wireDtMoneyLog();
