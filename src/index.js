@@ -132,7 +132,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-14·readiness';
+const BUILD = '2026-09-14·five-more';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -312,6 +312,7 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/config')     return apiGetConfig();
   if (request.method === 'POST' && pathname === '/api/config')     return apiSaveConfig(request);
   // ---- Booking management (authed — the Bookings dashboard view) ----
+  if (request.method === 'GET'  && pathname === '/api/openings')   return apiOpenings(url);
   if (request.method === 'GET'  && pathname === '/api/bookings')   return apiBookings(url);
   if (request.method === 'POST' && pathname === '/api/booking')    return apiBookingAction(request);
   if (request.method === 'GET'  && pathname === '/api/booking-settings') return apiBookingSettings();
@@ -12576,6 +12577,41 @@ async function apiBook(request) {
   notifyMikey(`🗓 New booking — ${name}`, `${detail}\n\nOpen your dashboard → Bookings to confirm.`).catch(() => {});
 
   return cors(json({ ok: true, id: rec.id }, 200));
+}
+
+// "Can you do Saturday?" is the question a texting conversation asks more than
+// any other, and answering it meant leaving the conversation for the day board
+// and coming back to type what you found. The booking calendar has known the
+// answer the whole time — it just only ever told the public booking page, one
+// day per request.
+//
+// This walks forward day by day and reports the first few that have room, using
+// exactly the same bkAvailability() the customer-facing page uses: the same
+// buffers, the same lead time, the same Google Calendar busy times, and the same
+// holds a job agreed over text already puts on a slot. Two sources of truth for
+// "when am I free" is how you double-book yourself.
+//
+// Read-only and cheap: a handful of KV reads, no writes, and the iCal feed is
+// cached for ten minutes behind bkFetchCal.
+async function apiOpenings(url) {
+  const days = Math.min(21, Math.max(1, parseInt(url.searchParams.get('days') || '10', 10) || 10));
+  const want = Math.min(6, Math.max(1, parseInt(url.searchParams.get('want') || '3', 10) || 3));
+  const service = url.searchParams.get('service') || 'full';
+  const size = url.searchParams.get('size') || 'suv';
+  const cfg = await loadConfig();
+  const out = [];
+  const seen = new Set();
+  // Stepping a fixed 24h can land on the same local date twice on the day the
+  // clocks go back, so the dates are de-duped rather than assumed — and a couple
+  // of extra steps are allowed so a repeat can't cost us the last day.
+  for (let i = 0; i < days + 2 && out.length < want; i++) {
+    const date = localDateStr(Date.now() + i * 86400000, cfg.tz);
+    if (seen.has(date)) continue;
+    seen.add(date);
+    const slots = await bkAvailability(date, service, size);
+    if (slots.length) out.push({ date, slots: slots.slice(0, 4) });
+  }
+  return json({ ok: true, service, size, days: out });
 }
 
 async function apiBookings(url) {

@@ -117,15 +117,31 @@ const check = (name, got, want) => {
   const expectQuiet = (hour >= 20 || hour < 8);
   console.log(`  (browser local hour is ${hour} — quiet-hours prompt expected: ${expectQuiet})`);
 
+  // Quiet hours used to be a confirm() that a No simply cancelled, leaving you
+  // with a full box and the same problem. It is a sheet now, with the answer he
+  // actually wants on it ("send it at 8am"), so this asserts the sheet — and
+  // that deciding once settles it for the sitting, which is what the old
+  // "don't nag twice" rule was really protecting.
+  // A closed sheet keeps its markup (jdSheetClose only drops the .show class),
+  // so "is it open" has to ask about the sheet, not about the card inside it.
+  const qhOpen = async () => (await page.locator('#jdSheet.show #qhCard').count()) > 0;
   dialogs.length = 0;
   await setBox('late night text');
-  await page.locator('#sendBtn').click(); await page.waitForTimeout(300);
-  check('quiet hours asks first, only when it is quiet hours', /quiet hours/i.test(dialogs.join(' ')), expectQuiet);
+  await page.locator('#sendBtn').click(); await page.waitForTimeout(400);
+  const qhUp = await qhOpen();
+  check('quiet hours stops the send, only when it is quiet hours', qhUp, expectQuiet);
+  if (expectQuiet) {
+    check('…and offers the morning instead of just a warning', await page.locator('#qhLater').isVisible(), true);
+    check('…with the words still in front of you', /late night text/.test(await page.locator('.qh-msg').innerText()), true);
+    await page.locator('#qhNow').click();       // decide once: send it anyway
+    await page.waitForTimeout(400);
+  }
 
   dialogs.length = 0;
   await setBox('a different text');
-  await page.locator('#sendBtn').click(); await page.waitForTimeout(300);
-  check('does not nag about quiet hours twice', dialogs.filter(d => /quiet hours/i.test(d)).length, 0);
+  await page.locator('#sendBtn').click(); await page.waitForTimeout(400);
+  check('does not ask about quiet hours again this sitting', await qhOpen(), false);
+  check('and no dialog either', dialogs.filter(d => /quiet hours/i.test(d)).length, 0);
 
   dialogs.length = 0;
   await setBox('a different text');

@@ -69,6 +69,14 @@ const check = (name, got, want) => {
     const u = new URL(route.request().url());
     let posted = {};
     try { posted = JSON.parse(route.request().postData() || '{}'); } catch (_) {}
+    // Quiet hours are read off the config, and a send inside them now stops to
+    // ask. This suite is about photos, not the hour it runs at — so it pins a
+    // config whose quiet hours never fire. (Same lesson as the dated fixtures:
+    // a test that only works at some times of day is a test you learn to ignore.)
+    if (u.pathname === '/api/config') {
+      return route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ ok: true, config: { quietStart: 0, quietEnd: 0 } }) });
+    }
     if (u.pathname === '/api/send-photo') {
       uploads.push({ type: posted.type, len: (posted.data || '').length });
       if (uploadHold) await uploadHold;
