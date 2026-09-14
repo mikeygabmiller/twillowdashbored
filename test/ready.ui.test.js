@@ -181,11 +181,11 @@ const pk = await page.locator('#pkCard').innerText();
 ok('it shows his readiness problem', /done by 1:30pm/.test(pk), pk);
 ok('stamped with when the job is', /Tomorrow/.test(pk));
 ok('and the fix', /Start by 10am/.test(pk));
-ok('four things he can do without opening anything', await page.locator('.pk-quick button').count() === 4);
-ok('Navigate is live because there is an address', !(await page.locator('#pkNav').isDisabled()));
-ok('Call is there', await page.locator('#pkCall').count() === 1);
-ok('Remind me is there', await page.locator('#pkRemind').count() === 1);
-ok('Archive is there', await page.locator('#pkArch').count() === 1);
+ok('four things he can do without opening anything', await page.locator('.pk-d').count() === 4);
+ok('Navigate is live because there is an address', !(await page.locator('.pk-d[data-pk="nav"]').isDisabled()));
+ok('Call is there', await page.locator('.pk-d[data-pk="call"]').count() === 1);
+ok('Remind me is there', await page.locator('.pk-d[data-pk="remind"]').count() === 1);
+ok('Archive is there', await page.locator('.pk-d[data-pk="archive"]').count() === 1);
 ok('and none of it loaded the thread', threadHits.length === before, threadHits.slice(before));
 
 section('Navigate stays dark when there is nowhere to go');
@@ -202,14 +202,14 @@ await page.evaluate(() => {
 });
 await page.waitForTimeout(600);
 ok('the card is showing her', /Shana/.test(await page.locator('#pkCard').innerText()));
-ok('Navigate is disabled', await page.locator('#pkNav').isDisabled());
-ok('but Call still works — you can always ring somebody', !(await page.locator('#pkCall').isDisabled()));
+ok('Navigate is disabled', await page.locator('.pk-d[data-pk="nav"]').isDisabled());
+ok('but Call still works — you can always ring somebody', !(await page.locator('.pk-d[data-pk="call"]').isDisabled()));
 ok('and she has no readiness problem to report', await page.locator('#pkCard .pk-blk').count() === 0);
 ok('still nothing marked read', threadHits.length === before, threadHits.slice(before));
 
 section('Call goes out without opening the thread');
 page.once('dialog', (d) => d.accept());
-await page.locator('#pkCall').click();
+await page.locator('.pk-d[data-pk="call"]').click();
 await page.waitForTimeout(400);
 ok('the call was placed', calls.length === 1, calls.length);
 ok('and the thread was still never loaded', threadHits.length === before, threadHits.slice(before));

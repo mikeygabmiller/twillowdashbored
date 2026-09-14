@@ -179,8 +179,12 @@ for (const fn of ['handleSubmit', 'handleQqcText']) {
   check(`${fn} still refuses one with no number`, /!(phone|clientPhone)\) return cors\(json\(\{ ok: false, error: 'missing_fields'/.test(body), true);
   check(`${fn} greets through the fallback`, /greetName\(name\)/.test(body), true);
   check(`${fn} asks for the name it did not get`, /your name and /.test(body), true);
-  check(`${fn} identifies the lead by number when it has no name`, /name \|\| clientPhone/.test(body), true);
-  check(`${fn} never overwrites a known name with a blank`, /if \(name && !thread\.name\)/.test(body), true);
+  // A nameless lead is labelled by number — unless the email box was carrying a
+  // name, which is only ever used to LABEL, never to greet (see name.test.js).
+  check(`${fn} identifies the lead by number when it has no name`, /name \|\| guessed \|\| clientPhone/.test(body), true);
+  // "never overwrite a known name with a blank" now lives in applyLearnedName,
+  // which refuses anything that doesn't outrank the name already on the thread.
+  check(`${fn} never overwrites a known name with a blank`, /applyLearnedName\(thread, name, 'form'\)/.test(body), true);
 }
 
 console.log(`\n${PASS} passed, ${FAIL} failed`);
