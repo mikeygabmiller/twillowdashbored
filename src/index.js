@@ -132,7 +132,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-04·send-now';
+const BUILD = '2026-09-14·auto-name';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -484,6 +484,11 @@ async function handleSubmit(request) {
   // Straighten "MIKE JONES" / "mike jones" before it reaches the customer's text,
   // the thread, or the quote log — see tidyName.
   const name = tidyName(body.name);
+  // The name box is optional now, but the email box beside it is usually still
+  // carrying one — "ruth.callahan@gmail.com". Used to LABEL the lead (the row,
+  // the alert), never to greet them: the first text has to get the name right or
+  // not use one, and this is a guess. See nameFromEmail / nameRank.
+  const guessed = name ? '' : nameFromEmail(body.email);
   // Only auto-text the client if they ticked the SMS consent box on the form
   // (A2P/compliance). Mikey's lead alert + the dashboard lead always go through.
   const consent = smsConsent === true || smsConsent === 'true';
@@ -498,7 +503,7 @@ async function handleSubmit(request) {
   const quoteLine = total ? `$${total}` : 'TBD';
   // What identifies this person on Mikey's side: the name when there is one, the
   // number when there isn't. "NEW QUOTE — " with nothing after it helps nobody.
-  const who = name || clientPhone;
+  const who = name || guessed || clientPhone;
 
   // When they didn't leave a name, the first text is also where he gets it — so
   // it asks, in the same breath as the car, instead of needing a second round.
@@ -522,7 +527,9 @@ async function handleSubmit(request) {
   const thread = await loadThread(clientPhone);
   markSource(thread, 'quote');
   // Never overwrite a name he already has with the blank a nameless lead brings.
-  if (name && !thread.name) thread.name = name;
+  // The typed name is the real one; the email guess only gets a look in when that
+  // box was left empty, and even then only fills a blank — see nameRank.
+  if (!applyLearnedName(thread, name, 'form')) applyLearnedName(thread, guessed, 'email');
   if (!thread.status) { thread.status = 'new'; thread.statusAt = thread.statusAt || Date.now(); }
   const detail = [
     vehicle ? `Vehicle: ${vehicle}` : null, condition ? `Condition: ${condition}` : null,
@@ -547,12 +554,12 @@ async function handleSubmit(request) {
   await saveThread(thread);
   await updateIndexEntry(thread);
   await logQuote({
-    name, phone: clientPhone, email, location, total, vehicle, condition,
+    name: name || guessed, phone: clientPhone, email, location, total, vehicle, condition,
     services: serviceList, notes, type: body.type, appointment: body.appointment,
   });
   // Put a name on whatever browsing led here. The form carries the visitor id
   // from site-stats.js; without it this is a no-op and the lead is unaffected.
-  await journeyLink(body.vid, clientPhone, name);
+  await journeyLink(body.vid, clientPhone, name || guessed);
 
   const ok = mikeyAlert;
   return cors(json({ ok, clientSms, mikeyAlert }, ok ? 200 : 207));
@@ -583,6 +590,7 @@ async function handleQqcText(request) {
   if (body.website || body._gotcha || body.hp) return cors(json({ ok: true, clientSms: 'skipped', mikeyAlert: false }, 200));
 
   const name = tidyName(body.name);   // "MIKE JONES" -> "Mike Jones", see tidyName
+  const guessed = name ? '' : nameFromEmail(body.email);  // labels the lead only — see /submit
   const clientPhone = normalizePhone(body.phone);
   // Name optional here too — same reason as /submit, and the two endpoints have
   // to behave identically or the site's fallback path quietly loses leads.
@@ -595,7 +603,7 @@ async function handleQqcText(request) {
   // Make's filter: send to the customer UNLESS smsConsent is explicitly "false".
   const consent = String(body.smsConsent).toLowerCase() !== 'false';
 
-  const who = name || clientPhone;
+  const who = name || guessed || clientPhone;
   const clientMsg =
     `Hey ${greetName(name)}, it's Mikey. I got your quote submission on my site. ` +
     `Whenever you have a minute, feel free to send over ${name ? '' : 'your name and '}the year, make, and model of the car ` +
@@ -607,7 +615,7 @@ async function handleQqcText(request) {
 
   // Record the lead and queue the delayed reach-out via the existing scheduler.
   const thread = await loadThread(clientPhone);
-  if (name && !thread.name) thread.name = name;
+  if (!applyLearnedName(thread, name, 'form')) applyLearnedName(thread, guessed, 'email');  // see /submit
   if (!thread.status) { thread.status = 'new'; thread.statusAt = Date.now(); }
   const email = body.email ? String(body.email).trim() : '';
   const location = body.location ? String(body.location).trim() : '';
@@ -634,7 +642,7 @@ async function handleQqcText(request) {
   await saveThread(thread);
   await updateIndexEntry(thread);
   await logQuote({
-    name, phone: clientPhone, email, location, total: body.total, vehicle,
+    name: name || guessed, phone: clientPhone, email, location, total: body.total, vehicle,
     condition, services, notes, type: body.type, appointment: body.appointment,
   });
   return cors(json({ ok: !!mikeyAlert, clientSms, mikeyAlert }, mikeyAlert ? 200 : 207));
@@ -874,6 +882,19 @@ async function handleInboundSms(request) {
   else if (numMedia > 0) inMsg.body = text + `\n[${numMedia} attachment(s)]`;
   if (params.MessageSid) inMsg.sid = params.MessageSid;
   const inThread = await appendMessage(fromNorm, inMsg);
+  // "hey it's Dave" — put a name on the row while they're still telling us it.
+  // Done before the draft and the alert are built so both get to use it: the AI
+  // greets them by name, and the notification banner says who texted instead of
+  // a phone number. Costs one extra KV write, and only on the rare text that
+  // actually names somebody — see nameCandidate, which refuses far more than it
+  // accepts.
+  let nameNote = '';
+  const saidName = nameCandidate(text) || nameFromAnswer(text, askedForName(inThread));
+  if (applyLearnedName(inThread, saidName, 'said')) {
+    await saveThread(inThread);
+    await updateIndexEntry(inThread);
+    nameNote = `📇 Saved their name as ${inThread.name} — they said it in this text. Rename in the dashboard if that's not it.`;
+  }
   // The alert doubles as the assist prompt: it tells Mikey he can answer straight
   // from his phone by texting the business number the bare facts (handleOwnerSms).
   const alertCfg = await loadConfig();
@@ -901,7 +922,7 @@ async function handleInboundSms(request) {
     ? `📱 ${who}: "${gist.length > 64 ? gist.slice(0, 63).trimEnd() + '…' : gist}"`
     : `📱 ${who} sent a photo`;
   await notifyMikey(subject,
-    assistAlertBody(alertCfg, { phone: fromNorm, who, msg: text, ask, draft, media: numMedia }));
+    assistAlertBody(alertCfg, { phone: fromNorm, who, msg: text, ask, draft, note: nameNote, media: numMedia }));
   // Watch for "so Saturday at 10 then?" and raise a one-tap job card if so.
   await maybeDetectJob(fromNorm);
   // No auto-reply to the customer — Mikey replies personally from the dashboard.
@@ -2411,6 +2432,11 @@ async function handleVoicemailTranscription(request) {
     return new Response('', { status: 204 });
   }
 
+  // A voicemail almost always opens with the one thing a missed call never
+  // carries: "hey, this is John". Read it here, where the words finally exist —
+  // the recording on its own has no name in it anything can use.
+  const heard = applyLearnedName(thread, nameCandidate(text), 'said');
+
   if (existing) {
     existing.body = `🎙️ Voicemail: "${text}"`;
     existing.transcript = text;
@@ -2442,7 +2468,8 @@ async function handleVoicemailTranscription(request) {
     outcome: 'voicemail', transcript: text, transcriptFailed: false,
     recording: recording ? recording + '.mp3' : undefined,
   });
-  notifyMikey(`🎙️ Voicemail transcript from ${from}`, `"${text}"\n\nOpen the dashboard to reply.`).catch(() => {});
+  notifyMikey(`🎙️ Voicemail transcript from ${thread.name || from}`,
+    `"${text}"\n\n${heard ? `📇 Saved their name as ${thread.name} — they said it in the voicemail.\n\n` : ''}Open the dashboard to reply.`).catch(() => {});
   return new Response('', { status: 204 });
 }
 
@@ -2645,7 +2672,10 @@ async function apiMeta(request) {
   const phone = normalizePhone(data.phone);
   if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
   const thread = await loadThread(phone);
-  if (typeof data.name === 'string') thread.name = data.name.trim();
+  // Mikey typing a name (or confirming the one we worked out) outranks anything
+  // we learned ourselves — clearing the marker is what stops a later guess from
+  // ever overwriting it. See nameRank.
+  if (typeof data.name === 'string') { thread.name = data.name.trim(); thread.nameAuto = ''; thread.nameAutoAt = 0; }
   if (Array.isArray(data.tags)) thread.tags = data.tags.map((t) => String(t).trim()).filter(Boolean).slice(0, 20);
   if (typeof data.status === 'string') {
     if (data.status !== thread.status) thread.statusAt = Date.now();
@@ -7861,6 +7891,219 @@ function tidyName(raw) {
 // other conversation instead of like a bug.
 function greetName(name) { return String(name || '').trim().split(' ')[0] || 'there'; }
 
+// ---- learning the customer's name ------------------------------------------
+// Half the conversations on the board are titled with a phone number. The quote
+// screen stopped asking for a name (it cost more submissions than the name was
+// worth) and someone who texts in cold never filled a form at all — so the name
+// is usually sitting right there in the conversation, in their own words: "hey
+// it's Dave", "my names Ruth, looking for a full detail". It just never got out
+// of the message body and onto the row.
+//
+// This reads it out of what they say. Two rules hold the whole thing together:
+//
+//   1. It only ever FILLS A BLANK, or upgrades a weaker guess — see nameRank.
+//      A name Mikey typed, or one off the quote form, always wins.
+//   2. A wrong name is worse than no name, because it goes out in the next text
+//      he sends. So everything below is built to REFUSE: one bad word and the
+//      candidate is dropped, no half-guesses.
+
+// Words that follow "it's" / "I'm" / "this is" far, far more often than a name
+// does. Without this list "it's fine", "I'm interested" and "this is about my
+// truck" would all end up as somebody's name.
+const NOT_A_NAME = new Set((
+  'a an the and or but so my our your his her their this that these those it its ' +
+  'me you he she they we us him them i im ive ill ' +
+  'ok okay okey fine good great cool awesome perfect nice sweet done ready set all both just still only more less same other ' +
+  'yes yeah yep no nope not never maybe probably actually definitely really very too also either neither ' +
+  'here there now then today tonight tomorrow yesterday morning afternoon evening night weekend week month year ' +
+  'monday tuesday wednesday thursday friday saturday sunday mon tue tues wed thu thur thurs fri sat sun ' +
+  'january february march april june july august september october november december ' +
+  'thanks thank thx sorry please hi hey hello yo sup howdy ' +
+  'interested looking wondering hoping trying wanting needing calling texting asking checking thinking planning ' +
+  'about back later soon anytime asap whenever after before around near close far away ' +
+  'free busy available open booked out in on at up down off over under next last first ' +
+  'car truck suv van vehicle detail detailing interior exterior wash waxed wax ceramic coating paint quote price cost job ' +
+  'mikey mikeys mike ' +
+  'work works working going gonna coming leaving waiting parked ' +
+  'raining rain snowing snow cold hot wet dirty clean gross rough bad big small new old good ' +
+  'number phone address email name text message call mobile cell ' +
+  'sure right correct exactly wrong curious again ' +
+  'what when where why how who whose which because since once unless while ' +
+  'urgent important serious ridiculous crazy insane nuts terrible awful amazing weird easy hard tough ' +
+  'such whatever whoever kinda sorta supposed been being ' +
+  'everything something anything nothing stuff kids kid wife husband mom dad son daughter brother sister friend neighbor boss ' +
+  'guy lady girl boy man woman customer someone somebody anybody anyone everybody nobody ' +
+  'from with for to of by have has had need want got get give take'
+).split(' '));
+
+// Leading filler that sits between the phrase and the actual name — "it's me,
+// John". Skipped rather than treated as the name itself.
+const NAME_SKIP = new Set(['me', 'just', 'actually', 'still', 'gonna']);
+
+// How each phrase is trusted. `strong` phrases are ones nobody says by accident,
+// so they're read even when the customer types in all lowercase; the rest have to
+// be capitalized (or arrive in a short, entirely-lowercase text, which is how a
+// whole category of people type) before they're believed.
+const NAME_PATTERNS = [
+  [/\bmy name(?:'s|’s|s| is| was)?\s+(.+)/i, true],
+  [/\bthe name(?:'s|’s|s| is)\s+(.+)/i, true],
+  [/^\s*name\s*[:\-–]\s*(.+)/i, true],
+  [/\bthis is\s+(.+)/i, true],
+  [/\byou can call me\s+(.+)/i, true],
+  [/\bcall me\s+(.+)/i, true],
+  [/\b(?:it'?s|it’s|its)\s+(.+)/i, false],
+  [/\b(?:i'?m|i’m|i am)\s+(.+)/i, false],
+  [/^\s*([A-Za-z][A-Za-z'’.-]{1,19}(?:\s+[A-Za-z][A-Za-z'’.-]{1,19})?)\s+here\b/, false],
+];
+
+// Walk the words after the phrase and keep the ones that can still be a name.
+// Stops dead at the first word that can't be — "Dave from Marysville" is Dave —
+// which is also what keeps a whole sentence from being swallowed as a surname.
+// English words a name will never be. No list of words can cover the language,
+// so this covers the SHAPES instead — an -ing/-ly/-ous/-ful/-tion word after
+// "it's" is a sentence carrying on, not somebody's name.
+const NOT_NAME_SHAPE = /^[a-z]{5,}(?:ing|ly|ous|ful|ness|tion|ment)$/i;
+
+function nameWords(raw, allowLower, strong) {
+  const words = String(raw || '').trim().split(/\s+/);
+  const out = [];
+  let i = 0;
+  let lowerStart = false;
+  for (; i < words.length; i++) {
+    const w = words[i].replace(/^[^A-Za-z]+/, '').replace(/[^A-Za-z'’-]+$/, '');
+    if (!w) break;
+    const low = w.toLowerCase();
+    if (!out.length && NAME_SKIP.has(low)) continue;
+    if (!/^[A-Za-z][A-Za-z'’-]{1,19}$/.test(w)) break;
+    if (NOT_A_NAME.has(low) || NOT_NAME_SHAPE.test(w)) break;
+    // "this is Mike's shop" — a possessive is somebody talking ABOUT a person,
+    // never somebody introducing themselves.
+    if (/['’]s$/.test(w)) break;
+    if (!allowLower && w[0] !== w[0].toUpperCase()) break;
+    if (!out.length) lowerStart = w[0] !== w[0].toUpperCase();
+    out.push(w);
+    if (out.length === 2) { i++; break; }   // first and last is a name; three words is a sentence
+  }
+  if (!out.length) return '';
+  // Nobody capitalized anything, so the only thing left telling a name from a
+  // sentence is where it STOPS: "im dave" and "this is ruth, looking for a quote"
+  // both end the thought on the name. "its supposed to rain" carries on, and
+  // that carrying on is the tell. A full first-and-last name after one of the
+  // deliberate phrasings is enough on its own.
+  if (lowerStart && !(strong && out.length === 2)) {
+    const rest = words.slice(i).join(' ').trim();
+    // …except "from", which is how the sentence carries on when the name is
+    // exactly what came before it: "this is tony from the shop next door".
+    if (rest && !/^(?:[,;:.!?]|from\b)/i.test(rest)) return '';
+  }
+  return tidyName(out.join(' '));
+}
+
+// The name a message introduces, or '' when it doesn't introduce one — which is
+// the answer for the overwhelming majority of texts, and has to stay that way.
+function nameCandidate(raw) {
+  const text = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (!text || text.length > 400) return '';
+  // People who never capitalize anything are common enough that demanding a
+  // capital would miss half of them — but only trust a lowercase "im dave" in a
+  // short text, where introducing themselves is the whole point of the message.
+  const noCaps = text === text.toLowerCase() && text.split(' ').length <= 10;
+  const parts = text.split(/([.!?\n]+)/);
+  for (let i = 0; i < parts.length; i += 2) {
+    const seg = String(parts[i] || '').trim();
+    if (!seg) continue;
+    // A question is somebody asking about a name, not giving one ("is this dave's
+    // number?"), so the loose phrasings don't get read inside one.
+    const asking = /\?/.test(parts[i + 1] || '');
+    for (const [re, strong] of NAME_PATTERNS) {
+      if (asking && !strong) continue;
+      const m = seg.match(re);
+      if (!m) continue;
+      const got = nameWords(m[1], strong || noCaps, strong);
+      if (got) return got;
+    }
+  }
+  return '';
+}
+
+// The first reach-out ASKS for a name — "send over your name and the year, make,
+// and model" — and the answer comes back as "John, 2019 F-150": a name with no
+// sentence around it, which nameCandidate is right to refuse on its own. It's
+// only safe to read because of who asked. So it's read ONLY when the last thing
+// we sent was that question, and only when the rest of the reply is the car we
+// asked for, which is what the year check is doing.
+const NAME_ASK = /your name and the year/i;
+const CAR_WORDS = new Set((
+  'toyota tacoma tundra runner 4runner corolla camry rav4 highlander tundra prius ' +
+  'honda civic accord crv pilot odyssey ridgeline ' +
+  'ford f150 f250 f350 explorer escape mustang bronco ranger expedition ' +
+  'chevy chevrolet silverado tahoe suburban equinox malibu colorado camaro corvette ' +
+  'gmc sierra yukon denali canyon ' +
+  'jeep wrangler cherokee gladiator compass renegade ' +
+  'subaru outback forester crosstrek impreza legacy ascent wrx ' +
+  'tesla model nissan altima rogue titan frontier pathfinder maxima ' +
+  'ram dodge charger challenger durango caravan ' +
+  'kia sportage telluride sorento soul optima hyundai tucson santa elantra sonata palisade ' +
+  'mazda miata cx5 lexus infiniti acura audi bmw mercedes benz volvo porsche mini fiat ' +
+  'volkswagen jetta passat atlas tiguan golf buick cadillac escalade lincoln navigator ' +
+  'sprinter transit promaster sedan coupe wagon hatchback convertible'
+).split(' '));
+function askedForName(thread) {
+  const outs = ((thread && thread.messages) || []).filter((m) => m.dir === 'out');
+  const last = outs[outs.length - 1];
+  return !!(last && NAME_ASK.test(String(last.body || '')));
+}
+function nameFromAnswer(raw, asked) {
+  if (!asked) return '';
+  const text = String(raw || '').replace(/\s+/g, ' ').trim();
+  const m = text.match(/^([A-Za-z][A-Za-z'’-]{1,19}(?:\s+[A-Za-z][A-Za-z'’-]{1,19})?)\s*[,\-–—]\s*(.+)$/);
+  if (!m || !/\b(19|20)\d{2}\b/.test(m[2])) return '';
+  const got = nameWords(m[1], true, true);
+  // "Tacoma, 2019 TRD" is somebody answering the second half of the question
+  // first. A truck is not a customer.
+  if (!got || got.toLowerCase().split(' ').some((w) => CAR_WORDS.has(w))) return '';
+  return got;
+}
+
+// A quote form with no name is often still carrying one, one box over:
+// "ruth.callahan@gmail.com" is a name typed into the email field. Only the
+// separated shapes are read — "detailguy@gmail.com" could be anything, and a
+// guess that wrong would sit on the list row forever.
+const EMAIL_NOT_NAME = new Set(['info', 'sales', 'admin', 'contact', 'hello', 'mail', 'email', 'me', 'no',
+  'noreply', 'reply', 'service', 'support', 'team', 'office', 'billing', 'help', 'detail', 'detailing',
+  'auto', 'car', 'cars', 'the', 'my', 'biz', 'business', 'work', 'home', 'shop', 'mikey', 'mikeys']);
+function nameFromEmail(email) {
+  const local = String(email || '').trim().toLowerCase().split('@')[0];
+  if (!local || /\d/.test(local)) return '';
+  const parts = local.split(/[._-]+/).filter(Boolean);
+  if (parts.length !== 2) return '';
+  if (parts.some((p) => p.length < 2 || p.length > 15 || !/^[a-z]+$/.test(p) || EMAIL_NOT_NAME.has(p))) return '';
+  return tidyName(parts.join(' '));
+}
+
+// How much a name is worth believing. A guess off an email address is the
+// weakest thing here, so anything later — them saying it out loud, the form,
+// Mikey typing it — is allowed to replace it. Nothing replaces a name with no
+// `nameAuto` marker: that one was typed by a human or came off the quote form.
+const NAME_RANK = { email: 1, said: 2 };
+function nameRank(thread) {
+  if (!(thread && String(thread.name || '').trim())) return 0;
+  return NAME_RANK[thread.nameAuto] || 3;
+}
+
+// Put a learned name on a thread — the ONLY way any of the above reaches KV.
+// Returns true when it actually changed something, so callers can skip the write.
+function applyLearnedName(thread, name, source) {
+  const clean = tidyName(name);
+  if (!thread || !clean) return false;
+  const rank = NAME_RANK[source] || 3;
+  if (rank <= nameRank(thread)) return false;
+  thread.name = clean;
+  thread.nameAuto = rank < 3 ? source : '';
+  thread.nameAutoAt = rank < 3 ? Date.now() : 0;
+  return true;
+}
+
 function firstName(thread) {
   // tidyName here as well as at intake, so threads saved before that existed
   // stop shouting the customer's name back at them.
@@ -9443,6 +9686,11 @@ function blankThread(phone) {
   return {
     phone,
     name: '',
+    nameAuto: '',      // where the name came from when nobody typed it: 'said'
+                       // (their own words) or 'email' (guessed off the quote
+                       // form). Blank means a human stands behind it, which is
+                       // what stops anything we work out later from overwriting
+                       // it — see nameRank.
     tags: [],
     status: '',        // '', 'new', 'active', 'won', 'lost'
     statusAt: 0,       // when status last changed (anchor for won/lost cadences)

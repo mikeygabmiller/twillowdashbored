@@ -44,6 +44,17 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   **tags**, and filter the list by status, unread, or scheduled.
 - **Private notes** per customer (vehicle, address, preferences…). Quote-form
   submissions are auto-saved into the notes.
+- **The conversation names itself.** Half the board used to be titled with a phone
+  number — the quote screen asks for the number alone, and a cold text never filled
+  a form. But people say their name anyway: *"hey it's Dave"*, *"my names Ruth,
+  looking for a full detail"*, *"Marcus, 2018 Silverado"* when the first text asked
+  for it, *"hi, this is John"* at the top of a voicemail. All of that now lands on
+  the row, in the alert, and in the next draft the AI writes. A quote form with the
+  name box left blank falls back to the email beside it (`ruth.callahan@gmail.com`)
+  — but only to *label* the lead, never to greet them, because a guess that's wrong
+  is worse in a text than no name at all. Details shows where a name came from with
+  **Looks right** / **Fix** next to it; either one makes it yours, and nothing the
+  app works out later can overwrite it after that.
 - **Scheduled send & appointment reminders:** pick a date/time (or a preset) and the
   message goes out automatically — handled by a **Cron Trigger** every minute.
 - **Auto follow-up engine:** every conversation is watched for context — who spoke
