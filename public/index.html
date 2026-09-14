@@ -285,6 +285,15 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .lead-card .body{min-width:0;flex:1}
   .lead-card .nm{font-weight:600;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .lead-card .prev{color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+  .lead-col .lc-head .lc-money{margin-left:auto;color:var(--green);font-size:12px;font-weight:700}
+  .lead-col .lc-head .lc-owed{color:var(--accent-text);font-size:11.5px;font-weight:700}
+  .lead-card{align-items:flex-start}
+  .lead-card .avatar{margin-top:1px}
+  .lead-marks{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px}
+  .lead-marks .lm{font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:8px;background:var(--panel3);color:var(--muted)}
+  .lead-marks .lm-q{color:#34d399;background:rgba(34,197,94,.14)}
+  .lead-marks .lm-w{color:var(--accent-text);background:var(--accent-soft)}
+  .lead-marks .lm-old{color:#f5c563;background:rgba(245,184,66,.13)}
 
   /* ---------- Bottom nav ---------- */
   .bottomnav{position:absolute;left:0;right:0;bottom:0;height:calc(var(--nav-h) + var(--safe-bottom));padding-bottom:var(--safe-bottom);
@@ -479,6 +488,75 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .fu-flag{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:700;color:#f5c563;background:rgba(245,184,66,.13);padding:2px 6px;border-radius:8px}
   .fu-flag.high{color:#ff8388;background:rgba(255,90,95,.14)}
   .reply-flag{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:700;color:#34d399;background:rgba(34,197,94,.14);padding:2px 6px;border-radius:8px}
+  .sum-pill.tapme{cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .sum-pill.tapme:active{transform:scale(.95)}
+  .chat-head .num.addname{display:inline-flex;align-items:center;gap:3px;color:var(--accent-text);
+    font-weight:600;cursor:pointer;-webkit-tap-highlight-color:transparent}
+  .chat-head .num.addname svg{width:11px;height:11px}
+  .chat-head .num.addname:active{opacity:.6}
+  /* Clearing the pile used to mean back, find the next one, tap in — three moves
+     between every reply. This is the third move on its own. It sits above the box
+     rather than in the header: six 44px icon targets up there already leave the
+     customer's own name about fifty pixels on a phone. */
+  .nextwait-bar{display:flex;align-items:center;gap:8px;width:100%;flex:none;
+    padding:8px 14px;border-top:1px solid var(--line);background:var(--panel2);
+    color:var(--text);font:inherit;font-size:12.5px;text-align:left;cursor:pointer}
+  .nextwait-bar:active{background:var(--panel3)}
+  .nextwait-bar svg{color:var(--accent);flex:none}
+  .nextwait-bar .nw-t{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .nextwait-bar .nw-t b{font-weight:700}
+  .nextwait-bar .nw-n{flex:none;min-width:19px;height:19px;padding:0 5px;border-radius:10px;
+    background:var(--accent);color:#fff;font-size:10.5px;font-weight:800;line-height:19px;text-align:center}
+  /* Reading back up a long thread had no way down except flicking, and any poll
+     that landed while you were up there threw you to the bottom anyway. This is
+     the way back — and it says what arrived while you were reading. */
+  .jump-new{position:absolute;left:50%;transform:translateX(-50%);bottom:8px;z-index:6;
+    display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border-radius:999px;
+    border:1px solid var(--line);background:var(--panel3);color:var(--text);
+    font-size:12.5px;font-weight:600;cursor:pointer;box-shadow:0 6px 18px rgba(0,0,0,.28)}
+  .jump-new svg{width:14px;height:14px;color:var(--accent)}
+  .jump-new.has-new{background:var(--accent);color:#fff;border-color:transparent}
+  .jump-new.has-new svg{color:#fff}
+  .jump-new:active{transform:translateX(-50%) scale(.96)}
+  .dtp-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+  .dtp{position:relative;aspect-ratio:1;padding:0;border:1px solid var(--line2);border-radius:9px;
+    overflow:hidden;background:var(--panel2);cursor:pointer}
+  .dtp img{width:100%;height:100%;object-fit:cover;display:block}
+  .dtp:active{transform:scale(.95)}
+  .dtp-you{position:absolute;left:3px;bottom:3px;padding:0 4px;border-radius:5px;background:rgba(0,0,0,.6);
+    color:#fff;font-size:8.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+  .sched-item .e{background:transparent;border:none;color:var(--muted2);cursor:pointer;padding:2px;display:inline-flex;align-items:center}
+  .sched-item .e:hover{color:var(--text)}
+  .sched-item .e:active{transform:scale(.9)}
+  .sx-hd{font-size:10.5px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted2);font-weight:800;padding:2px 2px 7px}
+  .sx-row{display:flex;flex-wrap:wrap;gap:6px;padding:0 2px 10px}
+  .sx-chip{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:999px;
+    border:1px solid var(--line);background:var(--panel2);color:var(--text);font-size:12px;font-weight:600;cursor:pointer}
+  .sx-chip.dim{color:var(--muted);border-style:dashed}
+  .sx-chip svg{width:12px;height:12px;color:var(--muted2)}
+  .sx-chip:active{transform:scale(.95)}
+  .tagadd.tag-sug{color:var(--muted2);cursor:pointer}
+  .tagadd.tag-sug:hover{color:var(--accent-text);border-color:var(--accent)}
+  .callrow .ctx{position:relative;padding-right:30px}
+  .ctx-copy{position:absolute;top:5px;right:4px;width:24px;height:24px;display:inline-flex;align-items:center;
+    justify-content:center;border-radius:7px;background:transparent;border:none;color:var(--muted2);cursor:pointer}
+  .ctx-copy:hover{background:var(--panel3);color:var(--text)}
+  .ctx-copy:active{transform:scale(.9)}
+  .cl-name{display:inline-flex;align-items:center;gap:2px;margin-left:7px;padding:1px 6px 1px 4px;border-radius:8px;
+    border:1px dashed var(--line);background:transparent;color:var(--muted2);font-size:10.5px;font-weight:700;cursor:pointer}
+  .cl-name:hover{color:var(--accent-text);border-color:var(--accent)}
+  .cl-name svg{width:11px;height:11px}
+  .mo-chat{flex:none;width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;
+    border-radius:9px;background:transparent;border:none;color:var(--muted2);cursor:pointer}
+  .mo-chat:hover{background:var(--panel3);color:var(--text)}
+  .mo-chat:active{transform:scale(.9)}
+  .mo-again{display:flex;align-items:center;gap:9px;width:100%;margin-top:8px;padding:9px 11px;border-radius:11px;
+    border:1px solid var(--line);background:var(--panel2);color:var(--text);font:inherit;text-align:left;cursor:pointer}
+  .mo-again:active{transform:scale(.99)}
+  .mo-again svg{color:var(--accent);flex:none}
+  .mo-again b{display:block;font-size:13px}
+  .mo-again small{display:block;color:var(--muted2);font-size:11.5px;margin-top:1px}
+  .draft-flag{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:700;color:#c4b5fd;background:rgba(167,139,250,.15);padding:2px 6px;border-radius:8px}
 
   /* per-contact follow-up controls in details */
   #dtFollowup .fu-row{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:13px}
@@ -529,7 +607,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   html.kb-up .chat>.followup-banner,
   html.kb-up .chat>.date-banner,
   html.kb-up .chat>.team-id-bar,
-  html.kb-up .chat>.coach-panel{display:none!important}
+  html.kb-up .chat>.coach-panel,
+  html.kb-up .chat>.nextwait-bar{display:none!important}
   /* The draft-review panels are about what he's writing, so they stay — capped
      to a slice of what's actually on screen (--vvh), never the window height. */
   html.kb-up .chat>.ai-review,
@@ -2828,6 +2907,12 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .pk-said .sh{font-size:11px;font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--muted2);margin-bottom:6px}
   .pk-said .sb{font-size:14px;line-height:1.5}
   .pk-said .st{font-size:11.5px;color:var(--muted2);margin-top:6px}
+  .pk-do{display:flex;gap:7px;margin:0 0 10px}
+  .pk-d{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;
+    padding:10px 4px;border-radius:13px;background:var(--panel2);border:1px solid var(--line);
+    color:var(--text);font-size:11.5px;font-weight:600;cursor:pointer}
+  .pk-d svg{color:var(--muted)}
+  .pk-d:active{transform:scale(.96)}
   .pk-acts{display:flex;gap:8px;align-items:center}
   .pk-step{flex:none;width:46px;height:46px;border-radius:14px;background:var(--panel2);border:1px solid var(--line);
     color:var(--text);display:flex;align-items:center;justify-content:center;transition:all .13s}
@@ -3833,6 +3918,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     <div class="sched-banner" id="schedBanner" style="display:none"></div>
     <div class="followup-banner" id="fuBanner" style="display:none"></div>
     <div class="messages" id="messages"></div>
+    <button class="jump-new" id="jumpNew" style="display:none" aria-label="Jump to the newest message"></button>
+    <button class="nextwait-bar" id="nextWaitBtn" style="display:none"></button>
     <div class="coach-panel" id="coachPanel" style="display:none"></div>
     <div class="team-id-bar" id="teamIdentityBar" style="display:none"></div>
     <div class="date-banner" id="dateBanner" style="display:none"></div>
@@ -3946,6 +4033,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         <div class="dt-sec">
           <div class="lbl">Linked conversations</div>
           <div id="dtLinked"></div>
+        </div>
+        <div class="dt-sec" id="dtPhotoSec" style="display:none">
+          <div class="lbl">Photos in this conversation</div>
+          <div id="dtPhotos"></div>
         </div>
         <div class="dt-sec">
           <div class="lbl">Jobs &amp; money</div>
@@ -4351,6 +4442,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     "chevron-up":'<path d="m18 15-6-6-6 6"/>',
     "chevron-down":'<path d="m6 9 6 6 6-6"/>',
     "chevron-right":'<path d="m9 18 6-6-6-6"/>',
+    "chevrons-right":'<path d="m6 17 5-5-5-5"/><path d="m13 17 5-5-5-5"/>',
     "home":'<path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/>',
     "rocket":'<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>',
     "download":'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/>',
@@ -5506,7 +5598,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   function passFilter(t){return !t.archived&&passTeam(t)&&passStatus(t)}
   // Search operators: status:won  tag:ceramic  is:unread  is:dnt  is:scheduled  +free text.
   function parseSearch(raw){
-    var out={text:"",status:null,tag:null,unread:false,dnt:false,scheduled:false};
+    var out={text:"",status:null,tag:null,unread:false,dnt:false,scheduled:false,draft:false};
     (raw||"").trim().split(/\s+/).forEach(function(tok){
       var lt=tok.toLowerCase();
       if(lt.indexOf("status:")===0)out.status=lt.slice(7);
@@ -5514,9 +5606,24 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       else if(lt==="is:unread")out.unread=true;
       else if(lt==="is:dnt"||lt==="is:optedout")out.dnt=true;
       else if(lt==="is:scheduled")out.scheduled=true;
+      else if(lt==="is:draft"||lt==="is:drafts")out.draft=true;
       else if(tok)out.text+=(out.text?" ":"")+tok;
     });
     return out;
+  }
+  // Everything the list row already knows, as one lowercase haystack. The row
+  // carries the vehicle, the city, the street and the one-line recap precisely so
+  // the board can read them without loading a thread — but search was only ever
+  // looking at the name, the number and the last text, so "silverado" or "monroe"
+  // found nobody even though both were sitting right there on the row.
+  function searchHay(t){
+    if(t._hay&&t._hayTs===t.lastTs)return t._hay;
+    var p=t.plan||{};
+    var h=[displayName(t),t.phone,t.lastBody,(t.tags||[]).join(" "),
+      t.vehicleLabel,t.city,t.address,t.recap,t.reminderNote,t.holdReason,t.needsYouAsk,p.service]
+      .filter(Boolean).join(" ").toLowerCase();
+    try{t._hay=h;t._hayTs=t.lastTs}catch(e){}
+    return h;
   }
   function passSearch(t){
     if(!state.search)return true;
@@ -5526,23 +5633,58 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(q.unread&&!(t.unread>0))return false;
     if(q.dnt&&!t.optedOut)return false;
     if(q.scheduled&&!(t.scheduledCount>0))return false;
+    if(q.draft&&!hasDraft(t.phone))return false;
     if(!q.text)return true;
-    var s=q.text.toLowerCase();
-    return(displayName(t)+" "+t.phone+" "+(t.lastBody||"")+" "+(t.tags||[]).join(" ")).toLowerCase().indexOf(s)>=0;
+    return searchHay(t).indexOf(q.text.toLowerCase())>=0;
   }
 
   // ---- main view dispatch ----
+  // Every render replaces the whole scroller's contents, which silently sends you
+  // back to the top — so scrolling forty conversations down, opening one, and
+  // coming back put you at the top again, and so did any poll that landed while
+  // you were reading. The position is remembered per view (tab + filter + search),
+  // because "where I was in Won" is a different place from "where I was in All".
+  var scrollMem={},scrollMemKey="",scrollMemReset=false;
+  function scrollKey(){return state.tab+"|"+state.filter+"|"+state.assign+"|"+(state.search||"")}
+  // Recorded from the scroll itself, never at render time: a phone hides the whole
+  // list while a conversation is open, and a hidden element's scrollTop reads 0 —
+  // so a render-time save would write "top" the instant you tapped into a thread
+  // and throw away the very position it is trying to keep.
+  (function watchScroll(){
+    var sc=el("scroll");if(!sc)return;
+    var f=null;
+    sc.addEventListener("scroll",function(){
+      if(f)return;
+      f=requestAnimationFrame(function(){
+        f=null;
+        // Hiding the list zeroes its scrollTop and can fire a scroll of its own.
+        // A scroller with no height on screen is not somebody scrolling.
+        if(scrollMemKey&&sc.clientHeight>0)scrollMem[scrollMemKey]=sc.scrollTop;
+      });
+    },{passive:true});
+  })();
   function renderMain(){
+    var sc=el("scroll");
     renderFilters();refreshBadges();
     // Bento turns the list into a card board, but Home and the leads columns lay
     // themselves out — so stamp which one is in there and let CSS pick.
-    var sc=el("scroll");
     if(sc)sc.setAttribute("data-view",(state.tab==="home"&&!state.search)?"home":(state.tab==="leads"?"leads":"list"));
     var r=renderMainInner();
     // Searching also searches the app itself, not just the conversations —
     // matching features are listed above whatever the current tab found, and
     // an empty box offers somewhere to go rather than sitting there blank.
     if(state.search||state.searchFocus)renderFeatureHits();
+    scrollMemKey=scrollKey();
+    // Deliberately reaching a tab from the nav means "start at the top" — only a
+    // re-render of the view you were already on gets put back where it was.
+    if(scrollMemReset){scrollMemReset=false;delete scrollMem[scrollMemKey]}
+    var want=scrollMem[scrollMemKey]||0;
+    if(sc&&sc.scrollTop!==want)sc.scrollTop=want;
+    // Rows can still be laying out (avatars, icons hydrating), so a tall restore
+    // can land short. Ask once more after the frame rather than half way up.
+    if(sc&&want>0)requestAnimationFrame(function(){
+      if(scrollMemKey===scrollKey()&&sc.scrollTop<want)sc.scrollTop=want;
+    });
     return r;
   }
   function renderMainInner(){
@@ -5679,7 +5821,22 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var hits=typed?featureSearch(state.search):fxSuggestions();
     if(!hits.length)return;
     var w=document.createElement("div");w.className="fx-wrap";
-    w.innerHTML='<div class="fx-hd">'+(typed?"Features":"Jump to")+'</div>';
+    // An empty box is the moment to say what search can do. The `is:` grammar has
+    // been in here the whole time and nothing has ever mentioned it, and the last
+    // few things you looked for are the likeliest next thing you want.
+    if(!typed){
+      var recents=sxRecent(),chips="";
+      recents.forEach(function(q){chips+='<button class="sx-chip" data-sx="'+esc(q)+'">'+ic("clock",12)+esc(q)+'</button>'});
+      SX_CUTS.forEach(function(c){
+        if(recents.indexOf(c[0])>=0)return;
+        chips+='<button class="sx-chip dim" data-sx="'+esc(c[0])+'" title="'+esc(c[0])+'">'+ic(c[2],12)+esc(c[1])+'</button>';
+      });
+      // Its own heading class, not .fx-hd — "Jump to" is the panel's first
+      // heading and a suite asserts as much, because that list is the promise
+      // the panel has always made about what Enter and a tap will do.
+      w.innerHTML='<div class="sx-hd">'+(recents.length?"Recent &amp; ready-made":"Try one of these")+'</div><div class="sx-row">'+chips+'</div>';
+    }
+    w.innerHTML+='<div class="fx-hd">'+(typed?"Features":"Jump to")+'</div>';
     hits.forEach(function(f,i){
       var r=document.createElement("button");
       // Only a typed query has a "top hit" that Enter will run — highlighting
@@ -5692,7 +5849,29 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       r.onclick=function(){runFeature(f);renderMain()};
       w.appendChild(r);
     });
+    Array.prototype.forEach.call(w.querySelectorAll("[data-sx]"),function(c){
+      c.onclick=function(){
+        var q=c.getAttribute("data-sx");
+        vibrate(6);
+        var si=el("search");si.value=q;state.search=q;sxRemember(q);
+        setTab("messages");si.focus();
+      };
+    });
     box.insertBefore(w,box.firstChild);
+  }
+  // ---- searches worth offering back --------------------------------------
+  // The ready-made cuts are the field grammar passSearch already understands,
+  // written the way you'd say them out loud.
+  var SX_KEY="mkd-sx",SX_MAX=4;
+  var SX_CUTS=[["is:unread","Unread","bell"],["is:draft","Half-written","pencil"],
+    ["is:scheduled","Scheduled","calendar-clock"],["status:won","Won","check-circle"],["is:dnt","Do not text","ban"]];
+  function sxRecent(){try{var a=JSON.parse(localStorage.getItem(SX_KEY)||"[]");return Array.isArray(a)?a.slice(0,SX_MAX):[]}catch(e){return []}}
+  function sxRemember(q){
+    q=String(q||"").trim();if(q.length<2)return;
+    try{
+      var a=sxRecent().filter(function(x){return x.toLowerCase()!==q.toLowerCase()});
+      a.unshift(q);localStorage.setItem(SX_KEY,JSON.stringify(a.slice(0,SX_MAX)));
+    }catch(e){}
   }
 
   // ---- Home (landing) ----
@@ -6618,6 +6797,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
           (t.optedOut?'<span class="dnt">'+ic("ban",10)+'Do not text</span>':'')+
           ((teamOn()&&t.assignedTo)?assignBadge(t.assignedTo):'')+
           (t.sendFailed?'<span class="dnt">'+ic("alert",10)+'not sent</span>':'')+
+          (hasDraft(t.phone)?'<span class="draft-flag">'+ic("pencil",11)+'draft</span>':'')+
           (t.replyReady?'<span class="reply-flag">'+ic("sparkles",11)+'reply ready</span>':'')+
           (t.needsYou?'<span class="reply-flag" style="color:#a78bfa;background:rgba(167,139,250,.16)">'+ic("help-circle",11)+'needs you</span>':'')+
           (t.dateRequested?'<span class="reply-flag" style="color:#eab308;background:rgba(234,179,8,.14)">'+ic("calendar-days",11)+'date needed</span>':'')+
@@ -6683,7 +6863,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     document.addEventListener("keydown",ctxKey,true);
     m.addEventListener("click",function(e){
       var chip=e.target.closest("[data-st]");
-      if(chip){var st=chip.getAttribute("data-st");closeCtxMenu();metaFor(t,{status:t.status===st?"":st},"Status updated");return}
+      if(chip){var st=chip.getAttribute("data-st");closeCtxMenu();setStatusWithUndo(t,t.status===st?"":st);return}
       var it=e.target.closest("[data-a]");if(!it)return;closeCtxMenu();ctxAction(it.getAttribute("data-a"),t);
     });
   }
@@ -6705,6 +6885,26 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     o.addEventListener("click",function(e){if(e.target===o)o.remove()});
     el("rmSave").onclick=function(){var v=el("rmDate").value;if(!v){toast("Pick a date & time",{bad:true});return}var at=new Date(v).getTime();metaFor(t,{reminderAt:at,reminderNote:el("rmNote").value.trim()},"Reminder set for "+fmtFull(at));o.remove()};
     var rc=el("rmClear");if(rc)rc.onclick=function(){metaFor(t,{reminderAt:null,reminderNote:""},"Reminder cleared");o.remove()};
+  }
+  // A stage is one tap away in three places, which also makes it one mis-tap away
+  // — and a lead quietly moved to "Lost" drops off the board, out of the
+  // follow-up engine, and out of the money you were still chasing. So the change
+  // says what it did and hands back the way out, like archiving already does.
+  function setStatusWithUndo(t,next){
+    var was=t.status||"";
+    if(was===next)return;
+    var label=next?(stageMeta(next).label):"No stage";
+    post("/api/meta",{phone:t.phone,status:next}).then(function(d){
+      if(!(d&&d.ok)){toast("Couldn't update",{bad:true});return}
+      if(state.phone===t.phone&&d.thread)state.thread=d.thread;
+      refreshThreads();
+      toast(displayName(t)+" \u2192 "+label,{undo:function(){
+        post("/api/meta",{phone:t.phone,status:was}).then(function(r){
+          if(state.phone===t.phone&&r&&r.thread)state.thread=r.thread;
+          refreshThreads();toast("Put back to "+(was?stageMeta(was).label:"no stage"));
+        });
+      }});
+    });
   }
   function metaFor(t,patch,msg){
     post("/api/meta",Object.assign({phone:t.phone},patch)).then(function(d){
@@ -6762,14 +6962,16 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var needs=active.filter(waitingOnMe).sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
     var unread=active.reduce(function(a,t){return a+(t.unread>0?1:0)},0);
     var sched=active.reduce(function(a,t){return a+(t.scheduledCount>0?1:0)},0);
+    var drafted=draftCount();
     var collapsed=localStorage.getItem("mkd-sum")==="0";
     var h='<div class="sumbar" id="sumbar">'+
       '<div class="sum-head" id="sumHead">'+
         '<span class="sum-title"><span class="ic-inline" data-ic-skip>'+ic("clipboard-list",14)+'</span> Today</span>'+
         '<span class="sum-pills">'+
-          '<span class="sum-pill'+(needs.length?" hot":"")+'">'+needs.length+' waiting</span>'+
-          (unread?'<span class="sum-pill">'+unread+' unread</span>':'')+
-          (sched?'<span class="sum-pill">'+sched+' scheduled</span>':'')+
+          '<span class="sum-pill tapme'+(needs.length?" hot":"")+'" data-sum="waiting">'+needs.length+' waiting</span>'+
+          (unread?'<span class="sum-pill tapme" data-sum="is:unread">'+unread+' unread</span>':'')+
+          (sched?'<span class="sum-pill tapme" data-sum="is:scheduled">'+sched+' scheduled</span>':'')+
+          (drafted?'<span class="sum-pill tapme" data-sum="is:draft">'+drafted+' draft'+(drafted>1?"s":"")+'</span>':'')+
         '</span>'+
         '<span class="sum-tog">'+(collapsed?ic("chevron-right",15):ic("chevron-down",15))+'</span>'+
       '</div>';
@@ -6792,6 +6994,19 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   function wireSummary(){
     var head=el("sumHead");if(!head)return;
     head.onclick=function(){var c=localStorage.getItem("mkd-sum")==="0";localStorage.setItem("mkd-sum",c?"1":"0");vibrate(6);renderMain()};
+    // Each pill counted something and then left you to go find it. Tapping one
+    // narrows the list to exactly what it just counted — "waiting" is a status
+    // chip the app already owns, the rest are search fields it already parses.
+    Array.prototype.forEach.call(head.querySelectorAll("[data-sum]"),function(pill){
+      pill.onclick=function(e){
+        e.stopPropagation();vibrate(6);
+        var q=pill.getAttribute("data-sum");
+        if(q==="waiting"){state.filter=state.filter==="waiting"?"all":"waiting";state.search="";el("search").value="";setTab("messages");return}
+        var si=el("search");
+        si.value=(si.value.trim()===q)?"":q;state.search=si.value;
+        setTab("messages");renderMain();
+      };
+    });
     Array.prototype.forEach.call(document.querySelectorAll(".sum-row"),function(r){r.onclick=function(){openThread(r.getAttribute("data-phone"))}});
     var more=el("sumMore");if(more)more.onclick=function(){openAnalytics()};
   }
@@ -6940,13 +7155,19 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       h+='<div class="callrow'+(fresh?" fresh":"")+'" data-cid="'+esc(c.id||"")+'" data-phone="'+esc(c.fromNorm||"")+'">'+
         '<div class="avatar" style="background:'+colorFor(c.fromNorm||"")+'">'+esc(callInitials(c))+'</div>'+
         '<div class="cbody">'+
-          '<div class="row1"><span class="nm">'+esc(callName(c))+'</span><span class="tm">'+esc(fmtTime(c.ts))+'</span></div>'+
+          '<div class="row1"><span class="nm">'+esc(callName(c))+'</span>'+
+            (c.name?'':'<button class="cl-name" data-clname="'+esc(c.fromNorm||"")+'" aria-label="Name this caller">'+ic("plus",11)+'name</button>')+
+            '<span class="tm">'+esc(fmtTime(c.ts))+'</span></div>'+
           '<div class="cwhat"><span class="cbadge cb-'+esc(m[2])+'">'+ic(m[1],11)+esc(m[0])+'</span>'+
             (sub.length?'<span>'+esc(sub.join(" · "))+'</span>':'')+'</div>';
 
       if(o==="voicemail"){
+        // The transcript is the address, the plate, the callback number they
+        // rattled off — and it was the one piece of text in this app you could
+        // only re-type. Now it copies, or goes into the reply box as your notes.
         h+=c.transcript
-          ? '<div class="ctx">'+ic("voicemail",12)+' '+esc(c.transcript)+'</div>'
+          ? '<div class="ctx">'+ic("voicemail",12)+' '+esc(c.transcript)+
+            '<button class="ctx-copy" data-vmcopy="'+esc(c.id||"")+'" aria-label="Copy this transcript" title="Copy this transcript">'+ic("copy",13)+'</button></div>'
           : '<div class="ctx pending">'+(c.transcriptFailed
               ?'No transcript for this one — too quiet, too noisy, or not English. Play it below.'
               :'Transcribing… the text lands here on its own in a minute.')+'</div>';
@@ -6981,6 +7202,28 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       Array.prototype.forEach.call(row.querySelectorAll(".cacts button"),function(b){
         b.onclick=function(e){e.stopPropagation();callAction(b.getAttribute("data-act"),phone,row)};
       });
+    });
+    Array.prototype.forEach.call(box.querySelectorAll("[data-vmcopy]"),function(b){
+      b.onclick=function(e){
+        e.stopPropagation();
+        var c=(CALLS.list||[]).filter(function(x){return x.id===b.getAttribute("data-vmcopy")})[0];
+        if(c&&c.transcript)copyText(c.transcript,"Voicemail copied");
+      };
+    });
+    Array.prototype.forEach.call(box.querySelectorAll("[data-clname]"),function(b){
+      b.onclick=function(e){
+        e.stopPropagation();
+        var ph=b.getAttribute("data-clname");if(!ph)return;
+        var v=prompt("Who called from "+prettyPhone(ph)+"?");
+        if(v==null)return;v=v.trim();if(!v)return;
+        post("/api/meta",{phone:ph,name:v}).then(function(d){
+          if(!(d&&d.ok)){toast("Couldn't save that",{bad:true});return}
+          // The calls list carries its own copy of the name; patch it rather than
+          // re-pulling the whole log for one word.
+          (CALLS.list||[]).forEach(function(c){if((c.fromNorm||"")===ph)c.name=v});
+          refreshThreads();renderMain();toast("Saved as "+v);
+        });
+      };
     });
   }
 
@@ -7036,11 +7279,27 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       if(!rows.length)return;
       any=true;
       var sm=stageMeta(col[0]); // custom label + color from Customize → Leads
-      html+='<div class="lead-col"><div class="lc-head"><span class="d" style="background:'+sm.color+'"></span><span class="lbl">'+esc(sm.label)+'</span><span class="n">'+rows.length+'</span></div>';
+      // A pipeline board with no dollars on it is half a pipeline. The open quote
+      // is already mirrored onto the index row (quoteTotal), so the column can say
+      // what it is worth without loading a single thread.
+      var money=rows.reduce(function(a,t){return a+(t.quoteTotal||0)},0);
+      var owedN=rows.filter(waitingOnMe).length;
+      html+='<div class="lead-col"><div class="lc-head"><span class="d" style="background:'+sm.color+'"></span><span class="lbl">'+esc(sm.label)+'</span><span class="n">'+rows.length+'</span>'+
+        (money>0?'<span class="lc-money">'+esc(fmtMoney(money))+' quoted</span>':'')+
+        (owedN?'<span class="lc-owed">'+owedN+' waiting on you</span>':'')+'</div>';
       rows.forEach(function(t){
+        // How long it has sat in THIS stage, not how long since the last text —
+        // a lead that has been "New" for nine days is the thing worth seeing.
+        var since=t.statusAt||t.lastTs||0;
+        var stale=since&&(Date.now()-since)>3*86400000;
+        var marks=[];
+        if(t.quoteTotal>0)marks.push('<span class="lm lm-q">'+esc(fmtMoney(t.quoteTotal))+'</span>');
+        if(waitingOnMe(t))marks.push('<span class="lm lm-w">waiting '+esc(ago(t.lastTs))+'</span>');
+        else if(since)marks.push('<span class="lm'+(stale?" lm-old":"")+'">'+esc(ago(since))+' in '+esc(sm.label.toLowerCase())+'</span>');
         html+='<div class="lead-card" data-phone="'+esc(t.phone)+'">'+
           '<div class="avatar" style="width:38px;height:38px;font-size:14px;background:'+colorFor(t.phone)+'">'+esc(initials(t))+'</div>'+
-          '<div class="body"><div class="nm">'+esc(displayName(t))+'</div><div class="prev">'+(t.lastDir==="out"?"You: ":"")+esc(t.lastBody||"")+'</div></div>'+
+          '<div class="body"><div class="nm">'+esc(displayName(t))+'</div><div class="prev">'+(t.lastDir==="out"?"You: ":"")+esc(t.lastBody||"")+'</div>'+
+          (marks.length?'<div class="lead-marks">'+marks.join("")+'</div>':'')+'</div>'+
           (t.unread>0?'<span class="unread-pill">'+t.unread+'</span>':'')+
         '</div>';
       });
@@ -7830,6 +8089,14 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
          '<div class="st">'+esc(fmtTime(t.lastTs)+" · "+ago(t.lastTs)+" ago")+'</div></div>';
     }
 
+    // The whole point of a peek is triage WITHOUT reading the thread, because
+    // reading it clears unread. Until now the only thing you could do from here
+    // was Open — which clears it. These are the three verdicts that don't.
+    h+='<div class="pk-do">'+
+       '<button class="pk-d" data-pk="call"'+(t.optedOut?'':'')+'>'+ic("phone",16)+'Call</button>'+
+       '<button class="pk-d" data-pk="remind">'+ic("clock",16)+'Remind me</button>'+
+       '<button class="pk-d" data-pk="archive">'+ic(t.archived?"undo":"archive",16)+(t.archived?"Unarchive":"Archive")+'</button>'+
+       '</div>';
     h+='<div class="pk-acts">'+
        '<button class="pk-step" id="pkPrev"'+(at>0?"":" disabled")+' aria-label="Previous conversation">'+ic("chevron-left",20)+'</button>'+
        '<button class="jd-btn pri pk-open" id="pkOpen">'+ic("message-square",17)+' Open</button>'+
@@ -7840,6 +8107,24 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     card.innerHTML=h;hydrateIcons(card);
     if(!rec&&!asked&&t.lastBody)recapFetch(t.phone,rk);
     card.querySelector("#pkOpen").onclick=function(){jdSheetClose();setTab("messages");openThread(PEEK.phone)};
+    Array.prototype.forEach.call(card.querySelectorAll("[data-pk]"),function(b){
+      b.onclick=function(){
+        var a=b.getAttribute("data-pk");vibrate(6);
+        // Step to the next one after a verdict — triage is a pile you work
+        // through, and stopping to reopen the peek for each is the friction.
+        var after=function(){
+          var ord=peekOrder(),i=ord.indexOf(PEEK.phone);
+          if(i>=0&&i<ord.length-1){PEEK.phone=ord[i+1];peekRender()}else jdSheetClose();
+        };
+        if(a==="call"){
+          if(!confirm("Call "+displayName(t)+"?\nYour cell rings first — answer it to connect."))return;
+          post("/api/call",{phone:t.phone}).then(function(d){toast(d&&d.ok?"Calling your phone — answer to connect":"Call failed",{bad:!(d&&d.ok)})});
+          return;
+        }
+        if(a==="remind"){jdSheetClose();openReminderModal(t);return}
+        if(a==="archive"){doArchiveToggle(t);after();return}
+      };
+    });
     var step=function(id,to){
       var b=card.querySelector(id);if(!b||b.disabled)return;
       b.onclick=function(){PEEK.phone=order[to];vibrate(5);peekRender()};
@@ -7878,6 +8163,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // reset any in-thread find when moving to a different conversation
     state.threadFind="";state.findIdx=0;var fb=el("findBar");if(fb)fb.style.display="none";var fi=el("findInput");if(fi)fi.value="";
     state.lastAiText=null;
+    if(switching)DTP.open=false;   // "all photos" belongs to the conversation you opened it on
     hideAiReview();resetPolish();pkHide();pkLoadStyle(false);
     var sbx=el("suggestBox");if(sbx){sbx.style.display="none";sbx.innerHTML=""}
     var dbx=el("dateBanner");if(dbx){dbx.style.display="none";dbx.innerHTML=""}
@@ -8506,8 +8792,23 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var t=state.thread;if(!t)return;
     el("chatHead").style.display="flex";el("composer").style.display="block";
     el("hAvatar").textContent=initials(t);el("hAvatar").style.background=colorFor(t.phone);
+    // An unnamed conversation printed the phone number twice — once as the title
+    // and once underneath it — and every downstream thing (the {first_name} in a
+    // template, the money entry, the board) stayed generic until you dug into the
+    // details sheet to type a name. Put the ask where the duplicate number was.
     el("hName").textContent=displayName(t);
-    el("hNum").textContent=prettyPhone(t.phone);
+    var hn=el("hNum");
+    if((t.name||"").trim()){hn.className="num";hn.textContent=prettyPhone(t.phone);hn.onclick=null}
+    else{
+      hn.className="num addname";
+      hn.innerHTML=ic("plus",11)+"Add a name";
+      hn.onclick=function(e){
+        e.stopPropagation();                       // the header itself opens Details
+        var v=prompt("Who is "+prettyPhone(t.phone)+"?");
+        if(v==null)return;v=v.trim();if(!v)return;
+        saveMeta({name:v});toast("Saved as "+v);
+      };
+    }
     el("hPin").innerHTML=ic("pin",14);el("hPin").style.display=t.pinned?"inline-block":"none";
     var dnt=isDnt(t.phone);el("hDnt").innerHTML=dnt?ic("ban",10)+'Do not text':'';el("hDnt").style.display=dnt?"inline-flex":"none";
 
@@ -8567,6 +8868,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     }else{qb.style.display="none"}
 
     renderQuickReplies(t);
+    renderNextWaiting(t);
 
     // With team mode on, outgoing texts get signed. Show whose name goes on it.
     var sa=el("signAs"),who=teamOn()?meName():"";
@@ -8605,10 +8907,16 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       rb.querySelector(".rb-edit").onclick=function(){openReminderModal(t)};
       rb.querySelector(".rb-x").onclick=function(){metaFor(t,{reminderAt:null,reminderNote:""},"Reminder cleared")};
     }else{rb.style.display="none"}
+    // A scheduled text used to be all-or-nothing: cancel it and type the whole
+    // thing again to change one word or push it an hour. Editing is that same
+    // cancel, except the words and the time come back with it.
     var sb=el("schedBanner");var sc=(t.scheduled||[]);
     if(sc.length){sb.style.display="block";sb.innerHTML='<div class="sb-title">'+ic("calendar-clock",13)+' Scheduled to send</div>'+sc.map(function(s){
-      return '<div class="sched-item"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(s.body.slice(0,60))+(s.body.length>60?'…':'')+'</span><span style="color:#7dd3fc;margin:0 8px">'+fmtFull(s.sendAt)+'</span><button class="x" data-id="'+s.id+'">'+ic("x",16)+'</button></div>'}).join('');
+      return '<div class="sched-item"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(s.body.slice(0,60))+(s.body.length>60?'…':'')+'</span><span style="color:#7dd3fc;margin:0 8px">'+fmtFull(s.sendAt)+'</span>'+
+        '<button class="e" data-edit="'+s.id+'" aria-label="Edit this scheduled message" title="Edit">'+ic("pencil",15)+'</button>'+
+        '<button class="x" data-id="'+s.id+'" aria-label="Cancel this scheduled message">'+ic("x",16)+'</button></div>'}).join('');
       Array.prototype.forEach.call(sb.querySelectorAll(".x"),function(b){b.onclick=function(){post("/api/unschedule",{phone:t.phone,id:b.getAttribute("data-id")}).then(function(d){if(d.ok){state.thread=d.thread;renderThread();refreshThreads();toast("Scheduled message canceled")}})}});
+      Array.prototype.forEach.call(sb.querySelectorAll(".e"),function(b){b.onclick=function(){editScheduled(t,b.getAttribute("data-edit"))}});
     }else sb.style.display="none";
     renderFuBanner(t);
     renderDateBanner(t);
@@ -8619,7 +8927,19 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var cp=el("coachPanel");if(cp._phone!==t.phone){cp.style.display="none";cp.innerHTML="";cp._phone=t.phone}
     renderTeamBits();
 
-    var box=el("messages");box.innerHTML="";var lastDay="";var lastDir="";
+    var box=el("messages");
+    // Where the reader was BEFORE this repaint. A poll lands every thirty seconds
+    // and rebuilds every bubble; snapping to the newest one each time yanked you
+    // out of whatever you had scrolled up to read. Same conversation and you were
+    // away from the bottom → you stay where you were, and the pill says what
+    // arrived while you were up there.
+    var sameThread=box._phone===t.phone;
+    var wasAway=sameThread&&(box.scrollHeight-box.scrollTop-box.clientHeight)>JUMP_SLACK;
+    var keepTop=box.scrollTop, prevCount=sameThread?(box._count||0):0;
+    box._phone=t.phone;box._count=(t.messages||[]).length;
+    if(!sameThread)jumpNew=0;
+    else if(wasAway)jumpNew+=Math.max(0,box._count-prevCount);
+    box.innerHTML="";var lastDay="";var lastDir="";
     // Which message to land on: the oldest one that came in while Mikey was away.
     var firstUnreadId="";
     if((t.unread||0)>0){
@@ -8664,7 +8984,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     Array.prototype.forEach.call(box.querySelectorAll("[data-loadmedia]"),function(btn){btn.onclick=function(){backfillMedia(btn)}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-photoquote]"),function(btn){btn.onclick=function(){aiPhotoQuote(btn)}});
     Array.prototype.forEach.call(box.querySelectorAll(".msg-img"),function(im){im.onclick=function(){openLightbox(im.src)}});
-    if((state.threadFind||"").trim()){focusFind(state.findIdx||0,true)}
+    if(wasAway){box.scrollTop=keepTop;renderJumpNew()}
+    else if((state.threadFind||"").trim()){focusFind(state.findIdx||0,true)}
     else if(firstUnreadId&&box.querySelector('[data-mid="'+cssEsc(firstUnreadId)+'"]')){
       // Came back to a thread with several new texts — start where you left off,
       // not at the bottom with the newest one and no idea what you missed.
@@ -8674,8 +8995,99 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       box.scrollTop=Math.max(0,fu.offsetTop-24);
     }
     else {box.scrollTop=box.scrollHeight}
+    if(!wasAway){jumpNew=0;renderJumpNew()}
     renderDetails();
   }
+  // Pull a queued send back into the composer — words in the box, time in the
+  // schedule picker, ready to go out again with whatever you changed. It is
+  // unscheduled first, so a slow edit can never race the cron and send twice.
+  function editScheduled(t,id){
+    var s=(t.scheduled||[]).filter(function(x){return x.id===id})[0];
+    if(!s)return;
+    var inp=el("msgInput");
+    if(inp.value.trim()&&!confirm("Replace what's in the box with this scheduled message?"))return;
+    post("/api/unschedule",{phone:t.phone,id:id}).then(function(d){
+      if(!(d&&d.ok)){toast("Couldn't pull that back",{bad:true});return}
+      state.thread=d.thread;renderThread();refreshThreads();
+      var i=el("msgInput");
+      i.value=s.body;autoGrow();updateCount();stashDraft(t.phone);
+      // Don't let the polisher rewrite something you already approved once.
+      resetPolish();polishDecide(s.body);
+      i.focus();try{i.selectionStart=i.selectionEnd=i.value.length}catch(e){}
+      closePops("schedPop");
+      var pop=el("schedPop");pop.style.display="block";
+      el("schedTime").value=toLocalInput(new Date(s.sendAt));
+      buildQuickset();
+      toast("Pulled back — edit it and schedule again");
+    });
+  }
+  // ---- "next one waiting" ---------------------------------------------------
+  // Answering the pile meant back out to the list, find who is next, tap in —
+  // three moves for every reply, and the list re-sorts under you as you go. The
+  // app already knows exactly who is owed a reply (it draws the "waiting" chip
+  // off the same rule), so it can just hand you the next one. Longest wait first,
+  // because the person who has been sitting there since Tuesday is the one about
+  // to give up on you.
+  function waitingQueue(exceptPhone){
+    return (state.threads||[]).filter(function(t){
+      return !t.archived&&waitingOnMe(t)&&t.phone!==exceptPhone&&passTeam(t);
+    }).sort(function(a,b){return (a.lastTs||0)-(b.lastTs||0)});
+  }
+  function renderNextWaiting(t){
+    var b=el("nextWaitBtn");if(!b)return;
+    var q=waitingQueue(t&&t.phone);
+    if(!q.length){b.style.display="none";b.innerHTML="";return}
+    var next=q[0];
+    b.style.display="flex";
+    b.innerHTML=ic("chevrons-right",16)+
+      '<span class="nw-t">Next waiting: <b>'+esc(displayName(next))+'</b> \u00b7 '+esc(ago(next.lastTs))+'</span>'+
+      '<span class="nw-n">'+(q.length>9?"9+":q.length)+'</span>';
+    b.title="Next waiting: "+displayName(next)+" \u00b7 "+ago(next.lastTs);
+    b.setAttribute("aria-label",b.title);
+    b.onclick=function(){
+      // Re-read the queue at tap time — you have been typing, and somebody may
+      // have replied since this button was drawn.
+      var again=waitingQueue(state.phone);
+      if(!again.length){toast("Nobody else is waiting on you");renderNextWaiting(state.thread);return}
+      vibrate(6);stashDraft(state.phone);openThread(again[0].phone);
+    };
+  }
+  // ---- "jump to the newest" -------------------------------------------------
+  // Sixty pixels of slack: a thumb resting one line off the bottom is still "at
+  // the bottom" as far as a reader is concerned.
+  var JUMP_SLACK=60,jumpNew=0;
+  function msgsAtBottom(){
+    var box=el("messages");if(!box)return true;
+    return (box.scrollHeight-box.scrollTop-box.clientHeight)<=JUMP_SLACK;
+  }
+  function renderJumpNew(){
+    var b=el("jumpNew"),box=el("messages");if(!b||!box)return;
+    if(!state.thread||!document.body.classList.contains("viewing")||msgsAtBottom()){
+      b.style.display="none";return;
+    }
+    b.className="jump-new"+(jumpNew?" has-new":"");
+    b.innerHTML=ic("chevron-down",14)+(jumpNew?(jumpNew+" new message"+(jumpNew>1?"s":"")):"Jump to newest");
+    b.style.display="inline-flex";
+    // Sit just above whatever the composer stack has grown to, not at the bottom
+    // of the pane — the banners and the box both change height as you type.
+    var chat=box.parentElement;
+    if(chat)b.style.bottom=Math.max(8,Math.round(chat.getBoundingClientRect().bottom-box.getBoundingClientRect().bottom)+8)+"px";
+  }
+  function jumpToNewest(){
+    var box=el("messages");if(!box)return;
+    jumpNew=0;vibrate(6);
+    box.scrollTo?box.scrollTo({top:box.scrollHeight,behavior:"smooth"}):(box.scrollTop=box.scrollHeight);
+    setTimeout(renderJumpNew,340);
+  }
+  (function wireJumpNew(){
+    var box=el("messages"),b=el("jumpNew");if(!box||!b)return;
+    b.onclick=jumpToNewest;
+    var t=null;
+    box.addEventListener("scroll",function(){
+      if(t)return;                                  // one repaint per frame, not one per scroll event
+      t=requestAnimationFrame(function(){t=null;if(msgsAtBottom())jumpNew=0;renderJumpNew()});
+    },{passive:true});
+  })();
 
   // Where a name came from, when it wasn't typed. "Looks right" just saves the
   // same name back through /api/meta, which is what promotes it to a name Mikey
@@ -8692,6 +9104,140 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     el("dtNameFix").onclick=function(){var v=prompt("Contact name:",t.name||"");if(v!==null)saveMeta({name:v.trim()})};
   }
 
+  // ---- what a single text is good for --------------------------------------
+  // A bubble was the one thing in the app you could not act on. The address a
+  // customer sent, the price you quoted, the line you wrote that landed — all of
+  // it was read-only, so it got retyped or hand-selected on a phone screen.
+  // Long-press (or right-click) one and it offers the four things you actually
+  // do with a text you are looking at.
+  var MSG_MONEY=/\$\s?(\d{1,5}(?:\.\d{2})?)\b/;
+  function msgById(id){
+    var ms=(state.thread&&state.thread.messages)||[];
+    for(var i=0;i<ms.length;i++)if(ms[i].id===id)return ms[i];
+    return null;
+  }
+  function msgPlainText(m){
+    // Strip the "[2 attachment(s)]" tail the old MMS path left behind — nobody
+    // wants that pasted into a note.
+    return String((m&&m.body)||"").replace(/\n?\[\d+ attachment\(s\)\]/,"").trim();
+  }
+  function copyText(text,okMsg){
+    if(!text)return;
+    if(navigator.clipboard&&navigator.clipboard.writeText)
+      navigator.clipboard.writeText(text).then(function(){toast(okMsg||"Copied")},function(){manualCopy(text,function(){toast(okMsg||"Copied")})});
+    else manualCopy(text,function(){toast(okMsg||"Copied")});
+  }
+  function openMsgMenu(x,y,m){
+    closeCtxMenu();
+    var t=state.thread;if(!t)return;
+    var text=msgPlainText(m),out=m.dir==="out";
+    var money=MSG_MONEY.exec(text);
+    var amt=money?Math.round(parseFloat(money[1])*100)/100:0;
+    var who=out?(m.by||"You"):displayName(t);
+    var scrim=document.createElement("div");scrim.className="ctx-scrim";
+    var menu=document.createElement("div");menu.className="ctx-menu";
+    menu.innerHTML=
+      '<div class="ctx-name">'+esc(who)+'<small>'+esc(new Date(m.ts).toLocaleString([],{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}))+'</small></div>'+
+      (text?'<div class="ctx-item" data-m="copy">'+ic("copy",17)+'Copy this text</div>':'')+
+      (text?'<div class="ctx-item" data-m="reuse">'+ic("pencil",17)+'Put it in the box</div>':'')+
+      ((text&&out)?'<div class="ctx-item" data-m="tpl">'+ic("plus",17)+'Save as a quick reply</div>':'')+
+      ((amt>0)?'<div class="ctx-sep"></div><div class="ctx-item" data-m="money">'+ic("dollar",17)+'Log '+esc(fmtMoney(amt))+' in the tracker</div>':'')+
+      (m.media&&m.media.length?'<div class="ctx-item" data-m="photo">'+ic("image",17)+'Open the photo</div>':'');
+    scrim.appendChild(menu);document.body.appendChild(scrim);ctxScrim=scrim;
+    var mw=menu.offsetWidth,mh=menu.offsetHeight,vw=window.innerWidth,vh=window.innerHeight;
+    menu.style.left=Math.max(8,Math.min(x,vw-mw-8))+"px";
+    menu.style.top=Math.max(8,Math.min(y,vh-mh-8))+"px";
+    var down=function(e){if(e.target===scrim)closeCtxMenu()};
+    scrim.addEventListener("mousedown",down);
+    scrim.addEventListener("touchstart",down,{passive:true});
+    document.addEventListener("keydown",ctxKey,true);
+    menu.addEventListener("click",function(e){
+      var it=e.target.closest("[data-m]");if(!it)return;
+      closeCtxMenu();msgAction(it.getAttribute("data-m"),m,text,amt);
+    });
+  }
+  function msgAction(a,m,text,amt){
+    var t=state.thread;if(!t)return;
+    if(a==="copy")return copyText(text,"Copied that text");
+    if(a==="reuse"){
+      var inp=el("msgInput");
+      // Append rather than replace — a half-written reply is not something to
+      // throw away because you reached for an old line to paste into it.
+      inp.value=inp.value.trim()?(inp.value.replace(/\s+$/,"")+" "+text):text;
+      autoGrow();updateCount();stashDraft(t.phone);inp.focus();
+      try{inp.selectionStart=inp.selectionEnd=inp.value.length}catch(e){}
+      return;
+    }
+    if(a==="tpl"){
+      var label=prompt("Name this quick reply",text.split(/\s+/).slice(0,3).join(" ").slice(0,24));
+      if(label==null)return;
+      label=label.trim();if(!label)return;
+      state.templates.push([label,text]);saveTemplates();buildTplMenu();
+      toast('Saved as "'+label+'"');
+      return;
+    }
+    if(a==="money"){
+      openMoney();
+      setTimeout(function(){openMoSheet("job",{phone:t.phone,name:displayName(t),amt:amt},null)},120);
+      return;
+    }
+    if(a==="photo"){
+      var im=(m.media||[]).filter(function(x){return /^image\//.test(x.type||"")||!x.type})[0];
+      if(im)openLightbox(mediaSrc(im.url));
+      return;
+    }
+  }
+  // One delegated pair of listeners on the message list rather than a handler per
+  // bubble — a long thread is hundreds of bubbles, rebuilt on every poll.
+  (function wireMsgMenu(){
+    var box=el("messages");if(!box)return;
+    var bubbleAt=function(node){var b=node&&node.closest?node.closest(".bubble[data-mid]"):null;return b},
+        timer=null,sx=0,sy=0;
+    box.addEventListener("contextmenu",function(e){
+      var b=bubbleAt(e.target);if(!b)return;
+      var m=msgById(b.getAttribute("data-mid"));if(!m)return;
+      e.preventDefault();openMsgMenu(e.clientX,e.clientY,m);
+    });
+    var clear=function(){if(timer){clearTimeout(timer);timer=null}};
+    box.addEventListener("touchstart",function(e){
+      if(e.touches.length!==1)return;
+      var b=bubbleAt(e.target);if(!b)return;
+      var p=e.touches[0];sx=p.clientX;sy=p.clientY;
+      timer=setTimeout(function(){
+        timer=null;var m=msgById(b.getAttribute("data-mid"));if(!m)return;
+        // Selecting text by hand is still the other reason to hold a bubble, so
+        // drop the browser's own selection before putting a menu over it.
+        try{var sel=window.getSelection();if(sel)sel.removeAllRanges()}catch(_){}
+        vibrate(16);openMsgMenu(sx,sy,m);
+      },520);
+    },{passive:true});
+    box.addEventListener("touchmove",function(e){var p=e.touches[0];if(!p)return;if(Math.abs(p.clientX-sx)>10||Math.abs(p.clientY-sy)>10)clear()},{passive:true});
+    box.addEventListener("touchend",clear);box.addEventListener("touchcancel",clear);
+    box.addEventListener("scroll",clear,{passive:true});
+  })();
+
+  // Every tag on every conversation, most-used first, minus the ones this one
+  // already has. Read straight off the index rows — no extra call.
+  function tagsInUse(t){
+    var mine={},freq={};
+    (t.tags||[]).forEach(function(x){mine[x.toLowerCase()]=1});
+    (state.threads||[]).forEach(function(x){
+      (x.tags||[]).forEach(function(tag){
+        if(mine[String(tag).toLowerCase()])return;
+        freq[tag]=(freq[tag]||0)+1;
+      });
+    });
+    return Object.keys(freq).sort(function(a,b){return freq[b]-freq[a]||a.localeCompare(b)});
+  }
+  // A new tag that only differs from an existing one by case IS that tag —
+  // otherwise "ceramic" quietly starts a second list nobody ever filters to.
+  function canonTag(v){
+    var low=v.toLowerCase(),hit="";
+    (state.threads||[]).forEach(function(x){
+      (x.tags||[]).forEach(function(tag){if(!hit&&String(tag).toLowerCase()===low)hit=tag});
+    });
+    return hit||v;
+  }
   function renderDetails(){
     var t=state.thread;if(!t)return;
     el("dtAvatar").textContent=initials(t);el("dtAvatar").style.background=colorFor(t.phone);
@@ -8712,7 +9258,21 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
 
     var tw=el("dtTags");tw.innerHTML="";
     (t.tags||[]).forEach(function(tag){var s=document.createElement("span");s.className="tag rm";s.innerHTML=esc(tag)+' <span class="ic-inline">'+ic("x",10)+'</span>';s.title="Remove tag";s.onclick=function(){saveMeta({tags:(t.tags||[]).filter(function(x){return x!==tag})})};tw.appendChild(s)});
-    var add=document.createElement("button");add.className="tagadd";add.textContent="+ Tag";add.onclick=function(){var v=prompt("Add tag (e.g. VIP, Ceramic, Truck):");if(v&&v.trim())saveMeta({tags:(t.tags||[]).concat([v.trim()])})};tw.appendChild(add);
+    // Typing a tag blind is how you end up with "Ceramic", "ceramic" and
+    // "ceramic coat" all meaning the same thing and none of them filtering to the
+    // same list. Offer the ones already in use first, most-used first; the
+    // prompt is still there for a genuinely new one.
+    tagsInUse(t).slice(0,6).forEach(function(tag){
+      var s=document.createElement("button");s.className="tagadd tag-sug";
+      s.innerHTML='+ '+esc(tag);s.title="Add this tag";
+      s.onclick=function(){saveMeta({tags:(t.tags||[]).concat([tag])})};
+      tw.appendChild(s);
+    });
+    var add=document.createElement("button");add.className="tagadd";add.textContent="+ New tag";
+    add.onclick=function(){var v=prompt("Add tag (e.g. VIP, Ceramic, Truck):");if(v&&v.trim())saveMeta({tags:(t.tags||[]).concat([canonTag(v.trim())])})};
+    tw.appendChild(add);
+
+    renderDtPhotos(t);
 
     var n=el("dtNotes");if(document.activeElement!==n)n.value=t.notes||"";
     el("dtPhone").textContent=prettyPhone(t.phone);
@@ -10380,14 +10940,30 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // ---- templates & schedule ----
   // Merge variables — expanded at insert time so Mikey sees/edits the real text before sending.
   //   {first_name}/{name} · {full_name} · {appt}/{appt_time} · {review}
+  // The four that were here covered who they are and when. These cover WHAT —
+  // the vehicle you are quoting, where you are driving, what you already told
+  // them it costs. Every one of them is already on the thread or its index row,
+  // so a template can finally say "your Silverado" without you retyping it.
+  // Anything the thread doesn't know stays neutral rather than leaving a hole:
+  // "your vehicle", "your place" — a sentence that still reads right.
   function expandVars(text){
-    var t=state.thread||{};var c=state.config||{};
+    var t=state.thread||{};var c=state.config||{};var g=t.garage||{};
     var first=((t.name||"").trim().split(/\s+/)[0])||"there";
     var appt=t.appointmentAt?fmtFull(t.appointmentAt):"your appointment time";
+    var veh=garageVehicleLine(g)||t.vehicleLabel||"your vehicle";
+    var addr=g.address||"your place";
+    var city=g.city||t.city||"your area";
+    var price=(t.quote&&t.quote.total)?fmtMoney(t.quote.total):"the quoted price";
+    var day=t.appointmentAt?new Date(t.appointmentAt).toLocaleDateString([],{weekday:"long"}):"that day";
     return String(text||"")
       .replace(/\{first_name\}|\{name\}/gi,first)
       .replace(/\{full_name\}/gi,(t.name||"there"))
       .replace(/\{appt(?:_time)?\}/gi,appt)
+      .replace(/\{day\}/gi,day)
+      .replace(/\{vehicle\}|\{car\}/gi,veh)
+      .replace(/\{address\}/gi,addr)
+      .replace(/\{city\}/gi,city)
+      .replace(/\{price\}|\{quote\}/gi,price)
       .replace(/\{review\}/gi,(c.reviewUrl||""));
   }
   function fillTemplate(text){el("msgInput").value=expandVars(text);el("msgInput").focus();autoGrow();updateCount();stashDraft(state.phone)}
@@ -10447,7 +11023,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     });
     var add=document.createElement("div");add.className="it tpl-new";add.innerHTML='<span class="ic-btn">'+ic("plus",15)+'<span>New quick reply</span></span>';
     add.onclick=function(){addTemplate()};m.appendChild(add);
-    var hint=document.createElement("div");hint.className="tpl-hint";hint.innerHTML="Tap a reply to insert it. Variables: <b>{first_name}</b>, <b>{appt}</b>, <b>{review}</b> — filled in automatically.";m.appendChild(hint);
+    var hint=document.createElement("div");hint.className="tpl-hint";hint.innerHTML="Tap a reply to insert it. Variables: <b>{first_name}</b>, <b>{vehicle}</b>, <b>{price}</b>, <b>{appt}</b>, <b>{day}</b>, <b>{address}</b>, <b>{city}</b>, <b>{review}</b> — filled in automatically.";m.appendChild(hint);
   }
   function loadTemplates(){return api("/api/templates").then(function(d){if(d&&d.ok&&d.templates&&d.templates.length)state.templates=d.templates;buildTplMenu()})}
   function saveTemplates(){post("/api/templates",{templates:state.templates}).then(function(d){if(!d||!d.ok)toast("Couldn't save template",{bad:true})})}
@@ -10606,6 +11182,20 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   }
   function loadDraft(phone){var inp=el("msgInput");inp.value=(phone&&drafts[phone])||"";autoGrow();updateCount()}
   function clearDraft(phone){if(phone&&drafts[phone]!=null){delete drafts[phone];saveDrafts()}}
+  // A half-written reply was perfectly safe and completely invisible: it only
+  // existed once you happened to open that conversation again. The row says so
+  // now, and `is:draft` gathers them, because an unfinished reply is a promise
+  // you made to yourself and forgot.
+  function hasDraft(phone){
+    if(!phone)return false;
+    // The open conversation's words are still in the box, not in the store yet.
+    if(phone===state.phone){var i=el("msgInput");if(i)return !!i.value.trim()}
+    return !!(drafts[phone]&&drafts[phone].trim());
+  }
+  function draftCount(){
+    var n=0;(state.threads||[]).forEach(function(t){if(!t.archived&&hasDraft(t.phone))n++});
+    return n;
+  }
 
   // ---- guards on the way out ----------------------------------------------
   // Two things worth a second of friction: the same text going twice because of
@@ -10700,9 +11290,12 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     el("emptyState").style.display="flex";el("chatHead").style.display="none";el("composer").style.display="none";el("schedBanner").style.display="none";el("fuBanner").style.display="none";el("remindBanner").style.display="none";el("jobBanner").style.display="none";el("planChipWrap").innerHTML="";pkHide();
     el("coachPanel").style.display="none";el("coachPanel")._phone=null;el("teamIdentityBar").style.display="none";
     hideAiReview();resetPolish();
-    el("messages").innerHTML="";
+    el("messages").innerHTML="";el("messages")._phone=null;
+    var jnb=el("jumpNew");if(jnb)jnb.style.display="none";jumpNew=0;
+    var nwb=el("nextWaitBtn");if(nwb)nwb.style.display="none";
     setNavActive(tab);
     el("scroll").scrollTop=0;
+    scrollMemKey="";scrollMemReset=true;
     renderMain();
     if(tab==="home")fetchInsights();
     if(tab==="followups")refreshThreads();
@@ -10995,6 +11588,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // blur-then-focus would clear the state right after it was set.
   si.addEventListener("blur",function(){
     sp.classList.remove("focus");
+    // Remembered when you stop typing, not on every keystroke — otherwise the
+    // recent list fills with "s", "si", "sil" on the way to "silverado".
+    sxRemember(state.search);
     setTimeout(function(){
       if(document.activeElement===si)return;
       state.searchFocus=false;if(!state.search)renderMain();
@@ -11030,6 +11626,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   function closeThread(){
     navDrop("thread");
     closeDetails();
+    var jn=el("jumpNew");if(jn)jn.style.display="none";
+    var nw=el("nextWaitBtn");if(nw)nw.style.display="none";
+    jumpNew=0;el("messages")._phone=null;
     stashDraft(state.phone);
     document.body.classList.remove("viewing");
     state.phone=null;
@@ -13401,7 +14000,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(r==="today")return moSumEntries((MO.entries||[]).filter(function(e){return e.date===moTodayStr()}));
     if(r==="week")return MO.week||moSumEntries([]);
     if(MO.report12)return moAggMonths(MO.report12,r);
-    if(!MO._r12busy){MO._r12busy=true;api("/api/money/report?months=12").then(function(d){MO._r12busy=false;if(d&&d.ok){MO.report12=d.months;if(MO.open&&MO.view==="log")moRender()}}).catch(function(){MO._r12busy=false})}
+    if(!MO._r12busy){MO._r12busy=true;api("/api/money/report?months=12").then(function(d){MO._r12busy=false;if(d&&d.ok){MO.report12=d.months||[];if(MO.open&&MO.view==="log")moRender()}}).catch(function(){MO._r12busy=false})}
     return null;
   }
   function moCatInfo(id){for(var i=0;i<MO_CATS.length;i++)if(MO_CATS[i][0]===id)return MO_CATS[i];return [id||"misc",id||"Misc","package"]}
@@ -13618,7 +14217,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var ph=el("moPulseHd");if(ph)ph.onclick=function(){MO.pulseOpen=!MO.pulseOpen;el("moPulse").classList.toggle("open",MO.pulseOpen)};
     var pmore=el("moPulseMore");if(pmore)pmore.onclick=function(){moSetView("report")};
     // lazily fetch the 6-mo trend so the hero sparkline fills in
-    if(!MO.report)api("/api/money/report?months=6").then(function(d){if(d&&d.ok){MO.report=d.months;if(MO.open&&MO.view==="log")moRender()}}).catch(function(){});
+    // `MO.report` doubles as "have we asked yet", so it must end up truthy even
+    // when the answer is "no months" — otherwise the repaint this triggers asks
+    // again, and again, forever.
+    if(!MO.report)api("/api/money/report?months=6").then(function(d){if(d&&d.ok){MO.report=d.months||[];if(MO.open&&MO.view==="log")moRender()}}).catch(function(){});
     Array.prototype.forEach.call(box.querySelectorAll("[data-owepaid]"),function(b){b.onclick=function(){
       var p=b.getAttribute("data-owepaid").split("|");b.disabled=true;
       post("/api/money/entry",{id:p[0],date:p[1],clearOwed:true}).then(function(d){
@@ -13641,10 +14243,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // the price is too low.
   var PRICING={data:null,fetching:false};
   function loadPricing(){
-    if(PRICING.fetching||PRICING.data)return;
+    if(PRICING.fetching||PRICING.data||PRICING.tried)return;
     PRICING.fetching=true;
     api("/api/pricing?months=12").then(function(d){
-      PRICING.fetching=false;
+      PRICING.fetching=false;PRICING.tried=true;   // an answer we can't use is still an answer
       if(d&&d.ok&&d.overall&&d.bands&&d.advice){PRICING.data=d;if(MO.open&&MO.view==="log")moRender()}
     }).catch(function(){PRICING.fetching=false});
   }
@@ -13708,14 +14310,25 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     else{var c=moCatInfo(e.cat);icon=c[2];l1=esc(c[1])+(e.sub?" · "+esc(e.sub):"");if(e.note)l2.push(esc(e.note))}
     return '<div class="mo-row" data-eid="'+esc(e.id)+'"><span class="ee">'+ic(icon,19)+'</span>'+
       '<div class="bd"><div class="l1">'+l1+'</div>'+(l2.length?'<div class="l2">'+l2.join(" · ")+'</div>':'')+extra+'</div>'+
+      (e.phone?'<button class="mo-chat" data-mochat="'+esc(e.phone)+'" aria-label="Open their texts" title="Open their texts">'+ic("message-square",14)+'</button>':"")+
       (e.rc?'<a class="mo-rc-clip" href="/api/money/receipt?id='+esc(e.id)+'" target="_blank" onclick="event.stopPropagation()" aria-label="View receipt">'+ic("image",14)+'</a>':"")+
       '<span class="amt'+amtCls+'">'+(e.type==="job"?"+":"−")+fmtMoney(e.amount)+'</span>'+
       (withDel?'<button class="del" data-edel="'+esc(e.id)+'|'+esc(e.date)+'" aria-label="Delete">'+ic("trash",15)+'</button>':'')+'</div>';
   }
   function moWireRows(box){
+    // $220 with a name on it, and no way from here to see what you actually said
+    // to earn it. The entry has carried the phone number all along.
+    Array.prototype.forEach.call(box.querySelectorAll("[data-mochat]"),function(b){
+      b.onclick=function(ev){
+        ev.stopPropagation();
+        var ph=b.getAttribute("data-mochat");
+        if(!threadByPhone(ph)){toast("No conversation with that number",{bad:true});return}
+        vibrate(6);closeMoSheet();closeMoney();setTab("messages");openThread(ph);
+      };
+    });
     Array.prototype.forEach.call(box.querySelectorAll(".mo-row[data-eid]"),function(r){
       r.onclick=function(ev){
-        if(ev.target.closest("[data-edel]"))return;
+        if(ev.target.closest("[data-edel]")||ev.target.closest("[data-mochat]"))return;
         var id=r.getAttribute("data-eid");
         var e=(MO.entries||[]).filter(function(x){return x.id===id})[0];
         if(e)openMoSheet(e.type==="exp"?(e.cat||"misc"):e.type,null,e);
@@ -13725,8 +14338,17 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       b.onclick=function(ev){ev.stopPropagation();var p=b.getAttribute("data-edel").split("|");moDeleteEntry(p[0],p[1])};
     });
   }
+  // What is about to be deleted, in the words on the row. "Delete this entry?" is
+  // not a question anyone can answer — a $220 job and a $12 car wash asked it
+  // identically, and only one of them is a mistake you can't get back.
+  function moEntryLabel(id){
+    var e=(MO.entries||[]).filter(function(x){return x.id===id})[0];
+    if(!e)return "this entry";
+    var who=e.type==="job"?(e.name||"a detail job"):e.type==="jp"?("pay to "+jpName()):(moCatInfo(e.cat)[1]);
+    return fmtMoney(e.amount)+" \u00b7 "+who+" \u00b7 "+moDayLabel(e.date);
+  }
   function moDeleteEntry(id,date){
-    if(!confirm("Delete this entry?"))return;
+    if(!confirm("Delete "+moEntryLabel(id)+"?\n\nThis can't be undone."))return;
     post("/api/money/delete",{id:id,date:date}).then(function(d){
       if(d&&d.ok){toast("Entry deleted");MO.report=null;dtMoneyCache={};closeMoSheet();loadMoney(MO.view==="log"?null:MO.month)}
       else toast("Couldn't delete: "+((d&&d.error)||"error"),{bad:true});
@@ -13748,7 +14370,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   }
   function openMoSheet(kind,preset,editEntry){
     preset=preset||{};
-    MOS={kind:kind,amt:"",method:"",service:"",sub:"",phone:preset.phone||"",name:preset.name||"",custQ:"",date:moTodayStr(),id:null,origDate:null,veh:"",rcImg:null,hadRc:false};
+    // A preset amount is how another screen hands this sheet a number it already
+    // knows (the $220 you texted, the last job for this customer) — the keypad is
+    // still right there to change it.
+    MOS={kind:kind,amt:preset.amt?String(preset.amt):"",method:preset.method||"",service:preset.service||"",sub:"",phone:preset.phone||"",name:preset.name||"",custQ:"",date:moTodayStr(),id:null,origDate:null,veh:preset.veh||"",rcImg:null,hadRc:false};
     if(editEntry){
       MOS.id=editEntry.id;MOS.origDate=editEntry.date;MOS.date=editEntry.date;MOS.amt=String(editEntry.amount);
       MOS.method=editEntry.method||"";MOS.service=editEntry.service||"";MOS.sub=editEntry.sub||"";
@@ -13757,7 +14382,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     }
     var ki=moKindInfo(kind);
     var h='<div class="sh-hd"><span class="e">'+ki.e+'</span><b>'+esc((MOS.id?"Edit · ":"")+ki.t)+'</b><button class="sh-x" id="moShX">'+ic("x",20)+'</button></div><div class="sh-body">';
-    h+='<div class="mo-amt zero" id="moAmt"><small>$</small>0</div>';
+    h+='<div class="mo-amt'+((!MOS.amt||+MOS.amt===0)?" zero":"")+'" id="moAmt"><small>$</small>'+esc(MOS.amt||"0")+'</div>';
     // one-tap common amounts (your own most-used for this kind, else presets)
     var qa=moQuickAmts(kind);
     if(qa.length)h+='<div class="mo-quickamts" id="moQA">'+qa.map(function(a){return '<button type="button" class="mo-qa" data-qa="'+a+'">$'+a+'</button>'}).join("")+'</div>';
@@ -13836,8 +14461,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   function moRenderCust(){
     var box=el("moCust");if(!box)return;
     if(MOS.phone){
-      box.innerHTML='<div class="mo-chips"><span class="mo-chip on" id="moCustClr">'+esc(MOS.name||prettyPhone(MOS.phone))+' ✕</span></div>';
+      box.innerHTML='<div class="mo-chips"><span class="mo-chip on" id="moCustClr">'+esc(MOS.name||prettyPhone(MOS.phone))+' ✕</span></div>'+
+        '<div id="moAgain"></div>';
       el("moCustClr").onclick=function(){MOS.phone="";MOS.name="";moRenderCust()};
+      moRenderAgain(MOS.phone);
       return;
     }
     var q=(MOS.custQ||"").toLowerCase();
@@ -13847,6 +14474,47 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var inp=el("moCustQ");
     inp.oninput=function(){MOS.custQ=inp.value;moRenderCust();var ni=el("moCustQ");if(ni){ni.focus();try{ni.setSelectionRange(ni.value.length,ni.value.length)}catch(e){}}};
     Array.prototype.forEach.call(box.querySelectorAll("[data-cust]"),function(c){c.onclick=function(){var ph=c.getAttribute("data-cust");var t=threadByPhone(ph);MOS.phone=ph;MOS.name=t?displayName(t):"";moRenderCust()}});
+  }
+  // A repeat customer is the same job again far more often than not — the same
+  // package on the same truck in the same town for the same price. Logging it
+  // meant retyping all four. Their last job is already one cheap read away
+  // (/api/money/by-phone, which the conversation's "Won but nothing logged"
+  // banner is calling anyway), so offer it as one chip instead.
+  function moRenderAgain(phone){
+    var box=el("moAgain");if(!box||!MOS||MOS.kind!=="job"||MOS.id)return;   // editing an entry already has its values
+    var paint=function(d){
+      var box2=el("moAgain");if(!box2||!MOS||MOS.phone!==phone)return;
+      var last=((d&&d.entries)||[]).filter(function(e){return e.type==="job"&&e.amount>0})[0];
+      if(!last){box2.innerHTML="";return}
+      var bits=[fmtMoney(last.amount),last.service,last.veh].filter(Boolean).join(" \u00b7 ");
+      box2.innerHTML='<button type="button" class="mo-again" id="moAgainBtn">'+ic("undo",14)+
+        '<span><b>Same as last time</b><small>'+esc(bits)+'</small></span></button>';
+      el("moAgainBtn").onclick=function(){
+        vibrate(6);
+        MOS.amt=String(last.amount);
+        if(last.method)MOS.method=last.method;
+        if(last.service)MOS.service=last.service;
+        if(last.veh)MOS.veh=last.veh;
+        moUpdateAmt();
+        // Repaint the chip rows the values just moved into.
+        [["moMeth","meth",MOS.method],["moSvc","svc",MOS.service],["moVeh","veh",MOS.veh]].forEach(function(r){
+          var row=el(r[0]);if(!row)return;
+          Array.prototype.forEach.call(row.querySelectorAll("[data-"+r[1]+"]"),function(c){
+            c.classList.toggle("on",c.getAttribute("data-"+r[1])===r[2]);
+          });
+        });
+        var city=el("moCity");if(city&&last.city&&!city.value)city.value=last.city;
+        toast("Filled in from "+moDayLabel(last.date));
+      };
+    };
+    var cached=dtMoneyCache[phone];
+    if(cached){paint(cached);return}
+    if(cached===null)return;                       // already in flight for this number
+    dtMoneyCache[phone]=null;
+    api("/api/money/by-phone?phone="+encodeURIComponent(phone)).then(function(d){
+      dtMoneyCache[phone]=(d&&d.ok)?d:{jobs:0,total:0,entries:[]};
+      paint(dtMoneyCache[phone]);
+    }).catch(function(){dtMoneyCache[phone]={jobs:0,total:0,entries:[]}});
   }
   // Common amounts for one-tap entry: your own most-frequent for this kind
   // (rounded, whole-dollar), topped up with sensible detailing presets.
@@ -14837,6 +15505,36 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     };
   }
 
+  // Every picture in the conversation, in one grid. Photos are how a detail gets
+  // quoted and how it gets proved — the swirl marks they sent, the before/after
+  // you sent back — and finding one meant thumbing up through a hundred texts.
+  // Newest first, because the one you want is almost always the last one.
+  function renderDtPhotos(t){
+    var sec=el("dtPhotoSec"),box=el("dtPhotos");if(!sec||!box)return;
+    var shots=[];
+    (t.messages||[]).forEach(function(m){
+      (m.media||[]).forEach(function(mm){
+        if(!(/^image\//.test(mm.type||"")||!mm.type))return;
+        shots.push({url:mm.url,ts:m.ts,dir:m.dir});
+      });
+    });
+    if(!shots.length){sec.style.display="none";box.innerHTML="";return}
+    shots.reverse();
+    sec.style.display="";
+    var shown=shots.slice(0,DTP.open?shots.length:8);
+    box.innerHTML='<div class="dtp-grid">'+shown.map(function(sh,i){
+      return '<button class="dtp" data-dtp="'+i+'" title="'+esc((sh.dir==="in"?"They sent":"You sent")+" \u00b7 "+fmtFull(sh.ts))+'">'+
+        '<img src="'+esc(mediaSrc(sh.url))+'" loading="lazy" alt="">'+
+        (sh.dir==="out"?'<span class="dtp-you">you</span>':'')+'</button>';
+    }).join("")+'</div>'+
+      (shots.length>8?'<button class="tagadd" id="dtpMore" style="margin-top:8px">'+(DTP.open?"Show fewer":"All "+shots.length+" photos")+'</button>':'');
+    Array.prototype.forEach.call(box.querySelectorAll("[data-dtp]"),function(b){
+      b.onclick=function(){openLightbox(mediaSrc(shown[+b.getAttribute("data-dtp")].url))};
+    });
+    var more=el("dtpMore");if(more)more.onclick=function(){DTP.open=!DTP.open;renderDtPhotos(t)};
+  }
+  var DTP={open:false};
+
   // ---- cross-link: "Jobs & money" in the conversation details panel ----
   function renderDtMoney(){
     var t=state.thread;var box=el("dtMoney");if(!box||!t)return;
@@ -15234,6 +15932,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(j.state==="done"||j.state==="skipped")h+='<button data-jdreset="'+esc(j.id)+'">'+ic("undo",15)+' Reopen</button>';
     if(j.mapQuery)h+='<button data-jdnav="'+esc(j.mapQuery)+'">'+ic("map-pin",15)+' Navigate</button>';
     if(j.phone)h+='<button data-jdchat="'+esc(j.phone)+'">'+ic("message-square",15)+' Text</button>';
+    // Driving to somebody's house is exactly when a text is the wrong tool —
+    // "I'm out front and the gate's locked" is a phone call. Text was here from
+    // the start; the call it half the time needs was not.
+    if(j.phone)h+='<button data-jdcall="'+esc(j.phone)+'">'+ic("phone",15)+' Call</button>';
     h+='<button data-jdmore="'+esc(j.id)+'">'+ic("sliders",15)+' More</button>';
     h+='</div></div>';
     return h;
@@ -15252,6 +15954,12 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     q("[data-jdreset]",function(b){b.onclick=function(){jdSetState(b.getAttribute("data-jdreset"),"queued",{text:false})}});
     q("[data-jdnav]",function(b){b.onclick=function(){jdNavigate(b.getAttribute("data-jdnav"))}});
     q("[data-jdchat]",function(b){b.onclick=function(){closeJobs();openThread(b.getAttribute("data-jdchat"))}});
+    q("[data-jdcall]",function(b){b.onclick=function(){
+      var ph=b.getAttribute("data-jdcall");
+      if(!confirm("Call "+prettyPhone(ph)+"?\nYour phone rings first — answer it to connect."))return;
+      vibrate(8);
+      post("/api/call",{phone:ph}).then(function(d){toast(d&&d.ok?"Calling your phone — answer to connect":"Call failed",{bad:!(d&&d.ok)})});
+    }});
     q("[data-jdmore]",function(b){b.onclick=function(){jdJobSheet(b.getAttribute("data-jdmore"))}});
     q("[data-jdcopy]",function(b){b.onclick=function(){jdCopy(location.origin+"/t/"+b.getAttribute("data-jdcopy"),"Tracking link copied")}});
     q("[data-jdadd]",function(b){b.onclick=function(){jdJobForm(null)}});
