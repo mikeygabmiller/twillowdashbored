@@ -4392,7 +4392,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-14·five-more";
+  var APP_BUILD="2026-09-14·auto-add";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -6222,7 +6222,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // tomorrow from TOM, and that is deliberately as far ahead as this looks. A
   // problem four days out is not something he can act on standing in a kitchen
   // at 7am; a problem tomorrow is the whole point.
-  var RD_IC={no_address:"map-pin",window:"clock",dark:"moon",rain:"droplet",overlap:"calendar-clock",access:"key",unconfirmed:"help"};
+  var RD_IC={no_address:"map-pin",window:"clock",dark:"moon",rain:"droplet",overlap:"calendar-clock",access:"key",unconfirmed:"help",time_unpinned:"clock"};
   function rdyJobs(){
     var out=[];
     var push=function(day,label){

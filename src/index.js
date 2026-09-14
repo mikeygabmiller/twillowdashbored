@@ -132,7 +132,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-14·five-more';
+const BUILD = '2026-09-14·auto-add';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -15227,6 +15227,18 @@ function jobBlockers(jobs, ctx) {
     // 7 · Still a maybe. A pending booking inside a day is a job that may not exist.
     if (j.pending && soon) add('unconfirmed', JR_CHECK, "They haven't confirmed yet", 'Confirm it');
 
+    // 8 · A time nobody actually agreed. Jobs land on the board by themselves
+    //     now (see detAutoAddable), and a detected "Saturday works" becomes a
+    //     9am slot because something had to go in the box. That is a useful
+    //     placeholder and a terrible promise, so the board says which it is —
+    //     this is the check that keeps auto-add honest, and it is the single
+    //     most common gap in his week: the day is agreed, the hour never was.
+    if (j.tentative) {
+      add('time_unpinned', soon ? JR_STOP : JR_CHECK,
+        'The ' + jrHm(startMin) + ' is a guess — they never gave you a time',
+        'Ask what time suits them');
+    }
+
     b.sort((x, y) => (x.level === JR_STOP ? 0 : 1) - (y.level === JR_STOP ? 0 : 1));
     j.blockers = b;
     j.ready = !b.some((x) => x.level === JR_STOP);
@@ -15640,6 +15652,17 @@ function detDefaults() {
     enabled: true,      // master switch for detection
     eager: true,        // fire on a bare day name with no time ("saturday works")
     holdSlots: true,    // an un-confirmed detection still blocks the booking page
+    // Put a detected job straight on the day board instead of parking it behind
+    // a tap. The pile this replaces had 21 cards in it going back to August and
+    // two of eighty-four conversations had an appointment on file, so every
+    // feature built on the board — readiness, the run sheet, the brief, the
+    // rain check — was reading an empty day. A gate nobody walks through is not
+    // a safety feature, it is just the thing that keeps the data empty.
+    autoAdd: true,
+    // ...but only when the model is genuinely sure. Detection already refuses
+    // below 0.45; this is the higher bar for acting without being asked, and
+    // anything between the two still becomes a card to tap.
+    autoAddMinConfidence: 0.7,
     defaultDurationMin: 180,
   };
 }
@@ -15647,7 +15670,9 @@ function detCfg(cfg) { return Object.assign(detDefaults(), (cfg && cfg.detect) |
 function sanitizeDetect(input, current) {
   const d = Object.assign(detDefaults(), current || {});
   const i = input || {};
-  ['enabled', 'eager', 'holdSlots'].forEach((k) => { if (typeof i[k] === 'boolean') d[k] = i[k]; });
+  ['enabled', 'eager', 'holdSlots', 'autoAdd'].forEach((k) => { if (typeof i[k] === 'boolean') d[k] = i[k]; });
+  if (i.autoAddMinConfidence != null && !isNaN(+i.autoAddMinConfidence))
+    d.autoAddMinConfidence = Math.max(0.45, Math.min(1, Number(i.autoAddMinConfidence)));
   if (i.defaultDurationMin != null && !isNaN(+i.defaultDurationMin))
     d.defaultDurationMin = Math.max(15, Math.min(720, Math.round(+i.defaultDurationMin)));
   return d;
@@ -15798,11 +15823,30 @@ async function detApply(thread, f, dc, cfg) {
   if (f.price && !rec.price) rec.price = f.price;
   if (f.notes) rec.notes = f.notes;
   if (!rec.durationMin) rec.durationMin = dc.defaultDurationMin;
-  if (!open) list.push(rec);
-  await saveDetections(list);
+
+  // Straight onto the board when it's safe to, rather than onto a pile. If the
+  // placement fails for any reason it falls through to the card below — the
+  // detection is never lost, only queued instead.
+  const why = detAutoAddable(rec, thread, dc, Date.now());
+  let placed = null;
+  if (!why) {
+    placed = await detPlaceOnDay(rec, { auto: true });
+    if (placed.ok && open) {
+      // It's on the board now, so the old card for the same customer goes.
+      const k = list.findIndex((x) => x.id === rec.id);
+      if (k >= 0) list.splice(k, 1);
+      await saveDetections(list);
+    }
+  }
+  if (!placed || !placed.ok) {
+    if (!open) list.push(rec);
+    await saveDetections(list);
+  }
 
   const who = rec.name || phone;
-  await notifyMikey(`📅 Looks like you booked ${who} — ${bkNiceDate(rec.date)} at ${bkFmt12(rec.slot)}`,
+  const onBoard = !!(placed && placed.ok);
+  await notifyMikey(
+    `${onBoard ? '📅 Added to your day' : '📅 Looks like you booked'} ${who} — ${bkNiceDate(rec.date)} at ${bkFmt12(rec.slot)}`,
     [
       `${who} · ${bkNiceDate(rec.date)} at ${bkFmt12(rec.slot)}${rec.tentative ? ' (time not pinned down)' : ''}`,
       rec.service ? `Service: ${rec.service}` : null,
@@ -15810,9 +15854,61 @@ async function detApply(thread, f, dc, cfg) {
       rec.address ? `Where: ${rec.address}${rec.city ? ', ' + rec.city : ''}` : null,
       rec.price ? `Quoted: $${rec.price}` : null,
       '', `From: "${rec.evidence}"`, '',
-      `It is NOT on your day yet — open Jobs and tap Yes to add it.`,
+      onBoard
+        ? `It's on your day board. Nothing was sent to them — open Jobs to change the time or take it off.${rec.tentative ? '\nThe time is a guess: they never gave you one.' : ''}`
+        : `It is NOT on your day yet — open Jobs and tap Yes to add it.`,
     ].filter((x) => x !== null).join('\n')).catch(() => {});
   await pushNotify().catch(() => {});
+}
+
+// Putting a detected job on the board. Extracted so the tap and the automatic
+// path do exactly the same thing — when those two drift, one of them is a bug
+// nobody notices until the run sheet disagrees with the conversation.
+//
+// Writes two places the rest of the app already understands: the day doc, and
+// thread.appointmentAt. Sends nothing. The customer-facing "you're all set"
+// text stays a draft he chooses to send, exactly as it was.
+async function detPlaceOnDay(rec, opts) {
+  const date = rec.date;
+  if (!jdIsDate(date) || !/^\d{2}:\d{2}$/.test(String(rec.slot || ''))) return { ok: false, error: 'bad_when' };
+  const doc = await loadDay(date);
+  if (doc.manual.length >= 40) return { ok: false, error: 'day_full' };
+  doc.manual.push({
+    id: 'm:' + genId(),
+    name: rec.name, phone: rec.phone,
+    address: rec.address, city: rec.city,
+    service: rec.service, size: '', vehicle: rec.vehicle,
+    slot: rec.slot, durationMin: rec.durationMin || 180,
+    price: jdMoney(rec.price), notes: rec.notes,
+    // Carried onto the board so it can say so out loud. A job that landed here
+    // on its own, at a time nobody actually agreed, must not look like one he
+    // sat down and booked.
+    tentative: !!rec.tentative,
+    autoAdded: !!(opts && opts.auto),
+    fromEvidence: (opts && opts.auto) ? jdStr(rec.evidence, 200) : '',
+  });
+  await saveDay(doc);
+
+  const thread = await loadThread(rec.phone);
+  thread.appointmentAt = rec.at;
+  thread.dateRequest = null;
+  if (!thread.name && rec.name) thread.name = rec.name;
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+  return { ok: true, date };
+}
+
+// Is this one safe to put on the board without asking? Deliberately narrow.
+// Each "no" here is a real way the board could end up lying, and a card to tap
+// is always the fallback — nothing is ever dropped, only queued instead.
+function detAutoAddable(rec, thread, dc, now) {
+  if (!dc.autoAdd) return 'off';
+  if (rec.kind !== 'set') return 'not-a-new-job';       // moving or cancelling changes something that exists
+  if (!jdIsDate(rec.date) || !rec.slot || !rec.at) return 'no-when';
+  if (rec.at <= now) return 'in-the-past';              // never backfill; this is what the 21-card backlog is
+  if ((rec.confidence || 0) < dc.autoAddMinConfidence) return 'not-sure-enough';
+  if (thread && thread.archived) return 'archived';
+  return '';
 }
 
 function detBlank(phone) {
@@ -15877,32 +15973,12 @@ async function apiDetectionAction(request) {
   }
 
   if (action === 'confirm') {
-    // Two things happen, both of which the rest of the app already understands:
-    // the job goes on the day board, and the conversation gets its appointment.
-    const date = rec.date;
-    const doc = await loadDay(date);
-    const job = {
-      id: 'm:' + genId(),
-      name: rec.name, phone: rec.phone,
-      address: rec.address, city: rec.city,
-      service: rec.service, size: '', vehicle: rec.vehicle,
-      slot: rec.slot, durationMin: rec.durationMin || 180,
-      price: jdMoney(rec.price), notes: rec.notes,
-    };
-    if (doc.manual.length >= 40) return json({ ok: false, error: 'day_full' }, 422);
-    doc.manual.push(job);
-    await saveDay(doc);
-
-    const thread = await loadThread(rec.phone);
-    thread.appointmentAt = rec.at;
-    thread.dateRequest = null;
-    if (!thread.name && rec.name) thread.name = rec.name;
-    await saveThread(thread);
-    await updateIndexEntry(thread);
-
+    // Same placement the automatic path uses — see detPlaceOnDay.
+    const placed = await detPlaceOnDay(rec, { auto: false });
+    if (!placed.ok) return json({ ok: false, error: placed.error }, 422);
     list.splice(i, 1);
     await saveDetections(list);
-    return json({ ok: true, date, day: await buildDay(date), draft: await detConfirmDraft(rec, cfg) });
+    return json({ ok: true, date: placed.date, day: await buildDay(placed.date), draft: await detConfirmDraft(rec, cfg) });
   }
 
   if (action === 'accept') {
