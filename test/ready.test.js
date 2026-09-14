@@ -44,13 +44,15 @@ const constOf = (n) => (SRC.match(new RegExp('^const ' + n + " = (.+);$", 'm')) 
 
 const ctx = {};
 const NAMES = ['jrSun', 'jrMinOf', 'jrWindow', 'jrAccessNeed', 'jobBlockers', 'jrSlotMin', 'jrHm', 'jrIn',
-  'bkLaOffsetMin', 'jobRainRisk', 'jdFirst', 'findWindowInThread', 'findAccessNeedInThread'];
+  'bkLaOffsetMin', 'jobRainRisk', 'jdFirst', 'findWindowInThread', 'findAccessNeedInThread',
+  'detAutoAddable', 'detDefaults', 'detCfg', 'jdIsDate'];
 const PRE = ['JR_STOP', 'JR_CHECK', 'JR_DUSK_BUFFER_MIN', 'JR_LAT', 'JR_LON', 'JR_T', 'JR_SCAN_BACK', 'WX_RISK_AT']
   .map((n) => `const ${n} = ${constOf(n)};`).join('\n') +
   '\nconst jrAmPm = ' + (SRC.match(/^const jrAmPm = (.+);$/m) || [])[1] + ';\n';
 // eslint-disable-next-line no-new-func
 new Function('ctx', PRE + NAMES.map(lift).join('\n') + '\n' + NAMES.map((n) => `ctx.${n} = ${n};`).join(''))(ctx);
-const { jrSun, jrWindow, jrAccessNeed, jobBlockers, jrHm, findWindowInThread, findAccessNeedInThread } = ctx;
+const { jrSun, jrWindow, jrAccessNeed, jobBlockers, jrHm, findWindowInThread, findAccessNeedInThread,
+        detAutoAddable, detDefaults, detCfg } = ctx;
 
 let PASS = 0, FAIL = 0;
 const check = (name, got, want) => {
@@ -223,6 +225,43 @@ check('a thread with nothing stated has no window', findWindowInThread({ message
 check('an empty thread does not throw', findWindowInThread({}), null);
 check('access is heard from either side',
   findAccessNeedInThread({ messages: [{ dir: 'out', ts: 1, body: "I'll grab the key from under the mat" }] }).keys, true);
+
+console.log('\n=== a time nobody agreed to ===');
+// Jobs land on the board by themselves now, and "Saturday works" has to become
+// some hour or there is nothing to put in the box. 9am is a placeholder, and
+// the board has to say so rather than let it read as a promise.
+const guess = run([{ id: 'g', name: 'Chris S.', date: '2026-09-19', slot: '09:00', durationMin: 180, tentative: true }],
+  at('2026-09-18', '20:00'))[0];
+check('it is called a guess, not a booking', textOf(guess, 'time_unpinned'),
+  'The 9am is a guess — they never gave you a time');
+check('and tomorrow that stops the day', stops(guess), ['time_unpinned']);
+check('with the thing to ask', (guess.blockers[0] || {}).fix, 'Ask what time suits them');
+// Weeks out it is a note. There is still time to ask.
+check('weeks out it is only a check',
+  run([{ date: '2026-10-10', slot: '09:00', tentative: true }])[0].ready, true);
+check('a job with a real agreed time says nothing',
+  codes(run([{ date: '2026-09-19', slot: '12:00', durationMin: 180 }])[0]), []);
+
+console.log('\n=== what is safe to put on the board without asking ===');
+// Each "no" below is a real way the board could end up lying. The fallback is
+// always a card to tap, so nothing is ever dropped — only queued instead.
+const DC = detCfg({});
+const NOW = Date.parse('2026-09-14T12:00:00-07:00');
+const det = (o) => Object.assign({ kind: 'set', date: '2026-09-19', slot: '12:00',
+  at: Date.parse('2026-09-19T12:00:00-07:00'), confidence: 0.9 }, o);
+check('auto-add is on out of the box', detDefaults().autoAdd, true);
+check('and the bar to act unasked is higher than the bar to notice', detDefaults().autoAddMinConfidence > 0.45, true);
+check('a confident future booking goes straight on', detAutoAddable(det(), {}, DC, NOW), '');
+check('a booking in the past never does', detAutoAddable(det({ date: '2026-08-10', at: Date.parse('2026-08-10T12:00:00-07:00') }), {}, DC, NOW), 'in-the-past');
+check('a half-sure one waits for a tap', detAutoAddable(det({ confidence: 0.5 }), {}, DC, NOW), 'not-sure-enough');
+check('a reschedule always asks', detAutoAddable(det({ kind: 'reschedule' }), {}, DC, NOW), 'not-a-new-job');
+check('a cancellation always asks', detAutoAddable(det({ kind: 'cancel' }), {}, DC, NOW), 'not-a-new-job');
+check('no date, no board', detAutoAddable(det({ date: '' }), {}, DC, NOW), 'no-when');
+check('no time, no board', detAutoAddable(det({ slot: '' }), {}, DC, NOW), 'no-when');
+check('an archived conversation is left alone', detAutoAddable(det(), { archived: true }, DC, NOW), 'archived');
+check('and the whole thing can be switched off', detAutoAddable(det(), {}, detCfg({ detect: { autoAdd: false } }), NOW), 'off');
+// A day agreed without an hour still goes on — that is the point of the check above.
+check('a tentative time is still worth putting on the board', detAutoAddable(det({ tentative: true }), {}, DC, NOW), '');
 
 console.log(`\n================  ${PASS} passed, ${FAIL} failed  ================`);
 process.exit(FAIL ? 1 : 0);
