@@ -225,7 +225,7 @@ const callSites = SRC.split('\n')
   .map((l, i) => [i + 1, l])
   .filter(([, l]) => /\b(geminiGenerate|aiGenerate)\(/.test(l)
     && !/^\s*(async )?function /.test(l)
-    && !/return geminiGenerate\(prompt, opts\);/.test(l));
+    && !/return geminiGenerate\(flattenForGemini\(prompt, opts\), opts\);/.test(l));
 // A multi-line call puts its options object a few lines below the call itself,
 // so look down to the closing paren rather than at that one line.
 const LINES = SRC.split('\n');

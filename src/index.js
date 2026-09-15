@@ -132,7 +132,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-15·quote-opener';
+const BUILD = '2026-09-15·pairs';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -2919,12 +2919,12 @@ async function apiSend(request) {
   // "Learns from your edits": if this send started from an AI draft/suggestion the
   // owner then tweaked, remember the before→after so future drafts sound more like him.
   const aiOriginal = (data.aiOriginal || '').trim();
-  if (aiOriginal) { try { await recordEdit(aiOriginal, body); } catch { /* non-fatal */ } }
+  if (aiOriginal) { try { await recordEdit(aiOriginal, body, askedBefore(thread, msg.ts)); } catch { /* non-fatal */ } }
   // A text he typed with no draft behind it is the purest voice sample there is,
   // and it used to be dropped — the corpus only grew from drafts he accepted or
   // rewrote, so the way he opens a conversation cold was never learned until the
   // next full rebuild. Now every message he writes goes in as he sends it.
-  else if (body && voiceUsable(msg)) { try { await recordVoiceSample(body, 'sent'); } catch { /* non-fatal */ } }
+  else if (body && voiceUsable(msg)) { try { await recordVoiceSample(body, 'sent', askedBefore(thread, msg.ts)); } catch { /* non-fatal */ } }
   // Two readings of the text he just sent: "see you Saturday at 10" is a job, and
   // "I'll get back to you Monday" is a promise that becomes a reminder with a
   // calendar invite. Both are best-effort, both gate on a free regex before any
@@ -2996,7 +2996,7 @@ async function apiMeta(request) {
   }
   if (typeof data.reminderNote === 'string') thread.reminderNote = data.reminderNote.slice(0, 200);
   if (data.clearSuggested) thread.suggested = null; // Mikey dismissed the pre-drafted reply
-  if (data.clearNeedsYou) thread.needsYou = null;   // he'd rather just write it himself
+  if (data.clearNeedsYou) { thread.needsYou = null; thread.needsYouAnswers = null; }   // he'd rather just write it himself
   if (Array.isArray(data.linked)) {
     thread.linked = [...new Set(data.linked.map((p) => normalizePhone(p) || p).filter(Boolean))]
       .filter((p) => p !== thread.phone).slice(0, 20);
@@ -6545,6 +6545,10 @@ async function generateReply(thread, cfg, hint) {
   // Resolve the async context blocks once, then reuse them across attempts.
   const rulesCtx = await rulesContext();
   const editsCtx = await editsContext(bucket);
+  // His real exchanges, as turns, plus any unpaired samples as a style list.
+  const ex = voiceExchanges(voice, bucket, situation);
+  // What this conversation still can't answer without asking.
+  const missing = missingFacts(thread, bucket);
   // The quote reply is a different shape from every other text he sends, and
   // asking for "1-3 short sentences" was quietly guaranteeing a bad one: his real
   // quote replies run 3-5 sentences and 171-313 characters, because naming the
@@ -6554,28 +6558,56 @@ async function generateReply(thread, cfg, hint) {
   const shape = quoting
     ? `Write ONE reply (2-5 sentences, roughly 170-320 characters, no greeting line, no signature, ready to send). `
     : `Write ONE reply (1-3 short complete sentences, no greeting line, no signature, ready to send). `;
-  const build = (extra) =>
+  // Split in two on purpose. Everything that is the same on every draft — the
+  // playbook, the standing rules, how he writes, what a reply must never do —
+  // goes in the cached system block. Everything that changes with this customer
+  // and this message comes after it. That is what makes the cache worth having,
+  // and it is also the honest division: the first half is who he is, the second
+  // half is what's happening right now.
+  const system =
     businessContext(cfg) +
     rulesCtx +
-    customerContext(thread, spend) +
-    voiceContext(voice, bucket, situation) +
-    editsCtx +
-    `You are replying to a customer by text for Mikey's Mobile Detailing. ` +
-    shape +
-    `It must be indistinguishable from the real texts above — same length, same rhythm, same punctuation habits. ` +
-    `Ground it in the business playbook — use the real services, pricing ranges and voice, and never contradict them. ` +
-    `Mikey works alone: always "I", never "we". ` +
-    `Every dollar figure you write must come from the playbook above, from this conversation, or from the goal below — ` +
+    voiceStyleContext(voice) +
+    `You are Mikey, writing a text back to a customer. You are not an assistant and you are not writing on his behalf — ` +
+    `you are writing as him, and the text goes out under his name.\n` +
+    `- Mikey works alone: always "I", never "we".\n` +
+    `- Every dollar figure must come from the playbook, from the conversation, or from the goal you are given — ` +
     `never a number you worked out yourself, and never one rounded up or down to look tidier. ` +
-    `If the playbook does not price this vehicle, ask for what you're missing instead of guessing at a total. ` +
-    `Do not make up an appointment time on your own. ` +
+    `If the playbook does not price this vehicle, ask for what you're missing instead of guessing at a total.\n` +
+    `- Never invent an appointment time. Ask, or offer what the playbook says he offers.\n` +
+    `- Write the way a busy person texts, not the way an assistant writes. Finish every sentence.\n`;
+
+  const build = (extra) =>
+    customerContext(thread, spend) +
+    ex.text +
+    editsCtx +
+    shape +
+    `It must be indistinguishable from the real replies above — same length, same rhythm, same punctuation habits. ` +
+    `Ground it in the business playbook — use the real services, pricing ranges and voice, and never contradict them. ` +
     `BUT if the goal below already specifies details the owner has decided — a price, a day, a time, an answer — use those exactly as given; that is the owner telling you what to say. ` +
-    `Write it the way a busy person texts, not the way an assistant writes. Finish every sentence. ` +
-    (hint ? `Goal of this reply (write a text that accomplishes exactly this): ${hint}. ` : '') +
+    // The complaint that started this: a draft that answers the question and
+    // stops is a dead end. Nearly every conversation that stalls stalls because
+    // nobody ever asked for the one fact that would let the job be booked — the
+    // vehicle, the address, the day. He asks for those in person without
+    // thinking about it; the draft never did unless the customer volunteered it.
+    (missing.length
+      ? `\nHe still does not know ${missing.join(', or ')}. End the reply by asking for ONE of those — the single one that would ` +
+        `move this job forward fastest — in his own words, as a short question tacked onto the end. One question, never two, ` +
+        `and skip it entirely if the goal below already covers it or if asking would read as pushy right here. `
+      : '') +
+    (hint ? `\nGoal of this reply (write a text that accomplishes exactly this): ${hint}. ` : '') +
     (extra || '') +
     `\n\nConversation so far:\n${transcript(thread)}\n\nReply:`;
 
-  let text = await aiGenerate(build(''), { surface: 'reply draft', tier: 'voice', maxTokens: 800, temperature: 0.45 });
+  // Effort above the default here alone. Every other surface is a mechanical
+  // rewrite with the answer already in the prompt; this one has to decide which
+  // of his past moments this is, whether the playbook actually covers the
+  // vehicle, and what is still missing — and gets those wrong at low effort.
+  // The cached system block is what makes it affordable.
+  // Spelled out at both call sites rather than shared through a variable: the
+  // surface and the tier say who pays for this and who reads it, and both are
+  // worth being able to see without following a name somewhere else.
+  let text = await aiGenerate(build(''), { surface: 'reply draft', tier: 'voice', system, turns: ex.turns, effort: 'medium', maxTokens: 800, temperature: 0.45 });
   text = cleanReply(text);
   // One regeneration if the draft gave itself away — either a stock AI phrase, or a
   // shape outside his measured habits (far too long, an emoji he'd never use, a
@@ -6597,7 +6629,7 @@ async function generateReply(thread, cfg, hint) {
     try {
       const retry = await aiGenerate(
         build(`CRITICAL: your previous attempt ${off}. Mikey does not write like that. Rewrite it to read exactly like the real texts above, and avoid any customer-service filler. `),
-        { surface: 'reply draft', tier: 'voice', maxTokens: 800, temperature: 0.45 },
+        { surface: 'reply draft', tier: 'voice', system, turns: ex.turns, effort: 'medium', maxTokens: 800, temperature: 0.45 },
       );
       const cleaned = cleanReply(retry);
       // Take the retry even if it still trips a rule — it was written under the
@@ -6638,28 +6670,70 @@ function cleanReply(raw) {
 // something ever cost an AI call — everything else drafts exactly as before.
 // Deliberately loose: the AI call below is what says no, and a false positive
 // there costs one cheap call, while a false negative costs a wrong promise.
-const OWNER_DECISION_RE = /(what time|when can|when could|when are|when will|when do|when would|how soon|what day|which day|are you (free|available|open)|you (free|available|open)|any (openings|availability|time|spots|room)|do you have (any|anything|time|room|openings)|how much|what.{0,14}cost|what do you charge|\bprice\b|\bquote\b|estimate|can you (come|do|make|fit|get|be|swing|squeeze)|(would|does) (that|this|it|monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|today|morning|afternoon)[^?.!]{0,24}work|how long|what.{0,10}time work|book me|get.{0,12}scheduled|reschedule|move.{0,12}appointment)/i;
+const OWNER_DECISION_RE = /(what time|when can|when could|when are|when will|when do|when would|how soon|what day|which day|are you (free|available|open)|you (free|available|open)|availab|opening|any (time|spots|room)|do you have (any|anything|time|room)|how much|what.{0,14}cost|what do you charge|\bprice\b|\bquote\b|estimate|\bcharge\b|ballpark|can you (come|do|make|fit|get|be|swing|squeeze|start|finish)|(would|does|will) (that|this|it|monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|today|morning|afternoon)[^?.!]{0,24}work|how long|what.{0,10}time work|book me|get.{0,12}scheduled|reschedule|move.{0,12}appointment|need it (done|back|ready)|before (mon|tues|wednes|thurs|fri|satur|sun)day|this (week|weekend)|next week|let me know|possible|worth it|recommend|should i|discount|\bdeal\b|\bcash\b|\bfit me\b|squeeze me)/i;
+// A regex was never going to enumerate the ways a person asks for a price or a
+// time, and the misses were the expensive half: "what's your availability like",
+// "I need it back before Friday" and "2024 Ram 3500, crew cab" all sailed past
+// the old pattern and got drafted as though nothing was being decided. So the
+// gate is now three ways in, any of which is enough to spend one classify call:
+//   - the pattern above, widened;
+//   - a plain question mark, because a question he can't answer from the
+//     playbook is exactly the case this exists for;
+//   - a situation that is structurally his call — a price moment (which is what
+//     a vehicle on its own is), an offer of a time, or a scheduling message.
+// The classifier below is what says no. It is cheap, and the asymmetry has not
+// changed: a false positive costs one call, a false negative promises a real
+// customer something Mikey never agreed to.
+function ownerDecisionLikely(text, bucket) {
+  const t = String(text || '').trim();
+  if (!t) return false;
+  if (OWNER_DECISION_RE.test(t)) return true;
+  if (t.includes('?')) return true;
+  return ['price', 'offer', 'schedule'].includes(bucket);
+}
 
 // Ask the model one narrow question: is the only thing standing between us and
 // a good reply a decision the owner has to make? Returns the question to put to
 // him plus a few realistic one-tap answers, or null when the thread already has
 // everything it needs (in which case we draft as normal).
-async function askOwnerChoices(thread, cfg) {
+async function askOwnerChoices(thread, cfg, already) {
   const msgs = thread.messages || [];
   const last = [...msgs].reverse().find((m) => m.dir === 'in');
-  if (!last || !OWNER_DECISION_RE.test(String(last.body || ''))) return null;
+  if (!last) return null;
+  const body = String(last.body || '');
+  if (!ownerDecisionLikely(body, voiceBucket(body))) return null;
+  // What he has already told us this round, so a follow-up asks the NEXT thing
+  // rather than the same thing in different words.
+  const answered = (already || []).filter(Boolean);
+  // The playbook is the same on every one of these and is most of the prompt, so
+  // it goes behind a cache breakpoint like the draft's does. That matters more
+  // here than it looks: widening the gate above means this runs on far more
+  // messages than it used to, and without the cache it would eat the day's
+  // budget that the drafts themselves need.
+  const system = businessContext(cfg);
   const prompt =
-    businessContext(cfg) +
     `You are helping the OWNER of this business answer a customer's text.\n` +
-    `Decide ONE thing: does answering this message require a decision or a fact that only the owner can supply — ` +
-    `a specific time or day HE is free, a price HE has to set for this particular job, a yes/no HE has to make? ` +
-    `If the business playbook above already answers it (a service he does offer, an area he does cover, a published price range, a policy), then it does NOT need him.\n\n` +
+    `Decide ONE thing: before this reply can go out, is there a fact only the owner can supply?\n\n` +
+    `It needs him whenever the reply would otherwise COMMIT him to something — a specific day or time he'd have to show up, ` +
+    `a price for this particular job, a yes or no about taking it on, how long he'd need, whether he'll travel there. ` +
+    `Guessing any of those puts a promise in his name on a real customer's phone, so when it is a close call, ASK HIM.\n` +
+    `It does NOT need him when the playbook above genuinely answers it outright — a service he lists, an area he covers, ` +
+    `a published price for exactly this vehicle and condition, a stated policy — or when the message asks nothing of him at all ` +
+    `(a thank-you, a confirmation, a complaint to apologise for). A published RANGE is not an answer to "what will it cost me"; ` +
+    `that is still his call.\n\n` +
+    (answered.length
+      ? `He has ALREADY answered these this round — never ask for any of them again, and set needed=false unless something ` +
+        `genuinely different is still missing:\n${answered.map((a) => '- ' + a).join('\n')}\n\n`
+      : '') +
     `Return ONLY JSON:\n` +
     `{"needed": true|false, "question": "the short question to put to the owner, max 60 characters, plain and direct, e.g. \\"What time works Thursday?\\" or \\"What are you charging for this?\\"", ` +
     `"options": ["3 to 5 SHORT tappable answers, 1-4 words each, realistic for THIS conversation, e.g. \\"9am\\", \\"Thursday 2pm\\", \\"$375\\", \\"Can't this week\\". They are choices for the OWNER to pick from, not messages to the customer."]}\n\n` +
-    `Set needed=false (and leave question/options empty) for anything else, including complaints, thank-yous, and questions the playbook answers.\n\n` +
     `Conversation:\n${transcript(thread, AI_CLASSIFY_TURNS)}`;
-  const raw = await geminiGenerate(prompt, { surface: 'ask me first', json: true, maxTokens: 400, temperature: 0.3 });
+  // On his model rather than the cheap one. This is the highest-stakes judgement
+  // in the app — it decides whether a machine gets to make a promise for him —
+  // and it was the one running on the classifier tier. The daily budget still
+  // drops it back to Gemini rather than leaving him without a draft.
+  const raw = await aiGenerate(prompt, { surface: 'ask me first', tier: 'voice', system, json: true, maxTokens: 400, temperature: 0.3 });
   const p = JSON.parse(raw);
   if (!p || p.needed !== true) return null;
   const question = String(p.question || '').trim().slice(0, 90);
@@ -6673,6 +6747,15 @@ async function askOwnerChoices(thread, cfg) {
 
 // He tapped one. Now — and only now — write the reply, with his answer handed
 // in as the goal so the draft states it exactly rather than approximating it.
+//
+// Or ask once more. A real booking usually needs two things from him, not one —
+// the price AND the day, the day AND whether he'll drive out there — and asking
+// for the first then guessing the second was throwing away the whole point of
+// asking. So after he answers, we check whether anything else is genuinely still
+// his to decide, and if it is, we ask that instead of drafting. Two taps, then
+// the text. Capped at two questions: past that it stops feeling like a shortcut
+// and starts feeling like a form, and typing it himself would have been faster.
+const NEEDS_YOU_MAX = 2;
 async function apiAiAnswer(request) {
   const data = await readJson(request);
   const phone = normalizePhone(data.phone);
@@ -6682,16 +6765,33 @@ async function apiAiAnswer(request) {
   const thread = await loadThread(phone);
   const cfg = await loadConfig();
   const asked = (thread.needsYou && thread.needsYou.question) || '';
+  const last = thread.messages[thread.messages.length - 1];
+
+  // Everything he has decided this round, question and answer together, so the
+  // draft can state all of it and the follow-up can't re-ask any of it.
+  const answers = (thread.needsYouAnswers || []).slice(0, NEEDS_YOU_MAX - 1);
+  answers.push(asked ? `${asked} ${choice}` : choice);
+
+  if (answers.length < NEEDS_YOU_MAX) {
+    let next = null;
+    try { next = await askOwnerChoices(thread, cfg, answers); } catch { next = null; }
+    if (next) {
+      thread.needsYou = { question: next.question, options: next.options, ts: Date.now(), forTs: last ? last.ts : Date.now() };
+      thread.needsYouAnswers = answers;
+      await saveThread(thread);
+      await updateIndexEntry(thread);
+      return json({ ok: true, needsYou: thread.needsYou, thread });
+    }
+  }
+
   // Phrased as an instruction rather than a fact, because generateReply treats
   // the hint as "the owner telling you what to say" — which is exactly what a
   // tap is. Without the "use it exactly", it likes to soften a bare "$375".
-  const hint = asked
-    ? `${asked} The owner's answer is: ${choice}. Tell the customer that, using it exactly as given.`
-    : `Answer the customer with this, exactly as given: ${choice}.`;
+  const hint = `The owner has decided: ${answers.join('; ')}. Tell the customer that, using his answers exactly as given.`;
   try {
     const text = await generateReply(thread, cfg, hint);
-    const last = thread.messages[thread.messages.length - 1];
     thread.needsYou = null;                                 // the question is answered
+    thread.needsYouAnswers = null;
     if (text) thread.suggested = { text, ts: Date.now(), forTs: last ? last.ts : Date.now() };
     await saveThread(thread);
     await updateIndexEntry(thread);
@@ -6837,6 +6937,23 @@ async function apiAiDraft(request) {
         out.text = draftText;
       }
       return json({ ok: true, draft: out.text, note: out.note });
+    }
+    // Tapping "write me one" used to guess at a time or a price where the
+    // inbound path would have stopped and asked — the same message got a held
+    // question if it arrived while he was away and an invented promise if he was
+    // looking at it. Same gate on both paths now. Only the bare button: a hint
+    // means he has already told it what to say.
+    if (!hint) {
+      let ask = null;
+      try { ask = await askOwnerChoices(thread, cfg); } catch { ask = null; }
+      if (ask) {
+        const last = thread.messages[thread.messages.length - 1];
+        thread.needsYou = { question: ask.question, options: ask.options, ts: Date.now(), forTs: last ? last.ts : Date.now() };
+        thread.needsYouAnswers = null;
+        await saveThread(thread);
+        await updateIndexEntry(thread);
+        return json({ ok: true, needsYou: thread.needsYou, thread });
+      }
     }
     const text = await generateReply(thread, cfg, hint);
     return json({ ok: true, draft: text });
@@ -8667,7 +8784,7 @@ async function apiFollowupAction(request) {
       return json({ ok: false, error: optedOut ? 'recipient_opted_out' : String((err && err.message) || err) }, optedOut ? 409 : 502);
     }
     await saveThread(thread); await updateIndexEntry(thread);
-    if (voiceUsable(msg)) { try { await recordVoiceSample(body, 'edited'); } catch { /* non-fatal */ } }
+    if (voiceUsable(msg)) { try { await recordVoiceSample(body, 'edited', askedBefore(thread, msg.ts)); } catch { /* non-fatal */ } }
     return json({ ok: true, thread });
   }
   if (action === 'snooze') {
@@ -10557,7 +10674,7 @@ async function appendMessage(phone, message, opts = {}) {
   // Once Mikey replies, any pre-drafted suggestion is answered — clear it, and
   // with it any question we were holding the draft for: he just answered it the
   // long way round.
-  if (message.dir === 'out') { thread.suggested = null; thread.needsYou = null; }
+  if (message.dir === 'out') { thread.suggested = null; thread.needsYou = null; thread.needsYouAnswers = null; }
   await saveThread(thread);
   await updateIndexEntry(thread);
   return thread;
@@ -10691,7 +10808,7 @@ const EDITS_KEEP = 100;   // was 12 — enough to retrieve a *relevant* pattern,
 async function loadEdits() {
   return (await kv().get(EDITS_KEY, { type: 'json' })) || [];
 }
-async function recordEdit(from, to) {
+async function recordEdit(from, to, asked) {
   from = String(from || '').trim();
   to = String(to || '').trim();
   if (!from || !to) return;
@@ -10700,12 +10817,12 @@ async function recordEdit(from, to) {
   // Sending a draft WORD FOR WORD is the strongest signal there is: the AI wrote
   // it and he shipped it. That used to be thrown away — now it's a positive
   // example that goes straight into the voice corpus.
-  if (norm(from) === norm(to)) { await recordVoiceSample(to, 'accepted'); return; }
+  if (norm(from) === norm(to)) { await recordVoiceSample(to, 'accepted', asked); return; }
   const list = await loadEdits();
   list.unshift({ from, to, ts: Date.now() });
   await kv().put(EDITS_KEY, JSON.stringify(list.slice(0, EDITS_KEEP)));
   // His rewrite is, by definition, how he'd have said it.
-  await recordVoiceSample(to, 'edited');
+  await recordVoiceSample(to, 'edited', asked);
 }
 // Pull the edit pairs most relevant to the situation being drafted, not merely
 // the most recent — a price rewrite teaches little about a scheduling reply.
@@ -10739,6 +10856,10 @@ const VOICE_KEY = 'voice:profile';
 // buckets is ~1,080 short texts, still a small fraction of one KV value.
 const VOICE_PER_BUCKET = 120;   // kept per situation (retrieval ranks across all of them)
 const VOICE_SHOW = 20;          // shown to the model per draft
+// How many of those may be full exchanges. Each pair costs two turns, and past a
+// point the model starts answering the examples rather than the customer — eight
+// is enough to establish the pattern with room left for the real conversation.
+const VOICE_TURNS = 8;
 
 // Situation buckets. Deterministic and free — no AI call to file a message.
 const VOICE_BUCKETS = ['price', 'offer', 'schedule', 'confirm', 'answer', 'apology', 'closing', 'quick', 'general'];
@@ -10770,9 +10891,46 @@ const VEHICLE_MAKES = /\b(ford|chevy|chevrolet|dodge|ram|jeep|toyota|honda|nissa
 function mentionsVehicle(t) {
   if (/\b(19|20)\d{2}\b/.test(t)) return true;          // a model year
   if (VEHICLE_MAKES.test(t)) return true;
-  // Body type alone, only when that is essentially the whole message.
-  return t.trim().length <= 25 &&
-    /^(a |an |it'?s a |its a |just a )?(truck|suv|sedan|van|car|coupe|wagon|crossover|pickup|minivan)\b/.test(t.trim());
+  // Body type alone, and now that means literally alone. "my truck" is how a
+  // customer answers "what are you driving?" and belongs in the quote moment;
+  // "My car is the blue one" is someone pointing at a parking space. A length
+  // cap could not tell those apart at 22 characters, so the match has to run to
+  // the end of the message instead of just starting at the front of it.
+  return /^(a |an |my |our |the |it'?s a |its a |just a )?(truck|suv|sedan|van|car|coupe|wagon|crossover|pickup|minivan)\b[\s.!,]*$/
+    .test(t.trim());
+}
+
+// ---------------------------------------------------------------------------
+// What the conversation still doesn't know
+// ---------------------------------------------------------------------------
+// A detail job needs three facts before it can be booked: what they drive, where
+// it'll be, and when. A draft that answers the customer's question without
+// collecting any of them is polite and useless — the thread goes quiet and the
+// job never happens. This works out which are still missing so the draft can ask
+// for one, the way he does on the phone without thinking about it.
+//
+// Deliberately generous about what counts as "already known": a false "he still
+// needs the address" makes the draft ask for something the customer gave two
+// texts ago, which reads as not listening — far worse than not asking at all.
+function missingFacts(thread, bucket) {
+  // Not every moment is a moment to ask. An apology, a thank-you, a "see you
+  // Tuesday" — tacking a question onto those is exactly the tin-eared thing that
+  // makes a text read as written by software.
+  if (['apology', 'closing', 'confirm', 'quick'].includes(bucket)) return [];
+  const msgs = (thread.messages || []);
+  const said = msgs.map((m) => String(m.body || '')).join(' \n ').toLowerCase();
+  const g = thread.garage || {};
+  const out = [];
+  if (!(g.vehicles || []).length && !mentionsVehicle(said)) out.push('what they drive');
+  // addressGuess is set when a message looked like an address, which is enough:
+  // the point is whether the subject has come up, not whether it parsed cleanly.
+  if (!g.address && !g.city && !thread.addressGuess && !/\b\d{2,5}\s+[a-z]{3,}/.test(said)) {
+    out.push('where the vehicle will be');
+  }
+  if (!thread.appointmentAt && !/\b(mon|tues|wednes|thurs|fri|satur|sun)day\b|\btomorrow\b|\bnext week\b|\b\d{1,2}:\d{2}\b|\b\d{1,2}\s*(am|pm)\b/.test(said)) {
+    out.push('what day works for them');
+  }
+  return out;
 }
 
 function voiceBucket(text) {
@@ -10839,21 +10997,55 @@ function emptyVoice() {
 // Add one sample to the corpus without a full rebuild. Used by the learning loop
 // (accepted drafts, his rewrites, trainer verdicts) so the profile keeps
 // sharpening between rebuilds.
-async function recordVoiceSample(text, source) { return addVoiceSamples([text], source); }
+async function recordVoiceSample(text, source, asked) { return addVoiceSamples([{ t: text, q: asked }], source); }
+
+// The message he was answering when he wrote this one. The corpus is worth far
+// more in pairs than in singles — see addVoiceSamples — and every place we learn
+// a sample already has the thread in hand, so the question costs one array walk.
+function askedBefore(thread, ts) {
+  const msgs = (thread && thread.messages) || [];
+  let found = '';
+  for (const m of msgs) {
+    if (!m || (m.ts || 0) >= (ts || Date.now())) break;
+    if (m.dir === 'in' && String(m.body || '').trim()) found = String(m.body).trim();
+  }
+  return found.slice(0, 300);
+}
 
 // Batch version — one KV read and one write no matter how many samples, which
 // matters when an import drops fifty of them in at once.
+//
+// A sample is `{ t, q }`: what he wrote, and the customer message he was
+// answering. The `q` half is the change that matters most here. A corpus of his
+// texts alone can only ever teach STYLE — the rhythm, the length, the habits —
+// and style was never the hard part. What it could not teach is JUDGEMENT: that
+// this kind of message gets a price and that kind gets a question back, that
+// "just checking in" gets two words and a vehicle gets five sentences. That
+// lives in the pairing, which we had in the threads all along and were throwing
+// away on the way into the profile. Samples with no `q` still work exactly as
+// before, so nothing has to be rebuilt for drafts to keep coming.
 async function addVoiceSamples(list, source) {
   const v = (await loadVoice()) || emptyVoice();
   const norm = (s) => s.replace(/\s+/g, ' ').toLowerCase();
   let added = 0;
   for (const raw of (list || [])) {
-    const t = String(raw || '').replace(/\s+/g, ' ').trim();
+    const item = (raw && typeof raw === 'object') ? raw : { t: raw };
+    const t = String(item.t || '').replace(/\s+/g, ' ').trim();
     if (t.length < 8 || t.length > 400) continue;
+    const q = String(item.q || '').replace(/\s+/g, ' ').trim().slice(0, 300);
     const b = voiceBucket(t);
     v.buckets[b] = v.buckets[b] || [];
-    if (v.buckets[b].some((x) => norm(x.t) === norm(t))) continue;   // already have it
-    v.buckets[b].unshift({ t, s: source || 'sent', at: Date.now() });
+    const dupe = v.buckets[b].find((x) => norm(x.t) === norm(t));
+    if (dupe) {
+      // Already have the text, but not the moment it answered. Fill it in rather
+      // than drop the sample: an unpaired copy learned months ago would otherwise
+      // block the paired one forever, and the pair is the more useful record.
+      if (q && !dupe.q) { dupe.q = q; added++; }
+      continue;
+    }
+    const row = { t, s: source || 'sent', at: Date.now() };
+    if (q) row.q = q;
+    v.buckets[b].unshift(row);
     if (v.buckets[b].length > VOICE_PER_BUCKET) v.buckets[b].length = VOICE_PER_BUCKET;
     added++;
   }
@@ -10953,14 +11145,22 @@ async function buildVoiceProfile(opts = {}) {
   for (const e of rows) {
     if (isPracticePhone(e.phone)) continue;             // the fake customer isn't training data
     const thread = await loadThread(e.phone);
+    // Walking in order lets us keep the last thing the customer said, so each of
+    // his replies is stored WITH the message it answered. Same scan, same cost,
+    // and it is the difference between a corpus that teaches how he sounds and
+    // one that teaches what he does.
+    let asked = '';
     for (const m of (thread.messages || [])) {
       scanned++;
+      if (m && m.dir === 'in' && String(m.body || '').trim()) asked = String(m.body).trim().slice(0, 300);
       if (!voiceUsable(m)) continue;
       const b = voiceBucket(m.body);
       if (v.buckets[b].length >= VOICE_PER_BUCKET) continue;
       const norm = (s) => s.replace(/\s+/g, ' ').toLowerCase();
       if (v.buckets[b].some((x) => norm(x.t) === norm(m.body))) continue;
-      v.buckets[b].push({ t: String(m.body).trim(), s: 'sent', at: m.ts || 0 });
+      const row = { t: String(m.body).trim(), s: 'sent', at: m.ts || 0 };
+      if (asked) row.q = asked;
+      v.buckets[b].push(row);
       kept++;
     }
   }
@@ -11111,27 +11311,51 @@ function voiceOverlap(a, b) {
 }
 
 // Rank his real texts by relevance to what the customer actually said.
+//
+// The ranking now leans on the QUESTION side of each sample rather than the
+// answer side, and that inversion is the point. Matching the customer's message
+// against his past REPLIES finds texts that share its vocabulary — ask about a
+// price and you get back his texts that say "price", which is circular and often
+// wrong. Matching it against the messages those replies were ANSWERING finds the
+// same moment: another customer who asked this, and the words he chose that time.
+// Unpaired samples (older ones, phone imports) still score on the answer side, so
+// nothing drops out of the pool while the corpus fills in.
 function pickVoiceExamples(voice, bucket, query, limit) {
   const rows = [];
   for (const b of VOICE_BUCKETS) {
     for (const x of (voice.buckets[b] || [])) {
-      if (x && x.t) rows.push({ t: String(x.t), bucket: b, toks: voiceTokens(x.t) });
+      if (x && x.t) rows.push({ t: String(x.t), q: String(x.q || ''), bucket: b, toks: voiceTokens(x.t), qToks: voiceTokens(x.q || '') });
     }
   }
   if (!rows.length) return [];
   const q = voiceTokens(query);
 
   // Document frequency, so a word like "detail" (in half his texts) counts for far
-  // less than "ceramic" or "Tuesday".
-  const df = new Map();
-  for (const r of rows) for (const t of r.toks) df.set(t, (df.get(t) || 0) + 1);
+  // less than "ceramic" or "Tuesday". Counted separately for the two sides: the
+  // words customers use are not distributed like the words he uses, and sharing
+  // one table would let his own vocabulary flatten theirs.
+  const df = new Map(), qdf = new Map();
+  for (const r of rows) {
+    for (const t of r.toks) df.set(t, (df.get(t) || 0) + 1);
+    for (const t of r.qToks) qdf.set(t, (qdf.get(t) || 0) + 1);
+  }
+  const paired = rows.filter((r) => r.qToks.size).length;
   const idf = (t) => Math.log(1 + rows.length / (1 + (df.get(t) || 0)));
+  const qidf = (t) => Math.log(1 + paired / (1 + (qdf.get(t) || 0)));
 
   for (const r of rows) {
     let s = 0;
     for (const t of r.toks) if (q.has(t)) s += idf(t);
     // Normalised so a long text does not win on sheer word count.
     r.score = s / Math.sqrt(r.toks.size + 1);
+    if (r.qToks.size) {
+      let qs = 0;
+      for (const t of r.qToks) if (q.has(t)) qs += qidf(t);
+      // Weighted above the answer-side score on purpose: "a customer said almost
+      // this" is stronger evidence about what to write than "he once used these
+      // words". A paired sample can win on this alone.
+      r.score += 1.5 * (qs / Math.sqrt(r.qToks.size + 1));
+    }
     if (r.bucket === bucket) r.score += 0.6;   // same situation is real evidence
   }
   rows.sort((a, b) => b.score - a.score);
@@ -11172,6 +11396,47 @@ function voiceContext(voice, bucket, query) {
     );
   }
   return out.length ? out.join('\n\n') + '\n\n' : '';
+}
+
+// The half of the voice profile that never changes between drafts: the measured
+// counts and the derived fingerprint. Split out from voiceContext() so it can sit
+// in the cached system block while the examples — which change with every
+// customer message — stay in the turns after it.
+function voiceStyleContext(voice) {
+  if (!voice) return '';
+  const out = [];
+  const measured = measuredStyleRules(voice.style);
+  if (measured) out.push(measured);
+  if (voice.fingerprint) {
+    out.push('HOW MIKEY WRITES (derived from his real texts — follow this exactly):\n' + voice.fingerprint);
+  }
+  return out.length ? out.join('\n\n') + '\n\n' : '';
+}
+
+// The examples, split by what they can teach. A paired sample becomes a real
+// two-turn exchange the model can continue; an unpaired one can still only be
+// shown as a style specimen, so it says so rather than pretending to be a reply
+// to something. Returns { turns, text } — turns go in `messages`, text goes in
+// the final user message.
+function voiceExchanges(voice, bucket, query) {
+  if (!voice || !voice.buckets) return { turns: [], text: '' };
+  const picked = pickVoiceExamples(voice, bucket, query || '', VOICE_SHOW);
+  const pairs = picked.filter((r) => r.q);
+  const loose = picked.filter((r) => !r.q);
+  const turns = [];
+  // Oldest-best last: the closest match sits nearest the real question, which is
+  // where it carries most weight.
+  for (const r of pairs.slice(0, VOICE_TURNS).reverse()) {
+    turns.push({ role: 'user', content: `A customer texted: "${r.q}"\n\nWrite Mikey's reply.` });
+    turns.push({ role: 'assistant', content: r.t });
+  }
+  let text = '';
+  if (loose.length) {
+    text = `MORE REAL TEXTS MIKEY SENT (no record of what they answered, so copy the rhythm, length and word choice only — ` +
+      `never the specific prices, times or names, which belong to other conversations):\n` +
+      loose.slice(0, VOICE_SHOW - turns.length / 2).map((r) => `- "${r.t}"`).join('\n') + '\n\n';
+  }
+  return { turns, text };
 }
 
 // ---------------------------------------------------------------------------
@@ -11432,6 +11697,10 @@ async function apiVoiceReplayScore(request) {
   const verdict = (d && d.verdict) === 'match' ? 'match' : 'off';
   const mine = String((d && d.mine) || '').trim();
   const ai = String((d && d.ai) || '').trim();
+  // The customer message this round was answering. The trainer is the one place
+  // he tells us outright "this is what I'd have written HERE" — storing it
+  // without the here made it just another loose sample.
+  const customer = String((d && d.customer) || '').trim().slice(0, 300);
   if (!id) return json({ ok: false, error: 'bad_request' }, 422);
 
   // Which situation this round was, so the scoreboard can say WHERE it's weak. A
@@ -11449,9 +11718,9 @@ async function apiVoiceReplayScore(request) {
   await kv().put(VOICE_SCORE_KEY, JSON.stringify(s));
 
   // His real words are always worth having in the corpus.
-  if (mine) await recordVoiceSample(mine, verdict === 'off' ? 'trainer' : 'sent');
+  if (mine) await recordVoiceSample(mine, verdict === 'off' ? 'trainer' : 'sent', customer);
   // A miss is a before→after pair: what the AI wrote, and what he'd have written.
-  if (verdict === 'off' && mine && ai) { try { await recordEdit(ai, mine); } catch { /* non-fatal */ } }
+  if (verdict === 'off' && mine && ai) { try { await recordEdit(ai, mine, customer); } catch { /* non-fatal */ } }
   return json({ ok: true, scores: { match: s.match || 0, off: s.off || 0 }, byBucket: s.byBucket });
 }
 
@@ -11794,6 +12063,7 @@ async function maybeSuggestReply(phone) {
         try { ask = await askOwnerChoices(thread, cfg); } catch { ask = null; }
         if (ask) {
           thread.needsYou = { question: ask.question, options: ask.options, ts: Date.now(), forTs: last.ts };
+          thread.needsYouAnswers = null;   // a new inbound starts the round over
           thread.suggested = null;
           changed = true;
         } else {
@@ -11803,7 +12073,7 @@ async function maybeSuggestReply(phone) {
         }
       }
     } else if (thread.suggested || thread.needsYou) {
-      thread.suggested = null; thread.needsYou = null; changed = true;   // nothing owed — drop any stale draft
+      thread.suggested = null; thread.needsYou = null; thread.needsYouAnswers = null; changed = true;   // nothing owed — drop any stale draft
     }
     if (changed) { await saveThread(thread); await updateIndexEntry(thread); }
   } catch { /* suggestions are a bonus — swallow errors so inbound never breaks */ }
@@ -11915,6 +12185,29 @@ function noteClaudeSpend(inTok, outTok) {
   if (CLAUDE_SPEND) CLAUDE_SPEND.usd += claudeCost(inTok, outTok);
 }
 
+// Gemini has no system slot and no message turns in the shape we use it, so the
+// fallback path folds both back into one string. Worth stating plainly: the
+// fallback is DELIBERATELY a weaker prompt. The turns are the whole point of the
+// Claude path — a real exchange teaches "this is what he says when a customer
+// says that" in a way a bulleted list never has — and flattening them back to a
+// list is the cost of not leaving him unable to reply during an outage.
+function flattenForGemini(prompt, opts) {
+  const turns = opts.turns || [];
+  if (!opts.system && !turns.length) return prompt;
+  const L = [];
+  if (opts.system) L.push(opts.system);
+  if (turns.length) {
+    const rows = [];
+    for (let i = 0; i < turns.length; i++) {
+      const t = turns[i] || {};
+      rows.push((t.role === 'assistant' ? 'Mikey replied: ' : 'Customer said: ') + String(t.content || ''));
+    }
+    L.push('REAL EXCHANGES FROM HIS OWN TEXTING — the customer\'s message and what he actually wrote back:\n' + rows.join('\n'));
+  }
+  L.push(prompt);
+  return L.join('\n\n');
+}
+
 async function aiGenerate(prompt, opts = {}) {
   if (opts.tier === 'voice' && ENV.ANTHROPIC_API_KEY && !envFlag('CLAUDE_DISABLED')) {
     const budget = aiDailyBudget();
@@ -11929,7 +12222,7 @@ async function aiGenerate(prompt, opts = {}) {
       console.log(`claude over the day's budget ($${spent.toFixed(2)} of $${budget.toFixed(2)}) — drafting on gemini`);
     }
   }
-  return geminiGenerate(prompt, opts);
+  return geminiGenerate(flattenForGemini(prompt, opts), opts);
 }
 
 // ===========================================================================
@@ -11951,16 +12244,37 @@ async function aiGenerate(prompt, opts = {}) {
 async function claudeGenerate(prompt, opts = {}) {
   const key = ENV.ANTHROPIC_API_KEY;
   if (!key) throw new Error('ANTHROPIC_API_KEY not set');
+  let userText = String(prompt || '');
+  if (opts.json) userText += '\n\nReturn ONLY valid JSON. No prose, no code fences.';
+  // Few-shot as actual message turns rather than quoted strings inside one blob.
+  // This is the single biggest lever on sounding like him: a list of his texts
+  // shows the model what he SOUNDS like, while a real exchange — customer turn,
+  // then the words he actually wrote back — shows it what he SAYS, and when. The
+  // model is built to continue a conversation, so handing it eight of his real
+  // ones and then this customer's message is asking it to do the thing it does.
+  // (Prefilling the assistant's reply would be stronger still and is a 400 on
+  // this model family — turns are the supported way to do it.)
+  const messages = (opts.turns || []).concat([{ role: 'user', content: userText }]);
   const body = {
     model: claudeModel(),
     max_tokens: Math.max(1024, Math.min(8000, (opts.maxTokens || 800) + 1200)), // room for thinking
-    // Low effort: these are short, well-specified writing tasks with the examples
-    // already in the prompt. Thinking stays ON — disabling it on Opus 5 can leak
+    // Effort per surface. Low is right for a mechanical rewrite; drafting a reply
+    // is a judgement call (which of his past moments is this one?) and gets more.
+    // Thinking stays ON at every level — disabling it on Opus 5 can leak
     // <thinking> tags into the visible text, which a customer would see.
-    output_config: { effort: 'low' },
-    messages: [{ role: 'user', content: prompt }],
+    output_config: { effort: opts.effort || 'low' },
+    messages,
   };
-  if (opts.json) body.messages[0].content += '\n\nReturn ONLY valid JSON. No prose, no code fences.';
+  // The playbook, the standing rules and his style fingerprint are identical on
+  // every draft, so they go in `system` behind a cache breakpoint instead of
+  // being re-billed at full price each time. The volatile half — this customer,
+  // these examples, this conversation — stays in the messages AFTER it, because
+  // caching is a prefix match and one changed byte up front voids the rest.
+  // It also pays for the higher effort above: the retry path re-sends the same
+  // system block, so a regenerated draft reads it from cache.
+  if (opts.system) {
+    body.system = [{ type: 'text', text: String(opts.system), cache_control: { type: 'ephemeral' } }];
+  }
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
@@ -12540,7 +12854,7 @@ async function dispatchDueScheduled(now = Date.now()) {
         const m = { id: genId(), dir: 'out', body: s.body, ts: Date.now(), kind, status: 'sent', sid: (r && r.sid) || undefined };
         if (s.src === 'manual') m.src = 'manual';
         thread.messages.push(m);
-        if (voiceUsable(m)) { learn.push(s.body); mine = true; }
+        if (voiceUsable(m)) { learn.push({ t: s.body, q: askedBefore(thread, m.ts) }); mine = true; }
         if (s.alertOnSend && alertOn) tell.push(`✅ Auto-reply sent — ${threadWho(thread)}. The quote text from your site just went out to them.`);
         sent++;
       } catch (err) {
