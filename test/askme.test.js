@@ -43,23 +43,27 @@ let PASS = 0, FAIL = 0;
 const ok = (n, c, x) => { if (c) { PASS++; console.log('  ✓', n); } else { FAIL++; console.log('  ✗', n, x !== undefined ? '→ ' + JSON.stringify(x) : ''); } };
 const section = (s) => console.log('\n' + s);
 
-// A stand-in world: geminiGenerate returns whatever the test queued, and the
-// prompt it was handed is captured so we can assert the playbook actually got
-// in front of it (a question asked without the playbook would ask him things
-// the playbook already answers).
-let queued = null, prompts = [], calls = 0;
+// A stand-in world: aiGenerate returns whatever the test queued, and the prompt
+// it was handed is captured so we can assert the playbook actually got in front
+// of it (a question asked without the playbook would ask him things the playbook
+// already answers).
+let queued = null, prompts = [], opts = [], calls = 0;
 const build = () => new Function(
-  'geminiGenerate', 'businessContext', 'transcript', 'AI_CLASSIFY_TURNS',
-  `${liftConst('OWNER_DECISION_RE')}\n${lift('askOwnerChoices')}\nreturn { askOwnerChoices, OWNER_DECISION_RE };`,
+  'aiGenerate', 'businessContext', 'transcript', 'AI_CLASSIFY_TURNS',
+  `${liftConst('VEHICLE_MAKES')}\n${lift('mentionsVehicle')}\n${lift('voiceBucket')}\n` +
+  `${liftConst('OWNER_DECISION_RE')}\n${lift('ownerDecisionLikely')}\n${lift('askOwnerChoices')}\n` +
+  `return { askOwnerChoices, ownerDecisionLikely, voiceBucket, OWNER_DECISION_RE };`,
 )(
-  async (prompt) => { calls++; prompts.push(prompt); if (queued instanceof Error) throw queued; return JSON.stringify(queued); },
+  async (prompt, o) => { calls++; prompts.push(prompt); opts.push(o); if (queued instanceof Error) throw queued; return JSON.stringify(queued); },
   () => 'PLAYBOOK: full detail $250-$450. Serves Snohomish.\n\n',
   (t) => (t.messages || []).map((m) => `${m.dir === 'in' ? 'Customer' : 'You'}: ${m.body}`).join('\n'),
   6,
 );
-const { askOwnerChoices, OWNER_DECISION_RE } = build();
+const { askOwnerChoices, ownerDecisionLikely, voiceBucket, OWNER_DECISION_RE } = build();
+// What the live callers pass: the message and the situation it was filed under.
+const gate = (t) => ownerDecisionLikely(t, voiceBucket(t));
 const thread = (body) => ({ phone: '+14255551234', messages: [{ dir: 'in', body, ts: Date.now() }] });
-const reset = () => { calls = 0; prompts = []; };
+const reset = () => { calls = 0; prompts = []; opts = []; };
 
 section('The cheap gate: which messages are even worth an AI call');
 const asks = [
@@ -68,13 +72,28 @@ const asks = [
   'How long does it take?', 'what day works best', 'Can I get scheduled for next week?',
   'I need to reschedule', 'whats the price on a truck', 'can you squeeze me in friday?',
 ];
-for (const a of asks) ok(`asks him something: "${a}"`, OWNER_DECISION_RE.test(a), a);
+for (const a of asks) ok(`asks him something: "${a}"`, gate(a), a);
+
+// The misses that made the feature feel like it never fired. None of these are
+// phrased as a question the old pattern knew, and every one of them is a moment
+// where answering means committing him to a price or a day.
+const widened = [
+  "what's your availability like next week", 'I need it back before Friday',
+  'Is it worth it for a car this old?', 'ballpark?', 'would you do it for cash',
+  '2024 Ram 3500 crew cab, diesel', 'my truck', 'Any chance this weekend',
+];
+for (const a of widened) ok(`used to sail past the gate: "${a}"`, gate(a), a);
 
 const noAsks = [
   'Thanks!', 'Sounds good, see you then', 'Ok', 'That looks amazing, thank you so much',
   'Just pulled in', 'My car is the blue one', '👍', 'Perfect',
 ];
-for (const n of noAsks) ok(`costs nothing: "${n}"`, !OWNER_DECISION_RE.test(n), n);
+for (const n of noAsks) ok(`costs nothing: "${n}"`, !gate(n), n);
+// The widening has to stop somewhere, and "ideal" is not "deal".
+ok('costs nothing: "that would be ideal"', !gate('that would be ideal'));
+for (const n of ['Whats included', 'Do you come to Everett']) {
+  ok(`the playbook answers it, so it stays cheap: "${n}"`, !gate(n), n);
+}
 
 section('Nothing that reads like a plain remark ever reaches the AI');
 reset();
@@ -86,8 +105,23 @@ queued = { needed: true, question: 'What time works Thursday?', options: ['9am',
 let r = await askOwnerChoices(thread('Thursday works. What time can you come by?'), {});
 ok('it asks him', r && r.question === 'What time works Thursday?', r);
 ok('with all four answers ready to tap', r && r.options.length === 4, r);
-ok('and it read the playbook before deciding', /PLAYBOOK: full detail/.test(prompts[0] || ''), (prompts[0] || '').slice(0, 60));
+// The playbook rides in the cached system block now rather than the prompt
+// string — it is the same on every one of these calls, and this runs on far more
+// messages than it used to. It still has to actually reach the model.
+ok('and it read the playbook before deciding',
+  /PLAYBOOK: full detail/.test(((opts[0] || {}).system || '') + (prompts[0] || '')), (prompts[0] || '').slice(0, 60));
+ok('the playbook is cached rather than re-sent as prose', /PLAYBOOK: full detail/.test((opts[0] || {}).system || ''), opts[0]);
 ok('and it saw the actual conversation', /Customer: Thursday works/.test(prompts[0] || ''));
+// It decides whether a machine may make a promise in his name. That is not a
+// job for the cheap tier, and it used to be running there.
+ok('and it ran on his own model, not the classifier', (opts[0] || {}).tier === 'voice', opts[0]);
+
+section('A follow-up never re-asks what he just answered');
+reset();
+queued = { needed: true, question: 'What are you charging?', options: ['$300', '$375'] };
+await askOwnerChoices(thread('Thursday works. What time can you come by?'), {}, ['What time works Thursday? 9am']);
+ok('his first answer is put in front of it', /ALREADY answered/.test(prompts[0] || ''), (prompts[0] || '').slice(0, 40));
+ok('including the answer itself', /What time works Thursday\? 9am/.test(prompts[0] || ''));
 
 section('When the playbook already answers it, the draft goes ahead as normal');
 reset();
