@@ -177,8 +177,10 @@ for (const fn of ['handleSubmit', 'handleQqcText']) {
   const body = lift(fn);
   check(`${fn} no longer refuses a nameless lead`, /if \(!name \|\| !(phone|clientPhone)\)/.test(body), false);
   check(`${fn} still refuses one with no number`, /!(phone|clientPhone)\) return cors\(json\(\{ ok: false, error: 'missing_fields'/.test(body), true);
-  check(`${fn} greets through the fallback`, /greetName\(name\)/.test(body), true);
-  check(`${fn} asks for the name it did not get`, /your name and /.test(body), true);
+  // The wording itself moved into quoteOpener() when the opener started being
+  // built from the submission — both endpoints now go through it, so the two
+  // nameless-lead rules are checked there instead of once per handler.
+  check(`${fn} builds its opener from the submission`, /composeQuoteOpener\(/.test(body), true);
   // A nameless lead is labelled by number — unless the email box was carrying a
   // name, which is only ever used to LABEL, never to greet (see name.test.js).
   check(`${fn} identifies the lead by number when it has no name`, /name \|\| guessed \|\| clientPhone/.test(body), true);
@@ -186,6 +188,11 @@ for (const fn of ['handleSubmit', 'handleQqcText']) {
   // which refuses anything that doesn't outrank the name already on the thread.
   check(`${fn} never overwrites a known name with a blank`, /applyLearnedName\(thread, name, 'form'\)/.test(body), true);
 }
+
+console.log('\n=== the opener still reads right for a lead with no name ===\n'.trimEnd());
+const opener = lift('quoteOpener');
+check('quoteOpener greets through the fallback', /greetName\(f\.name\)/.test(opener), true);
+check('quoteOpener asks for the name it did not get', /your name and /.test(opener), true);
 
 console.log(`\n${PASS} passed, ${FAIL} failed`);
 process.exit(FAIL ? 1 : 0);
