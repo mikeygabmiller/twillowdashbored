@@ -132,7 +132,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-14·auto-add';
+const BUILD = '2026-09-15·quote-opener';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -465,6 +465,297 @@ async function handle(request) {
 // ===========================================================================
 // Public webhooks
 // ===========================================================================
+// ===========================================================================
+// The quote-form opener — what the first text to a new lead actually says
+// ---------------------------------------------------------------------------
+// Both quote endpoints used to send one sentence to everybody: "send over the
+// year, make, and model of the car you'd like detailed". That text was written
+// for the submission that arrives with a phone number and nothing else, and it
+// is the wrong text for every other kind. Someone who picked their vehicle,
+// ticked three services and typed "any chance you could do Saturday?" got asked
+// for the car they had just named, and nothing back about Saturday — which
+// reads, correctly, like nobody looked at what they sent.
+//
+// So the opener is built FROM the submission instead of around it. Two layers:
+//
+//   quoteOpener()        — deterministic. Acknowledges what they gave, asks for
+//                          the one thing that is genuinely missing. No AI, no
+//                          key, no failure mode. This is the floor, and it is
+//                          what goes out unless the switch below is on.
+//   smartQuoteOpener()   — the same job, written by the AI in Mikey's voice, so
+//                          it can answer a note in the customer's own words
+//                          instead of in a template's. Only runs when the
+//                          `smartQuoteOpener` config switch is on, and every
+//                          draft has to clear openerFault() or the deterministic
+//                          line goes out in its place.
+//
+// Both layers write to the same shape, and it is the rule Mikey asked for:
+// acknowledge what they already told you, never ask for it again, and finish
+// with exactly ONE question that moves the job forward.
+//
+// Whatever comes out still lands in thread.scheduled, not in Twilio — so it sits
+// in the chat's scheduled banner for the ~3½ minutes before it sends, where he
+// can edit or cancel it. Nothing here shortens that window.
+
+// How long the form is willing to wait on a draft. The customer is staring at a
+// spinner on the website while this runs, so a slow model loses to the template
+// rather than holding up the page — the whole point of a deterministic floor.
+const QUOTE_OPENER_TIMEOUT_MS = 6000;
+
+// A day they can be held to ("Saturday", "tomorrow", "9/20") versus a stretch of
+// one ("morning"). Kept apart because they lead to opposite questions: name a day
+// and the useful reply is what time, name a time and it's what day.
+// Shorthand is allowed, but only where it cannot be an ordinary English word.
+// "tues", "thurs" and "fri" are never anything else; "sat", "sun" and "mon" are
+// ("the car sat outside all winter", "it bakes in the sun"), so those need a
+// period after them to count. Getting this wrong sends somebody "I saw you were
+// hoping for Saturday" about a Saturday they never mentioned, and the cost of
+// being strict is only that the text falls back to asking what day.
+const DAY_PHRASE = /\b(mon|tues|wednes|thurs|fri|satur|sun)day\b|\b(tue|tues|wed|weds|thu|thur|thurs|fri)\b|\b(mon|sat|sun)\.|\btomorrow\b|\btoday\b|\btonight\b|\bnext (week|weekend|month)\b|\bthis (week|weekend)\b|\bweekend\b|\b\d{1,2}\/\d{1,2}\b/i;
+const PART_OF_DAY = /\b(morning|afternoon|evening)s?\b/i;
+// A time they can hold him to. Needs am/pm or a colon on purpose: a bare "10" in
+// a notes box is far more often a year, a price or a count of cars.
+const CLOCK_TIME = /\b\d{1,2}:\d{2}\s*(am|pm)?|\b\d{1,2}\s*(am|pm)\b/i;
+
+const DAY_FULL = {
+  mon: 'Monday', tue: 'Tuesday', tues: 'Tuesday', wed: 'Wednesday', weds: 'Wednesday',
+  thu: 'Thursday', thur: 'Thursday', thurs: 'Thursday', fri: 'Friday', sat: 'Saturday', sun: 'Sunday',
+};
+// Echo their day back the way a person would write it. "sat" typed into a notes
+// box is Saturday; sending "I saw you were hoping for sat" is the kind of thing
+// only a machine does.
+function tidyDayWord(w) {
+  const s = String(w || '').trim().replace(/\.$/, '');
+  if (!s) return '';
+  const full = DAY_FULL[s.toLowerCase()];
+  if (full) return full;
+  // A full weekday typed in any case comes back capitalized; everything else
+  // ("tomorrow", "this weekend", "9/20") stays exactly as they typed it.
+  return /^(monday|tuesday|wednesday|thursday|friday|saturday|sunday)$/i.test(s)
+    ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()
+    : s.toLowerCase();
+}
+
+function matchPhrase(text, re) {
+  const m = String(text || '').replace(/\s+/g, ' ').match(re);
+  return m ? m[0].trim() : '';
+}
+
+// Everything the submission told us, in one bag, so the opener and the gate that
+// checks it are reasoning about the same set of facts.
+function quoteFacts(o) {
+  const o2 = o || {};
+  const services = Array.isArray(o2.services) ? o2.services.join(', ') : String(o2.services || '').trim();
+  return {
+    name: tidyName(o2.name),
+    vehicle: String(o2.vehicle || '').trim(),
+    condition: String(o2.condition || '').trim(),
+    services,
+    location: String(o2.location || '').trim(),
+    notes: String(o2.notes || '').trim(),
+    appointment: String(o2.appointment || '').trim(),
+    total: o2.total ? String(o2.total).trim() : '',
+  };
+}
+
+// The timing they volunteered, if any — the appointment box first, since that is
+// them asking for a slot outright, then whatever they typed free-hand.
+function quoteWhen(f) {
+  const src = [f.appointment, f.notes].filter(Boolean).join('. ');
+  // Singular, because the opener puts the plural back on: people type it both
+  // ways ("mornings work best", "I'd prefer morning") and mean the same thing.
+  return {
+    day: tidyDayWord(matchPhrase(src, DAY_PHRASE)),
+    part: matchPhrase(src, PART_OF_DAY).toLowerCase().replace(/s$/, ''),
+    time: matchPhrase(src, CLOCK_TIME).toLowerCase().replace(/\s+/g, ''),
+  };
+}
+
+function quoteOpener(f) {
+  const hi = `Hey ${greetName(f.name)}, it's Mikey.`;
+  // Nothing but a number came in. This is the text that has always gone out, and
+  // for this submission it is still the right one — the car is the only thing
+  // worth asking for, and the name rides along in the same breath.
+  if (!f.vehicle) {
+    return `${hi} I got your quote submission on my site. Whenever you have a minute, feel free to send over ` +
+      `${f.name ? '' : 'your name and '}the year, make, and model of the car you'd like detailed, ` +
+      `and I'll confirm that price. Talk soon!`;
+  }
+  // They named the car. Asking for it again is the bug this whole module exists
+  // to kill, so from here the opener acknowledges and moves to the next step.
+  // Services are only worth echoing when they're short; a five-item list read
+  // back at someone is a receipt, not a text.
+  const picked = f.services && f.services.length <= 44 ? f.services : '';
+  // "for the Tacoma for the Full Interior" is what happens when the services get
+  // bolted on with the same preposition, so the price carries them instead.
+  const tail = f.total
+    ? ` - $${f.total}${picked ? ` for the ${picked}` : ''}`
+    : (picked ? ` - ${picked}` : '');
+  const got = `I got your quote for the ${f.vehicle}${tail}.`;
+  const when = quoteWhen(f);
+  // A day AND a time is someone asking for a specific slot, not floating one, so
+  // narrowing it further is noise. The question that actually moves this along is
+  // the address - the form only ever collects a city.
+  if (when.day && when.time) {
+    return `${hi} ${got} I saw you were after ${when.day} at ${when.time} - let me check that against my day. ` +
+      `${f.name ? "What's" : "What's your name, and what's"} the address I'd be coming to?`;
+  }
+  // Whatever they said about timing gets echoed and NOT answered: his calendar is
+  // nowhere in this request, so "let me see what I've got" is the only honest
+  // thing this text can say about a day.
+  if (when.day) {
+    return `${hi} ${got} I saw you were hoping for ${when.day} - let me check what I've got open. ` +
+      `${f.name ? 'Is' : "What's your name, and is"} morning or afternoon better for you?`;
+  }
+  if (when.part) {
+    return `${hi} ${got} I saw ${when.part}s work better for you. ` +
+      `${f.name ? 'What' : "What's your name, and what"} day were you looking to get it done?`;
+  }
+  return `${hi} ${got} ` +
+    `${f.name ? 'What' : "What's your name, and what"} day were you looking to get it done?`;
+}
+
+// ---- the gate --------------------------------------------------------------
+// An AI-written text goes to a real customer's real phone with nobody having
+// read it, so the bar is not "is this good" — it's "is there anything here Mikey
+// would have to apologise for". Each check returns the offence in words, because
+// the retry can only fix what it has been told is wrong.
+const ASKS_VEHICLE = /\b(year,? make,? and model|year make and model|what (kind|type) of (car|vehicle|truck|suv)|what (car|vehicle|truck) |which (car|vehicle)|what are you driving|what you'?re driving)/i;
+const ASKS_NAME = /\b(what'?s your name|what is your name|who am i (talking|speaking|texting) (to|with)|can i (get|grab) your name|your name is)/i;
+// A day or a clock time in the draft is a promise about his calendar. "Morning"
+// is deliberately NOT here: "is morning or afternoon better?" is a question, not
+// an offer, and banning it would leave the opener with nothing useful to ask.
+const HARD_TIME = /\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday|tomorrow|today|tonight)\b|\b\d{1,2}:\d{2}\s*(am|pm)?|\b\d{1,2}\s*(am|pm)\b|\b\d{1,2}\/\d{1,2}\b/gi;
+
+// Every day the customer themselves named, in both the shorthand they typed and
+// the long form the AI will write it in — otherwise "sat" in the notes box makes
+// "Saturday" in the draft look invented.
+// "10 am" in the notes box and "10am" in the draft are the same time. Comparing
+// them as typed would make his own customer's time look like one he invented.
+const normTime = (x) => String(x || '').trim().toLowerCase().replace(/\s+/g, '');
+
+function agreedTimes(sources) {
+  const hay = (sources || []).filter(Boolean).join(' ').toLowerCase();
+  const out = new Set();
+  for (const m of hay.match(HARD_TIME) || []) out.add(normTime(m));
+  for (const m of hay.match(new RegExp(DAY_PHRASE.source, 'gi')) || []) {
+    out.add(normTime(m));
+    out.add(normTime(tidyDayWord(m.trim())));
+  }
+  return out;
+}
+
+function findInventedTime(text, sources) {
+  const ok = agreedTimes(sources);
+  for (const m of String(text || '').match(HARD_TIME) || []) {
+    if (!ok.has(normTime(m))) return m.trim();
+  }
+  return '';
+}
+
+function openerFault(text, f, priceSources) {
+  const t = String(text || '').trim();
+  if (!t) return 'came back empty';
+  if (t.length < 40) return 'is too short to say who is texting and still ask them anything';
+  if (t.length > 340) return `is ${t.length} characters, and a first text has to stay under about 300. Cut it down`;
+  if (!/mikey/i.test(t)) return 'never says who is texting. They do not have this number - it has to say "it\'s Mikey"';
+  const tell = findTell(t);
+  if (tell) return `used the phrase "${tell}", which is a dead giveaway that a machine wrote it`;
+  const bad = findInventedPrice(t, priceSources);
+  if (bad) return `quoted ${bad}, and that is not the price the site gave them. Use their price, or no price at all`;
+  const qs = (t.match(/\?/g) || []).length;
+  if (qs === 0) return 'asks them nothing, so there is nothing for them to reply to. End it with one question';
+  if (qs > 1) return `asks ${qs} questions. Mikey asks ONE - keep the one that moves the job forward and delete the rest`;
+  if (f.vehicle && ASKS_VEHICLE.test(t)) return `asks what the vehicle is, and they already told you: "${f.vehicle}". Never ask for something they sent`;
+  if (f.name && ASKS_NAME.test(t)) return `asks their name, and they already gave it as "${f.name}". Never ask for something they sent`;
+  const when = findInventedTime(t, [f.notes, f.appointment]);
+  if (when) return `says "${when}", which is a day Mikey has not agreed to and has not looked at his calendar for`;
+  return '';
+}
+
+// The AI layer. Returns the text, or '' when it could not write one worth
+// sending — the caller falls back to the deterministic opener either way.
+async function smartQuoteOpener(f, cfg) {
+  const voice = await loadVoice();
+  // Retrieval: a submission with a car and a price is the quote moment, so show
+  // it his real quoting texts; without one it is closer to proposing a next step.
+  const bucket = f.vehicle && f.total ? 'price' : 'offer';
+  const situation = [f.vehicle, f.services, f.condition, f.notes].filter(Boolean).join('. ') || 'new quote lead';
+  const facts = [
+    f.name ? `Their name: ${f.name}` : 'They did not leave a name.',
+    f.vehicle ? `Vehicle: ${f.vehicle}` : 'They did not say what the vehicle is.',
+    f.services ? `What they picked: ${f.services}` : null,
+    f.condition ? `Condition they described: ${f.condition}` : null,
+    f.location ? `Where they are: ${f.location}` : null,
+    f.total ? `The price the site quoted them: $${f.total}` : null,
+    f.appointment ? `The slot they asked for: ${f.appointment}` : null,
+    f.notes ? `What they typed in the notes box, word for word: "${f.notes}"` : null,
+  ].filter(Boolean).join('\n');
+  const rulesCtx = await rulesContext();
+  const editsCtx = await editsContext(bucket);
+
+  const build = (extra) =>
+    businessContext(cfg) +
+    rulesCtx +
+    voiceContext(voice, bucket, situation) +
+    editsCtx +
+    `You are writing the FIRST text Mikey sends someone who has just filled in the quote form on his website. ` +
+    `They have never texted him and do not have his number, so this text has to say who it is.\n\n` +
+    `WHAT THEY ALREADY TOLD YOU ON THAT FORM:\n${facts}\n\n` +
+    `Write ONE text that does three things, in this order:\n` +
+    `1. Says who it is. Start with "Hey ${greetName(f.name)}, it's Mikey."\n` +
+    `2. Shows them he actually read it. Name back the things above that matter - the vehicle, what they picked, anything they typed in the notes - in his words, not as a list. Two sentences at most.\n` +
+    `3. Ends with exactly ONE question: the single thing he needs from them to move this forward.\n\n` +
+    `HARD RULES:\n` +
+    `- NEVER ask them for anything in the list above. They already told you. Asking again is the one thing this text exists to stop.\n` +
+    `- If they mentioned a day, a time, or a worry, acknowledge that specifically. Do NOT answer it - he has not looked at his calendar and has not seen the car - just show them it landed.\n` +
+    `- Exactly ONE question mark in the whole message. No second question, no "let me know if..." bolted on the end.\n` +
+    `- Never say a day or a time is available, and never promise one. Never write a dollar figure other than the price above.\n` +
+    `- He works alone: "I", never "we". Plain text, no bullets, no sign-off, no subject line.\n` +
+    `- 2 to 4 sentences, roughly 120-300 characters. A busy person texting back, not a form letter.\n` +
+    (extra || '') +
+    `\nThe text:`;
+
+  const priceSources = [businessContext(cfg), f.total ? `$${f.total}` : ''];
+  // Both calls spell out their own surface rather than sharing an options object:
+  // the usage counters are only worth having if nothing quietly lands in "other",
+  // and aicost.test.js reads the call site itself to prove it.
+  const text = cleanReply(await aiGenerate(build(''), { surface: 'quote opener', tier: 'voice', maxTokens: 400, temperature: 0.5 }));
+  const fault = openerFault(text, f, priceSources);
+  if (!fault) return text;
+  // One retry, naming the offence. Two strikes and the template wins: a first
+  // text that breaks a rule is worse than a first text that reads like a template.
+  const retry = cleanReply(await aiGenerate(
+    build(`CRITICAL: your previous attempt ${fault}. Write it again and fix exactly that, keeping everything else.\n` +
+      `Your previous attempt was: "${text}"\n`),
+    { surface: 'quote opener', tier: 'voice', maxTokens: 400, temperature: 0.4 },
+  ));
+  return openerFault(retry, f, priceSources) ? '' : retry;
+}
+
+// The one entry point both quote endpoints call. Never throws and never returns
+// empty: the deterministic opener is the floor, everything above it is a bonus.
+async function composeQuoteOpener(raw, cfg) {
+  const f = quoteFacts(raw);
+  const plain = quoteOpener(f);
+  if (!cfg || cfg.smartQuoteOpener !== true || !aiConfigured()) return plain;
+  try {
+    // The website is waiting on this response, so the draft races a clock it
+    // cannot win by being thorough.
+    // The .catch matters: once the clock wins the race nobody is left holding
+    // the draft's promise, and a model that fails a second later would surface
+    // as an unhandled rejection in the Worker rather than as this fallback.
+    const smart = await Promise.race([
+      smartQuoteOpener(f, cfg).catch(() => ''),
+      new Promise((resolve) => setTimeout(() => resolve(''), QUOTE_OPENER_TIMEOUT_MS)),
+    ]);
+    return smart || plain;
+  } catch (err) {
+    console.log('quote opener fell back to the template:', String((err && err.message) || err).slice(0, 200));
+    return plain;
+  }
+}
+
 async function handleSubmit(request) {
   let body;
   try { body = await request.json(); } catch { return cors(json({ ok: false, error: 'bad_json' }, 400)); }
@@ -506,13 +797,6 @@ async function handleSubmit(request) {
   // number when there isn't. "NEW QUOTE — " with nothing after it helps nobody.
   const who = name || guessed || clientPhone;
 
-  // When they didn't leave a name, the first text is also where he gets it — so
-  // it asks, in the same breath as the car, instead of needing a second round.
-  const clientMsg =
-    `Hey ${greetName(name)}, it's Mikey. I got your quote submission on my site. ` +
-    `Whenever you have a minute, feel free to send over ${name ? '' : 'your name and '}the year, make, and model of the car ` +
-    `you'd like detailed, and I'll confirm that price. Talk soon!`;
-
   const mikeyMsg = [
     `🔔 NEW QUOTE — ${who}`, `Phone: ${clientPhone}`,
     email ? `Email: ${email}` : null, location ? `City: ${location}` : null,
@@ -548,6 +832,14 @@ async function handleSubmit(request) {
   let clientSms = 'skipped';
   if (consent) {
     const cfg = await loadConfig();
+    // Written from what they actually submitted — see composeQuoteOpener. Built
+    // here rather than at send time on purpose: the text has to be real by the
+    // time it shows up in the scheduled banner, or the window where he can edit
+    // it is a window onto a placeholder.
+    const clientMsg = await composeQuoteOpener(
+      { name, vehicle, condition, services: serviceList, location, notes, total, appointment: body.appointment },
+      cfg,
+    );
     thread.scheduled.push({ id: genId(), body: clientMsg, sendAt: firstReachoutAt(Date.now(), cfg), alertOnSend: true });
     thread.scheduled.sort((a, b) => a.sendAt - b.sendAt);
     clientSms = 'scheduled';
@@ -605,10 +897,6 @@ async function handleQqcText(request) {
   const consent = String(body.smsConsent).toLowerCase() !== 'false';
 
   const who = name || guessed || clientPhone;
-  const clientMsg =
-    `Hey ${greetName(name)}, it's Mikey. I got your quote submission on my site. ` +
-    `Whenever you have a minute, feel free to send over ${name ? '' : 'your name and '}the year, make, and model of the car ` +
-    `you'd like detailed, and I'll confirm that price. Talk soon!`;
   const mikeyMsg = `🔔 NEW QUOTE — ${who}${name ? `, ${clientPhone}` : ''}, ${quoteLine}` +
     (vehicle ? `, ${vehicle}` : '') + (services ? `, ${services}` : '');
 
@@ -636,6 +924,12 @@ async function handleQqcText(request) {
   if (consent) {
     // 3.5 min, like Make's Sleep — except overnight, which Make couldn't do.
     const cfg = await loadConfig();
+    // Same opener as /submit, from the same fields — the two endpoints have to
+    // say the same thing or the site's fallback path quietly sends a worse text.
+    const clientMsg = await composeQuoteOpener(
+      { name, vehicle, condition, services, location, notes, total, appointment: body.appointment },
+      cfg,
+    );
     thread.scheduled.push({ id: genId(), body: clientMsg, sendAt: firstReachoutAt(Date.now(), cfg), alertOnSend: true });
     thread.scheduled.sort((a, b) => a.sendAt - b.sendAt);
     clientSms = 'scheduled';
@@ -8450,6 +8744,7 @@ async function apiSaveConfig(request) {
   if (typeof data.missedCallTextback === 'boolean') next.missedCallTextback = data.missedCallTextback;
   if (typeof data.missedCallText === 'string') next.missedCallText = data.missedCallText.slice(0, 320);
   if (typeof data.autoReplyAlert === 'boolean') next.autoReplyAlert = data.autoReplyAlert;
+  if (typeof data.smartQuoteOpener === 'boolean') next.smartQuoteOpener = data.smartQuoteOpener;
   if (typeof data.quoteAbandon === 'boolean') next.quoteAbandon = data.quoteAbandon;
   if (data.quoteAbandonMin != null && !isNaN(+data.quoteAbandonMin)) next.quoteAbandonMin = Math.max(1, Math.min(60, Math.round(+data.quoteAbandonMin)));
   if (data.clickAlert === 'all' || data.clickAlert === 'ads' || data.clickAlert === 'off') next.clickAlert = data.clickAlert;
@@ -9769,6 +10064,12 @@ function defaultConfig() {
                              // submission; this one fires ~3.5 min later when the text
                              // really goes out, so he knows the customer has heard from
                              // him and can take over the conversation.
+    smartQuoteOpener: false, // let the AI write the quote-form first text from what the customer
+                             // actually submitted, instead of the one fixed sentence. Off by
+                             // default because this is the one message that goes to a real
+                             // customer with nobody having read it - see composeQuoteOpener.
+                             // With it off the opener is still built from the submission, just
+                             // deterministically, so nothing gets asked for twice either way.
     predictive: true,        // predictive keyboard: next-word chips above the compose box,
                              // learned from the texts he's sent. Runs in the browser off a
                              // downloaded n-gram model — no API call, so it costs nothing.
