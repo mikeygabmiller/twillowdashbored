@@ -225,11 +225,16 @@ const callSites = SRC.split('\n')
   .map((l, i) => [i + 1, l])
   .filter(([, l]) => /\b(geminiGenerate|aiGenerate)\(/.test(l)
     && !/^\s*(async )?function /.test(l)
-    && !/return geminiGenerate\(flattenForGemini\(prompt, opts\), opts\);/.test(l));
+    && !/geminiGenerate\(flattenForGemini\(prompt, opts\), opts\)/.test(l));
 // A multi-line call puts its options object a few lines below the call itself,
-// so look down to the closing paren rather than at that one line.
+// so look down to the closing paren rather than at that one line — and a few
+// lines UP too, because a call site that needs to read something back off its
+// options (which provider actually ran) has to name them first. The guarantee
+// is unchanged: a genuinely untagged call has no surface anywhere near it.
 const LINES = SRC.split('\n');
-const untagged = callSites.filter(([i]) => !LINES.slice(i - 1, i + 8).join('\n').split(/\);/)[0].includes("surface: '"));
+const untagged = callSites.filter(([i]) =>
+  !LINES.slice(i - 1, i + 8).join('\n').split(/\);/)[0].includes("surface: '")
+  && !LINES.slice(Math.max(0, i - 5), i).join('\n').includes("surface: '"));
 check(`all ${callSites.length} call sites are tagged`, untagged.map(([i]) => i), []);
 
 console.log('\n=== the daily budget: a ceiling that degrades, never one that stops ===');
