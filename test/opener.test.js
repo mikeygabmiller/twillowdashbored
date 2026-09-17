@@ -77,6 +77,8 @@ const check = (name, got, want) => {
 };
 // The opener is a sentence, so most assertions are about what is and isn't in it.
 const open = (o) => quoteOpener(quoteFacts(o));
+// The same submission with the reworded generic opener switched on.
+const openAsk = (o) => quoteOpener(quoteFacts(o), { ask: true });
 const asksForCar = (t) => /year, make, and model/i.test(t);
 const questions = (t) => (t.match(/\?/g) || []).length;
 
@@ -185,6 +187,44 @@ check('but "sat." with a period is Saturday',
 check('and the unambiguous shorthand still works bare',
   quoteWhen({ notes: 'thurs works for me', appointment: '' }).day, 'Thursday');
 
+console.log('\n=== the reworded generic opener (cfg.quoteOpenerAsk) ===');
+// The one branch that did not end on a question. Everything about it is opt-in:
+// with the flag off, not one character may move.
+{
+  const now = open({ phone: '4255550100' });
+  check('off, the old text is untouched, word for word',
+    now, "Hey there, it's Mikey. I got your quote submission on my site. Whenever you have a minute, " +
+         "feel free to send over your name and the year, make, and model of the car you'd like detailed, " +
+         "and I'll confirm that price. Talk soon!");
+  check('off, it ends on the sign-off',   /Talk soon!$/.test(now), true);
+  check('off, it asks no question',       questions(now), 0);
+}
+{
+  const t = openAsk({ phone: '4255550100' });
+  check('on, it ends on a real question',  /\?$/.test(t), true);
+  check('on, exactly one question',        questions(t), 1);
+  check('on, the sign-off is gone',        /Talk soon/.test(t), false);
+  check('on, it still asks for the car',   asksForCar(t) || /year, make and model/.test(t), true);
+  check('on, a nameless lead is still asked their name', /your name/i.test(t), true);
+  check('on, it still says who is texting', /^Hey there, it's Mikey\./.test(t), true);
+}
+{
+  const t = openAsk({ name: 'Dale Hobart' });
+  check('on, a named lead is not asked their name', /your name/i.test(t), false);
+  check('on, they are greeted by first name',       /^Hey Dale, it's Mikey\./.test(t), true);
+  check('on, one question',                         questions(t), 1);
+}
+// The flag only ever touches the no-vehicle branch; every other version already
+// ended on a question and must be byte-identical either way.
+for (const sub of [
+  { name: 'Dale', vehicle: 'Tacoma', total: '349' },
+  { name: 'Ruth', vehicle: 'CR-V', total: '280', notes: 'could you do Saturday?' },
+  { name: 'Lucy', vehicle: 'Outback', total: '379', appointment: 'Thursday 10am' },
+  { vehicle: 'Model Y', total: '349' },
+]) {
+  check('the flag leaves "' + (sub.vehicle || '?') + '" alone', open(sub) === openAsk(sub), true);
+}
+
 console.log('\n=== the gate on the AI version ===');
 // Everything below is a draft the model could plausibly return. The gate has to
 // let the good one through and name the fault in every bad one.
@@ -225,17 +265,21 @@ check('the weekday they DID mention is fine, even in shorthand',
 
 console.log('\n=== both endpoints go through it, and it can never leave them textless ===');
 const compose = lift('composeQuoteOpener');
-check('the plain opener is built first, always',  /const plain = quoteOpener\(f\);/.test(compose), true);
+check('the plain opener is built first, always',  /const plain = quoteOpener\(f, \{ ask:/.test(compose), true);
 check('the AI half is off unless switched on',    /cfg\.smartQuoteOpener !== true/.test(compose), true);
 check('and is skipped with no AI key at all',     /!aiConfigured\(\)/.test(compose), true);
 check('a slow model loses to the template',       /Promise\.race/.test(compose), true);
 check('so does a thrown one',                     /catch \(err\)/.test(compose), true);
 check('an empty draft falls back',                /return smart \|\| plain;/.test(compose), true);
-const smart = lift('smartQuoteOpener');
+// The drafting moved into draftQuoteOpener so the preview screen can see the
+// refusal reason; smartQuoteOpener is now the thin wrapper the live path uses.
+const smart = lift('draftQuoteOpener');
+const wrap = lift('smartQuoteOpener');
 check('a faulty draft gets exactly one retry',    (smart.match(/aiGenerate\(/g) || []).length, 2);
-check('and a twice-faulty draft is thrown away',  /\? '' : retry;/.test(smart), true);
+check('the draft reports WHY it was refused',     /refused: true/.test(smart), true);
+check('and the live path drops a refused draft',  /d\.refused \? '' :/.test(wrap), true);
 check('the reach-out is still only ever queued, never sent here',
-  /twilioSend|sendSms/.test(lift('composeQuoteOpener') + smart), false);
+  /twilioSend|sendSms/.test(lift('composeQuoteOpener') + smart + wrap), false);
 
 console.log(`\n${PASS} passed, ${FAIL} failed`);
 process.exit(FAIL ? 1 : 0);

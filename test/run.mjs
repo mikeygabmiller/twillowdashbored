@@ -19,14 +19,14 @@ const UNIT = [
   'hold', 'detect', 'pay', 'ai', 'compose', 'thread', 'inbox', 'money', 'quickreply',
   'replycheck', 'autoreply', 'quotes', 'balance', 'alertmail', 'assistmail', 'promise', 'recap',
   'geogrid', 'geogrid.ui', 'snapshot', 'journey', 'quotewatch', 'place', 'cold', 'portal', 'sheets', 'gdoc', 'gform', 'seed', 'scan', 'cpu',
-  'aicost', 'voicepairs', 'kept', 'use', 'calls', 'reachout', 'adsource', 'quotereply', 'askme', 'photo', 'rain', 'name', 'openings', 'ready', 'opener',
+  'aicost', 'voicepairs', 'kept', 'use', 'calls', 'reachout', 'adsource', 'quotereply', 'askme', 'photo', 'rain', 'name', 'openings', 'ready', 'opener', 'preview',
 ].map((n) => `${n}.test.js`);
 
 const UI = [
   'detect.ui', 'pay.ui', 'nav.ui', 'search.ui', 'tabs.ui', 'snapshot.ui', 'place.ui',
   'newmsg.ui', 'peek.ui', 'polish.ui', 'journey.ui', 'scan.ui', 'aidiet.ui', 'use.ui', 'layout.ui', 'stale.ui',
   'keyboard.ui', 'assist.ui', 'calls.ui', 'adsource.ui', 'askme.ui', 'photo.ui',
-  'winddown.ui', 'homeloop.ui', 'rain.ui', 'sendnow.ui', 'qol.ui', 'qol2.ui', 'name.ui', 'five.ui', 'ready.ui', 'opener.ui',
+  'winddown.ui', 'homeloop.ui', 'rain.ui', 'sendnow.ui', 'qol.ui', 'qol2.ui', 'name.ui', 'five.ui', 'ready.ui', 'opener.ui', 'preview.ui',
 ].map((n) => `${n}.test.js`);
 
 const mode = (process.argv[2] || 'unit').toLowerCase();

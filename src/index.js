@@ -354,6 +354,8 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/quotes')        return apiQuotes(url);
   if (request.method === 'GET'  && pathname === '/api/quotes/export') return apiQuotesExport(url);
   if (request.method === 'POST' && pathname === '/api/quotes/import') return apiQuotesImport(request);
+  if (request.method === 'POST' && pathname === '/api/quote-preview')  return apiQuotePreview(request);
+  if (request.method === 'POST' && pathname === '/api/quote-preview/teach') return apiQuotePreviewTeach(request);
 
   // Website analytics (Grow hub) — rollup of the /px pixel data.
   if (request.method === 'GET'  && pathname === '/api/analytics')   return apiAnalytics(url);
@@ -571,12 +573,24 @@ function quoteWhen(f) {
   };
 }
 
-function quoteOpener(f) {
+function quoteOpener(f, opts) {
   const hi = `Hey ${greetName(f.name)}, it's Mikey.`;
-  // Nothing but a number came in. This is the text that has always gone out, and
-  // for this submission it is still the right one — the car is the only thing
-  // worth asking for, and the name rides along in the same breath.
+  // Nothing but a number came in, so the car is the only thing worth asking for
+  // and the name rides along in the same breath. Two phrasings of that same ask:
+  //
+  //   the default   — what has always gone out. Polite, low-pressure, and it ends
+  //                   on "Talk soon!", which is a sign-off: the ask is buried in
+  //                   the middle and the message closes by releasing them.
+  //   opts.ask      — the same request turned into a question and moved to the
+  //                   end, so the text finishes on something to answer. Every
+  //                   other branch below already ends on a question; this is the
+  //                   one that did not. Behind cfg.quoteOpenerAsk because it
+  //                   changes a message real customers receive.
   if (!f.vehicle) {
+    if (opts && opts.ask) {
+      return `${hi} I got your quote submission on my site, and I can confirm that price as soon as I know the car. ` +
+        `${f.name ? "What's" : "What's your name, and what's"} the year, make and model?`;
+    }
     return `${hi} I got your quote submission on my site. Whenever you have a minute, feel free to send over ` +
       `${f.name ? '' : 'your name and '}the year, make, and model of the car you'd like detailed, ` +
       `and I'll confirm that price. Talk soon!`;
@@ -675,7 +689,11 @@ function openerFault(text, f, priceSources) {
 
 // The AI layer. Returns the text, or '' when it could not write one worth
 // sending — the caller falls back to the deterministic opener either way.
-async function smartQuoteOpener(f, cfg) {
+// The AI draft plus the reason it would be refused, if it would be. Split out
+// from smartQuoteOpener so the preview screen can show him the refusal itself —
+// "it asked for the car again, so the plain one went instead" is the single most
+// useful thing that screen can say, and swallowing it would waste the call.
+async function draftQuoteOpener(f, cfg) {
   const voice = await loadVoice();
   // Retrieval: a submission with a car and a price is the quote moment, so show
   // it his real quoting texts; without one it is closer to proposing a next step.
@@ -722,7 +740,7 @@ async function smartQuoteOpener(f, cfg) {
   // and aicost.test.js reads the call site itself to prove it.
   const text = cleanReply(await aiGenerate(build(''), { surface: 'quote opener', tier: 'voice', maxTokens: 400, temperature: 0.5 }));
   const fault = openerFault(text, f, priceSources);
-  if (!fault) return text;
+  if (!fault) return { text, fault: '', refused: false };
   // One retry, naming the offence. Two strikes and the template wins: a first
   // text that breaks a rule is worse than a first text that reads like a template.
   const retry = cleanReply(await aiGenerate(
@@ -730,14 +748,21 @@ async function smartQuoteOpener(f, cfg) {
       `Your previous attempt was: "${text}"\n`),
     { surface: 'quote opener', tier: 'voice', maxTokens: 400, temperature: 0.4 },
   ));
-  return openerFault(retry, f, priceSources) ? '' : retry;
+  const twice = openerFault(retry, f, priceSources);
+  return twice ? { text: retry, fault: twice, refused: true } : { text: retry, fault, refused: false };
+}
+
+// The live path only wants the text, and only when it is allowed out.
+async function smartQuoteOpener(f, cfg) {
+  const d = await draftQuoteOpener(f, cfg);
+  return d.refused ? '' : d.text;
 }
 
 // The one entry point both quote endpoints call. Never throws and never returns
 // empty: the deterministic opener is the floor, everything above it is a bonus.
 async function composeQuoteOpener(raw, cfg) {
   const f = quoteFacts(raw);
-  const plain = quoteOpener(f);
+  const plain = quoteOpener(f, { ask: !!(cfg && cfg.quoteOpenerAsk === true) });
   if (!cfg || cfg.smartQuoteOpener !== true || !aiConfigured()) return plain;
   try {
     // The website is waiting on this response, so the draft races a clock it
@@ -941,6 +966,176 @@ async function handleQqcText(request) {
     condition, services, notes, type: body.type, appointment: body.appointment,
   });
   return cors(json({ ok: !!mikeyAlert, clientSms, mikeyAlert }, mikeyAlert ? 200 : 207));
+}
+
+// ===========================================================================
+// The quote-text preview  (POST /api/quote-preview)
+// ---------------------------------------------------------------------------
+// "Let me see it before I turn it on." The AI opener writes a text nobody reads
+// before a customer does, so the switch that arms it is worth nothing unless he
+// can watch it work first. This is that screen's data.
+//
+// It replays REAL past submissions out of the quote log — the same fields the
+// live endpoints hand composeQuoteOpener, so what he reads here is what would
+// have gone out — and returns, per submission:
+//
+//   plain    what sends today, deterministic, no AI involved
+//   ask      the reworded generic opener, when it differs from plain
+//   smart    what the AI wrote
+//   fault    why that draft was refused, when it was
+//
+// Two things this deliberately does NOT do: send anything, and touch the live
+// switch. It calls draftQuoteOpener directly rather than composeQuoteOpener, so
+// the AI half can be judged while it is still switched off — which is the whole
+// point of it existing.
+const PREVIEW_MAX = 4;          // AI drafts per request; each one is a metered call
+const PREVIEW_MONTHS = 6;       // how far back to look for material
+
+// One line describing the submission, for the top of the card. This is what he
+// reads to decide whether the text below it was the right answer.
+function previewSummary(f) {
+  const bits = [
+    f.vehicle || 'no vehicle given',
+    f.total ? `$${f.total}` : 'no price',
+    f.services || null,
+    f.condition ? `condition: ${f.condition}` : null,
+    f.location || null,
+  ].filter(Boolean);
+  return bits.join(' · ');
+}
+
+// Rank submissions by how much they'd actually teach him. One with a note and a
+// vehicle exercises every branch; a bare name and a number exercises the oldest
+// line in the file, which he has already read a thousand times.
+function previewInterest(f) {
+  let n = 0;
+  // The note outranks any pile of structured fields on purpose: it is the thing
+  // the deterministic opener cannot read, so it is the only case that actually
+  // tests whether the AI half is worth switching on.
+  if (f.notes) n += 5;
+  if (f.appointment) n += 3;
+  if (f.vehicle) n += 2;
+  if (f.condition) n += 1;
+  if (f.services) n += 1;
+  if (f.total) n += 1;
+  return n;
+}
+
+async function apiQuotePreview(request) {
+  if (!aiConfigured()) return json({ ok: false, error: 'ai_not_configured' }, 503);
+  const d = await readJson(request).catch(() => ({}));
+  const cfg = await loadConfig();
+  const seen = new Set((Array.isArray(d && d.seen) ? d.seen : []).map(String));
+
+  // "Make one up" — he types a submission and sees it answered immediately. The
+  // only way to probe a case his real history doesn't happen to contain yet.
+  if (d && d.made && typeof d.made === 'object') {
+    const card = await previewCard(quoteFacts(d.made), cfg, 'made:' + genId());
+    return json({ ok: true, cards: [card], made: true });
+  }
+
+  // Real submissions, newest first. The log keeps one doc per month.
+  let month = localDateStr(Date.now(), cfg.tz).slice(0, 7);
+  const rows = [];
+  for (let i = 0; i < PREVIEW_MONTHS; i++) {
+    const doc = await loadQuoteMonth(month);
+    for (const e of (doc.entries || [])) rows.push(e);
+    month = prevMonthKey(month);
+  }
+  const cands = rows
+    .map((e) => ({ e, f: quoteFacts(e) }))
+    .filter((c) => !seen.has(String(c.e.id)))
+    // A quote with nothing but a name and a total is the pre-log backfill (see
+    // docs/qqc-backfill-2026.json) — there is no submission left to answer.
+    .filter((c) => previewInterest(c.f) > 1)
+    .sort((a, b) => (previewInterest(b.f) - previewInterest(a.f)) || ((b.e.ts || 0) - (a.e.ts || 0)));
+
+  if (!cands.length) return json({ ok: true, done: true, cards: [] });
+
+  const want = Math.max(1, Math.min(PREVIEW_MAX, Number((d && d.count) || 3)));
+  const picked = cands.slice(0, want);
+  // In parallel: each card is an independent AI call, and four in series is four
+  // times the wait on a screen he is sitting in front of.
+  const cards = await Promise.all(picked.map((c) => previewCard(c.f, cfg, String(c.e.id), c.e.ts)));
+  return json({ ok: true, cards, remaining: Math.max(0, cands.length - picked.length) });
+}
+
+// One card: the submission, both plain wordings, the AI draft, and the verdict
+// on that draft. Never throws — a card that couldn't reach the model still shows
+// him the deterministic text, which is the half that actually sends today.
+async function previewCard(f, cfg, id, ts) {
+  const plain = quoteOpener(f, { ask: false });
+  const ask = quoteOpener(f, { ask: true });
+  const out = {
+    id,
+    ts: ts || 0,
+    name: f.name || '',
+    summary: previewSummary(f),
+    notes: f.notes || '',
+    appointment: f.appointment || '',
+    bucket: f.vehicle && f.total ? 'price' : 'offer',
+    live: cfg.quoteOpenerAsk === true ? ask : plain,
+    plain,
+    // The OTHER wording, whichever way the switch currently sits — so the card
+    // is always a comparison and never the same sentence printed twice under a
+    // label that has gone stale. Blank when the rewording changes nothing for
+    // this submission, which is every one that named a vehicle.
+    alt: ask === plain ? '' : (cfg.quoteOpenerAsk === true ? plain : ask),
+    altCap: ask === plain ? '' : (cfg.quoteOpenerAsk === true ? 'The old wording (switch is on)' : 'The reworded version (switch is off)'),
+    smart: '',
+    fault: '',
+    error: '',
+  };
+  try {
+    const drafted = await draftQuoteOpener(f, cfg);
+    out.smart = drafted.text || '';
+    // A draft that passed on the retry still tripped something first, and he
+    // should see that: it is the difference between "this is fine" and "this is
+    // fine because the gate caught it".
+    out.fault = drafted.refused ? drafted.fault : (drafted.fault || '');
+    out.refused = !!drafted.refused;
+  } catch (err) {
+    out.error = String((err && err.message) || err).slice(0, 160);
+  }
+  return out;
+}
+
+// POST /api/quote-preview/teach — his verdict on one previewed draft.
+//
+// The preview would be a read-only curiosity without this. A miss here is the
+// same shape as a miss in the replay trainer — "the AI wrote X, I'd have written
+// Y" — so it goes into the same corpus through the same door, and the quote
+// opener gets better the same way every other draft does.
+//
+// What pairs with his text is the SUBMISSION, not a customer message, because on
+// this surface the form is the thing being answered. That is exactly the pairing
+// the corpus wants (see addVoiceSamples): retrieval matches on the asked side, so
+// a future quote lead finds the openers he wrote for past quote leads.
+async function apiQuotePreviewTeach(request) {
+  const d = await readJson(request);
+  const id = String((d && d.id) || '').slice(0, 80);
+  if (!id) return json({ ok: false, error: 'bad_request' }, 422);
+  const verdict = (d && d.verdict) === 'match' ? 'match' : 'off';
+  const mine = String((d && d.mine) || '').trim().slice(0, 600);
+  const ai = String((d && d.ai) || '').trim().slice(0, 600);
+  // What they submitted, as the thing being answered.
+  const asked = String((d && d.asked) || '').trim().slice(0, 300);
+  const bucket = VOICE_BUCKETS.includes(d && d.bucket) ? d.bucket : 'offer';
+
+  const s = await loadVoiceScores();
+  s.rounds.unshift({ id, verdict, at: Date.now(), b: bucket });
+  if (s.rounds.length > 200) s.rounds.length = 200;
+  s[verdict] = (s[verdict] || 0) + 1;
+  s.byBucket = s.byBucket || {};
+  const bb = s.byBucket[bucket] || (s.byBucket[bucket] = { match: 0, off: 0 });
+  bb[verdict] = (bb[verdict] || 0) + 1;
+  await kv().put(VOICE_SCORE_KEY, JSON.stringify(s));
+
+  // His words are worth having whichever way he voted; a miss is additionally a
+  // before→after pair, which is the highest-signal thing the prompt ever gets.
+  if (mine) await recordVoiceSample(mine, verdict === 'off' ? 'trainer' : 'sent', asked);
+  if (verdict === 'off' && mine && ai) { try { await recordEdit(ai, mine, asked); } catch { /* non-fatal */ } }
+  return json({ ok: true, scores: { match: s.match || 0, off: s.off || 0 } });
 }
 
 // ===========================================================================
@@ -8877,6 +9072,7 @@ async function apiSaveConfig(request) {
   if (typeof data.missedCallText === 'string') next.missedCallText = data.missedCallText.slice(0, 320);
   if (typeof data.autoReplyAlert === 'boolean') next.autoReplyAlert = data.autoReplyAlert;
   if (typeof data.smartQuoteOpener === 'boolean') next.smartQuoteOpener = data.smartQuoteOpener;
+  if (typeof data.quoteOpenerAsk === 'boolean') next.quoteOpenerAsk = data.quoteOpenerAsk;
   if (typeof data.quoteAbandon === 'boolean') next.quoteAbandon = data.quoteAbandon;
   if (data.quoteAbandonMin != null && !isNaN(+data.quoteAbandonMin)) next.quoteAbandonMin = Math.max(1, Math.min(60, Math.round(+data.quoteAbandonMin)));
   if (data.clickAlert === 'all' || data.clickAlert === 'ads' || data.clickAlert === 'off') next.clickAlert = data.clickAlert;
@@ -10196,6 +10392,11 @@ function defaultConfig() {
                              // submission; this one fires ~3.5 min later when the text
                              // really goes out, so he knows the customer has heard from
                              // him and can take over the conversation.
+    quoteOpenerAsk: false,   // reword the generic opener (the one for a lead who never
+                             // said what the car was) so it ends on a question instead of
+                             // "Talk soon!". Off by default for the same reason as the
+                             // switch below: it changes a text a real customer receives.
+                             // Preview both on Train AI -> Check the quote text.
     smartQuoteOpener: false, // let the AI write the quote-form first text from what the customer
                              // actually submitted, instead of the one fixed sentence. Off by
                              // default because this is the one message that goes to a real

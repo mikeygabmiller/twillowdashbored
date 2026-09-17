@@ -8090,6 +8090,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       '<div class="hint">When a call goes unanswered, a caller you\'ve never texted instantly gets a friendly text, so a cold missed call turns into a conversation. Anyone you\'re already texting — including someone whose quote-form reply is still queued up — is skipped, so nobody gets two "personal" texts from you inside five minutes. Leave the message blank to use the default.</div>'+
       '<div class="fu-row"><span class="lbl2">Tell me when the auto-reply sends <span style="color:var(--muted2);font-weight:400">· quote form</span></span><span class="sw'+(c.autoReplyAlert!==false?" on":"")+'" id="cfgArAlert"></span></div>'+
       '<div class="hint">A quote from your site alerts you right away, but the customer\'s reply is held about 3½ minutes so it reads like you texting back, not a bot — and a quote that comes in between 11pm and 5am waits until 5am. This texts you the moment it actually reaches them — with their name and number — so you know they\'ve heard from you and can take the conversation from there. If it fails to send, you get told that instead.</div>'+
+      '<div class="fu-row"><span class="lbl2">End the first text on a question <span style="color:var(--muted2);font-weight:400">\u00b7 no car given</span></span><span class="sw'+(c.quoteOpenerAsk===true?" on":"")+'" id="cfgOpenerAsk"></span></div>'+
+      '<div class="hint">Only affects the lead who leaves a number and never says what the car is. Off, they get the text you\'ve always sent: the ask sits in the middle and it closes with <b>Talk soon!</b>. On, it becomes <b>"I can confirm that price as soon as I know the car. What\'s the year, make and model?"</b> - same request, but the message ends on something to answer instead of a sign-off. Every other version already ends on a question. See both against your real quotes under <b>Train AI \u2192 Check the quote text</b>.</div>'+
       '<div class="fu-row"><span class="lbl2">Write that first text from what they sent <span style="color:var(--muted2);font-weight:400">\u00b7 AI</span></span><span class="sw'+(c.smartQuoteOpener===true?" on":"")+'" id="cfgSmartOpener"></span></div>'+
       '<div class="hint">Off, the first text is built from their submission by a fixed rule: it never asks for the car or the name they already gave, and if they mentioned a day it says so. On, the AI writes it in your voice instead, so it can answer whatever they actually typed in the notes box - still acknowledging, still finishing on <b>one</b> question. It can never name a price you didn\'t quote or a day you haven\'t agreed to, and if the draft breaks a rule twice the plain version goes instead. Either way it lands in <b>Scheduled</b> for about 3\u00bd minutes first, where you can read it, edit it, or kill it.</div>'+
       '<div class="fu-row"><span class="lbl2">Email me when a quote is seen but not sent <span style="color:var(--muted2);font-weight:400">· the ones that get away</span></span><span class="sw'+(c.quoteAbandon!==false?" on":"")+'" id="cfgQab"></span></div>'+
@@ -8161,6 +8163,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     el("cfgMct").onclick=function(){saveConfig({missedCallTextback:!(c.missedCallTextback!==false)})};
     el("cfgMctText").onchange=function(){saveConfig({missedCallText:el("cfgMctText").value})};
     el("cfgArAlert").onclick=function(){saveConfig({autoReplyAlert:!(c.autoReplyAlert!==false)})};
+    el("cfgOpenerAsk").onclick=function(){saveConfig({quoteOpenerAsk:!(c.quoteOpenerAsk===true)})};
     el("cfgSmartOpener").onclick=function(){saveConfig({smartQuoteOpener:!(c.smartQuoteOpener===true)})};
     el("cfgQab").onclick=function(){saveConfig({quoteAbandon:!(c.quoteAbandon!==false)})};
     el("cfgQabMin").onchange=function(){saveConfig({quoteAbandonMin:+el("cfgQabMin").value})};
@@ -8821,6 +8824,11 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // headline number, a per-situation breakdown, and a single obvious next action
   // that the server picks (stats.next), with everything else demoted below it.
   var TA={stats:null,queue:[],seen:[],judged:0,fetching:false,done:false};
+  // The quote-text preview. Same shape as TA because it is the same job on a
+  // different surface: show a real moment, show what the machine would send, let
+  // him rule on it. The difference is that nothing here has been sent yet — this
+  // is the one trainer that runs BEFORE the feature is switched on.
+  var QP={queue:[],seen:[],judged:0,fetching:false,done:false,made:false};
 
   function openTrainAI(){
     closeMore();
@@ -8979,6 +8987,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
 
     h+='<div class="tai-sec"><h4>Everything else</h4><div class="tai-acts">'+
       taAct("taiTrain","message-square","Check drafts","Judge real drafts against what you sent")+
+      taAct("taiQuote","clipboard-check","Check the quote text","See what a new lead gets - before you switch it on")+
       taAct("taiBuild","refresh-cw","Re-read my past texts","Rescans your conversations and re-derives your style")+
       taAct("taiImport","download","Paste texts from my phone","Years of your real texting is better material than anything in here")+
       taAct("taiPlaybook","file-text","Edit the playbook","Your services, prices, policies and rules")+
@@ -8990,6 +8999,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var go=function(){ d.next==="build"?taBuild():d.next==="import"?taImport():taTrain() };
     if(el("taiCta")&&d.next!=="no_ai")el("taiCta").onclick=go;
     el("taiTrain").onclick=taTrain;
+    el("taiQuote").onclick=qpStart;
     el("taiBuild").onclick=taBuild;
     el("taiImport").onclick=taImport;
     el("taiPlaybook").onclick=function(){closeTrainAI();openPlaybook()};
@@ -9119,6 +9129,136 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       '<button class="tai-cta" id="taiFinish" style="margin-top:0;width:auto;padding:12px 20px">See my score</button></div></div>';
     el("taiMore").onclick=function(){TA.judged=0;taCard()};
     el("taiFinish").onclick=function(){taLoad()};
+  }
+
+  // ---- the quote-text preview --------------------------------------------
+  // "Let me see it before I turn it on." Replays real past quote submissions and
+  // shows, for each, what sends today and what the AI would have written instead
+  // - including the drafts the gate REFUSED, which are the ones that tell him
+  // whether the safety net works. Nothing on this screen sends anything.
+  function qpStart(){
+    QP.judged=0;QP.done=false;QP.made=false;
+    if(QP.queue.length){qpCard();qpFill()} else {taSpin("Writing the texts your last few leads would have got\u2026");qpFill(qpCard)}
+  }
+  function qpFill(then){
+    if(QP.fetching||QP.done){if(then)then();return}
+    QP.fetching=true;
+    post("/api/quote-preview",{seen:QP.seen,count:3}).then(function(d){
+      QP.fetching=false;
+      if(d&&d.ok&&d.cards&&d.cards.length){
+        d.cards.forEach(function(c){QP.queue.push(c);QP.seen.push(c.id)});
+        if(d.remaining===0)QP.done=true;
+      } else if(d&&d.done){QP.done=true}
+      else if(d&&!d.ok){toast(d.error==="ai_not_configured"?"No AI key set on the server":"Couldn't write a draft",{bad:true});QP.done=true}
+      if(then)then();
+    }).catch(function(){QP.fetching=false;if(then)then()});
+  }
+  function qpBox(cap,color,text,extra){
+    return '<div class="tc-box"><div class="cap" style="color:'+color+'">'+cap+'</div>'+
+      '<div class="bd">'+esc(text)+'</div>'+(extra||'')+'</div>';
+  }
+  function qpCard(){
+    var body=el("taiBody"); if(!body)return;
+    var c=QP.queue[0];
+    if(!c){
+      body.innerHTML='<div class="tai-empty">'+
+        (QP.judged?'<b style="color:var(--text);font-size:15px">'+QP.judged+' checked \u2014 nice work.</b><br>':'')+
+        'That\'s every quote worth replaying for now. Come back after a few more come in, or make one up.'+
+        '<div style="display:flex;gap:8px;justify-content:center;margin-top:18px">'+
+        '<button class="btn" id="qpMake">Make one up</button>'+
+        '<button class="btn" id="qpBack">Back to Train AI</button></div></div>';
+      el("qpBack").onclick=taHome;
+      el("qpMake").onclick=qpMakeForm;
+      return;
+    }
+    // The gate's verdict is the most informative line on the card, so it is shown
+    // as its own banner rather than buried under the draft.
+    var gate='';
+    if(c.error)gate='<div class="tai-why" style="text-align:left;color:var(--red,#ff6b6b)">Couldn\'t reach the model: '+esc(c.error)+'</div>';
+    else if(c.refused)gate='<div class="tai-why" style="text-align:left;color:var(--red,#ff6b6b)"><b>Refused \u2014 the plain text would have gone instead.</b><br>It '+esc(c.fault)+'.</div>';
+    else if(c.fault)gate='<div class="tai-why" style="text-align:left"><b>Fixed on the retry.</b> Its first attempt '+esc(c.fault)+', so it was made to write it again.</div>';
+
+    body.innerHTML=
+      '<div id="taiCardBox">'+
+      '<div class="tc-prog"><span>'+QP.judged+' checked</span><span class="tr"><i style="width:0%"></i></span>'+
+        '<button class="btn" id="qpStop" style="padding:4px 9px;font-size:11.5px">Stop</button></div>'+
+      qpBox('What they submitted'+(c.name?' \u00b7 '+esc(c.name):''),'var(--muted2)',c.summary,
+        (c.notes?'<div class="bd" style="margin-top:6px;font-style:italic">\u201c'+esc(c.notes)+'\u201d</div>':'')+
+        (c.appointment?'<div class="bd" style="margin-top:6px">Asked for: '+esc(c.appointment)+'</div>':''))+
+      qpBox('What sends today','var(--green,#31c46b)',c.live)+
+      (c.alt?qpBox(esc(c.altCap||'The other wording'),'var(--muted2)',c.alt):'')+
+      (c.smart?qpBox('What the AI would write'+(c.refused?' \u2014 blocked':''),'var(--accent-text)',c.smart):'')+
+      gate+
+      '<div class="tc-vs"><button id="qpOff">Not how I\'d say it</button>'+
+        '<button id="qpYes" class="yes">Sounds like me</button></div>'+
+      '<div style="margin-top:8px"><button class="btn" id="qpRw" style="width:100%">Rewrite it myself</button></div>'+
+      '<div class="tai-why" style="text-align:left;margin-top:11px">Nothing here has been sent to anybody. <b>Rewrite it myself</b> teaches it most \u2014 your wording becomes the target for the next one.</div>'+
+      '</div>';
+    body.scrollTop=0;
+    el("qpStop").onclick=taHome;
+    el("qpOff").onclick=function(){qpVerdict("off","")};
+    el("qpYes").onclick=function(){qpVerdict("match","")};
+    el("qpRw").onclick=qpRewrite;
+  }
+  // His own wording, typed over the AI's. Posted as a miss with his text as the
+  // target, which is exactly the before/after pair the corpus learns fastest from.
+  function qpRewrite(){
+    var c=QP.queue[0]; if(!c)return;
+    var box=el("taiCardBox"); if(!box)return;
+    var seed=c.smart||c.live;
+    box.insertAdjacentHTML("beforeend",
+      '<div class="tc-box" style="margin-top:10px"><div class="cap">What you\'d have sent</div>'+
+      '<textarea id="qpText" rows="4" style="width:100%;background:transparent;border:0;color:var(--text);font:inherit;resize:vertical"></textarea></div>'+
+      '<div style="display:flex;gap:8px;margin-top:8px"><button class="btn" id="qpCancel" style="flex:1">Cancel</button>'+
+      '<button class="tai-cta" id="qpSave" style="margin-top:0;flex:2;padding:12px">Save it</button></div>');
+    var t=el("qpText"); t.value=seed; t.focus();
+    el("qpCancel").onclick=qpCard;
+    el("qpSave").onclick=function(){
+      var v=(el("qpText").value||"").trim();
+      if(!v){toast("Nothing to save",{bad:true});return}
+      qpVerdict("off",v);
+    };
+  }
+  function qpVerdict(verdict,mine){
+    var c=QP.queue.shift(); if(!c)return;
+    QP.judged++;
+    post("/api/quote-preview/teach",{
+      id:c.id,verdict:verdict,ai:c.smart||"",mine:mine||(verdict==="off"?"":c.smart||""),
+      asked:c.summary+(c.notes?" \u2014 \u201c"+c.notes+"\u201d":""),bucket:c.bucket
+    }).catch(function(){ /* a lost verdict is not worth interrupting him for */ });
+    if(QP.queue.length<=1)qpFill();
+    qpCard();
+  }
+  // Probe a case his real history hasn't thrown up yet.
+  function qpMakeForm(){
+    var body=el("taiBody"); if(!body)return;
+    var row=function(id,label,ph){
+      return '<div class="fu-col" style="margin-bottom:9px"><span class="lbl2">'+label+'</span>'+
+        '<input type="text" id="'+id+'" placeholder="'+ph+'"></div>';
+    };
+    body.innerHTML='<div id="taiCardBox">'+
+      '<div class="tc-box"><div class="cap">Make one up</div>'+
+      '<div class="bd" style="margin-bottom:10px">Fill in whatever a lead might send and see what they\'d get back. Nothing is sent.</div>'+
+      row("qpmName","Name","leave blank to test a nameless lead")+
+      row("qpmVehicle","Vehicle","2019 Toyota Tacoma")+
+      row("qpmTotal","Price the site quoted","349")+
+      row("qpmServices","Services","Full Interior")+
+      row("qpmCondition","Condition","pet hair, kids")+
+      row("qpmNotes","What they typed in the notes box","any chance you could do Saturday?")+
+      '</div>'+
+      '<div style="display:flex;gap:8px;margin-top:10px"><button class="btn" id="qpmBack" style="flex:1">Back</button>'+
+      '<button class="tai-cta" id="qpmGo" style="margin-top:0;flex:2;padding:12px">Write it</button></div></div>';
+    el("qpmBack").onclick=qpStart;
+    el("qpmGo").onclick=function(){
+      var made={name:val("qpmName"),vehicle:val("qpmVehicle"),total:val("qpmTotal"),
+        services:val("qpmServices"),condition:val("qpmCondition"),notes:val("qpmNotes")};
+      taSpin("Writing it\u2026");
+      post("/api/quote-preview",{made:made}).then(function(d){
+        if(d&&d.ok&&d.cards&&d.cards.length){QP.queue.unshift(d.cards[0]);QP.made=true;qpCard()}
+        else{toast("Couldn't write that one",{bad:true});qpMakeForm()}
+      }).catch(function(){toast("Couldn't write that one",{bad:true});qpMakeForm()});
+    };
+    function val(id){var e=el(id);return e?e.value.trim():""}
   }
 
   // Fire a fake customer question at your own inbox so you can rehearse replying.
