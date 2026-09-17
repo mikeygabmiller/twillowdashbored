@@ -132,7 +132,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-17·kept-rate';
+const BUILD = '2026-09-17·vehicle-read';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -543,14 +543,109 @@ function matchPhrase(text, re) {
   return m ? m[0].trim() : '';
 }
 
+// ---- reading the vehicle box ----------------------------------------------
+// The quote form does not collect "the car". It collects a size bucket from a
+// dropdown and, sometimes, whatever the customer typed above it, and it hands
+// both over glued together: "2023 jeep wrangler (SUV / Truck)". Three things go
+// wrong if that string is used as-is, and all three were going out live:
+//
+//   1. "(SUV / Truck)" is Mikey's own pricing bucket. Reading it back to a
+//      customer is like quoting them their own row number.
+//   2. People type in whatever case their keyboard was in. tidyName straightens
+//      the customer's NAME for exactly this reason; the car never got the same
+//      treatment, so "2023 jeep wrangler" went out lowercase.
+//   3. Worst: a submission can be nothing BUT the bucket. "SUV / Truck" with no
+//      car above it still read as "they told me the vehicle", so the text
+//      cheerfully said "I got your quote for the SUV / Truck" and never asked
+//      what the car was — which is the exact bug this whole module exists to
+//      kill, arriving through a side door.
+//
+// So the bucket is split off and kept separately (it is real information — it is
+// what the price was based on), and what remains is judged on whether it is
+// actually enough to price a car by.
+const SIZE_CLASS_RE = /^(sedan|compact|coupe|suv|truck|van|wagon|crossover|pickup|minivan|car|xl|full|mid|midsize|size|small|large|[\s/&+-])+$/i;
+
+// Title-case per word, not per string: tidyName's all-or-nothing rule would turn
+// "BMW" into "Bmw" and "RAV 4 XLE" into "Rav 4 Xle". A word the customer typed
+// with any capital in it is left exactly as they typed it — that is either a
+// real acronym or their own spelling, and both beat ours.
+function tidyVehicleCase(s) {
+  return String(s || '').replace(/[A-Za-z][A-Za-z']*/g, (w) => (
+    /[A-Z]/.test(w) ? w : w.charAt(0).toUpperCase() + w.slice(1)
+  ));
+}
+
+// { name, sizeClass, full } — what they actually told us about the car.
+//   full === true  → enough to talk about ("2023 Jeep Wrangler", "Acura RDX")
+//   full === false → something, but not enough ("2017", "BMW")
+//   name === ''    → nothing but the bucket
+function readVehicle(raw) {
+  let t = String(raw || '').replace(/\s+/g, ' ').trim();
+  let sizeClass = '';
+  // The bucket rides in trailing parens, or is the entire field.
+  const paren = t.match(/^(.*?)\s*\(([^)]*)\)\s*$/);
+  if (paren) { t = paren[1].trim(); sizeClass = paren[2].trim(); }
+  if (SIZE_CLASS_RE.test(t)) { sizeClass = sizeClass || t; t = ''; }
+  if (!t) return { name: '', sizeClass, full: false };
+  const name = tidyVehicleCase(t);
+  const year = /\b(19|20)\d{2}\b/.test(name);
+  // Words that are not the year. A make and a model ("Ford Bronco", "Acura RDX")
+  // is enough to price by; a lone "BMW" or a bare "2017" is not.
+  const words = name.replace(/\b(19|20)\d{2}\b/g, ' ').match(/[A-Za-z][A-Za-z'-]*/g) || [];
+  return { name, sizeClass, full: (year && words.length >= 1) || words.length >= 2 };
+}
+
+// Marques only. VEHICLE_MAKES (used by the voice bucketer) deliberately also
+// carries well-known MODEL names - f150, tacoma, wrangler - because over there
+// anything car-shaped is the signal. Here that would be actively wrong: someone
+// who typed "Tacoma" gave a model, and asking them for the model is the mistake
+// this function exists to avoid.
+const MARQUE_RE = /^(ford|chevy|chevrolet|dodge|ram|jeep|toyota|honda|nissan|subaru|mazda|hyundai|kia|gmc|bmw|mercedes|benz|audi|vw|volkswagen|lexus|acura|infiniti|tesla|volvo|cadillac|buick|chrysler|lincoln|mitsubishi|porsche|jaguar|land rover|range rover|mini|genesis|rivian|lucid|polestar|fiat|alfa|saab|suzuki|scion|hummer|pontiac|saturn|mercury|oldsmobile)$/i;
+
+// They gave part of a car. Ask for the rest of it and not for the part they
+// already typed: somebody who wrote "BMW" and is asked for the make learns that
+// nobody read the form, which is the whole failure this module exists to fix.
+function missingVehiclePart(name) {
+  const hasYear = /\b(19|20)\d{2}\b/.test(name);
+  const words = String(name).replace(/\b(19|20)\d{2}\b/g, ' ').match(/[A-Za-z][A-Za-z'-]*/g) || [];
+  if (hasYear && !words.length) return 'the make and model';
+  if (words.length === 1) {
+    // One word. If we recognise it as a marque ("BMW") the model is missing; if
+    // we don't, it is far more often a model they typed on its own ("CR-V",
+    // "Tacoma") and the make is missing. Either way the year is.
+    const known = MARQUE_RE.test(words[0]);
+    if (hasYear) return known ? 'the model' : 'the make';
+    return known ? 'the year and model' : 'the year and make';
+  }
+  return 'the year, make and model';
+}
+
+// A street address somebody typed into the notes box. Deliberately narrow: a
+// house number followed by a street suffix. Getting this wrong in the other
+// direction — inventing an address they never gave — would be much worse than
+// missing one, and missing one only costs us asking for it.
+const STREET_RE = /\b\d+\s+[\w.'-]+(\s+[\w.'-]+){0,3}\s+(ave|avenue|st|street|rd|road|dr|drive|ln|lane|way|blvd|boulevard|ct|court|pl|place|hwy|highway|ter|terrace|cir|circle|pkwy|parkway)\b/i;
+function hasStreetAddress(text) { return STREET_RE.test(String(text || '')); }
+
 // Everything the submission told us, in one bag, so the opener and the gate that
 // checks it are reasoning about the same set of facts.
 function quoteFacts(o) {
   const o2 = o || {};
   const services = Array.isArray(o2.services) ? o2.services.join(', ') : String(o2.services || '').trim();
+  const v = readVehicle(o2.vehicle);
   return {
     name: tidyName(o2.name),
-    vehicle: String(o2.vehicle || '').trim(),
+    vehicle: v.name,
+    // Did they put ANYTHING in the vehicle box? A lead who left it blank is the
+    // classic cold submission the legacy opener was written for. A lead whose
+    // entry turned out to be only a size bucket did engage with the form, and
+    // has a price and services worth acknowledging - sending her the legacy line
+    // would drop all of it. The two cases read differently for that reason.
+    vehicleBox: !!String(o2.vehicle || '').trim(),
+    // What the price was actually based on. Kept apart from the car's name so it
+    // can inform a draft without ever being read back as one.
+    sizeClass: v.sizeClass,
+    vehicleFull: v.full,
     condition: String(o2.condition || '').trim(),
     services,
     location: String(o2.location || '').trim(),
@@ -575,58 +670,82 @@ function quoteWhen(f) {
 
 function quoteOpener(f, opts) {
   const hi = `Hey ${greetName(f.name)}, it's Mikey.`;
-  // Nothing but a number came in, so the car is the only thing worth asking for
-  // and the name rides along in the same breath. Two phrasings of that same ask:
-  //
-  //   the default   — what has always gone out. Polite, low-pressure, and it ends
-  //                   on "Talk soon!", which is a sign-off: the ask is buried in
-  //                   the middle and the message closes by releasing them.
-  //   opts.ask      — the same request turned into a question and moved to the
-  //                   end, so the text finishes on something to answer. Every
-  //                   other branch below already ends on a question; this is the
-  //                   one that did not. Behind cfg.quoteOpenerAsk because it
-  //                   changes a message real customers receive.
-  if (!f.vehicle) {
-    if (opts && opts.ask) {
-      return `${hi} I got your quote submission on my site, and I can confirm that price as soon as I know the car. ` +
-        `${f.name ? "What's" : "What's your name, and what's"} the year, make and model?`;
-    }
-    return `${hi} I got your quote submission on my site. Whenever you have a minute, feel free to send over ` +
-      `${f.name ? '' : 'your name and '}the year, make, and model of the car you'd like detailed, ` +
-      `and I'll confirm that price. Talk soon!`;
-  }
-  // They named the car. Asking for it again is the bug this whole module exists
-  // to kill, so from here the opener acknowledges and moves to the next step.
-  // Services are only worth echoing when they're short; a five-item list read
-  // back at someone is a receipt, not a text.
+  const when = quoteWhen(f);
+  const addr = hasStreetAddress([f.notes, f.appointment, f.location].filter(Boolean).join(' '));
+  // The slot they named, in their words: "Friday morning", "Thursday at 10am".
+  const slot = when.day && (when.time || when.part)
+    ? `${when.day} ${when.time ? `at ${when.time}` : when.part}`
+    : '';
+
+  // ---- what they told us about the car --------------------------------------
+  // Three states, and they ask three different things. `full` is the only one
+  // where the car is never mentioned again.
+  const askCar = !f.vehicle
+    ? 'the year, make and model'
+    : (f.vehicleFull ? '' : missingVehiclePart(f.vehicle));
+
+  // ---- the acknowledgement --------------------------------------------------
   const picked = f.services && f.services.length <= 44 ? f.services : '';
-  // "for the Tacoma for the Full Interior" is what happens when the services get
-  // bolted on with the same preposition, so the price carries them instead.
   const tail = f.total
     ? ` - $${f.total}${picked ? ` for the ${picked}` : ''}`
     : (picked ? ` - ${picked}` : '');
-  const got = `I got your quote for the ${f.vehicle}${tail}.`;
-  const when = quoteWhen(f);
-  // A day AND a time is someone asking for a specific slot, not floating one, so
-  // narrowing it further is noise. The question that actually moves this along is
-  // the address - the form only ever collects a city.
-  if (when.day && when.time) {
-    return `${hi} ${got} I saw you were after ${when.day} at ${when.time} - let me check that against my day. ` +
-      `${f.name ? "What's" : "What's your name, and what's"} the address I'd be coming to?`;
+  // With no usable car name there is nothing to say "for the ___" about, so it
+  // falls back to naming the submission itself.
+  const got = f.vehicle
+    ? `I got your quote for the ${f.vehicle}${tail}.`
+    : `I got your quote submission on my site${tail}.`;
+
+  // Whatever they said about timing is echoed and never agreed to: his calendar
+  // is nowhere in a form post, so "let me check" is the only honest thing here.
+  const sawTime = slot
+    ? ` I've got you down for ${slot}${addr ? ' at the address you sent' : ''} - let me check that against my week.`
+    : when.day
+      ? ` I saw you were hoping for ${when.day} - let me check what I've got open.`
+      : when.part
+        ? ` I saw ${when.part}s work better for you.`
+        : '';
+
+  // ---- the one question -----------------------------------------------------
+  // Priority is "what stops him quoting or turning up", in that order. The car
+  // decides the price, so it outranks everything; then the address; then timing.
+  // Exactly one of these ever fires, which is what keeps it to one question.
+  const needName = !f.name;
+  if (askCar) {
+    // Nothing usable about the car. Everything else they said is still
+    // acknowledged above - this only changes what gets asked at the end.
+    // The legacy wording is for the lead who never touched the vehicle box and
+    // said nothing about timing - the cold submission it was written for, and the
+    // one cfg.quoteOpenerAsk governs. Somebody who DID fill that box, even if all
+    // that came through was a size bucket, has a price and services worth
+    // acknowledging; sending her the oldest line in the file drops all of it.
+    if (!f.vehicle && !f.vehicleBox && !slot && !when.day && !when.part) {
+      // The oldest case in the file: a number and nothing else. Two wordings,
+      // see cfg.quoteOpenerAsk.
+      if (opts && opts.ask) {
+        return `${hi} ${got} I can confirm that price as soon as I know the car. ` +
+          `${needName ? "What's your name, and what's" : "What's"} ${askCar}?`;
+      }
+      return `${hi} I got your quote submission on my site. Whenever you have a minute, feel free to send over ` +
+        `${needName ? 'your name and ' : ''}the year, make, and model of the car you'd like detailed, ` +
+        `and I'll confirm that price. Talk soon!`;
+    }
+    return `${hi} ${got}${sawTime} ${needName ? "What's your name, and what's" : "What's"} ${askCar}?`;
   }
-  // Whatever they said about timing gets echoed and NOT answered: his calendar is
-  // nowhere in this request, so "let me see what I've got" is the only honest
-  // thing this text can say about a day.
+  // They named a slot AND sent an address, so nothing is missing - the useful
+  // thing is to make sure it all landed right rather than to invent a question.
+  if (slot && addr) {
+    return `${hi} ${got}${sawTime} Have I got that right?`;
+  }
+  // A slot but nowhere to go: the address is the one thing still standing
+  // between him and the job.
+  if (slot) {
+    return `${hi} ${got}${sawTime} ${needName ? "What's your name, and what's" : "What's"} the address I'd be coming to?`;
+  }
   if (when.day) {
-    return `${hi} ${got} I saw you were hoping for ${when.day} - let me check what I've got open. ` +
-      `${f.name ? 'Is' : "What's your name, and is"} morning or afternoon better for you?`;
+    return `${hi} ${got}${sawTime} ${needName ? "What's your name, and is" : 'Is'} morning or afternoon better for you?`;
   }
-  if (when.part) {
-    return `${hi} ${got} I saw ${when.part}s work better for you. ` +
-      `${f.name ? 'What' : "What's your name, and what"} day were you looking to get it done?`;
-  }
-  return `${hi} ${got} ` +
-    `${f.name ? 'What' : "What's your name, and what"} day were you looking to get it done?`;
+  return `${hi} ${got}${sawTime} ` +
+    `${needName ? "What's your name, and what" : 'What'} day were you looking to get it done?`;
 }
 
 // ---- the gate --------------------------------------------------------------
@@ -701,9 +820,17 @@ async function draftQuoteOpener(f, cfg) {
   const situation = [f.vehicle, f.services, f.condition, f.notes].filter(Boolean).join('. ') || 'new quote lead';
   const facts = [
     f.name ? `Their name: ${f.name}` : 'They did not leave a name.',
-    f.vehicle ? `Vehicle: ${f.vehicle}` : 'They did not say what the vehicle is.',
+    f.vehicle
+      ? `Vehicle: ${f.vehicle}${f.vehicleFull ? '' : ' (this is only PART of a car - the rest is what you need from them)'}`
+      : 'They did not say what the vehicle is.',
+    // The size bucket is what the price was actually computed from, so the model
+    // should know it - but it is a dropdown row, not a car, and reading "SUV /
+    // Truck" back at somebody is like quoting them their own invoice code.
+    f.sizeClass ? `Size bracket the price came from (INTERNAL - never write this back to them): ${f.sizeClass}` : null,
     f.services ? `What they picked: ${f.services}` : null,
-    f.condition ? `Condition they described: ${f.condition}` : null,
+    // Same problem, worse: these are Mikey's own labels and one of them is a
+    // joke. "I saw it's a war zone" is not a thing to text a paying customer.
+    f.condition ? `How rough they said it is, picked from a dropdown (INTERNAL - never quote this label back, especially "War Zone"): ${f.condition}` : null,
     f.location ? `Where they are: ${f.location}` : null,
     f.total ? `The price the site quoted them: $${f.total}` : null,
     f.appointment ? `The slot they asked for: ${f.appointment}` : null,
@@ -727,6 +854,7 @@ async function draftQuoteOpener(f, cfg) {
     `HARD RULES:\n` +
     `- NEVER ask them for anything in the list above. They already told you. Asking again is the one thing this text exists to stop.\n` +
     `- If they mentioned a day, a time, or a worry, acknowledge that specifically. Do NOT answer it - he has not looked at his calendar and has not seen the car - just show them it landed.\n` +
+    `- If the notes say something personal (an accident, a death, a new baby, a car they just bought), give it ONE short human beat and move on - "glad to hear you've got it back". Never dwell on it, never ask about it, never make it the subject of the text. They came here for a clean car.\n` +
     `- Exactly ONE question mark in the whole message. No second question, no "let me know if..." bolted on the end.\n` +
     `- Never say a day or a time is available, and never promise one. Never write a dollar figure other than the price above.\n` +
     `- He works alone: "I", never "we". Plain text, no bullets, no sign-off, no subject line.\n` +
