@@ -132,7 +132,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-15·pairs';
+const BUILD = '2026-09-17·kept-rate';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -1374,6 +1374,9 @@ async function assistAnswerDraft(yes, { index, cfg, reply, channel, forcedPhone 
   }
   // Send the exact words he just approved, through the same queue as everything
   // else: opt-out guard, practice mode, the hold, and the CANCEL window all apply.
+  // A YES is a draft kept word for word — the strongest signal there is, and the
+  // one path that never touches the composer, so it records its own verdict.
+  await noteDraftVerdict(true, (thread.suggested && thread.suggested.by) || '');
   await runAssist({ text: `send: ${draft}`, cfg, reply, channel, forcedPhone: thread.phone });
   // Clear the draft only after the queue write, and only if it's still the one he
   // approved (he may have answered twice, or the customer may have texted again).
@@ -2919,7 +2922,11 @@ async function apiSend(request) {
   // "Learns from your edits": if this send started from an AI draft/suggestion the
   // owner then tweaked, remember the before→after so future drafts sound more like him.
   const aiOriginal = (data.aiOriginal || '').trim();
-  if (aiOriginal) { try { await recordEdit(aiOriginal, body, askedBefore(thread, msg.ts)); } catch { /* non-fatal */ } }
+  // Which provider wrote the draft he is sending. It rides along from the client
+  // because appendMessage() above has already cleared thread.suggested — asking
+  // the server to remember it would cost a second read of a thread we just wrote.
+  const aiBy = String((data && data.aiBy) || '').trim().slice(0, 12);
+  if (aiOriginal) { try { await recordEdit(aiOriginal, body, askedBefore(thread, msg.ts), aiBy); } catch { /* non-fatal */ } }
   // A text he typed with no draft behind it is the purest voice sample there is,
   // and it used to be dropped — the corpus only grew from drafts he accepted or
   // rewrote, so the way he opens a conversation cold was never learned until the
@@ -6530,7 +6537,10 @@ async function apiAiSummary(request) {
 // pre-drafted the moment a customer texts. It grounds every reply in the playbook +
 // Mikey's voice AND in how he's been editing recent drafts, so it keeps getting
 // sharper the more he uses it ("learns from your edits").
-async function generateReply(thread, cfg, hint) {
+// `meta` is an optional out-parameter: pass {} and it comes back carrying which
+// provider wrote this draft. A return value would have been cleaner, but seven
+// call sites expect a string and only two of them care.
+async function generateReply(thread, cfg, hint, meta) {
   const spend = await customerSpend(thread.phone, cfg);
   const voice = await loadVoice();
   // Which situation is this? Take it from what he's being asked to write about —
@@ -6607,7 +6617,9 @@ async function generateReply(thread, cfg, hint) {
   // Spelled out at both call sites rather than shared through a variable: the
   // surface and the tier say who pays for this and who reads it, and both are
   // worth being able to see without following a name somewhere else.
-  let text = await aiGenerate(build(''), { surface: 'reply draft', tier: 'voice', system, turns: ex.turns, effort: 'medium', maxTokens: 800, temperature: 0.45 });
+  const first = { surface: 'reply draft', tier: 'voice', system, turns: ex.turns, effort: 'medium', maxTokens: 800, temperature: 0.45 };
+  let text = await aiGenerate(build(''), first);
+  if (meta) meta.provider = first.usedProvider || '';
   text = cleanReply(text);
   // One regeneration if the draft gave itself away — either a stock AI phrase, or a
   // shape outside his measured habits (far too long, an emoji he'd never use, a
@@ -6627,14 +6639,15 @@ async function generateReply(thread, cfg, hint) {
       : styleViolation(text, voice && voice.style, bucket);
   if (off) {
     try {
+      const second = { surface: 'reply draft', tier: 'voice', system, turns: ex.turns, effort: 'medium', maxTokens: 800, temperature: 0.45 };
       const retry = await aiGenerate(
         build(`CRITICAL: your previous attempt ${off}. Mikey does not write like that. Rewrite it to read exactly like the real texts above, and avoid any customer-service filler. `),
-        { surface: 'reply draft', tier: 'voice', system, turns: ex.turns, effort: 'medium', maxTokens: 800, temperature: 0.45 },
+        second,
       );
       const cleaned = cleanReply(retry);
       // Take the retry even if it still trips a rule — it was written under the
       // stricter instruction, so it is the better of the two either way.
-      if (cleaned) text = cleaned;
+      if (cleaned) { text = cleaned; if (meta) meta.provider = second.usedProvider || ''; }
     } catch { /* keep the first attempt rather than failing the draft */ }
   }
   return text;
@@ -6788,14 +6801,15 @@ async function apiAiAnswer(request) {
   // the hint as "the owner telling you what to say" — which is exactly what a
   // tap is. Without the "use it exactly", it likes to soften a bare "$375".
   const hint = `The owner has decided: ${answers.join('; ')}. Tell the customer that, using his answers exactly as given.`;
+  const who = {};
   try {
-    const text = await generateReply(thread, cfg, hint);
+    const text = await generateReply(thread, cfg, hint, who);
     thread.needsYou = null;                                 // the question is answered
     thread.needsYouAnswers = null;
-    if (text) thread.suggested = { text, ts: Date.now(), forTs: last ? last.ts : Date.now() };
+    if (text) thread.suggested = { text, ts: Date.now(), forTs: last ? last.ts : Date.now(), by: who.provider };
     await saveThread(thread);
     await updateIndexEntry(thread);
-    return json({ ok: true, draft: text, thread });
+    return json({ ok: true, draft: text, by: who.provider, thread });
   } catch (err) {
     return json({ ok: false, error: String(err.message || err) }, 502);
   }
@@ -6955,8 +6969,9 @@ async function apiAiDraft(request) {
         return json({ ok: true, needsYou: thread.needsYou, thread });
       }
     }
-    const text = await generateReply(thread, cfg, hint);
-    return json({ ok: true, draft: text });
+    const who = {};
+    const text = await generateReply(thread, cfg, hint, who);
+    return json({ ok: true, draft: text, by: who.provider });
   } catch (err) {
     return json({ ok: false, error: String(err.message || err) }, 502);
   }
@@ -10808,7 +10823,53 @@ const EDITS_KEEP = 100;   // was 12 — enough to retrieve a *relevant* pattern,
 async function loadEdits() {
   return (await kv().get(EDITS_KEY, { type: 'json' })) || [];
 }
-async function recordEdit(from, to, asked) {
+// ---------------------------------------------------------------------------
+// Did it actually save him any time?
+// ---------------------------------------------------------------------------
+// Every other number this app keeps about the voice is a proxy. "78% sounded
+// like me" is a judgement he made sitting still in the trainer; it is not the
+// same thing as a text that went out without him touching it. THIS is the
+// number: of the drafts he sent, how many did he send word for word.
+//
+// A draft he sends unchanged saved him writing one. A draft he rewrote cost him
+// reading it first. The app has recorded which is which on every send for
+// months — as a tag on a voice sample, then thrown away — and never once added
+// them up. Split by provider, because "is the paid model worth it" is a
+// question only this number can answer, and answering it wrong costs him real
+// money every month.
+const DRAFT_VERDICT_KEY = 'voice:kept';
+const DRAFT_VERDICTS_KEEP = 300;
+async function loadDraftVerdicts() {
+  return (await kv().get(DRAFT_VERDICT_KEY, { type: 'json' })) || { rounds: [] };
+}
+// ⚠ KV WRITE — once per draft he sends, which is bounded by how fast he types.
+async function noteDraftVerdict(kept, by) {
+  try {
+    const d = await loadDraftVerdicts();
+    d.rounds.unshift({ at: Date.now(), kept: !!kept, by: by || '' });
+    if (d.rounds.length > DRAFT_VERDICTS_KEEP) d.rounds.length = DRAFT_VERDICTS_KEEP;
+    await kv().put(DRAFT_VERDICT_KEY, JSON.stringify(d));
+  } catch { /* a lost verdict is never worth failing a send for */ }
+}
+// Rolled up for the screen. `days` windows it so a month on Gemini and a month
+// on Claude can be compared without one burying the other, and a provider with
+// too few sends reports null rather than a number he might act on — three sends
+// is not evidence about anything.
+const DRAFT_VERDICT_MIN = 5;
+function rollUpDraftVerdicts(d, days) {
+  const since = Date.now() - (days || 30) * 86400000;
+  const rows = (d.rounds || []).filter((r) => r && (r.at || 0) >= since);
+  const tally = (list) => {
+    if (list.length < DRAFT_VERDICT_MIN) return { sent: list.length, kept: list.filter((r) => r.kept).length, rate: null };
+    const kept = list.filter((r) => r.kept).length;
+    return { sent: list.length, kept, rate: Math.round((kept / list.length) * 100) };
+  };
+  const by = {};
+  for (const name of ['claude', 'gemini']) by[name] = tally(rows.filter((r) => r.by === name));
+  return Object.assign(tally(rows), { byProvider: by, days: days || 30 });
+}
+
+async function recordEdit(from, to, asked, by) {
   from = String(from || '').trim();
   to = String(to || '').trim();
   if (!from || !to) return;
@@ -10817,7 +10878,12 @@ async function recordEdit(from, to, asked) {
   // Sending a draft WORD FOR WORD is the strongest signal there is: the AI wrote
   // it and he shipped it. That used to be thrown away — now it's a positive
   // example that goes straight into the voice corpus.
-  if (norm(from) === norm(to)) { await recordVoiceSample(to, 'accepted', asked); return; }
+  if (norm(from) === norm(to)) {
+    await noteDraftVerdict(true, by);
+    await recordVoiceSample(to, 'accepted', asked);
+    return;
+  }
+  await noteDraftVerdict(false, by);
   const list = await loadEdits();
   list.unshift({ from, to, ts: Date.now() });
   await kv().put(EDITS_KEY, JSON.stringify(list.slice(0, EDITS_KEEP)));
@@ -12004,8 +12070,14 @@ async function apiVoiceStats() {
     next = worst ? 'train' : 'good';
   }
 
+  // The one number that is not a proxy: of the drafts he sent, how many went out
+  // word for word. Windowed at 30 days and split by provider so a stretch on the
+  // paid model can be compared against a stretch on the free one.
+  const kept = rollUpDraftVerdicts(await loadDraftVerdicts(), 30);
+
   return json({
     ok: true,
+    kept,
     built: !!(v && v.builtAt), builtAt: (v && v.builtAt) || 0,
     fingerprint: (v && v.fingerprint) || '',
     style: (v && v.style) || null,
@@ -12068,8 +12140,9 @@ async function maybeSuggestReply(phone) {
           changed = true;
         } else {
           thread.needsYou = null;
-          const text = await generateReply(thread, cfg, '');
-          if (text) { thread.suggested = { text, ts: Date.now(), forTs: last.ts }; changed = true; drafted = text; }
+          const who = {};
+          const text = await generateReply(thread, cfg, '', who);
+          if (text) { thread.suggested = { text, ts: Date.now(), forTs: last.ts, by: who.provider }; changed = true; drafted = text; }
         }
       }
     } else if (thread.suggested || thread.needsYou) {
@@ -12213,7 +12286,7 @@ async function aiGenerate(prompt, opts = {}) {
     const budget = aiDailyBudget();
     const spent = await claudeSpentToday();
     if (budget > 0 && spent < budget) {
-      try { return await claudeGenerate(prompt, opts); }
+      try { const t = await claudeGenerate(prompt, opts); opts.usedProvider = 'claude'; return t; }
       catch (err) {
         // Never let a provider outage stop him replying — fall through to Gemini.
         console.log('claude failed, falling back to gemini:', String((err && err.message) || err).slice(0, 200));
@@ -12222,7 +12295,13 @@ async function aiGenerate(prompt, opts = {}) {
       console.log(`claude over the day's budget ($${spent.toFixed(2)} of $${budget.toFixed(2)}) — drafting on gemini`);
     }
   }
-  return geminiGenerate(flattenForGemini(prompt, opts), opts);
+  const text = await geminiGenerate(flattenForGemini(prompt, opts), opts);
+  // Stamped on the way out so the caller can record WHO wrote a draft. The
+  // routing above has three exits — over budget, provider down, no key — and all
+  // three land here silently, which is exactly the case where "the drafts got
+  // worse today" needs an answer.
+  opts.usedProvider = 'gemini';
+  return text;
 }
 
 // ===========================================================================

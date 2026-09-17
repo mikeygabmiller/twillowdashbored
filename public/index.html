@@ -4392,7 +4392,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-15·pairs";
+  var APP_BUILD="2026-09-17·kept-rate";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -8912,6 +8912,39 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     h+='<div class="tai-why">'+esc(cta[1])+'</div>';
     h+=bnote;
 
+    // The number that isn't a proxy. Everything else on this screen is a
+    // judgement he made sitting still; this one is what actually happened at the
+    // composer. A draft sent word for word saved him writing a text. A draft he
+    // rewrote cost him reading one first.
+    var k=d.kept||null;
+    if(k&&k.sent){
+      var kh='<div class="tai-sec"><h4>Drafts you sent without touching them</h4>';
+      if(k.rate!=null){
+        kh+='<div class="tai-score" style="margin:0"><div class="lbl"><b>'+k.rate+'% sent as written</b>'+
+          '<span>'+k.kept+' of '+k.sent+' drafts over the last '+k.days+' days. This is the one that means time saved.</span></div></div>';
+      } else {
+        kh+='<div class="tai-why">'+k.kept+' of '+k.sent+' so far. Needs a few more sends before the number means anything.</div>';
+      }
+      // Split by provider, because "is the paid model worth it" is a question
+      // only this comparison can answer — and answering it by feel costs real
+      // money every month.
+      var names={claude:"Claude",gemini:"Free model"};
+      var bp=k.byProvider||{}, both=["claude","gemini"].filter(function(n){return bp[n]&&bp[n].sent});
+      if(both.length){
+        // Same bar as the per-situation rows below, so the two comparisons read
+        // as the same kind of thing rather than two inventions.
+        both.forEach(function(n){
+          var r=bp[n], w=r.rate==null?0:r.rate;
+          var cls=r.rate==null?"":(r.rate>=60?"good":r.rate<35?"weak":"");
+          kh+='<div class="tai-bar"><span class="nm">'+names[n]+'</span>'+
+            '<span class="tr"><i class="'+cls+'" style="width:'+w+'%"></i></span>'+
+            '<span class="vv">'+esc(r.rate==null?r.sent+" sent":r.rate+"% · "+r.sent)+'</span></div>';
+        });
+        if(both.length<2)kh+='<div class="tai-why" style="text-align:left;margin-top:8px">Only one model has written enough to score. Run the other for a week and this becomes a straight comparison.</div>';
+      }
+      h+=kh+'</div>';
+    }
+
     // Per-situation: the whole point of the screen. A global 78% hides that pricing
     // is the part that's wrong, and pricing is the part worth fixing.
     var order=["price","offer","schedule","confirm","answer","apology","closing","quick","general"];
@@ -9856,8 +9889,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       '<div class="air-acts"><button class="btn accent air-send">'+ic("send",15)+' Send</button><button class="btn air-edit">'+ic("pencil",14)+' Edit first</button><button class="btn air-discard">Dismiss</button></div>';
     box.querySelector(".air-x").onclick=function(){dismissSuggested(t)};
     box.querySelector(".air-discard").onclick=function(){dismissSuggested(t)};
-    box.querySelector(".air-edit").onclick=function(){var inp=el("msgInput");inp.value=s.text;autoGrow();updateCount();inp.focus();state.lastAiText=s.text;box.style.display="none"};
-    box.querySelector(".air-send").onclick=function(){state.lastAiText=s.text;el("msgInput").value=s.text;autoGrow();updateCount();sendMessage()};
+    box.querySelector(".air-edit").onclick=function(){var inp=el("msgInput");inp.value=s.text;autoGrow();updateCount();inp.focus();state.lastAiText=s.text;state.lastAiBy=s.by||"";box.style.display="none"};
+    box.querySelector(".air-send").onclick=function(){state.lastAiText=s.text;state.lastAiBy=s.by||"";el("msgInput").value=s.text;autoGrow();updateCount();sendMessage()};
   }
   function dismissSuggested(t){
     var box=el("suggestBox");if(box){box.style.display="none";box.innerHTML=""}
@@ -9910,7 +9943,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       }
       if(d&&d.ok&&d.draft){
         if(d.thread){if(state.phone===t.phone)state.thread=d.thread;t=d.thread}
-        else{t.needsYou=null;t.suggested={text:d.draft,ts:Date.now()}}
+        else{t.needsYou=null;t.suggested={text:d.draft,ts:Date.now(),by:d.by||""}}
         renderSuggested(t);
         refreshThreads();
       } else {
@@ -10584,7 +10617,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         return;
       }
       if(d&&d.ok&&d.draft){
-        showAiReview({title:"Suggested reply",text:d.draft,onAccept:function(){state.lastAiText=d.draft;var inp=el("msgInput");inp.value=d.draft;autoGrow();updateCount();inp.focus()},onRegen:aiDraft});
+        showAiReview({title:"Suggested reply",text:d.draft,onAccept:function(){state.lastAiText=d.draft;state.lastAiBy=d.by||"";var inp=el("msgInput");inp.value=d.draft;autoGrow();updateCount();inp.focus()},onRegen:aiDraft});
       } else toast("Draft failed: "+((d&&d.error)||"error"),{bad:true});
     }).catch(function(){toast("Network error",{bad:true})})
     .then(function(){var bb=el("draftBtn");bb.disabled=false;bb.innerHTML=ic("sparkles",21)});
@@ -11349,7 +11382,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(teamOn()&&meName())payload.by=meName(); // sign the reply with who's texting
     // If this send started from an AI draft/suggestion, pass the original so the
     // server can learn from how Mikey edited it. Used once, then cleared.
-    if(state.lastAiText){payload.aiOriginal=state.lastAiText;state.lastAiText=null}
+    if(state.lastAiText){payload.aiOriginal=state.lastAiText;payload.aiBy=state.lastAiBy||"";state.lastAiText=null;state.lastAiBy=null}
     // Optimistic: show the bubble immediately (marked "Sending…"), clear the box,
     // then reconcile with the server — so a text feels instant even on slow signal.
     var tempId="tmp"+Date.now();var forPhone=state.phone;
