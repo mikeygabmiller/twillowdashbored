@@ -132,7 +132,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-18·quotecut';
+const BUILD = '2026-09-18·gclid';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -343,6 +343,11 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/journeys')      return apiJourneys(url);
   if (request.method === 'GET'  && pathname === '/api/journey')       return apiJourney(url);
   if (request.method === 'POST' && pathname === '/api/journey/ai')    return apiJourneyAi(request);
+
+  // Google Ads offline conversion import — the CSV he uploads so Google counts
+  // the leads its own browser tag can never see. Authed, like everything past
+  // the gate above: a click id identifies one person's click.
+  if (request.method === 'GET'  && pathname === '/api/ads/conversions')  return apiAdsConversions(url);
 
   // Dashboard usage — the same recording trick as the journeys above, pointed
   // at this app instead of the website. /api/use is the browser's batch; the
@@ -3813,17 +3818,32 @@ function refHostOf(ref) {
   try { return new URL(s).hostname.replace(/^www\./, ''); } catch (e) { return s.replace(/^www\./, '').slice(0, 60); }
 }
 
-// { ad, camp } for one landing. `ad` is the platform that got paid, '' when
-// nothing here says anyone did.
+// { ad, camp, clid, clidk } for one landing. `ad` is the platform that got paid,
+// '' when nothing here says anyone did.
+//
+// `clid` is the raw click id and `clidk` names the parameter that carried it.
+// Both are kept because the platform NAME cannot be uploaded back to Google and
+// the id can: see the offline-import section below, which is the only way a
+// phone call in his driveway ever gets credited to the ad he paid for. The id
+// exists for the length of one page load and cannot be reconstructed later.
 function adFromLanding(landing, refHost) {
-  const out = { ad: '', camp: '' };
+  const out = { ad: '', camp: '', clid: '', clidk: '' };
   const s = String(landing || '');
   const q = s.indexOf('?') >= 0 ? s.slice(s.indexOf('?') + 1) : s;
   let p = null;
   try { p = new URLSearchParams(q); } catch (e) { p = null; }
   if (p) {
     for (const id of Object.keys(AD_CLICK_IDS)) {
-      if (p.get(id)) { out.ad = AD_CLICK_IDS[id]; break; }
+      const v = p.get(id);
+      if (v) {
+        out.ad = AD_CLICK_IDS[id];
+        out.clidk = id;
+        // Click ids are base64url with the odd dot in them, so anything else is
+        // either mangling in transit or somebody probing — and a value headed
+        // for a CSV cell is not one to pass through unfiltered.
+        out.clid = String(v).replace(/[^\w.-]/g, '').slice(0, 200);
+        break;
+      }
     }
     if (!out.ad && AD_PAID_MEDIUM.test(String(p.get('utm_medium') || ''))) {
       const src = String(p.get('utm_source') || '').toLowerCase().replace(/[^a-z]/g, '');
@@ -3905,7 +3925,8 @@ async function handlePixel(url, request) {
     // stamp its own counter into the same put() instead of buying a second one.
     const vid = url.searchParams.get('v');
     if (vid) {
-      const step = await journeyStep(vid, { t: now, p: path, r: refHost }, { ad: ad.ad, camp: ad.camp, city });
+      const step = await journeyStep(vid, { t: now, p: path, r: refHost },
+        { ad: ad.ad, camp: ad.camp, city, clid: ad.clid, clidk: ad.clidk });
       if (step && step.isNew) await alertNewClick(step.doc, { ad, city, path, refHost, day, doc });
     }
     await kv().put(analyticsDayKey(day), JSON.stringify(doc));
@@ -4088,6 +4109,12 @@ function journeyMeta(doc) {
     ad: String(doc.ad || '').slice(0, 12),
     camp: String(doc.camp || '').slice(0, 40),
     city: String(doc.city || '').slice(0, 40),
+    // The click id, and the moment they became a lead, mirrored here for the
+    // same reason as everything else in this object: the Google Ads export
+    // scans every visitor on file and must not open a single doc to do it.
+    clid: String(doc.clid || '').slice(0, 200),
+    clidk: String(doc.clidk || '').slice(0, 12),
+    lead: doc.leadAt || 0,
     // Split so the board can say "5 pages · 12 actions" without opening a doc.
     pages: doc.steps.filter((x) => !x.k).length,
     acts: doc.steps.filter((x) => x.k && x.k !== 'lead').length,
@@ -4171,6 +4198,12 @@ function stampJourneyInfo(doc, info) {
   if (i.ad && !doc.ad) doc.ad = String(i.ad).slice(0, 12);
   if (i.camp && !doc.camp) doc.camp = String(i.camp).slice(0, 40);
   if (i.city && !doc.city) doc.city = String(i.city).slice(0, 40);
+  // Stamped as a pair so the id and the parameter it came from can never
+  // disagree — gclid and gbraid go to different places on the Google side.
+  if (i.clid && !doc.clid) {
+    doc.clid = String(i.clid).slice(0, 200);
+    doc.clidk = String(i.clidk || 'gclid').slice(0, 12);
+  }
   return doc;
 }
 
@@ -4220,7 +4253,10 @@ async function handlePixelEvents(request) {
         // The landing is the only event that can say who paid for it: the query
         // string read above, or failing that the referrer this event carries.
         const byRef = landed.ad ? landed : adFromLanding('', refHostOf(step.r));
-        stampJourneyInfo(doc, { ad: byRef.ad, camp: byRef.camp || landed.camp, city: visitorCity(request) });
+        // The click id only ever comes off the query string — a referrer can say
+        // Google was paid, it can't say which click.
+        stampJourneyInfo(doc, { ad: byRef.ad, camp: byRef.camp || landed.camp, city: visitorCity(request),
+          clid: landed.clid, clidk: landed.clidk });
       }
       else step.k = k;
       appendStep(doc, step);
@@ -4259,6 +4295,11 @@ async function journeyLink(vid, phone, name) {
     if (!doc) return;
     doc.phone = phone;
     if (name && !doc.name) doc.name = String(name).slice(0, 60);
+    // The moment a click became a lead — the "Conversion Time" the Google Ads
+    // upload is built on. First one wins: the same browser submitting twice is
+    // one lead, and moving this timestamp would move a row Google has already
+    // matched and counted into a second conversion.
+    doc.leadAt = doc.leadAt || Date.now();
     doc.steps = doc.steps || [];
     doc.lastAt = Date.now();
     doc.steps.push({ t: doc.lastAt, k: 'lead' });
@@ -4673,6 +4714,215 @@ function journeyThreadSteps(thread) {
       detail: String(r.body || '').replace(/\s+/g, ' ').slice(0, 120),
     };
   }
+}
+
+// ===========================================================================
+// Google Ads offline conversion import
+// ---------------------------------------------------------------------------
+// WHY THIS EXISTS. Google Ads reported 2 conversions against ~$220 of spend in
+// a month this dashboard recorded 27 leads in, four of them traced by the
+// journeys above to clicks Google itself had billed him for. A bidding
+// algorithm told that a month which produced 27 leads produced 2 is optimising
+// for the wrong thing with his money.
+//
+// THE BROWSER TAG IS NOT THE PROBLEM and this is not a patch for a broken one.
+// The tag on the marketing site is installed, intercepting, and pointed at the
+// right two conversion actions. It still cannot count these leads:
+//   • ~94% of the ad traffic is mobile, where Safari's ITP expires the _gcl_aw
+//     cookie after 7 days and his sales cycle is longer than a week;
+//   • an ad blocker swaps gtag.js for a no-op stub, which reports nothing and
+//     looks perfectly healthy doing it;
+//   • and no tag in a browser can EVER see a phone call or a text, which were
+//     11 of those 27 leads. Nothing happens in a browser when somebody dials.
+//
+// Offline import goes around all three. Upload the click id and Google matches
+// the conversion to the click it charged for: no cookie, no tag, no delivery
+// rate. The cost of admission is that the click id must already be on file when
+// the lead arrives, which is what the capture in adFromLanding is for — a gclid
+// lives for one page load, and Google's import window shuts 90 days after the
+// click, so leads that predate this capture cannot be recovered at all.
+// ===========================================================================
+
+// The conversion action names AS THEY ARE SPELLED in his Ads account
+// (AW-16856115492): 7745314558 "Site tap-to-call" and 7760469729 "Submit lead
+// form", read out of the two conversion labels the site tag already fires.
+// Google matches an uploaded row to an action by this name, exactly, and fails
+// a row whose name it doesn't recognise. These are not strings to tidy up.
+const ADS_ACTION_FORM = 'Submit lead form';
+const ADS_ACTION_CALL = 'Site tap-to-call';
+const ADS_CURRENCY = 'USD';
+// A job logged more than this long after the lead is different work, not what
+// this click bought. Deliberately wider than Google's 90-day import window:
+// the row is worth exporting with the real number on it either way.
+const ADS_JOB_WINDOW_MS = 120 * 86400000;
+
+// One CSV line, quoting only what has to be quoted.
+function csvLine(cells) {
+  return cells.map((c) => {
+    const s = String(c == null ? '' : c);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }).join(',');
+}
+
+// "2026-09-18 14:32:07" in his timezone — the format Google's importer documents
+// alongside the Parameters:TimeZone header the file opens with.
+//
+// The fallback stamps +0000 onto the row instead of quietly handing back a UTC
+// clock under a Los Angeles header. Google reads a row's own offset ahead of the
+// header, so a missing Intl timezone costs nothing; the silent version would
+// have moved every conversion 7 hours with nothing to show it had.
+function adsConvTime(ts, tz) {
+  const d = new Date(ts);
+  try {
+    const parts = {};
+    new Intl.DateTimeFormat('en-CA', { timeZone: tz || 'America/Los_Angeles', hour12: false,
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit' })
+      .formatToParts(d).forEach((x) => { parts[x.type] = x.value; });
+    if (!parts.year || !parts.hour) throw new Error('no parts');
+    // hour12:false renders midnight as 24 on some runtimes.
+    const hh = parts.hour === '24' ? '00' : parts.hour;
+    return parts.year + '-' + parts.month + '-' + parts.day + ' ' + hh + ':' + parts.minute + ':' + parts.second;
+  } catch (e) {
+    return d.toISOString().slice(0, 19).replace('T', ' ') + '+0000';
+  }
+}
+
+// What the lead was actually worth, in the order of what we know: money he
+// logged for the job beats the calculator's estimate every time.
+//
+// This is the whole reason a value rides along. Smart bidding optimises for the
+// number it is given, and "a lead is a lead" teaches it to go and find more
+// form-fillers. Handed the $379 truck detail he actually got paid for, it goes
+// looking for more trucks.
+function adsLeadValue(phone, leadAt, jobs, quotes) {
+  if (!phone) return { value: 0, from: '' };
+  // The EARLIEST job at or after the lead is the one this click bought. A job
+  // logged before they ever landed belongs to an earlier visit by a repeat
+  // customer, and claiming it would credit this click with someone else's work.
+  let job = null;
+  for (const e of jobs) {
+    if (e.phone !== phone) continue;
+    const t = intelTs(e);
+    // A day of slack, because a job carries a calendar date (read as noon UTC)
+    // while the lead carries a real clock: work done the same afternoon can
+    // otherwise read as having happened before the lead came in.
+    if (t < leadAt - 86400000 || t > leadAt + ADS_JOB_WINDOW_MS) continue;
+    if (!job || t < intelTs(job)) job = e;
+  }
+  if (job && job.amount > 0) return { value: money2(job.amount), from: 'job' };
+  // Nothing booked yet, so the quote he actually sent is the best number going.
+  let q = null;
+  for (const e of quotes) {
+    if (e.phone !== phone || !(e.total > 0)) continue;
+    if (!q || Math.abs((e.ts || 0) - leadAt) < Math.abs((q.ts || 0) - leadAt)) q = e;
+  }
+  if (q) return { value: money2(q.total), from: 'quote' };
+  return { value: 0, from: '' };
+}
+
+// One visitor → at most one conversion row, or null.
+//
+// ONE ROW PER VISITOR, not one per event. He counts in leads ("27 leads last
+// month"), and somebody who tapped CALL and then filled the form is one lead,
+// not two. The form wins when both happened: it's the row that can carry money.
+//
+// A tap-to-call is exported under the same action the site tag fires on a tap,
+// which is the honest equivalence — neither one proves the call connected, and
+// the tag has been counting taps as conversions all along.
+function adsConversionRow(vid, m, since) {
+  const kind = m.phone ? 'form' : (/Tapped to (CALL|TEXT)/.test(String(m.hot || '')) ? 'call' : '');
+  if (!kind) return null;
+  if (!m.clid) return { skip: 'noClick' };
+  // The importer has one click-id column and it is the gclid. gbraid and wbraid
+  // (Google's iOS pair) are captured all the same and counted as skipped here,
+  // because they can only go up through the API — a row Google can't read is
+  // worse than a row it never got.
+  if (m.clidk !== 'gclid') return { skip: 'braid' };
+  let at = kind === 'form' ? (m.lead || m.at || 0) : (m.at || 0);
+  if (!at) return { skip: 'noTime' };
+  // Google rejects a conversion dated before the click it belongs to. Inside one
+  // journey that cannot happen; a clock skew or a hand-edited doc is what this
+  // is here for.
+  if (m.first && at < m.first) at = m.first;
+  if (at < since) return null;
+  return { vid, kind, at, clid: m.clid, phone: m.phone || '',
+    name: kind === 'form' ? ADS_ACTION_FORM : ADS_ACTION_CALL,
+    // Order ID: Google dedupes on conversion action + time + this, so the same
+    // visitor in next month's export lands on the row it already has instead of
+    // doubling it. He WILL upload overlapping windows.
+    order: vid + '-' + kind };
+}
+
+// GET /api/ads/conversions?days=45[&format=json]
+// ---------------------------------------------------------------------------
+// The file he uploads at Google Ads → Goals → Conversions → Uploads.
+//
+// AUTHED, and it stays that way: a gclid identifies one person's click. That
+// rules out Google's own scheduled-import-from-a-URL, which fetches with no
+// credentials at all, so this is a download-and-upload on purpose.
+//
+// COSTS NOTHING TO SCAN. Every field a row needs about a visitor — click id,
+// phone, the moment they became a lead — is mirrored into KV metadata by
+// journeyMeta, so walking every visitor on file is a list() and zero reads. The
+// only reads here are the ledger and the quote log, for the values.
+async function apiAdsConversions(url) {
+  const cfg = await loadConfig();
+  const tz = cfg.tz || 'America/Los_Angeles';
+  const days = Math.min(90, Math.max(1, parseInt(url.searchParams.get('days') || '45', 10) || 45));
+  const since = Date.now() - days * 86400000;
+
+  // Four months of ledger and three of quotes covers every lead a journey can
+  // still be alive for (JOURNEY_TTL is 45 days) plus the job that came out of it.
+  const jobs = intelJobs(await intelLedger(4)).filter((e) => e.phone);
+  const quotes = [];
+  for (const m of await quoteWindow(3, tz)) for (const e of m.entries) if (e.phone) quotes.push(e);
+
+  const rows = [];
+  const skipped = { noClick: 0, braid: 0, noTime: 0 };
+  let cursor = undefined, guard = 0;
+  do {
+    const page = await kv().list({ prefix: 'journey:', cursor, limit: 1000 });
+    for (const k of page.keys || []) {
+      const row = adsConversionRow(k.name.slice('journey:'.length), k.metadata || {}, since);
+      if (!row) continue;
+      if (row.skip) { skipped[row.skip]++; continue; }
+      const val = adsLeadValue(row.phone, row.at, jobs, quotes);
+      row.value = val.value; row.from = val.from;
+      rows.push(row);
+    }
+    cursor = page.list_complete ? null : page.cursor;
+  } while (cursor && ++guard < 5);
+  rows.sort((a, b) => b.at - a.at);
+
+  // The same scan as numbers, for a screen or a sanity check before uploading.
+  // No click ids in it: the CSV is the only thing that needs to carry those.
+  if (url.searchParams.get('format') === 'json') {
+    return json({ ok: true, days, tz, rows: rows.length, skipped,
+      valued: rows.filter((r) => r.value > 0).length,
+      booked: rows.filter((r) => r.from === 'job').length,
+      value: money2(rows.reduce((a, r) => a + r.value, 0)),
+      conversions: rows.map((r) => ({ vid: r.vid, name: r.name, at: r.at, value: r.value, from: r.from })) });
+  }
+
+  const lines = [];
+  // Line one is Google's parameters row, not a header: the importer reads the
+  // timezone from here, and the times below carry none of their own.
+  lines.push('Parameters:TimeZone=' + tz);
+  lines.push(csvLine(['Google Click ID', 'Conversion Name', 'Conversion Time',
+    'Conversion Value', 'Conversion Currency', 'Order ID']));
+  for (const r of rows) {
+    // A blank value is not a zero: it tells Google to use the conversion
+    // action's own default rather than booking the lead at nothing.
+    lines.push(csvLine([r.clid, r.name, adsConvTime(r.at, tz),
+      r.value > 0 ? r.value.toFixed(2) : '', r.value > 0 ? ADS_CURRENCY : '', r.order]));
+  }
+  return new Response(lines.join('\n') + '\n', { status: 200, headers: {
+    'Content-Type': 'text/csv; charset=utf-8',
+    'Content-Disposition': 'attachment; filename="google-ads-conversions.csv"',
+    // Identifying data — it is not sitting in a shared cache anywhere.
+    'Cache-Control': 'no-store',
+  } });
 }
 
 // ===========================================================================
