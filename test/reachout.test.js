@@ -39,13 +39,15 @@ const ctx = {};
 // eslint-disable-next-line no-new-func
 new Function('ctx',
   lift('tidyName') + lift('firstName') + lift('tzFmt') + lift('localHour') +
-  lift('localMinute') + lift('msUntilLocalHour') + lift('firstReachoutAt') +
+  lift('localMinute') + lift('msUntilLocalHour') + lift('firstReachoutDelay') + lift('firstReachoutAt') +
   'const TZFMT = new Map();' +
-  'const FIRST_REACHOUT_DELAY_MS = 210000;' +
+  'const FIRST_REACHOUT_MIN_MS = 120000, FIRST_REACHOUT_MAX_MS = 240000;' +
   'const NIGHT_HOLD_START = 23, NIGHT_HOLD_END = 5;' +
   'ctx.tidyName = tidyName; ctx.firstName = firstName;' +
-  'ctx.firstReachoutAt = firstReachoutAt; ctx.localHour = localHour;')(ctx);
-const { tidyName, firstName, firstReachoutAt, localHour } = ctx;
+  'ctx.firstReachoutAt = firstReachoutAt; ctx.localHour = localHour;' +
+  'ctx.firstReachoutDelay = firstReachoutDelay;')(ctx);
+const { tidyName, firstName, firstReachoutAt, localHour, firstReachoutDelay } = ctx;
+const MIN_MS = 120000, MAX_MS = 240000;
 
 let PASS = 0, FAIL = 0;
 const check = (name, got, want) => {
@@ -89,7 +91,24 @@ const pdt = (day, hhmm) => Date.parse(`2026-07-${day}T${hhmm}:00-07:00`);
 const wall = (t) => new Date(t).toLocaleString('en-CA', { timeZone: TZ, hour12: false });
 
 console.log('\n=== during the day, the reach-out is just a few minutes out ===');
-check('a 2pm quote goes out at 2:03:30pm', wall(firstReachoutAt(pdt('14', '14:00'), cfg)), wall(pdt('14', '14:00') + 210000));
+// The wait is drawn fresh per submission (see firstReachoutDelay), so what these
+// assert is the window, not one exact second. The window IS the behaviour: a
+// fixed gap is the tell that a machine sent it.
+const inWindow = (from, at) => (at - from >= MIN_MS) && (at - from <= MAX_MS);
+check('a 2pm quote lands 2 to 4 minutes later',
+  inWindow(pdt('14', '14:00'), firstReachoutAt(pdt('14', '14:00'), cfg)), true);
+// 400 draws is enough that a delay stuck on one value, or one drifting outside
+// the window, shows up every run rather than once in a blue moon.
+let lo = Infinity, hi = -Infinity, distinct = new Set(), outside = 0;
+for (let i = 0; i < 400; i++) {
+  const d = firstReachoutDelay();
+  if (d < MIN_MS || d > MAX_MS) outside++;
+  lo = Math.min(lo, d); hi = Math.max(hi, d); distinct.add(d);
+}
+check('no draw ever falls outside 2 to 4 minutes', outside, 0);
+check('the draws actually vary', distinct.size > 100, true);
+check('the low end reaches down toward 2 min', lo < MIN_MS + 30000, true);
+check('the high end reaches up toward 4 min', hi > MAX_MS - 30000, true);
 check('a 9pm quote still goes out tonight', localHour(firstReachoutAt(pdt('14', '21:00'), cfg), TZ), 21);
 check('10:55pm is still inside the day',   localHour(firstReachoutAt(pdt('14', '22:55'), cfg), TZ), 22);
 check('5am on the nose sends now',         localHour(firstReachoutAt(pdt('14', '05:00'), cfg), TZ), 5);
@@ -105,8 +124,12 @@ check('1:00am waits for 5am',    held('15', '01:00'), wall(pdt('15', '05:00')));
 check('4:50am waits for 5am',    held('15', '04:50'), wall(pdt('15', '05:00')));
 // The window is checked against when the text would LAND, not when the form was
 // filled in — 4:59am + the pause is already a civil hour, so nothing is held.
+// 4:59am + any draw in the window is already past 5, so nothing is held and the
+// send keeps its own seconds rather than being rounded to the hour.
 check('4:59am is close enough that the pause carries it past 5',
-  held('15', '04:59'), wall(pdt('15', '04:59') + 210000));
+  inWindow(pdt('15', '04:59'), firstReachoutAt(pdt('15', '04:59'), cfg)), true);
+check('4:59am is not held to the hour',
+  localHour(firstReachoutAt(pdt('15', '04:59'), cfg), TZ), 5);
 check('10:58pm crosses into 11', held('14', '22:58'), wall(pdt('15', '05:00')));
 check('held sends land on the hour, not a random minute',
   new Date(firstReachoutAt(pdt('15', '02:17'), cfg)).getSeconds(), 0);

@@ -132,7 +132,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-17·vehicle-read';
+const BUILD = '2026-09-18·reachout-window';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -977,11 +977,12 @@ async function handleSubmit(request) {
   ].filter(Boolean).join('\n');
   if (detail && !thread.notes) thread.notes = `Quote request (${new Date().toLocaleDateString()}):\n${detail}`;
   // Queue the first reach-out (if they consented) instead of sending it now. The
-  // scheduled-send cron delivers it ~3.5 min later — or at 5am for an overnight
-  // submission, see firstReachoutAt — and records it in the thread; until then it
-  // shows as "scheduled to send" so Mikey can cancel and reply himself.
-  // `alertOnSend` makes the cron text him the moment it actually lands, so the 3.5
-  // minutes of silence after the lead alert isn't a mystery — see dispatchDueScheduled.
+  // scheduled-send cron delivers it a random 2 to 4 minutes later — or at 5am for
+  // an overnight submission, see firstReachoutAt — and records it in the thread;
+  // until then it shows as "scheduled to send" so Mikey can cancel and reply
+  // himself. `alertOnSend` makes the cron text him the moment it actually lands, so
+  // the few minutes of silence after the lead alert isn't a mystery — see
+  // dispatchDueScheduled.
   let clientSms = 'skipped';
   if (consent) {
     const cfg = await loadConfig();
@@ -1017,8 +1018,8 @@ async function handleSubmit(request) {
 //
 // Replicates the Make flow exactly:
 //   1. Text Mikey immediately:  🔔 NEW QUOTE — name, phone, $total, vehicle, services
-//   2. ~3.5 min later, text the customer the first reach-out — but only when they
-//      consented (Make's filter: smsConsent != "false") and the phone is a valid +1.
+//   2. A few minutes later, text the customer the first reach-out — but only when
+//      they consented (Make's filter: smsConsent != "false") and the phone is a valid +1.
 //      An overnight submission waits for 5am instead (firstReachoutAt).
 // Improvements over Make: the delayed text goes through the reserve-then-send cron
 // (at-most-once, opt-out aware, delivery-tracked), the lead is recorded in the
@@ -1075,7 +1076,8 @@ async function handleQqcText(request) {
   if (detail && !thread.notes) thread.notes = `QQC quote (${new Date().toLocaleDateString()}):\n${detail}`;
   let clientSms = 'skipped';
   if (consent) {
-    // 3.5 min, like Make's Sleep — except overnight, which Make couldn't do.
+    // A random 2 to 4 min, where Make slept a fixed 3.5 — except overnight, which
+    // Make couldn't do at all.
     const cfg = await loadConfig();
     // Same opener as /submit, from the same fields — the two endpoints have to
     // say the same thing or the site's fallback path quietly sends a worse text.
@@ -8561,7 +8563,20 @@ function inQuietHours(ts, cfg) {
 // Hold a new lead's first auto-reply for a few minutes so it reads like Mikey
 // personally texting back, not an instant bot. His own lead alert is unaffected —
 // that one goes out the second the form posts.
-const FIRST_REACHOUT_DELAY_MS = 210000; // 3.5 minutes
+//
+// The wait is a random point inside the window rather than the fixed 3.5 minutes
+// it used to be. A fixed offset is its own tell: two people who quote on the same
+// day, or one person who quotes twice, see the reply land at the identical gap
+// both times, which no human texting back ever produces.
+const FIRST_REACHOUT_MIN_MS = 120000; // 2 minutes
+const FIRST_REACHOUT_MAX_MS = 240000; // 4 minutes
+
+// One draw per submission. The minute cron rounds the actual send up to the next
+// tick, so this spreads the reply across roughly a 2-to-5 minute band, not the
+// exact seconds picked here.
+function firstReachoutDelay() {
+  return FIRST_REACHOUT_MIN_MS + Math.floor(Math.random() * (FIRST_REACHOUT_MAX_MS - FIRST_REACHOUT_MIN_MS + 1));
+}
 
 // ---- the overnight hold on a brand-new lead's first text -------------------
 // Deliberately NOT cfg.quietStart/quietEnd. Those guard the autopilot nudge,
@@ -8593,12 +8608,12 @@ function msUntilLocalHour(ts, tz, hour) {
   return t - ts;
 }
 
-// When a new lead's first reach-out should actually go out. Normally a few
+// When a new lead's first reach-out should actually go out. Normally a random few
 // minutes after they submit, so it reads like Mikey picking up his phone rather
 // than a bot firing on the webhook. A 1am submission instead gets answered at
 // 5am — a text at 1:04am is the other way a real person gives themselves away.
 function firstReachoutAt(now, cfg) {
-  const at = now + FIRST_REACHOUT_DELAY_MS;
+  const at = now + firstReachoutDelay();
   const h = localHour(at, cfg && cfg.tz);
   if (h < NIGHT_HOLD_START && h >= NIGHT_HOLD_END) return at;
   return at + msUntilLocalHour(at, cfg && cfg.tz, NIGHT_HOLD_END);
@@ -10517,7 +10532,7 @@ function defaultConfig() {
     missedCallText: '',      // custom missed-call text (blank = the friendly default)
     autoReplyAlert: true,    // text Mikey the moment the quote-form auto-reply actually
                              // reaches the customer. The "NEW QUOTE" alert fires on
-                             // submission; this one fires ~3.5 min later when the text
+                             // submission; this one fires a few minutes later when the text
                              // really goes out, so he knows the customer has heard from
                              // him and can take over the conversation.
     quoteOpenerAsk: false,   // reword the generic opener (the one for a lead who never
