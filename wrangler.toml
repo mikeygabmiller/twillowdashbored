@@ -38,7 +38,7 @@ binding = "MESSAGES"
 id = "e3305474d22a48ac97265b394aba685e"
 
 # Minute cron (scheduled() handler): delivers due scheduled sends (delayed auto-
-# replies, appointment reminders, the 3.5-min first reach-out) AND advances the
+# replies, appointment reminders, the first reach-out to a new lead) AND advances the
 # auto follow-up engine (surfaces nudges, fires autopilot sends). Well within the
 # free tier (~1,440 runs/day vs 100k/day); the engine uses the thread index's
 # cached next-due time to only load conversations that actually need action.
