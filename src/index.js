@@ -132,7 +132,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-18·polish-receipt';
+const BUILD = '2026-09-18·quotecut';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -1832,9 +1832,16 @@ function assistOutboundBlocked(text) {
   const t = String(text || '');
   if (t.includes(ASSIST_CUT)) return 'it still had the "reply above this line" marker in it';
   if (/\[ref:/i.test(t)) return 'it still had the routing line ([ref:…]) in it';
-  if (/^\s*On .{0,120}\bwrote:\s*$/m.test(t) || /^\s*>/m.test(t) || /^\s*From:\s.+@/m.test(t)) {
+  if (ASSIST_ATTRIB.test(t) || /^\s*>/m.test(t) || /^\s*From:\s.+@/m.test(t)) {
     return 'it looked like a quoted email had come along for the ride';
   }
+  // An address in angle brackets is mail plumbing, not something anyone types into
+  // a text. Checked separately from the attribution above because it is what's
+  // left when a client wraps the line somewhere we didn't predict — the guard's
+  // job is to be the thing that still catches it when the cut has already failed.
+  // Deliberately NOT a bare-address check: customers ask him for his email, and he
+  // has to be able to send it.
+  if (/<[^>\s@]+@[^>\s]+>/.test(t)) return 'it still had a quoted email address in it';
   if (t.length > 900) return `it was ${t.length} characters — far too long for a text`;
   return '';
 }
@@ -2105,6 +2112,22 @@ async function handleOwnerSms(rawText) {
 // texted last" guess going wrong when two people text at the same minute.
 const ASSIST_CUT = '--- reply above this line ---';
 
+// The line Gmail puts above what it quotes. It has to be matched in two places —
+// cut off his reply, and refused if it somehow survived — so it lives here once.
+//
+// Allowed to cross a newline, which the single-line version it replaces was not.
+// Gmail on Android wraps its plain-text parts at ~78 characters, and the
+// attribution for this app is 77: "On Thu, Sep 17, 2026, 9:40 PM Mikeys Dashboard
+// <onboarding@resend.dev> wrote:". Any longer sender name breaks the line right
+// before "wrote:", and on 2026-09-18 everything above that break went out to a
+// real customer under his name, because neither the cut nor the guard could see
+// an attribution that wasn't on one line.
+//
+// Bounded and lazy on purpose: an ordinary reply that happens to open with "On
+// Thursday…" can only be swallowed by this if "wrote:" ends a line within the
+// next 200 characters, which a text to a customer doesn't do.
+const ASSIST_ATTRIB = /^[ \t]*On\b[\s\S]{0,200}?\bwrote:[ \t]*$/m;
+
 // Assemble an alert body that can be replied to. The cut marker goes at the very
 // TOP — when he replies, his mail client quotes everything below it, so slicing
 // at the marker leaves exactly what he typed and nothing else. (Putting it at the
@@ -2350,7 +2373,7 @@ function assistStripQuoted(raw) {
   let s = String(raw || '').replace(/\r\n/g, '\n');
   const cuts = [
     s.indexOf(ASSIST_CUT),
-    s.search(/^\s*On .{0,120}\bwrote:\s*$/m),
+    s.search(ASSIST_ATTRIB),
     s.search(/^\s*-{2,}\s*Original Message\s*-{2,}/mi),
     s.search(/^\s*_{10,}\s*$/m),
     s.search(/^\s*From:\s.+$/m),

@@ -53,7 +53,7 @@ const NAMES = [
 // eslint-disable-next-line no-new-func
 new Function('ctx', 'ENV', 'publicBase',
   NAMES.map(lift).join('\n') + '\n' +
-  ['ASSIST_CUT', 'MAILC', 'MAILF', 'ASSIST_YES', 'ASSIST_NO'].map(liftConst).join('\n') + '\n' +
+  ['ASSIST_CUT', 'ASSIST_ATTRIB', 'MAILC', 'MAILF', 'ASSIST_YES', 'ASSIST_NO'].map(liftConst).join('\n') + '\n' +
   'ctx.ASSIST_CUT = ASSIST_CUT; ctx.ASSIST_YES = ASSIST_YES; ctx.ASSIST_NO = ASSIST_NO;' +
   NAMES.map((n) => `ctx.${n} = ${n};`).join(''),
 )(ctx, { ALERT_EMAIL: 'mikey@example.com', TWILIO_FROM: '+13605550000' }, () => 'https://dash.example.com');
