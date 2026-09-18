@@ -132,7 +132,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-18·reachout-window';
+const BUILD = '2026-09-18·polish-receipt';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -1576,11 +1576,12 @@ async function handleInboundSms(request) {
 // ===========================================================================
 const ASSIST_HELP =
   'Answer a customer from your phone:\n' +
+  '• Just type what you want to say. It goes out in your words — I only fix spelling and punctuation.\n' +
   '• "yes" sends the reply I wrote out for you in the alert. "no" drops it.\n' +
-  '• Text me the facts — "375, thursday works" — and I\'ll write it out and send it to whoever texted you last.\n' +
-  '• "@ruth 375 thursday" to pick who.\n' +
-  '• "send: ..." to send your exact words.\n' +
-  '• "draft: ..." to write it but hold it in the dashboard.\n' +
+  '• "@ruth on my way" to pick who.\n' +
+  '• "send: ..." for your exact keystrokes, typos and all.\n' +
+  '• "write: 375, thursday works" if you\'d rather give me the facts and have me word it.\n' +
+  '• "draft: ..." to hold it in the dashboard instead of sending.\n' +
   '• "who" = who\'s waiting. "cancel" = pull back the last one.';
 
 // Text Mikey on his cell. Always SMS (not notifyMikey, which prefers email) —
@@ -1714,6 +1715,110 @@ async function assistAnswerDraft(yes, { index, cfg, reply, channel, forcedPhone 
 }
 
 // ---------------------------------------------------------------------------
+// The polish pass — his words, with the typos taken out
+// ---------------------------------------------------------------------------
+// The original assist path handed what he typed to the AI and got back a written
+// reply. That's useful when he wants it written, and wrong as a default: he asked
+// for the opposite, in these words — "I just want to write my words and it
+// responds to them", fixing "grammar and spelling mistakes, no rephrasing".
+//
+// So the default is now a polish, not a rewrite: same sentence, same order, same
+// tone, with the spelling and punctuation cleaned up. The AI is allowed to change
+// how a word is SPELLED and nothing else.
+//
+// A prompt can't enforce that — models pad, soften and helpfully add a greeting.
+// So the prompt asks and assistPolishDrift() checks, word by word. Anything the
+// check doesn't recognise as a typo fix means the polish is thrown away and his
+// exact words are sent instead. That's the safe direction: the worst case is his
+// own sentence, untouched, which is what he asked for in the first place.
+const POLISH_PROMPT =
+  'Fix ONLY the spelling, capitalisation and punctuation of the message below.\n\n' +
+  'Hard rules:\n' +
+  '- Keep every word the writer used, in the same order. Never add a word. Never remove a word.\n' +
+  '- Do not rephrase, reword, soften, expand or shorten anything.\n' +
+  '- Do not add a greeting, a sign-off, a name, an emoji, or any sentence of your own.\n' +
+  '- Never change a number, a price, a time or a date.\n' +
+  '- Leave the casual tone alone. Fragments stay fragments. Slang stays slang.\n' +
+  '- Return the corrected message only, with no quotes around it and nothing else.\n\n' +
+  'MESSAGE:\n';
+
+// Words as the drift check sees them. Case, punctuation and apostrophes are
+// exactly what the polish is allowed to change, so they can't be part of the
+// comparison: "dont" and "Don't" have to read as the same word, or every
+// legitimate fix would look like a rewrite.
+function polishWords(s) {
+  return String(s || '').toLowerCase().replace(/['‘’]/g, '').split(/[^a-z0-9]+/).filter(Boolean);
+}
+
+// Straight Levenshtein, two rows. Only ever runs over one word against one word,
+// so the quadratic doesn't matter.
+function polishEdits(a, b) {
+  if (a === b) return 0;
+  let prev = [];
+  for (let j = 0; j <= b.length; j++) prev[j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+// Did the polish stay a polish? Returns '' when every word is either unchanged or
+// a plausible misspelling of the one he typed, or what went wrong in his words.
+// Deliberately strict: a false "that's drift" costs him nothing (his own sentence
+// goes out), a false "that's fine" puts words in his mouth in front of a customer.
+function assistPolishDrift(before, after) {
+  const a = polishWords(before);
+  const b = polishWords(after);
+  if (!b.length) return 'it came back empty';
+  // Tokens are letters and digits, so an emoji is invisible to the word compare
+  // below. He doesn't use them, and the prompt forbids adding one — but "forbids"
+  // isn't "can't", and a 👍 appearing under his name to a customer is a change of
+  // voice even though every word survived.
+  const emoji = (t) => (String(t).match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu) || []).length;
+  if (emoji(after) > emoji(before)) return 'it added an emoji';
+  if (a.length !== b.length) return a.length < b.length ? 'it added words' : 'it dropped words';
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i], y = b[i];
+    if (x === y) continue;
+    // A number is never a typo. A price he didn't say is the exact failure this
+    // whole feature promises can't happen, so one changed digit fails the lot.
+    if (/\d/.test(x) || /\d/.test(y)) return `it changed "${x}" to "${y}"`;
+    // Transposed letters ("teh" -> "the", "adn" -> "and") are the commonest typo
+    // there is and score badly on edit distance for a short word, so check the
+    // letters themselves before falling back to distance.
+    const letters = (s) => s.split('').sort().join('');
+    if (letters(x) === letters(y)) continue;
+    if (polishEdits(x, y) <= (x.length <= 4 ? 1 : 2)) continue;
+    return `it changed "${x}" to "${y}"`;
+  }
+  return '';
+}
+
+// Run the polish. Never throws and never blocks: every failure path — the AI
+// being down, an empty response, a drifted one — returns his words untouched,
+// because a customer waiting on an answer is worse than an answer with a typo.
+async function assistPolish(text, cfg) {
+  const raw = String(text || '').trim();
+  if (!raw) return raw;
+  if (cfg && cfg.assistPolish === false) return raw;
+  // Under a few words there is nothing to fix, and a round trip to Gemini to be
+  // told "ok" is a line on the AI bill with no reply attached to it.
+  if (raw.length < 12) return raw;
+  let out = '';
+  try {
+    out = await geminiGenerate(POLISH_PROMPT + raw, { temperature: 0, maxTokens: 500, surface: 'polish' });
+  } catch { return raw; }
+  // Models like to hand back a quoted string even when told not to.
+  out = String(out || '').trim().replace(/^["'“‘]+|["'”’]+$/g, '').trim();
+  if (!out) return raw;
+  return assistPolishDrift(raw, out) ? raw : out;
+}
+
+// ---------------------------------------------------------------------------
 // The last gate before a real customer's phone buzzes
 // ---------------------------------------------------------------------------
 // Two different fears, two different checks.
@@ -1842,14 +1947,16 @@ async function runAssist({ text, cfg, reply, channel, forcedPhone }) {
   const m = body0.match(/^@(\S+)\s+([\s\S]+)$/);
   if (m) { token = m[1]; body = m[2].trim(); }
 
-  // mode prefix
-  let mode = 'ai';
+  // Mode prefix. The default is 'polish' — what he typed, spelling fixed, nothing
+  // else — because the common case is him answering a customer in his own words
+  // and not wanting to type a prefix to get them through untouched. The full
+  // rewrite is still there behind "write:" for when he'd rather hand over the
+  // bare facts and have it written out.
+  let mode = 'polish';
   let mm = body.match(/^(?:send|say|verbatim)\s*:\s*([\s\S]+)$/i);
   if (mm) { mode = 'verbatim'; body = mm[1].trim(); }
-  else {
-    mm = body.match(/^(?:draft|hold)\s*:\s*([\s\S]+)$/i);
-    if (mm) { mode = 'draft'; body = mm[1].trim(); }
-  }
+  else if ((mm = body.match(/^(?:write|rewrite|word)\s*:\s*([\s\S]+)$/i))) { mode = 'ai'; body = mm[1].trim(); }
+  else if ((mm = body.match(/^(?:draft|hold)\s*:\s*([\s\S]+)$/i))) { mode = 'draft'; body = mm[1].trim(); }
   if (!body) { await reply(ASSIST_HELP); return; }
 
   // An email reply already knows who it's about (it's threaded to that customer's
@@ -1879,7 +1986,7 @@ async function runAssist({ text, cfg, reply, channel, forcedPhone }) {
 
   const thread = await loadThread(target.phone);
   let out = body;
-  if (mode !== 'verbatim') {
+  if (mode === 'ai') {
     // The hint path: generateReply() is grounded in the playbook, the rules, this
     // customer's history AND how Mikey edits drafts — and is told to use any fact
     // in the hint exactly as given.
@@ -1888,6 +1995,11 @@ async function runAssist({ text, cfg, reply, channel, forcedPhone }) {
       await reply(`Couldn't write that one (${String((err && err.message) || err).slice(0, 60)}). Send "send: <your exact message>" and I'll send it word for word.`);
       return;
     }
+  } else if (mode !== 'verbatim') {
+    // polish + draft: his sentence, typos out. assistPolish() falls back to his
+    // exact words on any failure, so there's nothing to catch and no way for this
+    // to leave him without a reply going out.
+    out = await assistPolish(body, cfg);
   }
   out = String(out || '').trim();
   if (!out) { await reply('That came back empty — try again, or use "send: <your exact message>".'); return; }
@@ -1901,8 +2013,12 @@ async function runAssist({ text, cfg, reply, channel, forcedPhone }) {
     return;
   }
 
-  // Fact check on the AI-worded path only. "send:" is his exact words and needs
-  // no second-guessing; a draft isn't going anywhere yet.
+  // Fact check on the AI-worded path only — "write:", and the YES-to-a-draft path
+  // that routes through it. "send:" is his exact words and needs no second-
+  // guessing. Nor does a polish: assistPolishDrift() has already established the
+  // text is his sentence word for word, so there is no room for a price or a day
+  // to have appeared that he didn't type, and a hold here would only put friction
+  // in front of the path he asked to be frictionless.
   if (mode === 'ai' && cfg.assistFactCheck !== false) {
     const drift = assistFactDrift(out, body, thread);
     if (drift) {
@@ -1948,6 +2064,12 @@ async function runAssist({ text, cfg, reply, channel, forcedPhone }) {
   const raw = channel === 'email' ? cfg.assistEmailDelaySec : cfg.assistDelaySec;
   const delaySec = Math.max(0, Math.min(900, Number(raw) || 0));
   const item = { id: genId(), kind: 'assist', at: Date.now(), body: out, sendAt: Date.now() + delaySec * 1000 };
+  // Ask the cron for a receipt once this actually reaches the customer. Until now
+  // the last thing he heard was "sending in ~3 min", which is a promise, not a
+  // record — and the gap between the two is exactly where a dead Twilio key or an
+  // opt-out hides. The receipt is the only message in this loop that says a
+  // customer's phone really buzzed.
+  if (cfg.assistSentReceipt !== false) item.receipt = channel === 'email' ? 'email' : 'sms';
   thread.scheduled.push(item);
   thread.scheduled.sort((a, b) => a.sendAt - b.sendAt);
   thread.dateRequest = null;
@@ -2141,15 +2263,15 @@ function assistAlertHtml(cfg, o) {
   const tips = [];
   if (quickOk && byEmail) {
     tips.push(offer
-      ? `Hit <b>Reply</b>: <b>YES</b> sends it, <b>NO</b> drops it — or tell me what to say instead (&ldquo;375, thursday&rdquo;) and I'll rewrite it in your voice. Free — no text message used.`
-      : `Hit <b>Reply</b> with just the facts and I'll write it out in your voice and send it to ${htmlEsc(who)}. Free — no text message used.`);
+      ? `Hit <b>Reply</b>: <b>YES</b> sends it, <b>NO</b> drops it — or just type your own answer and <b>that</b> goes to them, in your words. Free — no text message used.`
+      : `Hit <b>Reply</b> and type your answer. It goes to ${htmlEsc(who)} <b>in your words</b> — I only fix spelling and punctuation. Free — no text message used.`);
   }
   if (quickOk && cfg.assistSms !== false) {
     tips.push(`${byEmail && tips.length ? 'Or text' : 'Text'} <b>${htmlEsc(ENV.TWILIO_FROM || 'your business number')}</b> the same thing.`);
   }
   if (quickOk && tips.length) {
-    tips.push(`Also: &ldquo;send: your exact words&rdquo; skips the rewriting · &ldquo;draft: …&rdquo; holds it in the dashboard · &ldquo;who&rdquo; lists everyone waiting · &ldquo;cancel&rdquo; pulls one back.`);
-    tips.push(`You'll always get the finished wording back before it goes out.`);
+    tips.push(`Also: &ldquo;write: 375, thursday&rdquo; hands me the facts and lets me word it · &ldquo;send: …&rdquo; for your exact keystrokes · &ldquo;draft: …&rdquo; holds it in the dashboard · &ldquo;who&rdquo; lists everyone waiting · &ldquo;cancel&rdquo; pulls one back.`);
+    tips.push(`You'll get the finished wording back before it goes out, and a second email once it has actually reached them.`);
   }
   const base = publicBase();
   let footInner = '';
@@ -2192,15 +2314,15 @@ function assistAlertBody(cfg, opts) {
   const foot = [];
   if (quickOk && byEmail) {
     foot.push(offer
-      ? `💡 Hit REPLY: YES sends it, NO drops it — or just tell me what to say instead ("375, thursday") and I'll rewrite it in your voice. Free — no text message used.`
-      : `💡 Hit REPLY with just that and I'll write it out in your voice and send it to ${who}. Free — no text message used.`);
+      ? `💡 Hit REPLY: YES sends it, NO drops it — or just type your own answer and that goes to them, in your words. Free — no text message used.`
+      : `💡 Hit REPLY and type your answer. It goes to ${who} in your words — I only fix spelling and punctuation. Free — no text message used.`);
   }
   if (quickOk && cfg.assistSms !== false) {
     foot.push(`📱 ${byEmail && foot.length ? 'Or text' : 'Text'} ${ENV.TWILIO_FROM || 'your business number'} the same thing.`);
   }
   if (quickOk && foot.length) {
-    foot.push(`\nOther things you can say: "send: <your exact words>" to skip the rewriting · "draft: …" to hold it in the dashboard · "who" to see everyone waiting · "cancel" to pull one back.`);
-    foot.push(`You'll always get the finished wording back before it goes out.`);
+    foot.push(`\nOther things you can say: "write: 375, thursday" to hand me the facts and let me word it · "send: <exact words>" for your keystrokes as typed · "draft: …" to hold it in the dashboard · "who" to see everyone waiting · "cancel" to pull one back.`);
+    foot.push(`You'll get the finished wording back before it goes out, and a second email once it has actually reached them.`);
   }
   const body = `${core}\n${draftBlock}${block}`.trimEnd();
   // The HTML is what he'll actually see; the text is the fallback every mail
@@ -2368,6 +2490,56 @@ async function handleAssistEmail(cfg, email, phone, ver) {
     // to IT routes back here instead of landing in the inbox as ordinary mail.
     reply: say,
   });
+}
+
+// ---------------------------------------------------------------------------
+// The receipt — "it actually went"
+// ---------------------------------------------------------------------------
+// Answering by email used to end on "Sending in ~3 min." That's the last word he
+// hears, and it describes an intention. Everything that can go wrong goes wrong
+// after it: the hold expires into a Twilio error, the customer texted STOP in the
+// meantime, the queue got cancelled from the dashboard. All of those look
+// identical from his inbox — like it worked.
+//
+// So the cron sends this the moment the message actually goes out, and the same
+// email on the failure, because a silent failure is the one that costs him a
+// customer. "Went out" is Twilio accepting it, which is the same thing the
+// auto-reply confirmation has always meant by it — not a carrier delivery receipt. It carries the cut marker and the [ref:] line like every other mail in
+// this loop, so replying to it with a follow-up lands back in the same thread
+// instead of the inbox feed.
+async function assistReceipt(thread, r) {
+  const who = threadWho(thread);
+  const phone = thread.phone;
+  const ok = !!r.ok;
+  const subject = ok ? `✅ Sent to ${thread.name || phone}` : `⚠️ NOT sent to ${thread.name || phone}`;
+  const lead = ok
+    ? `It went out. ${who} has this on their phone now:`
+    : `It did NOT go out. ${who} has not heard from you:`;
+  const tail = ok
+    ? 'Reply to this if you want to send them something else.'
+    : `Reason: ${r.err || 'unknown'}\n\nReply to this with what you want to say and I'll try again, or give them a call.`;
+  const text = `${ASSIST_CUT}\n${lead}\n\n"${r.body}"\n\n${tail}\n\n[ref:${phone}]`;
+
+  const B = [];
+  B.push(mailCard(
+    `<div style="font:700 17px/1.35 ${MAILF};color:${ok ? MAILC.greenInk : MAILC.redInk};margin:0 0 8px;">${ok ? '✅ It went out' : '⚠️ It did not send'}</div>` +
+    `<div style="font:400 14px/1.6 ${MAILF};color:${MAILC.ink};">${mailLines(lead)}</div>`,
+    { bg: ok ? MAILC.greenBg : MAILC.redBg, border: ok ? '#bbf7d0' : '#fecaca', edge: ok ? MAILC.green : MAILC.red },
+  ));
+  B.push(mailCard(`<div style="font:400 15px/1.6 ${MAILF};color:${MAILC.ink};">&ldquo;${mailLines(r.body)}&rdquo;</div>`));
+  B.push(mailCard(`<div style="font:400 13px/1.6 ${MAILF};color:${MAILC.mute};">${mailLines(tail)}</div>`));
+  const base = publicBase();
+  if (base) B.push(mailBtn(base, 'Open the conversation', MAILC.ink));
+  B.push(`<div style="font:400 11px/1.5 ${MAILF};color:#94a3b8;padding:8px 4px;">[ref:${htmlEsc(phone)}]</div>`);
+
+  // notifyMikey, not sendEmail: it prefers email but falls back to a text, so a
+  // Resend outage downgrades the receipt rather than deleting it. `sms` keeps the
+  // fallback short — the plumbing marker and the ref are email-only furniture.
+  await notifyMikey(subject, {
+    text,
+    html: mailShell(r.body, B.join('')),
+    sms: ok ? `✅ Sent to ${who}: "${r.body}"` : `⚠️ NOT sent to ${who}: ${r.err || 'unknown'}. They haven't heard from you.`,
+  }).catch(() => {});
 }
 
 // ===========================================================================
@@ -9226,6 +9398,8 @@ async function apiSaveConfig(request) {
   if (typeof data.assistEmail === 'boolean') next.assistEmail = data.assistEmail;
   if (data.assistEmailDelaySec != null && !isNaN(+data.assistEmailDelaySec)) next.assistEmailDelaySec = Math.max(0, Math.min(900, Math.round(+data.assistEmailDelaySec)));
   if (typeof data.assistFactCheck === 'boolean') next.assistFactCheck = data.assistFactCheck;
+  if (typeof data.assistPolish === 'boolean') next.assistPolish = data.assistPolish;
+  if (typeof data.assistSentReceipt === 'boolean') next.assistSentReceipt = data.assistSentReceipt;
   // The extra addresses allowed to answer an alert. Stored as bare addresses so
   // the comparison never depends on a display name, and capped because this is a
   // one-man business, not a mailing list.
@@ -10566,6 +10740,14 @@ function defaultConfig() {
                              // whichever send-as alias the thread was addressed to, and a
                              // one-address rule quietly locked him out of his own feature
                              // the first time he answered from one.
+    assistPolish: true,      // fix the spelling and punctuation of what he typed before it
+                             // goes out, and change NOTHING else. Off = his keystrokes
+                             // exactly. Either way the words stay his: the polish is
+                             // thrown away whenever it isn't a word-for-word match.
+    assistSentReceipt: true, // email him when an assist reply actually reaches the
+                             // customer — and when it doesn't. "Sending in ~3 min" is a
+                             // promise; this is the only thing in the loop that reports
+                             // what really happened.
     assistFactCheck: true,   // hold an AI-worded reply instead of sending it when it contains
                              // a price or a day that he never gave and the conversation never
                              // mentioned. The promise of this feature is that every FACT came
@@ -13259,6 +13441,7 @@ async function dispatchDueScheduled(now = Date.now()) {
     if (!due.length) continue;
     let mine = false;   // did any of this thread's due items carry his own words?
     const tell = [];    // confirmations owed to Mikey once this thread is saved
+    const recs = [];    // "it actually went" receipts owed for his assist replies
     // Reserve the due items FIRST — remove them and persist BEFORE sending. KV is
     // eventually consistent and the cron runs every minute, so if we sent first and
     // saved after, an overlapping/next run could read the stale queue and text the
@@ -13279,6 +13462,7 @@ async function dispatchDueScheduled(now = Date.now()) {
         thread.messages.push(m);
         if (voiceUsable(m)) { learn.push({ t: s.body, q: askedBefore(thread, m.ts) }); mine = true; }
         if (s.alertOnSend && alertOn) tell.push(`✅ Auto-reply sent — ${threadWho(thread)}. The quote text from your site just went out to them.`);
+        if (s.receipt) recs.push({ ok: true, body: s.body });
         sent++;
       } catch (err) {
         // Left unmarked on purpose: a text that never reached the customer stays out
@@ -13287,6 +13471,11 @@ async function dispatchDueScheduled(now = Date.now()) {
         // A failed auto-reply is the one he most needs in the same place as the
         // success — silence would otherwise read as "it went out fine".
         if (s.alertOnSend && alertOn) tell.push(`⚠️ Auto-reply did NOT send — ${threadWho(thread)}. ${String(err.message || err)}. They haven't heard from you — reach out yourself.`);
+        // An assist reply gets the failure through the same receipt as the success,
+        // so both land in the same shape in the same thread. Without this branch it
+        // would fall to the generic "scheduled text failed" line below, which never
+        // says what he wrote and can't be replied to.
+        else if (s.receipt) recs.push({ ok: false, body: s.body, err: String(err.message || err) });
         else notifyMikey('⚠️ Scheduled text failed', `A scheduled message to ${thread.name || thread.phone} did not send: ${String(err.message || err)}`).catch(() => {});
       }
     }
@@ -13295,6 +13484,9 @@ async function dispatchDueScheduled(now = Date.now()) {
     // After the save, so a Twilio hiccup on the confirmation can't cost us the
     // record of a customer text that already went out.
     for (const msg of tell) await ownerSay(msg);
+    // Same reason as `tell`: after the save, so a Resend hiccup on the receipt
+    // can't cost us the record of a text that already reached the customer.
+    for (const r of recs) await assistReceipt(thread, r);
     // A queued text is still him talking — an assist reply he approved by email,
     // or one he wrote and held for later — so it gets read for a promise too.
     // Templated booking reminders are excluded by the same voiceUsable() test

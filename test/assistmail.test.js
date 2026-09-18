@@ -48,6 +48,7 @@ const NAMES = [
   'assistAppsScript', 'emailAddr', 'emailKey', 'assistOwnerKeys', 'assistIsOwnerReply',
   'assistRefPhone', 'assistStripQuoted', 'normalizePhone',
   'assistOutboundBlocked', 'assistFactDrift', 'assistDraftStale', 'humanAgo',
+  'polishWords', 'polishEdits', 'assistPolishDrift',
 ];
 // eslint-disable-next-line no-new-func
 new Function('ctx', 'ENV',
@@ -59,7 +60,7 @@ new Function('ctx', 'ENV',
 
 const {
   ASSIST_CUT, ASSIST_DRAFT_MAX_AGE_MS, assistAppsScript, emailKey, assistIsOwnerReply,
-  assistOutboundBlocked, assistFactDrift, assistDraftStale,
+  assistOutboundBlocked, assistFactDrift, assistDraftStale, assistPolishDrift,
 } = ctx;
 
 let PASS = 0, FAIL = 0;
@@ -403,6 +404,98 @@ truthy('a reply with no readable words gets told so', /couldn't find any words i
 truthy('a reply older than the age limit is never acted on', /ASSIST_MAX_AGE_MS/.test(SRC));
 truthy('a routing line from an unknown address is remembered, not dropped', /strangerFrom/.test(SRC));
 truthy('the dashboard records when the Gmail script last checked in', /pingAt/.test(SRC));
+
+// ---------------------------------------------------------------------------
+// The polish pass
+// ---------------------------------------------------------------------------
+// The promise he actually asked for: "I just want to write my words and it
+// responds to them", with the spelling tidied and NOTHING else touched. A prompt
+// can't hold a model to that, so assistPolishDrift() is what does — it compares
+// the polished text to his word for word and throws the polish away on anything
+// it can't account for as a typo fix.
+//
+// The asymmetry is the whole design. A polish wrongly rejected costs him nothing:
+// his own sentence goes out, which is what he wanted anyway. A polish wrongly
+// accepted puts a word he didn't write in front of a paying customer. So every
+// case below that is even slightly ambiguous is expected to FAIL the check.
+console.log('\n=== the polish only ever fixes spelling ===');
+const kept = (name, before, after) => check(name, assistPolishDrift(before, after), '');
+const tossed = (name, before, after) => truthy(name, assistPolishDrift(before, after));
+
+kept('an identical string is obviously fine', 'thursday works for me', 'thursday works for me');
+kept('capitalisation is the polish doing its job', 'thursday works for me', 'Thursday works for me');
+kept('so is adding the full stop', 'thursday works for me', 'Thursday works for me.');
+kept('and the apostrophe it was missing', 'i dont think so', "I don't think so");
+kept('a straight misspelling', 'i can defintely do that', 'I can definitely do that');
+kept('transposed letters, which score badly on distance', 'teh truck adn the car', 'the truck and the car');
+kept('your / you’re', 'your all set for thursday', "You're all set for Thursday");
+kept('a comma splice getting a full stop', 'sounds good see you then', 'Sounds good. See you then.');
+kept('slang is left alone as long as it is spelled', 'yeah thats gonna be fine', "Yeah, that's gonna be fine");
+
+tossed('it will not add a greeting', 'thursday works for me', 'Hi Ruth, Thursday works for me');
+tossed('it will not add a sign-off', 'thursday works for me', 'Thursday works for me. Thanks, Mikey');
+tossed('it will not pad out a fragment', 'yep', 'Yes, that works perfectly for me');
+tossed('it will not drop a word', 'thursday morning works for me', 'Thursday works for me');
+tossed('it will not reorder', 'thursday works for me', 'For me Thursday works');
+tossed('it will not swap a word for a fancier one', 'ill come by and clean it', 'I will arrive and detail it');
+tossed('it will not answer the prompt instead of doing it', 'thursday works', 'Here is the corrected message');
+tossed('it will not add an emoji, which every word surviving would hide', 'thursday works for me', 'Thursday works for me \u{1F44D}');
+kept('an emoji he typed himself is his to keep', 'thursday works \u{1F44D}', 'Thursday works \u{1F44D}');
+
+console.log('\n=== a number is never a typo ===');
+kept('the price he typed survives untouched', 'its 375 for the truck', "It's 375 for the truck.");
+kept('and it may gain the dollar sign he left off', 'its 375 for the truck', "It's $375 for the truck.");
+tossed('but a changed price fails the whole message', 'its 375 for the truck', "It's $395 for the truck.");
+tossed('a changed time fails it too', 'ill be there at 9am', "I'll be there at 10am.");
+tossed('and so does a dropped digit', 'call me on 4256007897', 'Call me on 425600789.');
+truthy('…and it names the number that moved', /375/.test(assistPolishDrift('its 375 for the truck', "It's $395 for the truck.")));
+
+console.log('\n=== the failure direction is always his own words ===');
+truthy('an empty polish is rejected rather than sent', assistPolishDrift('thursday works', ''));
+truthy('a drifted polish is thrown away, not held', /assistPolishDrift\(raw, out\) \? raw : out/.test(SRC));
+truthy('the AI being down returns his words instead of throwing', /catch \{ return raw; \}/.test(SRC));
+truthy('and the whole pass can be switched off in config', /cfg\.assistPolish === false/.test(SRC));
+check('polish is the default, so no prefix is needed', /let mode = 'polish';/.test(SRC), true);
+check('"send:" still means his exact keystrokes', /mode = 'verbatim'/.test(SRC), true);
+check('"write:" is how the old rewrite is reached now', /\(\?:write\|rewrite\|word\)/.test(SRC), true);
+check('a polished reply skips the fact check, which only guards invented facts',
+  /mode === 'ai' && cfg\.assistFactCheck !== false/.test(SRC), true);
+
+console.log('\n=== he is told when it really sent ===');
+truthy('an assist reply asks the cron for a receipt', /item\.receipt = channel === 'email'/.test(SRC));
+truthy('the receipt can be switched off', /cfg\.assistSentReceipt !== false/.test(SRC));
+truthy('a send that worked earns one', /recs\.push\(\{ ok: true/.test(SRC));
+truthy('a send that failed earns the same one', /recs\.push\(\{ ok: false/.test(SRC));
+truthy('it carries the words the customer actually got', /assistReceipt\(thread, r\)/.test(SRC));
+truthy('it is repliable, like every other mail in this loop', /ASSIST_CUT\}\\n\$\{lead\}/.test(SRC));
+truthy('and it falls back to a text if Resend is down', /sms: ok \? `✅ Sent to/.test(SRC));
+
+// assistPolish() itself, driven with a fake Gemini. The guard above proves the
+// comparison is right; this proves the function WIRES it right — that every way
+// the AI can let him down (down, empty, chatty, wrong) ends with his own sentence
+// going to the customer rather than an error or a silence.
+console.log('\n=== the pass itself, driven end to end ===');
+const polishCtx = {};
+let FAKE_AI = '';
+// eslint-disable-next-line no-new-func
+new Function('ctx', 'geminiGenerate',
+  SRC.match(/^const POLISH_PROMPT =[\s\S]*?;\n/m)[0] +
+  ['polishWords', 'polishEdits', 'assistPolishDrift'].map(lift).join('\n') + '\n' +
+  'async ' + lift('assistPolish') + '\n' +
+  'ctx.assistPolish = assistPolish;',
+)(polishCtx, async () => { if (FAKE_AI === '__THROW__') throw new Error('gemini down'); return FAKE_AI; });
+
+const polished = async (name, typed, aiSays, want) => {
+  FAKE_AI = aiSays;
+  check(name, await polishCtx.assistPolish(typed, {}), want);
+};
+await polished('a clean typo fix is taken', 'i can defintely do thursday morning', 'I can definitely do Thursday morning.', 'I can definitely do Thursday morning.');
+await polished('a rewrite is dropped for his words', 'i can defintely do thursday morning', 'Hi there! I can definitely accommodate Thursday morning for you.', 'i can defintely do thursday morning');
+await polished('the AI being down still answers the customer', 'i can defintely do thursday morning', '__THROW__', 'i can defintely do thursday morning');
+await polished('so does an empty response', 'i can defintely do thursday morning', '', 'i can defintely do thursday morning');
+await polished('wrapping quotes are furniture, not drift', 'i can defintely do thursday', '"I can definitely do Thursday."', 'I can definitely do Thursday.');
+await polished('a moved price loses the polish, not the reply', 'its 375 for the truck man', "It's $395 for the truck, man.", 'its 375 for the truck man');
+await polished('a couple of words never costs an API call', 'yep', 'Yes, absolutely!', 'yep');
 
 console.log(`\n${PASS} passed, ${FAIL} failed\n`);
 process.exit(FAIL ? 1 : 0);
