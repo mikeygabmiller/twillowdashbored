@@ -53,14 +53,14 @@ const NAMES = [
 // eslint-disable-next-line no-new-func
 new Function('ctx', 'ENV',
   NAMES.map(lift).join('\n') + '\n' +
-  ['ASSIST_CUT', 'ASSIST_DAYS', 'ASSIST_DRAFT_MAX_AGE_MS'].map(liftConst).join('\n') + '\n' +
+  ['ASSIST_CUT', 'ASSIST_ATTRIB', 'ASSIST_DAYS', 'ASSIST_DRAFT_MAX_AGE_MS'].map(liftConst).join('\n') + '\n' +
   'ctx.ASSIST_CUT = ASSIST_CUT; ctx.ASSIST_DRAFT_MAX_AGE_MS = ASSIST_DRAFT_MAX_AGE_MS;' +
   NAMES.map((n) => `ctx.${n} = ${n};`).join(''),
 )(ctx, { ALERT_EMAIL: 'Mikey <mikey@gmail.com>' });
 
 const {
   ASSIST_CUT, ASSIST_DRAFT_MAX_AGE_MS, assistAppsScript, emailKey, assistIsOwnerReply,
-  assistOutboundBlocked, assistFactDrift, assistDraftStale, assistPolishDrift,
+  assistOutboundBlocked, assistFactDrift, assistDraftStale, assistPolishDrift, assistStripQuoted,
 } = ctx;
 
 let PASS = 0, FAIL = 0;
@@ -496,6 +496,60 @@ await polished('so does an empty response', 'i can defintely do thursday morning
 await polished('wrapping quotes are furniture, not drift', 'i can defintely do thursday', '"I can definitely do Thursday."', 'I can definitely do Thursday.');
 await polished('a moved price loses the polish, not the reply', 'its 375 for the truck man', "It's $395 for the truck, man.", 'its 375 for the truck man');
 await polished('a couple of words never costs an API call', 'yep', 'Yes, absolutely!', 'yep');
+
+// ---------------------------------------------------------------------------
+// Cutting the quoted alert off his reply
+// ---------------------------------------------------------------------------
+// This had no coverage at all until a real customer got one. On 2026-09-18 he
+// replied "Got it." to an alert from a phone, and what reached her was:
+//
+//   Got it.
+//
+//   On Thu, Sep 17, 2026, 9:40 PM Mikeys Dashboard <onboarding@resend.dev>
+//   wrote:
+//
+// The attribution is 77 characters and Gmail on Android wraps plain text at
+// about 78, so it broke right before "wrote:" — and the pattern doing the cut
+// was single-line, so it matched nothing. Neither did the guard meant to catch
+// exactly this, for exactly the same reason. Every shape below is a real client's
+// output, and each one has to come back as the words he actually typed.
+console.log('\n=== the quoted alert never rides along ===');
+const QUOTE = '\n\n> ' + ASSIST_CUT + '\n> Ma texted:\n> "You should have it"\n> [ref:+14253081064]';
+const stripped = (name, raw, want) => check(name, assistStripQuoted(raw), want);
+
+stripped('Gmail on Android, wrapped before "wrote:" — the one that got out',
+  'Got it.\n\nOn Thu, Sep 17, 2026, 9:40 PM Mikeys Dashboard <onboarding@resend.dev>\nwrote:' + QUOTE, 'Got it.');
+stripped('the same attribution on one line',
+  'Got it.\n\nOn Thu, Sep 17, 2026, 9:40 PM Mikeys Dashboard <onboarding@resend.dev> wrote:' + QUOTE, 'Got it.');
+stripped('wrapped earlier, mid sender name',
+  'Got it.\n\nOn Thu, Sep 17, 2026, 9:40 PM Mikeys\nDashboard <onboarding@resend.dev>\nwrote:' + QUOTE, 'Got it.');
+stripped('iOS Mail, which puts a comma before "wrote"',
+  'Sounds good.\n\nOn Sep 17, 2026, at 9:40 PM, Mikeys Dashboard <onboarding@resend.dev> wrote:' + QUOTE, 'Sounds good.');
+stripped('Outlook, which sends a From: block instead',
+  'Yep thats fine\n\nFrom: Mikeys Dashboard <onboarding@resend.dev>\nSent: Thursday\n', 'Yep thats fine');
+stripped('a bare > quote with no attribution at all',
+  'On my way\n\n> ' + ASSIST_CUT + '\n> Ma texted:', 'On my way');
+stripped('our own marker, unquoted', 'Thursday works\n\n' + ASSIST_CUT + '\nMa texted:', 'Thursday works');
+
+console.log('\n=== …and the cut does not eat a real answer ===');
+stripped('a reply that simply opens with "On"', 'On Thursday I can come by around 9', 'On Thursday I can come by around 9');
+stripped('"wrote" used in an ordinary sentence', 'I wrote: it down already, see you then', 'I wrote: it down already, see you then');
+stripped('an email address, which customers do ask him for',
+  'Sure, email me at mikeysdetailing4u@gmail.com and I will send it', 'Sure, email me at mikeysdetailing4u@gmail.com and I will send it');
+
+console.log('\n=== the guard still catches it when the cut has missed ===');
+// The cut and the guard failed together last time, which is how it reached a
+// customer. They match on the same constant now, but the guard is tested from the
+// other side on purpose: it is the last thing standing if a client invents a
+// shape neither of us predicted.
+truthy('the exact text that reached her is refused now',
+  assistOutboundBlocked('Got it.\n\nOn Thu, Sep 17, 2026, 9:40 PM Mikeys Dashboard <onboarding@resend.dev>\nwrote:'));
+truthy('so is a stray angle-bracket address on its own', assistOutboundBlocked('Got it. <onboarding@resend.dev>'));
+truthy('and an attribution that stayed on one line', assistOutboundBlocked('Got it.\n\nOn Thu, Sep 17 Mikeys wrote:'));
+check('but his own address, plainly written, still sends', assistOutboundBlocked("Sure, it's mikeysdetailing4u@gmail.com"), '');
+check('and a reply that opens with "On" still sends', assistOutboundBlocked('On Thursday I can come by around 9'), '');
+check('the cut and the guard read the same pattern, so they cannot drift apart again',
+  (SRC.match(/ASSIST_ATTRIB/g) || []).length >= 3, true);
 
 console.log(`\n${PASS} passed, ${FAIL} failed\n`);
 process.exit(FAIL ? 1 : 0);
