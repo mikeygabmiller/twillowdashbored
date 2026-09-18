@@ -148,6 +148,24 @@ await page.locator('#cfgAssistFacts').click();
 await page.waitForTimeout(500);
 ok('turning it off is saved, and is his choice', configPosts.some((p) => p.assistFactCheck === false), configPosts);
 
+section('The two switches that decide what the customer gets, and what he hears back');
+await openSettings();
+// Both default ON for a config that predates them, so the behaviour he asked for
+// is what he gets without opening Settings at all — and both have to be findable
+// when he wants his exact keystrokes instead.
+ok('the spelling pass has a switch', await page.locator('#cfgAssistPolish').count() === 1);
+ok('and it is ON by default', await page.locator('#cfgAssistPolish').evaluate((n) => n.classList.contains('on')));
+await page.locator('#cfgAssistPolish').click();
+await page.waitForTimeout(500);
+ok('turning it off is saved, so his keystrokes go out untouched', configPosts.some((p) => p.assistPolish === false), configPosts);
+
+await openSettings();
+ok('the "it landed" email has a switch', await page.locator('#cfgAssistReceipt').count() === 1);
+ok('and it is ON by default', await page.locator('#cfgAssistReceipt').evaluate((n) => n.classList.contains('on')));
+await page.locator('#cfgAssistReceipt').click();
+await page.waitForTimeout(500);
+ok('turning it off is saved too', configPosts.some((p) => p.assistSentReceipt === false), configPosts);
+
 ok('no page errors along the way', errs.length === 0, errs);
 
 console.log(`\n  ${pass} passed, ${fail} failed`);
