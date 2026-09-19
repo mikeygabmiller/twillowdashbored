@@ -59,7 +59,11 @@ check('banner shown once it goes quiet', await page.locator('#quoteBanner').isVi
 check('says how long and how much', /no answer/i.test(await page.locator('#quoteBanner').textContent()||'') && /240/.test(await page.locator('#quoteBanner').textContent()||''), true);
 await page.locator('#quoteBanner .qb-go').click();
 await page.waitForTimeout(250);
-check('nudge drafts a follow-up', /circling back/i.test(await page.inputValue('#msgInput')), true);
+// Asserted on what the draft has to DO, not on a stock phrase: "circling back"
+// used to be here and was exactly the wording that made these reads as machine
+// copy. See voice.test.js, which holds every template against the tell-blocker.
+const nudged = await page.inputValue('#msgInput');
+check('nudge drafts a follow-up', /it's Mikey/.test(nudged) && /schedule/i.test(nudged) && nudged.includes('?'), true);
 await open('Quote Fresh');
 check('quiet for a day is not "cold"', await page.locator('#quoteBanner').isVisible(), false);
 await open('Quote Won');
