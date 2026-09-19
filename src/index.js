@@ -132,7 +132,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-18·gclid';
+const BUILD = '2026-09-19·voice';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -3150,7 +3150,7 @@ async function handleVoicemail(request) {
                                 (thread.scheduled || []).length > 0;
       if (!alreadyReachedOut) {
         const body = (cfg.missedCallText && cfg.missedCallText.trim()) ||
-          `Hey, it's Mikey with Mikey's Mobile Detailing — sorry I missed your call! Text me right here and I'll get back to you as quick as I can. 🚗`;
+          `Hey, it's Mikey with Mikey's Mobile Detailing. Sorry I missed your call, I'm usually mid job. Text me right here and I'll get back to you quick.`;
         try {
           const r = await sendSms(caller, body);
           thread.messages.push({ id: genId(), dir: 'out', body, ts: Date.now(), kind: 'missed-call', status: 'sent', sid: (r && r.sid) || undefined });
@@ -9342,18 +9342,35 @@ function followupTemplate(thread, plan, cfg) {
   const name = firstName(thread);
   const review = cfg.reviewUrl ? (' ' + cfg.reviewUrl) : '';
   const months = Math.max(1, Math.round((cfg.rebookDays || 90) / 30));
+  // Seeded off the number, so the second person he chases this week doesn't get
+  // the first person's text word for word.
+  const pick = (...v) => sayOneOf(`${thread.phone || ''}:${plan.stepKey || plan.stage}`, v);
   switch (plan.stage) {
     case 'owed':
-      return `Hey ${name}, following up on your last message — let me get you an answer. What works best for you?`;
+      return pick(
+        `Hey ${name}, I owe you an answer on that. What works best for you?`,
+        `Hey ${name}, sorry for the slow reply. What works best on your end?`);
     case 'nudge':
-      if (plan.step <= 1) return `Hey ${name}, just following up on your detail — happy to answer any questions or find a time that works. 🚗`;
-      if (plan.step === 2) return `Hi ${name}, still glad to help whenever you're ready. If it's timing or price, let me know and I'll work with you.`;
-      return `No worries if now's not the time, ${name} — I'll leave it here. Reach out anytime you'd like that detail. 👍`;
+      if (plan.step <= 1) return pick(
+        `Hey ${name}, just checking in on that detail. Any questions, or want me to find you a time?`,
+        `Hey ${name}, following up on the detail. Want me to look at what I've got open?`);
+      if (plan.step === 2) return pick(
+        `Hey ${name}, still around whenever you're ready. If it's the timing or the price, tell me and I'll work with you.`,
+        `Hey ${name}, no rush on my end. If the timing or the price is the holdup, say so and I'll see what I can do.`);
+      return pick(
+        `No worries if it's not the right time, ${name}. I'll leave you be. Text me whenever you want that detail done.`,
+        `All good if now isn't it, ${name}. I'll stop bugging you. Text me any time you want to get it on the books.`);
     case 'won':
-      if (plan.stepKey === 'won:rebook') return `Hey ${name}! It's been about ${months} month${months > 1 ? 's' : ''} since your last detail — want me to get you back on the schedule?`;
-      return `Thanks again ${name}! Hope the vehicle's still looking great. If you have 2 minutes, a quick review would mean the world:${review}`;
+      if (plan.stepKey === 'won:rebook') return pick(
+        `Hey ${name}, it's been about ${months} month${months > 1 ? 's' : ''} since I was out. Want me to get you back on the schedule?`,
+        `Hey ${name}, about ${months} month${months > 1 ? 's' : ''} since your last detail. Want me to get you back on?`);
+      return pick(
+        `Thanks again ${name}, hope it's still holding up. If you've got two minutes, a Google review helps me out a lot:${review}`,
+        `Thanks again ${name}. If you get a second, a review on Google goes a long way for me:${review}`);
     case 'lost':
-      return `Hey ${name}, circling back from Mikey's Mobile Detailing — happy to put together a fresh quote whenever you're ready. No pressure!`;
+      return pick(
+        `Hey ${name}, it's Mikey. If you're still thinking about that detail I can put a fresh price together whenever. No rush.`,
+        `Hey ${name}, Mikey with the mobile detailing. Still happy to work up a price for you whenever you want one.`);
     default:
       return `Hey ${name}, just following up!`;
   }
@@ -10896,6 +10913,30 @@ function genId() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 }
 
+// ---------------------------------------------------------------------------
+// One wording out of several, picked by who it's going to
+// ---------------------------------------------------------------------------
+// The thing that gives an automated text away isn't the words, it's that they
+// never change. Two neighbours who both booked, or one customer who books twice,
+// used to get a byte-identical message — which is how a person works out they're
+// being texted by a machine, no matter how well the sentence is written.
+//
+// So every recurring text has two or three wordings Mikey would actually use and
+// this picks one. Seeded off the recipient, NOT random: the same person and the
+// same kind of message always resolve to the same wording, which means the
+// scheduled banner shows what will really send, a preview matches the send, and
+// the tests can hold it still. Different people get different ones.
+function sayOneOf(seed, variants) {
+  const list = (variants || []).filter(Boolean);
+  if (!list.length) return '';
+  const s = String(seed == null ? '' : seed);
+  // djb2. Any stable hash does; this one is short and has no collisions worth
+  // caring about when the bucket count is two or three.
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0;
+  return list[h % list.length];
+}
+
 function blankThread(phone) {
   return {
     phone,
@@ -12323,6 +12364,13 @@ const AI_TELLS = [
   /\bthank you for reaching out\b/i, /\bi understand your concern\b/i, /\bgreat question\b/i,
   /\bas an ai\b/i, /\bi'?m here to help\b/i, /\bplease be advised\b/i, /\bkindly\b/i,
   /\bdelve\b/i, /\bit('?s| is) worth noting\b/i, /\bthat said,/i, /—/,   // em-dash: he doesn't use them
+  // Added after the hand-written templates were audited in Sept 2026: every one
+  // of these was sitting in a template Mikey never wrote, which is how they kept
+  // reading as machine copy. Banning them here stops the AI path putting them
+  // back the moment the deterministic path stopped saying them.
+  /\bcircling back\b/i, /\b(would )?mean(s)? the world\b/i, /\bno pressure\b/i,
+  /\bjust following up\b/i, /\breach out (to us|anytime)\b/i, /\bwe('| a)re here (for you|to help)\b/i,
+  /\blooking forward to (serving|assisting)\b/i, /\bvalued customer\b/i,
 ];
 function findTell(text) {
   for (const re of AI_TELLS) { const m = String(text || '').match(re); if (m) return m[0]; }
@@ -14072,7 +14120,10 @@ async function apiBook(request) {
   const stamp = new Date().toLocaleString('en-US', { timeZone: cfg.tz });
   thread.notes = (thread.notes ? thread.notes + '\n\n' : '') + `${detail}\n(received ${stamp})`;
   if (rec.smsConsent) {
-    const msg = `Hey ${first}, it's Mikey! Got your request for ${dateLabel} at ${bkFmt12(slot)} (${rec.serviceName}). I'll text you shortly to confirm and lock it in. Talk soon! - Mikey`;
+    const msg = sayOneOf(`${phone}:bkack`, [
+      `Hey ${first}, it's Mikey! Got your request for ${dateLabel} at ${bkFmt12(slot)} (${rec.serviceName}). I'll text you shortly to confirm and lock it in. Talk soon! - Mikey`,
+      `Hey ${first}, it's Mikey. Got your request for ${dateLabel} at ${bkFmt12(slot)} for the ${rec.serviceName}. Let me check it against my week and I'll text you right back to lock it in. - Mikey`,
+    ]);
     try { await sendSms(phone, msg); thread.messages.push({ id: genId(), dir: 'out', body: msg, ts: Date.now(), kind: 'booking', status: 'sent' }); } catch (e) {}
   }
   await saveThread(thread);
@@ -14143,17 +14194,38 @@ function bkMessage(kind, bk) {
   const first = (bk.name || '').split(/\s+/)[0] || 'there';
   const at = bkFmt12(bk.slot);
   const car = bk.vehicle || 'car';
+  // Seeded per booking, so one customer's four messages vary against each other
+  // the way a person's would, and two customers never get the same set.
+  const pick = (...v) => sayOneOf(`${bk.phone || bk.id || ''}:${kind}`, v);
   switch (kind) {
+    // The confirm is the only one that signs off: it is often the first text
+    // they get from this number. By the reminder he is a name in their phone,
+    // and a man who signs every text is a man sending form letters.
     case 'confirm':
-      return `You're all set for ${bk.dateLabel} at ${at} — ${bk.serviceName}. I come to you; just have water & power within about 20 ft of the car. I'll text when I'm on my way. - Mikey`;
+      return pick(
+        `You're all set for ${bk.dateLabel} at ${at}, ${bk.serviceName}. I come to you, so all I need on your end is an outside water spigot and an outlet I can reach. I'll text when I'm on my way. - Mikey`,
+        `Got you down for ${bk.dateLabel} at ${at}, ${bk.serviceName}. I bring everything else, I just need to get to an outdoor spigot and a plug. I'll give you a heads up before I head over. - Mikey`,
+        `Locked in for ${bk.dateLabel} at ${at}, ${bk.serviceName}. I come to you. The only things I need there are an outside faucet and an outlet within about 20 feet of the car. I'll text when I'm on my way. - Mikey`);
     case 'remind24':
-      return `Quick reminder: I'm detailing your ${car} tomorrow at ${at}. Please have it accessible with water & power within ~20 ft. See you then! - Mikey`;
+      return pick(
+        `Reminder, I've got your ${car} tomorrow at ${at}. If you can leave it somewhere I can walk around it and reach a spigot and an outlet, that's all I need. See you then.`,
+        `Heads up, I'm detailing your ${car} tomorrow at ${at}. All I need is to get to an outside faucet and a plug. See you tomorrow.`,
+        `You're on my schedule tomorrow at ${at} for the ${car}. Park it where I can get around it and reach water and power, and I'm all set. See you then.`);
     case 'remindAm':
-      return `Morning ${first}! I'm detailing your car today at ${at}. I'll text when I'm headed your way. - Mikey`;
+      return pick(
+        `Morning ${first}, you're on for today at ${at}. I'll text when I'm headed your way.`,
+        `Morning ${first}. Still good for ${at} today. I'll shoot you a text when I'm on the road.`,
+        `Morning ${first}, I've got you at ${at} today. I'll let you know when I'm leaving.`);
     case 'cancelled':
-      return `Hey ${first}, your detail on ${bk.dateLabel} at ${at} has been cancelled. No problem at all — just text me whenever you'd like to find another time. - Mikey`;
+      return pick(
+        `Hey ${first}, I've taken ${bk.dateLabel} at ${at} off the schedule. No problem at all. Text me whenever you want to find another time.`,
+        `Hey ${first}, that's cancelled for ${bk.dateLabel} at ${at}. Totally fine. Just text me when you want to get back on.`,
+        `Hey ${first}, I pulled ${bk.dateLabel} at ${at} off the books. No worries at all. Text me whenever and we'll find another day.`);
     case 'declined':
-      return `Hey ${first}, I wasn't able to lock in ${bk.dateLabel} at ${at}. Text me and we'll find a time that works. - Mikey`;
+      return pick(
+        `Hey ${first}, I couldn't make ${bk.dateLabel} at ${at} work. Text me and we'll find a day that does.`,
+        `Hey ${first}, ${bk.dateLabel} at ${at} isn't going to work on my end. Text me and I'll find you something close.`,
+        `Hey ${first}, I had to let ${bk.dateLabel} at ${at} go. Send me a text and we'll sort out another time.`);
     default:
       return '';
   }
@@ -14749,16 +14821,33 @@ function dayJobText(state, job, d, track, cfg) {
   if (custom) return custom;
   const first = jdFirst(job.name);
   const hi = first ? `Hey ${first}` : 'Hey';
+  const pick = (...v) => sayOneOf(`${job.phone || job.id || ''}:${state}`, v);
   if (state === 'enroute') {
     const eta = Math.max(1, Math.min(180, Number(d.etaMin) || 20));
-    return `${hi}, Mikey here — on my way now, about ${eta} minutes out.` +
-      (track ? ` Track me live: ${track.url}` : '') +
-      ` If you can, please have the car accessible with water & power nearby. See you soon!`;
+    const where = track ? ` You can watch me get there: ${track.url}` : '';
+    return pick(
+      `${hi}, it's Mikey, on my way now. About ${eta} minutes out.${where} If you can pull the car somewhere I can get around it, that helps.`,
+      `${hi}, heading your way now, roughly ${eta} minutes.${where} Park it where I can walk around it if you can.`,
+      `${hi}, just left, about ${eta} minutes out.${where} If the car isn't out yet, no rush, I'll be a few.`);
   }
-  if (state === 'onsite') return `${hi} — I'm here and getting started on your vehicle. I'll let you know the moment it's done. - Mikey`;
+  if (state === 'onsite') {
+    return pick(
+      `${hi}, I'm here and getting started. I'll let you know when it's done.`,
+      `${hi}, just pulled up. Starting on it now, I'll text you when I'm finished.`,
+      `${hi}, I'm out front and getting going. I'll let you know when it's ready.`);
+  }
   if (state === 'done') {
-    const rev = cfg && cfg.reviewUrl ? ` If you've got 2 minutes, a Google review means the world: ${cfg.reviewUrl}` : '';
-    return `${hi}, all finished — your vehicle is done and looking great! Thanks for having me out.${rev} - Mikey`;
+    // The ask is deliberately small and specific. "Means the world" is the kind
+    // of thing nobody says out loud to a customer standing in their driveway.
+    const rev = cfg && cfg.reviewUrl
+      ? sayOneOf(`${job.phone || job.id || ''}:rev`,
+          [` If you've got two minutes, a Google review helps me out a lot: ${cfg.reviewUrl}`,
+           ` If you get a second, a review on Google goes a long way for me: ${cfg.reviewUrl}`])
+      : '';
+    return pick(
+      `${hi}, all done and it came out great. Thanks for having me out.${rev}`,
+      `${hi}, finished up. I'm happy with how it turned out. Thanks for having me out.${rev}`,
+      `${hi}, all wrapped up and it looks really good. Thanks for having me out.${rev}`);
   }
   return '';
 }
@@ -15171,7 +15260,7 @@ function quoteMessage(q, calc, cfg) {
   if (calc.discount) lines.push(`- Discount: $${calc.discount}`);
   lines.push('');
   lines.push(`TOTAL: $${calc.total}  ·  about ${Math.round(calc.durationMin / 30) / 2} hrs`);
-  lines.push('I come to you — I just need water & power within ~20 ft.');
+  lines.push('I come to you. All I need there is an outside water spigot and an outlet within about 20 feet.');
   if (q.note) { lines.push(''); lines.push(q.note); }
   lines.push('');
   lines.push(`Want me to lock in a day? Just reply with what works.${q.expiresDays ? ` (Good for ${q.expiresDays} days.)` : ''}`);
@@ -15271,7 +15360,7 @@ function payDefaults() {
   return { venmo: '', cashapp: '', paypal: '', zelle: '', link: '', linkLabel: 'Card / Apple Pay',
     cash: true, cashLabel: 'Cash in person', depositPct: 25, remindDays: 3,
     businessName: "Mikey's Mobile Detailing",
-    tagline: 'Mobile detailing — I come to you',
+    tagline: 'Mobile detailing, I come to you',
     terms: 'Thanks for choosing Mikey\'s Mobile Detailing!',
     // Free-form extra ways to pay (Apple Cash, Chime, a check…) so the page can
     // cover whatever he actually uses without a code change.
@@ -15341,8 +15430,8 @@ async function apiPayRequest(request) {
   // message to UCS-2, which cuts the segment limit from 160 to 70 and quietly
   // doubles the Twilio cost of every payment request he sends.
   const body = jdStr(d.body, 600) || (inv.kind === 'deposit'
-    ? `Here's the deposit to hold your spot - amount and payment options: ${url}`
-    : `Here's your invoice - full breakdown and every way to pay: ${url}`);
+    ? `Here's the deposit to hold your spot. Amount and every way to pay are on here: ${url}`
+    : `Here's your invoice. Full breakdown and every way to pay: ${url}`);
 
   let texted = false, err = '';
   if (d.send !== false) {
@@ -15366,7 +15455,10 @@ async function apiPayAction(request) {
     inv.status = 'void';
   } else if (action === 'remind') {
     const first = jdFirst(inv.name);
-    const body = `${first ? 'Hey ' + first : 'Hey'} — quick nudge on the $${inv.amount} for ${inv.memo}. You can knock it out here: ${inv.url} Thanks! - Mikey`;
+    const body = sayOneOf(`${inv.phone}:paynudge`, [
+      `${first ? 'Hey ' + first : 'Hey'}, whenever you get a minute, the $${inv.amount} for ${inv.memo} is right here: ${inv.url} Thanks!`,
+      `${first ? 'Hey ' + first : 'Hey'}, no rush, but the $${inv.amount} for ${inv.memo} is still open. Quickest way is here: ${inv.url} Thanks!`,
+    ]);
     try { await sendSms(inv.phone, body); await appendMessage(inv.phone, { dir: 'out', body, kind: 'pay', status: 'sent' }, { name: inv.name }); inv.remindedAt = Date.now(); }
     catch (e) { return json({ ok: false, error: String(e.message || e) }, 502); }
   } else if (action === 'delete') {
@@ -15592,17 +15684,24 @@ function coldMonths(days) { return Math.max(6, Math.min(24, Math.ceil(days / 30)
 function coldDraft(kind, row, cfg) {
   const first = jdFirst(row.name) || 'there';
   if (kind === 'plan') return planDraft(row);
+  const pick = (...v) => sayOneOf(`${row.phone || ''}:${kind}`, v);
   if (kind === 'quote') {
     const what = row.service ? `that ${row.service} quote` : 'that quote I sent over';
-    return `Hey ${first}, Mikey here — just circling back on ${what}. Still want me to get you on the schedule?`;
+    return pick(
+      `Hey ${first}, it's Mikey. Did you still want me to get you on the schedule for ${what}?`,
+      `Hey ${first}, it's Mikey, following up on ${what}. Still want to get it on the books?`);
   }
   if (kind === 'rebook') {
     const veh = row.vehicle ? ` on your ${row.vehicle}` : '';
     const when = row.months >= 2 ? `It's been about ${row.months} months since I was out${veh}.` :
       `It's been a little while since I was out${veh}.`;
-    return `Hey ${first}, Mikey here. ${when} Want me to get you back on the schedule?`;
+    return pick(
+      `Hey ${first}, it's Mikey. ${when} Want me to get you back on the schedule?`,
+      `Hey ${first}, it's Mikey. ${when} Want me to get you back on?`);
   }
-  return `Hey ${first}, Mikey here — you reached out a while back about a detail and I don't think we ever locked in a time. Still interested? Happy to get you a price.`;
+  return pick(
+    `Hey ${first}, it's Mikey. You reached out a while back about a detail and I don't think we ever picked a time. Still want one? I can get you a price.`,
+    `Hey ${first}, it's Mikey. You asked about a detail a while back and we never got a time on the books. Still interested? I can work you up a price.`);
 }
 
 // The whole list, grouped, most-winnable first. One index read plus the money
@@ -15807,8 +15906,12 @@ function planDraft(row) {
   const first = jdFirst(row.name) || 'there';
   const veh = row.vehicle ? ` your ${row.vehicle}` : ' your vehicle';
   const wk = Math.round(row.every / 7);
-  return `Hey ${first}, Mikey here — you're due for${veh} (you're on the every-${wk}-week plan). ` +
-    `Want me to get you back on the schedule this week?`;
+  return sayOneOf(`${row.phone || ''}:plan`, [
+    `Hey ${first}, it's Mikey. You're due for${veh} (you're on the every-${wk}-week plan). ` +
+      `Want me to get you in this week?`,
+    `Hey ${first}, it's Mikey. You're due for${veh}, you're on the every-${wk}-week plan. ` +
+      `Want me to get you back on the schedule this week?`,
+  ]);
 }
 
 // ===========================================================================
@@ -15926,7 +16029,7 @@ async function apiCustLink(request) {
     const t = await loadThread(phone);
     const first = jdFirst(t.name) || 'there';
     const body = jdStr(d.body, 600) ||
-      `Hey ${first}, here's your own booking link — check what's coming up, book a time or move one, and see what I've done before. Save it, it doesn't expire: ${url}`;
+      `Hey ${first}, here's your own link: ${url} You can see what's coming up, book a time or move one, and look back at what I've done before. Save it, it doesn't expire.`;
     try {
       await sendSms(phone, body);
       await appendMessage(phone, { dir: 'out', body, kind: 'link', status: 'sent' }, { name: t.name });
@@ -16867,10 +16970,10 @@ function wxHeadsUpDraft(job, date, risk, moveTo, today) {
   const when = wxDayWord(date, today);
   const at = job.slot ? ` around ${bkFmt12(job.slot)}` : '';
   const move = moveTo
-    ? `${wxDayWord(moveTo, today)} is looking clear if you'd rather move it — otherwise I'll plan on ${when} as-is.`
-    : `Want to move it, or should I plan on ${when} as-is?`;
-  return `Hey ${first}, it's Mikey. Heads up — they're calling for rain ${when}${at} (${risk}% chance), ` +
-    `and it's hard to get a finish I'm happy with in the wet. ${move} Just let me know. - Mikey`;
+    ? `${wxDayWord(moveTo, today)} is looking clear if you'd rather move it. Otherwise I'll plan on ${when} as is.`
+    : `Want to move it, or should I plan on ${when} as is?`;
+  return `Hey ${first}, it's Mikey. Heads up, they're calling for rain ${when}${at} (${risk}% chance), ` +
+    `and I can't get a finish I'm happy with in the wet. ${move} Just let me know.`;
 }
 
 // The whole read, with no I/O in it — a forecast and a list of jobs go in, the
@@ -17118,7 +17221,10 @@ async function maybePayReminders() {
   if (!due.length) return;
   for (const inv of due.slice(0, 5)) {
     const first = jdFirst(inv.name);
-    const body = `${first ? 'Hey ' + first : 'Hey'} — just circling back on the $${inv.amount} for ${inv.memo}. Quick link: ${inv.url} Thanks! - Mikey`;
+    const body = sayOneOf(`${inv.phone}:payremind`, [
+      `${first ? 'Hey ' + first : 'Hey'}, still got the $${inv.amount} for ${inv.memo} open whenever you get a chance. Here's the link: ${inv.url} Thanks!`,
+      `${first ? 'Hey ' + first : 'Hey'}, following up on the $${inv.amount} for ${inv.memo}. You can take care of it here: ${inv.url} Thanks!`,
+    ]);
     try {
       await sendSms(inv.phone, body);
       await appendMessage(inv.phone, { dir: 'out', body, kind: 'pay', status: 'sent' }, { name: inv.name });
@@ -17511,8 +17617,8 @@ async function detConfirmDraft(rec, cfg, kind) {
   const when = `${bkNiceDate(rec.date)} at ${bkFmt12(rec.slot)}`;
   const tpl = rec.tentative || kind === 'pin'
     ? `Hey ${first}! Looking forward to ${bkNiceDate(rec.date)}. What time works best for you — morning or afternoon? I'll lock it in. - Mikey`
-    : `Hey ${first}, you're all set for ${when}${rec.service ? ` — ${rec.service}` : ''}. ` +
-      `${rec.address ? `I'll come to you at ${rec.address}. ` : ''}Just have the car accessible with water & power within about 20 ft. ` +
+    : `Hey ${first}, you're all set for ${when}${rec.service ? `, ${rec.service}` : ''}. ` +
+      `${rec.address ? `I'll come to you at ${rec.address}. ` : ''}All I need there is an outside water spigot and an outlet I can reach. ` +
       `I'll text you when I'm on my way. - Mikey`;
   if (!aiConfigured()) return tpl;
   try {

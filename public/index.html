@@ -4366,20 +4366,20 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   var CHAT_LENSES=[["messages","All chats"]].concat(CHAT_VIEWS);
   var LEAD_COLS=[["new","New leads","#3b82f6"],["active","Active","#22c55e"],["won","Won","#a855f7"],["lost","Lost","#8a93a3"]];
   var TEMPLATES=[
-    ["Intro","Hey {name}! It's Mikey from Mikey's Mobile Detailing — got your request. When works best for a detail this week?"],
-    ["Booked","You're locked in! I'll send a reminder the morning of. See you then! 🚗"],
-    ["Reminder","Hey {name}, quick reminder — your detail with Mikey's is tomorrow. Reply CONFIRM or text me to reschedule. 👍"],
-    ["Quote","Happy to help! For your vehicle that runs about $___. Want me to get you on the schedule?"],
-    ["On my way","On my way now — see you in about 15 minutes!"],
-    ["Review","Thanks {name}! Hope you love the detail. If you've got 2 min, a Google review means the world: "]
+    ["Intro","Hey {name}, it's Mikey with Mikey's Mobile Detailing. Got your request. When works best for you this week?"],
+    ["Booked","You're locked in. I'll text you the morning of. See you then."],
+    ["Reminder","Hey {name}, reminder that I've got your car tomorrow. Text me if anything changed."],
+    ["Quote","For your car that runs about $___. Want me to get you on the schedule?"],
+    ["On my way","On my way now, about 15 minutes out."],
+    ["Review","Thanks {name}. If you've got two minutes, a Google review helps me out a lot: "]
   ];
   var QUICK=[["In 1 hour",60],["This evening 6pm",-18],["Tomorrow 9am",-33],["Tomorrow 6pm",-42]];
   // Appointment reminders: premade messages + when-to-send presets (relative to the appointment).
   var REMINDERS=[
-    ["Day-before confirm","Hi {name}! Reminder: your detail with Mikey's Mobile Detailing is on {date} at {time}. Reply CONFIRM, or text me to reschedule. 🚗"],
-    ["Morning of","Good morning {name}! Looking forward to detailing your vehicle today at {time}. I'll text you when I'm on my way. 🚗✨"],
-    ["On my way","On my way now {name} — see you in about 15–20 minutes!"],
-    ["Aftercare + review","Thanks again {name}! Try to keep it out of the rain for 24 hours. If you've got 2 minutes, a Google review would mean the world: "]
+    ["Day-before confirm","Hey {name}, reminder that I've got you {date} at {time}. Text me if anything changed on your end."],
+    ["Morning of","Morning {name}, you're on for today at {time}. I'll text you when I'm headed your way."],
+    ["On my way","On my way now {name}, about 15 to 20 minutes out."],
+    ["Aftercare + review","Thanks again {name}. Try to keep it out of the rain for 24 hours if you can. If you've got two minutes, a Google review helps me out a lot: "]
   ];
   var REM_WHEN=[["Day before · 6pm","dayBefore18"],["Morning of · 8am","morning8"],["2 hours before","h2"],["1 hour before","h1"]];
   var ACCENTS=[["#ff2e43","#c81e30","Red"],["#3b82f6","#1d4ed8","Blue"],["#22c55e","#15803d","Green"],["#a855f7","#7e22ce","Purple"],["#f97316","#c2410c","Orange"],["#06b6d4","#0e7490","Cyan"]];
@@ -4392,7 +4392,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-18·gclid";
+  var APP_BUILD="2026-09-19·voice";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -9476,7 +9476,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         +'<button class="qb-go">Nudge them</button>';
       qb.querySelector(".qb-go").onclick=function(){
         var inp=el("msgInput");
-        inp.value="Hey "+firstNameOf(t)+", just circling back on that "+(qq.service||"quote")+" — still want me to get you on the schedule?";
+        inp.value="Hey "+firstNameOf(t)+", it's Mikey. Did you still want me to get you on the schedule for that "+(qq.service||"quote")+"?";
         autoGrow();updateCount();stashDraft(t.phone);inp.focus();
       };
     }else{qb.style.display="none"}
@@ -17696,8 +17696,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   }
   function jdBlastPick(s,list,place,job){
     var when=job?jdNiceDate(JD.date):"this week";
-    var msg="Hey {first_name}, it's Mikey — I'll be detailing in "+place+" "+when.toLowerCase()+
-      ". Since I'm already coming out there I can knock $25 off if you want yours done the same day. Want a spot? - Mikey";
+    var msg="Hey {first_name}, it's Mikey. I'll be detailing in "+place+" "+when.toLowerCase()+
+      ". Since I'm already coming out there I can knock $25 off if you want yours done the same day. Want a spot?";
     var picked={};
     list.forEach(function(c){picked[c.phone]=true});
     var rows=list.map(function(c){
