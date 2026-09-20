@@ -132,7 +132,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-19·voice';
+const BUILD = '2026-09-20·howitalk';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -311,6 +311,10 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/ai/rules')   return apiRulesPost(request);
   if (request.method === 'GET'  && pathname === '/api/config')     return apiGetConfig();
   if (request.method === 'POST' && pathname === '/api/config')     return apiSaveConfig(request);
+  // "How I talk" — read the rules and see every message they produce. POST
+  // because the screen previews unsaved rules; it reads and renders, no write.
+  if (request.method === 'GET'  && pathname === '/api/say')        return apiSayPreview(new Request(request.url));
+  if (request.method === 'POST' && pathname === '/api/say')        return apiSayPreview(request);
   // ---- Booking management (authed — the Bookings dashboard view) ----
   if (request.method === 'GET'  && pathname === '/api/openings')   return apiOpenings(url);
   if (request.method === 'GET'  && pathname === '/api/bookings')   return apiBookings(url);
@@ -749,8 +753,34 @@ function quoteOpener(f, opts) {
   if (when.day) {
     return `${hi} ${got}${sawTime} ${needName ? "What's your name, and is" : 'Is'} morning or afternoon better for you?`;
   }
-  return `${hi} ${got}${sawTime} ` +
-    `${needName ? "What's your name, and what" : 'What'} day were you looking to get it done?`;
+  // Nothing is missing except a time. WHICH question he ends on is his call,
+  // not the template's: this is the branch that produced "what day were you
+  // looking to get it done", the one line he asked never to send again. The
+  // old wording is still available, it just isn't the only option any more.
+  return `${hi} ${got}${sawTime} ${quoteCloser(opts, needName)}`;
+}
+
+// The last question of the quote opener, per the "How I talk" closer setting.
+// Each one has to survive the opener's own gate, so: exactly one question mark,
+// and nothing that names a day or promises a time he has not looked at.
+function quoteCloser(opts, needName) {
+  const nm = needName ? "What's your name, and " : '';
+  switch ((opts && opts.closer) || 'open') {
+    // The original. Kept so turning it back on is one tap, not a code change.
+    case 'day':
+      return `${needName ? "What's your name, and what" : 'What'} day were you looking to get it done?`;
+    case 'part':
+      return `${needName ? "What's your name, and is" : 'Is'} morning or afternoon better for you?`;
+    case 'address':
+      return `${nm}${needName ? "what's" : "What's"} the address I'd be coming to?`;
+    // No question at all. He gets a lead who knows he read the form and has to
+    // reach out himself, which is sometimes exactly what he wants.
+    case 'none':
+      return needName ? "What's your name?" : `Let me know when you'd like it done and I'll get you in.`;
+    case 'open':
+    default:
+      return `${nm}${needName ? 'want' : 'Want'} me to send over what I've got open?`;
+  }
 }
 
 // ---- the gate --------------------------------------------------------------
@@ -791,14 +821,14 @@ function findInventedTime(text, sources) {
   return '';
 }
 
-function openerFault(text, f, priceSources) {
+function openerFault(text, f, priceSources, cfg) {
   const t = String(text || '').trim();
   if (!t) return 'came back empty';
   if (t.length < 40) return 'is too short to say who is texting and still ask them anything';
   if (t.length > 340) return `is ${t.length} characters, and a first text has to stay under about 300. Cut it down`;
   if (!/mikey/i.test(t)) return 'never says who is texting. They do not have this number - it has to say "it\'s Mikey"';
-  const tell = findTell(t);
-  if (tell) return `used the phrase "${tell}", which is a dead giveaway that a machine wrote it`;
+  const tell = findTell(t, cfg);
+  if (tell) return `used the phrase "${tell}", which is either a dead giveaway that a machine wrote it or one you told me never to say`;
   const bad = findInventedPrice(t, priceSources);
   if (bad) return `quoted ${bad}, and that is not the price the site gave them. Use their price, or no price at all`;
   const qs = (t.match(/\?/g) || []).length;
@@ -863,6 +893,7 @@ async function draftQuoteOpener(f, cfg) {
     `- Exactly ONE question mark in the whole message. No second question, no "let me know if..." bolted on the end.\n` +
     `- Never say a day or a time is available, and never promise one. Never write a dollar figure other than the price above.\n` +
     `- He works alone: "I", never "we". Plain text, no bullets, no sign-off, no subject line.\n` +
+    sayNeverPrompt(cfg) +
     `- 2 to 4 sentences, roughly 120-300 characters. A busy person texting back, not a form letter.\n` +
     (extra || '') +
     `\nThe text:`;
@@ -872,7 +903,7 @@ async function draftQuoteOpener(f, cfg) {
   // the usage counters are only worth having if nothing quietly lands in "other",
   // and aicost.test.js reads the call site itself to prove it.
   const text = cleanReply(await aiGenerate(build(''), { surface: 'quote opener', tier: 'voice', maxTokens: 400, temperature: 0.5 }));
-  const fault = openerFault(text, f, priceSources);
+  const fault = openerFault(text, f, priceSources, cfg);
   if (!fault) return { text, fault: '', refused: false };
   // One retry, naming the offence. Two strikes and the template wins: a first
   // text that breaks a rule is worse than a first text that reads like a template.
@@ -881,7 +912,7 @@ async function draftQuoteOpener(f, cfg) {
       `Your previous attempt was: "${text}"\n`),
     { surface: 'quote opener', tier: 'voice', maxTokens: 400, temperature: 0.4 },
   ));
-  const twice = openerFault(retry, f, priceSources);
+  const twice = openerFault(retry, f, priceSources, cfg);
   return twice ? { text: retry, fault: twice, refused: true } : { text: retry, fault, refused: false };
 }
 
@@ -895,7 +926,7 @@ async function smartQuoteOpener(f, cfg) {
 // empty: the deterministic opener is the floor, everything above it is a bonus.
 async function composeQuoteOpener(raw, cfg) {
   const f = quoteFacts(raw);
-  const plain = quoteOpener(f, { ask: !!(cfg && cfg.quoteOpenerAsk === true) });
+  const plain = quoteOpener(f, { ask: !!(cfg && cfg.quoteOpenerAsk === true), closer: sayRules(cfg).closer });
   if (!cfg || cfg.smartQuoteOpener !== true || !aiConfigured()) return plain;
   try {
     // The website is waiting on this response, so the draft races a clock it
@@ -9339,12 +9370,15 @@ function followupReason(thread, plan) {
 }
 // Deterministic wording used for autopilot sends and as the AI fallback.
 function followupTemplate(thread, plan, cfg) {
+  return sayFinish(followupBody(thread, plan, cfg), cfg, 'every');
+}
+function followupBody(thread, plan, cfg) {
   const name = firstName(thread);
-  const review = cfg.reviewUrl ? (' ' + cfg.reviewUrl) : '';
+  const review = (cfg.reviewUrl && sayRules(cfg).reviewAsk) ? (' ' + cfg.reviewUrl) : '';
   const months = Math.max(1, Math.round((cfg.rebookDays || 90) / 30));
   // Seeded off the number, so the second person he chases this week doesn't get
   // the first person's text word for word.
-  const pick = (...v) => sayOneOf(`${thread.phone || ''}:${plan.stepKey || plan.stage}`, v);
+  const pick = (...v) => sayOneOf(`${thread.phone || ''}:${plan.stepKey || plan.stage}`, v, cfg, `followup:${plan.stepKey || plan.stage}`);
   switch (plan.stage) {
     case 'owed':
       return pick(
@@ -9364,6 +9398,10 @@ function followupTemplate(thread, plan, cfg) {
       if (plan.stepKey === 'won:rebook') return pick(
         `Hey ${name}, it's been about ${months} month${months > 1 ? 's' : ''} since I was out. Want me to get you back on the schedule?`,
         `Hey ${name}, about ${months} month${months > 1 ? 's' : ''} since your last detail. Want me to get you back on?`);
+      // With the review ask switched off there is no message here worth
+      // sending — "thanks again" on its own is filler. Say nothing; the rebook
+      // step still runs on its own schedule.
+      if (!review) return '';
       return pick(
         `Thanks again ${name}, hope it's still holding up. If you've got two minutes, a Google review helps me out a lot:${review}`,
         `Thanks again ${name}. If you get a second, a review on Google goes a long way for me:${review}`);
@@ -9704,6 +9742,16 @@ async function apiSaveConfig(request) {
   if (data.playbook && typeof data.playbook === 'object') next.playbook = sanitizePlaybook(data.playbook, next.playbook);
   if (data.detect && typeof data.detect === 'object') next.detect = sanitizeDetect(data.detect, next.detect);
   if (data.promise && typeof data.promise === 'object') next.promise = sanitizePromiseCfg(data.promise, next.promise);
+  if (data.say && typeof data.say === 'object') {
+    next.say = sanitizeSay(data.say, next.say);
+    // The one save this endpoint will refuse. A banned phrase that happens to
+    // appear in every wording of a message would leave that message with
+    // nothing to send, and a booking confirmation that silently doesn't arrive
+    // is a worse outcome than any phrase. Name what would break and change
+    // nothing; the screen offers to write his own wording instead.
+    const silenced = sayWouldSilence(next);
+    if (silenced.length) return json({ ok: false, error: 'would_silence', silenced }, 422);
+  }
   await kv().put('config', JSON.stringify(next));
   CFG_CACHE = next;
   return json({ ok: true, config: next });
@@ -10926,8 +10974,19 @@ function genId() {
 // same kind of message always resolve to the same wording, which means the
 // scheduled banner shows what will really send, a preview matches the send, and
 // the tests can hold it still. Different people get different ones.
-function sayOneOf(seed, variants) {
-  const list = (variants || []).filter(Boolean);
+function sayOneOf(seed, variants, cfg, kind) {
+  let list = (variants || []).filter(Boolean);
+  if (!list.length) return '';
+  // His own wording, if he wrote one for this message, beats every built-in.
+  const own = sayCustom(cfg, kind);
+  if (own) return own;
+  // Drop any wording that uses a phrase he has banned. If that empties the
+  // list, say NOTHING rather than send the very phrase he told us never to
+  // send: "never" has to mean never or the setting is decoration. Reaching
+  // this state through the dashboard is impossible — /api/config refuses a
+  // save that would cause it (sayWouldSilence) — and the send sites treat an
+  // empty body as "skip this text and tell Mikey", never as a blank SMS.
+  list = list.filter((t) => !sayBanned(t, cfg));
   if (!list.length) return '';
   const s = String(seed == null ? '' : seed);
   // djb2. Any stable hash does; this one is short and has no collisions worth
@@ -10935,6 +10994,241 @@ function sayOneOf(seed, variants) {
   let h = 5381;
   for (let i = 0; i < s.length; i++) h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0;
   return list[h % list.length];
+}
+
+// Every customizable message, rendered against the rules he is about to save.
+//
+// Built by calling the REAL builders with stand-in data rather than by keeping
+// a second list of wordings beside them. A parallel registry would drift within
+// a month and the preview would start lying, which is the one thing a preview
+// must never do.
+//
+// `optional: true` marks a message that is allowed to come out empty because a
+// switch deliberately silenced it (the review ask). Everything else coming back
+// empty means a ban has eaten the last wording, and that is an error.
+const SAY_SAMPLE = {
+  phone: '+14255550147', name: 'Dana Reed', vehicle: '2019 Subaru Outback',
+  date: 'Tue, Aug 4', time: '10:00 AM', service: 'Full Detail',
+};
+
+function sayPreview(cfg) {
+  const p = SAY_SAMPLE.phone;
+  const bk = { phone: p, name: SAY_SAMPLE.name, slot: '10:00', dateLabel: SAY_SAMPLE.date,
+    serviceName: SAY_SAMPLE.service, vehicle: SAY_SAMPLE.vehicle, id: 'sample' };
+  const job = { phone: p, name: SAY_SAMPLE.name, id: 'sample' };
+  const thread = { phone: p, name: SAY_SAMPLE.name, messages: [] };
+  const row = { phone: p, name: SAY_SAMPLE.name, vehicle: SAY_SAMPLE.vehicle,
+    service: SAY_SAMPLE.service, months: 5, every: 42 };
+  // A preview must never be the reason a live number gets texted, and none of
+  // these builders send — they only return strings. Kept as one list so the UI,
+  // the validator and the tests all walk exactly the same set.
+  const out = [
+    ['booking:confirm', 'Booking confirmed', 'When you tap Confirm', () => bkMessage('confirm', bk, cfg)],
+    ['booking:remind24', 'Day-before reminder', 'Sent 24 hrs before', () => bkMessage('remind24', bk, cfg)],
+    ['booking:remindAm', 'Morning-of reminder', 'Sent 7:30 AM on the day', () => bkMessage('remindAm', bk, cfg)],
+    ['booking:cancelled', 'You cancelled a job', 'Courtesy note', () => bkMessage('cancelled', bk, cfg)],
+    ['booking:declined', 'You declined a request', 'Off by default', () => bkMessage('declined', bk, cfg)],
+    ['run:enroute', 'On my way', 'Jobs board, with live tracking', () => dayJobText('enroute', job, { etaMin: 20 }, { url: 'https://mkd.co/t/9f2' }, cfg)],
+    ['run:onsite', "I'm here", 'Jobs board', () => dayJobText('onsite', job, {}, null, cfg)],
+    ['run:done', 'All finished', 'Jobs board, carries the review ask', () => dayJobText('done', job, {}, null, cfg)],
+    ['followup:owed', 'You owe a reply', 'Never auto-sends', () => followupTemplate(thread, { stage: 'owed', step: 0, stepKey: 'owed' }, cfg)],
+    ['followup:nudge:1', 'First chase', '+1 day', () => followupTemplate(thread, { stage: 'nudge', step: 1, stepKey: 'nudge:1' }, cfg)],
+    ['followup:nudge:2', 'Second chase', '+3 days', () => followupTemplate(thread, { stage: 'nudge', step: 2, stepKey: 'nudge:2' }, cfg)],
+    ['followup:nudge:3', 'Last soft touch', '+7 days', () => followupTemplate(thread, { stage: 'nudge', step: 3, stepKey: 'nudge:3' }, cfg)],
+    ['followup:won:review', 'Review ask', 'A day after a won job', () => followupTemplate(thread, { stage: 'won', step: 1, stepKey: 'won:review' }, cfg), true],
+    ['followup:won:rebook', 'Time to rebook', 'After your rebook window', () => followupTemplate(thread, { stage: 'won', step: 2, stepKey: 'won:rebook' }, cfg)],
+    ['followup:lost:revival', 'Revive a lost lead', '+30 days', () => followupTemplate(thread, { stage: 'lost', step: 1, stepKey: 'lost:revival' }, cfg)],
+    ['cold:quote', 'Quote nobody answered', 'Money on the table', () => coldDraft('quote', row, cfg)],
+    ['cold:rebook', 'Customer gone quiet', 'Money on the table', () => coldDraft('rebook', row, cfg)],
+    ['cold:never', 'Asked but never booked', 'Money on the table', () => coldDraft('never', row, cfg)],
+    ['plan', 'Maintenance plan due', 'From the plans board', () => sayFinish(planDraft(row, cfg), cfg, 'first')],
+    ['opener', 'Quote form first text', 'The closing question below', () => sayFinish(quoteOpener(
+      { name: SAY_SAMPLE.name, vehicle: SAY_SAMPLE.vehicle, vehicleFull: true, vehicleBox: true,
+        services: SAY_SAMPLE.service, total: '299', notes: '', appointment: '', location: '', condition: '' },
+      { ask: !!(cfg && cfg.quoteOpenerAsk === true), closer: sayRules(cfg).closer }), cfg, 'first')],
+  ];
+  return out.map(([id, label, note, build, optional]) => {
+    let text = '';
+    try { text = String(build() || ''); } catch { text = ''; }
+    return { id, label, note, text, optional: !!optional,
+      custom: !!sayCustom(cfg, id), chars: text.length };
+  });
+}
+
+// Which messages a proposed set of rules would leave with nothing to send.
+// Run BEFORE the rules are stored, so "I never want to hear X" can't quietly
+// turn into a customer who books and is never told his booking was confirmed.
+function sayWouldSilence(cfg) {
+  return sayPreview(cfg).filter((m) => !m.optional && !m.text.trim())
+    .map((m) => ({ id: m.id, label: m.label }));
+}
+
+// What the caller sent, made safe. Rebuilt from scratch every time so a key he
+// removed really goes away rather than lingering from the stored copy.
+function sanitizeSay(incoming, current) {
+  const d = sayDefaults();
+  const cur = sayRules({ say: current || {} });
+  const c = incoming || {};
+  const str = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
+  const custom = {};
+  if (c.custom && typeof c.custom === 'object') {
+    // Keyed by preview id, so a typo'd key can never become a message nobody
+    // can find in the UI to delete again.
+    const known = new Set(sayPreview({ say: d }).map((m) => m.id));
+    for (const k of Object.keys(c.custom)) {
+      if (!known.has(k)) continue;
+      const v = str(c.custom[k], 600);
+      if (v) custom[k] = v;
+    }
+  }
+  return {
+    never: (Array.isArray(c.never) ? c.never : cur.never)
+      .map((x) => str(x, 120)).filter((x) => x.length >= 3).slice(0, 50),
+    signoff: ['always', 'first', 'never'].includes(c.signoff) ? c.signoff : cur.signoff,
+    emoji: typeof c.emoji === 'boolean' ? c.emoji : cur.emoji,
+    closer: ['open', 'day', 'part', 'address', 'none'].includes(c.closer) ? c.closer : cur.closer,
+    reviewAsk: typeof c.reviewAsk === 'boolean' ? c.reviewAsk : cur.reviewAsk,
+    waterPower: typeof c.waterPower === 'boolean' ? c.waterPower : cur.waterPower,
+    custom: (c.custom && typeof c.custom === 'object') ? custom : cur.custom,
+  };
+}
+
+async function apiSayPreview(request) {
+  // Previews the rules in the BODY when there are any, so the screen can show
+  // the effect of a change before he commits to it, and the stored ones when
+  // there aren't. Read-only either way: nothing here writes or sends.
+  const body = await readJson(request).catch(() => ({}));
+  const cfg = Object.assign({}, await loadConfig());
+  if (body && body.say && typeof body.say === 'object') cfg.say = sanitizeSay(body.say, cfg.say);
+  return json({ ok: true, say: sayRules(cfg), messages: sayPreview(cfg), silenced: sayWouldSilence(cfg) });
+}
+
+// ===========================================================================
+// "How I talk" — the rules Mikey sets for what his texts are allowed to say
+// ===========================================================================
+// Everything above this line decides WHEN a text goes out. This decides WHAT it
+// is allowed to contain, and it is his to set, not the code's.
+//
+// It came from one sentence: "I don't want it to ever say what day are you
+// thinking." That is not a bug in a template, it is a standing preference, and
+// the only honest place for a standing preference is config. Three layers, in
+// the order he reaches for them:
+//
+//   1. never[]      a phrase he never wants sent. Blanket, applies to every
+//                   template AND every AI draft, forever.
+//   2. the choices  a small set of either/ors: which closing question the quote
+//                   opener ends on, when to sign off, emoji or no emoji.
+//   3. custom{}     he types the message himself and the built-ins step aside.
+//
+// The invariant that makes layer 1 safe: every message must always have at
+// least one legal wording. A ban that would wipe out the last wording of a
+// message is refused at save time, naming the message, rather than discovered
+// weeks later by a customer who got nothing. See sayWouldSilence.
+function sayDefaults() {
+  return {
+    // Phrases that must never appear in an outgoing text. Seeded with the one
+    // he asked for by name, in the wordings the templates could actually
+    // produce; he can clear it.
+    never: ['what day are you thinking', 'what day were you looking'],
+    // 'always' | 'first' | 'never'. 'first' signs only the texts that reach
+    // someone who may not have his number yet, which is how a person behaves.
+    signoff: 'first',
+    emoji: false,        // allow emoji through in an outgoing text
+    // What the quote opener ends on when they gave him a car but said nothing
+    // at all about timing. The old hardcoded "What day were you looking to get
+    // it done?" is still here as a choice; it is no longer the only one.
+    closer: 'open',      // 'open' | 'day' | 'part' | 'address' | 'none'
+    reviewAsk: true,     // ask for a Google review when a job is finished
+    waterPower: true,    // spell out that he needs an outdoor spigot and a plug
+    // His own wording per message, keyed by the ids sayPreview() returns.
+    // Anything in here wins outright. {name} {first} {date} {time} {service}
+    // {car} are filled in; anything else is left alone.
+    custom: {},
+  };
+}
+
+// The rules, with the defaults filled in for anything he has not set. Tolerates
+// being handed a whole config, a bare say object, or nothing at all, because it
+// is called from template code that does not always have a config in hand.
+function sayRules(cfg) {
+  const d = sayDefaults();
+  const raw = (cfg && cfg.say) || (cfg && (cfg.never || cfg.closer) ? cfg : null) || {};
+  return {
+    never: Array.isArray(raw.never) ? raw.never : d.never,
+    signoff: ['always', 'first', 'never'].includes(raw.signoff) ? raw.signoff : d.signoff,
+    emoji: raw.emoji === true,
+    closer: ['open', 'day', 'part', 'address', 'none'].includes(raw.closer) ? raw.closer : d.closer,
+    reviewAsk: raw.reviewAsk !== false,
+    waterPower: raw.waterPower !== false,
+    custom: (raw.custom && typeof raw.custom === 'object') ? raw.custom : {},
+  };
+}
+
+// Compared loosely on purpose. He types "what day are you thinking" and the
+// template says "What day were you thinking?" — a rule that only caught an
+// exact match would be a rule he thinks is on and isn't. Case, runs of
+// whitespace and punctuation all stop mattering; word order does not.
+function sayNorm(text) {
+  return String(text || '').toLowerCase().replace(/[^a-z0-9$]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function sayBanned(text, cfg) {
+  const rules = sayRules(cfg);
+  if (!rules.never.length) return '';
+  const hay = sayNorm(text);
+  if (!hay) return '';
+  for (const raw of rules.never) {
+    const needle = sayNorm(raw);
+    // A one-character rule would ban everything; ignore anything too short to
+    // be a phrase he meant.
+    if (needle.length < 3) continue;
+    if (hay.includes(needle)) return String(raw);
+  }
+  return '';
+}
+
+// The ban list, handed to the model as a rule rather than only enforced after
+// the fact. A gate that only rejects costs a whole extra generation every time;
+// telling it up front usually means there is nothing to reject.
+function sayNeverPrompt(cfg) {
+  const never = sayRules(cfg).never.filter((x) => String(x || '').trim().length >= 3);
+  if (!never.length) return '';
+  return `- NEVER use these phrases, he has banned them by name: ` +
+    never.slice(0, 25).map((x) => `"${String(x).trim()}"`).join(', ') + `.\n`;
+}
+
+function sayCustom(cfg, kind) {
+  if (!kind) return '';
+  const own = sayRules(cfg).custom[kind];
+  return (typeof own === 'string' && own.trim()) ? own.trim() : '';
+}
+
+// Fill {first} {name} {date} {time} {service} {car} in a wording he typed
+// himself. Anything he writes that is not one of those is left exactly as typed
+// — a stray brace is his, not a template bug.
+function sayFill(text, vars) {
+  return String(text || '').replace(/\{(first|name|date|time|service|car)\}/g,
+    (m, k) => (vars && vars[k] != null && vars[k] !== '') ? String(vars[k]) : m);
+}
+
+// Emoji, per the rules. Kept in one place because "no emoji" has to mean the
+// whole message, including one that arrived inside a wording he typed himself.
+const SAY_EMOJI_RE = /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}\u{2190}-\u{21FF}\u{2B00}-\u{2BFF}]/gu;
+
+// The last thing every outgoing text goes through. Applies the sign-off policy
+// and the emoji rule, and tidies the spacing those leave behind.
+//   first  — a text that may be landing on someone who does not have his number
+//   every  — one that certainly is not (a reminder, a day-of update)
+function sayFinish(text, cfg, contact) {
+  const rules = sayRules(cfg);
+  let out = String(text || '');
+  if (!out) return '';
+  if (!rules.emoji) out = out.replace(SAY_EMOJI_RE, '');
+  const signed = /-\s*Mikey\s*$/.test(out);
+  const wants = rules.signoff === 'always' || (rules.signoff === 'first' && contact === 'first');
+  if (signed && !wants) out = out.replace(/\s*-\s*Mikey\s*$/, '');
+  if (!signed && wants) out = out.replace(/\s*$/, '') + ' - Mikey';
+  return out.replace(/[ \t]{2,}/g, ' ').trim();
 }
 
 function blankThread(phone) {
@@ -11000,6 +11294,9 @@ function defaultFollowup() {
 
 function defaultConfig() {
   return {
+    // What his texts are allowed to say. See sayDefaults() — his rules, not
+    // the code's, and they apply to the fixed templates and the AI alike.
+    say: sayDefaults(),
     followupsEnabled: true,  // global master switch for the whole engine
     autopilot: false,        // when true, safe nudges send themselves at the due time
     reviewUrl: '',           // Google review link, dropped into the review-ask nudge
@@ -12372,7 +12669,12 @@ const AI_TELLS = [
   /\bjust following up\b/i, /\breach out (to us|anytime)\b/i, /\bwe('| a)re here (for you|to help)\b/i,
   /\blooking forward to (serving|assisting)\b/i, /\bvalued customer\b/i,
 ];
-function findTell(text) {
+function findTell(text, cfg) {
+  // His own "never say this" list is checked first: a phrase he banned by hand
+  // outranks the built-in list, and naming it back to him is what makes the
+  // refusal on the preview screen read as his rule working rather than a bug.
+  const his = sayBanned(text, cfg);
+  if (his) return his;
   for (const re of AI_TELLS) { const m = String(text || '').match(re); if (m) return m[0]; }
   return '';
 }
@@ -13605,6 +13907,10 @@ async function sendSms(to, body, opts = {}) {
   // be textable — not by the assist path (which stops earlier), and not by any
   // future code that stumbles onto the thread. Unconditional, before everything.
   if (isPracticePhone(toNorm)) throw new Error('practice_number');
+  // A blank body means something upstream had nothing to say — most likely the
+  // "How I talk" rules banned every wording of it. Twilio would reject it
+  // anyway; failing here keeps the reason legible in the logs.
+  if (!String(body || '').trim()) throw new Error('empty_body');
   // Opt-out guard: never text a number that sent STOP. Skipped for alerts to Mikey
   // himself (opts.skipOptOut) so notifications always get through.
   if (!opts.skipOptOut) {
@@ -14190,27 +14496,30 @@ async function apiBookings(url) {
 // also drives live ETA tracking. See dayJobText().
 function bkAutoOn(bcfg, kind) { return ((bcfg && bcfg.autoTexts) || {})[kind] !== false; }
 
-function bkMessage(kind, bk) {
+function bkMessageBody(kind, bk, cfg) {
   const first = (bk.name || '').split(/\s+/)[0] || 'there';
   const at = bkFmt12(bk.slot);
   const car = bk.vehicle || 'car';
   // Seeded per booking, so one customer's four messages vary against each other
   // the way a person's would, and two customers never get the same set.
-  const pick = (...v) => sayOneOf(`${bk.phone || bk.id || ''}:${kind}`, v);
+  const pick = (...v) => sayOneOf(`${bk.phone || bk.id || ''}:${kind}`, v, cfg, `booking:${kind}`);
+  // The water-and-power line is his to drop: some customers already know, and
+  // he asked to be able to decide what each text spells out.
+  const wp = sayRules(cfg).waterPower;
   switch (kind) {
     // The confirm is the only one that signs off: it is often the first text
     // they get from this number. By the reminder he is a name in their phone,
     // and a man who signs every text is a man sending form letters.
     case 'confirm':
       return pick(
-        `You're all set for ${bk.dateLabel} at ${at}, ${bk.serviceName}. I come to you, so all I need on your end is an outside water spigot and an outlet I can reach. I'll text when I'm on my way. - Mikey`,
-        `Got you down for ${bk.dateLabel} at ${at}, ${bk.serviceName}. I bring everything else, I just need to get to an outdoor spigot and a plug. I'll give you a heads up before I head over. - Mikey`,
-        `Locked in for ${bk.dateLabel} at ${at}, ${bk.serviceName}. I come to you. The only things I need there are an outside faucet and an outlet within about 20 feet of the car. I'll text when I'm on my way. - Mikey`);
+        `You're all set for ${bk.dateLabel} at ${at}, ${bk.serviceName}.${wp ? ' I come to you, so all I need on your end is an outside water spigot and an outlet I can reach.' : ' I come to you.'} I'll text when I'm on my way. - Mikey`,
+        `Got you down for ${bk.dateLabel} at ${at}, ${bk.serviceName}.${wp ? ' I bring everything else, I just need to get to an outdoor spigot and a plug.' : ''} I'll give you a heads up before I head over. - Mikey`,
+        `Locked in for ${bk.dateLabel} at ${at}, ${bk.serviceName}. I come to you.${wp ? ' The only things I need there are an outside faucet and an outlet within about 20 feet of the car.' : ''} I'll text when I'm on my way. - Mikey`);
     case 'remind24':
       return pick(
-        `Reminder, I've got your ${car} tomorrow at ${at}. If you can leave it somewhere I can walk around it and reach a spigot and an outlet, that's all I need. See you then.`,
-        `Heads up, I'm detailing your ${car} tomorrow at ${at}. All I need is to get to an outside faucet and a plug. See you tomorrow.`,
-        `You're on my schedule tomorrow at ${at} for the ${car}. Park it where I can get around it and reach water and power, and I'm all set. See you then.`);
+        `Reminder, I've got your ${car} tomorrow at ${at}.${wp ? ' If you can leave it somewhere I can walk around it and reach a spigot and an outlet, that\'s all I need.' : ''} See you then.`,
+        `Heads up, I'm detailing your ${car} tomorrow at ${at}.${wp ? ' All I need is to get to an outside faucet and a plug.' : ''} See you tomorrow.`,
+        `You're on my schedule tomorrow at ${at} for the ${car}.${wp ? ' Park it where I can get around it and reach water and power, and I\'m all set.' : ''} See you then.`);
     case 'remindAm':
       return pick(
         `Morning ${first}, you're on for today at ${at}. I'll text when I'm headed your way.`,
@@ -14229,6 +14538,15 @@ function bkMessage(kind, bk) {
     default:
       return '';
   }
+}
+
+// Every booking text, finished: the sign-off policy and the emoji rule applied
+// once, at the single door they all leave through. The confirm and the two
+// notices can be the first thing this number ever sends someone, so they count
+// as first contact; a reminder never is.
+function bkMessage(kind, bk, cfg) {
+  const FIRST = { confirm: 1, cancelled: 1, declined: 1 };
+  return sayFinish(bkMessageBody(kind, bk, cfg), cfg, FIRST[kind] ? 'first' : 'every');
 }
 
 // Drop any still-queued texts belonging to one booking. Without this, cancelling
@@ -14250,6 +14568,9 @@ async function apiBookingAction(request) {
   const bk = all.find((x) => x.id === id);
   if (!bk) return json({ ok: false, error: 'not_found' }, 404);
   const bcfg = await loadBookingConfig();
+  // The "How I talk" rules live on the main config, not the booking one, so a
+  // ban or a sign-off choice applies everywhere at once rather than per screen.
+  const cfg = await loadConfig();
   const now = Date.now();
   let texted = false;
 
@@ -14261,7 +14582,7 @@ async function apiBookingAction(request) {
     thread.appointmentAt = bk.apptAt;
     if (bk.smsConsent) {
       if (bkAutoOn(bcfg, 'confirm')) {
-        const body = bkMessage('confirm', bk);
+        const body = bkMessage('confirm', bk, cfg);
         try {
           const r = await sendSms(bk.phone, body);
           // Record it — this text used to go out without ever landing in the
@@ -14274,8 +14595,13 @@ async function apiBookingAction(request) {
       // and opt-out aware for free. Tagged with bkId so a later cancel can pull them.
       const r24 = bk.apptAt - 86400000, rAm = bkLaEpoch(bk.date, '07:30');
       const add = [];
-      if (bkAutoOn(bcfg, 'remind24') && r24 > now + 60000) add.push({ id: genId(), bkId: bk.id, kind: 'booking', body: bkMessage('remind24', bk), sendAt: r24 });
-      if (bkAutoOn(bcfg, 'remindAm') && rAm > now + 60000 && rAm < bk.apptAt) add.push({ id: genId(), bkId: bk.id, kind: 'booking', body: bkMessage('remindAm', bk), sendAt: rAm });
+      // Built before it is queued, because a reminder his "How I talk" rules
+      // left with no legal wording must not sit in the queue as a blank waiting
+      // to fail at send time. No wording, no reminder.
+      const b24 = bkAutoOn(bcfg, 'remind24') ? bkMessage('remind24', bk, cfg) : '';
+      const bAm = bkAutoOn(bcfg, 'remindAm') ? bkMessage('remindAm', bk, cfg) : '';
+      if (b24 && r24 > now + 60000) add.push({ id: genId(), bkId: bk.id, kind: 'booking', body: b24, sendAt: r24 });
+      if (bAm && rAm > now + 60000 && rAm < bk.apptAt) add.push({ id: genId(), bkId: bk.id, kind: 'booking', body: bAm, sendAt: rAm });
       if (add.length) { thread.scheduled.push(...add); thread.scheduled.sort((a, b) => a.sendAt - b.sendAt); }
     }
     await saveThread(thread);
@@ -14299,7 +14625,7 @@ async function apiBookingAction(request) {
     const thread = await loadThread(bk.phone);
     let changed = bkPurgeScheduled(thread, bk.id) > 0;   // no job → no reminders
     if (bk.smsConsent && bkAutoOn(bcfg, kind)) {
-      const body = bkMessage(kind, bk);
+      const body = bkMessage(kind, bk, cfg);
       try {
         const r = await sendSms(bk.phone, body);
         thread.messages.push({ id: genId(), dir: 'out', body, ts: Date.now(), kind: 'booking', status: 'sent', sid: (r && r.sid) || undefined });
@@ -14816,12 +15142,12 @@ async function apiDayState(request) {
   return json({ ok: true, day: await buildDay(date), texted, track });
 }
 
-function dayJobText(state, job, d, track, cfg) {
+function dayJobTextBody(state, job, d, track, cfg) {
   const custom = jdStr(d.body, 600);
   if (custom) return custom;
   const first = jdFirst(job.name);
   const hi = first ? `Hey ${first}` : 'Hey';
-  const pick = (...v) => sayOneOf(`${job.phone || job.id || ''}:${state}`, v);
+  const pick = (...v) => sayOneOf(`${job.phone || job.id || ''}:${state}`, v, cfg, `run:${state}`);
   if (state === 'enroute') {
     const eta = Math.max(1, Math.min(180, Number(d.etaMin) || 20));
     const where = track ? ` You can watch me get there: ${track.url}` : '';
@@ -14839,10 +15165,13 @@ function dayJobText(state, job, d, track, cfg) {
   if (state === 'done') {
     // The ask is deliberately small and specific. "Means the world" is the kind
     // of thing nobody says out loud to a customer standing in their driveway.
-    const rev = cfg && cfg.reviewUrl
+    // Two switches have to agree before a review is asked for: the link has to
+    // exist, and he has to still want the ask. Turning it off here turns it off
+    // on the run board and in the follow-up cadence both.
+    const rev = (cfg && cfg.reviewUrl && sayRules(cfg).reviewAsk)
       ? sayOneOf(`${job.phone || job.id || ''}:rev`,
           [` If you've got two minutes, a Google review helps me out a lot: ${cfg.reviewUrl}`,
-           ` If you get a second, a review on Google goes a long way for me: ${cfg.reviewUrl}`])
+           ` If you get a second, a review on Google goes a long way for me: ${cfg.reviewUrl}`], cfg, 'run:review')
       : '';
     return pick(
       `${hi}, all done and it came out great. Thanks for having me out.${rev}`,
@@ -14850,6 +15179,12 @@ function dayJobText(state, job, d, track, cfg) {
       `${hi}, all wrapped up and it looks really good. Thanks for having me out.${rev}`);
   }
   return '';
+}
+
+// Every day-of text goes out mid-job to someone who booked days ago, so none of
+// them is first contact.
+function dayJobText(state, job, d, track, cfg) {
+  return sayFinish(dayJobTextBody(state, job, d, track, cfg), cfg, 'every');
 }
 
 // Add / edit a hand-entered job (a cash job, a friend's truck, a re-do).
@@ -15682,9 +16017,12 @@ function coldMonths(days) { return Math.max(6, Math.min(24, Math.ceil(days / 30)
 // people who are already lukewarm, and an AI that invents a price or a date on
 // a rebook text does real damage. {first} is the only thing filled in.
 function coldDraft(kind, row, cfg) {
+  return sayFinish(coldBody(kind, row, cfg), cfg, 'first');
+}
+function coldBody(kind, row, cfg) {
   const first = jdFirst(row.name) || 'there';
-  if (kind === 'plan') return planDraft(row);
-  const pick = (...v) => sayOneOf(`${row.phone || ''}:${kind}`, v);
+  if (kind === 'plan') return planDraft(row, cfg);
+  const pick = (...v) => sayOneOf(`${row.phone || ''}:${kind}`, v, cfg, `cold:${kind}`);
   if (kind === 'quote') {
     const what = row.service ? `that ${row.service} quote` : 'that quote I sent over';
     return pick(
@@ -15898,11 +16236,11 @@ async function buildPlans(cfg, spendMap) {
     });
   }
   rows.sort((a, b) => (b.due - a.due) || (a.dueAt - b.dueAt));
-  for (const r of rows) r.draft = planDraft(r);
+  for (const r of rows) r.draft = sayFinish(planDraft(r, cfg), cfg, 'first');
   return { plans: rows, dueCount: rows.filter((r) => r.due).length };
 }
 
-function planDraft(row) {
+function planDraft(row, cfg) {
   const first = jdFirst(row.name) || 'there';
   const veh = row.vehicle ? ` your ${row.vehicle}` : ' your vehicle';
   const wk = Math.round(row.every / 7);
@@ -15911,7 +16249,7 @@ function planDraft(row) {
       `Want me to get you in this week?`,
     `Hey ${first}, it's Mikey. You're due for${veh}, you're on the every-${wk}-week plan. ` +
       `Want me to get you back on the schedule this week?`,
-  ]);
+  ], cfg, 'plan');
 }
 
 // ===========================================================================
