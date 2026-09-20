@@ -132,7 +132,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-20·howitalk';
+const BUILD = '2026-09-20·haiku';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -13109,7 +13109,7 @@ async function apiAiPredict(request) {
   const data = await readJson(request);
   const phone = normalizePhone(data.phone);
   const text = String(data.text || '').slice(0, 400);
-  if (!ENV.GEMINI_API_KEY && !ENV.ANTHROPIC_API_KEY) return json({ ok: false, error: 'no_ai' }, 503);
+  if (!aiConfigured()) return json({ ok: false, error: 'no_ai' }, 503);
   if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
   // Off by default. The browser already knows this and shouldn't be calling, but
   // a stale tab (or a cached shell after a deploy) still can — and the whole
@@ -13192,7 +13192,7 @@ async function apiVoiceStats() {
     perBucket[b] = { samples: buckets[b] || 0, rounds: n, rate: n ? Math.round(((r.match || 0) / n) * 100) : null };
   }
 
-  let provider = ENV.ANTHROPIC_API_KEY && !envFlag('CLAUDE_DISABLED') ? 'claude' : (ENV.GEMINI_API_KEY ? 'gemini' : 'none');
+  let provider = claudeVia() !== 'none' && !envFlag('CLAUDE_DISABLED') ? 'claude' : (ENV.GEMINI_API_KEY ? 'gemini' : 'none');
   // Say which model is writing RIGHT NOW, not which one is configured. Once the
   // day's budget is spent the drafts come from Gemini, and a screen that still
   // said "Claude" would be the one place he'd never think to look for why the
@@ -13339,7 +13339,7 @@ function businessContext(cfg) {
 //             cheap and entirely good enough.
 // Anything voice-tier falls back to Gemini automatically when ANTHROPIC_API_KEY
 // isn't set or the call fails, so the dashboard never loses the ability to draft.
-function aiConfigured() { return !!(ENV.GEMINI_API_KEY || ENV.ANTHROPIC_API_KEY); }
+function aiConfigured() { return !!ENV.GEMINI_API_KEY || claudeVia() !== 'none'; }
 
 // ---------------------------------------------------------------------------
 // The daily budget
@@ -13361,13 +13361,37 @@ const AI_PRICE_PER_M = {              // model -> [input $/1M, output $/1M]
   'claude-opus-5': [5, 25],
   'claude-sonnet-5': [2, 10],
   'claude-haiku-4-5': [1, 5],
+  // The same model, the other spelling. Through the AI binding the catalog names
+  // models `{author}/{model}`, and this table is keyed by whatever claudeModel()
+  // returns — so a missing row here would price every Haiku draft at Opus rates
+  // and trip the daily ceiling about twenty times too early. An unlisted model
+  // still falls back to Opus pricing below, which errs toward stopping early
+  // rather than toward a surprise bill.
+  'anthropic/claude-haiku-4.5': [1, 5],
 };
 // A draft costs roughly two and a half cents at Opus rates, so a dollar is about
 // forty of them in a day — comfortably more than a one-man detailing shop sends,
 // and small enough that a bug can't run away overnight.
 const AI_BUDGET_DEFAULT_USD = 1.00;
 
-function claudeModel() { return ENV.ANTHROPIC_MODEL || 'claude-opus-5'; }
+// How Claude is reached, in priority order. The binding wins whenever the Worker
+// has one: it carries no key at all (Cloudflare holds the provider credentials
+// and bills this account's prepaid credits), so an ANTHROPIC_API_KEY left behind
+// in the Worker after the switch cannot quietly keep charging the old account.
+// AI_BINDING_OFF is the no-deploy way back to the key, same as the other switches.
+function claudeVia() {
+  if (ENV.AI && typeof ENV.AI.run === 'function' && !envFlag('AI_BINDING_OFF')) return 'binding';
+  if (ENV.ANTHROPIC_API_KEY) return 'key';
+  return 'none';
+}
+// Two routes, two spellings of the same model. Deliberately two vars rather than
+// one: an ANTHROPIC_MODEL set for the direct API is a 400 on the binding, and a
+// 400 on every draft reads as "the AI stopped working", not as "wrong var".
+function claudeModel() {
+  return claudeVia() === 'binding'
+    ? (ENV.AI_MODEL || 'anthropic/claude-haiku-4.5')
+    : (ENV.ANTHROPIC_MODEL || 'claude-opus-5');
+}
 // Set ANTHROPIC_DAILY_BUDGET under Variables to change it without a deploy.
 // Setting it to 0 is a full stop: everything falls back to Gemini immediately,
 // which makes it a second kill switch alongside CLAUDE_DISABLED.
@@ -13431,7 +13455,7 @@ function flattenForGemini(prompt, opts) {
 }
 
 async function aiGenerate(prompt, opts = {}) {
-  if (opts.tier === 'voice' && ENV.ANTHROPIC_API_KEY && !envFlag('CLAUDE_DISABLED')) {
+  if (opts.tier === 'voice' && claudeVia() !== 'none' && !envFlag('CLAUDE_DISABLED')) {
     const budget = aiDailyBudget();
     const spent = await claudeSpentToday();
     if (budget > 0 && spent < budget) {
@@ -13456,6 +13480,21 @@ async function aiGenerate(prompt, opts = {}) {
 // ===========================================================================
 // Claude (Anthropic Messages API)
 // ===========================================================================
+// Two ways in, same Messages API on the far side:
+//
+//   binding — ENV.AI.run() through Cloudflare AI Gateway on Unified Billing.
+//             No key exists anywhere in this Worker: Cloudflare holds Anthropic's
+//             credentials and takes the cost out of the account's prepaid credits.
+//             This is the default now, on Haiku 4.5.
+//   key     — a direct POST to api.anthropic.com with ANTHROPIC_API_KEY, on Opus 5.
+//             Still here because it is the fallback if the binding is ever turned
+//             off, and because it is the only route that can use a key of his own.
+//
+// The two take DIFFERENT request shapes, which is the thing to get right: the
+// catalog schema behind the binding accepts messages, max_tokens and a plain
+// string system, and nothing else. Sending Opus's fields (output_config, or a
+// system block carrying cache_control) down that route is a 400.
+//
 // Raw fetch rather than @anthropic-ai/sdk on purpose: this Worker has zero
 // runtime dependencies today, ships on Cloudflare's free tier (hard bundle-size
 // ceiling), and every other outbound API here — Twilio, Gemini, Resend — is a
@@ -13470,8 +13509,8 @@ async function aiGenerate(prompt, opts = {}) {
 //   - a request can come back 200 with stop_reason 'refusal' and no content;
 //     check that before reading content[0].
 async function claudeGenerate(prompt, opts = {}) {
-  const key = ENV.ANTHROPIC_API_KEY;
-  if (!key) throw new Error('ANTHROPIC_API_KEY not set');
+  const via = claudeVia();
+  if (via === 'none') throw new Error('no Claude route — add the AI binding or set ANTHROPIC_API_KEY');
   let userText = String(prompt || '');
   if (opts.json) userText += '\n\nReturn ONLY valid JSON. No prose, no code fences.';
   // Few-shot as actual message turns rather than quoted strings inside one blob.
@@ -13486,13 +13525,14 @@ async function claudeGenerate(prompt, opts = {}) {
   const body = {
     model: claudeModel(),
     max_tokens: Math.max(1024, Math.min(8000, (opts.maxTokens || 800) + 1200)), // room for thinking
-    // Effort per surface. Low is right for a mechanical rewrite; drafting a reply
-    // is a judgement call (which of his past moments is this one?) and gets more.
-    // Thinking stays ON at every level — disabling it on Opus 5 can leak
-    // <thinking> tags into the visible text, which a customer would see.
-    output_config: { effort: opts.effort || 'low' },
     messages,
   };
+  // Effort per surface. Low is right for a mechanical rewrite; drafting a reply
+  // is a judgement call (which of his past moments is this one?) and gets more.
+  // Thinking stays ON at every level — disabling it on Opus 5 can leak
+  // <thinking> tags into the visible text, which a customer would see. Opus only:
+  // Haiku has no effort dial, and the field is rejected outright on that route.
+  if (via === 'key') body.output_config = { effort: opts.effort || 'low' };
   // The playbook, the standing rules and his style fingerprint are identical on
   // every draft, so they go in `system` behind a cache breakpoint instead of
   // being re-billed at full price each time. The volatile half — this customer,
@@ -13501,22 +13541,51 @@ async function claudeGenerate(prompt, opts = {}) {
   // It also pays for the higher effort above: the retry path re-sends the same
   // system block, so a regenerated draft reads it from cache.
   if (opts.system) {
-    body.system = [{ type: 'text', text: String(opts.system), cache_control: { type: 'ephemeral' } }];
+    // A plain string on the binding route: the catalog schema takes one, and the
+    // block form with cache_control is a 400 there. The lost cache breakpoint is
+    // the real cost of the switch, and it is small at Haiku's input rate — a
+    // fifth of Opus's — where re-reading the playbook each draft is a rounding
+    // error against what the cached Opus prefix used to cost.
+    body.system = via === 'binding'
+      ? String(opts.system)
+      : [{ type: 'text', text: String(opts.system), cache_control: { type: 'ephemeral' } }];
   }
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': key,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-  if (!res.ok) {
-    await noteAiUsage(opts.surface, 'claude', 0, 0, true);
-    throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  let data;
+  if (via === 'binding') {
+    const input = Object.assign({}, body);
+    delete input.model;                  // the binding takes the model as its own argument
+    try {
+      // The gateway id is only ever named so the logs land somewhere findable —
+      // Cloudflare creates `default` itself on the first call, which is why this
+      // route needed nothing set up by hand.
+      data = await ENV.AI.run(body.model, input, { gateway: { id: ENV.AI_GATEWAY_ID || 'default' } });
+    } catch (err) {
+      await noteAiUsage(opts.surface, 'claude', 0, 0, true);
+      // Passed through rather than tidied into "ai_failed": the first thing this
+      // route can get wrong is credits sitting on the wrong account, and the only
+      // place that ever gets said out loud is Cloudflare's own error text.
+      throw new Error(`AI binding: ${String((err && err.message) || err).slice(0, 300)}`);
+    }
+  } else {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': ENV.ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      await noteAiUsage(opts.surface, 'claude', 0, 0, true);
+      throw new Error(`Anthropic ${res.status}: ${(await res.text()).slice(0, 300)}`);
+    }
+    data = await res.json();
   }
-  const data = await res.json();
+  // Both routes are meant to hand back Anthropic's own response shape. Checked
+  // rather than assumed: a route that returns something else should fail as a
+  // failed draft (and fall through to Gemini), not as a TypeError on `.usage`.
+  if (!data || typeof data !== 'object') throw new Error('anthropic_empty');
   const cu = data.usage || {};
   await noteAiUsage(opts.surface, 'claude', cu.input_tokens, cu.output_tokens, false);
   noteClaudeSpend(cu.input_tokens, cu.output_tokens);

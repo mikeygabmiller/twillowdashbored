@@ -268,10 +268,15 @@ function makeRouter(env, opts = {}) {
     'claudeGenerate', 'geminiGenerate',
     'let CFG_CACHE = { tz: "America/Los_Angeles" };\n' +
     liftSpan('const AI_PRICE_PER_M', 'aiGenerate') + '\n' +
-    'Object.assign(ctx, { aiGenerate, claudeCost, aiDailyBudget, claudeModel,\n' +
+    'Object.assign(ctx, { aiGenerate, claudeCost, aiDailyBudget, claudeModel, claudeVia,\n' +
     '  claudeSpentToday, noteClaudeSpend,\n' +
     '  resetSpend: () => { CLAUDE_SPEND = null; } });',
-  )(r, env, budgetKv, () => !!env.CLAUDE_DISABLED, localDateStr, fakeDate, aiUsageKey, claude, gemini);
+    // envFlag has to read the NAME now, not just CLAUDE_DISABLED: there are two
+    // switches in this span (AI_BINDING_OFF is the other) and a stub that ignores
+    // the name would answer both with the same value, which is exactly the bug
+    // the binding route would be most likely to ship with.
+  )(r, env, budgetKv, (n) => ['1', 'true', 'yes', 'on'].includes(String(env[n] || '').toLowerCase()),
+    localDateStr, fakeDate, aiUsageKey, claude, gemini);
   return r;
 }
 
@@ -291,6 +296,45 @@ check('a var overrides it without a deploy', makeRouter(Object.assign({}, KEYED,
 check('nonsense falls back to the default rather than to infinity',
   makeRouter(Object.assign({}, KEYED, { ANTHROPIC_DAILY_BUDGET: 'free' })).aiDailyBudget(), 1);
 check('and the model is the one being priced', R.claudeModel(), 'claude-opus-5');
+
+console.log('\n=== reaching Claude through the AI binding, with no key anywhere ===');
+// The switch of 2026-09-20: drafts go through Cloudflare's AI binding on Unified
+// Billing instead of a key posted to api.anthropic.com. What has to hold is that
+// having NO ANTHROPIC_API_KEY stops meaning "no Claude" — before this, a Worker
+// without that secret drafted on Gemini forever and nothing said why.
+const BOUND = { AI: { run: async () => ({}) }, GEMINI_API_KEY: 'g-test' };
+let B = makeRouter(BOUND);
+check('a binding and no key is still a Claude', B.claudeVia(), 'binding');
+check('and it draws Haiku out of the catalog, with the catalog spelling',
+  B.claudeModel(), 'anthropic/claude-haiku-4.5');
+check('priced as Haiku, not silently as Opus', B.claudeCost(1e6, 1e6), 6);
+check('so a typical draft is under half a cent',
+  Math.round(B.claudeCost(3000, 300) * 10000) / 10000, 0.0045);
+check('AI_MODEL swaps the model without a deploy',
+  makeRouter(Object.assign({}, BOUND, { AI_MODEL: 'anthropic/claude-sonnet-4.6' })).claudeModel(),
+  'anthropic/claude-sonnet-4.6');
+
+STORE.clear(); B = makeRouter(BOUND); B.resetSpend();
+check('and the customer-facing draft actually routes to it',
+  await B.aiGenerate('draft this', { tier: 'voice', surface: 'reply draft' }), 'claude wrote this');
+
+// A key left behind in the Worker after the switch must not quietly keep
+// charging the old account — the binding is what "which bill pays for this" is
+// decided by, and the model name is the visible proof of which route ran.
+const BOTH = Object.assign({}, BOUND, { ANTHROPIC_API_KEY: 'sk-test' });
+check('a leftover key does not win back the bill', makeRouter(BOTH).claudeVia(), 'binding');
+check('AI_BINDING_OFF is the way back to it, with no deploy',
+  makeRouter(Object.assign({}, BOTH, { AI_BINDING_OFF: '1' })).claudeModel(), 'claude-opus-5');
+check('and with no key to fall back to, the binding off means no Claude at all',
+  makeRouter(Object.assign({}, BOUND, { AI_BINDING_OFF: '1' })).claudeVia(), 'none');
+
+STORE.clear(); B = makeRouter(Object.assign({}, BOUND, { CLAUDE_DISABLED: '1' })); B.resetSpend();
+check('CLAUDE_DISABLED still stops the binding route too',
+  await B.aiGenerate('draft this', { tier: 'voice', surface: 'reply draft' }), 'gemini wrote this');
+
+STORE.clear(); B = makeRouter({ AI: { run: async () => ({}) } }); B.resetSpend();
+check('a binding with no Gemini behind it still drafts',
+  await B.aiGenerate('draft this', { tier: 'voice', surface: 'reply draft' }), 'claude wrote this');
 
 // --- routing ---------------------------------------------------------------
 STORE.clear(); R = makeRouter(KEYED); R.resetSpend();

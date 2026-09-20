@@ -32,6 +32,24 @@ PUBLIC_BASE_URL = "https://texting.mikeysdetailingsnohomish.workers.dev"
 # own Resend account email right away; verify a domain later for a custom From.
 ALERT_EMAIL = "mikeysdetailing4u@gmail.com"
 
+# Claude, with no API key stored anywhere. The binding reaches Anthropic through
+# Cloudflare AI Gateway on Unified Billing: Cloudflare holds the provider
+# credentials on its side and takes the cost out of this account's prepaid
+# credits, so the Worker carries no secret for it at all. A gateway named
+# `default` is created automatically on the first call — nothing to set up by
+# hand, no fields to fill in, no key to rotate.
+#
+# Model is `anthropic/claude-haiku-4.5` ($1/$5 per million, about a fifth of what
+# Opus 5 cost per draft); override with AI_MODEL under Variables, using the
+# catalog's `{author}/{model}` spelling.
+#
+# BACKING OUT (no deploy): add  AI_BINDING_OFF = 1  under Variables. Drafting
+# falls back to ANTHROPIC_API_KEY if one is still set, and to Gemini if not —
+# the same degrade path as every other switch here, so it can never leave him
+# unable to answer a customer.
+[ai]
+binding = "AI"
+
 # Conversation storage. Reuses the MESSAGES namespace already on the account.
 [[kv_namespaces]]
 binding = "MESSAGES"
@@ -69,6 +87,8 @@ crons = ["* * * * *"]
 #   npx wrangler secret put TWILIO_FROM
 #   npx wrangler secret put MIKEY_PHONE
 #   npx wrangler secret put GEMINI_API_KEY   # optional, for the AI features
+#   (ANTHROPIC_API_KEY is NOT needed any more — the [ai] binding above pays for
+#    Claude out of Cloudflare credits. A key left set here is simply unused.)
 #   npx wrangler secret put RESEND_API_KEY   # optional — sends owner alerts as email (with ALERT_EMAIL above) instead of texting yourself
 
 # Dashboard click-to-call rings CALL_BRIDGE_PHONE (defaults to +14252321355 in
