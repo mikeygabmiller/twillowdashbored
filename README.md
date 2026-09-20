@@ -218,8 +218,12 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   runs on Haiku 4.5 through the Worker's `AI` binding (Cloudflare AI Gateway,
   Unified Billing), so there is **no API key anywhere**: Cloudflare holds the
   provider credentials and the cost comes out of the account's prepaid credits.
-  `ANTHROPIC_API_KEY` is still honoured as a fallback route (on Opus 5) if the
-  binding is turned off with `AI_BINDING_OFF`. Everything else (classification,
+  If your credits are on the **Anthropic** side instead, paste a key into
+  **☰ → Settings → Who pays for the AI** and that account pays instead — no
+  Cloudflare dashboard needed at all. A key entered there wins over the binding,
+  and the binding stays behind it as the fallback, so an account that runs out of
+  money fails over to the other one instead of falling back to Gemini.
+  `ANTHROPIC_API_KEY` is still honoured too, behind both. Everything else (classification,
   triage, summaries) stays on Gemini Flash, and drafting falls back to Gemini
   automatically if the call fails, so you never lose the ability to reply.
 - **Click-to-call:** rings your cell, then bridges the call to the customer through
