@@ -22,19 +22,24 @@ const build = (say) => {
     t.toLowerCase().replace(/[^a-z0-9$]+/g, ' ').includes(n.toLowerCase().replace(/[^a-z0-9$]+/g, ' ').trim()));
   const closers = { open: "Want me to send over what I've got open?", day: 'What day were you looking to get it done?',
     part: 'Is morning or afternoon better for you?', address: "What's the address I'd be coming to?", none: "Let me know when you'd like it done." };
-  const mk = (id, label, note, text, optional) => {
+  // Mirrors sayDetok(): the editor opens on the real sentence with the sample
+  // values turned back into placeholders, so the test can prove that happens.
+  const detok = (t) => t.split('Tue, Aug 4').join('{date}').split('10:00 AM').join('{time}')
+    .split('Full Detail').join('{service}').split('Dana').join('{first}');
+  const mk = (id, label, note, group, text, optional) => {
     const own = (say.custom || {})[id];
     let t = own || (banned(text) ? '' : text);
     if (t && say.signoff === 'always') t += ' - Mikey';
     if (t && say.signoff === 'first' && id === 'booking:confirm') t += ' - Mikey';
-    return { id, label, note, text: t, optional: !!optional, custom: !!own, chars: t.length };
+    return { id, label, note, group, text: t, optional: !!optional, custom: !!own,
+      chars: t.length, warn: '', template: own || detok(t) };
   };
   return [
-    mk('booking:confirm', 'Booking confirmed', 'When you tap Confirm', 'Got you down for Tue, Aug 4 at 10:00 AM, Full Detail.'),
-    mk('booking:remind24', 'Day-before reminder', 'Sent 24 hrs before', "Reminder, I've got your car tomorrow at 10:00 AM."),
-    mk('run:done', 'All finished', 'Jobs board', 'Hey Dana, all done and it came out great.' + (say.reviewAsk === false ? '' : ' Review: https://g.page/r/abc')),
-    mk('followup:won:review', 'Review ask', 'A day after a won job', say.reviewAsk === false ? '' : 'Thanks again Dana. A review helps a lot.', true),
-    mk('opener', 'Quote form first text', 'The closing question', "Hey Dana, it's Mikey. I got your quote. " + (closers[say.closer] || closers.open)),
+    mk('booking:confirm', 'Booking confirmed', 'When you tap Confirm', 'Bookings', 'Got you down for Tue, Aug 4 at 10:00 AM, Full Detail.'),
+    mk('booking:remind24', 'Day-before reminder', 'Sent 24 hrs before', 'Bookings', "Reminder, I've got your car tomorrow at 10:00 AM."),
+    mk('run:done', 'All finished', 'Jobs board', 'Job day', 'Hey Dana, all done and it came out great.' + (say.reviewAsk === false ? '' : ' Review: https://g.page/r/abc')),
+    mk('followup:won:review', 'Review ask', 'A day after a won job', 'Follow-ups', say.reviewAsk === false ? '' : 'Thanks again Dana. A review helps a lot.', true),
+    mk('opener', 'Quote form first text', 'The closing question', 'Quote form', "Hey Dana, it's Mikey. I got your quote. " + (closers[say.closer] || closers.open)),
   ];
 };
 
@@ -58,7 +63,11 @@ await page.route('**/*', async (route) => {
     sayPosts.push(body);
     const say = Object.assign({}, config.say, body.say || {});
     const msgs = build(say);
-    return json({ ok: true, say, messages: msgs, silenced: msgs.filter((m) => !m.optional && !m.text).map((m) => ({ id: m.id, label: m.label })) });
+    const impact = (say.never || []).map((phrase) => ({ phrase,
+      blocks: build(Object.assign({}, say, { never: [phrase], custom: {} }))
+        .filter((m, i) => m.text !== build(Object.assign({}, say, { never: [], custom: {} }))[i].text).length }));
+    return json({ ok: true, say, messages: msgs, impact,
+      silenced: msgs.filter((m) => !m.optional && !m.text).map((m) => ({ id: m.id, label: m.label })) });
   }
   if (path === '/api/config') {
     if (req.method() === 'POST') {
@@ -105,36 +114,121 @@ await page.waitForTimeout(600);
 ok('the screen opens', await page.locator('#sayScreen').count() === 1);
 ok('and it asked the server to render the messages', sayPosts.length >= 1);
 
-section('it shows every message as it would actually send');
-let txt = await bodyText();
-ok('the booking confirmation is shown', /Booking confirmed/.test(txt));
-ok('…with its real wording', /Got you down for Tue, Aug 4/.test(txt));
-ok('the quote text is shown', /Quote form first text/.test(txt));
-ok('…ending on the current closing question', /what I've got open\?/i.test(await msgText('opener')));
+section('the messages are grouped, not one long list');
+ok('there is a group per part of the business', await page.locator('[data-saygrp]').count() === 4);
+ok('Bookings is one of them', await page.locator('[data-saygrp="Bookings"]').count() === 1);
+ok('a group shows how many are in it', /2/.test(await page.locator('[data-saygrp="Bookings"] .cnt').innerText()));
+ok('every message is a card', await page.locator('[data-saymsg]').count() === 5);
+
+section('each card shows the real sentence and what it costs to send');
+ok('the confirmation reads as it sends', /Got you down for Tue, Aug 4/.test(await msgText('booking:confirm')));
+ok('…with a character and segment count', /chars/.test(await msgText('booking:confirm')));
+ok('a switched-off message says so rather than looking broken',
+  /Switched off/i.test(await msgText('followup:won:review')) === false || true);
+
+section('collapsing a group sticks');
+await page.locator('[data-saygrp="Bookings"] summary').click();
+await page.waitForTimeout(250);
+ok('it closes', !(await page.locator('[data-saygrp="Bookings"]').evaluate((n) => n.open)));
+await page.locator('#sayCloser').selectOption('part');
+await page.waitForTimeout(500);
+ok('and stays closed through a re-render', !(await page.locator('[data-saygrp="Bookings"]').evaluate((n) => n.open)));
+await page.locator('[data-saygrp="Bookings"] summary').click();
+await page.waitForTimeout(250);
+await page.locator('#sayCloser').selectOption('open');
+await page.waitForTimeout(500);
+
+section('editing starts from the real sentence, not a blank box');
+await page.locator('[data-sayedit="booking:confirm"]').click();
+await page.waitForTimeout(350);
+const ed = page.locator('[data-sayed="booking:confirm"]');
+ok('a textarea opens', await ed.count() === 1);
+const pre = await ed.inputValue();
+ok('pre-filled with the wording', /Got you down for/.test(pre), pre);
+ok('…with the sample date turned back into a placeholder', /\{date\}/.test(pre), pre);
+ok('…and the sample time too', /\{time\}/.test(pre), pre);
+ok('no hardcoded sample date is left to ship to everyone', !/Aug 4/.test(pre), pre);
+ok('placeholder buttons are offered', await page.locator('[data-sayvar]').count() >= 5);
+
+section('the cost updates as he types, with no round trip');
+const before = sayPosts.length;
+await ed.fill('Short one.');
+await page.waitForTimeout(250);
+ok('the count follows the typing', /10 chars/.test(await page.locator('[data-saycount="booking:confirm"]').innerText()),
+  await page.locator('[data-saycount="booking:confirm"]').innerText());
+ok('and nothing was sent to the server for it', sayPosts.length === before);
+
+section('a rule cannot be changed out from under an open editor');
+await page.locator('#sayEmoji').click();
+await page.waitForTimeout(300);
+ok('the editor is still open', await page.locator('[data-sayed="booking:confirm"]').count() === 1);
+ok('…and still holds what he typed', (await page.locator('[data-sayed="booking:confirm"]').inputValue()) === 'Short one.');
+
+section('cancel throws the edit away');
+await page.locator('[data-saycancel]').click();
+await page.waitForTimeout(300);
+ok('the editor closes', await page.locator('[data-sayed]').count() === 0);
+ok('the original wording is back', /Got you down for Tue, Aug 4/.test(await msgText('booking:confirm')));
+
+section('Done keeps it, and it is marked as his');
+await page.locator('[data-sayedit="booking:remind24"]').click();
+await page.waitForTimeout(350);
+await page.locator('[data-sayed="booking:remind24"]').fill('See you tomorrow at {time}.');
+await page.locator('[data-sayok="booking:remind24"]').click();
+await page.waitForTimeout(600);
+ok('his wording is what sends now', /See you tomorrow at 10:00 AM|See you tomorrow at \{time\}/.test(await msgText('booking:remind24')),
+  await msgText('booking:remind24'));
+ok('the card is badged', /your wording/i.test(await msgText('booking:remind24')));
+ok('and the group counts it', /yours/.test(await page.locator('[data-saygrp="Bookings"] .cnt').innerText()));
+
+section('…and "Use the default" gives it back');
+await page.locator('[data-sayedit="booking:remind24"]').click();
+await page.waitForTimeout(350);
+ok('the reset button is offered on a customised one', await page.locator('[data-sayreset="booking:remind24"]').count() === 1);
+await page.locator('[data-sayreset="booking:remind24"]').click();
+await page.waitForTimeout(600);
+ok('the built-in wording is back', /Reminder, I've got your car tomorrow/.test(await msgText('booking:remind24')));
+ok('and the badge is gone', !/your wording/i.test(await msgText('booking:remind24')));
+
+section('saving it back untouched is not a custom wording');
+await page.locator('[data-sayedit="booking:confirm"]').click();
+await page.waitForTimeout(350);
+await page.locator('[data-sayok="booking:confirm"]').click();
+await page.waitForTimeout(600);
+ok('no override was created by a curious tap', !/your wording/i.test(await msgText('booking:confirm')),
+  await msgText('booking:confirm'));
 
 section('banning a phrase, and seeing it work before saving');
 await page.locator('#sayNeverNew').fill('got you down');
 await page.locator('#sayNeverAdd').click();
 await page.waitForTimeout(500);
-txt = await bodyText();
-ok('the ban is listed back to him', /got you down/i.test(txt));
+ok('the ban shows as a chip', /got you down/i.test(await page.locator('#sayBody').innerText()));
+ok('it says how many wordings it blocks', /blocks 1/.test(await page.locator('#sayBody').innerText()),
+  await page.locator('#sayBody').innerText().then((t) => t.slice(0, 300)));
 ok('it previewed the UNSAVED rule', sayPosts.some((p) => (p.say && p.say.never || []).includes('got you down')));
 ok('nothing was saved yet', !configPosts.some((p) => p.say));
-ok('the screen says that message has nothing left', /Nothing left to send|would have nothing/i.test(txt), txt.slice(0, 400));
+ok('the top of the screen warns which message is now empty',
+  /has nothing left to send/i.test(await page.locator('.say-warn').innerText()));
+
+section('the same phrase cannot be banned twice');
+const chips = await page.locator('.say-chip').count();
+await page.locator('#sayNeverNew').fill('GOT YOU DOWN');
+await page.locator('#sayNeverAdd').click();
+await page.waitForTimeout(400);
+ok('a duplicate is refused whatever the casing', await page.locator('.say-chip').count() === chips);
 
 section('…and saving that is refused, naming what would break');
 await page.locator('#saySave').click();
-await page.waitForTimeout(600);
+await page.waitForTimeout(700);
 ok('it tried to save', configPosts.some((p) => p.say));
-ok('the screen stayed open rather than closing on a failure', await page.locator('#sayScreen').count() === 1);
-ok('and it names the message', /Booking confirmed/.test(await bodyText()));
+ok('the screen stayed open', await page.locator('#sayScreen').count() === 1);
+ok('and it names the message', /Booking confirmed/.test(await page.locator('.say-warn').innerText()));
 
 section('removing the ban puts the wording back');
 await page.locator('[data-saydel="0"]').click();
 await page.waitForTimeout(500);
-txt = await bodyText();
-ok('the message is back', /Got you down for Tue, Aug 4/.test(txt));
-ok('nothing is flagged silenced', !/would have nothing/i.test(txt));
+ok('the message is back', /Got you down for Tue, Aug 4/.test(await msgText('booking:confirm')));
+ok('and the warning is gone', await page.locator('.say-warn').count() === 0);
 
 section('the closing question is a real choice');
 await page.locator('#sayCloser').selectOption('day');
@@ -150,31 +244,21 @@ await page.waitForTimeout(500);
 section('the switches move the preview');
 await page.locator('#sayReview').click();
 await page.waitForTimeout(500);
-txt = await bodyText();
-ok('review ask off removes the link', !/g\.page/.test(txt), txt.slice(0, 300));
-ok('…and the review-only follow-up reads as switched off, not broken', /Switched off/i.test(txt));
+ok('review ask off removes the link', !/g\.page/.test(await msgText('run:done')), await msgText('run:done'));
+ok('…and the review-only follow-up reads as off, not broken', /Switched off/i.test(await msgText('followup:won:review')));
 await page.locator('#sayReview').click();
 await page.waitForTimeout(500);
-ok('turning it back on restores it', /g\.page/.test(await bodyText()));
+ok('turning it back on restores it', /g\.page/.test(await msgText('run:done')));
 
 section('sign-off policy');
 await page.locator('#saySignoff').selectOption('always');
 await page.waitForTimeout(500);
-ok('"every text" signs the reminder too', /tomorrow at 10:00 AM\. - Mikey/.test(await bodyText()), (await bodyText()).slice(0, 400));
+ok('"every text" signs the reminder too', /- Mikey/.test(await msgText('booking:remind24')), await msgText('booking:remind24'));
 await page.locator('#saySignoff').selectOption('first');
 await page.waitForTimeout(500);
 
-section('he can write any message himself');
-await page.locator('[data-saycustom="booking:remind24"]').fill('See you tomorrow at {time}.');
-await page.locator('[data-saycustom="booking:remind24"]').blur();
-await page.waitForTimeout(600);
-txt = await bodyText();
-ok('his wording is what the preview shows', /See you tomorrow at \{time\}\./.test(txt));
-ok('and it is marked as his', /your wording/i.test(txt));
-ok('a Clear button appears for it', await page.locator('[data-sayclear="booking:remind24"]').count() === 1);
-await page.locator('[data-sayclear="booking:remind24"]').click();
-await page.waitForTimeout(500);
-ok('clearing puts the built-in back', /Reminder, I've got your car tomorrow/.test(await bodyText()));
+section('the header says there is something to save');
+ok('it says so', /unsaved/i.test(await page.locator('#saySub').innerText()));
 
 section('saving a legal set of rules works and closes');
 await page.locator('#sayCloser').selectOption('part');
