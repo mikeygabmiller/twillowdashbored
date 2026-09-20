@@ -343,6 +343,19 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .out{align-self:flex-end;background:linear-gradient(135deg,var(--accent),var(--accent-dark));color:#fff;border-bottom-right-radius:5px}
   /* group spacing: tighten consecutive same-direction bubbles */
   .bubble + .bubble.same{margin-top:-1px}
+  /* A tapback — the heart somebody stuck on a text. It is drawn on the bubble it
+     belongs to, over the corner nearest the other person, the way a phone draws
+     it. The extra margin above a bubble that carries one is what stops the badge
+     sitting on top of the message before it. */
+  .tapback{position:absolute;top:-11px;display:inline-flex;align-items:center;gap:1px;
+    background:var(--panel3);color:var(--text);border:1.5px solid var(--bg);border-radius:999px;
+    padding:2px 6px;font-size:11.5px;line-height:1.15;white-space:nowrap;
+    box-shadow:0 1px 4px rgba(0,0,0,.35);animation:pop .18s ease;z-index:2}
+  .tapback i{font-style:normal}
+  .tapback .n{font-size:9.5px;font-weight:700;color:var(--muted);margin-left:2px}
+  .bubble.out .tapback{left:-9px}
+  .bubble.in .tapback{right:-9px}
+  .bubble.has-tap,.bubble + .bubble.same.has-tap{margin-top:13px}
   .out.auto{background:linear-gradient(135deg,#7a3346,#5e2433)}
   .out.scheduled{background:linear-gradient(135deg,#7a6320,#5e4c16)}
   .kind{font-size:9px;text-transform:uppercase;letter-spacing:.5px;opacity:.85;margin-left:6px;font-weight:700}
@@ -3365,6 +3378,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   :root[data-layout="deck"] .bubble.same::before{display:none}
   :root[data-layout="deck"] .bubble.same + .bubble{margin-top:0}
   :root[data-layout="deck"] .bubble.in{border-left-color:var(--line)}
+  /* The transcript layouts put a speaker name in the left gutter, so a badge
+     hanging off the left edge would land on top of it. */
+  :root[data-layout="deck"] .bubble .tapback{left:auto;right:12px;top:-10px}
   :root[data-layout="deck"] .bubble.out{
     background:color-mix(in srgb,var(--accent) 7%,transparent);border-left-color:var(--accent);color:var(--text)}
   :root[data-layout="deck"] .bubble.out::before{color:var(--accent-text)}
@@ -3819,6 +3835,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     letter-spacing:-.01em;border-left:2px solid transparent;position:relative;color:var(--text)}
   :root[data-layout="console"] .bubble:hover{background:var(--panel2)}
   :root[data-layout="console"] .bubble.in{border-left-color:var(--line)}
+  :root[data-layout="console"] .bubble .tapback{left:auto;right:12px;top:-10px}
   :root[data-layout="console"] .bubble.out{border-left-color:var(--accent);
     background:color-mix(in srgb,var(--accent) 5%,transparent);color:var(--text)}
   :root[data-layout="console"] .bubble.out.auto{border-left-color:var(--gold);
@@ -8709,6 +8726,88 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Delivery state shown under an outbound bubble (UX-04). Failures offer a resend.
   // Only annotate failures (always) and the most recent outbound bubble (like iMessage),
   // so long threads don't get a "Sent" under every message.
+  // ---- tapbacks -------------------------------------------------------------
+  // A tapback is a sticker somebody stuck on one of his texts, not a message.
+  // SMS has no way to say that, so a double-tap on "See you Saturday at 10"
+  // arrives here as the literal words `Loved "See you Saturday at 10"` — which
+  // used to land in the thread as a fresh inbound bubble quoting him back at
+  // himself, and made a settled conversation look like it had a new question.
+  //
+  // New ones arrive already tagged by the Worker (kind:"reaction" + reactTo).
+  // The parsing is repeated here anyway so every tapback ALREADY in his history
+  // collapses onto its message too — there are months of them, and a fix that
+  // only works going forward would leave the old threads looking wrong forever.
+  //
+  // Anything that can't be matched to a message stays an ordinary bubble. They
+  // pressed something real; showing it plainly beats swallowing it.
+  var TAPBACK_RE=/^(liked|loved|laughed at|emphasi[sz]ed|disliked|questioned)\s+["\u201C\u201D']/i,
+      TAPBACK_ANY_RE=/^reacted\s+(\S{1,12}?)\s+to\s+["\u201C\u201D']/i,
+      TAPBACK_OFF_RE=/^removed\s+(?:an?\s+)?(?:like|love|heart|dislike|laugh|question|exclamation|emphasis)\s+from\s+["\u201C\u201D']/i,
+      TAPBACK_EMOJI={liked:"\uD83D\uDC4D",loved:"\u2764\uFE0F","laughed at":"\uD83D\uDE02",
+        emphasized:"\u203C\uFE0F",emphasised:"\u203C\uFE0F",disliked:"\uD83D\uDC4E",questioned:"\u2753"};
+  // Same normalisation the Worker uses, so both ends agree on what "the same
+  // words" means: lowercase, emoji and punctuation dropped, spaces collapsed.
+  function normTap(s){
+    return String(s||"").toLowerCase()
+      .replace(/[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}\uFE0F\u200D]/gu," ")
+      .replace(/[^a-z0-9?'\s]/g," ").replace(/\s+/g," ").trim();
+  }
+  function parseTapback(body){
+    var raw=String(body||"").trim(),m,at,label,emoji,off=raw.match(TAPBACK_OFF_RE);
+    if(off)return{label:"removed",emoji:"",removed:true,quote:tapQuote(raw.slice(off[0].length))};
+    if((m=raw.match(TAPBACK_RE))){label=m[1].toLowerCase();emoji=TAPBACK_EMOJI[label]||TAPBACK_EMOJI.liked;at=m[0].length}
+    else if((m=raw.match(TAPBACK_ANY_RE))){label="reacted";emoji=m[1];at=m[0].length}
+    else return null;
+    return{label:label,emoji:emoji,removed:false,quote:tapQuote(raw.slice(at))};
+  }
+  // The quoted text runs to the end of the line (it can contain quotes of its
+  // own), and the phone truncates a long one with an ellipsis.
+  function tapQuote(rest){return String(rest||"").replace(/["\u201C\u201D']\s*$/,"").replace(/(\u2026|\.\.\.)$/,"").trim()}
+  // Which earlier message a tapback landed on. Exact wording wins outright, so a
+  // short quote can never steal a longer text that merely starts the same way;
+  // only a quote long enough to be distinctive may match on its opening.
+  function tapbackTarget(before,quote){
+    var want=normTap(quote),i;
+    if(want.length<2)return null;
+    var pool=before.slice(-60).filter(function(m){return m&&!parseTapback(m.body)&&normTap(m.body)});
+    for(i=pool.length-1;i>=0;i--)if(normTap(pool[i].body)===want)return pool[i];
+    if(want.length<16)return null;   // see reactionTarget in the Worker: truncation only
+    for(i=pool.length-1;i>=0;i--)if(normTap(pool[i].body).indexOf(want)===0)return pool[i];
+    return null;
+  }
+  // {on:{messageId:[reaction,...]}, placed:{messageId:1}} — what to draw on each
+  // bubble, and which messages are tapbacks that found a home and so should not
+  // be drawn as bubbles themselves.
+  function tapbackMap(msgs){
+    var list=msgs||[],on={},placed={},byId={},i;
+    for(i=0;i<list.length;i++)if(list[i]&&list[i].id)byId[list[i].id]=list[i];
+    list.forEach(function(m,idx){
+      if(!m)return;
+      var p=parseTapback(m.body);
+      if(!p)return;
+      if(m.kind==="reaction"&&m.emoji)p.emoji=m.emoji;
+      var tid=(m.reactTo&&byId[m.reactTo])?m.reactTo:null;
+      if(!tid){var tgt=tapbackTarget(list.slice(0,idx),p.quote);tid=tgt&&tgt.id?tgt.id:null}
+      if(!tid)return;                       // can't place it — leave it as a bubble
+      if(p.removed){
+        if(!(on[tid]&&on[tid].length))return; // nothing here to take off; show the words
+        on[tid].pop();
+        if(!on[tid].length)delete on[tid];
+      } else {
+        (on[tid]=on[tid]||[]).push({emoji:p.emoji||TAPBACK_EMOJI.liked,label:p.label,ts:m.ts,dir:m.dir});
+      }
+      if(m.id)placed[m.id]=1;
+    });
+    return{on:on,placed:placed};
+  }
+  // "Ruth loved this" — the badge is an emoji, so it needs words for a screen
+  // reader and for the tooltip on a desktop.
+  function tapbackWords(list,t){
+    return (list||[]).map(function(r){
+      var who=r.dir==="out"?"You":displayName(t);
+      return who+" "+(r.label==="reacted"?("reacted "+r.emoji+" to"):r.label)+" this";
+    }).join(", ");
+  }
   function delivHTML(m,isLast){
     if(!m||m.dir!=="out")return"";
     if(m.error||m.status==="failed"||m.status==="undelivered")
@@ -9775,7 +9874,16 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       if(fresh.length>1)firstUnreadId=fresh[0].id||"";   // one new text needs no marker
     }
     if(!t.messages.length){box.innerHTML='<div class="empty" style="height:100%"><div class="big">'+ic("message-circle",48)+'</div><div>No messages yet</div><div class="sub">Say hello — your first text starts the conversation.</div></div>'}
+    // Tapbacks get drawn ON the message they were stuck to, so they never become
+    // bubbles of their own. Worked out once per repaint, before anything is drawn.
+    var taps=tapbackMap(t.messages);
+    // The last bubble actually on screen — not the last message. A tapback that
+    // landed after his text is hidden, and without this his "Delivered" receipt
+    // would vanish with it.
+    var lastShown=-1;
+    t.messages.forEach(function(m,i){if(m&&!taps.placed[m.id])lastShown=i});
     t.messages.forEach(function(m,idx){
+      if(m&&taps.placed[m.id])return;     // it's a badge on another bubble now
       var day=new Date(m.ts).toDateString();
       if(day!==lastDay){lastDay=day;lastDir="";var dv=document.createElement("div");dv.className="day";dv.textContent=new Date(m.ts).toLocaleDateString([],{weekday:"long",month:"short",day:"numeric"});box.appendChild(dv)}
       var b=document.createElement("div");
@@ -9802,7 +9910,15 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         var vpu="/api/media?u="+encodeURIComponent(m.recording);
         voHTML='<div class="msg-vm"><audio controls preload="none" src="'+esc(vpu)+'"></audio>'+(m.transcriptFailed&&!m.transcript?'<span class="vm-fail">'+ic("alert",11)+' Auto-transcript unavailable — tap play to listen</span>':'')+'</div>';
       }
-      b.innerHTML=mediaHTML+voHTML+(shownBody?hlBody(shownBody):"")+'<span class="t">'+fmtTime(m.ts)+(m.kind&&m.kind!=="manual"&&m.dir==="out"?'<span class="kind">'+esc(m.kind)+'</span>':'')+(m.by&&m.dir==="out"?'<span class="by">'+esc(m.by)+'</span>':'')+'</span>'+(m.error?'<span class="err">'+ic("alert",11)+' '+esc(m.error)+'</span>':'')+delivHTML(m,idx===t.messages.length-1);
+      var tapList=(m.id&&taps.on[m.id])||null,tapHTML="";
+      if(tapList&&tapList.length){
+        b.className+=" has-tap";
+        var tapSay=tapbackWords(tapList,t);
+        tapHTML='<span class="tapback" title="'+esc(tapSay)+'" aria-label="'+esc(tapSay)+'">'
+          +tapList.slice(-3).map(function(r){return '<i>'+esc(r.emoji)+'</i>'}).join("")
+          +(tapList.length>3?'<span class="n">+'+(tapList.length-3)+'</span>':'')+'</span>';
+      }
+      b.innerHTML=mediaHTML+voHTML+(shownBody?hlBody(shownBody):"")+'<span class="t">'+fmtTime(m.ts)+(m.kind&&m.kind!=="manual"&&m.dir==="out"?'<span class="kind">'+esc(m.kind)+'</span>':'')+(m.by&&m.dir==="out"?'<span class="by">'+esc(m.by)+'</span>':'')+'</span>'+(m.error?'<span class="err">'+ic("alert",11)+' '+esc(m.error)+'</span>':'')+delivHTML(m,idx===lastShown)+tapHTML;
       box.appendChild(b);lastDir=m.dir;
     });
     Array.prototype.forEach.call(box.querySelectorAll("[data-resend]"),function(btn){
