@@ -757,15 +757,34 @@ function quoteOpener(f, opts) {
   // not the template's: this is the branch that produced "what day were you
   // looking to get it done", the one line he asked never to send again. The
   // old wording is still available, it just isn't the only option any more.
-  return `${hi} ${got}${sawTime} ${quoteCloser(opts, needName)}`;
+  return `${hi} ${got}${sawTime} ${quoteCloser(opts, needName)}`.replace(/\s+$/, '').replace(/[ \t]{2,}/g, ' ');
 }
 
 // The last question of the quote opener, per the "How I talk" closer setting.
 // Each one has to survive the opener's own gate, so: exactly one question mark,
 // and nothing that names a day or promises a time he has not looked at.
+//
+// A banned phrase outranks the setting. The opener is one sentence with no
+// alternative wordings for sayOneOf to filter, so this is the only place the
+// ban can bite on it: pick what he chose, and if his own rules forbid that
+// wording, walk on to the first one they allow. Choosing "what day" and ALSO
+// banning it is a contradiction, and the ban is the stronger statement.
 function quoteCloser(opts, needName) {
+  const cfg = opts && opts.cfg;
+  const want = (opts && opts.closer) || 'open';
+  const order = [want, 'open', 'part', 'address', 'none', 'day'];
+  for (const c of order) {
+    const t = quoteCloserText(c, needName);
+    if (!sayBanned(t, cfg)) return t;
+  }
+  // Every wording banned. Say nothing rather than send a phrase he forbade;
+  // the opener still reads as a complete text without a closing question.
+  return '';
+}
+
+function quoteCloserText(choice, needName) {
   const nm = needName ? "What's your name, and " : '';
-  switch ((opts && opts.closer) || 'open') {
+  switch (choice) {
     // The original. Kept so turning it back on is one tap, not a code change.
     case 'day':
       return `${needName ? "What's your name, and what" : 'What'} day were you looking to get it done?`;
@@ -926,7 +945,7 @@ async function smartQuoteOpener(f, cfg) {
 // empty: the deterministic opener is the floor, everything above it is a bonus.
 async function composeQuoteOpener(raw, cfg) {
   const f = quoteFacts(raw);
-  const plain = quoteOpener(f, { ask: !!(cfg && cfg.quoteOpenerAsk === true), closer: sayRules(cfg).closer });
+  const plain = quoteOpener(f, { ask: !!(cfg && cfg.quoteOpenerAsk === true), closer: sayRules(cfg).closer, cfg });
   if (!cfg || cfg.smartQuoteOpener !== true || !aiConfigured()) return plain;
   try {
     // The website is waiting on this response, so the draft races a clock it
@@ -11098,6 +11117,49 @@ const SAY_SAMPLE = {
   date: 'Tue, Aug 4', time: '10:00 AM', service: 'Full Detail',
 };
 
+// The rendered message with the sample values turned back into placeholders.
+//
+// This is what the editor starts from, and it is the difference between "write
+// your own wording" being a blank box and being the real sentence with one word
+// to change. Without it, editing the confirmation means either retyping it from
+// scratch or copying the preview and shipping "Tue, Aug 4" to every customer
+// forever, which is the trap a pre-filled box would otherwise set.
+//
+// Longest first: "Dana Reed" has to become {name} before "Dana" can become
+// {first}, or the surname is left stranded.
+function sayDetok(text) {
+  const S = SAY_SAMPLE;
+  const pairs = [
+    [S.name, '{name}'], [S.vehicle, '{car}'], [S.service, '{service}'],
+    [S.date, '{date}'], [S.time, '{time}'],
+    [String(S.name).split(' ')[0], '{first}'],
+  ];
+  let out = String(text || '');
+  for (const [from, to] of pairs) {
+    if (!from) continue;
+    out = out.split(from).join(to);
+  }
+  return out;
+}
+
+// How much work each ban is doing: the number of wordings it currently throws
+// out. A rule that blocks nothing is usually a typo, and one that blocks more
+// than he expected is worth seeing before it bites.
+function sayBanImpact(cfg) {
+  const rules = sayRules(cfg);
+  return rules.never.map((phrase) => {
+    // Count against the rules with ONLY this phrase active, so two overlapping
+    // bans don't each report zero by hiding behind the other.
+    const solo = Object.assign({}, cfg, { say: Object.assign({}, rules, { never: [phrase], custom: {} }) });
+    const withAll = Object.assign({}, cfg, { say: Object.assign({}, rules, { never: [], custom: {} }) });
+    let blocks = 0;
+    const open = sayPreview(withAll);
+    const shut = sayPreview(solo);
+    for (let i = 0; i < open.length; i++) if (open[i].text !== shut[i].text) blocks++;
+    return { phrase, blocks };
+  });
+}
+
 function sayPreview(cfg) {
   const p = SAY_SAMPLE.phone;
   const bk = { phone: p, name: SAY_SAMPLE.name, slot: '10:00', dateLabel: SAY_SAMPLE.date,
@@ -11109,36 +11171,49 @@ function sayPreview(cfg) {
   // A preview must never be the reason a live number gets texted, and none of
   // these builders send — they only return strings. Kept as one list so the UI,
   // the validator and the tests all walk exactly the same set.
+  // group: how the editor stacks them. Twenty messages in one flat list is a
+  // list nobody scrolls to the bottom of.
   const out = [
-    ['booking:confirm', 'Booking confirmed', 'When you tap Confirm', () => bkMessage('confirm', bk, cfg)],
-    ['booking:remind24', 'Day-before reminder', 'Sent 24 hrs before', () => bkMessage('remind24', bk, cfg)],
-    ['booking:remindAm', 'Morning-of reminder', 'Sent 7:30 AM on the day', () => bkMessage('remindAm', bk, cfg)],
-    ['booking:cancelled', 'You cancelled a job', 'Courtesy note', () => bkMessage('cancelled', bk, cfg)],
-    ['booking:declined', 'You declined a request', 'Off by default', () => bkMessage('declined', bk, cfg)],
-    ['run:enroute', 'On my way', 'Jobs board, with live tracking', () => dayJobText('enroute', job, { etaMin: 20 }, { url: 'https://mkd.co/t/9f2' }, cfg)],
-    ['run:onsite', "I'm here", 'Jobs board', () => dayJobText('onsite', job, {}, null, cfg)],
-    ['run:done', 'All finished', 'Jobs board, carries the review ask', () => dayJobText('done', job, {}, null, cfg)],
-    ['followup:owed', 'You owe a reply', 'Never auto-sends', () => followupTemplate(thread, { stage: 'owed', step: 0, stepKey: 'owed' }, cfg)],
-    ['followup:nudge:1', 'First chase', '+1 day', () => followupTemplate(thread, { stage: 'nudge', step: 1, stepKey: 'nudge:1' }, cfg)],
-    ['followup:nudge:2', 'Second chase', '+3 days', () => followupTemplate(thread, { stage: 'nudge', step: 2, stepKey: 'nudge:2' }, cfg)],
-    ['followup:nudge:3', 'Last soft touch', '+7 days', () => followupTemplate(thread, { stage: 'nudge', step: 3, stepKey: 'nudge:3' }, cfg)],
-    ['followup:won:review', 'Review ask', 'A day after a won job', () => followupTemplate(thread, { stage: 'won', step: 1, stepKey: 'won:review' }, cfg), true],
-    ['followup:won:rebook', 'Time to rebook', 'After your rebook window', () => followupTemplate(thread, { stage: 'won', step: 2, stepKey: 'won:rebook' }, cfg)],
-    ['followup:lost:revival', 'Revive a lost lead', '+30 days', () => followupTemplate(thread, { stage: 'lost', step: 1, stepKey: 'lost:revival' }, cfg)],
-    ['cold:quote', 'Quote nobody answered', 'Money on the table', () => coldDraft('quote', row, cfg)],
-    ['cold:rebook', 'Customer gone quiet', 'Money on the table', () => coldDraft('rebook', row, cfg)],
-    ['cold:never', 'Asked but never booked', 'Money on the table', () => coldDraft('never', row, cfg)],
-    ['plan', 'Maintenance plan due', 'From the plans board', () => sayFinish(planDraft(row, cfg), cfg, 'first')],
+    ['booking:confirm', 'Booking confirmed', 'When you tap Confirm', () => bkMessage('confirm', bk, cfg), 0, 'Bookings'],
+    ['booking:remind24', 'Day-before reminder', 'Sent 24 hrs before', () => bkMessage('remind24', bk, cfg), 0, 'Bookings'],
+    ['booking:remindAm', 'Morning-of reminder', 'Sent 7:30 AM on the day', () => bkMessage('remindAm', bk, cfg), 0, 'Bookings'],
+    ['booking:cancelled', 'You cancelled a job', 'Courtesy note', () => bkMessage('cancelled', bk, cfg), 0, 'Bookings'],
+    ['booking:declined', 'You declined a request', 'Off by default', () => bkMessage('declined', bk, cfg), 0, 'Bookings'],
+    ['run:enroute', 'On my way', 'Jobs board, with live tracking', () => dayJobText('enroute', job, { etaMin: 20 }, { url: 'https://mkd.co/t/9f2' }, cfg), 0, 'Job day'],
+    ['run:onsite', "I'm here", 'Jobs board', () => dayJobText('onsite', job, {}, null, cfg), 0, 'Job day'],
+    ['run:done', 'All finished', 'Jobs board, carries the review ask', () => dayJobText('done', job, {}, null, cfg), 0, 'Job day'],
+    ['followup:owed', 'You owe a reply', 'Never auto-sends', () => followupTemplate(thread, { stage: 'owed', step: 0, stepKey: 'owed' }, cfg), 0, 'Follow-ups'],
+    ['followup:nudge:1', 'First chase', '+1 day', () => followupTemplate(thread, { stage: 'nudge', step: 1, stepKey: 'nudge:1' }, cfg), 0, 'Follow-ups'],
+    ['followup:nudge:2', 'Second chase', '+3 days', () => followupTemplate(thread, { stage: 'nudge', step: 2, stepKey: 'nudge:2' }, cfg), 0, 'Follow-ups'],
+    ['followup:nudge:3', 'Last soft touch', '+7 days', () => followupTemplate(thread, { stage: 'nudge', step: 3, stepKey: 'nudge:3' }, cfg), 0, 'Follow-ups'],
+    ['followup:won:review', 'Review ask', 'A day after a won job', () => followupTemplate(thread, { stage: 'won', step: 1, stepKey: 'won:review' }, cfg), true, 'Follow-ups'],
+    ['followup:won:rebook', 'Time to rebook', 'After your rebook window', () => followupTemplate(thread, { stage: 'won', step: 2, stepKey: 'won:rebook' }, cfg), 0, 'Follow-ups'],
+    ['followup:lost:revival', 'Revive a lost lead', '+30 days', () => followupTemplate(thread, { stage: 'lost', step: 1, stepKey: 'lost:revival' }, cfg), 0, 'Follow-ups'],
+    ['cold:quote', 'Quote nobody answered', 'Money on the table', () => coldDraft('quote', row, cfg), 0, 'Winning work back'],
+    ['cold:rebook', 'Customer gone quiet', 'Money on the table', () => coldDraft('rebook', row, cfg), 0, 'Winning work back'],
+    ['cold:never', 'Asked but never booked', 'Money on the table', () => coldDraft('never', row, cfg), 0, 'Winning work back'],
+    ['plan', 'Maintenance plan due', 'From the plans board', () => sayFinish(planDraft(row, cfg), cfg, 'first'), 0, 'Winning work back'],
     ['opener', 'Quote form first text', 'The closing question below', () => sayFinish(quoteOpener(
       { name: SAY_SAMPLE.name, vehicle: SAY_SAMPLE.vehicle, vehicleFull: true, vehicleBox: true,
         services: SAY_SAMPLE.service, total: '299', notes: '', appointment: '', location: '', condition: '' },
-      { ask: !!(cfg && cfg.quoteOpenerAsk === true), closer: sayRules(cfg).closer }), cfg, 'first')],
+      { ask: !!(cfg && cfg.quoteOpenerAsk === true), closer: sayRules(cfg).closer, cfg }), cfg, 'first'), 0, 'Quote form'],
   ];
-  return out.map(([id, label, note, build, optional]) => {
+  return out.map(([id, label, note, build, optional, group]) => {
     let text = '';
     try { text = String(build() || ''); } catch { text = ''; }
-    return { id, label, note, text, optional: !!optional,
-      custom: !!sayCustom(cfg, id), chars: text.length };
+    const own = sayCustom(cfg, id);
+    return {
+      id, label, note, text, group: group || 'Other', optional: !!optional,
+      custom: !!own, chars: text.length,
+      // A banned phrase that made it through anyway — only reachable through a
+      // wording he typed himself, since every generated one is filtered. Shown
+      // rather than silently stripped: it is his text, so it is his call.
+      warn: text ? sayBanned(text, cfg) : '',
+      // What the editor opens with. His own wording when he has one, otherwise
+      // the real sentence with the sample values turned back into {placeholders}
+      // so editing is a tweak rather than a retype.
+      template: own || sayDetok(text),
+    };
   });
 }
 
@@ -11187,7 +11262,8 @@ async function apiSayPreview(request) {
   const body = await readJson(request).catch(() => ({}));
   const cfg = Object.assign({}, await loadConfig());
   if (body && body.say && typeof body.say === 'object') cfg.say = sanitizeSay(body.say, cfg.say);
-  return json({ ok: true, say: sayRules(cfg), messages: sayPreview(cfg), silenced: sayWouldSilence(cfg) });
+  return json({ ok: true, say: sayRules(cfg), messages: sayPreview(cfg),
+    silenced: sayWouldSilence(cfg), impact: sayBanImpact(cfg) });
 }
 
 // ===========================================================================

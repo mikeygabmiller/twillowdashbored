@@ -1691,6 +1691,53 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .tai-hd .t{font-weight:800;font-size:17px;flex:1;line-height:1.2}
   .tai-hd .t small{display:block;font-weight:500;font-size:12px;color:var(--muted2);margin-top:2px}
   .tai-body{flex:1;overflow-y:auto;padding:16px 15px calc(24px + var(--safe-bottom))}
+  /* --- "How I talk": the message editor -------------------------------- */
+  /* A card per message, a group per part of the business. The read view and
+     the edit view live in the same card so tapping Edit changes the card in
+     place rather than opening anything. */
+  .say-grp{border:1px solid var(--line);border-radius:14px;margin:0 0 10px;overflow:hidden;background:var(--panel)}
+  .say-grp>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:9px;padding:13px 14px;font-weight:700;font-size:14px}
+  .say-grp>summary::-webkit-details-marker{display:none}
+  .say-grp>summary .cnt{margin-left:auto;font-weight:500;font-size:12px;color:var(--muted2)}
+  .say-grp>summary .chev{transition:transform .15s ease;color:var(--muted2);display:flex}
+  .say-grp[open]>summary .chev{transform:rotate(90deg)}
+  .say-grp[open]>summary{border-bottom:1px solid var(--line)}
+  .say-card{padding:12px 14px;border-top:1px solid var(--line)}
+  .say-card:first-of-type{border-top:0}
+  .say-card.on{background:var(--bg)}
+  .say-hd{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap;margin-bottom:7px}
+  .say-hd .nm{font-weight:650;font-size:13.5px}
+  .say-hd .nt{font-size:11.5px;color:var(--muted2)}
+  .say-tag{font-size:10.5px;font-weight:700;letter-spacing:.02em;text-transform:uppercase;padding:2px 6px;border-radius:5px;background:var(--accent);color:#fff}
+  .say-tag.warn{background:var(--bad,#ff4d4f)}
+  .say-tag.off{background:var(--line);color:var(--muted2)}
+  /* The sentence exactly as it sends. Quoted, so it reads as a message rather
+     than as UI copy. */
+  .say-txt{font-size:13.5px;line-height:1.5;white-space:pre-wrap;border-left:2px solid var(--line);padding:1px 0 1px 10px;color:var(--fg)}
+  .say-txt.empty{color:var(--muted2);font-style:italic;border-left-color:var(--bad,#ff4d4f)}
+  .say-foot{display:flex;align-items:center;gap:8px;margin-top:8px;flex-wrap:wrap}
+  .say-meta{font-size:11.5px;color:var(--muted2);margin-right:auto}
+  .say-meta b{color:var(--fg);font-weight:650}
+  .say-meta.hot b{color:var(--bad,#ff4d4f)}
+  .say-mini{font-size:12px;font-weight:650;padding:5px 11px;border-radius:9px;border:1px solid var(--line);background:var(--panel);color:var(--fg);cursor:pointer}
+  .say-mini:active{transform:scale(.97)}
+  .say-mini.pri{background:var(--accent);border-color:var(--accent);color:#fff}
+  .say-ed{width:100%;min-height:84px;overflow:hidden;resize:none;font:inherit;font-size:13.5px;line-height:1.5;padding:10px 11px;border-radius:10px;border:1px solid var(--accent);background:var(--bg);color:var(--fg)}
+  /* Tap to drop a placeholder in at the cursor. Faster than remembering the
+     brace names, and it is the difference between editing and retyping. */
+  .say-vars{display:flex;gap:5px;flex-wrap:wrap;margin:7px 0}
+  .say-var{font-size:11.5px;font-family:ui-monospace,Menlo,monospace;padding:3px 8px;border-radius:7px;border:1px solid var(--line);background:var(--panel);color:var(--muted2);cursor:pointer}
+  .say-var:active{background:var(--accent);color:#fff}
+  .say-chip{display:inline-flex;align-items:center;gap:7px;background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 8px 6px 12px;font-size:13px;margin:0 6px 6px 0}
+  .say-chip .x{border:0;background:var(--line);color:var(--fg);width:19px;height:19px;border-radius:50%;font-size:13px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center}
+  .say-chip .n{font-size:11px;color:var(--muted2)}
+  .say-warn{border:1px solid var(--bad,#ff4d4f);border-radius:12px;padding:11px 13px;margin:0 0 12px;font-size:13px;line-height:1.5;background:color-mix(in srgb,var(--bad,#ff4d4f) 8%,transparent)}
+  .say-sec{font-weight:800;font-size:12px;letter-spacing:.04em;text-transform:uppercase;color:var(--muted2);margin:22px 0 8px;flex:none}
+  .say-sec:first-child{margin-top:0}
+  /* The borrowed .fu-settings rules make the scroller a flex column, so the
+     cards need to keep their own height rather than being stretched. */
+  #sayBody>.say-grp,#sayBody>.hint,#sayBody>.say-warn,#sayBody>div{flex:none}
+  .say-dirty{font-size:11.5px;font-weight:700;color:var(--accent)}
   /* headline score */
   .tai-score{display:flex;align-items:center;gap:15px;background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px 17px}
   .tai-dial{width:74px;height:74px;flex:none;position:relative}
@@ -8953,7 +9000,30 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   //
   // It previews UNSAVED rules (POST /api/say with the draft in the body), so he
   // watches the wording change as he flips a switch and only then hits Save.
-  var SAY={draft:null,msgs:[],dirty:false,busy:false};
+  // =========================================================================
+  // "How I talk" — the screen where he decides what his texts may say
+  // =========================================================================
+  // Three layers: ban a phrase, pick from a handful of either/ors, or write the
+  // message yourself. Beside all of it, every automatic text rendered exactly
+  // as it would send.
+  //
+  // Two rules shape the whole screen, both learned from the first version:
+  //
+  //   Never re-render while he is typing. Every rule change is a round trip
+  //   (the Worker owns the wording, not the browser), and a re-render under a
+  //   focused textarea throws the caret to the end mid-sentence. So the card
+  //   being edited is left alone until he saves or cancels it, and rule
+  //   changes are blocked while an editor is open.
+  //
+  //   Editing starts from the real sentence, not a blank box. The server hands
+  //   back `template`: the message as it sends, with the sample values turned
+  //   back into {placeholders}. Changing one word is changing one word.
+  var SAY={draft:null,msgs:[],impact:[],silenced:[],dirty:false,busy:false,
+           // editing: which message is open. editBuf: what is in its box right
+           // now. The buffer exists so a re-render for ANY reason re-creates
+           // the textarea holding what he actually typed, rather than resetting
+           // it to the stored wording and eating a half-written sentence.
+           editing:null,editBuf:null,shut:{}};
 
   function openHowITalk(){
     closeMore();
@@ -8961,113 +9031,183 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     w.className="tai"; w.id="sayScreen";
     w.innerHTML=
       '<div class="tai-hd">'+
-        '<div class="t">How I talk<small id="saySub">what your automatic texts are allowed to say</small></div>'+
+        '<div class="t">How I talk<small id="saySub">loading…</small></div>'+
         '<span style="display:flex;gap:6px"><button class="btn" id="saySave">Save</button><button class="btn" id="sayClose">Done</button></span>'+
       '</div>'+
-      '<div class="tai-body" id="sayBody"><div class="spin" style="margin:50px auto"></div></div>';
+      // fu-settings carries the row / label / hint / input styling the rest of
+      // the settings use. Borrowed rather than restated so this screen cannot
+      // drift away from how every other setting in the app looks.
+      '<div class="tai-body fu-settings" id="sayBody"><div class="spin" style="margin:50px auto"></div></div>';
     document.body.appendChild(w);
-    el("sayClose").onclick=closeHowITalk;
+    el("sayClose").onclick=sayTryClose;
     el("saySave").onclick=sayDoSave;
-    navOpen("howitalk",closeHowITalk);
-    SAY.draft=null;SAY.dirty=false;
+    navOpen("howitalk",sayTryClose);
+    SAY.draft=null;SAY.dirty=false;SAY.editing=null;SAY.shut={};
     sayReload();
   }
   function closeHowITalk(){
     navDrop("howitalk");
     var w=el("sayScreen"); if(w)w.remove();
   }
+  // Leaving with unsaved rules loses them, so say so once rather than silently.
+  function sayTryClose(){
+    if(SAY.dirty&&!confirm("You have unsaved changes. Close without saving?"))return;
+    closeHowITalk();
+  }
 
-  // One round trip: hand the server the draft rules, get back the rules it
-  // accepted plus every message as it would actually send.
+  // One round trip: hand the server the draft rules, get back every message as
+  // it would really send. The Worker builds them with the same functions that
+  // send them, so the preview cannot drift from the thing it previews.
   function sayReload(){
     if(SAY.busy)return;
     SAY.busy=true;
     post("/api/say",SAY.draft?{say:SAY.draft}:{}).then(function(d){
       SAY.busy=false;
-      if(!d||!d.ok){var b=el("sayBody");if(b)b.innerHTML='<div class="hint">Could not load. Pull down to retry.</div>';return}
-      SAY.draft=d.say;SAY.msgs=d.messages||[];SAY.silenced=d.silenced||[];
+      if(!d||!d.ok){var b=el("sayBody");if(b)b.innerHTML='<div class="hint">Could not load that. Close and try again.</div>';return}
+      SAY.draft=d.say;SAY.msgs=d.messages||[];SAY.silenced=d.silenced||[];SAY.impact=d.impact||[];
       sayRender();
     }).catch(function(){SAY.busy=false});
   }
-  // Change one rule and re-render from the server, so what he reads is always
-  // the Worker's own output rather than the browser's guess at it.
+  // Change a rule. Refused while a message is open for editing: re-rendering
+  // underneath a textarea would throw away what he is in the middle of typing.
   function sayPatch(k,v){
+    if(SAY.editing){toast("Finish editing that message first");sayKeepBuf();sayRender();return}
     SAY.draft=SAY.draft||{};SAY.draft[k]=v;SAY.dirty=true;sayReload();
+  }
+  // A pure UI change (open a group, start or stop editing). No server needed —
+  // re-render straight from what is already in hand.
+  function sayLocal(fn){ if(fn)fn(); sayRender(); }
+  // Read the open textarea back into the buffer before anything re-renders.
+  function sayKeepBuf(){
+    var b=el("sayBody"); if(!b||!SAY.editing)return;
+    var ta=b.querySelector("[data-sayed]");
+    if(ta)SAY.editBuf=ta.value;
   }
 
   function sayRender(){
     var b=el("sayBody"); if(!b)return;
     var r=SAY.draft||{},H=[];
-    var sub=el("saySub"); if(sub)sub.textContent=SAY.dirty?"unsaved changes":"what your automatic texts are allowed to say";
+    var keep=b.scrollTop;
+    var sub=el("saySub");
+    if(sub)sub.textContent=SAY.dirty?"unsaved changes — tap Save":"what your automatic texts are allowed to say";
+    var sv=el("saySave"); if(sv)sv.style.opacity=SAY.dirty?"1":".55";
 
-    // ---- 1. never say this -------------------------------------------------
-    H.push('<div class="fu-col"><span class="lbl2">Never say this</span>'+
-      '<span style="display:flex;gap:6px"><input type="text" id="sayNeverNew" placeholder="e.g. what day are you thinking" style="flex:1">'+
+    if((SAY.silenced||[]).length){
+      H.push('<div class="say-warn"><b>'+SAY.silenced.map(function(m){return esc(m.label)}).join(", ")+'</b> '+
+        (SAY.silenced.length===1?"has":"have")+' nothing left to send. Your bans rule out every wording. '+
+        'Remove a ban, or scroll down and write that one yourself.</div>');
+    }
+
+    // ---- 1 · never say this ------------------------------------------------
+    H.push('<div class="say-sec">Never say this</div>');
+    H.push('<div class="fu-col" style="gap:6px"><span style="display:flex;gap:6px">'+
+      '<input type="text" id="sayNeverNew" placeholder="e.g. what day are you thinking" style="flex:1" autocapitalize="none">'+
       '<button id="sayNeverAdd" class="btn" style="white-space:nowrap">Add</button></span></div>');
-    var never=(r.never||[]);
-    H.push('<div id="sayNeverList">'+(never.length?never.map(function(x,i){
-      return '<div class="fu-row"><span class="lbl2" style="font-weight:400">&ldquo;'+esc(x)+'&rdquo;</span>'+
-        '<button class="btn" data-saydel="'+i+'" style="padding:4px 10px">Remove</button></div>';
-    }).join(""):'<div class="hint" style="margin-top:0">Nothing banned yet.</div>')+'</div>');
-    H.push('<div class="hint">Any wording containing one of these is thrown out, in <b>every</b> automatic text and in anything the AI writes for you. Matched loosely, so &ldquo;what day are you thinking&rdquo; also catches &ldquo;What day were you thinking?&rdquo;. If banning something would leave a message with nothing left to say, saving is refused and it tells you which one.</div>');
+    var never=(r.never||[]),imp={};
+    (SAY.impact||[]).forEach(function(x){imp[x.phrase]=x.blocks});
+    if(never.length){
+      H.push('<div style="margin:9px 0 2px">'+never.map(function(x,i){
+        var n=imp[x];
+        return '<span class="say-chip">'+esc(x)+
+          (n?'<span class="n">blocks '+n+'</span>':'')+
+          '<button class="x" data-saydel="'+i+'" aria-label="Remove">×</button></span>';
+      }).join("")+'</div>');
+    }
+    H.push('<div class="hint">Thrown out of <b>every</b> automatic text and anything the AI writes. Matched loosely, so &ldquo;what day are you thinking&rdquo; also catches &ldquo;What day were you thinking?&rdquo;. If a ban would leave a message with nothing to say, saving is refused and it tells you which one.</div>');
 
-    // ---- 2. the choices ----------------------------------------------------
+    // ---- 2 · the choices ---------------------------------------------------
+    H.push('<div class="say-sec">The basics</div>');
     var so=r.signoff||"first";
     H.push('<div class="fu-row"><span class="lbl2">Sign off &ldquo;- Mikey&rdquo;</span>'+
       '<select id="saySignoff">'+
-        '<option value="first"'+(so==="first"?" selected":"")+'>Only when they may not have my number</option>'+
+        '<option value="first"'+(so==="first"?" selected":"")+'>When they may not have my number</option>'+
         '<option value="always"'+(so==="always"?" selected":"")+'>On every text</option>'+
         '<option value="never"'+(so==="never"?" selected":"")+'>Never</option>'+
       '</select></div>');
-    H.push('<div class="hint">Signing <i>every</i> text is one of the clearest tells that a machine sent it. The middle option signs a confirmation or a first reach-out and leaves a reminder unsigned, which is how a person actually texts.</div>');
+    H.push('<div class="hint">Signing <i>every</i> text is one of the clearest tells a machine sent it. The first option signs a confirmation and leaves a reminder unsigned, which is how a person texts.</div>');
 
     var cl=r.closer||"open";
     H.push('<div class="fu-row"><span class="lbl2">The quote text ends by asking</span>'+
       '<select id="sayCloser">'+
-        '<option value="open"'+(cl==="open"?" selected":"")+'>Want me to send over what I\'ve got open?</option>'+
+        '<option value="open"'+(cl==="open"?" selected":"")+'>Want me to send over what I&rsquo;ve got open?</option>'+
         '<option value="day"'+(cl==="day"?" selected":"")+'>What day were you looking to get it done?</option>'+
         '<option value="part"'+(cl==="part"?" selected":"")+'>Is morning or afternoon better for you?</option>'+
         '<option value="address"'+(cl==="address"?" selected":"")+'>What&rsquo;s the address I&rsquo;d be coming to?</option>'+
-        '<option value="none"'+(cl==="none"?" selected":"")+'>Nothing &mdash; don&rsquo;t ask a question</option>'+
+        '<option value="none"'+(cl==="none"?" selected":"")+'>Nothing, don&rsquo;t ask a question</option>'+
       '</select></div>');
-    H.push('<div class="hint">Only applies when they gave you the car but said nothing about timing. If they already named a day, or sent an address, the text asks about the thing that\'s actually missing instead.</div>');
+    H.push('<div class="hint">Only used when they gave you the car but said nothing about timing. If they named a day or sent an address, the text asks about whatever is actually missing instead. A phrase you have banned beats this setting.</div>');
 
     H.push('<div class="fu-row"><span class="lbl2">Ask for a Google review <span style="color:var(--muted2);font-weight:400">· after a finished job</span></span><span class="sw'+(r.reviewAsk!==false?" on":"")+'" id="sayReview"></span></div>');
     H.push('<div class="fu-row"><span class="lbl2">Spell out that I need water &amp; power</span><span class="sw'+(r.waterPower!==false?" on":"")+'" id="sayWp"></span></div>');
-    H.push('<div class="fu-row"><span class="lbl2">Allow emoji <span style="color:var(--muted2);font-weight:400">· also doubles what a text costs</span></span><span class="sw'+(r.emoji===true?" on":"")+'" id="sayEmoji"></span></div>');
-    H.push('<div class="hint">One emoji flips a message out of the plain-text format carriers charge least for: the limit drops from 160 characters to 70, so a normal-length text bills as two or three instead of one.</div>');
+    H.push('<div class="fu-row"><span class="lbl2">Allow emoji <span style="color:var(--muted2);font-weight:400">· costs more per text</span></span><span class="sw'+(r.emoji===true?" on":"")+'" id="sayEmoji"></span></div>');
+    H.push('<div class="hint">One emoji drops the limit from 160 characters to 70, so a normal text bills as two or three instead of one.</div>');
 
-    // ---- 3. every message, as it would send --------------------------------
-    if((SAY.silenced||[]).length){
-      H.push('<div class="fu-col"><span class="lbl2" style="color:var(--bad,#ff4d4f)">These would have nothing to send</span>'+
-        '<div class="hint" style="margin:0">'+SAY.silenced.map(function(m){return "<b>"+esc(m.label)+"</b>"}).join(", ")+
-        ' &mdash; your bans rule out every wording. Remove a ban, or write your own below.</div></div>');
-    }
-    H.push('<div class="fu-col"><span class="lbl2">Every text, exactly as it would send</span></div>');
-    H.push('<div class="hint" style="margin-top:0">Tap any one to write it yourself. Your own wording replaces all of them. <b>{first} {name} {date} {time} {service} {car}</b> get filled in.</div>');
-    (SAY.msgs||[]).forEach(function(m){
-      var own=(r.custom||{})[m.id]||"";
-      // data-saymsg makes one message's block addressable on its own, which is
-      // what lets a test read the rendered wording without the option labels of
-      // the dropdowns above bleeding into the same innerText.
-      H.push('<div class="fu-col" style="gap:4px" data-saymsg="'+esc(m.id)+'">'+
-        '<span class="lbl2">'+esc(m.label)+
-          '<span style="color:var(--muted2);font-weight:400"> · '+esc(m.note)+'</span>'+
-          (own?'<span style="color:var(--accent);font-weight:400"> · your wording</span>':'')+'</span>'+
-        '<div class="hint" style="margin:0;white-space:pre-wrap">'+
-          (m.text?esc(m.text):'<i>'+(m.optional?"Switched off, nothing sent.":"Nothing left to send.")+'</i>')+
-          (m.text?'<span style="color:var(--muted2)"> · '+m.chars+' chars</span>':'')+'</div>'+
-        '<span style="display:flex;gap:6px"><input type="text" data-saycustom="'+esc(m.id)+'" value="'+esc(own)+'" placeholder="write your own…" style="flex:1">'+
-          (own?'<button class="btn" data-sayclear="'+esc(m.id)+'" style="padding:4px 10px">Clear</button>':'')+'</span>'+
-      '</div>');
+    // ---- 3 · every message -------------------------------------------------
+    H.push('<div class="say-sec">Every text, as it sends</div>');
+    H.push('<div class="hint" style="margin-top:0">Tap <b>Edit</b> on any of them to write it yourself. You start from the real sentence, so changing one word is changing one word.</div>');
+
+    var groups=[],seen={};
+    (SAY.msgs||[]).forEach(function(m){ if(!seen[m.group]){seen[m.group]=[];groups.push(m.group)} seen[m.group].push(m) });
+    groups.forEach(function(g){
+      var list=seen[g],mine=list.filter(function(m){return m.custom}).length;
+      var open=!SAY.shut[g];
+      H.push('<details class="say-grp"'+(open?" open":"")+' data-saygrp="'+esc(g)+'">'+
+        '<summary><span class="chev">'+ic("chevron-right",15)+'</span>'+esc(g)+
+        '<span class="cnt">'+list.length+(mine?" · "+mine+" yours":"")+'</span></summary>'+
+        list.map(sayCard).join("")+'</details>');
     });
 
     b.innerHTML=H.join("");
+    b.scrollTop=keep;
+    sayWire(b,r);
+    // Put him back in the box he was typing in, at the end of what he typed.
+    if(SAY.editing){
+      var back=b.querySelector("[data-sayed]");
+      if(back){sayGrow(back);back.focus();back.setSelectionRange(back.value.length,back.value.length);
+        sayCountNow(SAY.editing)}
+    }
+  }
 
-    // ---- wiring ------------------------------------------------------------
+  // One message. Reading view, or the editor when this is the one he opened.
+  function sayCard(m){
+    var editing=SAY.editing===m.id;
+    var h='<div class="say-card'+(editing?" on":"")+'" data-saymsg="'+esc(m.id)+'">';
+    h+='<div class="say-hd"><span class="nm">'+esc(m.label)+'</span><span class="nt">'+esc(m.note)+'</span>'+
+      (m.custom?'<span class="say-tag">your wording</span>':'')+
+      (m.warn?'<span class="say-tag warn">says &ldquo;'+esc(m.warn)+'&rdquo;</span>':'')+
+      (!m.text&&m.optional?'<span class="say-tag off">off</span>':'')+
+      '</div>';
+    if(editing){
+      var val=(SAY.editBuf!=null)?SAY.editBuf:(m.template||"");
+      h+='<textarea class="say-ed" data-sayed="'+esc(m.id)+'" spellcheck="true">'+esc(val)+'</textarea>';
+      h+='<div class="say-vars">'+["{first}","{name}","{date}","{time}","{service}","{car}"].map(function(v){
+        return '<span class="say-var" data-sayvar="'+v+'">'+v+'</span>'}).join("")+'</div>';
+      h+='<div class="say-foot"><span class="say-meta" data-saycount="'+esc(m.id)+'"></span>'+
+        (m.custom?'<button class="say-mini" data-sayreset="'+esc(m.id)+'">Use the default</button>':'')+
+        '<button class="say-mini" data-saycancel="1">Cancel</button>'+
+        '<button class="say-mini pri" data-sayok="'+esc(m.id)+'">Done</button></div>';
+    }else{
+      h+='<div class="say-txt'+(m.text?"":" empty")+'">'+
+        (m.text?esc(m.text):(m.optional?"Switched off, nothing is sent.":"Nothing left to send."))+'</div>';
+      h+='<div class="say-foot"><span class="say-meta">'+(m.text?sayCost(m.text):"")+'</span>'+
+        '<button class="say-mini" data-sayedit="'+esc(m.id)+'">Edit</button></div>';
+    }
+    return h+'</div>';
+  }
+
+  // Length in the only units that matter: what it costs to send. Reuses the
+  // same counter the message box uses, so the two can never disagree.
+  function sayCost(t){
+    var i=smsInfo(t);
+    return '<b'+(i.segments>1?' class="hot"':'')+'>'+i.chars+' chars · '+i.segments+' text'+(i.segments===1?"":"s")+'</b>'+
+      (i.unicode?' · costs double':'');
+  }
+
+  function sayWire(b,r){
     var add=function(){
       var i=el("sayNeverNew"),v=(i.value||"").trim();
       if(v.length<3){toast("Too short to ban — use a phrase");return}
+      if((SAY.draft.never||[]).some(function(x){return x.toLowerCase()===v.toLowerCase()})){toast("Already banned");return}
       sayPatch("never",(SAY.draft.never||[]).concat([v]));
     };
     el("sayNeverAdd").onclick=add;
@@ -9083,29 +9223,84 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     el("sayReview").onclick=function(){sayPatch("reviewAsk",!(r.reviewAsk!==false))};
     el("sayWp").onclick=function(){sayPatch("waterPower",!(r.waterPower!==false))};
     el("sayEmoji").onclick=function(){sayPatch("emoji",!(r.emoji===true))};
-    // Custom wordings re-render on blur, not per keystroke: every change is a
-    // round trip, and one per character typed is a round trip per character.
-    b.querySelectorAll("[data-saycustom]").forEach(function(inp){
-      inp.onblur=function(){
-        var id=inp.getAttribute("data-saycustom"),v=(inp.value||"").trim();
-        var cur=(SAY.draft.custom||{})[id]||"";
-        if(v===cur)return;
-        var next=Object.assign({},SAY.draft.custom||{});
-        if(v)next[id]=v; else delete next[id];
-        sayPatch("custom",next);
-      };
+    // Collapsed groups are remembered so a save doesn't reopen all five.
+    b.querySelectorAll("[data-saygrp]").forEach(function(d){
+      d.addEventListener("toggle",function(){SAY.shut[d.getAttribute("data-saygrp")]=!d.open});
     });
-    b.querySelectorAll("[data-sayclear]").forEach(function(btn){
+    b.querySelectorAll("[data-sayedit]").forEach(function(btn){
       btn.onclick=function(){
-        var id=btn.getAttribute("data-sayclear");
-        var next=Object.assign({},SAY.draft.custom||{});
-        delete next[id];sayPatch("custom",next);
+        var id=btn.getAttribute("data-sayedit");
+        var msg=(SAY.msgs||[]).filter(function(m){return m.id===id})[0];
+        sayLocal(function(){SAY.editing=id;SAY.editBuf=(msg&&msg.template)||""});
+        var ta=b.querySelector('[data-sayed="'+id+'"]');
+        if(ta){sayGrow(ta);ta.focus();ta.setSelectionRange(ta.value.length,ta.value.length);sayCountNow(id);
+          ta.scrollIntoView({block:"center",behavior:"smooth"})}
       };
     });
+    b.querySelectorAll("[data-saycancel]").forEach(function(btn){
+      btn.onclick=function(){sayLocal(function(){SAY.editing=null;SAY.editBuf=null})};
+    });
+    b.querySelectorAll("[data-sayok]").forEach(function(btn){
+      btn.onclick=function(){
+        var id=btn.getAttribute("data-sayok");
+        var ta=b.querySelector('[data-sayed="'+id+'"]'),v=ta?(ta.value||"").trim():"";
+        var next=Object.assign({},SAY.draft.custom||{});
+        var msg=(SAY.msgs||[]).filter(function(m){return m.id===id})[0];
+        // Saving it back unchanged is not a custom wording, it is "leave it
+        // alone" — otherwise a curious tap quietly freezes that message
+        // against every future improvement to the built-in one.
+        if(!v||(msg&&v===sayDetokLocal(msg))) delete next[id]; else next[id]=v;
+        SAY.editing=null;SAY.editBuf=null;sayPatch("custom",next);
+      };
+    });
+    b.querySelectorAll("[data-sayreset]").forEach(function(btn){
+      btn.onclick=function(){
+        var id=btn.getAttribute("data-sayreset");
+        var next=Object.assign({},SAY.draft.custom||{});
+        delete next[id];SAY.editing=null;SAY.editBuf=null;sayPatch("custom",next);
+      };
+    });
+    b.querySelectorAll("[data-sayvar]").forEach(function(sp){
+      // mousedown, not click: the textarea must not lose focus first or the
+      // caret position we are inserting at is gone by the time we read it.
+      sp.addEventListener("mousedown",function(e){
+        e.preventDefault();
+        var ta=b.querySelector("[data-sayed]"); if(!ta)return;
+        var v=sp.getAttribute("data-sayvar"),a=ta.selectionStart,z=ta.selectionEnd;
+        ta.value=ta.value.slice(0,a)+v+ta.value.slice(z);
+        SAY.editBuf=ta.value;sayGrow(ta);
+        ta.focus();ta.setSelectionRange(a+v.length,a+v.length);
+        sayCountNow(ta.getAttribute("data-sayed"));
+      });
+    });
+    var ta=b.querySelector("[data-sayed]");
+    if(ta){ta.oninput=function(){SAY.editBuf=ta.value;sayGrow(ta);sayCountNow(ta.getAttribute("data-sayed"))};sayGrow(ta)}
   }
+
+  // Live cost while typing. Local on purpose: a round trip per keystroke would
+  // be both slow and pointless, since his own wording is sent as written.
+  // Grow the box to the text instead of scrolling it. A message he cannot see
+  // all of is a message he edits blind.
+  function sayGrow(ta){
+    if(!ta)return;
+    ta.style.height="auto";
+    ta.style.height=Math.max(84,ta.scrollHeight+2)+"px";
+  }
+  function sayCountNow(id){
+    var b=el("sayBody"); if(!b)return;
+    var ta=b.querySelector('[data-sayed="'+id+'"]'),out=b.querySelector('[data-saycount="'+id+'"]');
+    if(!ta||!out)return;
+    var v=ta.value||"";
+    out.innerHTML=v.trim()?sayCost(v):'<b>empty — the built-in wording will be used</b>';
+  }
+  // The template the server handed back for this message, for the "did he
+  // actually change anything" check. Never recomputed here: detokenising is
+  // the Worker's job and a second implementation would drift from it.
+  function sayDetokLocal(m){ return (m&&m.template)||"" }
 
   function sayDoSave(){
     if(!SAY.draft){closeHowITalk();return}
+    if(SAY.editing){toast("Finish editing that message first");return}
     post("/api/config",{say:SAY.draft}).then(function(d){
       if(d&&d.ok){
         state.config=d.config;afterConfig();SAY.dirty=false;
@@ -9113,6 +9308,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       } else if(d&&d.error==="would_silence"){
         // The one refusal. Name what would break rather than saying "invalid".
         SAY.silenced=d.silenced||[];sayRender();
+        var body=el("sayBody"); if(body)body.scrollTop=0;
         toast((d.silenced||[]).map(function(m){return m.label}).join(", ")+" would have nothing to send");
       } else toast("Could not save");
     }).catch(function(){toast("Could not save")});
