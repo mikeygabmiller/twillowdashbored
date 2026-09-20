@@ -64,7 +64,10 @@ new Function('ctx',
   liftBlock('const AI_TELLS = [', '];') +
   lift('tidyDayWord') + lift('matchPhrase') + lift('tidyName') + lift('greetName') +
   lift('tidyVehicleCase') + lift('readVehicle') + lift('missingVehiclePart') + lift('hasStreetAddress') +
-  lift('quoteFacts') + lift('quoteWhen') + lift('quoteOpener') +
+  lift('quoteFacts') + lift('quoteWhen') + lift('quoteOpener') + lift('quoteCloser') +
+  // findTell now also checks the owner's own "never say this" list, so the
+  // say-rule helpers come with it.
+  lift('sayDefaults') + lift('sayRules') + lift('sayNorm') + lift('sayBanned') + 
   lift('findTell') + lift('priceFigures') + lift('backedAmounts') + lift('findInventedPrice') +
   lift('agreedTimes') + lift('findInventedTime') + lift('openerFault') +
   'ctx.readVehicle = readVehicle; ctx.hasStreetAddress = hasStreetAddress;' +
@@ -80,6 +83,10 @@ const check = (name, got, want) => {
 };
 // The opener is a sentence, so most assertions are about what is and isn't in it.
 const open = (o) => quoteOpener(quoteFacts(o));
+// The same submission with an explicit closing question. Which question the
+// opener ends on is Mikey's setting now ("How I talk" → closer), so a test that
+// wants a particular ending has to say which one it means.
+const openWith = (o, closer) => quoteOpener(quoteFacts(o), { closer });
 // The same submission with the reworded generic opener switched on.
 const openAsk = (o) => quoteOpener(quoteFacts(o), { ask: true });
 const asksForCar = (t) => /year, make, and model/i.test(t);
@@ -128,6 +135,29 @@ console.log('\n=== a submission with nothing but a number still gets the old tex
   check('it still asks for the car',            asksForCar(t), true);
 }
 
+console.log('\n=== the closing question is his to choose ===');
+{
+  const sub2 = { name: 'Dale Hobart', vehicle: '2019 Toyota Tacoma', total: '349' };
+  const ends = (c) => openWith(sub2, c);
+  check("'open' offers what he has free",  /Want me to send over what I've got open\?$/.test(ends('open')), true);
+  check("'day' restores the old wording",  /What day were you looking to get it done\?$/.test(ends('day')), true);
+  check("'part' asks morning or afternoon", /Is morning or afternoon better for you\?$/.test(ends('part')), true);
+  check("'address' asks where to go",      /What's the address I'd be coming to\?$/.test(ends('address')), true);
+  check("'none' asks nothing at all",      (ends('none').match(/\?/g) || []).length, 0);
+  check("…and still ends on a full sentence", /\.$/.test(ends('none')), true);
+  // Whatever he picks, the opener's own gate still has to pass it.
+  for (const c of ['open', 'day', 'part', 'address', 'none']) {
+    const t = ends(c);
+    check(`'${c}' never asks for the car he gave`, asksForCar(t), false);
+    check(`'${c}' asks at most one question`, questions(t) <= 1, true);
+  }
+  // A nameless lead still gets asked their name, whichever ending is chosen.
+  for (const c of ['open', 'address', 'none']) {
+    check(`'${c}' still asks a nameless lead their name`,
+      /your name/i.test(openWith({ vehicle: '2019 Toyota Tacoma', total: '349' }, c)), true);
+  }
+}
+
 console.log('\n=== they told us the car, so it never asks again ===');
 {
   const t = open({ name: 'Dale Hobart', vehicle: '2019 Toyota Tacoma', total: '349' });
@@ -135,7 +165,10 @@ console.log('\n=== they told us the car, so it never asks again ===');
   check('the car is read back',        /2019 Toyota Tacoma/.test(t), true);
   check('their price is read back',    /\$349/.test(t), true);
   check('exactly one question',        questions(t), 1);
-  check('and it moves toward a day',   /what day/i.test(t), true);
+  // Default closer is 'open'. It still moves toward getting a time booked, it
+  // just no longer does it by asking "what day", which he asked never to send.
+  check('and it moves toward booking', /what I've got open/i.test(t), true);
+  check('…without asking what day',    /what day/i.test(t), false);
 }
 {
   // Car but no name: the name still has to be asked for, and still inside the
@@ -173,7 +206,7 @@ check('the appointment box counts as a day',
   // the day, so the open question is which day.
   const t = open({ name: 'Dale', vehicle: '2019 Toyota Tacoma', notes: 'mornings work best for me' });
   check('the time of day is acknowledged', /mornings work better for you/.test(t), true);
-  check('and the question becomes the day', /what day/i.test(t), true);
+  check('and the question moves it forward', /what I've got open/i.test(t), true);
   check('one question',                    questions(t), 1);
 }
 check('a note about nothing timely does not invent a day',

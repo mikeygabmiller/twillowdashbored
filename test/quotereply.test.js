@@ -50,6 +50,8 @@ new Function('ctx',
   grab(/const AI_TELLS = \[[\s\S]*?\n\];/, 'AI_TELLS') +
   lift('mentionsVehicle') + lift('voiceBucket') +
   lift('priceFigures') + lift('backedAmounts') + lift('findInventedPrice') +
+  // findTell now also checks the owner's own "never say this" list.
+  lift('sayDefaults') + lift('sayRules') + lift('sayNorm') + lift('sayBanned') + 
   lift('findTell') + lift('styleViolation') + lift('defaultPlaybook') +
   'ctx.voiceBucket=voiceBucket;ctx.findInventedPrice=findInventedPrice;ctx.findTell=findTell;' +
   'ctx.styleViolation=styleViolation;ctx.defaultPlaybook=defaultPlaybook;')(ctx);
