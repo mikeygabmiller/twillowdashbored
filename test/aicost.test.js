@@ -265,10 +265,16 @@ function makeRouter(env, opts = {}) {
   const gemini = async (prompt, o) => { r.calls.push('gemini'); return 'gemini wrote this'; };
   // eslint-disable-next-line no-new-func
   new Function('ctx', 'ENV', 'kv', 'envFlag', 'localDateStr', 'Date', 'aiUsageKey',
-    'claudeGenerate', 'geminiGenerate',
+    'claudeGenerate', 'geminiGenerate', 'loadConfig',
     'let CFG_CACHE = { tz: "America/Los_Angeles" };\n' +
+    // What cacheConfig() mirrors out of the config doc in the real Worker. The
+    // routing reads it synchronously, so the test has to stand it up the same
+    // way: KEY_IN_SETTINGS is this harness's name for "he typed one on the
+    // phone", as against ANTHROPIC_API_KEY, which is a Worker secret.
+    'let CFG_CLAUDE_KEY = String(ENV.KEY_IN_SETTINGS || "");\n' +
     liftSpan('const AI_PRICE_PER_M', 'aiGenerate') + '\n' +
     'Object.assign(ctx, { aiGenerate, claudeCost, aiDailyBudget, claudeModel, claudeVia,\n' +
+    '  claudeRoutes, claudeKey, modelTakesEffort,\n' +
     '  claudeSpentToday, noteClaudeSpend,\n' +
     '  resetSpend: () => { CLAUDE_SPEND = null; } });',
     // envFlag has to read the NAME now, not just CLAUDE_DISABLED: there are two
@@ -276,7 +282,7 @@ function makeRouter(env, opts = {}) {
     // the name would answer both with the same value, which is exactly the bug
     // the binding route would be most likely to ship with.
   )(r, env, budgetKv, (n) => ['1', 'true', 'yes', 'on'].includes(String(env[n] || '').toLowerCase()),
-    localDateStr, fakeDate, aiUsageKey, claude, gemini);
+    localDateStr, fakeDate, aiUsageKey, claude, gemini, async () => ({}));
   return r;
 }
 
@@ -284,18 +290,25 @@ const KEYED = { ANTHROPIC_API_KEY: 'sk-test', GEMINI_API_KEY: 'g-test' };
 
 // --- pricing ---------------------------------------------------------------
 let R = makeRouter(KEYED);
-check('a million tokens each way on Opus 5 is $30', R.claudeCost(1e6, 1e6), 30);
-check('output is the expensive half', R.claudeCost(0, 1e6), 25);
-check('a typical draft — 3k in, 300 out — is about two cents',
-  Math.round(R.claudeCost(3000, 300) * 1000) / 1000, 0.023);
+check('a million tokens each way on Haiku is $6', R.claudeCost(1e6, 1e6), 6);
+check('a typical draft — 3k in, 300 out — is under half a cent',
+  Math.round(R.claudeCost(3000, 300) * 10000) / 10000, 0.0045);
 check('a negative count cannot credit the budget back', R.claudeCost(-5e6, 0), 0);
+// Opus is still in the table and still priced right, because ANTHROPIC_MODEL can
+// put it back on the key route — the drafts it writes are better, and the whole
+// point of the ceiling is that the better model can't run away with the month.
+const OPUS = makeRouter(Object.assign({}, KEYED, { ANTHROPIC_MODEL: 'claude-opus-5' }));
+check('and a million each way on Opus 5 is still $30', OPUS.claudeCost(1e6, 1e6), 30);
+check('output is the expensive half', OPUS.claudeCost(0, 1e6), 25);
+check('Opus takes the effort dial', OPUS.modelTakesEffort(OPUS.claudeModel()), true);
+check('Haiku does not, and sending it one is a 400', R.modelTakesEffort(R.claudeModel()), false);
 
 // --- the ceiling itself ----------------------------------------------------
 check('the default ceiling is a dollar a day', R.aiDailyBudget(), 1);
 check('a var overrides it without a deploy', makeRouter(Object.assign({}, KEYED, { ANTHROPIC_DAILY_BUDGET: '0.25' })).aiDailyBudget(), 0.25);
 check('nonsense falls back to the default rather than to infinity',
   makeRouter(Object.assign({}, KEYED, { ANTHROPIC_DAILY_BUDGET: 'free' })).aiDailyBudget(), 1);
-check('and the model is the one being priced', R.claudeModel(), 'claude-opus-5');
+check('and the model is the one being priced', R.claudeModel(), 'claude-haiku-4-5');
 
 console.log('\n=== reaching Claude through the AI binding, with no key anywhere ===');
 // The switch of 2026-09-20: drafts go through Cloudflare's AI binding on Unified
@@ -324,9 +337,36 @@ check('and the customer-facing draft actually routes to it',
 const BOTH = Object.assign({}, BOUND, { ANTHROPIC_API_KEY: 'sk-test' });
 check('a leftover key does not win back the bill', makeRouter(BOTH).claudeVia(), 'binding');
 check('AI_BINDING_OFF is the way back to it, with no deploy',
-  makeRouter(Object.assign({}, BOTH, { AI_BINDING_OFF: '1' })).claudeModel(), 'claude-opus-5');
+  makeRouter(Object.assign({}, BOTH, { AI_BINDING_OFF: '1' })).claudeVia(), 'key');
 check('and with no key to fall back to, the binding off means no Claude at all',
   makeRouter(Object.assign({}, BOUND, { AI_BINDING_OFF: '1' })).claudeVia(), 'none');
+
+console.log('\n=== a key typed into Settings, by an owner with no dashboard ===');
+// The second half of the same problem. His credits turned out to be on the
+// ANTHROPIC account, not the Cloudflare one, and he cannot reach the Cloudflare
+// dashboard to store a secret — so the key goes in the config doc from the
+// phone. What has to hold: a key he typed TODAY outranks both ambient routes,
+// because entering it is him saying which account pays.
+const TYPED = { AI: { run: async () => ({}) }, GEMINI_API_KEY: 'g-test', KEY_IN_SETTINGS: 'sk-ant-typed' };
+check('a key from the screen beats the binding', makeRouter(TYPED).claudeVia(), 'key');
+check('and beats a stale Worker secret too',
+  makeRouter(Object.assign({}, TYPED, { ANTHROPIC_API_KEY: 'sk-old' })).claudeKey(), 'sk-ant-typed');
+check('the binding stays behind it as the fallback',
+  makeRouter(TYPED).claudeRoutes(), ['key', 'binding']);
+check('with no binding it is the only route', makeRouter({ KEY_IN_SETTINGS: 'sk-ant-typed' }).claudeRoutes(), ['key']);
+check('and it prices as Haiku, same as the binding does',
+  makeRouter(TYPED).claudeCost(1e6, 1e6), 6);
+
+STORE.clear();
+let T = makeRouter(TYPED); T.resetSpend();
+check('the customer-facing draft routes to it',
+  await T.aiGenerate('draft this', { tier: 'voice', surface: 'reply draft' }), 'claude wrote this');
+
+// The reason both routes are kept live rather than one replacing the other: an
+// account with no money in it fails hard, and the other account is the one
+// holding the credits. He should never have to know which is which.
+check('an unfunded first route still leaves a second to try',
+  makeRouter(Object.assign({}, TYPED, { ANTHROPIC_API_KEY: 'sk-old' })).claudeRoutes(), ['key', 'binding']);
 
 STORE.clear(); B = makeRouter(Object.assign({}, BOUND, { CLAUDE_DISABLED: '1' })); B.resetSpend();
 check('CLAUDE_DISABLED still stops the binding route too',
@@ -346,9 +386,12 @@ check('a fast-tier call never reaches Claude at all',
   await R.aiGenerate('classify this', { tier: 'fast', surface: 'keyboard' }), 'gemini wrote this');
 
 // A day that already spent the ceiling, written the way noteAiUsage files it.
+// The counts are Haiku-sized on purpose: a day that went over at Opus rates is
+// only sixty cents at Haiku's, and a ceiling test that no longer reaches the
+// ceiling passes for the wrong reason. $0.80 in + $0.60 out = $1.40.
 STORE.clear();
 STORE.set(aiUsageKey(TODAY), JSON.stringify({ date: TODAY, by: {
-  'reply draft (claude)': { calls: 60, in: 400000, out: 40000, errors: 0 },
+  'reply draft (claude)': { calls: 60, in: 800000, out: 120000, errors: 0 },
 } }));
 R = makeRouter(KEYED); R.resetSpend();
 const overBudget = await R.aiGenerate('draft this', { tier: 'voice', surface: 'reply draft' });
@@ -376,7 +419,7 @@ check('and it did try Claude first', R.calls, ['claude', 'gemini']);
 // --- a burst inside one isolate is caught before KV hears about it ---------
 STORE.clear(); R = makeRouter(KEYED); R.resetSpend();
 await R.claudeSpentToday();               // seeds the day at $0
-R.noteClaudeSpend(200000, 20000);         // $1.50 of drafting, none of it flushed yet
+R.noteClaudeSpend(700000, 120000);        // $1.30 of Haiku drafting, none of it flushed yet
 check('an in-flight burst counts against the budget immediately',
   await R.aiGenerate('draft this', { tier: 'voice', surface: 'reply draft' }), 'gemini wrote this');
 

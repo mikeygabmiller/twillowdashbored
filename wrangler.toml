@@ -87,8 +87,10 @@ crons = ["* * * * *"]
 #   npx wrangler secret put TWILIO_FROM
 #   npx wrangler secret put MIKEY_PHONE
 #   npx wrangler secret put GEMINI_API_KEY   # optional, for the AI features
-#   (ANTHROPIC_API_KEY is NOT needed any more — the [ai] binding above pays for
-#    Claude out of Cloudflare credits. A key left set here is simply unused.)
+#   (ANTHROPIC_API_KEY is NOT needed here any more. The [ai] binding above pays
+#    for Claude out of Cloudflare credits, and a key can also be pasted into
+#    ☰ → Settings → Who pays for the AI to spend Anthropic credits instead,
+#    with no dashboard at all. A key left set here is the last route tried.)
 #   npx wrangler secret put RESEND_API_KEY   # optional — sends owner alerts as email (with ALERT_EMAIL above) instead of texting yourself
 
 # Dashboard click-to-call rings CALL_BRIDGE_PHONE (defaults to +14252321355 in

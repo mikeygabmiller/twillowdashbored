@@ -4456,7 +4456,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-20·haiku";
+  var APP_BUILD="2026-09-20·whopays";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -8168,6 +8168,16 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
           '<option value="off"'+(clickAlertMode(c)==="off"?" selected":"")+'>Never</option>'+
         '</select></div>'+
       '<div class="hint">One email the moment a <b>new</b> visitor arrives \u2014 not every page they read, and not the same person twice. It says whether the click came from one of your ads or came in free, what city their phone was in, and which page they landed on. There is nobody to text: they haven\'t given you a number, and nothing is ever sent to them. It stops itself after 20 a day so a busy morning can\'t bury your real alerts.<br><br><b>"Only clicks I paid for"</b> needs your site to pass the ad\'s click id through to the tracker \u2014 the snippet in <b>Grow \u2192 Website</b> does this now; the copy on your site may be the older one, which sends the page but not the click id. Until it\'s updated, a paid click that Google routes through googleadservices still gets caught, and the rest read as ordinary visits.</div>'+
+      '<div class="fu-col"><span class="lbl2">Who pays for the AI</span>'+
+        '<span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+
+          '<input type="password" id="cfgAiKey" autocomplete="off" spellcheck="false" placeholder="sk-ant-…" style="flex:1;min-width:170px">'+
+          '<button id="cfgAiKeySave" class="btn">Save key</button>'+
+          ((c.aiKey&&c.aiKey.set)?'<button id="cfgAiKeyClear" class="btn">Remove</button>':'')+
+        '</span>'+
+        '<span id="cfgAiKeyMsg" style="color:var(--muted2);font-size:12px">'+
+          ((c.aiKey&&c.aiKey.set)?("Using your Anthropic account · "+esc(c.aiKey.hint)):"Not set — paid for with Cloudflare credits, or Gemini writes the drafts if there are none.")+
+        '</span></div>'+
+      '<div class="hint">Claude writes the texts a customer reads, and something has to pay for it. Two ways: credits on your <b>Cloudflare</b> account, where there is no key at all and nothing to paste, or a key from <b>console.anthropic.com</b> pasted here, which spends the credits sitting in that account instead. Paste one and it gets used ahead of everything else.<br><br><b>Treat it like the password to this dashboard.</b> It is kept in your app\'s own storage, not in a proper secret box, so anybody who can open this screen could spend it. It is never shown again after you save it, never included in a snapshot, and you can kill it from the Anthropic console in one tap. Whatever happens, the AI stops itself at <b>$1 a day</b>.</div>'+
       '<div class="fu-col"><span class="lbl2">What the AI is actually costing</span></div>'+
       '<div id="aiUseCard" class="hint">Counting\u2026</div>'+
       '<div class="fu-row"><span class="lbl2">AI keyboard <span style="color:var(--muted2);font-weight:400">· suggests your next word</span></span><span class="sw'+(c.predictive!==false?" on":"")+'" id="cfgPredict"></span></div>'+
@@ -8230,6 +8240,23 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     el("cfgEnabled").onclick=function(){saveConfig({followupsEnabled:!(c.followupsEnabled!==false)})};
     el("cfgAuto").onclick=function(){saveConfig({autopilot:!c.autopilot})};
     el("cfgReview").onchange=function(){saveConfig({reviewUrl:el("cfgReview").value.trim()})};
+    // The key is saved on a button press, not on blur like the rest of this
+    // screen: a half-pasted key committed by a stray tap would read as "saved"
+    // and then fail every draft. The box is emptied either way — what is stored
+    // never comes back down, so leaving the typed value sitting there would be
+    // the only place on the phone it still exists in full.
+    el("cfgAiKeySave").onclick=function(){
+      var v=el("cfgAiKey").value.trim();
+      if(!v){el("cfgAiKeyMsg").textContent="Paste a key first.";return}
+      saveConfig({anthropicApiKey:v}).then(function(d){
+        el("cfgAiKey").value="";
+        if(d&&d.ok)toast("Key saved — Claude writes the drafts now");
+        else toast(d&&d.error==="bad_ai_key"?"That isn't an Anthropic key — they start with sk-ant-":"Couldn't save that",{bad:true});
+      });
+    };
+    if(el("cfgAiKeyClear"))el("cfgAiKeyClear").onclick=function(){
+      saveConfig({anthropicApiKey:""}).then(function(){toast("Key removed")});
+    };
     el("cfgRebook").onchange=function(){saveConfig({rebookDays:+el("cfgRebook").value})};
     el("cfgQs").onchange=function(){saveConfig({quietStart:+el("cfgQs").value})};
     el("cfgQe").onchange=function(){saveConfig({quietEnd:+el("cfgQe").value})};

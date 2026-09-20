@@ -65,11 +65,24 @@ reached through the Worker's `AI` binding on Cloudflare AI Gateway with Unified
 Billing, which means no API key is stored anywhere and the drafts are paid for out
 of the account's prepaid credits (Cloudflare adds 5% on a credit purchase; the
 inference itself is at Anthropic's normal rates). The model moved with it:
-**`anthropic/claude-haiku-4.5` at $1/$5 per million**, down from Opus 5 at $5/$25,
+**Haiku 4.5 at $1/$5 per million**, down from Opus 5 at $5/$25,
 so a typical draft went from about 2.3¢ to about 0.45¢ and the $1/day ceiling now
 buys roughly five times as many drafts. The one thing given up is the prompt-cache
 breakpoint on the system block, which the catalog schema has no field for — at a
 fifth of the input rate that is a smaller loss than the cache was a win.
+
+**Amended the same day.** The credits turned out to be on the *Anthropic* account,
+not the Cloudflare one, so there are now two ways to pay and the router takes
+whichever is funded: a key pasted into **☰ → Settings → Who pays for the AI**
+(spends Anthropic credits, needs no Cloudflare dashboard at all) is tried first,
+the binding second, `ANTHROPIC_API_KEY` last. Both routes default to Haiku 4.5 —
+deliberately the same model, because the day's spend is priced with one model's
+rates and a draft could have come from either route. A key in Settings lives in
+the config doc in KV rather than in a Worker secret. That is a real step down in
+storage, taken because the alternative was no Claude at all for an owner who
+can't reach the Cloudflare dashboard; it is never served back to a browser
+(`publicConfig()` strips it), the snapshot scrubber hides it on the field name,
+and the $1/day ceiling caps what a leaked one could spend.
 
 **One thing the old table got wrong:** `apiAiDraft` was filed under "you tap", but
 Auto Polish calls the same endpoint **by itself** every time you stop typing for

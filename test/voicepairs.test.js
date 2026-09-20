@@ -179,19 +179,33 @@ ok('nor is an apology', env.missingFacts(bare, 'apology').length === 0);
 // ---------------------------------------------------------------------------
 section('What actually goes over the wire to Anthropic');
 let sent = null;
-const api = new Function(
-  'ENV', 'claudeVia', 'claudeModel', 'noteAiUsage', 'noteClaudeSpend', 'fetch',
-  `${lift('claudeGenerate')}\nreturn { claudeGenerate };`,
-)(
-  { ANTHROPIC_API_KEY: 'sk-test' },
-  () => 'key',
-  () => 'claude-opus-5',
-  async () => {}, () => {},
-  async (url, init) => {
+// One builder for both routes, because the point of these tests is that the SAME
+// function has to put a different shape on the wire depending on which account
+// is paying — and the way to prove that is to change only the route.
+function wire({ routes, model, key, fetch: fetchStub, ai }) {
+  return new Function(
+    'ENV', 'claudeRoutes', 'claudeKey', 'claudeModel', 'modelTakesEffort',
+    'noteAiUsage', 'noteClaudeSpend', 'fetch',
+    `${lift('claudeGenerate')}\n${lift('claudeAttempt')}\nreturn { claudeGenerate };`,
+  )(
+    { ANTHROPIC_API_KEY: key || '', AI: ai || null },
+    () => routes,
+    () => key || '',
+    (route) => model(route),
+    (m) => !/haiku/i.test(String(m || '')),
+    async () => {}, () => {},
+    fetchStub,
+  );
+}
+const api = wire({
+  routes: ['key'],
+  model: () => 'claude-opus-5',
+  key: 'sk-test',
+  fetch: async (url, init) => {
     sent = JSON.parse(init.body);
     return { ok: true, json: async () => ({ content: [{ type: 'text', text: 'drafted' }], usage: {} }) };
   },
-);
+});
 const turns = [
   { role: 'user', content: 'A customer texted: "how much for a truck"' },
   { role: 'assistant', content: 'Runs about $400.' },
@@ -212,16 +226,18 @@ section('And what goes over the wire through the AI binding instead');
 // output_config and a system block carrying cache_control are both 400s there,
 // and a 400 on every draft would read as "the AI broke", not as "wrong field".
 let bound = null;
-const api2 = new Function(
-  'ENV', 'claudeVia', 'claudeModel', 'noteAiUsage', 'noteClaudeSpend', 'fetch',
-  `${lift('claudeGenerate')}\nreturn { claudeGenerate };`,
-)(
-  { AI: { run: async (model, input, opts) => { bound = { model, input, opts }; return { content: [{ type: 'text', text: 'drafted' }], usage: {} }; } } },
-  () => 'binding',
-  () => 'anthropic/claude-haiku-4.5',
-  async () => {}, () => {},
-  async () => { throw new Error('the binding route must never reach out to api.anthropic.com'); },
-);
+const bindingStub = {
+  run: async (model, input, opts) => {
+    bound = { model, input, opts };
+    return { content: [{ type: 'text', text: 'drafted' }], usage: {} };
+  },
+};
+const api2 = wire({
+  routes: ['binding'],
+  model: () => 'anthropic/claude-haiku-4.5',
+  ai: bindingStub,
+  fetch: async () => { throw new Error('the binding route must never reach out to api.anthropic.com'); },
+});
 await api2.claudeGenerate('Reply:', { system: 'THE PLAYBOOK', turns, effort: 'medium' });
 ok('the model is the binding\'s own first argument, not a body field',
   bound.model === 'anthropic/claude-haiku-4.5' && bound.input.model === undefined, bound.model);
@@ -243,6 +259,45 @@ await api.claudeGenerate('Classify:', {});
 ok('a surface with no examples still sends a plain single-turn request',
   sent.messages.length === 1 && !sent.system, sent);
 ok('and stays on low effort', sent.output_config.effort === 'low', sent.output_config);
+
+// ---------------------------------------------------------------------------
+section('A key route running Haiku, which has no effort dial');
+// The trap in letting the key route run the cheap model: `effort` is an Opus
+// field. Keyed off the MODEL rather than the route, because ANTHROPIC_MODEL can
+// put Opus back on that same route and it should still think harder when
+// drafting — one wrong condition here is a 400 on every customer-facing text.
+let cheap = null;
+const api3 = wire({
+  routes: ['key'],
+  model: () => 'claude-haiku-4-5',
+  key: 'sk-test',
+  fetch: async (url, init) => {
+    cheap = JSON.parse(init.body);
+    return { ok: true, json: async () => ({ content: [{ type: 'text', text: 'drafted' }], usage: {} }) };
+  },
+});
+await api3.claudeGenerate('Reply:', { system: 'THE PLAYBOOK', turns, effort: 'medium' });
+ok('no effort dial goes to Haiku, even on the key route', cheap.output_config === undefined, cheap.output_config);
+ok('but the cache breakpoint still does, because this route takes one',
+  Array.isArray(cheap.system) && cheap.system[0].cache_control.type === 'ephemeral', cheap.system);
+
+// ---------------------------------------------------------------------------
+section('When the first account has no money in it');
+// The whole reason both routes stay live. An unfunded account fails hard on one
+// route and is a non-event on the other, and he should never have to know which
+// is which — least of all in the middle of answering a customer.
+let ran = [];
+const api4 = wire({
+  routes: ['key', 'binding'],
+  model: (route) => (route === 'binding' ? 'anthropic/claude-haiku-4.5' : 'claude-haiku-4-5'),
+  key: 'sk-broke',
+  ai: { run: async () => { ran.push('binding'); return { content: [{ type: 'text', text: 'drafted' }], usage: {} }; } },
+  fetch: async () => { ran.push('key'); return { ok: false, status: 402, text: async () => 'credit balance is too low' }; },
+});
+const rescued = await api4.claudeGenerate('Reply:', { system: 'THE PLAYBOOK', turns });
+ok('the draft still comes back', rescued === 'drafted', rescued);
+ok('and it tried the account he chose first', ran, ran.join(','));
+ok('falling through to the other one only after it failed', ran.join(',') === 'key,binding', ran);
 
 console.log(`\n${FAIL ? '✗' : '✓'} voicepairs — ${PASS} passed, ${FAIL} failed`);
 process.exit(FAIL ? 1 : 0);

@@ -101,6 +101,14 @@ let ENV = null;
 // doesn't re-read it for every thread it touches. Cleared at the top of each
 // entry point so a settings change is picked up on the very next invocation.
 let CFG_CACHE = null;
+// The AI key out of that config doc, mirrored here by cacheConfig(). Deliberately
+// NOT cleared by resetInvocationCaches, unlike CFG_CACHE: clearing it would make
+// the (synchronous) "is there a Claude?" check answer "no" at the top of every
+// invocation, before anything has read config — which is precisely the moment a
+// customer's first text arrives and a draft gets written by the wrong model.
+// Stale in the other direction is harmless: a cleared key stays live for the rest
+// of one isolate's config read, and a dead key falls back like any failed call.
+let CFG_CLAUDE_KEY = '';
 // Same idea for the thread index, and for a bigger reason: the index is the
 // largest doc we own, and `{type:'json'}` parses it on OUR CPU clock. A minute
 // cron that loads it in four separate sub-jobs paid for four full parses of every
@@ -132,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-20·haiku';
+const BUILD = '2026-09-20·whopays';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -9803,7 +9811,23 @@ async function apiFollowupAction(request) {
 }
 
 async function apiGetConfig() {
-  return json({ ok: true, config: await loadConfig() });
+  return json({ ok: true, config: publicConfig(await loadConfig()) });
+}
+
+// The config doc, minus the one field that must never travel back out. The
+// screen needs to know that a key is set and which one it is at a glance, and
+// nothing more — a value that can be read back out again is the whole risk of
+// keeping it in KV instead of in a Worker secret, and this is where that risk
+// gets taken off the table.
+function publicConfig(cfg) {
+  const out = Object.assign({}, cfg);
+  delete out.anthropicApiKey;
+  out.aiKey = { set: !!(cfg && cfg.anthropicApiKey), hint: keyHint(cfg && cfg.anthropicApiKey) };
+  return out;
+}
+function keyHint(k) {
+  const s = String(k || '');
+  return s ? s.slice(0, 7) + '…' + s.slice(-4) : '';
 }
 async function apiSaveConfig(request) {
   const data = await readJson(request);
@@ -9840,6 +9864,20 @@ async function apiSaveConfig(request) {
   if (Array.isArray(data.assistFrom)) {
     next.assistFrom = data.assistFrom.map((a) => emailAddr(a)).filter((a) => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(a)).slice(0, 5);
   }
+  // The AI key, typed on the phone by an owner who cannot reach the Cloudflare
+  // dashboard at all. An empty string clears it. A value containing the ellipsis
+  // is the masked hint coming back off a redrawn form, and is left alone rather
+  // than stored — otherwise saving any other setting on that screen would
+  // quietly replace a working key with the eleven characters of its own
+  // fingerprint, and the drafts would fall back to Gemini with nothing to show
+  // for it but a screen that still says a key is set.
+  if (typeof data.anthropicApiKey === 'string') {
+    const k = data.anthropicApiKey.trim();
+    if (!k) next.anthropicApiKey = '';
+    else if (k.indexOf('…') >= 0) { /* the mask, not a key — keep what's stored */ }
+    else if (/^sk-ant-\S{20,}$/.test(k)) next.anthropicApiKey = k.slice(0, 200);
+    else return json({ ok: false, error: 'bad_ai_key' }, 422);
+  }
   if (typeof data.teamMode === 'boolean') next.teamMode = data.teamMode;
   if (typeof data.briefEnabled === 'boolean') next.briefEnabled = data.briefEnabled;
   if (typeof data.dailyEmailsPaused === 'boolean') next.dailyEmailsPaused = data.dailyEmailsPaused;
@@ -9859,8 +9897,8 @@ async function apiSaveConfig(request) {
     if (silenced.length) return json({ ok: false, error: 'would_silence', silenced }, 422);
   }
   await kv().put('config', JSON.stringify(next));
-  CFG_CACHE = next;
-  return json({ ok: true, config: next });
+  cacheConfig(next);
+  return json({ ok: true, config: publicConfig(next) });
 }
 
 // Add or remove a number from the call block list. Blocked numbers are rejected
@@ -11463,6 +11501,11 @@ function defaultConfig() {
     followupsEnabled: true,  // global master switch for the whole engine
     autopilot: false,        // when true, safe nudges send themselves at the due time
     reviewUrl: '',           // Google review link, dropped into the review-ask nudge
+    // The Anthropic key, when there is one. Lives here rather than in a Worker
+    // secret because it has to be settable from the phone — see the Settings
+    // screen. It never leaves the Worker again: publicConfig() strips it out of
+    // every response, and the snapshot scrubber hides it on the name alone.
+    anthropicApiKey: '',
     rebookDays: 90,          // days after a Won job to suggest a rebook
     quietStart: 20,          // 8pm — no autopilot sends after this local hour…
     quietEnd: 8,             // …until 8am (suggestions still surface anytime)
@@ -11721,8 +11764,18 @@ function sanitizeTeam(arr) {
 async function loadConfig() {
   if (CFG_CACHE) return CFG_CACHE;
   const raw = await kv().get('config', { type: 'json' });
-  CFG_CACHE = Object.assign(defaultConfig(), raw || {});
-  return CFG_CACHE;
+  return cacheConfig(Object.assign(defaultConfig(), raw || {}));
+}
+
+// Every path that puts a config in the cache goes through here, for one reason:
+// the AI key lives in that doc, and the route check that decides who writes a
+// draft is synchronous — eleven call sites, most of them deep inside handling a
+// reply. Mirroring the key out on the way in is what lets that check stay a
+// plain function instead of an await threaded through half this file.
+function cacheConfig(cfg) {
+  CFG_CACHE = cfg;
+  CFG_CLAUDE_KEY = String((cfg && cfg.anthropicApiKey) || '');
+  return cfg;
 }
 
 // One-time playbook seed. The live `config` in KV was created before the owner
@@ -13558,24 +13611,51 @@ const AI_PRICE_PER_M = {              // model -> [input $/1M, output $/1M]
 // and small enough that a bug can't run away overnight.
 const AI_BUDGET_DEFAULT_USD = 1.00;
 
-// How Claude is reached, in priority order. The binding wins whenever the Worker
-// has one: it carries no key at all (Cloudflare holds the provider credentials
-// and bills this account's prepaid credits), so an ANTHROPIC_API_KEY left behind
-// in the Worker after the switch cannot quietly keep charging the old account.
-// AI_BINDING_OFF is the no-deploy way back to the key, same as the other switches.
-function claudeVia() {
-  if (ENV.AI && typeof ENV.AI.run === 'function' && !envFlag('AI_BINDING_OFF')) return 'binding';
-  if (ENV.ANTHROPIC_API_KEY) return 'key';
-  return 'none';
+// The routes Claude can be reached by, best first. There are two, and the order
+// is not "whichever exists" — it is "whichever one he MEANT":
+//
+//   a key typed into Settings    an explicit act. He sat down, made a key and
+//                                entered it on the screen, and that is him
+//                                saying which account pays. It wins.
+//   the AI binding               ambient. It is there because the Worker has it,
+//                                and it spends Cloudflare credits.
+//   ANTHROPIC_API_KEY            ambient too, and the likeliest to be a leftover
+//                                from before the binding — so it does NOT get to
+//                                quietly charge the old account.
+//
+// Whichever runs first, the other is tried when it fails, because the failure
+// this is built for is an account with no money in it, and that is exactly the
+// case where the OTHER route is the one holding the credits.
+function claudeRoutes() {
+  const bound = ENV.AI && typeof ENV.AI.run === 'function' && !envFlag('AI_BINDING_OFF');
+  const out = [];
+  if (CFG_CLAUDE_KEY) out.push('key');
+  if (bound) out.push('binding');
+  if (!CFG_CLAUDE_KEY && ENV.ANTHROPIC_API_KEY) out.push('key');
+  return out;
 }
+function claudeVia() { return claudeRoutes()[0] || 'none'; }
+// Settings first, so a key typed on the phone beats a stale Worker secret for
+// the same reason it beats the binding: it is the one somebody chose today.
+function claudeKey() { return CFG_CLAUDE_KEY || ENV.ANTHROPIC_API_KEY || ''; }
 // Two routes, two spellings of the same model. Deliberately two vars rather than
 // one: an ANTHROPIC_MODEL set for the direct API is a 400 on the binding, and a
 // 400 on every draft reads as "the AI stopped working", not as "wrong var".
-function claudeModel() {
-  return claudeVia() === 'binding'
+//
+// Both default to Haiku 4.5, and that matters beyond taste: the day's spend is
+// priced with ONE model's rates (claudeCost, below) but a draft may have been
+// written by either route. Defaults that disagreed would mean a Saturday priced
+// at Opus rates for drafts Haiku actually wrote, and a budget that stopped him
+// drafting five times too early.
+function claudeModel(route) {
+  return (route || claudeVia()) === 'binding'
     ? (ENV.AI_MODEL || 'anthropic/claude-haiku-4.5')
-    : (ENV.ANTHROPIC_MODEL || 'claude-opus-5');
+    : (ENV.ANTHROPIC_MODEL || 'claude-haiku-4-5');
 }
+// Haiku has no effort dial and rejects the field outright, where Opus needs it.
+// Keyed off the model rather than the route because ANTHROPIC_MODEL can put Opus
+// back on the key route, and that Opus should still think harder when drafting.
+function modelTakesEffort(model) { return !/haiku/i.test(String(model || '')); }
 // Set ANTHROPIC_DAILY_BUDGET under Variables to change it without a deploy.
 // Setting it to 0 is a full stop: everything falls back to Gemini immediately,
 // which makes it a second kill switch alongside CLAUDE_DISABLED.
@@ -13639,6 +13719,11 @@ function flattenForGemini(prompt, opts) {
 }
 
 async function aiGenerate(prompt, opts = {}) {
+  // Read config before asking who writes this. The key can live in that doc, and
+  // on a cold isolate nothing has loaded it yet — skipping this would send the
+  // first draft after every deploy to Gemini and leave no trace of why.
+  // It is one cached read per invocation, not one per draft (see loadConfig).
+  await loadConfig().catch(() => {});
   if (opts.tier === 'voice' && claudeVia() !== 'none' && !envFlag('CLAUDE_DISABLED')) {
     const budget = aiDailyBudget();
     const spent = await claudeSpentToday();
@@ -13693,8 +13778,20 @@ async function aiGenerate(prompt, opts = {}) {
 //   - a request can come back 200 with stop_reason 'refusal' and no content;
 //     check that before reading content[0].
 async function claudeGenerate(prompt, opts = {}) {
-  const via = claudeVia();
-  if (via === 'none') throw new Error('no Claude route — add the AI binding or set ANTHROPIC_API_KEY');
+  const routes = claudeRoutes();
+  if (!routes.length) throw new Error('no Claude route — add a key in Settings, or the AI binding');
+  // Try the route he meant, then the other one. An unfunded account is the
+  // failure this exists for: it looks like a hard error on one route and is a
+  // non-event on the other, and he should never have to know which is which.
+  let last = null;
+  for (const route of routes) {
+    try { return await claudeAttempt(route, prompt, opts); }
+    catch (err) { last = err; }
+  }
+  throw last;
+}
+
+async function claudeAttempt(via, prompt, opts = {}) {
   let userText = String(prompt || '');
   if (opts.json) userText += '\n\nReturn ONLY valid JSON. No prose, no code fences.';
   // Few-shot as actual message turns rather than quoted strings inside one blob.
@@ -13707,7 +13804,7 @@ async function claudeGenerate(prompt, opts = {}) {
   // this model family — turns are the supported way to do it.)
   const messages = (opts.turns || []).concat([{ role: 'user', content: userText }]);
   const body = {
-    model: claudeModel(),
+    model: claudeModel(via),
     max_tokens: Math.max(1024, Math.min(8000, (opts.maxTokens || 800) + 1200)), // room for thinking
     messages,
   };
@@ -13716,7 +13813,7 @@ async function claudeGenerate(prompt, opts = {}) {
   // Thinking stays ON at every level — disabling it on Opus 5 can leak
   // <thinking> tags into the visible text, which a customer would see. Opus only:
   // Haiku has no effort dial, and the field is rejected outright on that route.
-  if (via === 'key') body.output_config = { effort: opts.effort || 'low' };
+  if (via === 'key' && modelTakesEffort(body.model)) body.output_config = { effort: opts.effort || 'low' };
   // The playbook, the standing rules and his style fingerprint are identical on
   // every draft, so they go in `system` behind a cache breakpoint instead of
   // being re-billed at full price each time. The volatile half — this customer,
@@ -13754,7 +13851,7 @@ async function claudeGenerate(prompt, opts = {}) {
     const res = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
-        'x-api-key': ENV.ANTHROPIC_API_KEY,
+        'x-api-key': claudeKey(),
         'anthropic-version': '2023-06-01',
         'content-type': 'application/json',
       },
