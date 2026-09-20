@@ -18,7 +18,8 @@ import fs from 'fs';
 let src = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
 src = src.replace(/^export default \{[\s\S]*?^\};$/m, '');
 
-const EXPORTS = ['sayDefaults', 'sayRules', 'sayNorm', 'sayBanned', 'sayCustom', 'sayFill',
+const EXPORTS = ['sayDetok', 'sayBanImpact', 'quoteCloserText',
+  'sayDefaults', 'sayRules', 'sayNorm', 'sayBanned', 'sayCustom', 'sayFill',
   'sayFinish', 'sayOneOf', 'sayPreview', 'sayWouldSilence', 'sanitizeSay', 'sayNeverPrompt',
   'findTell', 'defaultConfig', 'quoteOpener', 'quoteFacts', 'quoteCloser', 'openerFault',
   'apiSaveConfig', 'apiSayPreview', 'loadConfig', 'bkMessage', 'dayJobText', 'followupTemplate'];
@@ -191,6 +192,64 @@ ok('and it renders what the real builder renders',
       serviceName: 'Full Detail', vehicle: '2019 Subaru Outback', id: 'sample' }, base()));
 ok('char counts are reported for the segment maths', pv.every((m) => m.chars === m.text.length));
 
+section('the editor opens on the real sentence, not a blank box');
+// Without this, "write your own" means either retyping the message or copying
+// the preview and shipping the sample date to every customer forever.
+const conf = find(base(), 'booking:confirm');
+ok('the template is the message', conf.template.length > 40);
+ok('the sample date is a placeholder', /\{date\}/.test(conf.template), conf.template);
+ok('…the time too', /\{time\}/.test(conf.template));
+ok('…and the service', /\{service\}/.test(conf.template));
+ok('no sample value is left to be shipped', !/Aug 4|10:00 AM|Dana|Subaru/.test(conf.template), conf.template);
+ok('the first name survives as {first}, not half a surname',
+  /\{first\}/.test(find(base(), 'booking:remindAm').template), find(base(), 'booking:remindAm').template);
+ok('the full name wins over the first name', M.sayDetok('Hey Dana Reed') === 'Hey {name}');
+ok('a template put back through the filler rebuilds the message',
+  M.sayFill(conf.template, { date: 'Tue, Aug 4', time: '10:00 AM', service: 'Full Detail',
+    name: 'Dana Reed', first: 'Dana', car: '2019 Subaru Outback' }) === conf.text);
+ok('his own wording is what the editor opens with once he has one',
+  find(withSay({ custom: { 'booking:confirm': 'Mine.' } }), 'booking:confirm').template === 'Mine.');
+
+section('every message is filed under a group');
+ok('all of them have one', M.sayPreview(base()).every((m) => !!m.group));
+ok('there are several, not one bucket', new Set(M.sayPreview(base()).map((m) => m.group)).size >= 4);
+ok('nothing lands in the catch-all', !M.sayPreview(base()).some((m) => m.group === 'Other'));
+
+section('a ban reports how much work it is doing');
+const impact = M.sayBanImpact(withSay({ never: ['no worries at all'] }));
+ok('it counts the wordings it blocks', impact[0] && impact[0].blocks >= 1, impact);
+ok('and names the phrase back', impact[0].phrase === 'no worries at all');
+ok('a ban that matches nothing reports zero rather than lying',
+  M.sayBanImpact(withSay({ never: ['xylophone repair'] }))[0].blocks === 0);
+ok('two overlapping bans are each counted on their own merits',
+  M.sayBanImpact(withSay({ never: ['no worries at all', 'no worries'] })).every((x) => x.blocks >= 1),
+  M.sayBanImpact(withSay({ never: ['no worries at all', 'no worries'] })));
+
+section('a ban beats a conflicting closer choice');
+// Choosing "what day" AND banning it is a contradiction. The ban is the
+// stronger statement, and the opener is one sentence with no variants for
+// sayOneOf to filter, so the closer is the only place it can bite.
+const clash = withSay({ closer: 'day' });
+ok('the banned wording does not go out', !/what day were you looking/i.test(find(clash, 'opener').text), find(clash, 'opener').text);
+ok('…and it falls to a legal question rather than going silent',
+  find(clash, 'opener').text.length > 40 && /\?/.test(find(clash, 'opener').text));
+ok('with the ban lifted, his choice is honoured',
+  /what day were you looking/i.test(find(withSay({ closer: 'day', never: [] }), 'opener').text));
+ok('banning every closing question drops the question, not the text',
+  (() => {
+    const all = ['open', 'day', 'part', 'address', 'none'].map((c) => M.quoteCloserText(c, false));
+    const t = find(withSay({ closer: 'open', never: all }), 'opener').text;
+    return t.length > 40 && !/\?/.test(t);
+  })(), find(withSay({ closer: 'open', never: ['Want me to send over'] }), 'opener').text);
+ok('and the opener never ends on a dangling space',
+  !/\s$/.test(find(withSay({ closer: 'none' }), 'opener').text));
+
+section('a banned phrase he typed himself is flagged, not silently stripped');
+const ownBad = withSay({ never: ['brand new'], custom: { 'booking:confirm': 'Looks brand new when I go.' } });
+ok('his wording still sends', find(ownBad, 'booking:confirm').text.includes('brand new'));
+ok('…but the screen warns him', find(ownBad, 'booking:confirm').warn === 'brand new');
+ok('a clean message carries no warning', !find(base(), 'booking:remindAm').warn);
+
 section('the preview endpoint reads, and only reads');
 await (async () => {
   store.clear(); M.__reset();
@@ -200,6 +259,8 @@ await (async () => {
   ok('it previews the UNSAVED rules', /what day were you looking/i.test(r.messages.find((m) => m.id === 'opener').text));
   ok('…without storing them', store.size === before && !store.has('config'));
   ok('it reports what would be silenced', Array.isArray(r.silenced));
+  ok('and how much each ban is doing', Array.isArray(r.impact));
+  ok('every row carries what the editor needs', r.messages.every((m) => m.group && typeof m.template === 'string'));
   const r2 = await (await M.apiSayPreview(req({ say: { never: ['Mikey'] } }))).json();
   ok('and flags a silencing draft before he saves it', r2.silenced.length > 0);
 })();

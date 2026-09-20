@@ -64,7 +64,7 @@ new Function('ctx',
   liftBlock('const AI_TELLS = [', '];') +
   lift('tidyDayWord') + lift('matchPhrase') + lift('tidyName') + lift('greetName') +
   lift('tidyVehicleCase') + lift('readVehicle') + lift('missingVehiclePart') + lift('hasStreetAddress') +
-  lift('quoteFacts') + lift('quoteWhen') + lift('quoteOpener') + lift('quoteCloser') +
+  lift('quoteFacts') + lift('quoteWhen') + lift('quoteOpener') + lift('quoteCloser') + lift('quoteCloserText') +
   // findTell now also checks the owner's own "never say this" list, so the
   // say-rule helpers come with it.
   lift('sayDefaults') + lift('sayRules') + lift('sayNorm') + lift('sayBanned') + 
@@ -86,7 +86,12 @@ const open = (o) => quoteOpener(quoteFacts(o));
 // The same submission with an explicit closing question. Which question the
 // opener ends on is Mikey's setting now ("How I talk" → closer), so a test that
 // wants a particular ending has to say which one it means.
-const openWith = (o, closer) => quoteOpener(quoteFacts(o), { closer });
+// `cfg` carries the owner's "How I talk" rules. Passed explicitly because a
+// banned phrase OUTRANKS the closer choice, and most of these cases want to
+// see the choice itself rather than the ban overriding it. NO_BANS is the
+// state after he clears the seeded rule.
+const NO_BANS = { say: { never: [] } };
+const openWith = (o, closer, cfg) => quoteOpener(quoteFacts(o), { closer, cfg: cfg || NO_BANS });
 // The same submission with the reworded generic opener switched on.
 const openAsk = (o) => quoteOpener(quoteFacts(o), { ask: true });
 const asksForCar = (t) => /year, make, and model/i.test(t);
@@ -145,6 +150,18 @@ console.log('\n=== the closing question is his to choose ===');
   check("'address' asks where to go",      /What's the address I'd be coming to\?$/.test(ends('address')), true);
   check("'none' asks nothing at all",      (ends('none').match(/\?/g) || []).length, 0);
   check("…and still ends on a full sentence", /\.$/.test(ends('none')), true);
+  // A phrase he banned beats the choice. Picking "what day" while it is on the
+  // never list is a contradiction, and the ban is the stronger statement — the
+  // opener is one sentence with no alternative wordings to filter, so this is
+  // the only place the ban can reach it.
+  const banned = openWith(sub2, 'day', { say: { never: ['what day were you looking'] } });
+  check('a banned closing question is not sent', /what day were you looking/i.test(banned), false);
+  check('…and it falls to a legal one instead', /\?$/.test(banned), true);
+  const allBanned = openWith(sub2, 'open',
+    { say: { never: ['open', 'what day', 'morning or afternoon', 'the address', 'let me know'] } });
+  check('banning every one drops the question, not the whole text', allBanned.length > 40, true);
+  check('…and what is left is still a complete sentence', /\.$/.test(allBanned), true);
+  check('…and leaves no dangling space', /\s$/.test(allBanned), false);
   // Whatever he picks, the opener's own gate still has to pass it.
   for (const c of ['open', 'day', 'part', 'address', 'none']) {
     const t = ends(c);
