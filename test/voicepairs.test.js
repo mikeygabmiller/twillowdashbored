@@ -180,10 +180,11 @@ ok('nor is an apology', env.missingFacts(bare, 'apology').length === 0);
 section('What actually goes over the wire to Anthropic');
 let sent = null;
 const api = new Function(
-  'ENV', 'claudeModel', 'noteAiUsage', 'noteClaudeSpend', 'fetch',
+  'ENV', 'claudeVia', 'claudeModel', 'noteAiUsage', 'noteClaudeSpend', 'fetch',
   `${lift('claudeGenerate')}\nreturn { claudeGenerate };`,
 )(
   { ANTHROPIC_API_KEY: 'sk-test' },
+  () => 'key',
   () => 'claude-opus-5',
   async () => {}, () => {},
   async (url, init) => {
@@ -203,6 +204,35 @@ ok('his real exchanges are message turns, not quoted strings in a blob',
   sent.messages.length === 3 && sent.messages[1].role === 'assistant', sent.messages.map((m) => m.role));
 ok('and the live question comes last', /Reply:/.test(sent.messages[2].content), sent.messages[2]);
 ok('drafting thinks harder than the mechanical surfaces', sent.output_config.effort === 'medium', sent.output_config);
+
+// ---------------------------------------------------------------------------
+section('And what goes over the wire through the AI binding instead');
+// Same function, same draft, a different shape on the wire. The catalog schema
+// behind the binding takes messages, max_tokens and a STRING system — Opus's
+// output_config and a system block carrying cache_control are both 400s there,
+// and a 400 on every draft would read as "the AI broke", not as "wrong field".
+let bound = null;
+const api2 = new Function(
+  'ENV', 'claudeVia', 'claudeModel', 'noteAiUsage', 'noteClaudeSpend', 'fetch',
+  `${lift('claudeGenerate')}\nreturn { claudeGenerate };`,
+)(
+  { AI: { run: async (model, input, opts) => { bound = { model, input, opts }; return { content: [{ type: 'text', text: 'drafted' }], usage: {} }; } } },
+  () => 'binding',
+  () => 'anthropic/claude-haiku-4.5',
+  async () => {}, () => {},
+  async () => { throw new Error('the binding route must never reach out to api.anthropic.com'); },
+);
+await api2.claudeGenerate('Reply:', { system: 'THE PLAYBOOK', turns, effort: 'medium' });
+ok('the model is the binding\'s own first argument, not a body field',
+  bound.model === 'anthropic/claude-haiku-4.5' && bound.input.model === undefined, bound.model);
+ok('the system prompt goes as a plain string', bound.input.system === 'THE PLAYBOOK', bound.input.system);
+ok('with no cache_control block to be rejected for', typeof bound.input.system === 'string');
+ok('and no effort dial, which Haiku does not have', bound.input.output_config === undefined, bound.input.output_config);
+ok('his real exchanges still ride as message turns',
+  bound.input.messages.length === 3 && bound.input.messages[1].role === 'assistant',
+  bound.input.messages.map((m) => m.role));
+ok('and the call is tagged with a gateway so the logs land somewhere findable',
+  bound.opts.gateway.id === 'default', bound.opts);
 // Prefilling the assistant turn would be stronger still and is a 400 on this
 // model family, so the turns above are the supported way to do this.
 ok('there is no trailing assistant prefill to get rejected',

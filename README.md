@@ -213,11 +213,15 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
   enters the corpus; a plain list of your texts, one per line, works too. Bare
   links, phone numbers and payment URLs are dropped; payment methods mentioned
   inside a sentence are kept, because that's your voice.
-- **Claude writes the customer-facing drafts** when `ANTHROPIC_API_KEY` is set —
-  holding one specific person's voice from example texts is the one place the model
-  itself is the ceiling. Everything else (classification, triage, summaries) stays
-  on Gemini Flash, and drafting falls back to Gemini automatically if the key is
-  missing or the call fails, so you never lose the ability to reply.
+- **Claude writes the customer-facing drafts** — holding one specific person's
+  voice from example texts is the one place the model itself is the ceiling. It
+  runs on Haiku 4.5 through the Worker's `AI` binding (Cloudflare AI Gateway,
+  Unified Billing), so there is **no API key anywhere**: Cloudflare holds the
+  provider credentials and the cost comes out of the account's prepaid credits.
+  `ANTHROPIC_API_KEY` is still honoured as a fallback route (on Opus 5) if the
+  binding is turned off with `AI_BINDING_OFF`. Everything else (classification,
+  triage, summaries) stays on Gemini Flash, and drafting falls back to Gemini
+  automatically if the call fails, so you never lose the ability to reply.
 - **Click-to-call:** rings your cell, then bridges the call to the customer through
   your Twilio number (keeps your personal number private).
 - **Instant email alerts (optional, Resend):** get emailed the moment a text,

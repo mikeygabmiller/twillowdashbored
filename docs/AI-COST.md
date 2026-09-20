@@ -56,9 +56,20 @@ vs $0.30 per million); the range spanned both.
 | Voice fingerprint | `deriveVoiceFingerprint` | you tap "Relearn how I text" | rare | — |
 | Detection draft | `detConfirmDraft` | you confirm a job card | rare | — |
 
-`generateReply` runs at `voice` tier: with `ANTHROPIC_API_KEY` set it goes to
-Claude instead, so its 17% lands on a different (pricier) bill. The counters keep
-that separate — a Claude call is filed as `<surface> (claude)`.
+`generateReply` runs at `voice` tier: it goes to Claude instead, so its 17% lands
+on a different bill. The counters keep that separate — a Claude call is filed as
+`<surface> (claude)`.
+
+**Changed 2026-09-20.** That bill is now Cloudflare's, not Anthropic's. Claude is
+reached through the Worker's `AI` binding on Cloudflare AI Gateway with Unified
+Billing, which means no API key is stored anywhere and the drafts are paid for out
+of the account's prepaid credits (Cloudflare adds 5% on a credit purchase; the
+inference itself is at Anthropic's normal rates). The model moved with it:
+**`anthropic/claude-haiku-4.5` at $1/$5 per million**, down from Opus 5 at $5/$25,
+so a typical draft went from about 2.3¢ to about 0.45¢ and the $1/day ceiling now
+buys roughly five times as many drafts. The one thing given up is the prompt-cache
+breakpoint on the system block, which the catalog schema has no field for — at a
+fifth of the input rate that is a smaller loss than the cache was a win.
 
 **One thing the old table got wrong:** `apiAiDraft` was filed under "you tap", but
 Auto Polish calls the same endpoint **by itself** every time you stop typing for
