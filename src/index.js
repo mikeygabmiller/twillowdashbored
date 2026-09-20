@@ -1593,9 +1593,17 @@ async function handleInboundSms(request) {
   // Their actual words go in the subject, so the phone's notification banner —
   // which is all he sees half the time — already says what was asked.
   const gist = String(text || '').replace(/\s+/g, ' ').trim();
-  const subject = gist
-    ? `📱 ${who}: "${gist.length > 64 ? gist.slice(0, 63).trimEnd() + '…' : gist}"`
-    : `📱 ${who} sent a photo`;
+  // A tapback reads better as itself than as a quote of a quote. The banner on
+  // his phone is often the only part he sees, so it says "❤️ Ruth loved" and
+  // then HIS words, not `📱 Ruth: "Loved "see you Saturday at 10""`.
+  const tap = parseReaction(text);
+  const tapQuote = tap ? (tap.quote.length > 52 ? tap.quote.slice(0, 51).trimEnd() + '…' : tap.quote) : '';
+  const tapVerb = tap ? (tap.removed ? 'took their reaction off' : tap.label === 'reacted' ? 'reacted to' : tap.label) : '';
+  const subject = tap
+    ? `${tap.emoji ? tap.emoji + ' ' : '↩️ '}${who} ${tapVerb} "${tapQuote}"`
+    : gist
+      ? `📱 ${who}: "${gist.length > 64 ? gist.slice(0, 63).trimEnd() + '…' : gist}"`
+      : `📱 ${who} sent a photo`;
   await notifyMikey(subject,
     assistAlertBody(alertCfg, { phone: fromNorm, who, msg: text, ask, draft, note: nameNote, media: numMedia }));
   // Watch for "so Saturday at 10 then?" and raise a one-tap job card if so.
@@ -8778,6 +8786,80 @@ function isClosingRemark(body) {
   return words.every((w) => CLOSER_WORDS.has(w));
 }
 
+// ===========================================================================
+// Tapbacks — the heart somebody put on one of his texts
+// ---------------------------------------------------------------------------
+// A tapback is not a message, it is a sticker stuck on an existing one. Phones
+// have no way to say that over SMS, so it arrives as plain text: a customer
+// double-taps "See you Saturday at 10" and what lands here is the literal
+// string `Loved "See you Saturday at 10"`. Untreated, that showed up in the
+// dashboard as a brand-new inbound bubble repeating Mikey's own words back at
+// him, and the thread looked like it had something new to answer.
+//
+// So it is parsed on the way in and pinned to the message it points at. Two
+// deliberate choices:
+//
+// - The quote is matched as a PREFIX, not an equality. Phones truncate a long
+//   message with an ellipsis, so `Loved "Hey Dave, I can do Saturday at…"` has
+//   to find a text it is only the opening of.
+// - A tapback we cannot place stays a normal message. They pressed something on
+//   their phone and that is real; showing it plainly is a much smaller failure
+//   than swallowing it.
+// ===========================================================================
+const TAPBACKS = {
+  liked: '\uD83D\uDC4D', loved: '\u2764\uFE0F', 'laughed at': '\uD83D\uDE02',
+  emphasized: '\u203C\uFE0F', emphasised: '\u203C\uFE0F',
+  disliked: '\uD83D\uDC4E', questioned: '\u2753',
+};
+// iOS 18 and RCS let you tap back with any emoji: `Reacted \uD83D\uDD25 to "..."`.
+const REACTION_ANY_RE = /^reacted\s+(\S{1,12}?)\s+to\s+["\u201C\u201D']/i;
+// The four that close a conversation. "Disliked" and "Questioned" are NOT here:
+// a thumbs-down or a "?" on a price is a customer with a problem, and the whole
+// bias of the reply check is that a needless nudge beats a missed customer.
+const QUIET_TAPBACKS = new Set(['liked', 'loved', 'laughed at', 'emphasized', 'emphasised']);
+
+// Taking a tapback back off arrives as text too: `Removed a heart from "..."`.
+const REACTION_REMOVED_RE = /^removed\s+(?:an?\s+)?(?:like|love|heart|dislike|laugh|question|exclamation|emphasis)\s+from\s+["\u201C\u201D']/i;
+
+// { label, emoji, quote, removed } for a tapback, or null for an ordinary text.
+function parseReaction(body) {
+  const raw = String(body || '').trim();
+  let label = '', emoji = '', at = -1;
+  const undone = raw.match(REACTION_REMOVED_RE);
+  if (undone) {
+    const gone = raw.slice(undone[0].length).replace(/["\u201C\u201D']\s*$/, '');
+    return { label: 'removed', emoji: '', removed: true, quote: gone.replace(/(\u2026|\.\.\.)$/, '').trim() };
+  }
+  const named = raw.match(REACTION_RE);
+  if (named) { label = named[1].toLowerCase(); emoji = TAPBACKS[label] || TAPBACKS.liked; at = named[0].length - 1; }
+  else {
+    const any = raw.match(REACTION_ANY_RE);
+    if (!any) return null;
+    emoji = any[1]; label = 'reacted'; at = any[0].length - 1;
+  }
+  // `at` sits on the opening quote character; the closing one is whatever ends
+  // the line, because the quoted text can itself contain quotes.
+  const quote = raw.slice(at + 1).replace(/["\u201C\u201D']\s*$/, '');
+  return { label, emoji, removed: false, quote: quote.replace(/(\u2026|\.\.\.)$/, '').trim() };
+}
+
+// Which message a tapback landed on, or null. Newest first: if he sent the same
+// line twice, the one they just read is the one they tapped. Exact matches win
+// over truncated ones outright, so a short quote can never steal a longer text
+// that merely starts the same way.
+function reactionTarget(messages, quote) {
+  const want = normText(quote);
+  if (want.length < 2) return null;
+  const recent = (messages || []).slice(-60).filter((m) => m && m.kind !== 'reaction' && normText(m.body));
+  for (let i = recent.length - 1; i >= 0; i--) if (normText(recent[i].body) === want) return recent[i];
+  // Only a quote long enough to be distinctive may match on its opening. The
+  // prefix path exists for ONE reason — the phone truncated a long message — so
+  // the bar is set well above anything two people would say by coincidence.
+  if (want.length < 16) return null;
+  for (let i = recent.length - 1; i >= 0; i--) if (normText(recent[i].body).startsWith(want)) return recent[i];
+  return null;
+}
+
 // Ask Gemini to read the whole conversation and rule on whether Mikey still owes
 // the customer something. Returns { needed, reason }. Throws if the AI is
 // unavailable so the caller can fall back to the heuristic above.
@@ -8929,6 +9011,11 @@ async function ensureReplyCheck(thread, cfg) {
     verdict = { needed: false, reason: 'STOP/START keyword — no reply', via: 'rule' };
   } else if (last.kind === 'voicemail' || (Array.isArray(last.media) && last.media.length)) {
     verdict = { needed: true, reason: 'Voicemail or photo to respond to', via: 'rule' };
+  } else if (last.kind === 'reaction' && QUIET_TAPBACKS.has(last.reactLabel || '')) {
+    // A heart on his last text is the conversation ending well, not a question.
+    // Settled here for free, before looksLikeQuestion reads the quoted words
+    // back out of it and decides Mikey's own "how much?" needs answering again.
+    verdict = { needed: false, reason: 'They tapped back — nothing asked', via: 'rule' };
   } else if (looksLikeQuestion(last.body)) {
     verdict = { needed: true, reason: 'They asked you something', via: 'rule' };
   } else if (!ENV.GEMINI_API_KEY) {
@@ -11841,7 +11928,13 @@ function buildIndexSummary(thread, cfg) {
     recap: (recapFor(thread) || {}).text || '',
     // A text that is nothing but a photo has no words to preview — say so, or the
     // list row goes blank and the last thing that happened looks like nothing.
-    lastBody: last ? (preview(last.body) || (Array.isArray(last.media) && last.media.length ? '\uD83D\uDCF7 Photo' : '')) : '',
+    // A tapback carries its emoji into the list row, the way a phone shows it:
+    // `❤️ Loved "see you Saturday"` reads as somebody happy, where the bare
+    // words read as a new question he hasn't answered.
+    lastBody: last
+      ? ((last.kind === 'reaction' && last.emoji ? last.emoji + ' ' : '') +
+         (preview(last.body) || (Array.isArray(last.media) && last.media.length ? '\uD83D\uDCF7 Photo' : '')))
+      : '',
     lastDir: last ? last.dir : '',
     lastTs: last ? last.ts : (thread.updatedAt || Date.now()),
     awaitingReply: awaiting,
@@ -11889,6 +11982,21 @@ async function appendMessage(phone, message, opts = {}) {
   if (message.dir === 'in') markSource(thread, message.kind === 'voicemail' ? 'call' : 'text');
   message.id = message.id || genId();
   message.ts = message.ts || Date.now();
+  // A tapback gets tied to the message it was stuck on, here — the one place
+  // every inbound text passes through — so the thread can draw it on that
+  // bubble instead of repeating his own words back at him as a new message.
+  // Unmatched ones keep `kind: 'reaction'` and no `reactTo`, and the dashboard
+  // then shows them as an ordinary text rather than dropping them.
+  if (message.dir === 'in' && !message.kind) {
+    const react = parseReaction(message.body);
+    if (react) {
+      message.kind = 'reaction';
+      message.emoji = react.emoji;
+      message.reactLabel = react.label;
+      const target = reactionTarget(thread.messages, react.quote);
+      if (target && target.id) message.reactTo = target.id;
+    }
+  }
   thread.messages.push(message);
   if (message.dir === 'in') thread.unread = (thread.unread || 0) + 1;
   // A customer reaching out beats any note Mikey left himself: an inbound text
