@@ -90,6 +90,43 @@ Auto Polish calls the same endpoint **by itself** every time you stop typing for
 counters will show what it really costs. It has not been switched off — unlike the
 keyboard's ghost text, a rewritten message box is something you'd notice missing.
 
+## What was cut on 2026-09-21, and why
+
+The rule this round: **a button nobody taps costs nothing.** Deleting screens off
+the bill is theatre — what you pay for is the AI that runs *without being asked*.
+So the cut went after automatic calls first, and only then at surfaces that were
+paying to restate something the app already showed for free.
+
+| Cut | Was | Now |
+|---|---|---|
+| **Home's AI card** (`/api/ai/analyze`) | ran itself on **every** Home draw, in Pro mode | waits for a tap ("Read my dashboard") |
+| **Journey AI read** (`/api/journey/ai`) | a button per visitor + one for the board | gone; the recorded timeline is the answer |
+| **Usage AI read** (`/api/use/ai`) | "how do I actually use this?" | gone; *Copy all of this for Claude* asks the same thing for free |
+| **Content studio** (`/api/ai/generate`) | 6 marketing-copy prompts | gone; nothing in the app had called it in any version |
+
+The Home card is the one that mattered. `state.aiBrief` lives in memory only, so
+every cold open of the PWA bought a fresh whole-dashboard prompt at 2600 output
+tokens — a dozen a day on a phone that gets opened between jobs, for a paragraph
+nobody had asked for. **One caveat worth stating rather than glossing:** the card
+is a Pro-mode surface (`UI.mode`, per device, in `localStorage`), so this was only
+being spent on a device switched to Pro. On a Simple-mode phone the card never
+rendered and `wireAiCenter` returned early, so there was nothing to cut. Check the
+`analyze` line in the counters before crediting this with a number.
+
+The counters could not have told the two apart anyway: an auto-run and a deliberate
+tap were both filed under `analyze`. `test/aidiet.ui.test.js` now pins the split —
+in Pro mode, opening the app makes zero calls, one tap makes exactly one.
+
+`/api/ai/generate` was dead code — a Grow-hub Content Studio endpoint with no
+caller left anywhere in `public/index.html` or the tests.
+
+**What was deliberately left alone:** every AI in the texting loop (drafts, polish,
+recap, inbound triage, reply check, appointment detect, promise capture, quote
+opener, follow-up drafts), and the manual buttons that only spend when they are
+pushed — photo quote, bank scan, Money Brain, coach, triage board, command bar,
+the agent. Those are a judgement call away from the counters, not a fact yet. The
+next cut should be the one `bySurface` names, per step 5 below.
+
 ## The deadline that matters more than the cost
 
 `gemini-2.5-flash` — the hard-coded default in `geminiGenerate()` — **retires
@@ -111,7 +148,7 @@ deadline forces it, and watch the error column afterwards.
 2. ~~**Gate `assistAsk`.**~~ Done.
 3. ~~**Send less context.**~~ Done for the three classification prompts.
 4. **Finish the two-tier router.** `aiGenerate()` already splits `voice` from
-   `fast`, but only 4 of 23 call sites use it; the other 19 call `geminiGenerate()`
+   `fast`, but only 4 of 19 call sites use it; the other 19 call `geminiGenerate()`
    directly and can't be routed or repriced centrally. Pointing them at
    `aiGenerate({ tier: 'fast' })` makes the October migration — and any future
    "cheap model on boring jobs" call — a one-line change. Every call site now
