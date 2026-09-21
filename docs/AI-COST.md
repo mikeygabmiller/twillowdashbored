@@ -127,6 +127,50 @@ pushed — photo quote, bank scan, Money Brain, coach, triage board, command bar
 the agent. Those are a judgement call away from the counters, not a fact yet. The
 next cut should be the one `bySurface` names, per step 5 below.
 
+## 2026-09-21, second pass: the automatic half is now opt-in
+
+The rule from the first pass held: a button nobody taps costs nothing, so the
+only AI worth managing is the AI that runs while the phone is in his pocket.
+That half now has a switchboard — ☰ → Settings → **AI that runs by itself** —
+and every switch on it ships **off**.
+
+| Switch (`config.autoAi`) | What runs it | With it off |
+|---|---|---|
+| `triage` | every inbound text | the alert quotes their text |
+| `appointment` | inbound that looks schedulish | no job card; he adds it |
+| `promise` | inbound that sounds like a promise | nothing watches |
+| `replyCheck` | every inbound needing a ruling | the free rules decide (question = owed) |
+| `draft` | every inbound owed a reply | he taps the sparkles when he wants one |
+| `followupDraft` | the cron, when a nudge comes due | the nudge sends his saved template |
+| `recap` | every peek at a card | the last message, plus a *Sum it up* button |
+
+Two design notes worth keeping:
+
+**It sits in front of the old per-feature switches rather than replacing them.**
+Flipping `detect.enabled`'s default to false would have done nothing: defaults
+only apply to a key that isn't stored, and his config has had those keys written
+for months. A key his stored config has never heard of is the only thing that
+reads "off" on day one without rewriting his settings underneath him.
+
+**Off is never a hole.** Every one of these surfaces already had a
+no-`GEMINI_API_KEY` path, and the switch routes into that same path — the one the
+suites already cover. Off means the free answer, not a blank.
+
+Also flipped: **Auto Polish** (`UI.autoPolish`, per device) now starts off. It
+called `/api/ai/draft` every time he stopped typing for 2.4s, so a message typed
+with three pauses was three calls to tidy one text. The wand beside the box does
+it on demand, and resuming is one tap on the polish strip.
+
+`test/autoai.test.js` pins the gates at the function level — off means **zero**
+calls, and the fallback still produces a real answer rather than an empty one.
+`test/autoai.ui.test.js` pins the screen: seven rows, all off for a config that
+has never heard of the key, and a tap that posts exactly the key the Worker
+gates on.
+
+**What this does not touch:** the manual buttons. Photo quote, bank scan, Money
+Brain, coach, triage board, the command bar, the agent, *Write it for me*, the
+wand — all unchanged, because they only spend when they are pressed.
+
 ## The deadline that matters more than the cost
 
 `gemini-2.5-flash` — the hard-coded default in `geminiGenerate()` — **retires

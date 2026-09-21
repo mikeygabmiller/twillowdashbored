@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-21·aidiet2';
+const BUILD = '2026-09-21·askfirst';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -2216,7 +2216,7 @@ const ASSIST_ATTRIB = /^[ \t]*On\b[\s\S]{0,200}?\bwrote:[ \t]*$/m;
 const ASSIST_KINDS = ['price', 'schedule', 'question', 'confirm', 'chitchat', 'escalate'];
 
 async function assistAsk(thread, cfg) {
-  if (!ENV.GEMINI_API_KEY) return null;
+  if (!ENV.GEMINI_API_KEY || !autoAiOn(cfg, 'triage')) return null;
   const msgs = thread.messages || [];
   const last = msgs[msgs.length - 1];
   if (!last || last.dir !== 'in') return null;
@@ -8789,12 +8789,17 @@ function recapFor(thread) {
   return (r && r.forTs === last.ts && r.text) ? r : null;
 }
 
-async function ensureRecap(thread, cfg) {
+async function ensureRecap(thread, cfg, asked) {
   const msgs = thread.messages || [];
   const last = msgs[msgs.length - 1];
   if (!last) return false;                 // nothing has happened yet
   if (recapFor(thread)) return false;      // already summarised this exact state
-  if (!ENV.GEMINI_API_KEY) return false;   // no key — the card falls back to the last message
+  // Off, or no key at all, and the card falls back to the last message — which is
+  // why this is safe to leave off: the row still says something, just for free.
+  // `asked` is him pressing Sum it up on the card. The switch governs the peek
+  // paying for itself; it was never meant to stop him buying one on purpose.
+  if (!ENV.GEMINI_API_KEY) return false;
+  if (!asked && !autoAiOn(cfg, 'recap')) return false;
 
   const who = (thread.name || '').trim().split(/\s+/)[0] || 'they';
   const prompt =
@@ -8842,12 +8847,19 @@ async function apiAiRecap(request) {
   const cached = recapFor(thread);
   if (cached) return json({ ok: true, recap: cached.text, cached: true });
   const cfg = await loadConfig();
-  if (await ensureRecap(thread, cfg)) {
+  // The peek asks for a recap on its own every time it opens a card, so it only
+  // gets one when he's switched that on. `ask:true` is the button on the card,
+  // which is him choosing to spend and always works.
+  if (await ensureRecap(thread, cfg, data.ask === true)) {
     await saveThread(thread);
     await updateIndexEntry(thread);
     return json({ ok: true, recap: (thread.recap || {}).text || '' });
   }
-  return json({ ok: true, recap: '', error: ENV.GEMINI_API_KEY ? 'ai_failed' : 'ai_not_configured' });
+  if (!ENV.GEMINI_API_KEY) return json({ ok: true, recap: '', error: 'ai_not_configured' });
+  // Told apart on purpose: "it's switched off" is a different thing for the card
+  // to show than "it tried and failed", and only one of them offers a button.
+  if (!autoAiOn(cfg, 'recap') && data.ask !== true) return json({ ok: true, recap: '', error: 'auto_off' });
+  return json({ ok: true, recap: '', error: 'ai_failed' });
 }
 
 // Sync read used by the (sync) follow-up planner and the index builder.
@@ -8887,7 +8899,7 @@ async function ensureReplyCheck(thread, cfg) {
     verdict = { needed: false, reason: 'They tapped back — nothing asked', via: 'rule' };
   } else if (looksLikeQuestion(last.body)) {
     verdict = { needed: true, reason: 'They asked you something', via: 'rule' };
-  } else if (!ENV.GEMINI_API_KEY) {
+  } else if (!ENV.GEMINI_API_KEY || !autoAiOn(cfg, 'replyCheck')) {
     verdict = isClosingRemark(last.body)
       ? { needed: false, reason: 'Wrapped up — nothing asked', via: 'rule' }
       : { needed: true, reason: 'Waiting on you', via: 'rule' };
@@ -9450,7 +9462,7 @@ async function ensureLiveSuggestion(thread, cfg, now) {
   if (!plan || plan.dueAt > now) return changed;
   if (autopilotAllowed(plan, fu, cfg)) return changed;   // autopilot handles it; don't nag with a suggestion
   if (!fu.suggestion) {
-    const draft = await buildFollowupDraft(thread, plan, cfg, { ai: true });
+    const draft = await buildFollowupDraft(thread, plan, cfg, { ai: autoAiOn(cfg, 'followupDraft') });
     fu.suggestion = {
       id: genId(), stage: plan.stage, step: plan.step || 0, stepKey: plan.stepKey,
       reason: followupReason(thread, plan), draft, urgency: plan.urgency, dueAt: plan.dueAt, createdAt: now,
@@ -9530,7 +9542,7 @@ async function evaluateFollowups(now = Date.now()) {
       }
       changed = true; acted++;
     } else if (plan && plan.dueAt <= now && !autopilotAllowed(plan, fu, cfg) && !fu.suggestion) {
-      const draft = await buildFollowupDraft(thread, plan, cfg, { ai: true });
+      const draft = await buildFollowupDraft(thread, plan, cfg, { ai: autoAiOn(cfg, 'followupDraft') });
       fu.suggestion = {
         id: genId(), stage: plan.stage, step: plan.step || 0, stepKey: plan.stepKey,
         reason: followupReason(thread, plan), draft, urgency: plan.urgency, dueAt: plan.dueAt, createdAt: now,
@@ -9683,6 +9695,10 @@ async function apiGetConfig() {
 function publicConfig(cfg) {
   const out = Object.assign({}, cfg);
   delete out.anthropicApiKey;
+  // Always sent whole, defaults filled in, so the switches on the screen read the
+  // same "off" the Worker reads rather than rendering blank for a config that has
+  // never been saved since this shipped.
+  out.autoAi = autoAiCfg(cfg);
   out.aiKey = { set: !!(cfg && cfg.anthropicApiKey), hint: keyHint(cfg && cfg.anthropicApiKey) };
   return out;
 }
@@ -9745,6 +9761,15 @@ async function apiSaveConfig(request) {
   if (data.briefHour != null && !isNaN(+data.briefHour)) next.briefHour = Math.max(4, Math.min(11, Math.round(+data.briefHour)));
   if (Array.isArray(data.team)) next.team = sanitizeTeam(data.team);
   if (data.playbook && typeof data.playbook === 'object') next.playbook = sanitizePlaybook(data.playbook, next.playbook);
+  // Only the keys the switchboard knows about, only booleans. A screen that can
+  // turn spending on is not a place to let an arbitrary key through.
+  if (data.autoAi && typeof data.autoAi === 'object') {
+    const a = Object.assign(autoAiDefaults(), next.autoAi || {});
+    for (const k of Object.keys(autoAiDefaults())) {
+      if (typeof data.autoAi[k] === 'boolean') a[k] = data.autoAi[k];
+    }
+    next.autoAi = a;
+  }
   if (data.detect && typeof data.detect === 'object') next.detect = sanitizeDetect(data.detect, next.detect);
   if (data.promise && typeof data.promise === 'object') next.promise = sanitizePromiseCfg(data.promise, next.promise);
   if (data.say && typeof data.say === 'object') {
@@ -11360,6 +11385,9 @@ function defaultConfig() {
     // the code's, and they apply to the fixed templates and the AI alike.
     say: sayDefaults(),
     followupsEnabled: true,  // global master switch for the whole engine
+    // Which AI is allowed to run without him pressing anything. All off — see
+    // autoAiDefaults(). The ones he turns on are the ones he's paying for.
+    autoAi: autoAiDefaults(),
     autopilot: false,        // when true, safe nudges send themselves at the due time
     reviewUrl: '',           // Google review link, dropped into the review-ask nudge
     // The Anthropic key, when there is one. Lives here rather than in a Worker
@@ -11947,6 +11975,41 @@ function computeReplyStats(messages) {
 // turns is all "does he still owe a reply?" or "what happened here?" ever reads.
 // Drafting deliberately keeps the full 40: holding his voice is worth the context.
 const AI_CLASSIFY_TURNS = 12;
+
+// ===========================================================================
+// AI that runs without being asked  (config.autoAi)
+// ---------------------------------------------------------------------------
+// Every AI in this app falls into one of two piles. One pile only ever runs
+// because he pressed something, and a button he never presses costs nothing.
+// The other pile runs on an inbound text or on the cron, while the phone is in
+// his pocket, and that pile is the bill. This is the switchboard for the second
+// pile, and everything on it starts OFF.
+//
+// It deliberately sits IN FRONT of the older per-feature switches (detect.enabled,
+// promise.enabled) rather than replacing them. Flipping those defaults would have
+// done nothing for him anyway: defaults only apply to a key that isn't stored,
+// and his config has had those keys written for months. A new key that his stored
+// config has never heard of is the only thing that reads "off" on day one without
+// anybody rewriting his settings underneath him.
+//
+// Each one routes through the SAME path the app already takes when there's no
+// GEMINI_API_KEY at all — a path every one of these surfaces already had, and
+// that the suites already cover. Off doesn't mean broken here, it means the free
+// answer: the peek card shows the last message, the reply check falls back to its
+// rules, the follow-up uses its template.
+function autoAiDefaults() {
+  return {
+    triage: false,        // read an incoming text and work out what it's asking
+    appointment: false,   // spot "saturday at 10 then?" and raise a job card
+    promise: false,       // catch something he said he'd do, and remind him
+    replyCheck: false,    // rule on whether he still owes an answer
+    draft: false,         // have a reply written and waiting before he opens it
+    followupDraft: false, // word the nudge when one comes due on the cron
+    recap: false,         // sum up a conversation when he peeks at the card
+  };
+}
+function autoAiCfg(cfg) { return Object.assign(autoAiDefaults(), (cfg && cfg.autoAi) || {}); }
+function autoAiOn(cfg, k) { return autoAiCfg(cfg)[k] === true; }
 
 function transcript(thread, max = 40) {
   return (thread.messages || []).slice(-max)
@@ -13378,7 +13441,7 @@ async function maybeSuggestReply(phone) {
     let changed = await ensureReplyCheck(thread, cfg);
     verdict = replyCheckFor(thread);
     if (replyOwed(thread)) {
-      if (aiConfigured()) {
+      if (aiConfigured() && autoAiOn(cfg, 'draft')) {
         // Ask before guessing. If the reply hinges on something only he knows,
         // hold the draft and hang the question on the thread instead — a wrong
         // guessed time goes out in his voice and is his problem to walk back.
@@ -17928,6 +17991,7 @@ async function maybeDetectJob(phone) {
     if (envFlag('DETECT_DISABLED')) return;          // no-KV-write kill switch
     if (!ENV.GEMINI_API_KEY) return;
     const cfg = await loadConfig();
+    if (!autoAiOn(cfg, 'appointment')) return;
     const dc = detCfg(cfg);
     if (!dc.enabled) return;
     const thread = await loadThread(phone);
@@ -18576,6 +18640,7 @@ async function maybePromise(phone) {
     if (envFlag('PROMISE_DISABLED')) return null;    // no-KV-write kill switch
     if (!ENV.GEMINI_API_KEY) return null;
     const cfg = await loadConfig();
+    if (!autoAiOn(cfg, 'promise')) return null;
     const pc = promCfg(cfg);
     if (!pc.enabled) return null;
     const thread = await loadThread(phone);

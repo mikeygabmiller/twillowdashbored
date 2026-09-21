@@ -2862,6 +2862,21 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .mr-row .n{flex:0 0 auto;font-size:12px;color:var(--muted2)}
   .mr-row .cv{flex:0 0 auto;color:var(--muted2);line-height:0}
   .mr-row.danger .t,.mr-row.danger .e{color:var(--accent-text)}
+  .aa-intro{padding:13px 15px;border:1px solid var(--line);border-radius:14px;background:var(--panel);margin-bottom:12px}
+  .aa-intro b{display:block;font-size:14.5px;margin-bottom:5px}
+  .aa-intro span{display:block;font-size:12.5px;line-height:1.5;color:var(--muted2)}
+  .aa-row{display:flex;gap:11px;align-items:flex-start;padding:13px 14px;border:1px solid var(--line);
+    border-radius:14px;background:var(--card);margin-bottom:9px;cursor:pointer}
+  .aa-row.on{border-color:var(--accent)}
+  .aa-row:active{transform:scale(.995)}
+  .aa-ic{flex:none;color:var(--muted);display:flex;margin-top:1px}
+  .aa-row.on .aa-ic{color:var(--accent-text)}
+  .aa-txt{flex:1;min-width:0}
+  .aa-txt b{display:block;font-size:14px;font-weight:650;margin-bottom:3px}
+  .aa-what{display:block;font-size:12.5px;line-height:1.5;color:var(--muted2)}
+  .aa-calls{display:block;font-size:11px;margin-top:5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .aa-row .sw{flex:none;margin-top:2px}
+  .aa-foot{font-size:12px;line-height:1.55;color:var(--muted2);margin:14px 2px 4px}
   .mr-sec{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2);padding:16px 4px 8px}
   .mr-foot{text-align:center;color:var(--muted2);font-size:11.5px;line-height:1.7;padding:18px 0 6px}
   .jd{position:fixed;inset:0;z-index:82;background:var(--bg);display:none;flex-direction:column}
@@ -3078,6 +3093,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .pk-recap{background:var(--panel2);border-radius:15px;padding:12px 13px;margin-bottom:14px}
   .pk-recap .rh{display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:800;letter-spacing:.06em;
     text-transform:uppercase;color:var(--muted2);margin-bottom:6px}
+  .pk-recap-ask{display:inline-flex;align-items:center;gap:6px;font-family:inherit;font-size:12.5px;font-weight:600;
+    color:var(--accent-text);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:6px 12px;margin-top:5px;cursor:pointer}
+  .pk-recap-ask:active{transform:scale(.97)}
   .pk-recap .rb{font-size:14.5px;line-height:1.5}
   .pk-recap.loading .rb{color:var(--muted2);animation:pkpulse 1.3s ease-in-out infinite}
   @keyframes pkpulse{0%,100%{opacity:.45}50%{opacity:.9}}
@@ -4460,7 +4478,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-21·aidiet2";
+  var APP_BUILD="2026-09-21·askfirst";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4937,7 +4955,11 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     radius:"md", density:"comfy", textScale:100, font:"system", bg:"solid",
     mode:"simple", locked:false, tourSeen:false, listStyle:"compact",
     layout:"classic",   // classic | deck | air | bento | console — see applyLayout()
-    autoPolish:true,   // rewrite the draft in place when you pause typing (undo lives on the strip)
+    // Off: it called the AI every time he stopped typing for 2.4s, which on a
+    // three-pause message is three calls to tidy one text. The wand button beside
+    // the box does the same job the moment he wants it. Resume is one tap on the
+    // strip, and that choice sticks per device.
+    autoPolish:false,  // rewrite the draft in place when you pause typing (undo lives on the strip)
     navV:5, tabsOrder:["home","messages","calls","work","money","more","stats"], tabsHidden:["stats"],
     mblocks:["hero","log","alerts","pulse","brain","today","pricing"], mblocksHidden:[],
     mkpis:["net","you","costs","savings","avg","jobs","margin","owed","best"],
@@ -8483,16 +8505,18 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // and got nothing, which is a real answer and stops it asking again.
   var RECAP={},RECAP_BUSY={};
   function recapKey(t){return t.phone+"|"+(t.lastTs||0)}
-  function recapFetch(phone,key){
+  function recapFetch(phone,key,ask){
     if(RECAP_BUSY[key])return;
     RECAP_BUSY[key]=true;
-    var done=function(text){
-      RECAP_BUSY[key]=false;RECAP[key]={text:text||""};
+    var done=function(text,off){
+      RECAP_BUSY[key]=false;RECAP[key]={text:text||"",off:!!off};
       var e=threadByPhone(phone);if(e&&text)e.recap=text;
       if(PEEK.phone===phone)peekRender();
     };
-    post("/api/ai/recap",{phone:phone})
-      .then(function(d){done(d&&d.ok?d.recap:"")})
+    post("/api/ai/recap",{phone:phone,ask:ask===true})
+      // auto_off is the switch, not a failure, and it is the one answer that
+      // earns a button instead of silence: he can still buy this one card.
+      .then(function(d){done(d&&d.ok?d.recap:"",d&&d.error==="auto_off")})
       .catch(function(){done("")});
   }
   // That person's booked job, if it happens to be today or tomorrow — the two
@@ -8569,9 +8593,13 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // The story, under the status. Nothing is rendered once we've asked and come
     // back empty — the "they said last" block below already covers that case.
     var rk=recapKey(t),rec=t.recap||((RECAP[rk]||{}).text)||"",asked=!!t.recap||RECAP.hasOwnProperty(rk);
-    if(t.lastBody&&(rec||!asked)){   // nothing said yet → nothing to recap, and nothing to spin on
+    var recOff=!rec&&(RECAP[rk]||{}).off&&!RECAP_BUSY[rk];
+    if(t.lastBody&&(rec||!asked||recOff)){   // nothing said yet → nothing to recap, and nothing to spin on
       h+='<div class="pk-recap'+(rec?"":" loading")+'"><div class="rh">'+ic("sparkles",12)+' What happened</div>'+
-         '<div class="rb">'+esc(rec||"Reading the conversation…")+'</div></div>';
+         (recOff
+           ? '<button class="pk-recap-ask" id="pkRecapAsk">'+ic("sparkles",13)+'<span>Sum it up</span></button>'
+           : '<div class="rb">'+esc(rec||"Reading the conversation…")+'</div>')+
+         '</div>';
     }
 
     if(facts.length){
@@ -8646,6 +8674,13 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
 
     card.innerHTML=h;hydrateIcons(card);
     if(!rec&&!asked&&t.lastBody)recapFetch(t.phone,rk);
+    var ra=card.querySelector("#pkRecapAsk");
+    if(ra)ra.onclick=function(){
+      vibrate(6);RECAP_BUSY[rk]=false;delete RECAP[rk];
+      // Repaint first so the button becomes "Reading…" the moment he presses it.
+      RECAP[rk]={text:"",off:false};RECAP_BUSY[rk]=true;peekRender();RECAP_BUSY[rk]=false;delete RECAP[rk];
+      recapFetch(t.phone,rk,true);
+    };
     card.querySelector("#pkOpen").onclick=function(){jdSheetClose();setTab("messages");openThread(PEEK.phone)};
 
     var box=card.querySelector("#pkBox");
@@ -11533,7 +11568,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     else if(polish.busy){icon="wand";label="Polishing…";}
     else if(undone){icon="undo";label=paused?"Your words are back · paused":"Your words are back — this one is left alone";}
     else if(note){icon="alert-triangle";label="Reads fine — one thing to look at";}
-    else if(paused){icon="pause";label="Auto Polish paused";}
+    else if(paused){icon="wand";label="Polish is in Tools when you want it";}
     else {icon="wand";label="Polishes when you pause";}
     var h='<div class="pb-top"><span class="pb-ic">'+ic(icon,15)+'</span><span class="pb-t">'+esc(label)+'</span>';
     if(offer)h+='<button class="pb-use" id="pbUse">'+ic("check",13)+'Use it</button>'+
@@ -12754,7 +12789,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     account:["Tools & account","Connection, backups and signing out"],
     playbook:["Business playbook","What the AI knows about your business"],
     daytool:["Day tools","Today's list, promises and the weather"],
-    index:["Everything, A–Z","Every screen in this app, grouped"]};
+    index:["Everything, A–Z","Every screen in this app, grouped"],
+    autoai:["AI that runs by itself","The only AI here that can spend without you"]};
   // Park the JS-filled panels back in the holding div before wiping the body,
   // so re-rendering never destroys them.
   function mrStash(){
@@ -12790,6 +12826,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(MORE.view==="settings")return mrSettings(b);
     if(MORE.view==="account")return mrAccount(b);
     if(MORE.view==="index")return mrIndex(b);
+    if(MORE.view==="autoai")return mrAutoAi(b);
     if(MORE.view==="daytool")return mrDayTool(b);
     if(MORE.view==="playbook"){b.appendChild(el("playbookPanel"));return}
     // Your own most-recent jumps, above the fixed menu. The list already exists
@@ -12813,14 +12850,129 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       {t:"Phone notifications",ic:"bell",noteId:"pushState",go:function(){closeMore();jdPushSheet()}},
       {t:"Customize everything",ic:"sliders",go:function(){closeMore();openCustomize()}},
       {t:"Layout",ic:"layout-grid",note:layoutMeta(layoutId()).name,go:function(){closeMore();openCustomize();CZ.tab="shell";czRender()}},
-      {t:"Money settings",ic:"dollar",go:function(){closeMore();openMoney("settings")}}
+      {t:"Money settings",ic:"dollar",go:function(){closeMore();openMoney("settings")}},
+      {t:"AI that runs by itself",ic:"sparkles",noteId:"autoAiState",go:function(){openMore("autoai")}}
     ]));
+    autoAiBadge();
     b.appendChild(mrLabel("Auto follow-ups & calls"));b.appendChild(el("fuSettings"));
     b.appendChild(mrLabel("Team"));b.appendChild(el("teamPanel"));
     b.appendChild(mrLabel("Appearance"));b.appendChild(el("themeSeg"));
     b.appendChild(mrLabel("Accent color"));b.appendChild(el("accentRow"));
     updatePushBadge();
   }
+  // ---- AI that runs by itself ---------------------------------------------
+  // Every AI in this app is in one of two piles. One pile only runs because he
+  // pressed something, and a button he never presses costs nothing — there is
+  // nothing to manage there. The other pile runs on an inbound text or on the
+  // cron, while the phone is in his pocket, and that pile is the bill. This is
+  // the whole of that second pile on one screen, off by default, each with the
+  // number of calls it has actually made so the choice is made on his numbers
+  // rather than on a feeling about what AI costs.
+  //
+  // Every row says what happens with it OFF, because that is the real question.
+  // None of these leaves a hole: each one falls back to the same path the app
+  // takes with no AI key at all — a rule, a template, or the last message.
+  var AUTOAI_ROWS=[
+    {k:"triage",ic:"inbox",t:"Read a text as it lands",
+     on:"Works out what they're actually asking, so the alert on your phone says it.",
+     off:"The alert quotes their text and you read it yourself.",
+     surfaces:["inbound triage"]},
+    {k:"appointment",ic:"calendar-days",t:"Spot a booking in a text",
+     on:"Turns \u201csaturday at 10 then?\u201d into a job card you tap once to accept.",
+     off:"Nothing watches for it. You add the job yourself.",
+     surfaces:["appointment detect"]},
+    {k:"promise",ic:"bell",t:"Catch what you promised",
+     on:"Hears you say you'll send a price tonight, and reminds you.",
+     off:"Nothing watches for it.",
+     surfaces:["promise catch"]},
+    {k:"replyCheck",ic:"help-circle",t:"Decide if you still owe a reply",
+     on:"Reads the conversation before deciding whether it goes in Needs your attention.",
+     off:"A plain rule decides instead: a question means yes, anything else means they're waiting. Costs nothing and is right most of the time.",
+     surfaces:["reply check"]},
+    {k:"draft",ic:"sparkles",t:"Have a reply already written",
+     on:"Writes one in your voice the moment they text, so it's waiting when you open it. This is the dearest one on the list.",
+     off:"Open the conversation and tap the sparkles when you want one.",
+     surfaces:["reply draft","ask me first"]},
+    {k:"followupDraft",ic:"clock",t:"Word the follow-up nudge",
+     on:"Writes the nudge fresh for that person when one comes due.",
+     off:"The nudge still comes. It uses your saved wording instead.",
+     surfaces:["follow-up draft"]},
+    {k:"recap",ic:"activity",t:"Sum up a conversation when you peek",
+     on:"Every card you peek at gets a line on what happened between you.",
+     off:"The card shows their last message, and carries a Sum it up button when you want the full story.",
+     surfaces:["recap"]}
+  ];
+  var AUTOAI={usage:null,loading:false};
+  function autoAiCfg(){var c=(state.config||{}).autoAi||{};return c}
+  function autoAiOn(k){return autoAiCfg()[k]===true}
+  function autoAiCount(){var n=0;AUTOAI_ROWS.forEach(function(r){if(autoAiOn(r.k))n++});return n}
+  // The row on Settings says the count without opening anything, because "how
+  // much of this is on" is the only thing he'd open the screen to check.
+  function autoAiBadge(){
+    var e=el("autoAiState");if(!e)return;
+    var n=autoAiCount();
+    e.textContent=n?(n+" of "+AUTOAI_ROWS.length+" on"):"all off";
+  }
+  // Real counts, from the same counters Settings bills against. Best-effort: the
+  // switches are the point and they render fine without it.
+  function autoAiLoadUsage(){
+    if(AUTOAI.usage||AUTOAI.loading)return;
+    AUTOAI.loading=true;
+    api("/api/ai/usage?days=14").then(function(d){
+      AUTOAI.loading=false;
+      if(d&&d.ok){AUTOAI.usage=d;if(MORE.view==="autoai")mrRender()}
+    }).catch(function(){AUTOAI.loading=false});
+  }
+  // A surface's Claude calls are filed under the same name with "(claude)" on
+  // the end, and the drafts go to Claude, so both have to be counted or the one
+  // row that matters most reads zero.
+  function autoAiCalls(r){
+    var u=AUTOAI.usage;if(!u||!u.bySurface)return null;
+    var n=0,found=false;
+    u.bySurface.forEach(function(x){
+      var base=String(x.surface||"").replace(/\s*\(claude\)$/,"");
+      if(r.surfaces.indexOf(base)>=0){n+=x.calls||0;found=true}
+    });
+    return found?n:0;
+  }
+  function mrAutoAi(b){
+    autoAiLoadUsage();
+    var w=document.createElement("div");
+    var on=autoAiCount();
+    var h='<div class="aa-intro">'+
+      '<b>'+(on?on+" of "+AUTOAI_ROWS.length+" are on.":"Everything here is off.")+'</b>'+
+      '<span>These are the only things in the app that can call the AI while your phone is in your pocket. '+
+      'Everything else waits for you to press it, and a button you never press costs nothing.</span></div>';
+    AUTOAI_ROWS.forEach(function(r){
+      var isOn=autoAiOn(r.k),calls=autoAiCalls(r);
+      h+='<div class="aa-row'+(isOn?" on":"")+'" data-aa="'+esc(r.k)+'">'+
+        '<span class="aa-ic">'+ic(r.ic,19)+'</span>'+
+        '<span class="aa-txt"><b>'+esc(r.t)+'</b>'+
+          '<span class="aa-what">'+esc(isOn?r.on:r.off)+'</span>'+
+          (calls!=null?'<span class="aa-calls">'+(calls?esc(calls+" call"+(calls===1?"":"s")+" in the last 14 days"):"No calls in the last 14 days")+'</span>':"")+
+        '</span>'+
+        '<span class="sw'+(isOn?" on":"")+'"></span></div>';
+    });
+    h+='<p class="aa-foot">Turning one on starts costing money on the next text that fits it. '+
+       'Turning one off never loses anything: each falls back to a plain rule, your saved wording, or their last message.</p>';
+    w.innerHTML=h;
+    Array.prototype.forEach.call(w.querySelectorAll("[data-aa]"),function(node){
+      node.onclick=function(){
+        var k=node.getAttribute("data-aa"),next=!autoAiOn(k),patch={autoAi:{}};
+        patch.autoAi[k]=next;vibrate(6);
+        // Painted from the answer, not from the tap: a save that didn't land must
+        // not leave a switch claiming something the Worker isn't doing.
+        saveConfig(patch).then(function(d){
+          if(!d||!d.ok){toast("Couldn't save that",{bad:true});return}
+          toast(next?"On — it'll run on the next text that fits":"Off — nothing will call the AI for this");
+          if(MORE.view==="autoai")mrRender();
+          autoAiBadge();
+        }).catch(function(){toast("Network error",{bad:true})});
+      };
+    });
+    b.appendChild(w);
+  }
+
   // ---- Everything, A–Z ----------------------------------------------------
   // FEATURES is already a complete, keyworded map of every screen in here, but
   // it only ever rendered as search results — which you have to know to search
