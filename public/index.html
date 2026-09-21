@@ -4456,7 +4456,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-20·whopays";
+  var APP_BUILD="2026-09-21·whyfailed";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -8172,6 +8172,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         '<span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+
           '<input type="password" id="cfgAiKey" autocomplete="off" spellcheck="false" placeholder="sk-ant-…" style="flex:1;min-width:170px">'+
           '<button id="cfgAiKeySave" class="btn">Save key</button>'+
+          '<button id="cfgAiTest" class="btn">Test it</button>'+
           ((c.aiKey&&c.aiKey.set)?'<button id="cfgAiKeyClear" class="btn">Remove</button>':'')+
         '</span>'+
         '<span id="cfgAiKeyMsg" style="color:var(--muted2);font-size:12px">'+
@@ -8256,6 +8257,22 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     };
     if(el("cfgAiKeyClear"))el("cfgAiKeyClear").onclick=function(){
       saveConfig({anthropicApiKey:""}).then(function(){toast("Key removed")});
+    };
+    // The one place a raw provider error is shown. Everywhere else a failure
+    // falls back and reports whoever failed LAST, so a dead key reads as a
+    // Google problem — which is how a whole day can pass with nothing working.
+    el("cfgAiTest").onclick=function(){
+      var m=el("cfgAiKeyMsg");m.textContent="Testing…";
+      api("/api/ai/selftest").then(function(d){
+        if(!d||!d.ok){m.textContent="Couldn't run the test.";return}
+        var lines=(d.routes||[]).map(function(r){
+          var who=r.route==="key"?"Your Anthropic key":"Cloudflare credits";
+          return r.ok?(who+": working ("+r.model+")"):(who+": FAILED — "+r.error);
+        });
+        if(!(d.routes||[]).length)lines.push(d.note||"No Claude set up at all.");
+        if(d.gemini)lines.push(d.gemini.ok?"Gemini (backup): working":"Gemini (backup): FAILED — "+(d.gemini.error||""));
+        m.innerHTML=lines.map(esc).join("<br>");
+      });
     };
     el("cfgRebook").onchange=function(){saveConfig({rebookDays:+el("cfgRebook").value})};
     el("cfgQs").onchange=function(){saveConfig({quietStart:+el("cfgQs").value})};

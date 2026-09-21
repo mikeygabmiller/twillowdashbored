@@ -36,6 +36,7 @@ page.on('pageerror', (e) => errs.push('PAGEERROR: ' + e.message));
 page.on('console', (m) => { if (m.type() === 'error' && !/favicon|manifest|sw\.js|fetching the script|422/.test(m.text())) errs.push('CONSOLE: ' + m.text()); });
 
 const configPosts = [];
+const selfTests = [];
 
 await page.route('**/*', async (route) => {
   const req = route.request();
@@ -61,6 +62,12 @@ await page.route('**/*', async (route) => {
       config.aiKey = { set: !!storedKey, hint: storedKey ? HINT : '' };
     }
     return json({ ok: true, config });
+  }
+  if (path === '/api/ai/selftest') {
+    selfTests.push(1);
+    return json({ ok: true, at: Date.now(),
+      routes: [{ route: 'key', model: 'claude-haiku-4-5', ok: false, error: 'Anthropic 401: invalid x-api-key' }],
+      gemini: { ok: false, error: 'Gemini 403: PERMISSION_DENIED' } });
   }
   if (path === '/api/ai/usage') {
     return json({ ok: true, days: 14, today: '2026-09-20', model: 'claude-haiku-4-5',
@@ -134,6 +141,18 @@ section('Once set, it says so without saying what');
 await openSettings();
 ok('the hint is shown', (await page.locator('#cfgAiKeyMsg').textContent()).indexOf(HINT) >= 0);
 ok('and Remove has appeared', await page.locator('#cfgAiKeyClear').count() === 1);
+
+section('Test it tells him WHY, in words, on the phone');
+// The reason this button exists: a failed draft falls back and reports whoever
+// failed last, so a dead Anthropic key reads as a Google problem. He has no
+// Worker log and no dashboard — if the reason isn't on this screen it is nowhere.
+await page.locator('#cfgAiTest').click();
+await page.waitForTimeout(600);
+const msg = await page.locator('#cfgAiKeyMsg').textContent();
+ok('it ran the test', selfTests.length === 1, selfTests.length);
+ok('the Anthropic failure is named in plain words', /Your Anthropic key: FAILED/.test(msg), msg);
+ok('with the provider\'s own reason', /401/.test(msg), msg);
+ok('and Gemini is shown separately as the backup', /Gemini \(backup\): FAILED/.test(msg), msg);
 
 section('And it can be taken back out');
 await page.locator('#cfgAiKeyClear').click();
