@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-21·askfirst';
+const BUILD = '2026-09-21·say-it-back';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -7565,12 +7565,128 @@ const POLISH_PLAYBOOK =
   'If nothing on the FIX list is wrong, return his message EXACTLY as written, character for character. ' +
   'A message with no defect on that list is a finished message.\n\n';
 
+// ---------------------------------------------------------------------------
+// "Say it back to them" — the other half of a good reply
+// ---------------------------------------------------------------------------
+// The polish playbook can only ever subtract. It fixes a comma splice, it warns
+// that a text reads curt — but the reply Mikey actually worries about is the one
+// where a customer names a real problem ("there's a juice stain all over the
+// back seat") and the honest answer he types is "yea I can clean that". Nothing
+// on the FIX list is wrong with that text. It is still the wrong reply, because
+// it never proves he heard them.
+//
+// So this is a SECOND, separate suggestion on the same call: the same reply with
+// the four beats that make someone feel taken care of. The order is the point —
+// a worried person cannot hear the fix until they feel heard, which is why the
+// acknowledgement goes first and the method second, never the other way round.
+//
+//   1. NAME IT BACK. The actual thing, in their words — "the juice on the back
+//      seat", not "that". "That" is the tell that nobody read the message.
+//   2. NORMALISE IT. "One of the most common ones I get." People are quietly
+//      embarrassed about the state of their car; this takes that away, and it
+//      says he's seen a hundred of these without him having to claim it.
+//   3. NAME THE STEP, in plain words. "I'll hit that seat with a hot-water
+//      extraction" is proof of a method. "I can clean that" is proof of nothing.
+//      This is the single biggest difference between reading as a pro and
+//      reading as a guy with a bucket.
+//   4. GIVE THE HONEST LIMIT. Mikey already writes the perfect version of this
+//      and it is sitting in his own playbook: "I can't guarantee how much of the
+//      stains I can get out, but I'll go over all the surfaces and get out as
+//      much as I can." The caveat is not a weakness to hide — it is the reason
+//      people book him. A man who tells you the limit before you ask is the one
+//      you trust with your truck.
+//
+// Why this can NEVER be the silent rewrite: every other polish output is a
+// subtraction, and this one is an addition. It adds a method and an expectation
+// — claims with consequences. So it comes back as its own suggestion, shown in
+// full, and nothing lands in his message box until he taps it.
+const SAY_BACK_PLAYBOOK =
+  'SAY IT BACK — a second, OPTIONAL suggestion, separate from the polish.\n\n' +
+  'Everything above this line governs "text" and still does: "text" stays a minimal correction of his draft that adds ' +
+  'nothing. This section governs a DIFFERENT field, "say_back", and nothing in it may change "text". Adding is allowed ' +
+  'here and only here.\n\n' +
+  'The customer named something specific they are worried about. Rewrite Mikey\'s reply so it proves he heard them, ' +
+  'in this order:\n' +
+  '1. Name the exact thing back, in their own words. "the juice on the back seat", "the dog hair in the cargo area". ' +
+  'Never "that", "it", or "the issue" — a pronoun is the tell that nobody read the message.\n' +
+  '2. Say it is normal and he has seen it before, briefly. One clause, not a speech.\n' +
+  '3. Say what he will actually DO about it, in plain words a customer understands — the step, not the service name. ' +
+  'Shampoo and hot-water extraction for a stain, a rubber brush and the vacuum for pet hair, a clay bar for rough paint, ' +
+  'an enzyme treatment for a smell. Use ordinary detailing knowledge here, but only for the METHOD.\n' +
+  '4. End with the honest limit, the way he already writes it: "I can\'t guarantee how much of it comes out, but I\'ll go ' +
+  'over it and get out as much as I can." Under-promise. Never say it will look brand new, never say it will all come out.\n\n' +
+  'HARD LIMITS:\n' +
+  '- NEVER mention money. No price, no "that\'s an add-on", no "a little extra", no upsell of any kind. Not one word about cost.\n' +
+  '- NEVER add a number, a day, a time, an address or a name that is not already in his draft.\n' +
+  '- NEVER promise a result. The limit in beat 4 is the whole point.\n' +
+  '- Keep it a text he would actually thumb out: 2-4 short sentences, his voice, his lowercase, his casual rhythm. ' +
+  'No customer-service voice, no "I understand your concern", no "rest assured".\n' +
+  '- It must still say everything his draft said. This is his reply with the four beats added, not a different reply.\n\n' +
+  'Return "" for this when there is nothing specific to say back — when the customer named no problem, or when his draft ' +
+  'already names the thing, says what he will do, and gives the limit. A reply that already does the job needs no second version.\n\n';
+
+// Where saying it back would be strange rather than warm. Two lists, because the
+// two sides of the exchange rule it out for different reasons.
+//
+// His draft rules it out only when he is LOCKING IN a booking — nobody wants
+// their confirmation text to open with how common juice stains are.
+//
+// Note what is deliberately NOT in that list: `quick`. The obvious version of
+// this skipped short drafts, and that was exactly backwards. `voiceBucket` calls
+// anything under 40 characters `quick`, and "yea i can clean that" is twenty —
+// so the one message this whole feature exists to fix was the one message it
+// refused to look at. Short and flat is the symptom, not the reason to skip.
+const SAY_BACK_SKIP_BUCKETS = ['schedule', 'confirm'];
+// Their message rules it out when the conversation is already wrapped up: a
+// thanks, an agreement, a "sounds good, see you at 2". There is no worry left to
+// answer, so a warmer version would be answering nobody.
+const SAY_BACK_SETTLED = ['closing', 'confirm', 'schedule', 'quick'];
+
+// Is there anything to say back? Returns the customer's message to work from, or
+// '' to skip the whole block — which also keeps it out of the prompt entirely, so
+// an ineligible draft costs nothing extra to polish.
+function sayBackSource(thread, draftText) {
+  const msgs = (thread && thread.messages) || [];
+  const last = msgs[msgs.length - 1];
+  // Inbound only. There is nothing to hear in a text he opened himself.
+  if (!last || last.dir !== 'in') return '';
+  const body = String(last.body || '').replace(/\s+/g, ' ').trim();
+  // "k" and "thanks!" name no concern. The floor is low on purpose — "back seat
+  // is trashed" is 20 characters and is exactly the message this is for.
+  if (body.length < 15) return '';
+  if (SAY_BACK_SETTLED.indexOf(voiceBucket(body)) >= 0) return '';
+  if (SAY_BACK_SKIP_BUCKETS.indexOf(voiceBucket(draftText)) >= 0) return '';
+  return body;
+}
+
+// Everything the say-back is forbidden to contain, checked rather than trusted.
+// A suggestion he taps goes straight to a customer, so the gate is the same one
+// the rewrite path gets: a violation drops the whole suggestion instead of
+// trying to repair it. No suggestion is a fine outcome; a suggestion that quotes
+// a price Mikey never said is not.
+const SAY_BACK_MONEY = /\$|\bprices?\b|\bpricing\b|\bcosts?\b|\bcharges?\b|\bfees?\b|\bextra\b|\badd[- ]?ons?\b|\bupgrade\b|\bdiscount\b|\bquote\b|\bdeal\b/i;
+function cleanSayBack(raw, draftText, cfg) {
+  const t = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (!t || t === String(draftText || '').trim()) return '';
+  if (t.length > 480) return '';                 // past this it is an email, not a text
+  if (SAY_BACK_MONEY.test(t)) return '';         // no upsell, ever — his call, and he said no
+  // His own "never say this" list rides along with the built-in tells. A phrase
+  // he banned by hand is banned here too — this is a message he would send.
+  if (findTell(t, cfg)) return '';
+  // Every digit it uses has to be one he already wrote. Dropping one of his is
+  // fine; inventing a time, a day-of-month or a price is not.
+  const had = String(draftText || '').match(/\d+/g) || [];
+  const want = t.match(/\d+/g) || [];
+  for (const n of want) if (had.indexOf(n) < 0) return '';
+  return t;
+}
+
 // Pull the message and the warning back out. The model is asked for JSON, but a
 // polish reply lands straight in his message box, so this never guesses: a reply
 // that parses gives us both halves, a reply that is plainly prose is the message
 // itself, and a reply that is broken JSON gets thrown away rather than pasted
 // into a customer's text as "{"text": ...".
-function parsePolishOut(raw, original) {
+function parsePolishOut(raw, original, cfg) {
   let s = String(raw || '').trim();
   const fence = s.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
   if (fence) s = fence[1].trim();
@@ -7580,11 +7696,14 @@ function parsePolishOut(raw, original) {
       const p = JSON.parse(s);
       const text = clean(p.text || p.message || p.polished);
       const note = String(p.note || '').replace(/\s+/g, ' ').trim().slice(0, 70);
-      if (text) return { text, note };
+      // The say-back rides in the same JSON but is gated separately, because it
+      // is the only field here that ADDS words to a customer's text.
+      const say = cleanSayBack(clean(p.say_back || p.sayBack), original, cfg);
+      if (text) return { text, note, say };
     } catch { /* fall through */ }
-    return { text: original, note: '' };   // broken JSON is not a text message
+    return { text: original, note: '', say: '' };   // broken JSON is not a text message
   }
-  return { text: clean(s), note: '' };
+  return { text: clean(s), note: '', say: '' };
 }
 
 // Every digit-run in the message. The playbook forbids touching a number, and
@@ -7622,6 +7741,19 @@ async function apiAiDraft(request) {
       // polish — the one surface where his words are already on the page — was
       // the only writing path not getting it.
       const edits = await editsContext(voiceBucket(draftText));
+      // Its own switch, sent with the request rather than stored: it is a typing
+      // preference like Auto Polish, not a business setting, and a switch that is
+      // off should cost nothing — an off request never carries the block at all.
+      const saySrc = data.say === false ? '' : sayBackSource(thread, draftText);
+      // What the customer actually said, and what Mikey actually sells. Polish
+      // has never needed either — it only ever looked at his own sentence. The
+      // say-back can't work without both: beat 1 quotes their words back, and
+      // beat 3 has to name a step he really performs.
+      const sayBlock = saySrc
+        ? SAY_BACK_PLAYBOOK +
+          (cfg.playbook && cfg.playbook.services ? `WHAT MIKEY ACTUALLY DOES:\n${cfg.playbook.services}\n\n` : '') +
+          `THE CUSTOMER'S LAST MESSAGE — this is what he has to prove he heard:\n${saySrc}\n\n`
+        : '';
       const prompt =
         voice +
         (measured ? measured + '\n\n' : '') +
@@ -7632,22 +7764,24 @@ async function apiAiDraft(request) {
         `KEEP his exact meaning and intent. Keep it casual and friendly like a real text — never stiff, formal or corporate — and keep it about the same length (it's a text, so stay concise). ` +
         `Do NOT add, remove, or change any facts, prices, dates, times, names or details, and do NOT invent anything he didn't say.\n\n` +
         POLISH_PLAYBOOK +
-        `Return JSON, exactly: {"text": "the message", "note": "one short warning, or empty"}\n` +
+        sayBlock +
+        `Return JSON, exactly: {"text": "the message", "note": "one short warning, or empty"${saySrc ? ', "say_back": "the fuller version, or empty"' : ''}}\n` +
         `- "text" is the message, ready to send: the FIX list applied and nothing else. Unchanged if nothing on that list was wrong.\n` +
         `- "note" is at most 60 characters of plain ASCII, spoken to Mikey, about ONE thing from the FLAG or TONE lists — the worst one. ` +
         `Examples: "reads a little curt", "tomorrow - name the day?", "that is a hard promise". ` +
         `Never describe a fix you already made, never praise the message, and use "" when there is nothing worth saying.\n` +
+        (saySrc ? `- "say_back" is the SAY IT BACK version, or "" when there is nothing specific to say back. It is a suggestion he will read before he sends it, so write the whole message, ready to go.\n` : '') +
         (hint ? `Also follow this instruction: ${hint}.\n` : '') +
         `\nMessage to polish:\n${draftText}`;
       const raw = await aiGenerate(prompt, { surface: 'auto polish', tier: 'voice', json: true, temperature: 0.4, maxTokens: 800 });
-      const out = parsePolishOut(raw, draftText);
+      const out = parsePolishOut(raw, draftText, cfg);
       // A rewrite that moved a number is refused outright — the note survives, so
       // he still hears about it, but his own price goes back in the box.
       if (out.text !== draftText && polishNumbers(out.text) !== polishNumbers(draftText)) {
         out.note = out.note || 'left it alone - it moved a number';
         out.text = draftText;
       }
-      return json({ ok: true, draft: out.text, note: out.note });
+      return json({ ok: true, draft: out.text, note: out.note, sayBack: saySrc ? (out.say || '') : '' });
     }
     // Tapping "write me one" used to guess at a time or a price where the
     // inbound path would have stopped and asked — the same message got a held

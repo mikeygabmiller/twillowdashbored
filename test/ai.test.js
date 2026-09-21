@@ -147,15 +147,26 @@ const liftFlat = (name) => {
   if (start < 0) throw new Error(`function ${name} not found`);
   return SRC.slice(start, SRC.indexOf('\n}\n', start) + 2);
 };
+// The same JSON now carries a third field, the say-back, and parsePolishOut
+// gates it through cleanSayBack on the way out — so that gate and the two
+// helpers it leans on have to come along, or every parse would land in the
+// catch and quietly hand back his own words. (Which is what happened the first
+// time this suite ran after the say-back shipped: three green-looking "falls
+// back to his own words" results that were really a ReferenceError.)
+const sayDeps = (() => {
+  const grab = (re) => { const m = SRC.match(re); if (!m) throw new Error('missing ' + re); return m[0]; };
+  return grab(/const AI_TELLS =[\s\S]*?;\n/) + liftFlat('findTell') +
+         grab(/const SAY_BACK_MONEY =[\s\S]*?;\n/) + liftFlat('cleanSayBack');
+})();
 const pctx = {};
 // eslint-disable-next-line no-new-func
-new Function('ctx', liftFlat('parsePolishOut') + liftFlat('polishNumbers') +
+new Function('ctx', sayDeps + liftFlat('parsePolishOut') + liftFlat('polishNumbers') +
   'ctx.parsePolishOut = parsePolishOut; ctx.polishNumbers = polishNumbers;')(pctx);
 const { parsePolishOut, polishNumbers } = pctx;
 
 check('plain JSON comes apart',
   parsePolishOut('{"text":"Thursday works. Ill see you then.","note":"reads a bit curt"}', 'x'),
-  { text: 'Thursday works. Ill see you then.', note: 'reads a bit curt' });
+  { text: 'Thursday works. Ill see you then.', note: 'reads a bit curt', say: '' });
 check('a fenced reply still comes apart',
   parsePolishOut('```json\n{"text":"All good","note":""}\n```', 'x').text, 'All good');
 check('an empty note stays empty',
