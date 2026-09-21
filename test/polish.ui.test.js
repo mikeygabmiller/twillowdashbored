@@ -1,5 +1,8 @@
 // Auto Polish rewrites the message box for you when you stop typing — nobody
-// taps "accept" any more. That trade only holds if the way back is real, so
+// taps "accept" any more. As of 2026-09-21 it ships OFF (it was a call every
+// typing pause), so the first sections here pin that, and the rest switch it on
+// and go on testing the auto path, which still has to be safe for anyone who
+// turns it back on. That trade only holds if the way back is real, so
 // this suite is mostly about the way back: undo restores the exact words you
 // typed, one tapped chip restores one spot and leaves the rest polished, pause
 // stops the next rewrite dead, and — the thing that would make it unusable —
@@ -96,6 +99,42 @@ const settle = () => page.waitForTimeout(3600);
 // that polishes right after another one has to outwait the cooldown, not just
 // the idle pause.
 const settleAfterOne = () => page.waitForTimeout(7200);
+
+section('Out of the box it does not rewrite anything, because it is off now');
+// Auto Polish used to ship on, which meant a call to /api/ai/draft every time he
+// stopped typing for 2.4s — three calls to tidy one message typed with three
+// pauses. It ships OFF: the wand beside the box does the same job the moment he
+// asks. Everything below this section is about the auto path's safety net, which
+// still has to hold for the people who switch it back on — so this suite turns it
+// on deliberately, right after pinning that it started off.
+await openThread('Dale Hobart');
+await type('yea thurs works for me ill swing by around ten');
+await settle();
+ok('nothing was rewritten', (await box()).startsWith('yea thurs'), await box());
+ok('and nothing was asked of the AI', polishAsks.length === 0, polishAsks);
+ok('the strip says where polish went', /polish is in tools/i.test(await page.locator('#polishBar').textContent()),
+  await page.locator('#polishBar').textContent());
+
+section('The wand still polishes this one, on purpose');
+// The real route in, because #polishBtn is a hidden proxy the sheet clicks: the
+// Tools button, then "Polish my text now". If that path breaks, switching auto
+// off leaves him with no polish at all, which is the whole promise here.
+await page.locator('#toolsBtn').click();
+await page.waitForTimeout(400);
+ok('Tools offers it by name', await page.getByText('Polish my text now', { exact: true }).count() === 1);
+await page.getByText('Polish my text now', { exact: true }).click();
+await settle();
+ok('one call, because he asked for it', polishAsks.length === 1, polishAsks);
+ok('and the box holds the polished words', (await box()).indexOf('Thursday') >= 0, await box());
+
+section('Switched back on, it behaves exactly as it always did');
+await page.evaluate(() => {
+  const u = JSON.parse(localStorage.getItem('mkd-ui') || '{}');
+  u.autoPolish = true; localStorage.setItem('mkd-ui', JSON.stringify(u));
+});
+await page.goto('https://texting.test/');
+await page.waitForTimeout(900);
+polishAsks.length = 0;
 
 section('It waits noticeably longer than it did when it only offered');
 const idle = (await P()).idle;
