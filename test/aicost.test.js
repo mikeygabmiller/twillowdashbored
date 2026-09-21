@@ -222,7 +222,11 @@ console.log('\n=== every AI call site says which surface it is ===');
 // The counters are only useful if nothing lands in the "other" bucket. Any new
 // geminiGenerate/aiGenerate call has to carry a surface, and this is what says so.
 const callSites = SRC.split('\n')
-  .map((l, i) => [i + 1, l])
+  // Prose is not a call site. The comments in this file name these functions
+  // constantly — that is the house style — and a guard that flags a sentence
+  // sends the next person hunting a bug that isn't there, which is exactly what
+  // it cost on 2026-09-21. Strip the `//` tail before looking for a call.
+  .map((l, i) => [i + 1, l.replace(/\/\/.*$/, '')])
   .filter(([, l]) => /\b(geminiGenerate|aiGenerate)\(/.test(l)
     && !/^\s*(async )?function /.test(l)
     && !/geminiGenerate\(flattenForGemini\(prompt, opts\), opts\)/.test(l));
