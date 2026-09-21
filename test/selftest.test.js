@@ -41,14 +41,18 @@ const section = (s) => console.log('\n' + s);
 
 // Build the endpoint with both providers stubbed, so a test can decide exactly
 // which route fails and check what comes back out.
-function build({ routes, claude, gemini, env }) {
-  const mod = new Function('ENV', 'claudeRoutes', 'claudeModel', 'claudeAttempt', 'geminiGenerate', 'json',
+function build({ routes, claude, gemini, env, order }) {
+  // The route list is only correct AFTER config has been read, because a key
+  // typed on the phone lives in that doc. The stub records the order so a test
+  // can prove the endpoint asks in the right sequence.
+  const seen = order || [];
+  const mod = new Function('ENV', 'claudeRoutesLoaded', 'claudeModel', 'claudeAttempt', 'geminiGenerate', 'json',
     `${lift('apiAiSelfTest')}\n${lift('scrubKeys')}\nreturn { apiAiSelfTest, scrubKeys };`,
   )(
     env || { GEMINI_API_KEY: 'g-test' },
-    () => routes,
+    async () => { seen.push('routes'); return routes; },
     (route) => (route === 'binding' ? 'anthropic/claude-haiku-4.5' : 'claude-haiku-4-5'),
-    claude,
+    (route, prompt, opts) => { seen.push('call:' + route); return claude(route, prompt, opts); },
     gemini,
     (o) => o,
   );
@@ -95,6 +99,22 @@ m = build({ routes: [], claude: okClaude, gemini: okGemini, env: {} });
 r = await m.apiAiSelfTest();
 ok('says so in words rather than showing an empty list', /No Claude route/.test(r.note || ''), r.note);
 ok('and names the missing Gemini key too', r.gemini.ok === false && /GEMINI_API_KEY/.test(r.gemini.error), r.gemini);
+
+section('It asks for the routes the way that can SEE a key typed on the phone');
+// The bug this caught, live, on 2026-09-21: the endpoint asked claudeRoutes()
+// cold. That function reads a module global mirrored out of the config doc, and
+// on an isolate that has not loaded config yet the global is empty — so the
+// self test reported "binding only" while a key sat in KV, on the one screen
+// whose entire job is to say which routes exist. It must go through the async
+// form, which loads config first.
+const SRC_SELFTEST = lift('apiAiSelfTest');
+ok('the endpoint uses the config-loading form', /await claudeRoutesLoaded\(\)/.test(SRC_SELFTEST), SRC_SELFTEST.slice(0, 200));
+ok('and never the cold synchronous one', !/[^s]claudeRoutes\(\)/.test(SRC_SELFTEST));
+
+const seq = [];
+m = build({ routes: ['key'], claude: okClaude, gemini: okGemini, order: seq });
+await m.apiAiSelfTest();
+ok('routes are resolved before any provider is called', seq[0] === 'routes', seq);
 
 section('No credential ever reaches the screen');
 // This screen is built to be screenshotted and pasted to somebody for help, and

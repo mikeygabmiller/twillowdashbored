@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-21·whyfailed';
+const BUILD = '2026-09-21·seethekey';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -13414,6 +13414,10 @@ async function apiAiPredict(request) {
 // is actually writing. Also computes the ONE next action worth taking, so the screen
 // can show a single obvious button instead of a row of equal-looking ones.
 async function apiVoiceStats() {
+  // Same trap as the self test: this screen names which model is writing his
+  // texts, and reading that cold reports the binding while a key typed on the
+  // phone sits unseen in KV.
+  await loadConfig().catch(() => {});
   const v = await loadVoice();
   const s = await loadVoiceScores();
   const total = (s.match || 0) + (s.off || 0);
@@ -13636,6 +13640,18 @@ function claudeRoutes() {
   return out;
 }
 function claudeVia() { return claudeRoutes()[0] || 'none'; }
+// The same question, asked safely from an API endpoint.
+//
+// claudeRoutes() is synchronous because the drafting path needs it deep inside
+// handling a reply, and it reads CFG_CLAUDE_KEY — which is empty until something
+// in this isolate has loaded config. aiGenerate() covers itself. An endpoint
+// that asks cold does NOT, and gets back a route list with the key MISSING,
+// which is worse than useless on a screen whose whole job is to say which routes
+// exist: it told us there was no key at all while one was sitting in KV.
+async function claudeRoutesLoaded() {
+  await loadConfig().catch(() => {});
+  return claudeRoutes();
+}
 // Settings first, so a key typed on the phone beats a stale Worker secret for
 // the same reason it beats the binding: it is the one somebody chose today.
 function claudeKey() { return CFG_CLAUDE_KEY || ENV.ANTHROPIC_API_KEY || ''; }
@@ -13792,7 +13808,7 @@ async function aiGenerate(prompt, opts = {}) {
 // line of it costs a fraction of a cent.
 async function apiAiSelfTest() {
   const out = { ok: true, at: Date.now(), routes: [], gemini: null };
-  for (const route of claudeRoutes()) {
+  for (const route of await claudeRoutesLoaded()) {
     const model = claudeModel(route);
     const started = Date.now();
     try {
