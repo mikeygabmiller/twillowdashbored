@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-21·say-it-back';
+const BUILD = '2026-09-21·promise-why';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -18490,6 +18490,12 @@ function promDefaults() {
     emailEach: true,     // email + calendar invite the moment a promise is made
     defaultHours: 24,    // when he promised no time ("I'll let you know"), how long to give it
     scanDepth: 3,        // how many recent messages a catch-up scan reads per conversation
+    // One email is easy to swipe away at a red light, and the promise it was
+    // about is still broken afterwards. So a nudge that doesn't get answered
+    // comes back — bounded, because a reminder nobody can stop is one he learns
+    // to ignore, which is the failure this whole feature exists to prevent.
+    nudgeEvery: 24,      // hours between repeat nudges while a promise stays open
+    maxNudges: 3,        // total nudges per promise, including the first
   };
 }
 function promCfg(cfg) { return Object.assign(promDefaults(), (cfg && cfg.promise) || {}); }
@@ -18499,6 +18505,8 @@ function sanitizePromiseCfg(input, current) {
   if (typeof input.emailEach === 'boolean') d.emailEach = input.emailEach;
   if (input.defaultHours != null && !isNaN(+input.defaultHours)) d.defaultHours = Math.max(1, Math.min(168, Math.round(+input.defaultHours)));
   if (input.scanDepth != null && !isNaN(+input.scanDepth)) d.scanDepth = Math.max(1, Math.min(10, Math.round(+input.scanDepth)));
+  if (input.nudgeEvery != null && !isNaN(+input.nudgeEvery)) d.nudgeEvery = Math.max(1, Math.min(168, Math.round(+input.nudgeEvery)));
+  if (input.maxNudges != null && !isNaN(+input.maxNudges)) d.maxNudges = Math.max(1, Math.min(10, Math.round(+input.maxNudges)));
   return d;
 }
 
@@ -18675,6 +18683,186 @@ function promWhenLabel(at, cfg) {
   } catch { return new Date(at).toISOString().slice(0, 16).replace('T', ' '); }
 }
 
+// ---------------------------------------------------------------------------
+// "Why this one matters" — the stakes behind a promise
+// ---------------------------------------------------------------------------
+// A reminder that only says "you said you'd follow up" is a reminder that loses
+// to whatever else is in front of him. It states a task; it doesn't state a
+// consequence, so it gets swiped away and the lead dies anyway.
+//
+// So every nudge carries the facts that make answering obvious: the money still
+// sitting on the table, how long they have actually been waiting, the question
+// of theirs he never answered, the times they have already chased him, and any
+// deadline they mentioned in their own words. All of it is read straight off the
+// conversation — no AI call, so a nudge costs nothing and can never be wrong in
+// the confident way a generated sentence can.
+//
+// Pure on purpose (thread in, facts out): the whole thing is testable without a
+// KV, and the same facts render into the email, the SMS fallback and the board.
+// ---------------------------------------------------------------------------
+
+// A customer naming a clock they're up against. These are the ones that make a
+// missed follow-up unrecoverable rather than merely late — you can't detail the
+// car after they've sold it.
+const PROM_DEADLINE_RE = /\b(sell(?:ing|s)?|trade(?:[- ]?in)?|leaving town|out of town|before (?:i|we|my|the|it|he|she|they)|moving|move out|road ?trip|vacation|deadline|asap|as soon as possible|by (?:mon|tues?|wed|thur?s?|fri|sat|sun)\w*|birthday|surprise|wedding|anniversary|due any day|new baby|inspection|lease|returning|graduation)\b/i;
+
+// Them coming back a second time because he went quiet. The sharpest signal on
+// the board: someone who chases is someone still willing to buy, right up until
+// the message that says "never mind".
+const PROM_CHASE_RE = /\b(just check(?:ing|ed)?|checking in|check(?:ing)? back|follow(?:ing)? up|any update|any word|did (?:you|my)|hello\?|you there|heard (?:back|anything|from)|touch(?:ing)? base|still (?:planning|coming|able|on|good|interested|want)|wondering if|what time)\b/i;
+
+// Pull out the thing they actually asked, so the nudge can show him the question
+// instead of a summary of it. The last question in their last message wins —
+// that's the one still hanging.
+function promQuestionIn(text) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  if (t.indexOf('?') < 0) return '';
+  // Split on any sentence end, not just '?' — "The car is filthy. Can you do
+  // Friday?" must come back as the question alone, or the nudge quotes a
+  // paragraph back at him and he skims it.
+  const parts = t.split(/(?<=[.!?])\s+/).filter((x) => x.indexOf('?') >= 0);
+  const last = parts[parts.length - 1] || t;
+  return last.length > 160 ? last.slice(-160).replace(/^\S*\s/, '') : last;
+}
+
+// The one sentence at the bottom of the email — what it costs him to keep
+// scrolling. Picked from the strongest fact present rather than written fresh,
+// so it never claims something the conversation doesn't support.
+function promCostLine(s) {
+  if (s.money > 0) return `That's $${s.money} going to whoever answers them first.`;
+  if (s.chases >= 2) return `They've chased you ${s.chases} times. The next message in a thread like this is usually "never mind".`;
+  // Only when they actually asked again. One message after the promise might be
+  // them sending the address he asked for — calling that "they came back to ask"
+  // describes a conversation that didn't happen.
+  if (s.chases === 1 && s.chaseQuote) return `They've already come back once to ask. People don't usually ask a third time.`;
+  if (s.deadline) return `They're on a clock. Miss it and there is no second chance on this job.`;
+  if (s.waitingMs >= 172800000) return `Two days of silence is how a warm lead turns into someone else's customer.`;
+  return `A thirty-second text now is the difference between a booked job and a lead that quietly dies.`;
+}
+
+// Read the conversation behind a promise and return the facts worth acting on.
+// `rec` is the promise record; `now` is injectable so the tests aren't a clock.
+function promStakes(thread, rec, cfg, now = Date.now()) {
+  const t = thread || {};
+  const msgs = (t.messages || []).filter((m) => m && m.body);
+  const madeAt = (rec && rec.madeAt) || 0;
+  const name = t.name || (rec && rec.name) || '';
+  // First name where there is one, so the reason reads like a person and not a
+  // record. With no name at all the sentence has to change shape, not just the
+  // word — "They has been waiting" is the kind of thing that makes a tool look
+  // broken.
+  const who = name ? name.split(/\s+/)[0] : '';
+  // A tapback is a sticker stuck on something he already sent, not a message.
+  // Counting a 👍 on his own quote as "they chased you" would put a reason on
+  // the board that isn't true, and one false reason is all it takes for him to
+  // stop believing the rest.
+  const ins = msgs.filter((m) => m.dir === 'in' && !parseReaction(m.body));
+  const last = ins[ins.length - 1] || null;
+
+  // An open quote is the most winnable money on the board — a price they already
+  // saw and didn't say no to. Won/lost threads have already resolved, so they
+  // carry no stake.
+  const live = t.status !== 'won' && t.status !== 'lost';
+  const money = (live && t.quote && Number(t.quote.total) > 0) ? Math.round(Number(t.quote.total)) : 0;
+  const quoteAt = (live && t.quote && t.quote.at) || 0;
+
+  // Everything they've said since he made the promise. These are the messages he
+  // has left sitting.
+  const since = ins.filter((m) => (m.ts || 0) > madeAt + 60000);
+  const chaseMsg = since.filter((m) => PROM_CHASE_RE.test(m.body))[0] || null;
+  const deadlineMsg = ins.slice(-6).filter((m) => PROM_DEADLINE_RE.test(m.body))[0] || null;
+  const deadline = deadlineMsg ? ((deadlineMsg.body.match(PROM_DEADLINE_RE) || [])[0] || '') : '';
+
+  const s = {
+    name,
+    money,
+    quoteAgoMs: quoteAt ? Math.max(0, now - quoteAt) : 0,
+    // "Waiting" is measured from THEIR last word, not from the promise: that is
+    // the clock the customer is actually watching.
+    waitingMs: last ? Math.max(0, now - (last.ts || now)) : Math.max(0, now - madeAt),
+    theirLast: last ? String(last.body).replace(/\s+/g, ' ').trim().slice(0, 240) : '',
+    theirLastTs: last ? (last.ts || 0) : 0,
+    chases: since.length,
+    chaseQuote: chaseMsg ? String(chaseMsg.body).replace(/\s+/g, ' ').trim().slice(0, 140) : '',
+    question: promQuestionIn(last ? last.body : ''),
+    deadline: deadline ? deadline.toLowerCase() : '',
+    nudges: (rec && rec.nudges) || 0,
+    lines: [],
+    cost: '',
+  };
+
+  // Ordered by what actually gets someone to pick up the phone: money, then a
+  // person kept waiting, then the question he skipped, then the clock. Capped at
+  // four — a list long enough to skim past is the same as no list.
+  const L = [];
+  if (s.money) {
+    L.push(s.quoteAgoMs >= 86400000
+      ? `$${s.money} is still on the table — you quoted it ${humanAgo(s.quoteAgoMs)} ago and never heard back.`
+      : `$${s.money} is still on the table.`);
+  }
+  if (s.waitingMs >= 7200000) {
+    L.push(who
+      ? `${who} has been waiting ${humanAgo(s.waitingMs)} for an answer.`
+      : `They've been waiting ${humanAgo(s.waitingMs)} for an answer.`);
+  }
+  if (s.chases >= 2) L.push(`They've written ${s.chases} times since you said that — and you haven't answered any of them.`);
+  else if (s.chases === 1 && s.chaseQuote) L.push(`They came back to ask again: "${s.chaseQuote}"`);
+  // The chase line may already be quoting the very sentence the question came
+  // from. Saying it twice in a four-line list wastes the two lines that would
+  // have carried the money and the deadline.
+  if (s.question && s.chaseQuote.indexOf(s.question.slice(0, 40)) < 0) {
+    L.push(`You never answered what they asked: "${s.question}"`);
+  }
+  if (s.deadline) L.push(`They're up against something — they mentioned "${s.deadline}".`);
+  if (s.nudges >= 1) L.push(`This is reminder ${s.nudges + 1}. The last one didn't get answered either.`);
+  s.lines = L.slice(0, 4);
+  s.cost = promCostLine(s);
+  return s;
+}
+
+// What actually gets stored on the promise record. The full facts are worked out
+// fresh each time; only the parts something renders are kept, because this doc is
+// read by the cron every single minute and the rest would be weight for nothing.
+function promStakesLite(s) {
+  if (!s) return null;
+  return {
+    name: s.name, money: s.money, waitingMs: s.waitingMs,
+    theirLast: s.theirLast, theirLastTs: s.theirLastTs,
+    lines: s.lines, cost: s.cost,
+  };
+}
+
+// The stakes as plain text — the SMS fallback and the text half of the email.
+function promStakesText(s) {
+  if (!s || (!s.lines.length && !s.theirLast)) return '';
+  let out = '';
+  if (s.theirLast) out += `They last said:\n"${s.theirLast}"\n\n`;
+  if (s.lines.length) out += `Why this one matters:\n${s.lines.map((l) => `• ${l}`).join('\n')}\n\n`;
+  if (s.cost) out += `${s.cost}\n\n`;
+  return out;
+}
+
+// The stakes as email cards: their own words loud (answering a person is easier
+// than answering a task), then the facts, then the cost in red.
+function promStakesHtml(s) {
+  if (!s || (!s.lines.length && !s.theirLast)) return '';
+  let out = '';
+  if (s.theirLast) {
+    out += mailCard(
+      mailLabel(`${s.name ? s.name + ' said' : 'They said'}${s.theirLastTs ? ` — ${humanAgo(Date.now() - s.theirLastTs)} ago` : ''}`, MAILC.mute) +
+      mailShout(s.theirLast));
+  }
+  if (s.lines.length) {
+    const rows = s.lines.map((l) =>
+      `<div style="font:400 15px/1.55 ${MAILF};color:${MAILC.ink};margin:0 0 9px;padding-left:16px;text-indent:-16px;">` +
+      `<span style="color:${MAILC.red};font-weight:700;">•</span> ${mailLines(l)}</div>`).join('');
+    out += mailCard(mailLabel('Why this one matters', MAILC.redInk) + rows +
+      (s.cost ? `<div style="font:700 16px/1.45 ${MAILF};color:${MAILC.redInk};margin:14px 0 0;border-top:1px solid #fecaca;padding-top:12px;">${mailLines(s.cost)}</div>` : ''),
+    { bg: MAILC.redBg, border: '#fecaca', edge: MAILC.red });
+  }
+  return out;
+}
+
 // The "you just promised something" email. Same mail kit as the customer alerts,
 // so it reads like the rest of them: his own words loudest, then what happens
 // next, then the buttons.
@@ -18684,6 +18872,7 @@ function promMadeEmail(rec, cfg) {
   const text =
     `You told ${rec.name || rec.phone}:\n"${rec.quote}"\n\n` +
     (rec.what ? `So you owe them: ${rec.what}\n\n` : '') +
+    (rec.stakes ? promStakesText(rec.stakes) : '') +
     `⏰ I'll remind you ${when}, and there's a calendar invite attached so it's in your calendar too.\n\n` +
     (base ? `Open the conversation: ${base}/?c=${rec.phone}\n` : '') +
     `Nothing was sent to them — this is just for you.`;
@@ -18698,30 +18887,40 @@ function promMadeEmail(rec, cfg) {
     mailBtn(promGcalUrl(rec), '📅  Add to Google Calendar', MAILC.blue) +
     `<div style="font:400 13px/1.6 ${MAILF};color:${MAILC.mute};margin-top:10px;">Not on Google? The <b>.ics</b> attached to this email adds it to any calendar.</div>`;
   B.push(mailCard(plan, { bg: MAILC.blueBg, border: '#bfdbfe', edge: MAILC.blue }));
+  if (rec.stakes) B.push(promStakesHtml(rec.stakes));
   if (base) B.push(mailCard(mailBtn(`${base}/?c=${rec.phone}`, 'Open the conversation', MAILC.ink) +
     `<div style="font:400 13px/1.6 ${MAILF};color:${MAILC.mute};margin-top:12px;">Nothing was sent to ${htmlEsc(rec.name || rec.phone)} — this one is just for you.</div>`));
   return { text, html: mailShell(rec.quote, B.join('')) };
 }
 
-// The nudge itself, when the promised time arrives.
+// The nudge itself, when the promised time arrives. Built around the stakes
+// (see promStakes): his words, then THEIR words, then what it costs to keep
+// scrolling. `rec.stakes` is the snapshot taken when this nudge was raised.
 function promDueEmail(rec, cfg) {
   const base = publicBase();
   const ago = humanAgo(Date.now() - (rec.madeAt || Date.now()));
+  const st = rec.stakes || null;
+  const nth = (rec.nudges || 0) >= 1 ? ` (reminder ${(rec.nudges || 0) + 1})` : '';
   const text =
     `You said this to ${rec.name || rec.phone} ${ago} ago:\n"${rec.quote}"\n\n` +
     (rec.what ? `You owe them: ${rec.what}\n\n` : '') +
+    (st ? promStakesText(st) : '') +
     (base ? `Open the conversation and answer them: ${base}/?c=${rec.phone}\n` : '');
   const B = [];
   B.push(mailCard(
-    mailLabel(`You promised ${rec.name || rec.phone} — ${ago} ago`, MAILC.amberInk) + mailShout(rec.quote),
+    mailLabel(`You promised ${rec.name || rec.phone} — ${ago} ago${nth}`, MAILC.amberInk) + mailShout(rec.quote),
     { bg: MAILC.amberBg, border: '#fde68a', edge: MAILC.amber, pad: '18px' }));
   if (rec.what) {
     B.push(mailCard(mailLabel('What you owe them', MAILC.blue) +
       `<div style="font:600 17px/1.5 ${MAILF};color:${MAILC.ink};">${mailLines(rec.what)}</div>`,
       { bg: MAILC.blueBg, border: '#bfdbfe', edge: MAILC.blue }));
   }
-  if (base) B.push(mailCard(mailBtn(`${base}/?c=${rec.phone}`, 'Open the conversation', MAILC.ink)));
-  return { text, html: mailShell(rec.quote, B.join('')) };
+  if (st) B.push(promStakesHtml(st));
+  if (base) B.push(mailCard(mailBtn(`${base}/?c=${rec.phone}`, 'Open the conversation', MAILC.ink) +
+    `<div style="font:400 13px/1.6 ${MAILF};color:${MAILC.mute};margin-top:12px;">Nothing was sent to ${htmlEsc(rec.name || rec.phone)} — this one is just for you.</div>`));
+  // The preheader is the grey line beside the subject in the inbox. Their words
+  // there mean he often knows what to do without opening anything.
+  return { text, html: mailShell((st && st.theirLast) || rec.quote, B.join('')) };
 }
 
 // ---------------------------------------------------------------------------
@@ -18732,6 +18931,10 @@ function promBlank(phone) {
     id: genId(), phone, name: '', quote: '', what: '', dueAt: 0, vague: false,
     madeAt: Date.now(), msgId: '', status: 'open', notified: false, notifiedAt: 0,
     source: 'live', confidence: 0, closedAt: 0, closedBy: '',
+    // How many nudges have gone out for this one, and the facts behind it as of
+    // the last one. Stashed on the record so the board and every later email get
+    // the "why" for free, without re-reading the conversation.
+    nudges: 0, stakes: null,
   };
 }
 
@@ -18762,6 +18965,10 @@ async function promRaise(thread, found, cfg, source, target) {
   rec.status = 'open';
   rec.notified = false;
   rec.notifiedAt = 0;
+  rec.nudges = 0;
+  // Restating a promise resets the stakes with it — the old snapshot described a
+  // conversation that has since moved on.
+  rec.stakes = promStakesLite(promStakes(thread, rec, cfg));
   if (!existing) list.push(rec);
   await savePromises(list);
   return rec;
@@ -18815,6 +19022,7 @@ async function dispatchDuePromises(now = Date.now()) {
   if (!list.some((p) => p.status === 'open')) return 0;
   const index = await loadIndex();
   const cfg = await loadConfig();
+  const pc = promCfg(cfg);
   let dirty = false, fired = 0;
   for (const p of list) {
     if (p.status !== 'open') continue;
@@ -18827,12 +19035,43 @@ async function dispatchDuePromises(now = Date.now()) {
       p.status = 'done'; p.closedAt = now; p.closedBy = 'texted-again'; dirty = true;
       continue;
     }
-    if (p.notified || !(p.dueAt > 0) || p.dueAt > now) continue;
+    if (!(p.dueAt > 0)) continue;
+    // Records made before repeat nudges existed carry `notified` but no count.
+    // Reading those as "never nudged" would fire one email per open promise the
+    // minute this deploys — a burst that teaches him to mute the whole feature.
+    // They already had their first nudge, so that is what they are credited.
+    const sent = p.nudges != null ? p.nudges : (p.notified ? 1 : 0);
+    if (sent >= pc.maxNudges) continue;
+    // The first nudge lands at the promised time; each repeat waits out the
+    // configured gap from the last one, so an ignored reminder escalates instead
+    // of going quiet — but only maxNudges times.
+    const nextAt = sent === 0 ? p.dueAt : (p.notifiedAt || p.dueAt) + pc.nudgeEvery * 3600000;
+    if (nextAt > now) continue;
+
+    // The one thread read in this whole loop, and only for a promise actually
+    // firing — a handful a day. This is what turns "you said you'd follow up"
+    // into "$370 is on the table and they've asked twice".
+    let stakes = null;
+    try { stakes = promStakes(await loadThread(p.phone), p, cfg, now); } catch { /* facts are a bonus */ }
+    if (stakes) p.stakes = promStakesLite(stakes);
+
+    p.nudges = sent + 1;
     p.notified = true; p.notifiedAt = now; dirty = true; fired++;
+
+    const waited = stakes ? humanAgo(stakes.waitingMs) : humanAgo(now - (p.madeAt || now));
+    const who = p.name || p.phone;
+    // The subject carries the stake, because on a phone the subject is often the
+    // whole message. It escalates with each repeat.
+    const subject = p.nudges >= pc.maxNudges && pc.maxNudges > 1
+      ? `🔴 Last call — ${who} has been waiting ${waited}${stakes && stakes.money ? ` ($${stakes.money})` : ''}`
+      : p.nudges > 1
+        ? `⏰ Still waiting: ${who}${stakes && stakes.money ? ` — $${stakes.money} on the table` : ''}`
+        : `⏰ You said you'd get back to ${who}${stakes && stakes.money ? ` — $${stakes.money} on the table` : ''}`;
     const mail = promDueEmail(p, cfg);
-    notifyMikey(`⏰ You said you'd get back to ${p.name || p.phone}`, {
+    notifyMikey(subject, {
       text: mail.text, html: mail.html,
-      sms: `You told ${p.name || p.phone} you'd follow up: "${p.quote}"${p.what ? '\n\n' + p.what : ''}`,
+      sms: `You told ${who} you'd follow up: "${p.quote}"${p.what ? '\n\n' + p.what : ''}` +
+        (stakes && stakes.lines.length ? '\n\n' + stakes.lines.map((l) => '• ' + l).join('\n') : ''),
     }).catch(() => {});
     pushNotify().catch(() => {});
   }
@@ -18951,7 +19190,9 @@ async function apiPromiseAction(request) {
     rec.closedAt = now;
     rec.closedBy = 'you';
   } else if (action === 'reopen') {
-    rec.status = 'open'; rec.closedAt = 0; rec.closedBy = ''; rec.notified = false;
+    // Re-opening means he wants the nudges back, so the count goes with it —
+    // otherwise a promise re-opened after three nudges would never nudge again.
+    rec.status = 'open'; rec.closedAt = 0; rec.closedBy = ''; rec.notified = false; rec.nudges = 0;
   } else if (action === 'snooze') {
     const hours = Math.max(1, Math.min(720, Math.round(+d.hours || 24)));
     rec.dueAt = promWorkHours(now + hours * 3600000, await loadConfig());
