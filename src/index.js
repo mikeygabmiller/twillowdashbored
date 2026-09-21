@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-20·whopays';
+const BUILD = '2026-09-21·whyfailed';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -338,6 +338,7 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/migrate')    return apiMigrate(url);
   if (request.method === 'GET'  && pathname === '/api/templates')  return apiGetTemplates();
   if (request.method === 'POST' && pathname === '/api/templates')  return apiSaveTemplates(request);
+  if (request.method === 'GET'  && pathname === '/api/ai/selftest') return apiAiSelfTest();
   if (request.method === 'POST' && pathname === '/api/ai/summary') return apiAiSummary(request);
   if (request.method === 'POST' && pathname === '/api/ai/recap')   return apiAiRecap(request);
   if (request.method === 'POST' && pathname === '/api/ai/draft')   return apiAiDraft(request);
@@ -13777,6 +13778,54 @@ async function aiGenerate(prompt, opts = {}) {
 //     so max_tokens needs headroom well past the length of the text itself.
 //   - a request can come back 200 with stop_reason 'refusal' and no content;
 //     check that before reading content[0].
+// "Is the AI actually working, and if not, whose fault is it?"
+//
+// Every other surface answers that question with a shrug. A draft that fails
+// falls back to Gemini, and if Gemini fails too the error he sees is GEMINI's —
+// so a broken Anthropic key reads as a Google problem, which is how a whole day
+// can go by with nothing working and no idea why. The usage counters are no
+// better: a failed call is a number, not a reason.
+//
+// This runs each route for real, one tiny call each, and hands back exactly what
+// the provider said. It is the only place in the app that shows a raw provider
+// error, and it is deliberately behind a button rather than automatic: every
+// line of it costs a fraction of a cent.
+async function apiAiSelfTest() {
+  const out = { ok: true, at: Date.now(), routes: [], gemini: null };
+  for (const route of claudeRoutes()) {
+    const model = claudeModel(route);
+    const started = Date.now();
+    try {
+      const text = await claudeAttempt(route, 'Reply with the single word: ok', { maxTokens: 16, surface: 'self test' });
+      out.routes.push({ route, model, ok: true, ms: Date.now() - started, said: String(text).slice(0, 40) });
+    } catch (err) {
+      out.routes.push({ route, model, ok: false, ms: Date.now() - started, error: scrubKeys(String((err && err.message) || err)).slice(0, 400) });
+    }
+  }
+  if (!out.routes.length) out.note = 'No Claude route at all — no key in Settings, and no AI binding on the Worker.';
+  if (ENV.GEMINI_API_KEY) {
+    const started = Date.now();
+    try {
+      await geminiGenerate('Reply with the single word: ok', { maxTokens: 16, surface: 'self test' });
+      out.gemini = { ok: true, ms: Date.now() - started };
+    } catch (err) {
+      out.gemini = { ok: false, ms: Date.now() - started, error: scrubKeys(String((err && err.message) || err)).slice(0, 400) };
+    }
+  } else {
+    out.gemini = { ok: false, error: 'GEMINI_API_KEY not set' };
+  }
+  return json(out);
+}
+// A provider that echoes the credential back inside its own error message would
+// otherwise put it on a screen, in a screenshot, and in whatever he pastes to
+// somebody for help. Cheap insurance on the one surface built to be pasted.
+function scrubKeys(s) {
+  return String(s || '')
+    .replace(/sk-ant-\S+/g, 'sk-ant-[hidden]')
+    .replace(/AIza\S+/g, 'AIza[hidden]')
+    .replace(/key=\S+/g, 'key=[hidden]');
+}
+
 async function claudeGenerate(prompt, opts = {}) {
   const routes = claudeRoutes();
   if (!routes.length) throw new Error('no Claude route — add a key in Settings, or the AI binding');
