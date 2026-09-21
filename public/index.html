@@ -1182,6 +1182,15 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .pm-due{color:var(--accent-text);font-weight:800}
   .pm-q{margin:9px 0 0;font-size:14px;line-height:1.45;font-weight:650}
   .pm-what{margin-top:6px;font-size:12px;color:var(--muted2);display:flex;align-items:center;gap:5px}
+  /* Their own words, then why this one is worth stopping for. Deliberately the
+     loudest thing in the row after his quote: a promise board that reads like a
+     to-do list loses to whatever else is on the screen. */
+  .pm-them{margin-top:8px;font-size:12.5px;line-height:1.45;color:var(--muted);display:flex;gap:6px;align-items:flex-start}
+  .pm-them svg{flex:none;margin-top:2px;opacity:.7}
+  .pm-why{margin-top:9px;padding:9px 10px;border-radius:10px;background:var(--accent-soft);border:1px solid rgba(255,46,67,.22)}
+  .pm-why-l{font-size:12.5px;line-height:1.5;font-weight:600}
+  .pm-why-l+.pm-why-l{margin-top:4px}
+  .pm-cost{margin-top:7px;padding-top:7px;border-top:1px solid rgba(255,46,67,.22);font-size:12.5px;line-height:1.45;font-weight:800;color:var(--accent-text)}
   .pm-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
   .pm-acts .btn{font-size:12px;padding:7px 9px;display:inline-flex;align-items:center;gap:5px;text-decoration:none}
   .pm-foot{margin-top:11px}
@@ -4498,7 +4507,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-21·say-it-back";
+  var APP_BUILD="2026-09-21·promise-why";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -6977,6 +6986,21 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       toast("Network error",{bad:true});
     });
   }
+  // The stakes behind a promise, as the worker worked them out (promStakes).
+  // Same facts the nudge email leads with — the point of a board that only says
+  // "you said you'd follow up" is lost the moment something else is louder, and
+  // "$370, and they've asked twice" is louder than a task.
+  function prWhy(p){
+    var st=p&&p.stakes;if(!st)return "";
+    var L=(st.lines||[]).slice(0,3);
+    if(!L.length&&!st.theirLast)return "";
+    var out="";
+    if(st.theirLast)out+='<div class="pm-them">'+ic("message-square",11)+' “'+esc(st.theirLast)+'”</div>';
+    if(L.length)out+='<div class="pm-why">'+L.map(function(l){
+      return '<div class="pm-why-l">'+esc(l)+'</div>'}).join("")+
+      (st.cost?'<div class="pm-cost">'+esc(st.cost)+'</div>':"")+'</div>';
+    return out;
+  }
   function homePromisesWidget(){
     prLoad();
     var open=prOpen();
@@ -6999,6 +7023,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         '</div>'+
         '<div class="pm-q">“'+esc(p.quote||"")+'”</div>'+
         (p.what?'<div class="pm-what">'+ic("chevron-right",12)+' '+esc(p.what)+'</div>':"")+
+        prWhy(p)+
         '<div class="pm-acts">'+
           '<a class="btn sm" href="/api/promise.ics?id='+encodeURIComponent(p.id)+'">'+ic("calendar-days",13)+' Add to calendar</a>'+
           '<a class="btn sm" href="'+esc(p.gcal||"#")+'" target="_blank" rel="noopener">Google</a>'+
@@ -8274,8 +8299,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       '<div class="fu-row"><span class="lbl2">Catch my promises <span style="color:var(--muted2);font-weight:400">· \u201cI\u2019ll get back to you Monday\u201d</span></span><span class="sw'+((c.promise&&c.promise.enabled===false)?"":" on")+'" id="cfgProm"></span></div>'+
       '<div class="fu-row"><span class="lbl2">Email me + a calendar invite</span><span class="sw'+((c.promise&&c.promise.emailEach===false)?"":" on")+'" id="cfgPromMail"></span></div>'+
       '<div class="fu-row"><span class="lbl2">If I didn\'t say when, remind me in</span><span style="display:flex;align-items:center;gap:6px"><input type="number" id="cfgPromHours" min="1" max="168" value="'+(((c.promise||{}).defaultHours)||24)+'"><span style="color:var(--muted2)">hrs</span></span></div>'+
+      '<div class="fu-row"><span class="lbl2">Keep nudging until I answer <span style="color:var(--muted2);font-weight:400">· every</span></span><span style="display:flex;align-items:center;gap:6px"><input type="number" id="cfgPromEvery" min="1" max="168" value="'+(((c.promise||{}).nudgeEvery)||24)+'"><span style="color:var(--muted2)">hrs,</span><input type="number" id="cfgPromMax" min="1" max="10" value="'+(((c.promise||{}).maxNudges)||3)+'" style="width:56px"><span style="color:var(--muted2)">max</span></span></div>'+
       '<div class="fu-col"><span class="lbl2">Look back through what I\'ve already sent</span><span style="display:flex;align-items:center;gap:6px"><button id="cfgPromScan" class="btn" style="white-space:nowrap">'+ic("search",14)+' Scan my last <span id="cfgPromDepthLbl">'+(((c.promise||{}).scanDepth)||3)+'</span> messages</button><input type="number" id="cfgPromDepth" min="1" max="10" value="'+(((c.promise||{}).scanDepth)||3)+'" style="width:64px"></span><span id="cfgPromScanMsg" style="color:var(--muted2);font-size:12px"></span></div>'+
-      '<div class="hint">Every text <b>you</b> send is read for a promise to come back to someone \u2014 \u201cI\u2019ll check and let you know\u201d, \u201cI\u2019ll get you a price tonight\u201d. When it finds one you get an email with a <b>calendar invite attached</b>, it shows up on Home, and you get a nudge at the time you promised. Nothing is ever texted to the customer. The scan reads back over the last few messages of every open conversation and picks up the ones you made before \u2014 the ones most likely already forgotten.</div>'+
+      '<div class="hint">Every text <b>you</b> send is read for a promise to come back to someone \u2014 \u201cI\u2019ll check and let you know\u201d, \u201cI\u2019ll get you a price tonight\u201d. When it finds one you get an email with a <b>calendar invite attached</b>, it shows up on Home, and you get a nudge at the time you promised. Every nudge carries <b>why it matters</b> \u2014 the money still on the table, what they actually said, the question you skipped, how many times they\u2019ve chased you \u2014 and it comes back until you answer. Nothing is ever texted to the customer. The scan reads back over the last few messages of every open conversation and picks up the ones you made before \u2014 the ones most likely already forgotten.</div>'+
       '<div class="fu-col"><span class="lbl2">Voicemails</span><button id="cfgVmRecover" class="btn" style="white-space:nowrap;align-self:flex-start">'+ic("mic",14)+' Recover past voicemails</button></div>'+
       '<div class="fu-col"><span class="lbl2">Call history</span><button id="cfgCallRecover" class="btn" style="white-space:nowrap;align-self:flex-start">'+ic("phone",14)+' Pull past calls into the log</button></div>'+
       '<div class="hint">Fills the <b>Calls</b> screen with the calls Twilio already has on record — recordings and transcripts included. Safe to run anytime; it skips anything already there.</div>'+
@@ -8374,6 +8400,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     el("cfgProm").onclick=function(){saveConfig({promise:{enabled:!((c.promise||{}).enabled!==false)}})};
     el("cfgPromMail").onclick=function(){saveConfig({promise:{emailEach:!((c.promise||{}).emailEach!==false)}})};
     el("cfgPromHours").onchange=function(){saveConfig({promise:{defaultHours:+el("cfgPromHours").value}})};
+    el("cfgPromEvery").onchange=function(){saveConfig({promise:{nudgeEvery:+el("cfgPromEvery").value}})};
+    el("cfgPromMax").onchange=function(){saveConfig({promise:{maxNudges:+el("cfgPromMax").value}})};
     el("cfgPromDepth").onchange=function(){var v=+el("cfgPromDepth").value;var l=el("cfgPromDepthLbl");if(l)l.textContent=String(v);saveConfig({promise:{scanDepth:v}})};
     el("cfgPromScan").onclick=function(){promScanNow(el("cfgPromScan"),el("cfgPromScanMsg"))};
     el("cfgAssistScript").onclick=function(){copyAssistScript()};
