@@ -13,13 +13,19 @@ The full move, every time:
 2. Bump the build fingerprint in **both** files, kept identical:
    - `src/index.js` → `const BUILD = 'YYYY-MM-DD·label'`
    - `public/index.html` → `var APP_BUILD = 'YYYY-MM-DD·label'`
-3. Run `npm test` **and** `npm run test:ui`.
+3. Run **`npm run test:all`** — one command, every suite, ~3 minutes. It runs four
+   at a time and re-runs any failure alone before calling it a failure, so a suite
+   reported FLAKY passed on its own and a suite reported ✗ really is broken.
+   While iterating, filter to what you touched: `node test/run.mjs ui polish peek`.
+   Don't go back to `npm test` + `npm run test:ui` as two serial commands — that's
+   the same work in triple the wall clock.
 4. Push, open a PR **into the production branch**, mark it ready, **squash merge it.**
 5. Report what shipped, and say plainly whether you could verify it live.
 
 ## What "finished" has to mean before you merge
 
-- **Both suites run.** Not "the one I touched" — all of it.
+- **Both suites run.** Not "the one I touched" — all of it. `npm run test:all` is
+  both, in one go.
 - **No new failures.** A test that fails identically on the base branch with your
   changes stashed is pre-existing and doesn't block the merge — but **verify that
   claim by actually stashing and running it**, and name the failure in the PR body.

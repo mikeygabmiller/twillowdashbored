@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-21·seethekey';
+const BUILD = '2026-09-21·aidiet2';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -350,12 +350,10 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/ai/command')  return apiAiCommand(request);
   if (request.method === 'POST' && pathname === '/api/ai/analyze')  return apiAiAnalyze(request);
   if (request.method === 'POST' && pathname === '/api/ai/agent')    return apiAiAgent(request);
-  if (request.method === 'POST' && pathname === '/api/ai/generate') return apiAiGenerate(request);
 
   // QQC quote log (Analytics → Quotes) — every quote the form has sent in.
   if (request.method === 'GET'  && pathname === '/api/journeys')      return apiJourneys(url);
   if (request.method === 'GET'  && pathname === '/api/journey')       return apiJourney(url);
-  if (request.method === 'POST' && pathname === '/api/journey/ai')    return apiJourneyAi(request);
 
   // Google Ads offline conversion import — the CSV he uploads so Google counts
   // the leads its own browser tag can never see. Authed, like everything past
@@ -368,7 +366,6 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/use')           return apiUseIngest(request);
   if (request.method === 'GET'  && pathname === '/api/use')           return apiUse(url);
   if (request.method === 'GET'  && pathname === '/api/use/export')    return apiUseExport(url);
-  if (request.method === 'POST' && pathname === '/api/use/ai')        return apiUseAi(request);
   if (request.method === 'GET'  && pathname === '/api/quotes')        return apiQuotes(url);
   if (request.method === 'GET'  && pathname === '/api/quotes/export') return apiQuotesExport(url);
   if (request.method === 'POST' && pathname === '/api/quotes/import') return apiQuotesImport(request);
@@ -4658,72 +4655,6 @@ async function apiJourney(url) {
   });
 }
 
-// POST /api/journey/ai  { vid? }
-// ---------------------------------------------------------------------------
-// The reason for recording any of this. One journey, or the last 25 of them,
-// flattened into plain text and handed to Gemini with one question: what are
-// these people doing, where do they give up, and what should Mikey change?
-//
-// No chart can answer that. A chart can only show you what you already thought
-// to plot; this can notice that everyone who books read the ceramic page first.
-async function apiJourneyAi(request) {
-  if (!ENV.GEMINI_API_KEY) return json({ ok: false, error: 'ai_not_configured' }, 503);
-  let data = {};
-  try { data = await request.json(); } catch (e) {}
-  const one = cleanVid(data.vid || '');
-
-  const docs = [];
-  if (one) {
-    const d = await kv().get(journeyKey(one), { type: 'json' });
-    if (d) docs.push(d);
-  } else {
-    // Newest first, and only paths with enough on them to say anything.
-    const page = await kv().list({ prefix: 'journey:', limit: 1000 });
-    const rows = (page.keys || []).map((k) => ({ name: k.name, m: k.metadata || {} }))
-      .filter((r) => (r.m.n || 0) >= 3)
-      .sort((a, b) => (b.m.at || 0) - (a.m.at || 0)).slice(0, 25);
-    for (const r of rows) {
-      const d = await kv().get(r.name, { type: 'json' });
-      if (d) docs.push(d);
-    }
-  }
-  if (!docs.length) return json({ ok: true, read: '', empty: true });
-
-  const lines = [];
-  docs.forEach((d, i) => {
-    const who = d.name || (d.phone ? 'left their number' : 'never made contact');
-    lines.push(`--- VISITOR ${i + 1} (${who}) ---`);
-    for (const st of (d.steps || []).slice(0, 60)) {
-      const r = journeyReadStep(st);
-      lines.push(`  ${new Date(r.t).toISOString().slice(11, 16)}  ${r.title}${r.detail ? ' — ' + r.detail : ''}`);
-    }
-  });
-
-  const prompt = [
-    'You are looking at recorded sessions from a mobile car-detailing website in Snohomish County, WA.',
-    'Each block is ONE anonymous visitor: the pages they opened, the sections they scrolled to, the buttons',
-    'they pushed, how far down each page they got, how long they stayed, and — if they ever filled out the',
-    'quote or booking form — what happened in the conversation afterwards.',
-    '',
-    one ? 'Tell the owner, Mikey, the story of this one visit in plain language: what they were clearly looking for, how interested they were, and what he should do about it.'
-        : 'Find the PATTERNS across these visits. What do the people who make contact do that the people who leave do not? Where exactly do people give up? Which sections and buttons are doing work, and which are being ignored?',
-    '',
-    'Rules:',
-    '- Talk to Mikey like a person, not a report. Short paragraphs, no headings, no bullet symbols.',
-    '- Say what the evidence actually supports. If there is not enough here to tell, say that plainly.',
-    '- Never invent a number you were not given.',
-    '- End with the single most useful thing he could change on the site, and why this data says so.',
-    '',
-    lines.join('\n').slice(0, 40000),
-  ].join('\n');
-
-  try {
-    const read = await geminiGenerate(prompt, { surface: 'journey read', temperature: 0.5, maxTokens: 900 });
-    return json({ ok: true, read, visitors: docs.length, scope: one ? 'one' : 'all' });
-  } catch (err) {
-    return json({ ok: false, error: String(err.message || err).slice(0, 200) }, 502);
-  }
-}
 
 // One stored step → one row Mikey can read. The storage shape is deliberately
 // terse (k/l/d/p, one or two letters) because it's written on every click and
@@ -5421,50 +5352,6 @@ async function apiUseExport(url) {
   } });
 }
 
-// POST /api/use/ai — the reason for recording behaviour instead of counting it.
-// A bar chart can only show what someone already thought to plot. This can
-// notice that he opens Money right after every send, or that he has opened
-// Pipeline every morning for a month and never once pushed anything on it.
-async function apiUseAi(request) {
-  if (!ENV.GEMINI_API_KEY) return json({ ok: false, error: 'ai_not_configured' }, 503);
-  let data = {};
-  try { data = await readJson(request); } catch (e) {}
-  const g = await useGather(useDays(data.days));
-  // Emptiness is a fact about the record, not something to infer from the text
-  // of the report — the header alone ("across 0 of 30 days") carries digits.
-  if (!g.events) return json({ ok: true, read: '', empty: true });
-  const body = useExportText(g);
-
-  const prompt = [
-    'Below is a recording of how ONE person — Mikey, who runs a mobile car-detailing business alone —',
-    'actually uses his own dashboard: which controls he pushes, which screens he sits on and for how long,',
-    'which screens he opens and abandons in seconds, what hours he is in there, which controls have been',
-    'on his screen for weeks and never once pushed, and the raw order of his last few moves.',
-    '',
-    'Tell him what this says about how he really works. Specifically:',
-    '- What is he leaning on hardest, and what does that suggest is missing right next to it?',
-    '- What routine shows up in the ORDER of his moves that could be collapsed into one button?',
-    '- What has he never used, or stopped using, that is worth deleting to make the app smaller?',
-    '- Where does he open something and leave immediately? That screen is not answering his question.',
-    '',
-    'Rules:',
-    '- Talk to Mikey like a person, not a report. Short paragraphs, no headings, no bullet symbols.',
-    '- Say what the evidence actually supports. If there is not enough recorded yet to tell, say so plainly.',
-    '- Never invent a number you were not given.',
-    '- End with the single most useful change to the dashboard this data argues for, and why.',
-    '',
-    body.slice(0, 40000),
-  ].join('\n');
-
-  try {
-    // Tagged like every other call site so this shows up by name in
-    // ☰ → Settings → what the AI is actually costing, rather than in "other".
-    const read = await geminiGenerate(prompt, { surface: 'usage read', temperature: 0.5, maxTokens: 900 });
-    return json({ ok: true, read, days: g.days });
-  } catch (err) {
-    return json({ ok: false, error: String(err.message || err).slice(0, 200) }, 502);
-  }
-}
 
 // ===========================================================================
 // Website analytics command center — GA4 + Microsoft Clarity
@@ -6873,33 +6760,6 @@ async function apiIntelPulse() {
       best: series.slice().sort((a, b) => b.rev - a.rev)[0] || null,
     },
   });
-}
-
-// AI content generator (Grow hub → SEO / Content Studio). One flexible endpoint
-// that turns a task + short context into ready-to-use marketing copy via Gemini.
-async function apiAiGenerate(request) {
-  if (!ENV.GEMINI_API_KEY) return json({ ok: false, error: 'ai_not_configured' }, 503);
-  const data = await readJson(request);
-  const task = String(data.task || '').slice(0, 60);
-  const context = String(data.context || '').slice(0, 1200);
-  const cfg = await loadConfig();
-  const biz = (cfg.playbook && cfg.playbook.business) || "Mikey's Mobile Detailing";
-  const area = (cfg.playbook && cfg.playbook.area) || 'Snohomish, WA and surrounding areas';
-  const PROMPTS = {
-    gbp_post: `Write a short, upbeat Google Business Profile post for ${biz}, a mobile auto detailing business serving ${area}. Keep it 2-3 sentences, friendly and local, with a soft call to action. Do not use hashtags or emojis. Topic/details: ${context || 'a general promo for this week'}.`,
-    review_response: `Write a warm, professional 1-2 sentence reply from the owner of ${biz} responding to this customer review. Sound genuine and human, thank them, and invite them back. Review: "${context || 'Great job, my car looks brand new!'}"`,
-    promo_text: `Write a short SMS promo (under 300 characters, no links) for ${biz} to send past customers. Friendly, local, one clear offer and call to action. Details: ${context || 'a seasonal detailing special'}.`,
-    social_caption: `Write an engaging social media caption for ${biz} (mobile auto detailing in ${area}). 1-2 sentences plus up to 3 relevant hashtags. Topic: ${context || 'before-and-after of a full detail'}.`,
-    service_desc: `Write a polished, benefit-focused service description (2-3 sentences) for ${biz}. Service: ${context || 'Full interior + exterior detail'}.`,
-    email_blast: `Write a short marketing email (subject line + 3-4 sentence body) for ${biz} to past customers. Warm, local, one clear offer. Details: ${context || 'a limited-time detailing special'}.`,
-  };
-  const prompt = PROMPTS[task] || (`You are the marketing assistant for ${biz}, a mobile auto detailing business in ${area}. ${context}`);
-  try {
-    const text = await geminiGenerate(prompt, { surface: 'write something', temperature: 0.8, maxTokens: 600 });
-    return json({ ok: true, task, text });
-  } catch (e) {
-    return json({ ok: false, error: 'ai_error', detail: String(e.message || e).slice(0, 200) }, 502);
-  }
 }
 
 // ===========================================================================

@@ -63,6 +63,7 @@ page.on('console', (m) => { if (m.type() === 'error' && !/favicon|manifest|sw\.j
 
 const batches = [];        // every POST /api/use body the app sent
 let exportCalls = 0;
+let aiCalls = 0;
 await page.route('**/*', async (route) => {
   const u = new URL(route.request().url()); const p = u.pathname;
   const json = (o) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(o) });
@@ -73,7 +74,9 @@ await page.route('**/*', async (route) => {
   }
   if (p === '/api/use') return json(USAGE);
   if (p === '/api/use/export') { exportCalls++; return route.fulfill({ status: 200, contentType: 'text/plain', body: 'DASHBOARD USAGE — pasteable' }); }
-  if (p === '/api/use/ai') return json({ ok: true, read: 'You live in Chats and you never once opened the Map.', days: 30 });
+  // Cut on 2026-09-21 (docs/AI-COST.md): the free export below answers the same
+  // question. Still answered here so a stray call is counted rather than 404'd.
+  if (p === '/api/use/ai') { aiCalls++; return json({ ok: true, read: 'x', days: 30 }); }
   if (p === '/api/threads') {
     const want = u.searchParams.get('phone');
     const out = { ok: true, threads: rows, config: {} };
@@ -223,14 +226,14 @@ ok('a screen he opens and walks out of says so',
 ok('and what went cold is a separate list', /Went cold/i.test(await page.locator('#grBody').textContent()));
 ok('the last few moves are replayed in order', await page.locator('.uz-step').count() === 3, await page.locator('.uz-step').count());
 
-section('The AI read, and the paste');
-await page.locator('#uzAi').click();
-await page.waitForTimeout(700);
-ok('the read comes back onto the screen',
-  /never once opened the Map/.test(await page.locator('.wa-ai').first().textContent()),
-  await page.locator('.wa-ai').first().textContent());
-ok('and is not confused with the hours chart it sits next to',
-  await page.locator('.uz-hours').count() === 1 && await page.locator('.wa-ai').count() === 1);
+section('The paste, which is the read now');
+// This screen used to carry an AI button that answered "what do I never use?".
+// That is the one question the record below already answers, and the Copy button
+// hands the whole thing to a chat for free. The paid version is gone; the export
+// it was competing with is what has to keep working.
+ok('the AI button is gone', await page.locator('#uzAi').count() === 0);
+ok('nothing on this screen asked the AI', aiCalls === 0, aiCalls);
+ok('the hours chart is still the only panel here', await page.locator('.uz-hours').count() === 1);
 await page.evaluate(() => {
   window.__copied = '';
   Object.defineProperty(navigator, 'clipboard', {

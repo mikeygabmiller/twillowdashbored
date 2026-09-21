@@ -64,10 +64,10 @@ await page.route('**/*', async (route) => {
     oneCalls[vid] = (oneCalls[vid] || 0) + 1;
     return json(vid === 'v-sarah' ? SARAH : GHOST);
   }
-  if (p === '/api/journey/ai') {
-    aiCalls.push(JSON.parse(route.request().postData() || '{}'));
-    return json({ ok: true, read: 'They came for ceramic and priced it twice before calling.', visitors: 2, scope: 'all' });
-  }
+  // The AI read of these journeys was cut on 2026-09-21 (see docs/AI-COST.md).
+  // The route stays answered so that a stray call would be COUNTED, not 404'd —
+  // which is what makes the assertion below mean something.
+  if (p === '/api/journey/ai') { aiCalls.push(JSON.parse(route.request().postData() || '{}')); return json({ ok: true, read: 'x' }); }
   if (p === '/api/threads') return json({ ok: true, threads: [], config: {} });
   if (p === '/api/money') return json({ ok: true, month: '2026-08', today: '2026-08-24', entries: [], nudges: [], owed: [], summary: {}, config: {} });
   if (p === '/api/day') return json({ ok: true, date: '2026-08-24', jobs: [], manual: [], order: [], summary: { total: 0, done: 0, remaining: 0, booked: 0, earned: 0, hours: 0 } });
@@ -167,16 +167,15 @@ section('It gets you back to the actual conversation');
 await page.locator('.jn-card').nth(0).locator('.jn-head').click();
 await page.waitForTimeout(400);
 
-section('You can ask the AI what people are doing');
-ok('there is a read-everyone button', await page.locator('#jnAiAll').count() === 1);
-await page.locator('#jnAiAll').click();
-await page.waitForTimeout(600);
-ok('it asked for the whole board, not one visitor', aiCalls.length === 1 && aiCalls[0].vid === '', aiCalls);
-ok('the answer is shown', /priced it twice/.test(await page.locator('.wa-ai').textContent()));
-ok('one visitor can be read on their own', await page.locator('[data-jn-ai]').count() >= 1);
-await page.locator('[data-jn-ai]').first().click();
-await page.waitForTimeout(600);
-ok('and that call carries the vid', aiCalls.length === 2 && aiCalls[1].vid === 'v-sarah', aiCalls);
+section('Reading the journeys costs nothing');
+// Two AI buttons used to sit on this screen — one per visitor, one for the board.
+// The recorded paths ARE the answer, and an AI paragraph about them was a bill for
+// restating what the timeline already shows. Both are gone; what has to stay gone
+// is the call, so this walks the screen the way he would and pins the count at zero.
+ok('no "read them for me" button is left', await page.locator('#jnAiAll').count() === 0);
+ok('and none on the individual cards', await page.locator('[data-jn-ai]').count() === 0);
+ok('the journeys themselves still drew', await page.locator('.jn-card').count() >= 2);
+ok('browsing them asked the AI nothing', aiCalls.length === 0, aiCalls);
 
 ok('there is a way into the thread', await page.locator('[data-jn-phone]').count() === 1);
 await page.locator('[data-jn-phone]').click();
@@ -192,7 +191,7 @@ await page.waitForTimeout(900);
 ok('Analytics opened on Journey', await page.locator('#growApp.show').count() === 1 &&
   await page.locator('#grNav [data-gv="journey"].active').count() === 1);
 ok('their card is already expanded', await page.locator('.jn-card.on').count() === 1);
-ok('and it is the right one', await page.locator('.jn-card.on [data-jn-ai]').first().getAttribute('data-jn-ai') === 'v-ghost');
+ok('and it is the right one', await page.locator('.jn-card.on [data-jn-vid]').first().getAttribute('data-jn-vid') === 'v-ghost');
 ok('their steps were fetched', oneCalls['v-ghost'] === 1, oneCalls);
 ok('the vid is scrubbed out of the address bar', !/journey=/.test(page.url()), page.url());
 

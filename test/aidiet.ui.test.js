@@ -33,6 +33,7 @@ page.on('pageerror', (e) => errs.push('PAGEERROR: ' + e.message));
 page.on('console', (m) => { if (m.type() === 'error' && !/favicon|manifest|sw\.js|fetching the script/.test(m.text())) errs.push('CONSOLE: ' + m.text()); });
 
 const predictCalls = [];
+const analyzeCalls = [];
 const polishCalls = [];
 const configPosts = [];
 
@@ -64,6 +65,13 @@ await page.route('**/*', async (route) => {
     return json({ ok: true, completion: ' works for me', options: ['works', 'sounds good'] });
   }
   if (path === '/api/ai/style') return json({ ok: true, model: { n: 120, uni: { thursday: 3 }, bi: {}, tri: {} } });
+  // The whole-dashboard read behind Home's AI card. Counted, never refused: the
+  // point of the section below is that opening the app does not reach for it.
+  if (path === '/api/ai/analyze') {
+    analyzeCalls.push(1);
+    return json({ ok: true, headline: 'Two people are waiting on you.',
+      attention: [{ title: 'Dale Hobart', detail: 'asked about Thursday an hour ago' }] });
+  }
   if (path === '/api/ai/draft') { polishCalls.push(1); return json({ ok: true, draft: 'Polished.' }); }
   if (path === '/api/ai/usage') {
     return json({ ok: true, days: 14, today: '2026-08-25', model: 'gemini-2.5-flash',
@@ -129,6 +137,30 @@ const closeSettings = async () => {
     await page.waitForTimeout(300);
   }
 };
+
+section('Home does not read the whole dashboard just because it opened');
+// The card only exists in Pro mode, so Pro is where the bill was. Set the mode the
+// way the app stores it and reload, which is exactly what a Pro-mode cold open is.
+await page.evaluate(() => {
+  const u = JSON.parse(localStorage.getItem('mkd-ui') || '{}');
+  u.mode = 'pro'; localStorage.setItem('mkd-ui', JSON.stringify(u));
+});
+await page.goto('https://texting.test/');
+await page.waitForTimeout(1200);
+// This was the app's biggest unasked-for expense. Home's AI card called
+// /api/ai/analyze — the full dashboard-in-a-prompt — every single time the app
+// drew, and the answer lives in memory only, so every reopen of the PWA bought
+// another one. He was paying a dozen times a day for a paragraph he had not asked
+// for. The card is the same card; it just waits now.
+ok('opening the app read nothing', analyzeCalls.length === 0, analyzeCalls);
+ok('the card is still there', await page.locator('.ai-center').count() === 1);
+ok('offering the read instead of doing it', await page.locator('#aiHomeRead').count() === 1);
+
+section('…and it still reads when he asks');
+await page.locator('#aiHomeRead').click();
+await page.waitForTimeout(600);
+ok('one tap, one call', analyzeCalls.length === 1, analyzeCalls);
+ok('the answer lands in the card', /waiting on you/.test(await page.locator('#aiHomeBrief').textContent()));
 
 section('Out of the box, the keyboard costs nothing');
 await openThread();

@@ -92,13 +92,13 @@ const CODE = [
   lift('noteApiUse'), lift('useBufDue'), lift('useTakeBuf'), lift('useMaybeFlush'),
   lift('apiUseIngest'), lift('useLoadDays'), lift('useGather'),
   lift('useDeadRows'), lift('useColdRows'), lift('useScreenRows'), lift('apiUse'),
-  lift('useReadKind'), lift('useExportText'), lift('apiUseExport'), lift('apiUseAi'),
+  lift('useReadKind'), lift('useExportText'), lift('apiUseExport'),
   constant('useDays'),
 ].join('\n\n');
 
 const factory = new Function(...Object.keys(ctx), CODE + `
   return { useFlush, noteApiUse, useMaybeFlush, useBufDue, apiUseIngest, apiUse,
-           apiUseExport, apiUseAi, useRoutePath, useLabel, useApplyEvent,
+           apiUseExport, useRoutePath, useLabel, useApplyEvent,
            blankUseDay, useCatalogTouch, useCatalogTrim, blankUseCatalog,
            bufLen: () => USE_BUF.length, USE_TAPE_PER_DAY, USE_CATALOG_MAX };`);
 const U = factory(...Object.values(ctx));
@@ -312,17 +312,12 @@ ok('and the order of his last moves', /THE LAST FEW MOVES/.test(txt));
 ok('no phone number is anywhere in it', !/\+?1?\d{10}/.test(txt.replace(/20\d\d-\d\d-\d\d/g, '')), (txt.match(/\+?1?\d{10}/) || [])[0]);
 ok('it says out loud that it is safe to paste', /never content/i.test(txt) || /identifies a customer/i.test(txt));
 
-section('The AI read refuses to invent a story out of nothing');
-STORE.clear();
-ctx.ENV.GEMINI_API_KEY = '';
-let ai = await U.apiUseAi({ __body: {} });
-ok('no key is an honest 503, not a fake answer', ai.__json.error === 'ai_not_configured', ai.__json);
-ctx.ENV.GEMINI_API_KEY = 'k';
-ai = await U.apiUseAi({ __body: { days: 30 } });
-ok('an empty record reads as empty rather than a hallucination', ai.__json.ok === true && ai.__json.empty === true, ai.__json);
-await U.useFlush([{ t: now, k: 't', l: 'Money · Log a job' }], []);
-ai = await U.apiUseAi({ __body: { days: 30 } });
-ok('with something recorded, it answers', ai.__json.ok === true && ai.__json.read === 'a read', ai.__json);
+// The AI read of this record was cut on 2026-09-21 (docs/AI-COST.md). The export
+// above answers the same question — "what do I never use?" — for no API call, so
+// what has to keep being true is that the export stays complete, which the block
+// above checks, and that nothing here reaches for the model at all.
+section('Reading this record costs nothing');
+ok('there is no AI endpoint left on this screen', typeof U.apiUseAi === 'undefined');
 
 section('The kill switch works with the write budget already blown');
 STORE.clear();

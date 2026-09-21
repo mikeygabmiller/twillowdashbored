@@ -1027,6 +1027,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .aic-itxt b{display:block;font-weight:600;color:var(--text)}
   .aic-itxt span{display:block;color:var(--muted2);font-size:12px;margin-top:1px;line-height:1.45}
   .aic-muted{color:var(--muted2);display:flex;align-items:center;gap:7px}
+  .aic-readbtn{display:inline-flex;align-items:center;gap:7px;font-family:inherit;font-size:13px;font-weight:600;
+    color:var(--accent-text);background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:8px 14px;cursor:pointer}
+  .aic-readbtn:hover{border-color:var(--accent)}
+  .aic-readbtn:active{transform:scale(.97)}
   .aic-ask{display:flex;gap:8px;margin-top:12px}
   .aic-ask input{flex:1;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:12px;color:var(--text);padding:11px 13px;font-size:14.5px;font-family:inherit;outline:none}
   .aic-ask input:focus{border-color:var(--accent)}
@@ -4456,7 +4460,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-21·seethekey";
+  var APP_BUILD="2026-09-21·aidiet2";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4750,7 +4754,6 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       res.innerHTML='<div class="ar-line"><span class="ar-ic">'+ic("check",16)+'</span><span>'+esc(d.reply||"Done.")+'</span></div>';
       res.style.display="block";
       refreshThreads();if(typeof loadMoney==="function")loadMoney();if(typeof fetchInsights==="function")fetchInsights();
-      if(typeof renderHome==="function"&&state.tab==="home")setTimeout(function(){aiBriefLoad(true)},400);
       toast(d.reply||"Done");
     }).catch(function(){aiCmdShowError("Network error — please try again.")});
   }
@@ -6177,7 +6180,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     W.aicenter='<div data-hwidget="aicenter"><div class="ai-center">'+
       '<div class="aic-head"><span class="aic-ic">'+ic("sparkles",18)+'</span><span class="aic-title">AI command center</span>'+
       '<button class="aic-refresh" id="aiHomeRefresh" aria-label="Refresh summary">'+ic("refresh-cw",15)+'</button></div>'+
-      '<div class="aic-brief" id="aiHomeBrief"><div class="aic-muted">'+ic("sparkles",14)+' Reading your dashboard…</div></div>'+
+      '<div class="aic-brief" id="aiHomeBrief"></div>'+
       '<div class="aic-ask"><input id="aiHomeInput" placeholder="Ask or tell me anything…" autocomplete="off">'+
       '<button class="aic-go" id="aiHomeGo" aria-label="Ask">'+ic("send",17)+'</button></div>'+
       '<div class="aic-try">'+ic("lightbulb",12)+' Try asking</div>'+
@@ -7046,10 +7049,22 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     inp.addEventListener("keydown",function(e){if(e.key==="Enter"){e.preventDefault();submit()}});
     if(ref)ref.onclick=function(){aiBriefLoad(true)};
     if(chips){chips.innerHTML="";AIC_CHIPS.forEach(function(x){var b=document.createElement("button");b.textContent=x;b.onclick=function(){openAiCmd(x)};chips.appendChild(b)})}
-    aiBriefLoad(false);
+    // It used to read the whole dashboard the moment Home drew — a full AI call
+    // every time the app was opened, for a paragraph he never asked for. This is
+    // a PWA he reopens a dozen times a day, so that was the biggest thing the app
+    // spent on its own. Now it waits to be asked, and a read already done this
+    // session is redrawn for free.
+    if(state.aiBrief)renderBrief(state.aiBrief); else briefOffer();
   }
   // The lightweight "what needs attention" summary (analyze endpoint). Cached in
   // state so re-rendering Home doesn't re-hit Gemini; refresh button forces it.
+  // What sits in the card until he asks for a read.
+  function briefOffer(){
+    var box=el("aiHomeBrief");if(!box)return;
+    box.innerHTML='<button class="aic-readbtn" id="aiHomeRead">'+ic("sparkles",14)+
+      '<span>Read my dashboard</span></button>';
+    var b=el("aiHomeRead");if(b)b.onclick=function(){vibrate(6);aiBriefLoad(true)};
+  }
   function aiBriefLoad(force){
     var box=el("aiHomeBrief");if(!box)return;
     if(state.aiBrief&&!force){renderBrief(state.aiBrief);return}
@@ -13273,12 +13288,11 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     web:{range:"7d",data:null,loading:false,err:"",settings:false,status:null,ai:"",aiRange:"",aiLoading:false,savingGa:false,savingCl:false},
     // `steps` is a per-visitor cache: the board is one cheap list call, but each
     // replay is its own fetch, so re-collapsing a card must not re-fetch it.
-    journey:{list:null,total:0,named:0,loading:false,err:"",open:"",steps:{},
-             ai:"",aiScope:"",aiLoading:false,aiErr:""},
+    journey:{list:null,total:0,named:0,loading:false,err:"",open:"",steps:{}},
     quotes:{months:6,data:null,loading:false,err:""},
     // Usage is the only screen in here that measures the app instead of the
     // business, so it keeps its own range separate from everything else.
-    usage:{days:30,data:null,loading:false,err:"",ai:"",aiDays:0,aiLoading:false,aiErr:"",deadAll:false,copied:false},
+    usage:{days:30,data:null,loading:false,err:"",deadAll:false,copied:false},
     map:{mode:"area",area:{size:9,radius:12,metric:"rev",months:12},
          rank:{data:null,loading:false,err:"",setup:false,saving:false,
                size:7,radius:5,keyword:"",scanning:false,done:0,total:0,live:null,viewId:"",
@@ -13769,7 +13783,6 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     h+="</div>";
     var btns="";
     if(d.phone)btns+='<button class="btn ic-btn" data-jn-phone="'+esc(d.phone)+'">'+ic("message-square",15)+"<span>Open the conversation</span></button>";
-    btns+='<button class="btn ic-btn" data-jn-ai="'+esc(d.vid||"")+'">'+ic("sparkles",15)+"<span>What were they after?</span></button>";
     h+='<div class="jn-acts">'+btns+"</div>";
     return h;
   }
@@ -13796,10 +13809,6 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(!paidRows)h+='<div class="hint" style="margin:0 0 10px">None of these came in tagged as an ad click. If your ads are running, the site has to pass the click id through — see Grow \u2192 Website \u2192 the tracker snippet.</div>';
     // The whole point of recording behaviour rather than counting it: ask what
     // the pattern IS. One button, reading every path on the board at once.
-    h+='<button class="btn ic-btn" id="jnAiAll" style="width:100%;justify-content:center;margin:2px 0 10px">'+ic("sparkles",15)+
-       "<span>"+(J.aiLoading&&J.aiScope==="all"?"Reading what everyone did…":"AI read — what are people actually doing?")+"</span></button>";
-    if(J.aiErr)h+='<div class="wa-ins bad"><span class="i-ic">'+ic("alert",15)+"</span><div>"+esc(J.aiErr)+"</div></div>";
-    if(J.ai)h+='<div class="wa-panel"><div class="p-t">'+ic("bot",14)+" AI read <small>"+esc(J.aiScope==="one"?"this visitor":"across "+(J.aiVisitors||0)+" visitors")+"</small></div><div class=\"wa-ai\">"+esc(J.ai)+"</div></div>";
     h+='<div class="gr-sec"><span class="gs-ic">'+ic("route",16)+"</span>Recent visitors</div>";
     rows.forEach(function(r){
       var open=J.open===r.vid;
@@ -13818,30 +13827,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     });
     box.innerHTML=h;jnWire(box);
   }
-  // One call for both scopes: no vid means "read everyone on the board", a vid
-  // means "read this one visit". Same endpoint, same panel.
-  function jnAsk(vid){
-    var J=GROW.journey;
-    if(J.aiLoading)return;
-    J.aiLoading=true;J.aiErr="";J.ai="";J.aiScope=vid?"one":"all";growRender();
-    post("/api/journey/ai",{vid:vid||""}).then(function(d){
-      J.aiLoading=false;
-      if(d&&d.ok){
-        J.ai=d.empty?"Not enough recorded yet to say anything useful. Give it a few days of visits.":(d.read||"");
-        J.aiVisitors=d.visitors||0;
-      }else{
-        J.aiErr=(d&&d.error==="ai_not_configured")?"The AI key isn't set on the Worker yet.":((d&&d.error)||"Couldn't read them");
-      }
-      if(el("growApp").classList.contains("show")&&GROW.view==="journey")growRender();
-    }).catch(function(){J.aiLoading=false;J.aiErr="Network error";
-      if(el("growApp").classList.contains("show")&&GROW.view==="journey")growRender();});
-  }
   function jnWire(box){
-    var all=box.querySelector("#jnAiAll");
-    if(all)all.onclick=function(){vibrate(6);jnAsk("")};
-    Array.prototype.forEach.call(box.querySelectorAll("[data-jn-ai]"),function(b){
-      b.onclick=function(){vibrate(6);jnAsk(b.getAttribute("data-jn-ai"));el("grBody").scrollTop=0};
-    });
     Array.prototype.forEach.call(box.querySelectorAll("[data-jn-vid]"),function(b){
       b.onclick=function(){
         var v=b.getAttribute("data-jn-vid");vibrate(6);
@@ -13924,10 +13910,6 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
 
     // The one button worth putting above the lists: a chart can only show what
     // you already thought to plot.
-    h+='<button class="btn ic-btn" id="uzAi" style="width:100%;justify-content:center;margin:10px 0 4px">'+ic("sparkles",15)+
-       "<span>"+(U.aiLoading?"Reading how you work…":"AI read — how do I actually use this?")+"</span></button>";
-    if(U.aiErr)h+='<div class="wa-ins bad"><span class="i-ic">'+ic("alert",15)+"</span><div>"+esc(U.aiErr)+"</div></div>";
-    if(U.ai)h+='<div class="wa-panel"><div class="p-t">'+ic("bot",14)+" AI read <small>last "+(U.aiDays||U.days)+" days</small></div><div class=\"wa-ai\">"+esc(U.ai)+"</div></div>";
 
     h+=uzBars((d.top||[]).slice(0,20),"What you push most","target",null);
 
@@ -13985,30 +13967,18 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
 
     h+='<button class="btn ic-btn" id="uzCopy" style="width:100%;justify-content:center;margin:14px 0 4px">'+ic("copy",15)+
        "<span>"+(U.copied?"Copied — paste it to Claude":"Copy all of this for Claude")+"</span></button>";
-    h+='<p class="hint" style="margin:6px 0 0">Features and screens only — no messages, no names, no amounts. Safe to paste anywhere.</p>';
+    h+='<p class="hint" style="margin:6px 0 0">Features and screens only — no messages, no names, no amounts. Safe to paste anywhere. '+
+       'Paste it into a chat and ask what you never use: the same read the AI button used to do, for nothing.</p>';
 
     box.innerHTML=h;uzWire(box);
   }
   function uzHour(i){return i===0?"12am":i<12?i+"am":i===12?"noon":(i-12)+"pm"}
   function uzClock(t){return new Date(t).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})}
   function uzVerb(k){return k==="t"?"pushed":k==="v"?"opened":k==="b"?"opened and left":k==="a"?"server":k}
-  function uzAsk(){
-    var U=GROW.usage;
-    if(U.aiLoading)return;
-    U.aiLoading=true;U.aiErr="";U.ai="";growRender();
-    post("/api/use/ai",{days:U.days}).then(function(d){
-      U.aiLoading=false;
-      if(d&&d.ok){U.ai=d.empty?"Not enough recorded yet to say anything useful. Give it a few days of normal use.":(d.read||"");U.aiDays=d.days||U.days}
-      else U.aiErr=(d&&d.error==="ai_not_configured")?"The AI key isn't set on the Worker yet.":((d&&d.error)||"Couldn't read it");
-      if(el("growApp").classList.contains("show")&&GROW.view==="usage")growRender();
-    }).catch(function(){U.aiLoading=false;U.aiErr="Network error";
-      if(el("growApp").classList.contains("show")&&GROW.view==="usage")growRender();});
-  }
   function uzWire(box){
     Array.prototype.forEach.call(box.querySelectorAll("[data-uzr]"),function(b){
       b.onclick=function(){vibrate(6);GROW.usage.days=+b.getAttribute("data-uzr");GROW.usage.data=null;GROW.usage.deadAll=false;growLoadUsage(true)};
     });
-    var ai=box.querySelector("#uzAi");if(ai)ai.onclick=function(){vibrate(6);uzAsk()};
     var more=box.querySelector("#uzMore");if(more)more.onclick=function(){vibrate(6);GROW.usage.deadAll=true;growRender()};
     var cp=box.querySelector("#uzCopy");
     if(cp)cp.onclick=function(){
