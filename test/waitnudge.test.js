@@ -1,6 +1,7 @@
 // The two-hour nudge: a customer texted, the alert went out, and nobody answered.
 // What has to hold:
-//   - it fires once per unanswered run, counted from their FIRST text, never again
+//   - it fires once per unanswered TEXT: each new text earns its own nudge, the
+//     same text never gets two, and texts overdue together share one email
 //   - never for the practice customer, someone who opted out, or an archived thread
 //   - never during quiet hours, and three or more at once come as one email
 //   - the email carries the one-tap answers (draft, choices, "buy me time") and
@@ -94,6 +95,34 @@ check('his reply resets it', ctx.since([{ dir: 'in', ts: 10 }, { dir: 'out', ts:
 check('a double-text an hour in does not push it back',
   ctx.due([row({ lastTs: NOW - 1 * H, waitSince: NOW - 2.5 * H })], {}, {}, NOW).length, 1);
 
+console.log('\n=== every new text gets its own nudge ===');
+{
+  // "Tahoe?" at -3h, nudged at -1h. Then "hello??" at -1.5h.
+  const sent = { '+14255550101': NOW - 3 * H };
+  const r = (lastAgo) => row({ waitSince: NOW - 3 * H, lastTs: NOW - lastAgo * H });
+  check('first text already nudged, second only 1.5h old → wait', ctx.due([r(1.5)], {}, sent, NOW).length, 0);
+  const d = ctx.due([r(2.1)], {}, sent, NOW);
+  check('second text hits 2h → its own nudge', d.length, 1);
+  check('…about the second text', d[0].nudgeFor, NOW - 2.1 * H);
+  check('same second text next minute → nothing', ctx.due([r(2.1)], {}, { '+14255550101': NOW - 2.1 * H }, NOW + 60000).length, 0);
+  const both = ctx.due([r(2.5)], {}, {}, NOW);
+  check('both already overdue, neither nudged → ONE nudge', both.length, 1);
+  check('…for the newest', both[0].nudgeFor, NOW - 2.5 * H);
+}
+{
+  const t = { phone: '+14255550101', name: 'Ruth', messages: [
+    { dir: 'in', body: 'How much for a Tahoe?', ts: NOW - 3 * H },
+    { dir: 'in', body: 'hello??', ts: NOW - 2.1 * H },
+  ] };
+  const w = world({ rows: [row({ waitSince: NOW - 3 * H, lastTs: NOW - 2.1 * H })], threads: { '+14255550101': t },
+    stored: { '+14255550101': NOW - 3 * H } });
+  await run(w);
+  check('second nudge emailed', w.mails.length, 1);
+  check('subject quotes the NEW text', /"hello\?\?"$/.test(w.mails[0].subject), true);
+  check('subject counts from the new text', /\(2h\)/.test(w.mails[0].subject), true);
+  check('body still shows the first one for context', /Tahoe/.test(w.mails[0].body.text), true);
+}
+
 console.log('\n=== who gets nudged ===');
 check('2.5h waiting → due', ctx.due([row()], {}, {}, NOW).length, 1);
 check('1h waiting → not yet', ctx.due([row({ waitSince: NOW - H, lastTs: NOW - H })], {}, {}, NOW).length, 0);
@@ -152,7 +181,7 @@ console.log('\n=== quiet hours and the pile-up ===');
   check('and nothing marked, so it goes in the morning', w.puts, 0);
 }
 {
-  const rows = [1, 2, 3].map((i) => row({ phone: '+1425555010' + i, name: 'C' + i, waitSince: NOW - (2 + i) * H }));
+  const rows = [1, 2, 3].map((i) => row({ phone: '+1425555010' + i, name: 'C' + i, waitSince: NOW - (2 + i) * H, lastTs: NOW - (2 + i) * H }));
   const w = world({ rows });
   check('three due → all counted', await run(w), 3);
   check('…as ONE email', w.mails.length, 1);
