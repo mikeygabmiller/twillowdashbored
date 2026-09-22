@@ -160,7 +160,13 @@ console.log('\n=== and the good one gets through ===');
 check('the four-beat version survives every gate', cleanExpand(GOOD, DRAFT, THEIRS), GOOD);
 
 console.log('\n=== the playbook asks for the three moves, in order ===');
-const PB = SRC.slice(SRC.indexOf('const EXPAND_PLAYBOOK'), SRC.indexOf('const EXPAND_SETTLED'));
+// The playbook is one long string built by concatenation, so a rule can land
+// with a line break in the middle of it. Testing the raw source therefore tests
+// the FILE'S WRAPPING as much as the prompt — an assertion can fail because an
+// editor rewrapped a line. Rejoin the pieces first so every check below reads
+// the prompt the model actually receives.
+const PB = SRC.slice(SRC.indexOf('const EXPAND_PLAYBOOK'), SRC.indexOf('const EXPAND_SETTLED'))
+  .replace(/'\s*\+\s*\n\s*'/g, '');
 check('1. say back what he heard', /SAY BACK WHAT HE HEARD/.test(PB), true);
 check('…and bans the pronoun that proves nobody read it', /never "that"/.test(PB), true);
 check('2. one concrete thought that proves he pictured the job', /PROVES HE PICTURED THE JOB/.test(PB), true);
@@ -176,6 +182,34 @@ check('…and that it may not touch the polished text', /nothing in it may chang
 // prompt that only describes a shape gets a different shape; one that shows the
 // shape gets that one.
 check('the shape is shown, not just described', PB.includes('the Highlander, the HRV and the E-350'), true);
+
+console.log('\n=== how it is told to sound like him ===');
+// The first version asserted "his lowercase, his casual rhythm". That was a
+// guess, and the text he actually sent read "Not sure if it would be prudent to
+// do them all in the same day, but I'm happy to tackle them nonetheless." The
+// prompt already carries real counts from his real texts; a hardcoded guess
+// sitting below them just overrode measured evidence with an assumption.
+check('it defers to the measured counts', /measured style block[\s\S]*COUNTS FROM HIS REAL TEXTS/.test(PB), true);
+check('it no longer asserts he writes lowercase', /his lowercase/.test(PB), false);
+check('…and says so out loud, because the assumption is the common one',
+  /Do not assume he writes in lowercase/.test(PB), true);
+// The other half of that: the measured block caps length, and an expansion is
+// longer than his median by definition. Both rules in one prompt with no
+// ordering between them is a coin flip.
+check('the length conflict is resolved explicitly', /LENGTH IS THE ONE EXCEPTION/.test(PB), true);
+check('…and the cap is said to govern the polish, not this', /It does NOT govern this field/.test(PB), true);
+
+console.log('\n=== and not to sound like a template ===');
+check('it says the moves are not a running order', /not a running order to fill/.test(PB), true);
+check('a move that does not earn its place is dropped', /Drop any move that does not earn its place/.test(PB), true);
+check('filler is refused by name', /Filler is worse than the short draft/.test(PB), true);
+check('there are two examples, not one', PB.includes('A. They listed details') && PB.includes('B. They named a problem'), true);
+check('…deliberately different shapes', /does NOT open by listing anything back/.test(PB), true);
+// The examples are a shape to copy, but HIS phrases are the target — "a photo or
+// just a quick explanation is fine" is his own line out of his own playbook, and
+// an earlier draft of this rule banned it as an example lift, which is backwards.
+check('his own phrasing is protected from the anti-copy rule',
+  /Phrases that appear in HIS real texts or his own playbook are a different matter/.test(PB), true);
 
 console.log('\n=== it rides the polish call, it does not add one ===');
 const draftFn = lift('apiAiDraft');
