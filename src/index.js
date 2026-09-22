@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-22·expand-it';
+const BUILD = '2026-09-22·expand-voice';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -7613,6 +7613,25 @@ const POLISH_PLAYBOOK =
 // subtraction, and this one is an addition — a method, an expectation, a claim
 // with consequences. So it comes back as its own suggestion, shown in full, and
 // nothing lands in his message box until he taps it.
+//
+// Two things about the WORDING that cost a round to learn:
+//
+// The first draft of this playbook asserted he writes "lowercase, casual" — a
+// guess, and a wrong one. The text he actually sent in the exchange that prompted
+// all this read "Not sure if it would be prudent to do them all in the same day,
+// but I'm happy to tackle them nonetheless." Full sentences, proper capitals, a
+// vocabulary no one would call casual. The prompt already carries `measuredStyleRules`
+// — real counts from his real texts, sitting a few hundred tokens above — and the
+// hardcoded guess was overriding measured evidence. So this section now defers to
+// those counts instead of describing him, with ONE documented exception: the
+// measured LENGTH cap governs the polish, not the expansion. An expansion is
+// longer than his median text by definition; leaving both rules in the same
+// prompt just made the model pick one at random.
+//
+// The second is that a three-move recipe run at full strength every time is its
+// own tell. He texts the same people repeatedly, and three replies that open
+// alike and march through the same order read MORE machine-written than the bare
+// draft did. The moves are a checklist to consider, not a running order to fill.
 const EXPAND_PLAYBOOK =
   'EXPAND IT — a second, OPTIONAL suggestion, separate from the polish.\n\n' +
   'Everything above this line governs "text" and still does: "text" stays a minimal correction of his draft that adds ' +
@@ -7648,18 +7667,44 @@ const EXPAND_PLAYBOOK =
   '- You may use any fact EITHER OF THEM has already written in the conversation below — their vehicles, their model years, ' +
   'the services they named. You may NOT introduce a number, day, time, price, address or name that neither of them wrote.\n' +
   '- NEVER promise a result, and never commit him to a duration or a date he has not given.\n' +
-  '- Keep it a text he would actually thumb out: 2-5 short sentences, his voice, his lowercase, his casual rhythm. No ' +
-  'customer-service voice, no "I understand your concern", no "rest assured", no bullet points.\n' +
   '- It must still do everything his draft did, including asking whatever he asked. This is his reply expanded, not a ' +
-  'different reply.\n\n' +
-  'HOW ONE READS END TO END — match this shape:\n' +
+  'different reply.\n' +
+  '- No customer-service voice, no "I understand your concern", no "rest assured", no bullet points, no headings.\n\n' +
+  'SOUNDING LIKE HIM — read this carefully, it overrides any habit you have about how a tradesman texts.\n' +
+  '- The measured style block near the top of this prompt is COUNTS FROM HIS REAL TEXTS. Its capitalisation, punctuation, ' +
+  'greeting, emoji and sign-off habits govern this field too. Follow it. Do not assume he writes in lowercase, in ' +
+  'fragments, or in slang unless those counts say so — plenty of one-man trades write in full, properly capitalised ' +
+  'sentences, and guessing wrong is the single most obvious way this reads as written by someone else.\n' +
+  '- LENGTH IS THE ONE EXCEPTION. The measured length cap governs "text". It does NOT govern this field: an expansion is ' +
+  'longer than his median text by definition, because the whole point is that his draft was too short. Aim for roughly ' +
+  'two to four sentences more than he wrote, and stop there. Keep HIS sentence shapes — just more of them.\n' +
+  '- Vary the opening. If his draft already opens ("Perfect.", "Sounds good!"), keep his opener and build from it rather ' +
+  'than replacing it. Never bolt a new greeting onto a conversation already in progress.\n\n' +
+  'DO NOT WRITE TO A TEMPLATE. He sends these all day to the same people. Three expansions that all open the same way and ' +
+  'march through the same three moves in the same order are more obviously machine-written than the short draft was. So:\n' +
+  '- The three moves are what to consider, not a running order to fill in. Drop any move that does not earn its place here ' +
+  'and say the remaining ones in whatever order reads naturally.\n' +
+  '- The worked examples below show the SHAPE and the DEPTH, not the words. Do not reach for their sentence patterns — ' +
+  'opening every expansion "so that\'s the X, the Y and the Z" turns one good move into a catchphrase. Phrases that ' +
+  'appear in HIS real texts or his own playbook are a different matter: those are his and you should sound like them.\n' +
+  '- If the only way to hit move 2 is a sentence that could be said about any vehicle ("I\'ll make sure it looks great", ' +
+  '"I\'ll take good care of it"), leave it out. Filler is worse than the short draft.\n\n' +
+  'TWO WORKED EXAMPLES — different situations, deliberately different shapes. Match the depth, never the words.\n\n' +
+  'A. They listed details.\n' +
   'They sent: "2018 Toyota Highlander / 2024 Honda HRV / 2012 Ford Econoline E-350. All just interior detail."\n' +
   'He drafted: "Perfect. How\'s the condition of those cars?"\n' +
-  'Expanded: "Perfect, so that\'s the Highlander, the HRV and the E-350, all interiors. The van\'s a big one inside so ' +
-  'I\'d give that its own chunk of time. How are they looking in there? A photo or just a quick description is fine, ' +
-  'doesn\'t have to be detailed, I just want to know if there\'s anything out of the ordinary from normal use so I can get ' +
-  'you an exact price."\n\n' +
-  'Return "" when his draft already does all three moves, or when there is genuinely nothing true to add. A reply that ' +
+  'Expanded: "Perfect, so that\'s the Highlander, the HRV and the E-350, all interiors. The van is a much bigger job ' +
+  'inside than the other two, so I would probably want to spread those out rather than cram them into one day. How are ' +
+  'they looking in there right now? A photo works, or just tell me if there is anything out of the ordinary from normal ' +
+  'use, and I can get you an exact price."\n\n' +
+  'B. They named a problem. Note that this one does NOT open by listing anything back, uses no question at the end ' +
+  'because his draft asked none, and ends on the limit instead.\n' +
+  'They sent: "my kid dumped a whole juice box across the back seat last week and I think it soaked in."\n' +
+  'He drafted: "yeah I can clean that"\n' +
+  'Expanded: "Yeah, a soaked-in juice spill is one of the most common things I get called for. I would go at the back ' +
+  'seat with a hot water extraction, which pulls it out of the foam rather than just off the top. I cannot promise the ' +
+  'whole stain comes out once it has had a week to set, but I will work it over and get out as much as there is to get."\n\n' +
+  'Return "" when his draft already does the job, or when there is genuinely nothing true to add. A reply that ' +
   'already does the job needs no second version, and a padded one is worse than the short one he wrote.\n\n';
 
 // When there is nothing to expand ON. Judged from THEIR side only.
