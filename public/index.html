@@ -456,19 +456,19 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
      is a correction and this one is not — it is the reply you'd have written if
      you had another minute. Closed it is one chip; open it is the whole message,
      because nothing gets tapped into a customer's text sight-unseen. */
-  .pb-say{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line2);padding-top:6px}
-  .pb-say-chip{align-self:flex-start;max-width:100%;display:inline-flex;align-items:center;gap:6px;
+  .pb-exp{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line2);padding-top:6px}
+  .pb-exp-chip{align-self:flex-start;max-width:100%;display:inline-flex;align-items:center;gap:6px;
     background:rgba(34,197,94,.14);border:1px solid rgba(34,197,94,.42);color:var(--text);border-radius:999px;
     padding:5px 11px;font-size:11.5px;font-weight:750;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .pb-say-chip:hover{border-color:var(--green)}
-  .pb-say-chip svg{width:13px;height:13px;flex:none;color:var(--green)}
-  .pb-say-prev{font-size:12.5px;color:var(--text);line-height:1.45;background:rgba(34,197,94,.09);
+  .pb-exp-chip:hover{border-color:var(--green)}
+  .pb-exp-chip svg{width:13px;height:13px;flex:none;color:var(--green)}
+  .pb-exp-prev{font-size:12.5px;color:var(--text);line-height:1.45;background:rgba(34,197,94,.09);
     border-left:2px solid var(--green);border-radius:0 8px 8px 0;padding:7px 9px;max-height:9em;overflow-y:auto}
-  .pb-say-act{display:flex;align-items:center;gap:8px}
-  .pb-say-act .pb-t{font-size:11.5px}
-  .pb-say-use{flex:none;display:inline-flex;align-items:center;gap:4px;background:var(--green);border:1px solid var(--green);
+  .pb-exp-act{display:flex;align-items:center;gap:8px}
+  .pb-exp-act .pb-t{font-size:11.5px}
+  .pb-exp-use{flex:none;display:inline-flex;align-items:center;gap:4px;background:var(--green);border:1px solid var(--green);
     color:#04210f;border-radius:999px;padding:5px 11px;font-size:11.5px;font-weight:800;cursor:pointer}
-  .pb-say-use svg{width:13px;height:13px}
+  .pb-exp-use svg{width:13px;height:13px}
   /* Text changing by itself is startling if nothing marks the moment. */
   @keyframes polishFlash{0%{background:rgba(124,92,255,.22)}100%{background:transparent}}
   .just-polished{animation:polishFlash .7s ease}
@@ -4507,7 +4507,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-21·promise-why";
+  var APP_BUILD="2026-09-22·expand-it";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4710,7 +4710,6 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     "cloud-drizzle":'<path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M8 19v1"/><path d="M8 14v1"/><path d="M16 19v1"/><path d="M16 14v1"/><path d="M12 21v1"/><path d="M12 16v1"/>',
     "cloud-snow":'<path d="M4 14.899A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 2.5 8.242"/><path d="M8 15h.01"/><path d="M8 19h.01"/><path d="M12 17h.01"/><path d="M12 21h.01"/><path d="M16 15h.01"/><path d="M16 19h.01"/>',
     "cloud-lightning":'<path d="M6 16.326A7 7 0 1 1 15.71 8h1.79a4.5 4.5 0 0 1 1.5 8.742"/><path d="m13 12-3 5h4l-3 5"/>',
-    "heart":'<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
     "help-circle":'<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>'
   };
   function ic(name,size,strokeW){
@@ -4994,7 +4993,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // its own. It rides whatever polish call he already asked for — the wand
     // button, or Auto Polish if he turns it back on — so "on" costs nothing until
     // he has asked for something.
-    sayBack:true,      // offer the "make them feel heard" version alongside the polish (you tap it, it never lands on its own)
+    expand:true,       // offer the fuller version of a short draft alongside the polish (you tap it, it never lands on its own)
     navV:5, tabsOrder:["home","messages","calls","work","money","more","stats"], tabsHidden:["stats"],
     mblocks:["hero","log","alerts","pulse","brain","today","pricing"], mblocksHidden:[],
     mkpis:["net","you","costs","savings","avg","jobs","margin","owed","best"],
@@ -10987,9 +10986,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       '<div class="ts-row ts-sw" id="tsAutoPolish"><span class="ts-ic">'+ic("wand",19)+'</span>'+
       '<span class="ts-txt"><b>Auto Polish</b><span>Rewrites your text when you pause — undo is always one tap</span></span>'+
       '<span class="sw'+(autoPolishOn()?" on":"")+'" id="tsAutoPolishSw"></span></div>'+
-      '<div class="ts-row ts-sw" id="tsSayBack"><span class="ts-ic">'+ic("heart",19)+'</span>'+
-      '<span class="ts-txt"><b>Say it back to them</b><span>When they name a problem, offers the version that says it back and what you\'ll do. You tap it — it never lands on its own. Rides along with Auto Polish</span></span>'+
-      '<span class="sw'+(sayBackOn()?" on":"")+'" id="tsSayBackSw"></span></div>'+
+      '<div class="ts-row ts-sw" id="tsExpand"><span class="ts-ic">'+ic("sparkles",19)+'</span>'+
+      '<span class="ts-txt"><b>Expand it</b><span>When your reply is short, offers the fuller one \u2014 says back what they told you, shows you pictured the job, makes your question easy to answer. You tap it; it never lands on its own</span></span>'+
+      '<span class="sw'+(expandOn()?" on":"")+'" id="tsExpandSw"></span></div>'+
       '<div class="ts-row ts-sw" id="tsPredict"><span class="ts-ic">'+ic("keyboard",19)+'</span>'+
       '<span class="ts-txt"><b>Next-word suggestions</b><span>The word chips above the message box</span></span>'+
       '<span class="sw'+(predictOn()?" on":"")+'" id="tsPredictSw"></span></div>'+
@@ -11004,10 +11003,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       if(e){e.stopPropagation()}
       setAutoPolish(!autoPolishOn());   // it repaints the switch and says which way it went
     };
-    var sbRow=sheet.querySelector("#tsSayBack");
+    var sbRow=sheet.querySelector("#tsExpand");
     if(sbRow)sbRow.onclick=function(e){
       if(e){e.stopPropagation()}
-      setSayBack(!sayBackOn());
+      setExpand(!expandOn());
     };
     var pkRow=sheet.querySelector("#tsPredict");
     if(pkRow)pkRow.onclick=function(e){
@@ -11458,18 +11457,18 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   var POLISH_MAX_CHANGE=.4;  // past this share of the words it asks instead of swapping
   var polish={timer:null,busy:false,at:0,applied:false,before:"",after:"",parts:[],phone:"",undone:"",
               note:"",noteFor:"",offer:null,
-              // ---- say it back ----
-              say:"",        // the fuller "they feel heard" version for the current draft
-              sayFor:"",     // the exact draft text it belongs to (it is about one draft, like the note)
-              sayOpen:false, // has he tapped the chip to read it
-              sayBefore:"",  // his words before he used it — the way back
-              sayAfter:""};  // what taking it put in the box, so typing past it retires the undo
+              // ---- expand it ----
+              expand:"",       // the fuller version of the current draft
+              expandFor:"",    // the exact draft text it belongs to (it is about one draft, like the note)
+              expandOpen:false,// has he tapped the chip to read it
+              expandBefore:"", // his words before he used it — the way back
+              expandAfter:""};// what taking it put in the box, so typing past it retires the undo
   var polishCache={};        // exact draft text -> polished text ("" = nothing to suggest)
   var polishNotes={};        // exact draft text -> the one warning it had ("" = none)
-  var polishSays={};         // exact draft text -> the say-it-back version ("" = nothing to say back)
+  var polishExpands={};      // exact draft text -> the fuller version ("" = nothing worth adding)
   var polishDeclined={};     // exact draft text -> true (already your call — never re-polish this)
   function autoPolishOn(){return UI.autoPolish!==false}
-  function sayBackOn(){return UI.sayBack!==false}
+  function expandOn(){return UI.expand!==false}
   function curDraft(){var i=el("msgInput");return i?(i.value||"").trim():""}
   function polishWorthIt(text){
     return !!(state.thread&&text.length>=POLISH_MIN&&text.split(/\s+/).length>=2);
@@ -11478,7 +11477,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var k=Object.keys(polishCache);if(k.length>60)k.slice(0,30).forEach(function(x){delete polishCache[x]});
     var d=Object.keys(polishDeclined);if(d.length>80)d.slice(0,40).forEach(function(x){delete polishDeclined[x]});
     var t=Object.keys(polishNotes);if(t.length>60)t.slice(0,30).forEach(function(x){delete polishNotes[x]});
-    var y=Object.keys(polishSays);if(y.length>60)y.slice(0,30).forEach(function(x){delete polishSays[x]});
+    var y=Object.keys(polishExpands);if(y.length>60)y.slice(0,30).forEach(function(x){delete polishExpands[x]});
   }
   function polishDecide(text){if(text)polishDeclined[text]=true}
 
@@ -11552,7 +11551,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // You kept typing after taking the say-back, so "Undo" no longer means "put
     // my draft back" — it would mean "throw away everything since". Same reason
     // the chips above go: an undo that undoes more than it offered is a trap.
-    if(polish.sayBefore&&text!==polish.sayAfter){polish.sayBefore="";polish.sayAfter=""}
+    if(polish.expandBefore&&text!==polish.expandAfter){polish.expandBefore="";polish.expandAfter=""}
     if(polish.undone&&text!==polish.undone)polish.undone="";
     // An offer is about one exact draft. Type another word and it isn't that
     // draft any more, so the version on the strip is no longer the one on offer.
@@ -11578,20 +11577,20 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // skips the wait and says something when the call fails.
   function requestPolish(text,forPhone,manual){
     polish.busy=true;polish.at=Date.now();renderPolishBar();
-    return post("/api/ai/draft",{phone:forPhone,text:text,say:sayBackOn()}).then(function(d){
+    return post("/api/ai/draft",{phone:forPhone,text:text,expand:expandOn()}).then(function(d){
       if(d&&d.ok&&d.draft){
         var out=d.draft.trim();
         polishNotes[text]=String(d.note||"").trim();
-        polishSays[text]=sayBackOn()?String(d.sayBack||"").trim():"";
+        polishExpands[text]=expandOn()?String(d.expand||"").trim():"";
         polishCache[text]=(out===text)?"":out;prunePolishCache();
         applyPolish(text,polishCache[text],forPhone);
-        if(manual&&!polishCache[text]&&!polishNotes[text]&&!polishSays[text])toast("Already reads well — nothing to change");
+        if(manual&&!polishCache[text]&&!polishNotes[text]&&!polishExpands[text])toast("Already reads well — nothing to change");
       } else {
-        polishCache[text]="";polishNotes[text]="";polishSays[text]="";  // remember the miss so auto-polish can't hammer a failing API
+        polishCache[text]="";polishNotes[text]="";polishExpands[text]="";  // remember the miss so auto-polish can't hammer a failing API
         if(manual)toast("Polish failed: "+((d&&d.error)||"error"),{bad:true});
       }
     }).catch(function(){
-      polishCache[text]="";polishNotes[text]="";polishSays[text]="";
+      polishCache[text]="";polishNotes[text]="";polishExpands[text]="";
       if(manual)toast("Network error",{bad:true});
     }).then(function(){
       polish.busy=false;
@@ -11605,24 +11604,24 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // The say-back travels with the draft it is about, exactly like the note: the
   // moment he types another word it is a suggestion about a message that no
   // longer exists, so it has to be re-pinned (or dropped) on every swap.
-  function pinSay(forText){
-    var say=polishSays[forText]||"";
-    if(say===polish.say&&forText===polish.sayFor)return;   // same suggestion, keep it open
-    polish.say=say;polish.sayFor=forText;polish.sayOpen=false;
+  function pinExpand(forText){
+    var say=polishExpands[forText]||"";
+    if(say===polish.expand&&forText===polish.expandFor)return;   // same suggestion, keep it open
+    polish.expand=say;polish.expandFor=forText;polish.expandOpen=false;
   }
   function applyPolish(src,out,forPhone,force){
     if(!state.thread||state.thread.phone!==forPhone||curDraft()!==src){renderPolishBar();return}
     var note=polishNotes[src]||"";
     // Nothing to rewrite is a real answer now, not a dead end: the playbook lets
     // it say "this is fine" and still hand back one thing worth a look.
-    if(!out){polish.note=note;polish.noteFor=src;pinSay(src);renderPolishBar();return}
+    if(!out){polish.note=note;polish.noteFor=src;pinExpand(src);renderPolishBar();return}
     var parts=polishDiff(src,out);
-    if(!parts||!polishChangesIn(parts).length){polishCache[src]="";polish.note=note;polish.noteFor=src;pinSay(src);renderPolishBar();return}
+    if(!parts||!polishChangesIn(parts).length){polishCache[src]="";polish.note=note;polish.noteFor=src;pinExpand(src);renderPolishBar();return}
     // Past the cap this stopped being a polish and started being a different
     // message. Swapping that in silently would leave a row of chips nobody can
     // reason about, so it waits to be asked instead.
     if(!force&&polishChangeRatio(parts)>POLISH_MAX_CHANGE){
-      polish.offer={src:src,out:out,phone:forPhone};polish.note=note;polish.noteFor=src;pinSay(src);
+      polish.offer={src:src,out:out,phone:forPhone};polish.note=note;polish.noteFor=src;pinExpand(src);
       renderPolishBar();return;
     }
     var inp=el("msgInput");
@@ -11635,7 +11634,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // The say-back was worked out from his draft, but the box now holds the
     // polished version — so it follows the words, or it would vanish the instant
     // the rewrite landed. Same reason the note re-pins to `out`.
-    polishSays[out]=polishSays[src]||"";pinSay(out);
+    polishExpands[out]=polishExpands[src]||"";pinExpand(out);
     // Its own output is never a candidate again — that's the loop-guard.
     polishCache[out]="";polishDecide(out);
     if(typeof vibrate==="function")vibrate(8);
@@ -11653,10 +11652,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var undone=!!(polish.undone&&text&&text===polish.undone);
     var offer=(polish.offer&&polish.offer.src===text)?polish.offer:null;
     var note=(polish.note&&polish.noteFor===text)?polish.note:"";
-    var say=(polish.say&&polish.sayFor===text)?polish.say:"";
-    var saidBack=!!(polish.sayBefore&&text&&text!==polish.sayBefore);
-    var show=!!state.thread&&(polish.applied||polish.busy||offer||note||say||saidBack||undone||(polishWorthIt(text)&&!polishDeclined[text]));
-    if(paused&&!polish.applied&&!offer&&!note&&!say&&!saidBack&&!polishWorthIt(text))show=false;
+    var fuller=(polish.expand&&polish.expandFor===text)?polish.expand:"";
+    var expanded=!!(polish.expandBefore&&text&&text!==polish.expandBefore);
+    var show=!!state.thread&&(polish.applied||polish.busy||offer||note||fuller||expanded||undone||(polishWorthIt(text)&&!polishDeclined[text]));
+    if(paused&&!polish.applied&&!offer&&!note&&!fuller&&!expanded&&!polishWorthIt(text))show=false;
     if(!show){hidePolishBar();return}
     var icon,label;
     if(offer){icon="wand";label="That's a big rewrite — your call";}
@@ -11664,8 +11663,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     else if(polish.busy){icon="wand";label="Polishing…";}
     else if(undone){icon="undo";label=paused?"Your words are back · paused":"Your words are back — this one is left alone";}
     else if(note){icon="alert-triangle";label="Reads fine — one thing to look at";}
-    else if(saidBack){icon="heart";label="Said back to them — your words are one tap away";}
-    else if(say){icon="wand";label="Reads fine — or make them feel heard";}
+    else if(expanded){icon="sparkles";label="Expanded — your words are one tap away";}
+    else if(fuller){icon="wand";label="Reads fine — or send the fuller version";}
     else if(paused){icon="wand";label="Polish is in Tools when you want it";}
     else {icon="wand";label="Polishes when you pause";}
     var h='<div class="pb-top"><span class="pb-ic">'+ic(icon,15)+'</span><span class="pb-t">'+esc(label)+'</span>';
@@ -11681,19 +11680,19 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // Closed: one chip that says what tapping it gets you. Open: the whole
     // message, then Use it. Never a preview so short you have to guess — what
     // lands in the box is a promise about somebody's car.
-    if(say){
-      h+='<div class="pb-say">';
-      if(!polish.sayOpen){
-        h+='<button class="pb-say-chip" id="pbSayChip">'+ic("heart",13)+'Say it back to them</button>';
+    if(fuller){
+      h+='<div class="pb-exp">';
+      if(!polish.expandOpen){
+        h+='<button class="pb-exp-chip" id="pbExpChip">'+ic("sparkles",13)+'Expand it</button>';
       } else {
-        h+='<div class="pb-say-prev" id="pbSayPrev">'+esc(say)+'</div>'+
-           '<div class="pb-say-act"><span class="pb-t">Makes them feel heard</span>'+
-           '<button class="pb-say-use" id="pbSayUse">'+ic("check",13)+'Use it</button>'+
-           '<button class="pb-no" id="pbSayNo" aria-label="Keep my wording" title="Keep my wording">'+ic("x",15)+'</button></div>';
+        h+='<div class="pb-exp-prev" id="pbExpPrev">'+esc(fuller)+'</div>'+
+           '<div class="pb-exp-act"><span class="pb-t">The fuller version</span>'+
+           '<button class="pb-exp-use" id="pbExpUse">'+ic("check",13)+'Use it</button>'+
+           '<button class="pb-no" id="pbExpNo" aria-label="Keep my wording" title="Keep my wording">'+ic("x",15)+'</button></div>';
       }
       h+='</div>';
-    } else if(saidBack){
-      h+='<div class="pb-say"><button class="pb-undo" id="pbSayUndo">'+ic("undo",13)+'Undo</button></div>';
+    } else if(expanded){
+      h+='<div class="pb-exp"><button class="pb-undo" id="pbExpUndo">'+ic("undo",13)+'Undo</button></div>';
     }
     if(polish.applied){
       var ch=polishChanges();
@@ -11713,10 +11712,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var yes=bar.querySelector("#pbUse");if(yes)yes.onclick=function(e){e.stopPropagation();polishUseOffer()};
     var no=bar.querySelector("#pbNo");if(no)no.onclick=function(e){e.stopPropagation();polishRefuseOffer()};
     bar.querySelector("#pbPP").onclick=function(e){e.stopPropagation();setAutoPolish(!autoPolishOn())};
-    var sc=bar.querySelector("#pbSayChip");if(sc)sc.onclick=function(e){e.stopPropagation();polish.sayOpen=true;renderPolishBar()};
-    var su=bar.querySelector("#pbSayUse");if(su)su.onclick=function(e){e.stopPropagation();sayBackUse()};
-    var sn=bar.querySelector("#pbSayNo");if(sn)sn.onclick=function(e){e.stopPropagation();sayBackRefuse()};
-    var sb=bar.querySelector("#pbSayUndo");if(sb)sb.onclick=function(e){e.stopPropagation();sayBackUndo()};
+    var sc=bar.querySelector("#pbExpChip");if(sc)sc.onclick=function(e){e.stopPropagation();polish.expandOpen=true;renderPolishBar()};
+    var su=bar.querySelector("#pbExpUse");if(su)su.onclick=function(e){e.stopPropagation();expandUse()};
+    var sn=bar.querySelector("#pbExpNo");if(sn)sn.onclick=function(e){e.stopPropagation();expandRefuse()};
+    var sb=bar.querySelector("#pbExpUndo");if(sb)sb.onclick=function(e){e.stopPropagation();expandUndo()};
     Array.prototype.forEach.call(bar.querySelectorAll(".pb-w"),function(b){
       b.onclick=function(e){e.stopPropagation();polishToggleWord(Number(b.getAttribute("data-i")))};
     });
@@ -11755,8 +11754,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // then take it. The way back is the same as everywhere else here — his exact
   // draft, one tap, and the result marked decided so the polisher can't turn
   // round and start editing a message he just chose.
-  function sayBackUse(){
-    var src=polish.sayFor,out=polish.say;
+  function expandUse(){
+    var src=polish.expandFor,out=polish.expand;
     if(!out||curDraft()!==src)return;
     var inp=el("msgInput");
     inp.value=out;autoGrow();updateCount();
@@ -11773,27 +11772,27 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // sentence that is no longer in the box, and leaving them would be a row of
     // undo buttons that undo into nothing.
     clearApplied();
-    polish.sayBefore=src;polish.sayAfter=out;polish.say="";polish.sayFor="";polish.sayOpen=false;
+    polish.expandBefore=src;polish.expandAfter=out;polish.expand="";polish.expandFor="";polish.expandOpen=false;
     polish.note="";polish.noteFor="";
-    polishCache[out]="";polishSays[out]="";polishDecide(out);
+    polishCache[out]="";polishExpands[out]="";polishDecide(out);
     if(typeof vibrate==="function")vibrate(9);
     renderPolishBar();
   }
   // No thanks has to stick, or the identical suggestion reappears the moment he
   // stops typing — which reads as nagging about a reply he already judged.
-  function sayBackRefuse(){
-    var src=polish.sayFor;
-    if(src)polishSays[src]="";
-    polish.say="";polish.sayFor="";polish.sayOpen=false;
+  function expandRefuse(){
+    var src=polish.expandFor;
+    if(src)polishExpands[src]="";
+    polish.expand="";polish.expandFor="";polish.expandOpen=false;
     if(typeof vibrate==="function")vibrate(5);
     renderPolishBar();
   }
-  function sayBackUndo(){
-    var src=polish.sayBefore;if(!src)return;
+  function expandUndo(){
+    var src=polish.expandBefore;if(!src)return;
     var inp=el("msgInput");
     inp.value=src;autoGrow();updateCount();
     if(typeof stashDraft==="function")stashDraft(state.phone);
-    polish.sayBefore="";polish.sayAfter="";
+    polish.expandBefore="";polish.expandAfter="";
     polishDecide(src);            // his words, his call — never re-suggested
     if(typeof vibrate==="function")vibrate(6);
     renderPolishBar();
@@ -11812,7 +11811,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // The warning was about what he wrote, not about the rewrite — taking the
     // rewrite back is no reason to stop telling him the text reads curt.
     polish.noteFor=src;
-    pinSay(src);
+    pinExpand(src);
     polish.undone=src;
     if(typeof vibrate==="function")vibrate(6);
     renderPolishBar();
@@ -11826,7 +11825,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var out=polishJoin(polish.parts),inp=el("msgInput");
     inp.value=out;autoGrow();updateCount();
     if(typeof stashDraft==="function")stashDraft(state.phone);
-    polish.after=out;polish.noteFor=out;polishSays[out]=polish.say;pinSay(out);polishCache[out]="";polishDecide(out);
+    polish.after=out;polish.noteFor=out;polishExpands[out]=polish.expand;pinExpand(out);polishCache[out]="";polishDecide(out);
     if(typeof vibrate==="function")vibrate(5);
     renderPolishBar();
   }
@@ -11835,20 +11834,20 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   function resetPolish(){
     if(polish.timer){clearTimeout(polish.timer);polish.timer=null}
     clearApplied();polish.undone="";polish.offer=null;polish.note="";polish.noteFor="";
-    polish.say="";polish.sayFor="";polish.sayOpen=false;polish.sayBefore="";polish.sayAfter="";
+    polish.expand="";polish.expandFor="";polish.expandOpen=false;polish.expandBefore="";polish.expandAfter="";
     hidePolishBar();
   }
-  function setSayBack(on){
-    UI.sayBack=!!on;saveUI();
+  function setExpand(on){
+    UI.expand=!!on;saveUI();
     if(typeof vibrate==="function")vibrate(6);
-    var sw=el("tsSayBackSw");if(sw)sw.classList.toggle("on",sayBackOn());
+    var sw=el("tsExpandSw");if(sw)sw.classList.toggle("on",expandOn());
     if(!on){
       // Off means off right now, not after the next pause: drop the suggestion
       // that is already on the strip too.
-      polish.say="";polish.sayFor="";polish.sayOpen=false;polishSays={};
-      toast("Say it back is off");renderPolishBar();return;
+      polish.expand="";polish.expandFor="";polish.expandOpen=false;polishExpands={};
+      toast("Expand it is off");renderPolishBar();return;
     }
-    toast("Say it back is on");schedulePolish();
+    toast("Expand it is on");schedulePolish();
   }
   function setAutoPolish(on){
     UI.autoPolish=!!on;saveUI();
@@ -11866,9 +11865,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     return {on:autoPolishOn(),applied:polish.applied,busy:polish.busy,before:polish.before,after:polish.after,
             idle:POLISH_IDLE,min:POLISH_MIN,cap:POLISH_MAX_CHANGE,
             note:(polish.note&&polish.noteFor===curDraft())?polish.note:"",
-            sayOn:sayBackOn(),
-            say:(polish.say&&polish.sayFor===curDraft())?polish.say:"",
-            sayOpen:!!polish.sayOpen,sayBefore:polish.sayBefore,
+            expandOn:expandOn(),
+            expand:(polish.expand&&polish.expandFor===curDraft())?polish.expand:"",
+            expandOpen:!!polish.expandOpen,expandBefore:polish.expandBefore,
             offer:polish.offer?{src:polish.offer.src,out:polish.offer.out}:null,
             changes:polish.parts.filter(function(p){return !p.eq}).map(function(p){
               return {from:p.from.trim(),to:p.to.trim(),mine:p.mine}})};
@@ -11878,7 +11877,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // suite testing what the switches DO doesn't have to open a sheet ten times.
   window.__defaultUI=function(){return defaultUI()};
   window.__setAutoPolish=function(on){setAutoPolish(on)};
-  window.__setSayBack=function(on){setSayBack(on)};
+  window.__setExpand=function(on){setExpand(on)};
   // The Polish tool means "don't wait for the pause" — same rewrite, right now.
   function aiPolish(){
     var t=state.thread;if(!t)return;
