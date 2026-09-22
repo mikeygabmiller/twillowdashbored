@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-22·wait-nudge';
+const BUILD = '2026-09-22·nudge-each-text';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -178,7 +178,7 @@ async function runCron() {
   await seedPlaybookIfNeeded();
   await dispatchDueScheduled();
   await dispatchDueReminders();
-  // "Ruth has been waiting two hours." One email per unanswered run.
+  // "Ruth has been waiting two hours." One email per unanswered text.
   await dispatchWaitNudges().catch(() => {});
   // "I'll get back to you Monday" — nudge him when the time he promised arrives.
   await dispatchDuePromises().catch(() => {});
@@ -239,9 +239,12 @@ async function dispatchDueReminders(now = Date.now()) {
 // reply so the customer at least knows they were seen. No AI call — everything
 // in it was already worked out when the text came in.
 //
-// Once per unanswered run (keyed on when the run started), never a chase: a
-// reminder that repeats every hour is the one that gets muted. Held through quiet
-// hours, and several due at once arrive as one list, not a pile of emails.
+// Once per unanswered TEXT, never a chase. Each new text they send earns its own
+// nudge two hours after it lands (his call: "every new text, not one per
+// conversation". A second text is new information, and the first nudge said
+// nothing about it). The same text is never nudged twice, and texts that come
+// due in the same minute share one email. Held through quiet hours, and several
+// people due at once arrive as one list, not a pile of emails.
 const WAIT_NUDGE_KEY = 'waitnudge';
 const WAIT_NUDGE_MAX_AGE_MS = 24 * 3600000;   // past a day, Home and the brief carry it
 const WAIT_NUDGE_DIGEST_AT = 3;               // this many at once → one email listing them
@@ -250,16 +253,27 @@ const WAIT_STALL_TEXT = "Got your message! I'm in the middle of a job right now,
 function waitNudgeMs(cfg) { return (+cfg.waitNudgeHours > 0 ? +cfg.waitNudgeHours : 2) * 3600000; }
 
 // Index rows only, so the minute-by-minute check never opens a thread. `sent` is
-// phone → the waitSince already nudged for.
+// phone → the timestamp of the newest text already nudged for. Returns copies of
+// the due rows with `nudgeFor` set to the text this nudge is about.
+//
+// The row only knows the first and the latest unanswered text, and that's
+// enough: the latest one that has waited long enough is the one to nudge for,
+// and anything older is covered by the same email. So "Tahoe?" then "hello??"
+// an hour later is two nudges an hour apart, but if both are already overdue
+// (quiet hours just ended) it's one.
 function waitNudgeDue(index, cfg, sent, now) {
   if (cfg.waitNudge === false) return [];
   const wait = waitNudgeMs(cfg);
-  return (index || []).filter((e) => {
-    if (!rowAwaitingReply(e) || e.archived || e.optedOut || isPracticePhone(e.phone)) return false;
-    const since = e.waitSince || e.lastTs || 0;
-    if (!since || now - since < wait || now - since > WAIT_NUDGE_MAX_AGE_MS) return false;
-    return (sent || {})[e.phone] !== since;
-  }).sort((a, b) => (a.waitSince || a.lastTs) - (b.waitSince || b.lastTs));
+  const out = [];
+  for (const e of index || []) {
+    if (!rowAwaitingReply(e) || e.archived || e.optedOut || isPracticePhone(e.phone)) continue;
+    const last = e.lastTs || 0, first = e.waitSince || last;
+    const at = (last && now - last >= wait) ? last : (first && now - first >= wait) ? first : 0;
+    if (!at || now - at > WAIT_NUDGE_MAX_AGE_MS) continue;
+    if (at <= ((sent || {})[e.phone] || 0)) continue;
+    out.push(Object.assign({}, e, { nudgeFor: at }));
+  }
+  return out.sort((a, b) => a.nudgeFor - b.nudgeFor);
 }
 
 async function dispatchWaitNudges(now = Date.now()) {
@@ -275,7 +289,7 @@ async function dispatchWaitNudges(now = Date.now()) {
   // minute, which is far worse than one nudge lost to a crash.
   const keep = {};
   for (const k of Object.keys(sent)) if (now - sent[k] < 2 * WAIT_NUDGE_MAX_AGE_MS) keep[k] = sent[k];
-  for (const e of due) keep[e.phone] = e.waitSince || e.lastTs;
+  for (const e of due) keep[e.phone] = e.nudgeFor;
   await kv().put(WAIT_NUDGE_KEY, JSON.stringify(keep));
   if (due.length >= WAIT_NUDGE_DIGEST_AT) {
     const m = waitDigestMail(due, cfg, now);
@@ -313,9 +327,11 @@ function waitNudgeParts(e, thread) {
 
 function waitNudgeMail(e, thread, cfg, now) {
   const who = (thread && thread.name) || e.name || e.phone;
-  const waited = humanAgo(now - (e.waitSince || e.lastTs || now));
+  const waited = humanAgo(now - (e.nudgeFor || e.lastTs || now));
   const p = waitNudgeParts(e, thread);
-  const gist = String(p.msg).replace(/\s+/g, ' ').trim();
+  // The subject quotes the newest text, the one this nudge is about. The body
+  // keeps the earlier unanswered ones for context.
+  const gist = String(p.msg).split('\n').pop().replace(/\s+/g, ' ').trim();
   const subject = `⏳ ${who} is still waiting (${waited})${gist ? `: "${gist.length > 56 ? gist.slice(0, 55).trimEnd() + '…' : gist}"` : ''}`;
   const byEmail = cfg.assistEmail !== false && !!assistMailto('');
   const phone = e.phone;
@@ -378,12 +394,12 @@ function waitNudgeMail(e, thread, cfg, now) {
 // line each, oldest first; the answering happens in the dashboard.
 function waitDigestMail(rows, cfg, now) {
   const base = publicBase();
-  const line = (e) => `${e.name || e.phone} · ${humanAgo(now - (e.waitSince || e.lastTs || now))}: "${String(e.lastBody || '').slice(0, 70)}"`;
+  const line = (e) => `${e.name || e.phone} · ${humanAgo(now - (e.nudgeFor || e.lastTs || now))}: "${String(e.lastBody || '').slice(0, 70)}"`;
   const subject = `⏳ ${rows.length} people are still waiting on you`;
   const text = `Nobody's heard back yet:\n\n${rows.map((e, i) => `${i + 1}. ${line(e)}`).join('\n')}` +
     `\n\nOldest first. Each one has a reply drafted in the dashboard${base ? `: ${base}` : '.'}`;
   const inner = mailLabel(`${rows.length} still waiting`, MAILC.amberInk) +
-    rows.map((e) => `<div style="font:400 15px/1.5 ${MAILF};color:${MAILC.ink};margin:0 0 10px;"><b>${htmlEsc(e.name || e.phone)}</b> <span style="color:${MAILC.mute};">· ${htmlEsc(humanAgo(now - (e.waitSince || e.lastTs || now)))}</span><br>&ldquo;${htmlEsc(String(e.lastBody || '').slice(0, 90))}&rdquo;</div>`).join('');
+    rows.map((e) => `<div style="font:400 15px/1.5 ${MAILF};color:${MAILC.ink};margin:0 0 10px;"><b>${htmlEsc(e.name || e.phone)}</b> <span style="color:${MAILC.mute};">· ${htmlEsc(humanAgo(now - (e.nudgeFor || e.lastTs || now)))}</span><br>&ldquo;${htmlEsc(String(e.lastBody || '').slice(0, 90))}&rdquo;</div>`).join('');
   const B = [mailCard(inner, { bg: MAILC.amberBg, border: '#fde68a', edge: MAILC.amber })];
   if (base) B.push(mailCard(mailBtn(base, 'Answer them', MAILC.ink)));
   return { subject, text, html: mailShell(rows.map((e) => e.name || e.phone).join(', '), B.join('')) };
@@ -11808,7 +11824,7 @@ function defaultConfig() {
                              // really goes out, so he knows the customer has heard from
                              // him and can take over the conversation.
     waitNudge: true,         // email him again when a customer has been left unanswered for
-    waitNudgeHours: 2,       // this long. Once per unanswered run, never a chase: the first
+    waitNudgeHours: 2,       // this long. Once per unanswered text, never a chase: the first
                              // alert already had the draft, this one exists because the
                              // usual reason he didn't answer is that the answer needed
                              // thinking and he was mid-job. So it leads with the one-tap
