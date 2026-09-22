@@ -34,7 +34,7 @@ const UNIT = [
   'hold', 'detect', 'pay', 'ai', 'compose', 'thread', 'inbox', 'money', 'quickreply',
   'replycheck', 'autoreply', 'quotes', 'balance', 'alertmail', 'assistmail', 'promise', 'recap',
   'geogrid', 'geogrid.ui', 'snapshot', 'journey', 'quotewatch', 'place', 'cold', 'portal', 'sheets', 'gdoc', 'gform', 'seed', 'scan', 'cpu',
-  'aicost', 'expand', 'autoai', 'selftest', 'voicepairs', 'kept', 'use', 'calls', 'reachout', 'adsource', 'adsexport', 'quotereply', 'askme', 'photo', 'rain', 'name', 'openings', 'ready', 'opener', 'preview', 'voice', 'say', 'react',
+  'aicost', 'expand', 'autoai', 'selftest', 'voicepairs', 'kept', 'use', 'calls', 'reachout', 'adsource', 'adsexport', 'quotereply', 'askme', 'photo', 'rain', 'name', 'openings', 'ready', 'opener', 'preview', 'voice', 'say', 'react', 'waitnudge',
 ].map((n) => `${n}.test.js`);
 
 const UI = [

@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-22·expand-voice';
+const BUILD = '2026-09-22·wait-nudge';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -178,6 +178,8 @@ async function runCron() {
   await seedPlaybookIfNeeded();
   await dispatchDueScheduled();
   await dispatchDueReminders();
+  // "Ruth has been waiting two hours." One email per unanswered run.
+  await dispatchWaitNudges().catch(() => {});
   // "I'll get back to you Monday" — nudge him when the time he promised arrives.
   await dispatchDuePromises().catch(() => {});
   await evaluateFollowups();
@@ -224,6 +226,167 @@ async function dispatchDueReminders(now = Date.now()) {
     if (applyIndexSummary(index, buildIndexSummary(thread, cfg))) dirty = true;
   }
   if (dirty) await saveIndex(index);
+}
+
+// ---------------------------------------------------------------------------
+// "They're still waiting on you" — the two-hour nudge
+// ---------------------------------------------------------------------------
+// The first alert goes out the second they text. When he doesn't answer it, it's
+// rarely because he missed it. It's because the answer needed thinking and he was
+// mid-job, and by evening it's buried. So this second email is built for exactly
+// that moment and asks nothing new of him: the draft with a one-tap Send, the
+// choices that draft was waiting on as one-tap answers, and a "buy me time"
+// reply so the customer at least knows they were seen. No AI call — everything
+// in it was already worked out when the text came in.
+//
+// Once per unanswered run (keyed on when the run started), never a chase: a
+// reminder that repeats every hour is the one that gets muted. Held through quiet
+// hours, and several due at once arrive as one list, not a pile of emails.
+const WAIT_NUDGE_KEY = 'waitnudge';
+const WAIT_NUDGE_MAX_AGE_MS = 24 * 3600000;   // past a day, Home and the brief carry it
+const WAIT_NUDGE_DIGEST_AT = 3;               // this many at once → one email listing them
+const WAIT_STALL_TEXT = "Got your message! I'm in the middle of a job right now, I'll get back to you later today.";
+
+function waitNudgeMs(cfg) { return (+cfg.waitNudgeHours > 0 ? +cfg.waitNudgeHours : 2) * 3600000; }
+
+// Index rows only, so the minute-by-minute check never opens a thread. `sent` is
+// phone → the waitSince already nudged for.
+function waitNudgeDue(index, cfg, sent, now) {
+  if (cfg.waitNudge === false) return [];
+  const wait = waitNudgeMs(cfg);
+  return (index || []).filter((e) => {
+    if (!rowAwaitingReply(e) || e.archived || e.optedOut || isPracticePhone(e.phone)) return false;
+    const since = e.waitSince || e.lastTs || 0;
+    if (!since || now - since < wait || now - since > WAIT_NUDGE_MAX_AGE_MS) return false;
+    return (sent || {})[e.phone] !== since;
+  }).sort((a, b) => (a.waitSince || a.lastTs) - (b.waitSince || b.lastTs));
+}
+
+async function dispatchWaitNudges(now = Date.now()) {
+  const cfg = await loadConfig();
+  if (cfg.waitNudge === false || inQuietHours(now, cfg)) return 0;
+  const index = await loadIndex();
+  // The usual minute: nobody's been waiting that long, and it costs no read.
+  if (!waitNudgeDue(index, cfg, null, now).length) return 0;
+  const sent = (await kv().get(WAIT_NUDGE_KEY, { type: 'json' })) || {};
+  const due = waitNudgeDue(index, cfg, sent, now);
+  if (!due.length) return 0;
+  // Marked BEFORE sending. The other order means one bad send repeats every
+  // minute, which is far worse than one nudge lost to a crash.
+  const keep = {};
+  for (const k of Object.keys(sent)) if (now - sent[k] < 2 * WAIT_NUDGE_MAX_AGE_MS) keep[k] = sent[k];
+  for (const e of due) keep[e.phone] = e.waitSince || e.lastTs;
+  await kv().put(WAIT_NUDGE_KEY, JSON.stringify(keep));
+  if (due.length >= WAIT_NUDGE_DIGEST_AT) {
+    const m = waitDigestMail(due, cfg, now);
+    await notifyMikey(m.subject, { text: m.text, html: m.html }).catch(() => {});
+    return due.length;
+  }
+  for (const e of due) {
+    // loadThread, not openThreadForRead: a reminder must not mark it read.
+    let thread = null;
+    try { thread = await loadThread(e.phone); } catch { /* fall back to the row */ }
+    const m = waitNudgeMail(e, thread, cfg, now);
+    await notifyMikey(m.subject, { text: m.text, html: m.html }).catch(() => {});
+  }
+  return due.length;
+}
+
+// What's on offer for one waiting customer: their words since he last spoke,
+// the pre-drafted reply if it still answers the latest of them, and the choices
+// the drafter stopped to ask him about.
+function waitNudgeParts(e, thread) {
+  const msgs = (thread && thread.messages) || [];
+  const since = e.waitSince || e.lastTs || 0;
+  const theirs = msgs.filter((m) => m.dir === 'in' && (m.ts || 0) >= since && m.body).map((m) => String(m.body).trim());
+  const last = msgs[msgs.length - 1];
+  const sug = thread && thread.suggested;
+  const draft = (sug && sug.text && last && sug.forTs === last.ts) ? String(sug.text).trim() : '';
+  const ny = thread && thread.needsYou;
+  const choices = (!draft && ny && last && ny.forTs === last.ts && Array.isArray(ny.options))
+    ? ny.options.map((x) => String(x).trim()).filter(Boolean).slice(0, 5) : [];
+  return {
+    msg: theirs.length ? theirs.slice(-3).join('\n') : (e.lastBody || ''),
+    draft, choices, question: choices.length ? String(ny.question || '') : '',
+  };
+}
+
+function waitNudgeMail(e, thread, cfg, now) {
+  const who = (thread && thread.name) || e.name || e.phone;
+  const waited = humanAgo(now - (e.waitSince || e.lastTs || now));
+  const p = waitNudgeParts(e, thread);
+  const gist = String(p.msg).replace(/\s+/g, ' ').trim();
+  const subject = `⏳ ${who} is still waiting (${waited})${gist ? `: "${gist.length > 56 ? gist.slice(0, 55).trimEnd() + '…' : gist}"` : ''}`;
+  const byEmail = cfg.assistEmail !== false && !!assistMailto('');
+  const phone = e.phone;
+
+  // Text first: it's the SMS fallback and what a reply is parsed against, so the
+  // cut marker and ref follow the same rules as the first alert.
+  const T = [`${who} texted ${waited} ago and hasn't heard back:\n"${p.msg}"`];
+  if (p.draft) T.push(`✍️  HERE'S WHAT I'D SEND BACK\n   "${p.draft}"\n   Reply YES and it goes out as written.`);
+  if (p.choices.length) T.push(`❓ ${p.question || 'Pick one and I\'ll write it up'}\n   Reply "write: " plus your answer: ${p.choices.join(' · ')}`);
+  T.push(`⏱  NO TIME TO THINK IT THROUGH?\n   Reply "send: ${WAIT_STALL_TEXT}" and they'll know you've seen it.`);
+  let text = T.join('\n\n');
+  if (byEmail) text = `${ASSIST_CUT}\n${text}\n\n[ref:${phone}]`;
+
+  const B = [];
+  if (byEmail) B.push(`<div style="font:400 11px/1.5 ${MAILF};color:#94a3b8;margin:0 0 10px;">${htmlEsc(ASSIST_CUT)}</div>`);
+  B.push(mailCard(
+    mailLabel(`${who} · waiting ${waited}`, MAILC.amberInk) + mailShout(p.msg || 'Sent you a photo'),
+    { bg: MAILC.amberBg, border: '#fde68a', edge: MAILC.amber, pad: '18px' }));
+  if (p.draft) {
+    let inner = mailLabel("Here's what I'd send back", MAILC.greenInk) +
+      `<div style="font:600 17px/1.5 ${MAILF};color:${MAILC.ink};background:${MAILC.card};border:1px solid #bbf7d0;border-radius:12px;padding:14px;">${mailLines(p.draft)}</div>`;
+    inner += byEmail
+      ? `<div style="height:14px;line-height:14px;">&nbsp;</div>` + mailBtn(assistMailto('YES', phone), '✅  Send it', MAILC.green)
+      : `<div style="font:400 14px/1.6 ${MAILF};color:${MAILC.mute};margin-top:12px;">Open the dashboard to send it.</div>`;
+    B.push(mailCard(inner, { bg: MAILC.greenBg, border: '#bbf7d0', edge: MAILC.green }));
+  }
+  if (p.choices.length) {
+    // "write:" so a tapped "9am" becomes a whole sentence in his voice rather
+    // than the customer getting the bare word.
+    let inner = mailLabel('Just pick one', MAILC.blue) +
+      (p.question ? `<div style="font:600 16px/1.5 ${MAILF};color:${MAILC.ink};margin:0 0 12px;">${mailLines(p.question)}</div>` : '');
+    for (const c of p.choices) {
+      inner += (byEmail
+        ? mailBtn(assistMailto('write: ' + c, phone), htmlEsc(c), MAILC.card, { fg: MAILC.ink, border: '#bfdbfe' })
+        : `<div style="font:600 15px/1.5 ${MAILF};color:${MAILC.ink};background:${MAILC.card};border:1px solid #bfdbfe;border-radius:10px;padding:10px 14px;">${htmlEsc(c)}</div>`) +
+        `<div style="height:8px;line-height:8px;">&nbsp;</div>`;
+    }
+    B.push(mailCard(inner, { bg: MAILC.blueBg, border: '#bfdbfe', edge: MAILC.blue }));
+  }
+  // The honest answer when the real one needs thinking: tell them they were seen.
+  // "I'll get back to you" also passes the promise tracker's filter, so with that
+  // feature on he gets reminded to come back. Not promised in the email, because
+  // it depends on a switch and an AI call this code doesn't own.
+  let stall = mailLabel('No time to think it through?', MAILC.ink) +
+    `<div style="font:400 15px/1.55 ${MAILF};color:${MAILC.ink};margin:0 0 12px;">&ldquo;${htmlEsc(WAIT_STALL_TEXT)}&rdquo;</div>`;
+  stall += byEmail
+    ? mailBtn(assistMailto('send: ' + WAIT_STALL_TEXT, phone), '⏱  Send that for now', MAILC.ink)
+    : `<div style="font:400 14px/1.6 ${MAILF};color:${MAILC.mute};">Open the dashboard to send it.</div>`;
+  B.push(mailCard(stall));
+  const base = publicBase();
+  if (base) B.push(mailCard(mailBtn(base, 'Open the dashboard', MAILC.card, { fg: MAILC.ink, border: MAILC.line })));
+  if (byEmail) {
+    B.push(`<div style="font:400 13px/1.6 ${MAILF};color:${MAILC.mute};padding:0 4px 8px;">Or hit <b>Reply</b> and type your own answer. Nothing goes out until you see the wording.</div>`);
+    B.push(`<div style="font:400 11px/1.5 ${MAILF};color:#94a3b8;padding:0 4px 8px;">[ref:${htmlEsc(phone)}]</div>`);
+  }
+  return { subject, text, html: mailShell(p.msg || who, B.join('')) };
+}
+
+// Three or more at once — the morning after quiet hours, usually. One email, one
+// line each, oldest first; the answering happens in the dashboard.
+function waitDigestMail(rows, cfg, now) {
+  const base = publicBase();
+  const line = (e) => `${e.name || e.phone} · ${humanAgo(now - (e.waitSince || e.lastTs || now))}: "${String(e.lastBody || '').slice(0, 70)}"`;
+  const subject = `⏳ ${rows.length} people are still waiting on you`;
+  const text = `Nobody's heard back yet:\n\n${rows.map((e, i) => `${i + 1}. ${line(e)}`).join('\n')}` +
+    `\n\nOldest first. Each one has a reply drafted in the dashboard${base ? `: ${base}` : '.'}`;
+  const inner = mailLabel(`${rows.length} still waiting`, MAILC.amberInk) +
+    rows.map((e) => `<div style="font:400 15px/1.5 ${MAILF};color:${MAILC.ink};margin:0 0 10px;"><b>${htmlEsc(e.name || e.phone)}</b> <span style="color:${MAILC.mute};">· ${htmlEsc(humanAgo(now - (e.waitSince || e.lastTs || now)))}</span><br>&ldquo;${htmlEsc(String(e.lastBody || '').slice(0, 90))}&rdquo;</div>`).join('');
+  const B = [mailCard(inner, { bg: MAILC.amberBg, border: '#fde68a', edge: MAILC.amber })];
+  if (base) B.push(mailCard(mailBtn(base, 'Answer them', MAILC.ink)));
+  return { subject, text, html: mailShell(rows.map((e) => e.name || e.phone).join(', '), B.join('')) };
 }
 
 // ===========================================================================
@@ -9948,6 +10111,8 @@ async function apiSaveConfig(request) {
   if (typeof data.missedCallTextback === 'boolean') next.missedCallTextback = data.missedCallTextback;
   if (typeof data.missedCallText === 'string') next.missedCallText = data.missedCallText.slice(0, 320);
   if (typeof data.autoReplyAlert === 'boolean') next.autoReplyAlert = data.autoReplyAlert;
+  if (typeof data.waitNudge === 'boolean') next.waitNudge = data.waitNudge;
+  if (data.waitNudgeHours != null && !isNaN(+data.waitNudgeHours)) next.waitNudgeHours = Math.max(0.5, Math.min(12, Math.round(+data.waitNudgeHours * 2) / 2));
   if (typeof data.smartQuoteOpener === 'boolean') next.smartQuoteOpener = data.smartQuoteOpener;
   if (typeof data.quoteOpenerAsk === 'boolean') next.quoteOpenerAsk = data.quoteOpenerAsk;
   if (typeof data.quoteAbandon === 'boolean') next.quoteAbandon = data.quoteAbandon;
@@ -11642,6 +11807,12 @@ function defaultConfig() {
                              // submission; this one fires a few minutes later when the text
                              // really goes out, so he knows the customer has heard from
                              // him and can take over the conversation.
+    waitNudge: true,         // email him again when a customer has been left unanswered for
+    waitNudgeHours: 2,       // this long. Once per unanswered run, never a chase: the first
+                             // alert already had the draft, this one exists because the
+                             // usual reason he didn't answer is that the answer needed
+                             // thinking and he was mid-job. So it leads with the one-tap
+                             // answers and a "buy me time" reply, not with more to read.
     quoteOpenerAsk: false,   // reword the generic opener (the one for a lead who never
                              // said what the car was) so it ends on a question instead of
                              // "Talk soon!". Off by default for the same reason as the
@@ -12107,6 +12278,10 @@ function buildIndexSummary(thread, cfg) {
     lastDir: last ? last.dir : '',
     lastTs: last ? last.ts : (thread.updatedAt || Date.now()),
     awaitingReply: awaiting,
+    // When the unanswered run started — the FIRST of their texts since his last
+    // one, not the latest. The two-hour nudge counts from here, so a customer
+    // who double-texts "hello??" an hour in doesn't push his reminder back.
+    waitSince: awaiting ? waitingSinceTs(thread.messages) : 0,
     // Has the current inbound message been read for "is anything still open?"
     // yet? Lets the cron find the few threads that still need judging without
     // loading every conversation on every tick.
@@ -12117,6 +12292,15 @@ function buildIndexSummary(thread, cfg) {
     followupDue: !!sug,
     fu: sug ? { reason: sug.reason, urgency: sug.urgency, stage: sug.stage, dueAt: sug.dueAt, draft: (sug.draft || '').slice(0, 320) } : null,
   };
+}
+
+function waitingSinceTs(msgs) {
+  let since = 0;
+  for (let i = (msgs || []).length - 1; i >= 0; i--) {
+    if (msgs[i].dir !== 'in') break;
+    since = msgs[i].ts || since;
+  }
+  return since;
 }
 
 // Merge `summary` into the in-memory `index`. Returns true only if something
