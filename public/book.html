@@ -484,7 +484,7 @@ async function submit(){
     wantQuote:S.wantQuote, date:S.date, dateLabel:S.dateLabel, slot:S.slot,
     estimate:total(), name:S.name.trim(), phone:S.phone.trim(), address:S.address.trim(),
     city:S.city, email:S.email.trim(), notes:S.notes.trim(),
-    ackWaterPower:S.ackWaterPower, smsConsent:S.smsConsent,
+    ackWaterPower:S.ackWaterPower, smsConsent:S.smsConsent, ref:S.ref||"",
     website:"" // honeypot (kept empty)
   };
   try{
@@ -543,6 +543,9 @@ function readPrefillIntoState(){
     var em=p.get("email"); if(em) S.email=em;
     var vh=p.get("vehicle"); if(vh) S.vehicle=vh;
     var ct=p.get("city"); if(ct && CONFIG.cities.indexOf(ct)>=0) S.city=ct;
+    // A friend's share link (/book.html?ref=…). Read before any early return
+    // below, and only ever passed through: the Worker decides who it means.
+    var rf=p.get("ref"); if(rf) S.ref=rf.replace(/[^A-Za-z0-9]/g,"").slice(0,20);
     if(S.service && S.size) return 3;  // everything known → jump straight to the time-picker
     if(S.service) return 1;
   }catch(e){}

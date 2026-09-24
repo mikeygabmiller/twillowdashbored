@@ -35,7 +35,9 @@ const REPORT = () => ({
   ok: true,
   referrers: [{ phone: DAVE, name: 'Dave Park', people: [{ phone: NEW, name: 'Kim Nguyen', at: now, jobs: 1, total: 299, thankedAt: 0 }],
     dollars: 299, jobs: 1, unthanked: thanked ? 0 : 1, draft: thanked ? '' : THANKS, optedOut: false }],
-  guesses: [], totals: { people: 1, dollars: 299, referrers: 1, paying: 3, payingReferred: 1, unthanked: thanked ? 0 : 1 },
+  guesses: [], totals: { people: 1, dollars: 299, referrers: 1, paying: 3, payingReferred: 1, unthanked: thanked ? 0 : 1, extOwed: redeemed ? 1 : 2 },
+  owed: [{ phone: DAVE, name: 'Dave Park', earned: 1, used: redeemed ? 1 : 0, owed: redeemed ? 0 : 1 },
+    { phone: NEW, name: 'Kim Nguyen', earned: 1, used: 0, owed: 1 }],
   reward: '',
 });
 
@@ -47,7 +49,7 @@ page.on('console', (m) => { if (m.type() === 'error' && !/favicon|manifest|sw\.j
 
 const sent = [];
 const refPosts = [];
-let thanked = false;
+let thanked = false, redeemed = false;
 await page.route('**/*', async (route) => {
   const req = route.request();
   const u = new URL(req.url()); const path = u.pathname;
@@ -65,6 +67,7 @@ await page.route('**/*', async (route) => {
   if (path === '/api/referral') {
     const b = body(); refPosts.push(b);
     if (b.action === 'thanked') { thanked = true; return json(REPORT()); }
+    if (b.action === 'redeem') { redeemed = !b.undo; return json(REPORT()); }
     const t = THREADS[b.phone];
     if (b.action === 'set') { t.referredBy = { phone: b.by, name: rows.find((r) => r.phone === b.by).name, at: Date.now(), thankedAt: 0, how: 'said' }; t.refGuess = null; }
     if (b.action === 'no' || b.action === 'clear') { t.refGuess = null; t.referredBy = null; t.refNo = true; }
@@ -169,6 +172,24 @@ await page.locator('#refBanner [data-ref-no]').click();
 await page.waitForTimeout(500);
 ok('"Not a referral" is saved', refPosts.some((p) => p.action === 'no' && p.phone === NEW), refPosts);
 ok('and the banner goes away', !(await page.locator('#refBanner').isVisible()));
+
+section('Free exteriors owed');
+if (await page.evaluate(() => document.body.classList.contains('viewing'))) {
+  await page.locator('#backBtn').click(); await page.waitForTimeout(250);
+}
+await page.locator('.navitem[data-tab="more"]').click(); await page.waitForTimeout(400);
+await page.getByText('Word of mouth', { exact: true }).first().click();
+await page.waitForTimeout(900);
+const sh2 = await page.locator('#jdSheet').innerText();
+ok('the sheet lists who is owed a free exterior', /Free exteriors owed · 2/i.test(sh2), sh2.slice(0, 600));
+ok('both ends of the referral are on it', /Dave Park[\s\S]*1 owed/.test(sh2) && /Kim Nguyen/.test(sh2), sh2.slice(0, 600));
+await page.locator(`[data-ext-used="${DAVE}"]`).click();
+await page.waitForTimeout(900);
+ok('"Did one" records it for Dave', refPosts.some((p) => p.action === 'redeem' && p.phone === DAVE && !p.undo), refPosts);
+const sh3 = await page.locator('#jdSheet').innerText();
+ok('…and Dave reads all given', /All given · 1 of 1 done/.test(sh3), sh3.slice(0, 600));
+ok('…with an undo for a mis-tap', await page.locator(`[data-ext-undo="${DAVE}"]`).count() === 1);
+await page.keyboard.press('Escape'); await page.waitForTimeout(400);
 
 section('nothing threw');
 ok('no page errors', errs.length === 0, errs);

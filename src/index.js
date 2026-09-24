@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-24·word-of-mouth';
+const BUILD = '2026-09-24·before-after';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -15182,6 +15182,26 @@ async function apiBook(request) {
   };
   const all = await loadBookings(); all.unshift(rec); await saveBookings(all);
 
+  // Booked off a friend's share link (see refCodeFor). Only ever fills in an
+  // empty "who sent them": whatever Mikey set by hand, or what the customer
+  // said in a text, stays the answer. Nobody sends themselves, and two people
+  // who each "sent" the other is a loop, not a referral.
+  let refBy = '', refName = '';
+  if (b.ref) {
+    const by = await refResolve(b.ref);
+    if (by && by !== phone && !(await loadThread(phone)).referredBy) {
+      const src = await loadThread(by);
+      if (!(src.referredBy && src.referredBy.phone === phone)) { refBy = by; refName = src.name || by; }
+    }
+  }
+  // The free exteriors this customer has coming, so he sees it on the request
+  // rather than having to remember it in the driveway.
+  let owed = 0;
+  if (refBy || b.fromLink) {
+    const cr = refCredits(phone, await loadIndex(), await moneySpendMap(await loadConfig()));
+    owed = cr.owed;
+  }
+
   const detail = [
     `🗓 BOOKING REQUEST (pending)`,
     `${rec.serviceName} · ${rec.sizeLabel}${rec.vehicle ? ` · ${rec.vehicle}` : ''}`,
@@ -15193,6 +15213,8 @@ async function apiBook(request) {
     rec.email ? `Email: ${rec.email}` : null,
     `Water & power on site: ${rec.ackWaterPower ? 'yes' : 'NEEDS to sort out'}`,
     rec.notes ? `Notes: ${rec.notes}` : null,
+    refBy ? `Sent by: ${refName} (their share link). You both get a free Exterior Detail once this one's paid.` : null,
+    owed ? `🎁 Has ${owed} free Exterior Detail${owed === 1 ? '' : 's'} owed from referrals` : null,
   ].filter(Boolean).join('\n');
 
   const thread = await loadThread(phone);
@@ -15200,6 +15222,10 @@ async function apiBook(request) {
   if (!thread.status) { thread.status = 'new'; thread.statusAt = Date.now(); }
   markSource(thread, 'booking');
   if (!thread.tags.includes('booking')) thread.tags.push('booking');
+  if (refBy && !thread.referredBy) {
+    thread.referredBy = { phone: refBy, name: refName, at: Date.now(), thankedAt: 0, how: 'link' };
+    thread.refGuess = null;
+  }
   thread.appointmentAt = rec.apptAt;
   const stamp = new Date().toLocaleString('en-US', { timeZone: cfg.tz });
   thread.notes = (thread.notes ? thread.notes + '\n\n' : '') + `${detail}\n(received ${stamp})`;
@@ -17061,6 +17087,103 @@ async function custResolve(token) {
 }
 function custUrl(token) { return `${publicBase()}/c/${token}`; }
 
+// ---- Send a friend --------------------------------------------------------
+// The share link is its OWN code, never the /c/ token. The token opens that
+// customer's page — their address, their bookings, a cancel button — so a
+// customer forwarding "their link" to a friend would be handing over the keys.
+// The code only ever answers one question: who sent this booking.
+const REF_CODE_KEY = (c) => 'refcode:' + c;
+const REF_CODE_FOR = (p) => 'refcodefor:' + p;
+async function refCodeFor(phone) {
+  phone = normalizePhone(phone);
+  if (!phone) return '';
+  const existing = await kv().get(REF_CODE_FOR(phone));
+  if (existing) return existing;
+  // Short enough to survive being retyped off a screenshot; 60 bits is plenty
+  // when the worst a guessed code can do is credit the wrong referrer.
+  const code = jdToken().replace(/[^A-Za-z0-9]/g, '').slice(0, 10);
+  await kv().put(REF_CODE_KEY(code), phone);
+  await kv().put(REF_CODE_FOR(phone), code);
+  return code;
+}
+async function refResolve(code) {
+  code = String(code || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 20);
+  if (code.length < 8) return '';
+  return (await kv().get(REF_CODE_KEY(code))) || '';
+}
+function refShareUrl(code) { return `${publicBase()}/book.html?ref=${code}`; }
+
+// Mikey's offer, 2026-09-24: a free Exterior Detail for BOTH people. It unlocks
+// only once the friend's first detail is paid for, so a friend who books and
+// never shows costs nothing, and a friend who only ever wants an exterior can't
+// turn the offer into a free first job. Nothing here texts anybody or takes
+// money off a booking by itself; it keeps count, and he honors it at the job.
+const REF_OFFER = "When a friend books with your link and their first detail is done, you both get a free Exterior Detail.";
+
+// Free exteriors earned, used and still owed, from index rows alone. `paid` is
+// the money ledger: a detail counts once it's been paid for, which is the only
+// "done" that jobs agreed over text and jobs booked online both leave behind.
+function refCredits(phone, index, spendMap) {
+  const paid = (p) => !!(spendMap[p] && spendMap[p].jobs);
+  const me = index.find((t) => t.phone === phone) || {};
+  let earned = me.refBy && paid(phone) ? 1 : 0;
+  let friends = 0, friendsDone = 0;
+  for (const t of index) {
+    if (t.refBy !== phone) continue;
+    friends++;
+    if (paid(t.phone)) { friendsDone++; earned++; }
+  }
+  const used = Math.min(earned, Math.max(0, me.extUsed || 0));
+  return { earned, used, owed: earned - used, friends, friendsDone };
+}
+
+// ---- After the job: looking after it ---------------------------------------
+// The common advice, not a product manual: what most detailers tell people to
+// do (and not do) after each kind of job. Keyed off the service name because
+// that's all a booking reliably carries, and Mikey renames services freely.
+function careKind(serviceName) {
+  const s = String(serviceName || '').toLowerCase();
+  if (/ceramic|coating/.test(s)) return 'ceramic';
+  if (/correct|compound|polish/.test(s)) return 'correction';
+  if (/interior/.test(s) && !/full|exterior|in ?& ?out/.test(s)) return 'interior';
+  if (/exterior|wash/.test(s) && !/full|interior|in ?& ?out/.test(s)) return 'exterior';
+  return 'full';
+}
+const CARE_TIPS = {
+  ceramic: [
+    'Keep it dry for the first 24 hours if you can. Park it inside if rain is coming.',
+    "Don't wash it for 7 days. The coating is still hardening.",
+    'Water spots that first week: dab them off with a clean microfiber, no scrubbing.',
+    'After that, hand wash with a pH-neutral car shampoo. Skip the automatic brush washes.',
+    "No wax or spray sealant on top. The coating does that job and wax just hides it.",
+  ],
+  correction: [
+    "Skip automatic brush washes. They put swirls right back into paint I just took them out of.",
+    'Hand wash with two buckets and dry with a clean microfiber towel, not a bath towel.',
+    'Get bird droppings and tree sap off within a day. They etch into the clear coat.',
+    'If you didn\'t get a coating or sealant, get some protection on in the next couple of weeks. Ask me about it.',
+  ],
+  interior: [
+    'If I shampooed anything, crack the windows for a few hours so it finishes drying.',
+    'Floor mats back in only once they feel dry to the touch.',
+    'A quick vacuum every couple of weeks keeps it from building back up.',
+  ],
+  exterior: [
+    'Skip automatic brush washes. They put fine scratches back in.',
+    'Get bird droppings and tree sap off within a day. They etch into the paint.',
+    'A hand wash every two weeks or so keeps it looking like this.',
+  ],
+  full: [
+    'If I shampooed anything, crack the windows for a few hours so it finishes drying.',
+    'Skip automatic brush washes. They put fine scratches back in.',
+    'Get bird droppings and tree sap off within a day. They etch into the paint.',
+  ],
+};
+// How long after a job the page leads with "how'd it go". Three weeks covers
+// the ceramic cure and the "I only just noticed" window, and then it gets out
+// of the way.
+const CUST_AFTER_DAYS = 21;
+
 // Everything that customer is allowed to see about themselves.
 async function custState(phone) {
   const cfg = await loadConfig();
@@ -17072,12 +17195,24 @@ async function custState(phone) {
   const upcoming = bookings
     .filter((b) => (b.apptAt || 0) > now && b.status !== 'cancelled' && b.status !== 'declined')
     .sort((a, b) => a.apptAt - b.apptAt)[0] || null;
-  const spend = await moneySpendFor(phone, cfg);
-  const history = bookings
+  const spendMap = await moneySpendMap(cfg);
+  const spend = spendMap[phone] || { jobs: 0, total: 0, lastDate: '' };
+  const done = bookings
     .filter((b) => b.status === 'done')
-    .sort((a, b) => (b.apptAt || 0) - (a.apptAt || 0))
+    .sort((a, b) => (b.doneAt || b.apptAt || 0) - (a.doneAt || a.apptAt || 0));
+  const history = done
     .slice(0, 6)
     .map((b) => ({ date: b.date, service: b.serviceName || '', vehicle: b.vehicle || '', price: b.estimate || 0 }));
+  const last = done[0];
+  const recent = last && (now - (last.doneAt || last.apptAt || 0)) < CUST_AFTER_DAYS * 86400000 ? last : null;
+  // The share card is for people who've actually had a detail. Asking a
+  // stranger who hasn't met Mikey yet to vouch for him reads as a pyramid scheme.
+  let refer = null;
+  if (spend.jobs || done.length) {
+    const code = await refCodeFor(phone);
+    const cr = refCredits(phone, await loadIndex(), spendMap);
+    refer = { url: refShareUrl(code), owed: cr.owed, friends: cr.friends, friendsDone: cr.friendsDone, offer: REF_OFFER };
+  }
   return {
     name: t.name || '', first: jdFirst(t.name),
     vehicle: garageVehicleLabel(g), address: g.address || '', city: g.city || '',
@@ -17085,7 +17220,17 @@ async function custState(phone) {
     upcoming: upcoming ? {
       id: upcoming.id, date: upcoming.date, slot: upcoming.slot, dateLabel: upcoming.dateLabel || bkNiceDate(upcoming.date),
       service: upcoming.serviceName || '', price: upcoming.estimate || 0, status: upcoming.status,
+      durationMin: upcoming.durationMin || 0, readyAt: upcoming.readyAt || 0, readyNote: upcoming.readyNote || '',
     } : null,
+    after: recent ? {
+      id: recent.id, dateLabel: recent.dateLabel || bkNiceDate(recent.date), service: recent.serviceName || '',
+      care: careKind(recent.serviceName), issueAt: ((recent.issues || [])[0] || {}).at || 0,
+    } : null,
+    // Shown to everybody, happy or not. Only sending the happy ones to Google
+    // is "review gating" and it's against Google's rules; the "something not
+    // right?" box sits right next to it instead.
+    review: cfg.reviewUrl && sayRules(cfg).reviewAsk ? cfg.reviewUrl : '',
+    refer,
     history, jobs: spend.jobs, lifetime: spend.total, needsAddress: !(g.address && g.city),
     services: (bcfg.services || []).filter((s) => s.enabled !== false)
       .map((s) => ({ id: s.id, name: s.name, price: s.price, duration: s.duration })),
@@ -17113,6 +17258,48 @@ async function apiCustAction(request, url) {
   const all = await loadBookings();
   const bk = all.find((x) => x.id === jdStr(d.id, 40) && x.phone === rec.phone);
   if (!bk) return cors(json({ ok: false, error: 'not_found' }, 404));
+
+  // "I've got water and power, here's the gate code." The spigot and the outlet
+  // are the one thing that turns a booked job into a wasted drive, so a yes
+  // from the customer is worth telling him about. Capped per booking because a
+  // public link that can ring his phone is a link somebody can lean on.
+  if (action === 'ready') {
+    if (bk.status !== 'pending' && bk.status !== 'confirmed') return cors(json({ ok: false, error: 'not_open' }, 409));
+    if ((bk.readyN || 0) >= 3) return cors(json({ ok: false, error: 'too_many' }, 429));
+    const note = jdStr(d.note, 300).trim();
+    bk.readyAt = Date.now(); bk.readyNote = note; bk.readyN = (bk.readyN || 0) + 1;
+    await saveBookings(all);
+    const t = await loadThread(rec.phone);
+    await notifyMikey(
+      `✅ ${t.name || rec.phone} is set for ${bk.dateLabel || bk.date}`,
+      [`${bk.serviceName || 'Job'} · ${bk.dateLabel || bk.date} at ${bkFmt12(bk.slot)}`,
+        'They confirmed water and power on site, and that you can get into the car.',
+        note ? `They added: ${note}` : null].filter(Boolean).join('\n'),
+    );
+    return cors(json(Object.assign({ ok: true }, await custState(rec.phone))));
+  }
+
+  // "Something's not right." Goes to him and onto the conversation's notes so
+  // it's there when he opens it, and never to an auto-reply: a complaint is
+  // the one message that has to be answered by the person who did the work.
+  if (action === 'issue') {
+    if (bk.status !== 'done') return cors(json({ ok: false, error: 'not_done' }, 409));
+    const note = jdStr(d.note, 600).trim();
+    if (!note) return cors(json({ ok: false, error: 'empty' }, 422));
+    if ((bk.issues || []).length >= 3) return cors(json({ ok: false, error: 'too_many' }, 429));
+    bk.issues = [{ at: Date.now(), note }].concat(bk.issues || []);
+    await saveBookings(all);
+    const t = await loadThread(rec.phone);
+    const stamp = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
+    t.notes = (t.notes ? t.notes + '\n\n' : '') + `⚠️ Not right after the ${bk.serviceName || 'job'} on ${bk.dateLabel || bk.date}: ${note}\n(from their link, ${stamp})`;
+    await saveThread(t); await updateIndexEntry(t);
+    await notifyMikey(
+      `⚠️ ${t.name || rec.phone} says something's not right`,
+      [`${bk.serviceName || 'Job'} · ${bk.dateLabel || bk.date}`, `They said: ${note}`,
+        'Sent from their link. Text them back yourself: nothing automatic has answered.'].join('\n'),
+    );
+    return cors(json(Object.assign({ ok: true }, await custState(rec.phone))));
+  }
 
   if (action !== 'cancel') return cors(json({ ok: false, error: 'bad_action' }, 422));
   if (bk.status === 'cancelled') return cors(json(Object.assign({ ok: true }, await custState(rec.phone))));
@@ -17183,9 +17370,68 @@ async function custPage(token) {
       ${u.status === 'pending' ? '<div class="pill warn">Waiting on Mikey to confirm</div>' : '<div class="pill ok">Confirmed</div>'}
       <div class="row"><button class="btn ghost" id="moveBtn">Need a different time</button>
       <button class="btn ghost danger" id="cancelBtn">Cancel</button></div></div>`;
-  } else {
+  } else if (!s.after) {
     up = `<div class="card"><div class="lbl">Nothing on the books</div>
       <div class="sub">Pick a time below whenever you're ready — it comes straight to me.</div></div>`;
+  }
+
+  // Before the job. Ordered by what actually costs a wasted drive, not by what
+  // reads nicely: water and power first, then getting into the car.
+  let prep = '';
+  if (s.upcoming) {
+    const u = s.upcoming;
+    const m = u.durationMin || 0;
+    const long = !m ? '' : m < 120 ? `About ${m} minutes` : `About ${Math.round(m / 30) / 2} hours`.replace('.5 hours', '½ hours');
+    const said = u.readyAt
+      ? `<div class="pill ok">✓ You told me you're set</div>${u.readyNote ? `<div class="note">You added: ${jdEsc(u.readyNote)}</div>` : ''}`
+      : '';
+    prep = `<div class="card" id="prepCard"><div class="lbl">Before I get there</div>
+      <div class="tip"><b>Water and power.</b> I need an outdoor water spigot and a power outlet I can reach from the driveway. That's the one thing I can't bring.</div>
+      <div class="tip"><b>You don't need to be home.</b> I just need to get into the car. Leave it unlocked or tell me where the keys are.</div>
+      <div class="tip"><b>Clear it out.</b> Take out valuables and car seats. Anything else I'll work around.</div>
+      ${long ? `<div class="tip"><b>How long.</b> ${jdEsc(long)} for this one.</div>` : ''}
+      <div class="tip"><b>If it rains.</b> I'll text you and we'll figure it out: under cover if there's room, or another day.</div>
+      <div class="tip"><b>Paying.</b> After the work, once you've seen it. Cash, check or Zelle. No deposit.</div>
+      ${said}
+      <div id="prepForm"${u.readyAt ? ' hidden' : ''}>
+        <textarea class="fld" id="prepNote" maxlength="300" rows="2" placeholder="Anything I should know? Gate code, where it's parked, pet hair, a stain you care about"></textarea>
+        <button class="btn" id="readyBtn" data-id="${jdEsc(u.id)}" style="margin-top:10px">I've got water and power</button>
+        <div class="note" id="prepMsg"></div>
+      </div></div>`;
+  }
+
+  // After the job. The review link is here for everyone, and so is the box
+  // that goes straight to him when something isn't right.
+  let after = '';
+  if (s.after) {
+    const a = s.after;
+    after = `<div class="card next" id="afterCard"><div class="lbl">Thanks for having me out</div>
+      <div class="sub" style="margin:0 0 12px">${jdEsc(a.service || 'Your detail')} · ${jdEsc(a.dateLabel)}</div>
+      <div class="lbl">Looking after it</div>
+      ${(CARE_TIPS[a.care] || CARE_TIPS.full).map((x) => `<div class="tip">${jdEsc(x)}</div>`).join('')}
+      <div class="lbl" style="margin-top:14px">Something not right?</div>
+      ${a.issueAt
+        ? '<div class="pill warn">Got it. I\'ll be in touch</div>'
+        : `<div class="sub" style="margin:0">Tell me and I'll make it right. This goes straight to me.</div>
+      <textarea class="fld" id="issueNote" maxlength="600" rows="2" placeholder="What did you notice?"></textarea>
+      <button class="btn ghost" id="issueBtn" data-id="${jdEsc(a.id)}" style="margin-top:10px">Send to Mikey</button>
+      <div class="note" id="issueMsg"></div>`}
+      ${s.review ? `<div class="lbl" style="margin-top:16px">Happy with it?</div>
+      <div class="sub" style="margin:0 0 10px">A Google review helps a one-man shop more than anything else.</div>
+      <a class="btn" href="${jdEsc(s.review)}" target="_blank" rel="noopener">Leave a review</a>` : ''}
+    </div>`;
+  }
+
+  // Send a friend. Only for people who've had a detail (see custState).
+  let refer = '';
+  if (s.refer) {
+    const r = s.refer;
+    refer = `<div class="card" id="referCard"><div class="lbl">Send a friend</div>
+      <div class="sub" style="margin:0 0 12px">${jdEsc(r.offer)}</div>
+      ${r.owed ? `<div class="pill ok">You've got ${r.owed} free Exterior Detail${r.owed === 1 ? '' : 's'} waiting. Mention it when you book.</div>` : ''}
+      ${r.friends ? `<div class="note">${r.friends} friend${r.friends === 1 ? '' : 's'} booked with your link so far${r.friendsDone < r.friends ? `, ${r.friendsDone} done` : ''}.</div>` : ''}
+      <button class="btn" id="shareBtn" data-url="${jdEsc(r.url)}" style="margin-top:12px">Share my link</button>
+      <div class="note tiny">${jdEsc(r.url)}</div></div>`;
   }
 
   const yours = [s.vehicle, s.address ? s.address + (s.city ? ', ' + s.city : '') : ''].filter(Boolean);
@@ -17205,10 +17451,10 @@ async function custPage(token) {
   const inner = `<div class="pad">
     <h1>${hi}</h1>
     <p class="sub">Everything about your detailing in one place. Save this link — it doesn't expire.</p>
-    ${up}${mine}
+    ${up}${prep}${after}${mine}
     <div class="card" id="bookCard"><div class="lbl">Book a time</div>
       <div id="bookBody"><button class="btn" id="startBook">Pick a day</button></div></div>
-    ${hist}
+    ${refer}${hist}
     <div class="card contact"><div class="lbl">Need me?</div>
       ${tel ? `<a class="btn ghost" href="sms:${jdEsc(tel)}">Text Mikey</a>
       <a class="btn ghost" href="tel:${jdEsc(tel)}">Call Mikey</a>` : '<div class="sub">Text me any time.</div>'}</div>
@@ -17255,6 +17501,12 @@ h1{font-size:28px;letter-spacing:-.03em;margin:0 0 6px}
 .fld{width:100%;background:#1a1b21;border:1px solid #2a2d36;color:#f2f4f8;border-radius:11px;
   padding:12px;font-size:15px;margin-top:7px;font-family:inherit}
 .note{color:#9aa3b2;font-size:13px;margin:10px 0 0;line-height:1.5}
+.note.tiny{font-size:11.5px;word-break:break-all}
+.tip{font-size:14px;line-height:1.5;padding:7px 0;border-bottom:1px solid #23252d}
+.tip:last-of-type{border-bottom:none}
+.tip b{font-weight:700}
+textarea.fld{resize:vertical;min-height:58px}
+[hidden]{display:none!important}
 .foot{text-align:center;color:#6b7280;font-size:12px;margin-top:22px}
 @media (prefers-color-scheme:light){
   body{background:radial-gradient(1200px 600px at 50% -10%,#fff,#eef0f3 60%);color:#161820}
@@ -17266,7 +17518,7 @@ h1{font-size:28px;letter-spacing:-.03em;margin:0 0 6px}
   .grid button{background:#f4f6f8;border-color:#d7dbe2;color:#161820}
   .grid button.on{background:#c81e30;border-color:#c81e30;color:#fff}
   .fld{background:#f4f6f8;border-color:#d7dbe2;color:#161820}
-  .hrow{border-bottom-color:#e3e6eb}}
+  .hrow,.tip{border-bottom-color:#e3e6eb}}
 </style></head><body>${inner}
 <script>
 var TOK=${JSON.stringify(token || '')};
@@ -17338,8 +17590,38 @@ function submit(){
       $("bookNote").textContent=d&&d.error==="slot_taken"?"Someone just took that one — pick another time.":"That didn't go through. Try again, or text me."}
   }).catch(function(){b.disabled=false;b.textContent="Request this time"});
 }
+function act(body,btn,msgId,okFn){
+  var was=btn.textContent;btn.disabled=true;btn.textContent="Sending…";
+  api("/api/cust/action?t="+encodeURIComponent(TOK),{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify(body)}).then(function(d){
+      if(d&&d.ok){okFn(d);return}
+      btn.disabled=false;btn.textContent=was;
+      $(msgId).textContent=d&&d.error==="empty"?"Tell me what you noticed first.":
+        d&&d.error==="too_many"?"Got your earlier messages. Text me if there's more.":"That didn't go through. Try again, or text me.";
+    }).catch(function(){btn.disabled=false;btn.textContent=was;$(msgId).textContent="That didn't go through. Try again, or text me."});
+}
 document.addEventListener("click",function(e){
   if(e.target.id==="startBook"){startBook();return}
+  if(e.target.id==="readyBtn"){
+    var n=$("prepNote").value.trim();
+    act({action:"ready",id:e.target.getAttribute("data-id"),note:n},e.target,"prepMsg",function(){
+      $("prepForm").hidden=true;
+      var p=document.createElement("div");p.className="pill ok";p.textContent="✓ Thanks. See you then";
+      $("prepCard").appendChild(p);
+    });return}
+  if(e.target.id==="issueBtn"){
+    act({action:"issue",id:e.target.getAttribute("data-id"),note:$("issueNote").value.trim()},e.target,"issueMsg",function(){
+      $("issueNote").hidden=true;e.target.hidden=true;
+      $("issueMsg").textContent="Got it. It went straight to me and I'll be in touch.";
+    });return}
+  if(e.target.id==="shareBtn"){
+    var u=e.target.getAttribute("data-url");
+    var txt="I use Mikey for detailing, he comes to you. Book with my link and once your first detail is done we both get a free exterior: "+u;
+    // The share sheet where there is one (every phone); a text to nobody yet
+    // where there isn't, so the customer picks the friend.
+    if(navigator.share){navigator.share({text:txt}).catch(function(){})}
+    else location.href="sms:?&body="+encodeURIComponent(txt);
+    return}
   if(e.target.id==="moveBtn"){startBook();$("bookCard").scrollIntoView({behavior:"smooth"});return}
   if(e.target.id==="cancelBtn"){
     if(!S||!S.upcoming)return;
@@ -17669,6 +17951,10 @@ function referralIndexFields(thread) {
     refThanked: r ? (r.thankedAt || 0) : 0,
     refGuess: g ? (g.name || g.rel || '?') : '',
     refGuessLine: g ? (g.line || '').slice(0, 160) : '',
+    // Free exteriors he's already given this person. What they've earned is
+    // worked out from the rows and the ledger (refCredits); only the redeeming
+    // is a fact that has to be stored.
+    extUsed: thread.freeExtUsed || 0,
   };
 }
 
@@ -17734,6 +18020,23 @@ async function buildReferrals(cfg) {
   list.sort((a, b) => b.dollars - a.dollars || b.people.length - a.people.length);
   guesses.sort((a, b) => b.at - a.at);
 
+  // Free exteriors owed: everybody on either end of a referral whose friend's
+  // (or own) first detail has been paid for, less the ones he's already done.
+  const owed = [];
+  const seen = new Set();
+  for (const t of index) {
+    for (const p of t.refBy ? [t.refBy, t.phone] : []) {
+      if (seen.has(p)) continue;
+      seen.add(p);
+      const cr = refCredits(p, index, spendMap);
+      if (!cr.earned) continue;
+      const row = byPhone[p] || {};
+      owed.push({ phone: p, name: row.name || '', earned: cr.earned, used: cr.used, owed: cr.owed });
+    }
+  }
+  for (const r of list) r.extOwed = (owed.find((o) => o.phone === r.phone) || {}).owed || 0;
+  owed.sort((a, b) => b.owed - a.owed || String(a.name).localeCompare(String(b.name)));
+
   // What share of the customers who have actually paid came from somebody.
   // That one number is the whole argument for asking for referrals at all.
   let paying = 0, payingReferred = 0;
@@ -17745,9 +18048,11 @@ async function buildReferrals(cfg) {
   return {
     referrers: list.slice(0, 60),
     guesses: guesses.slice(0, 30),
+    owed: owed.slice(0, 60),
     totals: {
       people, dollars, referrers: list.length, paying, payingReferred,
       unthanked: list.reduce((s, r) => s + r.unthanked, 0),
+      extOwed: owed.reduce((s, o) => s + o.owed, 0),
     },
     reward: String(cfg.referralReward || ''),
   };
@@ -17795,6 +18100,20 @@ async function apiReferralAction(request) {
   const phone = normalizePhone(d.phone);
   if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
   const thread = await loadThread(phone);
+
+  // He did one of their free exteriors (or `undo`: tapped that by mistake).
+  // Never past what they've earned, so a double-tap can't bank a negative.
+  if (action === 'redeem') {
+    const index = await loadIndex();
+    const cr = refCredits(phone, index, await moneySpendMap(cfg, 18));
+    const used = Math.min(cr.earned, Math.max(0, thread.freeExtUsed || 0));
+    thread.freeExtUsed = d.undo ? Math.max(0, used - 1) : Math.min(cr.earned, used + 1);
+    await saveThread(thread);
+    applyIndexSummary(index, buildIndexSummary(thread, cfg));
+    await saveIndex(index);
+    return json(Object.assign({ ok: true }, await buildReferrals(cfg)));
+  }
+
   if (action === 'set') {
     const by = normalizePhone(d.by);
     if (!by) return json({ ok: false, error: 'bad_phone' }, 422);
