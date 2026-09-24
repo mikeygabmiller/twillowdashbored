@@ -112,13 +112,14 @@ ok('the price is not on it (his call)', !/\$299/.test(h));
 ok('"How it goes" in three steps', /How it goes/.test(h) && (h.match(/<li>/g) || []).length >= 3);
 { const p = h.slice(h.indexOf('id="prepCard"'));
   ok('water and power comes first', p.indexOf('Water and power') > 0 && p.indexOf('Water and power') < p.indexOf("don't need to be home")); }
-ok('it says they need a spigot and an outlet, and that he cannot bring it', /spigot/.test(h) && /outlet/.test(h) && /can't bring/.test(h));
+ok('it says they need a spigot and an outlet, plainly', /spigot/.test(h) && /outlet/.test(h) && !/can't bring/.test(h));
 ok('they do not need to be home, just access to the car', /don't need to be home/.test(h) && /unlocked/.test(h));
 ok('how long, from the booking (210 min → 3½ hours)', /About 3½ hours/.test(h), (h.match(/How long[^<]*<\/b>[^<]*/) || [])[0]);
 ok('payment: after, cash, check or Zelle, no deposit', /Cash, check or Zelle/.test(h) && /No deposit/.test(h));
 ok('rain: he texts and they figure it out', /If it rains/.test(h));
-ok('it has the "I\'m all set" button, locked until every box is ticked', /id="readyBtn" type="button" disabled/.test(h));
-ok('the checklist is the four things that waste a drive', ['water', 'power', 'keys', 'room'].every((c) => h.includes(`value="${c}"`)));
+ok('nothing to tick or submit (his call)', !/id="readyBtn"/.test(h) && !/type="checkbox"/.test(h) && !/<textarea/.test(h));
+ok('…just an invite to text if something does not line up', /Something doesn't line up\?/.test(h) && /href="sms:\+14256007897"/.test(h));
+ok('the steps read like the site: a heading and what happens', /<b>I pull up with everything\.<\/b> All my own gear/.test(h) && /<b>We look it over together\.<\/b>/.test(h));
 ok('no Text / Call Mikey card (his call)', !/Need me\?/.test(h) && !/href="tel:/.test(h));
 ok('the stars and the website are at the bottom', /5\.0 across 40 Google reviews/.test(h) && /href="https:\/\/mikeysdetailing\.com"/.test(h));
 ok('it draws a proper preview when texted', /og:image" content="https:\/\/texting\.example\.workers\.dev\/og-car\.jpg"/.test(h) && /og:title" content="Before your detail/.test(h));
@@ -141,7 +142,7 @@ ok('Mikey is told, with the note', alerts.length === 1 && /is set for/.test(aler
 ok('the customer is NOT texted', sms.length === 0, sms);
 ok('the state now says they are set', res.ready && res.ready.at > 0);
 h = await page('before', tok);
-ok('the page shows it back instead of the form again', /You told me you're set/.test(h) && /prepForm" hidden/.test(h));
+ok('(the old "ready" endpoint still records it if anything calls it)', res.ready && res.ready.at > 0);
 await M.apiCustAction(req({ action: 'ready' }), q(tok));
 await M.apiCustAction(req({ action: 'ready' }), q(tok));
 const r4 = await M.apiCustAction(req({ action: 'ready' }), q(tok));
@@ -165,8 +166,8 @@ const TEXTED = '+14255550444';
 }
 const tokT = await M.custTokenFor(TEXTED);
 h = await page('before', tokT);
-ok('it knows the day from the conversation', /Your detail/.test(h) && /id="readyBtn"/.test(h));
-ok('with no booking it gives the usual times instead of guessing', /A full detail takes 3–5 hours/.test(h));
+ok('it knows the day from the conversation', /Your detail/.test(h));
+ok('with no booking it gives the usual times instead of guessing (full detail 2–4 hours)', /A full detail takes 2–4 hours/.test(h));
 ok('"I\'m set" works without a booking', (await (await M.apiCustAction(req({ action: 'ready' }), q(tokT))).json()).ok);
 
 // ------------------------------------------------------------------- after
@@ -314,9 +315,8 @@ ok('…but nobody refers themselves', !(await M.loadThread(JENNA)).referredBy);
 section('The saved links: bare /before, /after, /friend work for anybody');
 h = await page('before');
 ok('/before renders with no customer', /<title>Before I get there<\/title>/.test(h) && /spigot/.test(h));
-ok('…with the usual times, not somebody\'s booking', /A full detail takes 3–5 hours/.test(h) && !/Jenna|Saturday/.test(h));
-ok('…and a text-me button instead of one that needs to know who you are', !/id="readyBtn"/.test(h) && /id="smsSet" type="button" data-tel="\+14256007897"/.test(h));
-ok('…with the same checklist', /value="water"/.test(h) && /value="room"/.test(h));
+ok('…with the usual times, not somebody\'s booking', /A full detail takes 2–4 hours/.test(h) && !/Jenna|Saturday/.test(h));
+ok('…and the same invite to text', /Something doesn't line up\?/.test(h) && /href="sms:\+14256007897"/.test(h));
 ok('…and no job card or calendar', !/Your detail/.test(h) && !/\/cal\//.test(h));
 ok('…and no "opened" beacon, because the generic page is nobody\'s', /var TOK=""/.test(h));
 h = await page('after');
