@@ -1254,6 +1254,13 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .plan-state{margin-top:14px;display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted)}
   .plan-acts{margin-top:16px}
   .plan-acts2{display:flex;gap:7px;margin-top:8px}
+  .lk-row{padding:12px 0;border-bottom:1px solid var(--line)}
+  .lk-row:last-child{border-bottom:none}
+  .lk-row .link-box{margin-top:8px}
+  .lk-t{display:flex;flex-direction:column;gap:3px;font-size:13px;color:var(--muted)}
+  .lk-t b{color:var(--text);font-size:15px}
+  .lk-due{align-self:flex-start;font-size:11px;font-weight:800;color:var(--accent);background:rgba(255,46,67,.12);border-radius:999px;padding:3px 9px}
+  .lk-row.due .link-box{border-color:var(--accent)}
   .link-box{margin-top:14px;background:var(--panel2);border:1px solid var(--line);border-radius:11px;
     padding:12px;font-size:12.5px;word-break:break-all;color:var(--muted);font-family:ui-monospace,Menlo,monospace}
   .plan-acts2 button{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--muted);
@@ -4160,6 +4167,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     <div id="planChipWrap"></div>
     <div class="hold-banner" id="holdBanner" style="display:none"></div>
     <div class="hold-banner ref-banner" id="refBanner" style="display:none"></div>
+    <div class="hold-banner ref-banner" id="linkBanner" style="display:none"></div>
     <div class="optout-banner" id="optOutBanner" style="display:none"></div>
     <div class="logjob-banner" id="logJobBanner" style="display:none"></div>
     <div class="quote-banner" id="quoteBanner" style="display:none"></div>
@@ -4526,7 +4534,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-24·before-after";
+  var APP_BUILD="2026-09-24·own-links";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -6188,6 +6196,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       return '<span class="nd-sig rem">'+ic("bell",12)+'Promised</span>'});
     var gRem=grp("remind","Your reminders",function(){
       return '<span class="nd-sig rem">'+ic("bell",12)+'Reminder</span>'});
+    var gLink=grp("link","Send them a link",function(t){var d=linkDue(t);
+      return '<span class="nd-sig date">'+ic("link",12)+esc(d?LINK_TAG[d.kind]:"Link")+'</span>'});
 
     (waiting||[]).forEach(function(t){if(seen[t.phone])return;seen[t.phone]=1;
       gWait.rows.push({t:t,sub:(t.lastBody||"Sent you a message")})});
@@ -6202,33 +6212,44 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     (reminders||[]).forEach(function(t){if(seen[t.phone])return;seen[t.phone]=1;
       gRem.rows.push({t:t,sub:(t.reminderNote||"Reminder set for today")})});
 
+    // Last, and only for people nothing above has claimed: a link is a nice
+    // thing to send, never more urgent than somebody waiting on him. Like the
+    // follow-up ideas it's the app's suggestion, so it's listed but never
+    // counted in the "needs your attention" number, and it still shows when
+    // he's otherwise caught up.
+    (state.threads||[]).forEach(function(t){if(seen[t.phone])return;var d=linkDue(t);if(!d)return;seen[t.phone]=1;
+      gLink.rows.push({t:t,sub:linkHead(d)})});
     [gWait,gDate,gProm,gRem].forEach(function(g){if(g.rows.length)G.push(g)});
     var total=G.reduce(function(n,g){return n+g.rows.length},0);
     // The engine's own suggestions, counted but never mixed in.
     var fuN=(fu||[]).filter(function(t){return !seen[t.phone]}).length;
 
+    var rowHtml=function(it,g){var t=it.t;
+      return '<div class="nd-row" data-open="'+esc(t.phone)+'">'+
+        '<div class="avatar" style="width:40px;height:40px;font-size:14px;background:'+colorFor(t.phone)+'">'+esc(initials(t))+'</div>'+
+        '<div class="nd-b"><div class="nd-nm">'+esc(displayName(t))+'</div><div class="nd-sub">'+esc(it.sub)+'</div></div>'+
+        g.sig(t)+'</div>'};
+    var linkBlock=gLink.rows.length?'<div class="nd-grp">'+esc(gLink.label)+'<span class="nd-gn">'+gLink.rows.length+'</span></div><div class="nd-list">'+
+      gLink.rows.slice(0,4).map(function(it){return rowHtml(it,gLink)}).join("")+'</div>':'';
     if(!total){
       var okBody=fuN?('Nobody is waiting and nothing is due. '+fuN+' follow-up idea'+(fuN===1?"":"s")+' are parked in Chats when you want them.')
                     :"Nobody's waiting and nothing's due right now. Nice work.";
       return '<div class="needs ok"><span class="nd-ok">'+ic("check-circle",26)+'</span>'+
-        '<div><div class="nd-ok-t">You\'re all caught up</div><div class="nd-ok-s">'+esc(okBody)+'</div></div></div>';
+        '<div><div class="nd-ok-t">You\'re all caught up</div><div class="nd-ok-s">'+esc(okBody)+'</div></div></div>'+
+        (linkBlock?'<div class="needs nd-links">'+linkBlock+'</div>':'');
     }
     var h='<div class="needs"><div class="nd-head"><span class="nd-h-l">'+ic("alert",15)+
       'Needs your attention</span><span class="nd-h-n">'+total+'</span></div>';
     // Four per group, so no one group can bury another the way follow-ups did.
     G.forEach(function(g){
       h+='<div class="nd-grp">'+esc(g.label)+'<span class="nd-gn">'+g.rows.length+'</span></div><div class="nd-list">';
-      g.rows.slice(0,4).forEach(function(it){var t=it.t;
-        h+='<div class="nd-row" data-open="'+esc(t.phone)+'">'+
-          '<div class="avatar" style="width:40px;height:40px;font-size:14px;background:'+colorFor(t.phone)+'">'+esc(initials(t))+'</div>'+
-          '<div class="nd-b"><div class="nd-nm">'+esc(displayName(t))+'</div><div class="nd-sub">'+esc(it.sub)+'</div></div>'+
-          g.sig(t)+'</div>';
-      });
+      g.rows.slice(0,4).forEach(function(it){h+=rowHtml(it,g)});
       h+='</div>';
       if(g.rows.length>4)h+='<div class="nd-more" data-more="messages">'+(g.rows.length-4)+' more '+esc(g.label.toLowerCase())+'</div>';
     });
     // One quiet line, at the bottom, off the critical path. He can still get to
     // them; they just can't pretend to be the thing that needs him.
+    h+=linkBlock;
     if(fuN)h+='<div class="nd-fu" data-more="messages">'+ic("list-checks",14)+
       '<span>'+fuN+' follow-up idea'+(fuN===1?"":"s")+' from the app</span><span class="nd-fu-go">Look</span></div>';
     return h+'</div>';
@@ -6853,6 +6874,75 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       if(typeof closeJobs==="function")closeJobs();
       setTab("messages");openThread(by);
     });
+  }
+  // ---- Before / after / friend links: which one to suggest, and when -------
+  // Each is its own page on the customer's link (/before, /after, /friend).
+  // The app never sends one. It says which fits right now, and one tap puts
+  // the text in the box for him to send. Works off the list row or the loaded
+  // conversation alike, so Home and the banner can never disagree.
+  //   before: a job in the next 4 days, this job's link not yet sent or skipped
+  //   after:  a job finished in the last 3 days, not sent or skipped since
+  //   friend: 5 to 30 days after a job, nothing reported wrong, not sent since
+  var LINK_TAG={before:"Before",after:"After",friend:"Friend"};
+  function linkDue(t,now){
+    if(!t||t.archived||t.optedOut||isDnt(t.phone))return null;
+    now=now||Date.now();var D=86400000;
+    var sent=t.linkAt||t.linkSent||{},skip=t.linkSkip||{};
+    var handled=function(k,since){return (sent[k]||0)>=since||(skip[k]||0)>=since};
+    var appt=t.appointmentAt||0;
+    if(appt>now&&appt-now<=4*D&&!handled("before",appt-14*D))return {kind:"before",at:appt};
+    var last=t.lastJobAt||(t.lastJob&&t.lastJob.at)||0;
+    if(last&&now>=last&&now-last<=3*D&&!handled("after",last))return {kind:"after",at:last};
+    var issue=t.issueAt||((t.afterIssues||[])[0]||{}).at||0;
+    if(last&&now-last>=5*D&&now-last<=30*D&&issue<last&&!handled("friend",last))return {kind:"friend",at:last};
+    return null;
+  }
+  function linkWhen(ts){
+    var a=new Date(ts),b=new Date();a.setHours(0,0,0,0);b.setHours(0,0,0,0);
+    var n=Math.round((a-b)/86400000);
+    return n<=0?"today":n===1?"tomorrow":new Date(ts).toLocaleDateString([],{weekday:"long"});
+  }
+  function linkHead(d){
+    return d.kind==="before"?"Detail "+linkWhen(d.at)+": send the before-job link"
+      :d.kind==="after"?"Job done: send the after-job link"
+      :"Ask for a referral: send their friend link";
+  }
+  // Into the box, never out the door. Anything he'd already typed stays.
+  function putLinkDraft(phone,kind,done){
+    post("/api/cust/link",{phone:phone}).then(function(d){
+      if(!(d&&d.ok&&d.drafts&&d.drafts[kind]))return toast("Couldn't make the link",{bad:true});
+      var text=d.drafts[kind];
+      if(state.phone===phone&&el("msgInput")){
+        var inp=el("msgInput"),cur=inp.value.trim();
+        inp.value=cur?cur+"\n\n"+text:text;autoGrow();updateCount();inp.focus();
+      }else seedDraft(phone,text);
+      toast("In the box: check it and send");
+      if(done)done();
+    }).catch(function(){toast("Network error",{bad:true})});
+  }
+  var LINK_PUT={};
+  function renderLinkBanner(t){
+    var b=el("linkBanner");if(!b)return;
+    var d=linkDue(t);
+    if(!d||LINK_PUT[t.phone+":"+d.kind]){b.style.display="none";b.innerHTML="";return}
+    var sub={before:"Water and power, getting into the car, how long, paying. They tap one button when they're set.",
+      after:"How to look after it, a box to tell you if something's off, and your review link.",
+      friend:"Their own share link. You both get a free exterior once the friend's first detail is paid."}[d.kind];
+    b.style.display="flex";
+    b.innerHTML='<span class="hb-ic">'+ic("link",15)+'</span><div class="hb-txt"><b>'+esc(linkHead(d))+'?</b>'+
+      '<span class="hb-when">'+esc(sub)+'</span>'+
+      '<div class="ref-acts"><button class="hb-x pri" data-link-put="'+d.kind+'">Put it in the box</button>'+
+      '<button class="hb-x" data-link-skip="'+d.kind+'">Not now</button></div></div>';
+    b.querySelector("[data-link-put]").onclick=function(){
+      putLinkDraft(t.phone,d.kind,function(){LINK_PUT[t.phone+":"+d.kind]=1;renderLinkBanner(t)})};
+    b.querySelector("[data-link-skip]").onclick=function(){
+      post("/api/cust/linkskip",{phone:t.phone,kind:d.kind}).then(function(r){
+        if(!(r&&r.ok))return toast("Couldn't save that",{bad:true});
+        t.linkSkip=r.thread.linkSkip;
+        var row=(state.threads||[]).filter(function(x){return x.phone===t.phone})[0];if(row)row.linkSkip=r.thread.linkSkip;
+        renderLinkBanner(t);toast("Won't suggest it for this job");
+      }).catch(function(){toast("Network error",{bad:true})});
+    };
   }
   // The question in the conversation, and the one-tap thank-you after it's answered.
   function renderRefBanner(t){
@@ -10321,6 +10411,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     renderJobBanner(t);
     renderPlanChip(t);
     renderRefBanner(t);
+    renderLinkBanner(t);
 
     // "You told me to leave this one alone." Shows the reason back in Mikey's own
     // words so a quiet conversation never looks like the app forgot about it.
@@ -11235,7 +11326,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       {act:"reqdate",ic:"calendar-days",  t:"Request a date from Mikey", s:"Emails Mikey for his next open date", accent:true},
       {act:"pay",    ic:"receipt",         t:"Send a payment request", s:"Texts a link with the breakdown and every way to pay", accent:true},
       {act:"plan",   ic:"refresh-cw",      t:"Put them on a plan", s:"Every few weeks, on a rhythm — you get reminded, they get asked", accent:true},
-      {act:"link",   ic:"share",           t:"Send their booking link", s:"Their own page — book, move, cancel, see past jobs. No texting you", accent:true},
+      {act:"link",   ic:"link",            t:"Send them a link", s:"Before the job, after the job, send a friend, or their booking page", accent:true},
       {act:"photo",  ic:"image",           t:"Send a photo", s:"Camera roll, or one you've sent before — the price sheet, a before/after", accent:true},
       {act:"draft",  ic:"sparkles",       t:"AI draft a reply", s:"Let the AI suggest a full reply to send"},
       {act:"polish", ic:"wand",           t:"Polish my text now", s:"Don't wait for the pause — rewrite it this second"},
@@ -11378,26 +11469,37 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var first=firstNameOf(t)||"them";
     post("/api/cust/link",{phone:t.phone}).then(function(d){
       if(!(d&&d.ok))return toast("Couldn't make the link",{bad:true});
-      var h='<div class="jd-sh-title">'+esc(first)+'\u2019s booking link</div>'+
-        '<div class="jd-sh-sub">Their own page: what\u2019s coming up, book a time from your real availability, move or cancel, and every detail you\u2019ve done for them. It never expires, so they only ever need this one link.</div>'+
-        '<div class="link-box" id="custLinkBox">'+esc(d.url)+'</div>'+
-        '<div class="plan-acts"><button class="jd-btn pri" id="linkText">'+ic("send",17)+' Text it to '+esc(first)+'</button></div>'+
-        '<div class="plan-acts2"><button id="linkCopy">'+ic("share",15)+' Copy link</button></div>';
-      var sh=jdSheetOpen(h);
-      sh.querySelector("#linkCopy").onclick=function(){
-        var b=this;
-        (navigator.clipboard?navigator.clipboard.writeText(d.url):Promise.reject())
-          .then(function(){b.textContent="Copied"}).catch(function(){
-            var r=document.createRange();r.selectNode(sh.querySelector("#custLinkBox"));
-            var sel=getSelection();sel.removeAllRanges();sel.addRange(r);b.textContent="Select and copy";});
-      };
-      sh.querySelector("#linkText").onclick=function(){
-        var b=this;b.disabled=true;b.textContent="Sending\u2026";
-        post("/api/cust/link",{phone:t.phone,text:true}).then(function(r){
-          if(r&&r.ok&&r.texted){jdSheetClose();toast("Link sent");openThread(t.phone)}
-          else{b.disabled=false;b.textContent="Text it to "+first;toast("Couldn\u2019t send that",{bad:true})}
-        }).catch(function(){b.disabled=false;toast("Network error",{bad:true})});
-      };
+      var L=d.links||{book:d.url},due=linkDue(t);
+      var row=function(k,title,what){
+        return '<div class="lk-row'+(due&&due.kind===k?' due':'')+'"><div class="lk-t"><b>'+esc(title)+'</b>'+
+          (due&&due.kind===k?'<span class="lk-due">Send this one now</span>':'')+'<span>'+esc(what)+'</span></div>'+
+          '<div class="link-box">'+esc(L[k]||"")+'</div>'+
+          '<div class="plan-acts2"><button data-lk-put="'+k+'">'+ic("send",15)+' Put in the box</button>'+
+          '<button data-lk-copy="'+esc(L[k]||"")+'">'+ic("share",15)+' Copy</button></div></div>'};
+      var h='<div class="jd-sh-title">'+esc(first)+'\u2019s links</div>'+
+        '<div class="jd-sh-sub">Each one is its own page and never expires. \u201cPut in the box\u201d writes the text for you to check and send.</div>'+
+        row("before","Before the job","Water and power, getting in the car, how long, paying, and an \u201cI\u2019m set\u201d button.")+
+        row("after","After the job","How to look after it, \u201csomething not right?\u201d, and your review link.")+
+        row("friend","Send a friend","Their share link and any free exteriors they\u2019ve earned.")+
+        row("book","Booking page","What\u2019s coming up, book or move a time, and every detail you\u2019ve done.")+
+        (d.saved?'<div class="ref-h">Keep these saved on your phone</div><div class="jd-sh-sub" style="margin-top:0">The same pages for anybody, even someone not in the app yet.</div>'+
+          '<div class="lk-row"><div class="link-box">'+esc(d.saved.before)+'</div><div class="plan-acts2"><button data-lk-copy="'+esc(d.saved.before)+'">'+ic("share",15)+' Copy before-job link</button></div></div>'+
+          '<div class="lk-row"><div class="link-box">'+esc(d.saved.after)+'</div><div class="plan-acts2"><button data-lk-copy="'+esc(d.saved.after)+'">'+ic("share",15)+' Copy after-job link</button></div></div>':'');
+      var sh=jdSheetOpen(h);hydrateIcons(sh);
+      Array.prototype.forEach.call(sh.querySelectorAll("[data-lk-copy]"),function(b){b.onclick=function(){
+        var v=b.getAttribute("data-lk-copy");
+        (navigator.clipboard?navigator.clipboard.writeText(v):Promise.reject())
+          .then(function(){b.textContent="Copied"}).catch(function(){b.textContent="Long-press the link to copy"});
+      }});
+      Array.prototype.forEach.call(sh.querySelectorAll("[data-lk-put]"),function(b){b.onclick=function(){
+        var k=b.getAttribute("data-lk-put");
+        var text=(d.drafts||{})[k];if(!text)return;
+        jdSheetClose();
+        var inp=el("msgInput");if(!inp)return;
+        var cur=inp.value.trim();inp.value=cur?cur+"\n\n"+text:text;autoGrow();updateCount();inp.focus();
+        LINK_PUT[t.phone+":"+k]=1;renderLinkBanner(t);
+        toast("In the box: check it and send");
+      }});
     }).catch(function(){toast("Network error",{bad:true})});
   }
 
