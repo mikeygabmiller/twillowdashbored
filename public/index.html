@@ -4526,7 +4526,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-24·word-of-mouth";
+  var APP_BUILD="2026-09-24·before-after";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -6987,6 +6987,19 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
             '<div class="cr-acts">'+(r.unthanked&&!r.optedOut?'<button class="pri" data-ref-thanks="'+esc(r.phone)+'">'+ic("send",15)+' Open with this text</button>':'')+
             '<button data-ref-go="'+esc(r.phone)+'">Open</button></div></div>'}).join("")+'</div>';
       }
+      // Free exteriors: the offer on every customer's own link. Each one is
+      // earned when the friend's first detail is paid, and comes off here when
+      // he's done it. Nothing is texted or discounted on its own.
+      if(d.owed&&d.owed.length){
+        h+='<div class="ref-h">Free exteriors owed'+(tt.extOwed?' · '+tt.extOwed:'')+'</div><div class="cold-list">'+d.owed.map(function(o){
+          var nm=o.name||prettyPhone(o.phone);
+          return '<div class="cold-row" data-ext-row="'+esc(o.phone)+'"><div class="cr-top"><div class="pr-av" style="background:'+colorFor(o.phone)+'">'+esc((nm[0]||"#").toUpperCase())+'</div>'+
+            '<div class="cr-b"><div class="cr-nm">'+esc(nm)+'</div><div class="cr-why">'+(o.owed?o.owed+' owed':'All given')+' · '+o.used+' of '+o.earned+' done</div></div>'+
+            (o.owed?'<span class="pr-tag quote">Owed</span>':'')+'</div>'+
+            '<div class="cr-acts">'+(o.owed?'<button class="pri" data-ext-used="'+esc(o.phone)+'">'+ic("check",15)+' Did one</button>':'')+
+            (o.used?'<button data-ext-undo="'+esc(o.phone)+'">Undo</button>':'')+
+            '<button data-ref-go="'+esc(o.phone)+'">Open</button></div></div>'}).join("")+'</div>';
+      }
       h+='<div class="ref-h">What you give for a referral</div>'+
         '<div class="jd-sh-sub" style="margin-top:0">Optional. Your own sentence, added to the end of every thank-you. Leave it blank and the thank-you is just a thank-you.</div>'+
         '<div class="ref-reward jd-field"><input id="refReward" maxlength="140" placeholder="e.g. Your next detail is $20 off, on me." value="'+esc(d.reward||"")+'">'+
@@ -6995,6 +7008,14 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       Array.prototype.forEach.call(s.querySelectorAll("[data-ref-go]"),function(b){b.onclick=function(){
         var ph=b.getAttribute("data-ref-go");jdSheetClose();if(typeof closeJobs==="function")closeJobs();setTab("messages");openThread(ph)}});
       Array.prototype.forEach.call(s.querySelectorAll("[data-ref-thanks]"),function(b){b.onclick=function(){refThank(b.getAttribute("data-ref-thanks"))}});
+      function extTap(ph,undo){
+        post("/api/referral",{action:"redeem",phone:ph,undo:!!undo}).then(function(x){
+          if(x&&x.ok&&x.referrers){REF.data=x;REF.at=Date.now();toast(undo?"Put it back":"Marked done");jdSheetClose();refSheet()}
+          else toast("Couldn't save that",{bad:true});
+        }).catch(function(){toast("Couldn't save that",{bad:true})});
+      }
+      Array.prototype.forEach.call(s.querySelectorAll("[data-ext-used]"),function(b){b.onclick=function(){b.disabled=true;extTap(b.getAttribute("data-ext-used"))}});
+      Array.prototype.forEach.call(s.querySelectorAll("[data-ext-undo]"),function(b){b.onclick=function(){b.disabled=true;extTap(b.getAttribute("data-ext-undo"),true)}});
       s.querySelector("#refRewardSave").onclick=function(){
         var v=s.querySelector("#refReward").value.trim();
         post("/api/referral",{action:"reward",reward:v}).then(function(x){
