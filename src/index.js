@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-24·before-after';
+const BUILD = '2026-09-24·own-links';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -432,7 +432,9 @@ async function handle(request) {
   if (request.method === 'OPTIONS' && pathname === '/px/e')          return pxOk();
 
   // ---- Public booking API (customer-facing /book.html — MUST stay above the /api auth gate) ----
-  if (request.method === 'GET'  && (pathname === '/book' || pathname === '/book/')) return Response.redirect(new URL('/book.html', request.url).toString(), 302);
+  // Keeps the query string: /book?ref=… and the quote calculator's
+  // /book?service=… handoff both lost everything after the ? here.
+  if (request.method === 'GET'  && (pathname === '/book' || pathname === '/book/')) return Response.redirect(new URL('/book.html' + url.search, request.url).toString(), 302);
   if (request.method === 'GET'  && pathname === '/api/book-config')  return apiBookConfig();
   if (request.method === 'GET'  && pathname === '/api/availability') return apiAvailability(url);
   if (request.method === 'POST' && pathname === '/api/book')         return apiBook(request);
@@ -446,6 +448,12 @@ async function handle(request) {
   // /c/<token> — the customer's own page: what's booked, book a time, what I've done
   if (request.method === 'GET'  && pathname.startsWith('/c/'))      return custPage(pathname.slice(3).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80));
   if (request.method === 'GET'  && pathname === '/api/cust/state')  return apiCustState(url);
+  // /before, /after, /friend — each with /<token> for that customer's own
+  // page, or bare for the generic one he keeps saved. See custSubPage.
+  {
+    const m = /^\/(before|after|friend)(?:\/([A-Za-z0-9_-]{0,80}))?\/?$/.exec(pathname);
+    if (request.method === 'GET' && m) return custSubPage(m[1], m[2] || '');
+  }
   // /i/<id> — a photo he sent. Public on purpose: Twilio fetches this URL itself,
   // with no cookie and no credentials, or the MMS never goes out. See servePhoto.
   if (request.method === 'GET'  && pathname.startsWith('/i/'))      return servePhoto(pathname.slice(3));
@@ -641,6 +649,7 @@ async function handle(request) {
 
   // The customer's own link — minted once per customer, then reused forever
   if (request.method === 'POST' && pathname === '/api/cust/link')      return apiCustLink(request);
+  if (request.method === 'POST' && pathname === '/api/cust/linkskip')  return apiCustLinkSkip(request);
 
   // Maintenance plans — the every-N-weeks rhythm behind a rebook
   if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/plan') return apiPlan(request, url);
@@ -12238,6 +12247,13 @@ function buildIndexSummary(thread, cfg) {
     // Booked time (the day board finds the day's jobs from here without loading
     // every thread) plus the garage headline for the customer roster.
     appointmentAt: thread.appointmentAt || null,
+    // What the "send them the before / after / friend link" suggestion reads,
+    // so Home can list who's due one from the index alone. linkAt/linkSkip are
+    // null for nearly everyone and cost nothing.
+    lastJobAt: (thread.lastJob && thread.lastJob.at) || 0,
+    linkAt: thread.linkSent || null,
+    linkSkip: thread.linkSkip || null,
+    issueAt: ((thread.afterIssues || [])[0] || {}).at || 0,
     // A maintenance plan, mirrored whole so "who is due" can be answered from
     // the index alone — null for almost everyone, so it costs nothing.
     plan: thread.plan ? {
@@ -12393,6 +12409,7 @@ async function appendMessage(phone, message, opts = {}) {
   // with it any question we were holding the draft for: he just answered it the
   // long way round.
   if (message.dir === 'out') { thread.suggested = null; thread.needsYou = null; thread.needsYouAnswers = null; }
+  if (message.dir === 'out') noteCustLinks(thread, message.body);
   await saveThread(thread);
   await updateIndexEntry(thread);
   return thread;
@@ -15421,7 +15438,8 @@ async function apiBookingAction(request) {
     // "all finished" text) — deliberately not duplicated here.
     const wasWon = thread.status === 'won';
     if (!wasWon) { thread.status = 'won'; thread.statusAt = now; }
-    if (purged || !wasWon) { await saveThread(thread); await updateIndexEntry(thread); }
+    thread.lastJob = { at: now, service: bk.serviceName || '', jobId: bk.id };
+    await saveThread(thread); await updateIndexEntry(thread);
 
   } else if (action === 'decline' || action === 'cancel') {
     const kind = action === 'decline' ? 'declined' : 'cancelled';
@@ -15924,6 +15942,21 @@ async function apiDayState(request) {
   if (state === 'done' && !run.doneAt) run.doneAt = now;
   if (state === 'queued') { run.enrouteAt = 0; run.startedAt = 0; run.doneAt = 0; }
   if (typeof d.note === 'string') run.note = d.note.slice(0, 400);
+  // The job's own record of being finished, on the customer. The Jobs board
+  // keeps its state per day and never touches the booking, so without this
+  // the after-job page and its "send the after link" nudge couldn't see a
+  // job finished here — which is most of them. Undone if he re-queues it.
+  if (job.phone && (state === 'done' || state === 'queued')) {
+    const th = await loadThread(job.phone);
+    const was = th.lastJob;
+    if (state === 'done' && !(was && was.jobId === jobId)) {
+      th.lastJob = { at: run.doneAt || now, service: job.service || '', jobId };
+      await saveThread(th); await updateIndexEntry(th);
+    } else if (state === 'queued' && was && was.jobId === jobId) {
+      th.lastJob = null;
+      await saveThread(th); await updateIndexEntry(th);
+    }
+  }
 
   let track = null, texted = false;
   if (state === 'enroute' && d.track && job.phone) {
@@ -17184,6 +17217,41 @@ const CARE_TIPS = {
 // of the way.
 const CUST_AFTER_DAYS = 21;
 
+// The next job and the last one, from wherever each actually gets recorded.
+// A job agreed over text only ever sets thread.appointmentAt; a job finished on
+// the Jobs board never touches its booking (it stamps thread.lastJob instead);
+// a job he only logged in Money is just a ledger line. Reading all of them is
+// what makes the before and after pages right for every customer, not only the
+// ones who happened to book online and get closed out on the Bookings tab.
+function custNext(t, bookings, now, tz) {
+  const bk = bookings
+    .filter((b) => (b.apptAt || 0) > now && b.status !== 'cancelled' && b.status !== 'declined' && b.status !== 'done')
+    .sort((a, b) => a.apptAt - b.apptAt)[0];
+  if (bk) {
+    return { at: bk.apptAt, id: bk.id, date: bk.date, slot: bk.slot, dateLabel: bk.dateLabel || bkNiceDate(bk.date),
+      service: bk.serviceName || '', price: bk.estimate || 0, status: bk.status, durationMin: bk.durationMin || 0 };
+  }
+  if (t.appointmentAt && t.appointmentAt > now) {
+    const date = localDateStr(t.appointmentAt, tz);
+    return { at: t.appointmentAt, id: '', date, slot: localTimeHm(t.appointmentAt, tz), dateLabel: bkNiceDate(date),
+      service: '', price: 0, status: 'confirmed', durationMin: 0 };
+  }
+  return null;
+}
+function custLast(t, bookings, spend) {
+  const c = [];
+  if (t.lastJob && t.lastJob.at) c.push({ at: t.lastJob.at, service: t.lastJob.service || '' });
+  for (const b of bookings) if (b.status === 'done') c.push({ at: b.doneAt || b.apptAt || 0, service: b.serviceName || '' });
+  // A ledger line has a date and no time: call it the end of that working day.
+  if (spend && spend.lastDate) c.push({ at: Date.parse(spend.lastDate + 'T23:00:00Z'), service: '' });
+  const best = c.filter((x) => x.at).sort((a, b) => b.at - a.at)[0];
+  if (!best) return null;
+  // The newest record may be the ledger line that knows no service; borrow the
+  // name from whichever record of the same job does.
+  if (!best.service) best.service = (c.find((x) => x.service && Math.abs(x.at - best.at) < 2 * 86400000) || {}).service || '';
+  return best;
+}
+
 // Everything that customer is allowed to see about themselves.
 async function custState(phone) {
   const cfg = await loadConfig();
@@ -17192,23 +17260,22 @@ async function custState(phone) {
   const t = await loadThread(phone);
   const g = t.garage || {};
   const bookings = (await loadBookings()).filter((b) => b.phone === phone);
-  const upcoming = bookings
-    .filter((b) => (b.apptAt || 0) > now && b.status !== 'cancelled' && b.status !== 'declined')
-    .sort((a, b) => a.apptAt - b.apptAt)[0] || null;
   const spendMap = await moneySpendMap(cfg);
   const spend = spendMap[phone] || { jobs: 0, total: 0, lastDate: '' };
-  const done = bookings
+  const next = custNext(t, bookings, now, cfg.tz);
+  const last = custLast(t, bookings, spendMap[phone]);
+  const recent = last && (now - last.at) < CUST_AFTER_DAYS * 86400000 ? last : null;
+  const history = bookings
     .filter((b) => b.status === 'done')
-    .sort((a, b) => (b.doneAt || b.apptAt || 0) - (a.doneAt || a.apptAt || 0));
-  const history = done
+    .sort((a, b) => (b.doneAt || b.apptAt || 0) - (a.doneAt || a.apptAt || 0))
     .slice(0, 6)
     .map((b) => ({ date: b.date, service: b.serviceName || '', vehicle: b.vehicle || '', price: b.estimate || 0 }));
-  const last = done[0];
-  const recent = last && (now - (last.doneAt || last.apptAt || 0)) < CUST_AFTER_DAYS * 86400000 ? last : null;
-  // The share card is for people who've actually had a detail. Asking a
+  const ready = next && t.prepReady && t.prepReady.forAt === next.at ? t.prepReady : null;
+  const issue = recent ? (t.afterIssues || []).find((x) => x.forAt === recent.at) : null;
+  // The friend page is for people who've actually had a detail. Asking a
   // stranger who hasn't met Mikey yet to vouch for him reads as a pyramid scheme.
   let refer = null;
-  if (spend.jobs || done.length) {
+  if (spend.jobs || last) {
     const code = await refCodeFor(phone);
     const cr = refCredits(phone, await loadIndex(), spendMap);
     refer = { url: refShareUrl(code), owed: cr.owed, friends: cr.friends, friendsDone: cr.friendsDone, offer: REF_OFFER };
@@ -17217,15 +17284,12 @@ async function custState(phone) {
     name: t.name || '', first: jdFirst(t.name),
     vehicle: garageVehicleLabel(g), address: g.address || '', city: g.city || '',
     plan: t.plan && !t.plan.paused ? { every: t.plan.every } : null,
-    upcoming: upcoming ? {
-      id: upcoming.id, date: upcoming.date, slot: upcoming.slot, dateLabel: upcoming.dateLabel || bkNiceDate(upcoming.date),
-      service: upcoming.serviceName || '', price: upcoming.estimate || 0, status: upcoming.status,
-      durationMin: upcoming.durationMin || 0, readyAt: upcoming.readyAt || 0, readyNote: upcoming.readyNote || '',
-    } : null,
-    after: recent ? {
-      id: recent.id, dateLabel: recent.dateLabel || bkNiceDate(recent.date), service: recent.serviceName || '',
-      care: careKind(recent.serviceName), issueAt: ((recent.issues || [])[0] || {}).at || 0,
-    } : null,
+    // The hub's booking card (move / cancel) only ever means a real booking.
+    upcoming: next && next.id ? next : null,
+    next,
+    ready: ready ? { at: ready.at, note: ready.note || '' } : null,
+    after: recent ? { at: recent.at, dateLabel: bkNiceDate(localDateStr(recent.at, cfg.tz)), service: recent.service,
+      care: careKind(recent.service), issueAt: issue ? issue.at : 0 } : null,
     // Shown to everybody, happy or not. Only sending the happy ones to Google
     // is "review gating" and it's against Google's rules; the "something not
     // right?" box sits right next to it instead.
@@ -17246,7 +17310,7 @@ async function apiCustState(url) {
   return cors(json(Object.assign({ ok: true }, await custState(rec.phone))));
 }
 
-// The customer acting on their own booking. Cancelling is real — that's the
+// The customer acting from their own links. Cancelling is real — that's the
 // point of handing them the link — but it always tells Mikey, and it pulls the
 // reminders the job still had queued so nobody gets "see you tomorrow!" for a
 // job that isn't happening.
@@ -17255,51 +17319,59 @@ async function apiCustAction(request, url) {
   if (!rec) return cors(json({ ok: false, error: 'bad_token' }, 404));
   let d; try { d = await request.json(); } catch { return cors(json({ ok: false, error: 'bad_json' }, 400)); }
   const action = jdStr(d.action, 12);
-  const all = await loadBookings();
-  const bk = all.find((x) => x.id === jdStr(d.id, 40) && x.phone === rec.phone);
-  if (!bk) return cors(json({ ok: false, error: 'not_found' }, 404));
+  const now = Date.now();
 
   // "I've got water and power, here's the gate code." The spigot and the outlet
   // are the one thing that turns a booked job into a wasted drive, so a yes
-  // from the customer is worth telling him about. Capped per booking because a
-  // public link that can ring his phone is a link somebody can lean on.
-  if (action === 'ready') {
-    if (bk.status !== 'pending' && bk.status !== 'confirmed') return cors(json({ ok: false, error: 'not_open' }, 409));
-    if ((bk.readyN || 0) >= 3) return cors(json({ ok: false, error: 'too_many' }, 429));
-    const note = jdStr(d.note, 300).trim();
-    bk.readyAt = Date.now(); bk.readyNote = note; bk.readyN = (bk.readyN || 0) + 1;
-    await saveBookings(all);
+  // from the customer is worth telling him about. Keyed to the next job, not to
+  // a booking, because half his jobs are agreed over text and have none.
+  // Capped per job because a public link that can ring his phone is a link
+  // somebody can lean on.
+  if (action === 'ready' || action === 'issue') {
+    const cfg = await loadConfig();
     const t = await loadThread(rec.phone);
-    await notifyMikey(
-      `✅ ${t.name || rec.phone} is set for ${bk.dateLabel || bk.date}`,
-      [`${bk.serviceName || 'Job'} · ${bk.dateLabel || bk.date} at ${bkFmt12(bk.slot)}`,
-        'They confirmed water and power on site, and that you can get into the car.',
-        note ? `They added: ${note}` : null].filter(Boolean).join('\n'),
-    );
-    return cors(json(Object.assign({ ok: true }, await custState(rec.phone))));
-  }
-
-  // "Something's not right." Goes to him and onto the conversation's notes so
-  // it's there when he opens it, and never to an auto-reply: a complaint is
-  // the one message that has to be answered by the person who did the work.
-  if (action === 'issue') {
-    if (bk.status !== 'done') return cors(json({ ok: false, error: 'not_done' }, 409));
-    const note = jdStr(d.note, 600).trim();
+    const bookings = (await loadBookings()).filter((b) => b.phone === rec.phone);
+    if (action === 'ready') {
+      const next = custNext(t, bookings, now, cfg.tz);
+      if (!next) return cors(json({ ok: false, error: 'nothing_booked' }, 409));
+      const was = t.prepReady && t.prepReady.forAt === next.at ? t.prepReady : null;
+      if (was && (was.n || 0) >= 3) return cors(json({ ok: false, error: 'too_many' }, 429));
+      const note = jdStr(d.note, 300);
+      t.prepReady = { at: now, note, forAt: next.at, n: ((was && was.n) || 0) + 1 };
+      await saveThread(t); await updateIndexEntry(t);
+      await notifyMikey(
+        `✅ ${t.name || rec.phone} is set for ${next.dateLabel}`,
+        [`${next.service || 'Detail'} · ${next.dateLabel} at ${bkFmt12(next.slot)}`,
+          'They confirmed water and power on site, and that you can get into the car.',
+          note ? `They added: ${note}` : null].filter(Boolean).join('\n'),
+      );
+      return cors(json(Object.assign({ ok: true }, await custState(rec.phone))));
+    }
+    // "Something's not right." Goes to him and onto the conversation's notes so
+    // it's there when he opens it, and never to an auto-reply: a complaint is
+    // the one message that has to be answered by the person who did the work.
+    const last = custLast(t, bookings, (await moneySpendMap(cfg))[rec.phone]);
+    if (!last || now - last.at > CUST_AFTER_DAYS * 86400000) return cors(json({ ok: false, error: 'not_done' }, 409));
+    const note = jdStr(d.note, 600);
     if (!note) return cors(json({ ok: false, error: 'empty' }, 422));
-    if ((bk.issues || []).length >= 3) return cors(json({ ok: false, error: 'too_many' }, 429));
-    bk.issues = [{ at: Date.now(), note }].concat(bk.issues || []);
-    await saveBookings(all);
-    const t = await loadThread(rec.phone);
-    const stamp = new Date().toLocaleString('en-US', { timeZone: 'America/Los_Angeles' });
-    t.notes = (t.notes ? t.notes + '\n\n' : '') + `⚠️ Not right after the ${bk.serviceName || 'job'} on ${bk.dateLabel || bk.date}: ${note}\n(from their link, ${stamp})`;
+    const mine = (t.afterIssues || []).filter((x) => x.forAt === last.at);
+    if (mine.length >= 3) return cors(json({ ok: false, error: 'too_many' }, 429));
+    t.afterIssues = [{ at: now, note, forAt: last.at }].concat(t.afterIssues || []).slice(0, 12);
+    const when = bkNiceDate(localDateStr(last.at, cfg.tz));
+    const stamp = new Date(now).toLocaleString('en-US', { timeZone: cfg.tz });
+    t.notes = (t.notes ? t.notes + '\n\n' : '') + `⚠️ Not right after the ${last.service || 'detail'} on ${when}: ${note}\n(from their link, ${stamp})`;
     await saveThread(t); await updateIndexEntry(t);
     await notifyMikey(
       `⚠️ ${t.name || rec.phone} says something's not right`,
-      [`${bk.serviceName || 'Job'} · ${bk.dateLabel || bk.date}`, `They said: ${note}`,
+      [`${last.service || 'Detail'} · ${when}`, `They said: ${note}`,
         'Sent from their link. Text them back yourself: nothing automatic has answered.'].join('\n'),
     );
     return cors(json(Object.assign({ ok: true }, await custState(rec.phone))));
   }
+
+  const all = await loadBookings();
+  const bk = all.find((x) => x.id === jdStr(d.id, 40) && x.phone === rec.phone);
+  if (!bk) return cors(json({ ok: false, error: 'not_found' }, 404));
 
   if (action !== 'cancel') return cors(json({ ok: false, error: 'bad_action' }, 422));
   if (bk.status === 'cancelled') return cors(json(Object.assign({ ok: true }, await custState(rec.phone))));
@@ -17321,25 +17393,78 @@ async function apiCustAction(request, url) {
   return cors(json(Object.assign({ ok: true, cancelled: true }, await custState(rec.phone))));
 }
 
-// Hand Mikey the link to send. Generated once and reused forever after.
+// The three pages that hang off a customer's link, each its own URL so he can
+// send exactly the one that fits the moment. Same token as /c/: it's that
+// customer's identity, and every one of these only ever shows them their own.
+const CUST_PAGES = { before: 'before', after: 'after', friend: 'friend' };
+function custPageUrl(kind, token) { return `${publicBase()}/${CUST_PAGES[kind]}${token ? '/' + token : ''}`; }
+
+// What he texts with each link, in his words. Drafts only: they land in the
+// box and he sends them, so nothing here ever reaches a phone on its own.
+function custLinkDrafts(t, token, next) {
+  const first = jdFirst(t.name) || 'there';
+  const day = next ? next.dateLabel.split(',')[0] : '';
+  return {
+    book: `Hey ${first}, here's your own link: ${custUrl(token)} You can see what's coming up, book a time or move one, and look back at what I've done before. Save it, it doesn't expire.`,
+    before: `Hey ${first}, here's everything for ${day ? day + "'s detail" : 'your detail'}: what I need from you, how long it takes and paying. ${custPageUrl('before', token)} Tap the button at the bottom once you're set.`,
+    after: `Thanks for having me out, ${first}. Here's how to look after it, and if anything's not right tell me there and I'll make it right: ${custPageUrl('after', token)}`,
+    friend: `Hey ${first}, if anyone asks who did your car, here's your own link to send them. Once their first detail is done you both get a free exterior on me: ${custPageUrl('friend', token)}`,
+  };
+}
+
+// Hand Mikey the links to send. Generated once and reused forever after. The
+// generic ones (/before, /after) are the same for everybody — the ones to keep
+// saved on his phone for a customer who isn't in the app yet.
 async function apiCustLink(request) {
   const d = await readJson(request);
   const phone = normalizePhone(d.phone);
   if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
   const token = await custTokenFor(phone);
   const url = custUrl(token);
+  const t = await loadThread(phone);
+  const cfg = await loadConfig();
+  const next = custNext(t, (await loadBookings()).filter((b) => b.phone === phone), Date.now(), cfg.tz);
+  const drafts = custLinkDrafts(t, token, next);
+  const links = { book: url, before: custPageUrl('before', token), after: custPageUrl('after', token), friend: custPageUrl('friend', token) };
+  const saved = { before: custPageUrl('before', ''), after: custPageUrl('after', '') };
   if (d.text) {
-    const t = await loadThread(phone);
-    const first = jdFirst(t.name) || 'there';
-    const body = jdStr(d.body, 600) ||
-      `Hey ${first}, here's your own link: ${url} You can see what's coming up, book a time or move one, and look back at what I've done before. Save it, it doesn't expire.`;
+    const body = jdStr(d.body, 600) || drafts.book;
     try {
       await sendSms(phone, body);
       await appendMessage(phone, { dir: 'out', body, kind: 'link', status: 'sent' }, { name: t.name });
     } catch (e) { return json({ ok: false, error: String(e.message || e), url }, 502); }
-    return json({ ok: true, url, texted: true });
+    return json({ ok: true, url, links, drafts, saved, texted: true });
   }
-  return json({ ok: true, url, texted: false });
+  return json({ ok: true, url, links, drafts, saved, texted: false });
+}
+
+// "Not now" on a suggested link. Remembered per kind with a time, so it only
+// silences THIS job's suggestion: the next booking asks again.
+async function apiCustLinkSkip(request) {
+  const d = await readJson(request);
+  const phone = normalizePhone(d.phone);
+  const kind = CUST_PAGES[d.kind] ? d.kind : '';
+  if (!phone || !kind) return json({ ok: false, error: 'bad_request' }, 422);
+  const t = await loadThread(phone);
+  t.linkSkip = Object.assign({}, t.linkSkip || {}, { [kind]: Date.now() });
+  await saveThread(t); await updateIndexEntry(t);
+  return json({ ok: true, thread: t });
+}
+
+// Remember which of the page links went out, and when — off the text itself,
+// so it counts however he sent it (the banner, the sheet, pasted by hand).
+// That's what stops the dashboard suggesting a link he already sent.
+function noteCustLinks(thread, body) {
+  const base = publicBase();
+  if (!base || !body || body.indexOf(base) < 0) return false;
+  let hit = false;
+  for (const kind of Object.keys(CUST_PAGES)) {
+    if (body.indexOf(`${base}/${kind}/`) >= 0 || new RegExp(`${base.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/${kind}(?![\\w/-])`).test(body)) {
+      thread.linkSent = Object.assign({}, thread.linkSent || {}, { [kind]: Date.now() });
+      hit = true;
+    }
+  }
+  return hit;
 }
 
 function htmlResponse(body, status = 200) {
@@ -17347,16 +17472,49 @@ function htmlResponse(body, status = 200) {
     headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
 }
 
-// The page itself. Server-rendered identity (so it says their name before a
-// single request lands), then it drives the SAME public booking endpoints the
-// website already uses — /api/availability and /api/book — so a time booked
-// here and a time booked on the website can never disagree about what's free.
+// ---- page pieces, shared by the personal and the generic versions ---------
+function custDurationLabel(m) {
+  if (!m) return '';
+  return m < 120 ? `About ${m} minutes` : `About ${Math.round(m / 30) / 2} hours`.replace('.5 hours', '½ hours');
+}
+// Ordered by what actually costs a wasted drive, not by what reads nicely:
+// water and power first, then getting into the car.
+function custPrepTips(next) {
+  const long = next ? custDurationLabel(next.durationMin) : '';
+  return `<div class="tip"><b>Water and power.</b> I need an outdoor water spigot and a power outlet I can reach from the driveway. That's the one thing I can't bring.</div>
+      <div class="tip"><b>You don't need to be home.</b> I just need to get into the car. Leave it unlocked or tell me where the keys are.</div>
+      <div class="tip"><b>Clear it out.</b> Take out valuables and car seats. Anything else I'll work around.</div>
+      <div class="tip"><b>How long.</b> ${long ? jdEsc(long) + ' for this one.' : 'A full detail takes 3–5 hours. A basic interior is about 90 minutes.'}</div>
+      <div class="tip"><b>If it rains.</b> I'll text you and we'll figure it out: under cover if there's room, or another day.</div>
+      <div class="tip"><b>Paying.</b> After the work, once you've seen it. Cash, check or Zelle. No deposit.</div>`;
+}
+function custCareHtml(kind) {
+  return (CARE_TIPS[kind] || CARE_TIPS.full).map((x) => `<div class="tip">${jdEsc(x)}</div>`).join('');
+}
+function custSmsHref(tel, body) {
+  return `sms:${jdEsc(tel)}${body ? '?&body=' + encodeURIComponent(body) : ''}`;
+}
+function custContact(tel) {
+  return `<div class="card contact"><div class="lbl">Need me?</div>
+      ${tel ? `<a class="btn ghost" href="sms:${jdEsc(tel)}">Text Mikey</a>
+      <a class="btn ghost" href="tel:${jdEsc(tel)}">Call Mikey</a>` : '<div class="sub">Text me any time.</div>'}</div>`;
+}
+async function custBizInfo() {
+  const bcfg = await loadBookingConfig();
+  const cfg = await loadConfig();
+  return { biz: bcfg.bizName || "Mikey's Mobile Detailing", tel: String(ENV.TWILIO_FROM || '').replace(/[^0-9+]/g, ''),
+    review: cfg.reviewUrl && sayRules(cfg).reviewAsk ? cfg.reviewUrl : '' };
+}
+
+// The hub. Server-rendered identity (so it says their name before a single
+// request lands), then it drives the SAME public booking endpoints the website
+// already uses — /api/availability and /api/book — so a time booked here and a
+// time booked on the website can never disagree about what's free. The before,
+// after and friend pages are their own links; the hub just points at whichever
+// fits right now.
 async function custPage(token) {
   const rec = await custResolve(token);
-  if (!rec) {
-    return htmlResponse(custShell(`<div class="pad"><h1>Link not found</h1>
-      <p class="sub">This link isn't valid any more. Text Mikey and he'll send you a new one.</p></div>`, ''), 404);
-  }
+  if (!rec) return custDeadLink();
   const s = await custState(rec.phone);
   const hi = s.first ? `Hi ${jdEsc(s.first)}` : 'Your detailing';
   const tel = String(s.phoneMikey || '').replace(/[^0-9+]/g, '');
@@ -17370,69 +17528,21 @@ async function custPage(token) {
       ${u.status === 'pending' ? '<div class="pill warn">Waiting on Mikey to confirm</div>' : '<div class="pill ok">Confirmed</div>'}
       <div class="row"><button class="btn ghost" id="moveBtn">Need a different time</button>
       <button class="btn ghost danger" id="cancelBtn">Cancel</button></div></div>`;
+  } else if (s.next) {
+    up = `<div class="card next"><div class="lbl">You're booked</div>
+      <div class="big">${jdEsc(s.next.dateLabel)}</div>
+      <div class="sub">${jdEsc(bkFmt12(s.next.slot))}</div><div class="pill ok">Confirmed</div></div>`;
   } else if (!s.after) {
     up = `<div class="card"><div class="lbl">Nothing on the books</div>
       <div class="sub">Pick a time below whenever you're ready — it comes straight to me.</div></div>`;
   }
 
-  // Before the job. Ordered by what actually costs a wasted drive, not by what
-  // reads nicely: water and power first, then getting into the car.
-  let prep = '';
-  if (s.upcoming) {
-    const u = s.upcoming;
-    const m = u.durationMin || 0;
-    const long = !m ? '' : m < 120 ? `About ${m} minutes` : `About ${Math.round(m / 30) / 2} hours`.replace('.5 hours', '½ hours');
-    const said = u.readyAt
-      ? `<div class="pill ok">✓ You told me you're set</div>${u.readyNote ? `<div class="note">You added: ${jdEsc(u.readyNote)}</div>` : ''}`
-      : '';
-    prep = `<div class="card" id="prepCard"><div class="lbl">Before I get there</div>
-      <div class="tip"><b>Water and power.</b> I need an outdoor water spigot and a power outlet I can reach from the driveway. That's the one thing I can't bring.</div>
-      <div class="tip"><b>You don't need to be home.</b> I just need to get into the car. Leave it unlocked or tell me where the keys are.</div>
-      <div class="tip"><b>Clear it out.</b> Take out valuables and car seats. Anything else I'll work around.</div>
-      ${long ? `<div class="tip"><b>How long.</b> ${jdEsc(long)} for this one.</div>` : ''}
-      <div class="tip"><b>If it rains.</b> I'll text you and we'll figure it out: under cover if there's room, or another day.</div>
-      <div class="tip"><b>Paying.</b> After the work, once you've seen it. Cash, check or Zelle. No deposit.</div>
-      ${said}
-      <div id="prepForm"${u.readyAt ? ' hidden' : ''}>
-        <textarea class="fld" id="prepNote" maxlength="300" rows="2" placeholder="Anything I should know? Gate code, where it's parked, pet hair, a stain you care about"></textarea>
-        <button class="btn" id="readyBtn" data-id="${jdEsc(u.id)}" style="margin-top:10px">I've got water and power</button>
-        <div class="note" id="prepMsg"></div>
-      </div></div>`;
-  }
-
-  // After the job. The review link is here for everyone, and so is the box
-  // that goes straight to him when something isn't right.
-  let after = '';
-  if (s.after) {
-    const a = s.after;
-    after = `<div class="card next" id="afterCard"><div class="lbl">Thanks for having me out</div>
-      <div class="sub" style="margin:0 0 12px">${jdEsc(a.service || 'Your detail')} · ${jdEsc(a.dateLabel)}</div>
-      <div class="lbl">Looking after it</div>
-      ${(CARE_TIPS[a.care] || CARE_TIPS.full).map((x) => `<div class="tip">${jdEsc(x)}</div>`).join('')}
-      <div class="lbl" style="margin-top:14px">Something not right?</div>
-      ${a.issueAt
-        ? '<div class="pill warn">Got it. I\'ll be in touch</div>'
-        : `<div class="sub" style="margin:0">Tell me and I'll make it right. This goes straight to me.</div>
-      <textarea class="fld" id="issueNote" maxlength="600" rows="2" placeholder="What did you notice?"></textarea>
-      <button class="btn ghost" id="issueBtn" data-id="${jdEsc(a.id)}" style="margin-top:10px">Send to Mikey</button>
-      <div class="note" id="issueMsg"></div>`}
-      ${s.review ? `<div class="lbl" style="margin-top:16px">Happy with it?</div>
-      <div class="sub" style="margin:0 0 10px">A Google review helps a one-man shop more than anything else.</div>
-      <a class="btn" href="${jdEsc(s.review)}" target="_blank" rel="noopener">Leave a review</a>` : ''}
-    </div>`;
-  }
-
-  // Send a friend. Only for people who've had a detail (see custState).
-  let refer = '';
-  if (s.refer) {
-    const r = s.refer;
-    refer = `<div class="card" id="referCard"><div class="lbl">Send a friend</div>
-      <div class="sub" style="margin:0 0 12px">${jdEsc(r.offer)}</div>
-      ${r.owed ? `<div class="pill ok">You've got ${r.owed} free Exterior Detail${r.owed === 1 ? '' : 's'} waiting. Mention it when you book.</div>` : ''}
-      ${r.friends ? `<div class="note">${r.friends} friend${r.friends === 1 ? '' : 's'} booked with your link so far${r.friendsDone < r.friends ? `, ${r.friendsDone} done` : ''}.</div>` : ''}
-      <button class="btn" id="shareBtn" data-url="${jdEsc(r.url)}" style="margin-top:12px">Share my link</button>
-      <div class="note tiny">${jdEsc(r.url)}</div></div>`;
-  }
+  const go = [];
+  if (s.next) go.push(['before', 'Before I get there', s.ready ? "You told me you're set" : 'Water, power, keys and paying']);
+  if (s.after) go.push(['after', 'Looking after it', s.after.service || 'Your last detail']);
+  if (s.refer) go.push(['friend', 'Send a friend', s.refer.owed ? `${s.refer.owed} free exterior waiting` : 'You both get a free exterior']);
+  const pages = go.length ? `<div class="card"><div class="lbl">Your pages</div>${go.map((g) =>
+    `<a class="golink" href="/${g[0]}/${jdEsc(token)}"><span><b>${jdEsc(g[1])}</b><small>${jdEsc(g[2])}</small></span><i>›</i></a>`).join('')}</div>` : '';
 
   const yours = [s.vehicle, s.address ? s.address + (s.city ? ', ' + s.city : '') : ''].filter(Boolean);
   const mine = yours.length
@@ -17451,22 +17561,116 @@ async function custPage(token) {
   const inner = `<div class="pad">
     <h1>${hi}</h1>
     <p class="sub">Everything about your detailing in one place. Save this link — it doesn't expire.</p>
-    ${up}${prep}${after}${mine}
+    ${up}${pages}${mine}
     <div class="card" id="bookCard"><div class="lbl">Book a time</div>
       <div id="bookBody"><button class="btn" id="startBook">Pick a day</button></div></div>
-    ${refer}${hist}
-    <div class="card contact"><div class="lbl">Need me?</div>
-      ${tel ? `<a class="btn ghost" href="sms:${jdEsc(tel)}">Text Mikey</a>
-      <a class="btn ghost" href="tel:${jdEsc(tel)}">Call Mikey</a>` : '<div class="sub">Text me any time.</div>'}</div>
+    ${hist}${custContact(tel)}
     <div class="foot">${jdEsc(s.biz)}</div>
   </div>`;
-  return htmlResponse(custShell(inner, token));
+  return htmlResponse(custShell(inner, token, { title: 'Your detailing', book: true }));
 }
 
-function custShell(inner, token) {
+function custDeadLink() {
+  return htmlResponse(custShell(`<div class="pad"><h1>Link not found</h1>
+      <p class="sub">This link isn't valid any more. Text Mikey and he'll send you a new one.</p></div>`, '', {}), 404);
+}
+
+// /before, /after, /friend — with a token, that customer's own page; without
+// one, the generic version he keeps saved and can paste to anybody. The
+// generic page has no buttons that need to know who you are: its buttons open
+// a text to him instead.
+async function custSubPage(kind, token) {
+  if (!CUST_PAGES[kind]) return custDeadLink();
+  const rec = token ? await custResolve(token) : null;
+  if (token && !rec) return custDeadLink();
+  const s = rec ? await custState(rec.phone) : null;
+  const info = await custBizInfo();
+  const tel = info.tel;
+  const hub = rec ? `<a class="back" href="/c/${jdEsc(token)}">‹ Your detailing</a>` : '';
+  let title = '', body = '';
+
+  if (kind === 'before') {
+    title = 'Before I get there';
+    const n = s && s.next;
+    const head = n
+      ? `<div class="card next"><div class="lbl">You're booked</div><div class="big">${jdEsc(n.dateLabel)}</div>
+         <div class="sub" style="margin:0">${jdEsc(bkFmt12(n.slot))}${n.service ? ' · ' + jdEsc(n.service) : ''}</div></div>`
+      : '';
+    let foot;
+    if (n) {
+      const said = s.ready
+        ? `<div class="pill ok">✓ You told me you're set</div>${s.ready.note ? `<div class="note">You added: ${jdEsc(s.ready.note)}</div>` : ''}`
+        : '';
+      foot = `${said}<div id="prepForm"${s.ready ? ' hidden' : ''}>
+        <textarea class="fld" id="prepNote" maxlength="300" rows="2" placeholder="Anything I should know? Gate code, where it's parked, pet hair, a stain you care about"></textarea>
+        <button class="btn" id="readyBtn" style="margin-top:10px">I've got water and power</button>
+        <div class="note" id="prepMsg"></div></div>`;
+    } else {
+      foot = tel ? `<a class="btn" href="${custSmsHref(tel, "I'm set: water and power are good.")}" style="margin-top:12px">Text me you're set</a>` : '';
+    }
+    body = `${head}<div class="card" id="prepCard"><div class="lbl">What I need from you</div>${custPrepTips(n)}${foot}</div>`;
+  }
+
+  if (kind === 'after') {
+    title = 'Looking after it';
+    const a = s && s.after;
+    let care;
+    if (a) {
+      care = `<div class="card next"><div class="lbl">Thanks for having me out</div>
+        <div class="sub" style="margin:0 0 12px">${jdEsc(a.service || 'Your detail')} · ${jdEsc(a.dateLabel)}</div>
+        <div class="lbl">Looking after it</div>${custCareHtml(a.care)}</div>`;
+    } else {
+      // Generic: every kind, headed, because it can't know which he did.
+      care = [['full', 'After a detail'], ['ceramic', 'After a ceramic coating'], ['correction', 'After paint correction']]
+        .map(([k, h]) => `<div class="card"><div class="lbl">${h}</div>${custCareHtml(k)}</div>`).join('');
+    }
+    let issue;
+    if (a && a.issueAt) issue = '<div class="pill warn">Got it. I\'ll be in touch</div>';
+    else if (a) {
+      issue = `<div class="sub" style="margin:0">Tell me and I'll make it right. This goes straight to me.</div>
+      <textarea class="fld" id="issueNote" maxlength="600" rows="2" placeholder="What did you notice?"></textarea>
+      <button class="btn ghost" id="issueBtn" style="margin-top:10px">Send to Mikey</button>
+      <div class="note" id="issueMsg"></div>`;
+    } else {
+      issue = `<div class="sub" style="margin:0 0 10px">Tell me and I'll make it right.</div>
+      ${tel ? `<a class="btn ghost" href="${custSmsHref(tel, '')}">Text Mikey</a>` : ''}`;
+    }
+    const review = info.review ? `<div class="lbl" style="margin-top:16px">Happy with it?</div>
+      <div class="sub" style="margin:0 0 10px">A Google review helps a one-man shop more than anything else.</div>
+      <a class="btn" href="${jdEsc(info.review)}" target="_blank" rel="noopener">Leave a review</a>` : '';
+    body = `${care}<div class="card" id="afterCard"><div class="lbl">Something not right?</div>${issue}${review}</div>`;
+    if (s && s.refer) body += `<a class="golink solo" href="/friend/${jdEsc(token)}"><span><b>Send a friend</b><small>You both get a free exterior</small></span><i>›</i></a>`;
+  }
+
+  if (kind === 'friend') {
+    title = 'Send a friend';
+    const r = s && s.refer;
+    if (r) {
+      body = `<div class="card next" id="referCard"><div class="lbl">Send a friend</div>
+        <div class="sub" style="margin:0 0 12px">${jdEsc(r.offer)}</div>
+        ${r.owed ? `<div class="pill ok">You've got ${r.owed} free Exterior Detail${r.owed === 1 ? '' : 's'} waiting. Mention it when you book.</div>` : ''}
+        ${r.friends ? `<div class="note">${r.friends} friend${r.friends === 1 ? '' : 's'} booked with your link so far${r.friendsDone < r.friends ? `, ${r.friendsDone} done` : ''}.</div>` : ''}
+        <button class="btn" id="shareBtn" data-url="${jdEsc(r.url)}" style="margin-top:12px">Share my link</button>
+        <div class="note tiny">${jdEsc(r.url)}</div></div>`;
+    } else {
+      body = `<div class="card next"><div class="lbl">Send a friend</div>
+        <div class="sub" style="margin:0 0 12px">${jdEsc(REF_OFFER)}</div>
+        <div class="sub" style="margin:0 0 12px">Text me and I'll send you your own link to share.</div>
+        ${tel ? `<a class="btn" href="${custSmsHref(tel, 'Can I get my referral link?')}">Text Mikey</a>` : ''}</div>`;
+    }
+  }
+
+  const inner = `<div class="pad">${hub}<h1>${jdEsc(title)}</h1>
+    ${s && s.first ? `<p class="sub">Hi ${jdEsc(s.first)}. This page stays up to date, so save it.</p>` : ''}${body}${custContact(tel)}
+    <div class="foot">${jdEsc(info.biz)}</div></div>`;
+  return htmlResponse(custShell(inner, rec ? token : '', { title }));
+}
+
+function custShell(inner, token, opts) {
+  opts = opts || {};
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0a0a0c"><title>Your detailing</title>
+<meta name="theme-color" content="#0a0a0c"><title>${jdEsc(opts.title || 'Your detailing')}</title>
 <link rel="icon" href="/favicon.svg"><style>
 *{box-sizing:border-box}html,body{margin:0;min-height:100%}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -17507,6 +17711,13 @@ h1{font-size:28px;letter-spacing:-.03em;margin:0 0 6px}
 .tip b{font-weight:700}
 textarea.fld{resize:vertical;min-height:58px}
 [hidden]{display:none!important}
+.golink{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid #23252d;color:inherit;text-decoration:none}
+.golink:last-child{border-bottom:none}
+.golink span{flex:1;display:flex;flex-direction:column;gap:2px}
+.golink small{color:#9aa3b2;font-size:12.5px}
+.golink i{font-style:normal;font-size:22px;color:#6b7280}
+.golink.solo{background:#121216;border:1px solid #26293a55;border-radius:18px;padding:14px 15px;margin-bottom:12px}
+.back{display:inline-block;color:#9aa3b2;text-decoration:none;font-size:14px;margin-bottom:12px}
 .foot{text-align:center;color:#6b7280;font-size:12px;margin-top:22px}
 @media (prefers-color-scheme:light){
   body{background:radial-gradient(1200px 600px at 50% -10%,#fff,#eef0f3 60%);color:#161820}
@@ -17518,7 +17729,8 @@ textarea.fld{resize:vertical;min-height:58px}
   .grid button{background:#f4f6f8;border-color:#d7dbe2;color:#161820}
   .grid button.on{background:#c81e30;border-color:#c81e30;color:#fff}
   .fld{background:#f4f6f8;border-color:#d7dbe2;color:#161820}
-  .hrow,.tip{border-bottom-color:#e3e6eb}}
+  .hrow,.tip,.golink{border-bottom-color:#e3e6eb}
+  .golink small,.back{color:#5a626f}.golink.solo{background:#fff;border-color:#d7dbe2}}
 </style></head><body>${inner}
 <script>
 var TOK=${JSON.stringify(token || '')};
@@ -17526,7 +17738,8 @@ var S=null,pick={date:"",slot:"",service:"",size:""};
 function $(i){return document.getElementById(i)}
 function api(p,o){return fetch(p,o).then(function(r){return r.json()})}
 function load(then){api("/api/cust/state?t="+encodeURIComponent(TOK)).then(function(d){if(d&&d.ok){S=d;if(then)then(d)}})}
-load();
+// Only the hub books, so only the hub needs the state up front.
+if(TOK&&${opts.book ? 'true' : 'false'})load();
 function days(){
   var out=[],d=new Date();
   for(var i=1;i<=14;i++){
@@ -17604,13 +17817,13 @@ document.addEventListener("click",function(e){
   if(e.target.id==="startBook"){startBook();return}
   if(e.target.id==="readyBtn"){
     var n=$("prepNote").value.trim();
-    act({action:"ready",id:e.target.getAttribute("data-id"),note:n},e.target,"prepMsg",function(){
+    act({action:"ready",note:n},e.target,"prepMsg",function(){
       $("prepForm").hidden=true;
       var p=document.createElement("div");p.className="pill ok";p.textContent="✓ Thanks. See you then";
       $("prepCard").appendChild(p);
     });return}
   if(e.target.id==="issueBtn"){
-    act({action:"issue",id:e.target.getAttribute("data-id"),note:$("issueNote").value.trim()},e.target,"issueMsg",function(){
+    act({action:"issue",note:$("issueNote").value.trim()},e.target,"issueMsg",function(){
       $("issueNote").hidden=true;e.target.hidden=true;
       $("issueMsg").textContent="Got it. It went straight to me and I'll be in touch.";
     });return}
