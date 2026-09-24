@@ -4552,7 +4552,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-24·before-after-pages";
+  var APP_BUILD="2026-09-24·before-steps";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -6943,7 +6943,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var b=el("linkBanner");if(!b)return;
     var d=linkDue(t);
     if(!d||LINK_PUT[t.phone+":"+d.kind]){b.style.display="none";b.innerHTML="";return}
-    var sub={before:"Water and power, getting into the car, how long, paying. They tap one button when they're set.",
+    var sub={before:"How the day goes, water and power, getting into the car, how long, paying.",
       after:t.lastJob?"How to look after it and when to have you back, plus what you did. Tick it first:":"How to look after it, and when to have you back.",
       friend:"Their own share link. You both get a free exterior once the friend's first detail is paid."}[d.kind];
     b.style.display="flex";
@@ -8644,7 +8644,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
 
   // The boxes under Settings → Customer pages wording: [config key, label, textarea rows (0 = one line)].
   var CUST_PAGE_FIELDS=[["stars","Rating line",0],["beforeIntro","Before page: opening line",0],
-    ["expect","Before page: how it goes (one step per line)",3],["rain","Before page: if it rains",2],
+    ["expect","Before page: how it goes (one step per line, first sentence is the heading)",7],["rain","Before page: if it rains",2],
     ["afterThanks","After page: thank-you line",0],["care_full","Care tips: full detail",3],["care_interior","Care tips: interior",3],
     ["care_exterior","Care tips: exterior",3],["care_ceramic","Care tips: ceramic coating",4],["care_correction","Care tips: paint correction",4]];
   function renderFuSettings(){

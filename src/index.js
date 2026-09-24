@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-24·before-after-pages';
+const BUILD = '2026-09-24·before-steps';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -17250,12 +17250,16 @@ const CUST_NEXT_WEEKS = [6, 8];
 const CUST_COPY_DEFAULTS = {
   stars: '5.0 across 40 Google reviews',
   beforeIntro: "Here's what I need from you and how the day goes.",
-  expect: "I show up with everything except water and power.\nI do the work. You don't need to be home for it.\nWe walk around it together, and you pay once you've seen it.",
+  // One step per line. The first sentence is the step's heading, the rest is
+  // what happens, written the way the site's own three steps are.
+  expect: "I pull up with everything. All my own gear and every product. Hand me the keys or leave it unlocked, then get on with your day: work, errands, back to bed.\n" +
+    "I do it all by hand. Not a drive-through wash: I get the spots a car wash skips, like door jambs and the corners nobody reaches. I text you the moment it's finished.\n" +
+    "We look it over together. Before I load up we walk around the car, and anything you're not happy with I fix right there in your driveway. You pay after that, not before.",
   rain: "I'll text you and we'll figure it out: under cover if there's room, or another day.",
   afterThanks: 'Thanks for having me out.',
   care_full: '', care_interior: '', care_exterior: '', care_ceramic: '', care_correction: '',
 };
-const CUST_COPY_MAX = { stars: 80, beforeIntro: 200, expect: 600, rain: 240, afterThanks: 200 };
+const CUST_COPY_MAX = { stars: 80, beforeIntro: 200, expect: 900, rain: 240, afterThanks: 200 };
 function custCopy(cfg) {
   const saved = (cfg && cfg.custPages) || {};
   const out = {};
@@ -17673,13 +17677,13 @@ function custPrepTips(next, copy) {
   const kind = next && next.service ? careKind(next.service) : '';
   const out = custOutsideOnly(kind);
   const tips = [
-    `<div class="tip"><b>Water and power.</b> I need an outdoor water spigot and a power outlet I can reach from the driveway. That's the one thing I can't bring.</div>`,
+    `<div class="tip"><b>Water and power.</b> I'll need an outdoor water spigot and a power outlet I can reach from the driveway.</div>`,
     out ? `<div class="tip"><b>You don't need to be home.</b> This one's all outside, so I don't need to get into the car.</div>`
       : `<div class="tip"><b>You don't need to be home.</b> I just need to get into the car. Leave it unlocked or tell me where the keys are.</div>`,
   ];
   if (!out) tips.push(`<div class="tip"><b>Clear it out.</b> Take out valuables and car seats. Anything else I'll work around.</div>`);
   if (kind === 'ceramic') tips.push(`<div class="tip"><b>Keep it dry after.</b> The coating wants 24 hours out of the rain, so a garage or carport that night is ideal.</div>`);
-  tips.push(`<div class="tip"><b>How long.</b> ${long ? jdEsc(long) + ' for this one.' : 'A full detail takes 3–5 hours. A basic interior is about 90 minutes.'}</div>`);
+  tips.push(`<div class="tip"><b>How long.</b> ${long ? jdEsc(long) + ' for this one.' : 'A full detail takes 2–4 hours. A basic interior is about 90 minutes.'}</div>`);
   tips.push(`<div class="tip"><b>If it rains.</b> ${jdEsc(copy.rain)}</div>`);
   tips.push(`<div class="tip"><b>Paying.</b> After the work, once you've seen it. Cash, check or Zelle. No deposit.</div>`);
   return tips.join('\n      ');
@@ -17821,27 +17825,15 @@ async function custSubPage(kind, token) {
         <a class="btn ghost mt" href="/cal/${jdEsc(token)}.ics" data-tap="calendar">Add to calendar</a></div>`;
     }
     const steps = custCopyLines(copy.expect);
-    const expect = steps.length ? `<div class="card"><div class="lbl">How it goes</div><ol class="steps">${steps.map((x) => `<li>${jdEsc(x)}</li>`).join('')}</ol></div>` : '';
-    // The checklist. Every box ticked is the only way to say "I'm set": the
-    // four things are the four that waste a drive, and half-set is not set.
-    const items = Object.keys(CUST_CHECKS).filter((c) => !(c === 'keys' && custOutsideOnly(k)));
-    const boxes = items.map((c) => `<label class="chk"><input type="checkbox" name="chk" value="${c}"><span>${jdEsc(CUST_CHECKS[c])}</span></label>`).join('');
-    let foot;
-    if (n) {
-      const said = s.ready
-        ? `<div class="pill ok">✓ You told me you're set</div>${s.ready.note ? `<div class="note">You added: ${jdEsc(s.ready.note)}</div>` : ''}`
-        : '';
-      foot = `${said}<div id="prepForm"${s.ready ? ' hidden' : ''}>
-        <div class="lbl mt">Tick these off</div>${boxes}
-        <textarea class="fld" id="prepNote" maxlength="300" rows="2" placeholder="Anything I should know? Gate code, where it's parked, pet hair, a stain you care about"></textarea>
-        <button class="btn mt" id="readyBtn" type="button" disabled>I'm all set</button>
-        <div class="note" id="prepMsg">Missing one? Reply to my text and we'll sort it out.</div></div>`;
-    } else {
-      foot = tel ? `<div id="prepForm"><div class="lbl mt">Tick these off</div>${boxes}
-        <textarea class="fld" id="prepNote" maxlength="300" rows="2" placeholder="Anything I should know? Gate code, where it's parked, pet hair, a stain you care about"></textarea>
-        <button class="btn mt" id="smsSet" type="button" data-tel="${jdEsc(tel)}" disabled>Text Mikey I'm set</button>
-        <div class="note" id="prepMsg">Missing one? Reply to my text and we'll sort it out.</div></div>` : '';
-    }
+    const expect = steps.length ? `<div class="card"><div class="lbl">How it goes</div><ol class="steps">${steps.map((x) => {
+      const m = /^(.+?[.!?])\s+(.+)$/.exec(x);
+      return m ? `<li><span><b>${jdEsc(m[1])}</b> ${jdEsc(m[2])}</span></li>` : `<li><span>${jdEsc(x)}</span></li>`;
+    }).join('')}</ol></div>` : '';
+    // Nothing to fill in or submit (his call): the page tells them what's
+    // needed and invites a text if something doesn't line up. The text thread
+    // is where that conversation already lives.
+    const foot = `<div class="lineup">Something doesn't line up? No outlet near the driveway, a gate code, a tight spot to park?
+        ${tel ? `<a href="${custSmsHref(tel, '')}">Text me</a>` : 'Text me'} and we'll sort it out.</div>`;
     body = `${head}${expect}<div class="card" id="prepCard"><div class="lbl">What I need from you</div>${custPrepTips(n, copy)}${foot}</div>`;
   }
 
@@ -18031,7 +18023,10 @@ h1{font-size:30px;font-weight:800;letter-spacing:-.02em;line-height:1.08;margin:
 .tip:last-of-type{border-bottom:none}
 .tip b{font-weight:700;color:var(--ink)}
 .steps{margin:0;padding:0;list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:10px}
-.steps li{counter-increment:s;display:flex;gap:11px;font-size:15px;line-height:1.45;color:var(--gray)}
+.steps li{counter-increment:s;display:flex;gap:11px;font-size:15px;line-height:1.5;color:var(--gray)}
+.steps li b{color:var(--ink);font-weight:700}
+.lineup{margin-top:12px;padding:12px 13px;border-radius:12px;background:rgba(201,162,75,.10);border:1px solid rgba(201,162,75,.30);font-size:14.5px;line-height:1.5;color:var(--gray)}
+.lineup a{color:var(--gold2);font-weight:700}
 .steps li::before{content:counter(s);flex:none;width:24px;height:24px;border-radius:50%;background:rgba(201,162,75,.16);color:var(--gold2);
   font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center;margin-top:-1px}
 .chk{display:flex;align-items:center;gap:11px;padding:10px 0;border-bottom:1px solid var(--line);font-size:15px;cursor:pointer}
@@ -18079,26 +18074,10 @@ function act(body,btn,msgId,okFn){
         d&&d.error==="too_many"?"Got your earlier ones. Reply to my text if there's more.":"That didn't go through. Try again, or reply to my text.";
     }).catch(function(){btn.disabled=false;btn.textContent=was;$(msgId).textContent="That didn't go through. Try again, or reply to my text."});
 }
-function checked(){return Array.prototype.map.call(document.querySelectorAll('input[name="chk"]:checked'),function(x){return x.value})}
-function allChecked(){var a=document.querySelectorAll('input[name="chk"]');return a.length&&checked().length===a.length}
-document.addEventListener("change",function(e){
-  if(e.target.name==="chk"){var b=$("readyBtn")||$("smsSet");if(b)b.disabled=!allChecked()}
-});
 document.addEventListener("click",function(e){
   var t=e.target.closest?e.target.closest("[data-tap]"):null;
   if(t)tap(t.getAttribute("data-tap"));
   var id=e.target.id;
-  if(id==="readyBtn"){
-    act({action:"ready",note:$("prepNote").value.trim(),checks:checked()},e.target,"prepMsg",function(){
-      $("prepForm").hidden=true;
-      var p=document.createElement("div");p.className="pill ok";p.textContent="✓ Thanks. See you then";
-      $("prepCard").appendChild(p);
-    });return}
-  if(id==="smsSet"){
-    var labels=Array.prototype.map.call(document.querySelectorAll('input[name="chk"]:checked'),function(x){return x.nextElementSibling.textContent.toLowerCase()});
-    var n=$("prepNote").value.trim();
-    var body="I'm set for my detail: "+labels.join(", ")+"."+(n?" "+n:"");
-    location.href="sms:"+e.target.getAttribute("data-tel")+"?&body="+encodeURIComponent(body);return}
   if(id==="addrBtn"){$("addrForm").hidden=false;$("addrIn").focus();e.target.hidden=true;return}
   if(id==="addrSend"){
     act({action:"address",address:$("addrIn").value.trim()},e.target,"addrMsg",function(d){
