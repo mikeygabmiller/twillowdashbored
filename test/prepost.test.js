@@ -21,7 +21,8 @@ const EXPORTS = ['custTokenFor', 'custState', 'apiCustState', 'apiCustAction', '
   'apiCustLink', 'apiCustLinkSkip', 'appendMessage', 'apiDayJob', 'apiDayState', 'buildIndexSummary',
   'refCodeFor', 'refResolve', 'refCredits', 'careKind', 'CARE_TIPS', 'REF_OFFER', 'buildReferrals', 'apiReferralAction',
   'loadThread', 'saveThread', 'updateIndexEntry', 'loadBookings', 'saveBookings', 'loadIndex',
-  'loadMonth', 'saveMonth', 'loadConfig', 'localDateStr', 'bkAvailability', 'genId'];
+  'loadMonth', 'saveMonth', 'loadConfig', 'localDateStr', 'bkAvailability', 'genId',
+  'custCalendar', 'apiCustDid', 'apiSaveConfig', 'apiPushPeek'];
 
 const store = new Map();
 const kv = {
@@ -103,14 +104,25 @@ const tok = await M.custTokenFor(JENNA);
 const bk = await booking(JENNA);
 let h = await page('before', tok);
 ok('/before/<token> is its own page', /<title>Before I get there<\/title>/.test(h) && /Hi Jenna/.test(h));
-ok('it shows the job it is about', /You're booked/.test(h) && /Saturday/.test(h));
-ok('water and power comes first', h.indexOf('Water and power') > 0 && h.indexOf('Water and power') < h.indexOf("don't need to be home"));
+ok('it shows the job it is about', /Your detail/.test(h) && /Saturday/.test(h));
+ok('…arriving morning or afternoon, never an exact time', /Morning · Full Detail/.test(h) && !/10:00 AM/.test(h));
+ok('…with the address and a way to fix it', /1425 Cedar Ave, Everett/.test(h) && /id="addrBtn"/.test(h));
+ok('…and an add-to-calendar link', h.includes(`href="/cal/${tok}.ics"`));
+ok('the price is not on it (his call)', !/\$299/.test(h));
+ok('"How it goes" in three steps', /How it goes/.test(h) && (h.match(/<li>/g) || []).length >= 3);
+{ const p = h.slice(h.indexOf('id="prepCard"'));
+  ok('water and power comes first', p.indexOf('Water and power') > 0 && p.indexOf('Water and power') < p.indexOf("don't need to be home")); }
 ok('it says they need a spigot and an outlet, and that he cannot bring it', /spigot/.test(h) && /outlet/.test(h) && /can't bring/.test(h));
 ok('they do not need to be home, just access to the car', /don't need to be home/.test(h) && /unlocked/.test(h));
 ok('how long, from the booking (210 min → 3½ hours)', /About 3½ hours/.test(h), (h.match(/How long[^<]*<\/b>[^<]*/) || [])[0]);
 ok('payment: after, cash, check or Zelle, no deposit', /Cash, check or Zelle/.test(h) && /No deposit/.test(h));
 ok('rain: he texts and they figure it out', /If it rains/.test(h));
-ok('it has the "I\'ve got water and power" button', /id="readyBtn"/.test(h));
+ok('it has the "I\'m all set" button, locked until every box is ticked', /id="readyBtn" type="button" disabled/.test(h));
+ok('the checklist is the four things that waste a drive', ['water', 'power', 'keys', 'room'].every((c) => h.includes(`value="${c}"`)));
+ok('no Text / Call Mikey card (his call)', !/Need me\?/.test(h) && !/href="tel:/.test(h));
+ok('the stars and the website are at the bottom', /5\.0 across 40 Google reviews/.test(h) && /href="https:\/\/mikeysdetailing\.com"/.test(h));
+ok('it draws a proper preview when texted', /og:image" content="https:\/\/texting\.example\.workers\.dev\/og-car\.jpg"/.test(h) && /og:title" content="Before your detail/.test(h));
+ok('none of the booking code rides along', !/function startBook/.test(h) && /action:"seen"/.test(h));
 ok('short jobs read in minutes', /About 90 minutes/.test(await (async () => {
   const all = await M.loadBookings(); all[0].durationMin = 90; await M.saveBookings(all); return page('before', tok);
 })()));
@@ -153,7 +165,7 @@ const TEXTED = '+14255550444';
 }
 const tokT = await M.custTokenFor(TEXTED);
 h = await page('before', tokT);
-ok('it knows the day from the conversation', /You're booked/.test(h) && /id="readyBtn"/.test(h));
+ok('it knows the day from the conversation', /Your detail/.test(h) && /id="readyBtn"/.test(h));
 ok('with no booking it gives the usual times instead of guessing', /A full detail takes 3–5 hours/.test(h));
 ok('"I\'m set" works without a booking', (await (await M.apiCustAction(req({ action: 'ready' }), q(tokT))).json()).ok);
 
@@ -171,7 +183,10 @@ ok('/after/<token> is its own page', /<title>Looking after it<\/title>/.test(h))
 ok('the after card is there', /Thanks for having me out/.test(h));
 ok('ceramic gets the ceramic advice (no wash for 7 days)', /Don't wash it for 7 days/.test(h));
 ok('the review link is offered', /g\.page\/r\/mikey-review/.test(h));
-ok('…and the "not right" box sits on the same card', /Something not right\?/.test(h) && h.indexOf('Something not right') < h.indexOf('Leave a review'));
+ok('…in its own "Happy with it?" card', /Happy with it\?/.test(h));
+ok('no "something not right" box any more (his call: they reply to the text)', !/Something not right/.test(h) && !/id="issueBtn"/.test(h));
+ok('the friend card sits near the top, above the care tips', h.indexOf('/friend/') > 0 && h.indexOf('/friend/') < h.indexOf("Don't wash it for 7 days"));
+ok('it points at the next one, 6–8 weeks out', /every 6–8 weeks/.test(h) && h.includes(`href="/c/${tok}#book"`) && /id="planBtn"/.test(h));
 hub = await html(tok);
 ok('the hub now points at the after page', hub.includes(`href="/after/${tok}"`));
 ok('…and no longer at the before page', !hub.includes('/before/'));
@@ -187,15 +202,23 @@ ok('a real one goes through', res.ok && res.after.issueAt > 0, res);
 ok('Mikey is told what they said', alerts.length === 1 && /not right/.test(alerts[0].subject) && /Water spots/.test(alerts[0].text));
 ok('it is on the conversation notes for when he opens it', /Water spots on the hood/.test((await M.loadThread(JENNA)).notes));
 ok('nothing texts the customer back on its own', sms.length === 0, sms);
-ok('the page now says he got it', /I'll be in touch/.test(await page('after', tok)));
+ok('(the old endpoint still records it if anything calls it)', res.after.issueAt > 0);
 
-section('Three weeks on, the page gets out of the way');
+section('A month on, the after page still shows their last job; the hub moves on');
 {
   const all = await M.loadBookings();
   const j = all.find((x) => x.id === bk.id); j.doneAt = NOW - 30 * DAY; j.apptAt = NOW - 30 * DAY;
   await M.saveBookings(all);
 }
-ok('no after card a month later', !/Thanks for having me out/.test(await page('after', tok)));
+h = await page('after', tok);
+ok('the after page still shows their last job a month later', /Your last detail/.test(h) && /Ceramic Coating/.test(h));
+{
+  const OLD = '+14255550321';
+  const ot = await customer(OLD, 'Pat Old');
+  ot.lastJob = { at: NOW - 70 * DAY, service: 'Exterior Detail', jobId: 'j-old' }; await M.saveThread(ot); await M.updateIndexEntry(ot);
+  const oh = await page('after', await M.custTokenFor(OLD));
+  ok('…and says they are due once 8 weeks have passed', /you're due/.test(oh) && /Exterior Detail/.test(oh));
+}
 h = await html(tok);
 ok('the hub is back to "nothing on the books"', /Nothing on the books/.test(h));
 ok('…and keeps pointing at the friend page', h.includes(`href="/friend/${tok}"`));
@@ -292,9 +315,13 @@ section('The saved links: bare /before, /after, /friend work for anybody');
 h = await page('before');
 ok('/before renders with no customer', /<title>Before I get there<\/title>/.test(h) && /spigot/.test(h));
 ok('…with the usual times, not somebody\'s booking', /A full detail takes 3–5 hours/.test(h) && !/Jenna|Saturday/.test(h));
-ok('…and a text-me button instead of one that needs to know who you are', !/id="readyBtn"/.test(h) && /sms:\+14256007897\?&amp;body=|sms:\+14256007897\?&body=/.test(h));
+ok('…and a text-me button instead of one that needs to know who you are', !/id="readyBtn"/.test(h) && /id="smsSet" type="button" data-tel="\+14256007897"/.test(h));
+ok('…with the same checklist', /value="water"/.test(h) && /value="room"/.test(h));
+ok('…and no job card or calendar', !/Your detail/.test(h) && !/\/cal\//.test(h));
+ok('…and no "opened" beacon, because the generic page is nobody\'s', /var TOK=""/.test(h));
 h = await page('after');
-ok('/after shows every kind of aftercare, headed', /After a detail/.test(h) && /After a ceramic coating/.test(h) && /After paint correction/.test(h));
+ok('/after asks what was done and shows that one', /What did I do\?/.test(h) && /data-care="ceramic"/.test(h) && /data-care-list="ceramic" hidden/.test(h) && /After a paint correction/.test(h));
+ok('…with booking pointed at the website', /Book the next one/.test(h) && /href="https:\/\/mikeysdetailing\.com" target/.test(h));
 ok('…with the review link', /g\.page\/r\/mikey-review/.test(h));
 ok('…and no complaint box that can\'t say who it\'s from', !/id="issueBtn"/.test(h));
 h = await page('friend');
@@ -339,8 +366,110 @@ ok('"Not now" is remembered per kind', sk.ok && sk.thread.linkSkip.friend > 0);
 ok('…and on the list row', (await M.loadIndex()).find((r) => r.phone === JENNA).linkSkip.friend > 0);
 ok('a made-up kind is refused', (await M.apiCustLinkSkip(req({ phone: JENNA, kind: 'spam' }))).status === 422);
 
+section('The before-page checklist, the address fix and the calendar');
+{
+  const CK = '+14255550901';
+  await customer(CK, 'Cara Kent');
+  const tk = await M.custTokenFor(CK);
+  const cb = await booking(CK, { serviceName: 'Exterior Detail', slot: '13:00', apptAt: NOW + 2 * DAY, date: dateOf(NOW + 2 * DAY), dateLabel: 'Friday' });
+  let ph = await page('before', tk);
+  ok('an exterior job does not ask for keys or car seats', !ph.includes('value="keys"') && !/Clear it out/.test(ph) && /all outside/.test(ph));
+  ok('…and reads as an afternoon', /Afternoon · Exterior Detail/.test(ph));
+  alerts.length = 0;
+  let r = await (await M.apiCustAction(req({ action: 'ready', checks: ['water', 'power', 'room', 'bogus'], note: 'side gate' }), q(tk))).json();
+  ok('ticking the boxes says they are set', r.ok && r.ready, r);
+  ok('Mikey is told exactly what they ticked, and nothing made up', alerts.length === 1 && /They ticked: Outdoor water spigot, Power outlet you can reach, Room to work around the car\./.test(alerts[0].text) && !/bogus/.test(alerts[0].text), alerts[0] && alerts[0].text);
+
+  alerts.length = 0;
+  const before = JSON.stringify((await M.loadThread(CK)).garage);
+  r = await (await M.apiCustAction(req({ action: 'address', address: '88 Birch Rd, Monroe' }), q(tk))).json();
+  ok('"Wrong? Fix it" goes through', r.ok && r.addrFix && r.addrFix.address === '88 Birch Rd, Monroe', r);
+  ok('…tells Mikey both addresses', alerts.length === 1 && /88 Birch Rd/.test(alerts[0].text) && /1425 Cedar Ave/.test(alerts[0].text));
+  ok('…never overwrites what is on file', JSON.stringify((await M.loadThread(CK)).garage) === before);
+  ok('…and lands on the notes', /88 Birch Rd, Monroe/.test((await M.loadThread(CK)).notes));
+  ok('the page shows it back', /Sent to Mikey: 88 Birch Rd, Monroe/.test(await page('before', tk)));
+  ok('an empty address is refused', (await M.apiCustAction(req({ action: 'address', address: ' ' }), q(tk))).status === 422);
+  await M.apiCustAction(req({ action: 'address', address: 'b' }), q(tk));
+  await M.apiCustAction(req({ action: 'address', address: 'c' }), q(tk));
+  ok('…and it cannot be leaned on (3 per job)', (await M.apiCustAction(req({ action: 'address', address: 'd' }), q(tk))).status === 429);
+
+  const cal = await M.custCalendar(tk);
+  const ics = await cal.text();
+  ok('/cal/<token>.ics is a calendar file', /text\/calendar/.test(cal.headers.get('Content-Type')) && /BEGIN:VEVENT/.test(ics));
+  ok('…all-day on the job date, no made-up clock time', ics.includes('DTSTART;VALUE=DATE:' + cb.date.replace(/-/g, '')) && !/DTSTART:\d/.test(ics));
+  ok('…that says afternoon and what he needs', /afternoon/.test(ics) && /water spigot/.test(ics) && /Exterior Detail/.test(ics));
+  ok('a made-up token gets no calendar', (await M.custCalendar('zzzzzzzzzzzzzzzz')).status === 404);
+}
+
+section('After page: what I did, and "put me on a plan"');
+{
+  const DD = '+14255550902';
+  const dt = await customer(DD, 'Dana Diaz');
+  ok('"What I did" needs a finished job to hang off', (await M.apiCustDid(req({ phone: DD, did: ['Hand wash'] }))).status === 409);
+  dt.lastJob = { at: NOW - DAY, service: 'Full Detail', jobId: 'j1' }; await M.saveThread(dt); await M.updateIndexEntry(dt);
+  const dr = await (await M.apiCustDid(req({ phone: DD, did: ['Hand wash', 'Seats and carpets shampooed', 'Hand wash', ''] }))).json();
+  ok('he ticks what he did, deduped', dr.ok && dr.lastJob.did.join('|') === 'Hand wash|Seats and carpets shampooed', dr);
+  const td = await M.custTokenFor(DD);
+  let ah = await page('after', td);
+  ok('the after page lists it', /What I did/.test(ah) && /<li>Seats and carpets shampooed<\/li>/.test(ah));
+  alerts.length = 0;
+  let r = await (await M.apiCustAction(req({ action: 'plan' }), q(td))).json();
+  ok('"Put me on a plan" tells Mikey', r.ok && r.planAskAt > 0 && alerts.length === 1 && /wants to go on a plan/.test(alerts[0].subject));
+  ok('…and does not put them on one by itself', !(await M.loadThread(DD)).plan);
+  await M.apiCustAction(req({ action: 'plan' }), q(td));
+  ok('…once a day, however many taps', alerts.length === 1);
+  ah = await page('after', td);
+  ok('the page says he got it', /I'll text you about a plan/.test(ah) && !/id="planBtn"/.test(ah));
+}
+
+section('Opened and tapped: the dashboard hears about it, once');
+{
+  const OP = '+14255550903';
+  await customer(OP, 'Owen Park');
+  const to = await M.custTokenFor(OP);
+  await M.appendMessage(OP, { dir: 'out', body: 'Here you go https://texting.example.workers.dev/before/' + to, status: 'sent' });
+  store.delete('push:note');
+  let r = await (await M.apiCustAction(req({ action: 'seen', kind: 'before' }), q(to))).json();
+  ok('the first open is noted', r.ok && r.noted && (await M.loadThread(OP)).linkOpen.before > 0, r);
+  ok('…mirrored onto the list row', (await M.loadIndex()).find((x) => x.phone === OP).linkOpen.before > 0);
+  ok('…and the phone gets a headline that says who', /Owen Park opened their before-job link/.test(JSON.parse(store.get('push:note') || '{}').title || ''));
+  const peek = await (await M.apiPushPeek()).json();
+  ok('the push shows that headline once', /opened their before-job link/.test(peek.title));
+  ok('…and not again', !/opened/.test((await (await M.apiPushPeek()).json()).title));
+  r = await (await M.apiCustAction(req({ action: 'seen', kind: 'before' }), q(to))).json();
+  ok('opening it again writes nothing', r.ok && r.noted === false);
+  ok('a made-up page kind is refused', (await M.apiCustAction(req({ action: 'seen', kind: 'x' }), q(to))).status === 422);
+  r = await (await M.apiCustAction(req({ action: 'tap', kind: 'before', name: 'calendar' }), q(to))).json();
+  ok('a tap is counted', r.noted && (await M.loadThread(OP)).linkTaps['before:calendar'].n === 1);
+  r = await (await M.apiCustAction(req({ action: 'tap', kind: 'before', name: 'calendar' }), q(to))).json();
+  ok('…a double-tap is not', r.noted === false && (await M.loadThread(OP)).linkTaps['before:calendar'].n === 1);
+  ok('an unknown button is refused', (await M.apiCustAction(req({ action: 'tap', kind: 'before', name: 'evil' }), q(to))).status === 422);
+  await M.appendMessage(OP, { dir: 'out', body: 'Again https://texting.example.workers.dev/before/' + to, status: 'sent' });
+  r = await (await M.apiCustAction(req({ action: 'seen', kind: 'before' }), q(to))).json();
+  ok('sending the link again means the next open counts again', r.noted === true);
+}
+
+section('He can change the page wording from Settings');
+{
+  await M.apiSaveConfig(req({ custPages: { rain: 'Rain? I have a pop-up tent.', stars: '5.0 across 41 Google reviews', care_ceramic: 'Line one\nLine two' } }));
+  M.__resetCfg();
+  let gh = await page('before');
+  ok('his rain line replaces mine', /Rain\? I have a pop-up tent\./.test(gh) && !/under cover if there's room/.test(gh));
+  ok('the stars line updates', /41 Google reviews/.test(gh));
+  ok('care tips are one per line', /<div class="tip">Line one<\/div><div class="tip">Line two<\/div>/.test(await page('after')));
+  await M.apiSaveConfig(req({ custPages: { rain: '' } }));
+  M.__resetCfg();
+  gh = await page('before');
+  ok('clearing a box puts the original words back', /under cover if there's room/.test(gh) && /41 Google reviews/.test(gh));
+  ok('page text is escaped, never markup', await (async () => {
+    await M.apiSaveConfig(req({ custPages: { beforeIntro: '<img src=x onerror=alert(1)>' } })); M.__resetCfg();
+    const x = await page('before'); await M.apiSaveConfig(req({ custPages: { beforeIntro: '' } })); M.__resetCfg();
+    return !x.includes('<img src=x') && x.includes('&lt;img');
+  })());
+}
+
 section('Nothing here texted a customer');
-ok('no SMS to any customer across the whole suite', !sms.some((m) => [JENNA, RUTH, FRIEND, TEXTED, BOARD].includes(m.to)), sms);
+ok('no SMS to any customer across the whole suite', !sms.some((m) => [JENNA, RUTH, FRIEND, TEXTED, BOARD, '+14255550901', '+14255550902', '+14255550903'].includes(m.to)), sms);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
