@@ -303,6 +303,33 @@ list, and only when Mikey taps a button.
 > filtered client-side for a last job 45+ days ago while reading only the
 > *current month's* ledger, so the condition was very nearly unsatisfiable.
 
+## Word of mouth (More → Word of mouth)
+A detailer's best leads come off a driveway: a neighbour watched the truck get
+done and asked for the number. `source` already said *how* somebody reached him
+(a text, a call, the form); nothing said *who sent them*, so the leads that close
+best and cost nothing were invisible, and nobody got thanked.
+
+- **The conversation asks.** When one of a new lead's first four texts (or the
+  quote form's notes box) says so, *"Dave told me about you"*, *"got your number
+  from my coworker Jenna"*, *"a friend gave me your number"*, a banner asks
+  **Sent by Dave?** and offers every Dave he has texted by full name, customers
+  first. One tap confirms; **Someone else** opens a picker; **Not a referral**
+  stops it asking. "Google recommended you" and "I'll recommend you to my
+  friends" are not referrals and don't ask. Free regex, no AI.
+- **Details → Who sent them** is always there, so a referral nobody typed can
+  still go on file, be changed, or be cleared.
+- **The Word of mouth sheet** ranks who sends him business **in dollars** (from
+  the money ledger), not head count, and says what share of his paying customers
+  came from somebody. Anyone not yet thanked has a **thank-you already written**
+  that names everyone they sent; one tap opens it in their conversation's box.
+  Optional: his own reward sentence ("Your next detail is $20 off, on me.") goes
+  on the end. The app never invents an offer.
+
+**Nothing here texts anybody.** The thank-you is typed into the box and he sends
+it. Stored on the thread (`referredBy`, `refGuess`) and mirrored onto the index
+row, so the sheet is one index read plus the ledger. Endpoints:
+`GET /api/referrals`, `POST /api/referral`.
+
 ## Maintenance plans (conversation → Tools → Put them on a plan)
 A plan says "this person gets detailed every N weeks" — 4 weeks through 6
 months. When the cycle comes round they move to the top of *Money on the table*

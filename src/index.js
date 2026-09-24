@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-22·nudge-each-text';
+const BUILD = '2026-09-24·word-of-mouth';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -631,6 +631,10 @@ async function handle(request) {
   // Money on the table — quotes gone quiet, customers due again, leads that never booked
   if (request.method === 'GET'  && pathname === '/api/cold')           return apiCold();
   if (request.method === 'POST' && pathname === '/api/cold/action')    return apiColdAction(request);
+
+  // Word of mouth — who sent them, and who hasn't been thanked yet
+  if (request.method === 'GET'  && pathname === '/api/referrals')      return apiReferrals();
+  if (request.method === 'POST' && pathname === '/api/referral')       return apiReferralAction(request);
 
   // Pricing — what you charge vs what actually gets accepted
   if (request.method === 'GET'  && pathname === '/api/pricing')        return apiPricing(url);
@@ -1208,6 +1212,8 @@ async function handleSubmit(request) {
   // The typed name is the real one; the email guess only gets a look in when that
   // box was left empty, and even then only fills a blank — see nameRank.
   if (!applyLearnedName(thread, name, 'form')) applyLearnedName(thread, guessed, 'email');
+  // "Referred by my neighbor Dave" in the notes box is the form saying who sent them.
+  noteReferral(thread, notes);
   if (!thread.status) { thread.status = 'new'; thread.statusAt = thread.statusAt || Date.now(); }
   const detail = [
     vehicle ? `Vehicle: ${vehicle}` : null, condition ? `Condition: ${condition}` : null,
@@ -12307,6 +12313,9 @@ function buildIndexSummary(thread, cfg) {
     followupNextAt: plan ? plan.dueAt : null,
     followupDue: !!sug,
     fu: sug ? { reason: sug.reason, urgency: sug.urgency, stage: sug.stage, dueAt: sug.dueAt, draft: (sug.draft || '').slice(0, 320) } : null,
+    // Who sent them, mirrored so the Word of mouth screen and the peek can both
+    // answer it from the list row alone. Empty strings for almost everyone.
+    ...referralIndexFields(thread),
   };
 }
 
@@ -12366,6 +12375,10 @@ async function appendMessage(phone, message, opts = {}) {
       if (target && target.id) message.reactTo = target.id;
     }
   }
+  // Who sent them, if the hello says so — only a lead's first few texts, see
+  // REF_READ_FIRST. Free regex; it only ever raises a question on the screen.
+  if (message.dir === 'in' && message.kind !== 'reaction' &&
+      thread.messages.filter((m) => m.dir === 'in').length < REF_READ_FIRST) noteReferral(thread, message.body);
   thread.messages.push(message);
   if (message.dir === 'in') thread.unread = (thread.unread || 0) + 1;
   // A customer reaching out beats any note Mikey left himself: an inbound text
@@ -17550,6 +17563,265 @@ async function moneySpendMap(cfg, months = 18) {
 async function moneySpendFor(phone, cfg) {
   const map = await moneySpendMap(cfg);
   return map[phone] || { jobs: 0, total: 0, lastDate: '' };
+}
+
+// ===========================================================================
+// 6c · WORD OF MOUTH — who sent them
+// ===========================================================================
+// A detailer's best leads don't come off an ad, they come off a driveway: a
+// neighbour watched the truck get done and asked for the number. Those leads
+// close more often and cost nothing, and until now the app couldn't see a
+// single one of them. `source` answers HOW somebody reached him (a text, a
+// call, the form). This answers WHO sent them, which is the part worth
+// thanking somebody for.
+//
+// Nothing here is AI and nothing here texts anyone. The only guessing is a free
+// regex over what a new lead says ("Dave told me about you"), and a guess is
+// only ever a question on the screen: he says yes, picks who, or says no. The
+// thank-you text is a fixed template he opens in the box and sends himself.
+
+// Words that say how the person who sent them is related. "a friend", "my
+// neighbor" and "my coworker Dave" all mean somebody sent this lead.
+const REF_REL = "friend|neighbou?r|coworker|co-worker|buddy|brother|sister|mom|mother|dad|father|son|daughter|" +
+  "cousin|wife|husband|boss|aunt|uncle|roommate|girlfriend|boyfriend|fianc[eé]e?|grandma|grandpa|in-laws?|family";
+// Things that "recommend" him that aren't a person, and so aren't a referral
+// anyone can be thanked for. A Google review sending a lead is the ad report's
+// job, not this one's.
+const REF_NOT_PERSON = new Set(['google', 'yelp', 'facebook', 'nextdoor', 'instagram', 'insta', 'tiktok',
+  'reddit', 'craigslist', 'website', 'site', 'ad', 'ads', 'thumbtack', 'angi', 'angie', 'maps', 'everyone',
+  'everybody', 'people', 'someone', 'somebody', 'they', 'he', 'she', 'who', 'that', 'which', 'it', 'you',
+  'i', 'we', 'a', 'an', 'the', 'my', 'our', 'your', 'also', 'just', 'actually', 'really', 'and', 'so']);
+
+const REF_VERB = "recommended you|recommended me to you|referred me|told me about you|told me to (?:text|call|reach out to|contact|hit up) you|" +
+  "gave me your (?:number|info|name|card|contact(?: info)?)|passed (?:along |me )?your (?:number|info|card)|" +
+  "sent me (?:your way|to you|over)|swears by you|raves about you|won't stop talking about you";
+
+// Ordered most-certain first; the first hit wins. Each hands back what it
+// could see of the name and the relation, either of which can be missing.
+const REF_PATTERNS = [
+  // "referred by Dave", "referred by my neighbor Dave", "referred by a friend"
+  { re: new RegExp(`\\breferr?ed (?:to you |over )?by (?:(?:my|a|our) (${REF_REL})[, ]*)?([A-Za-z][A-Za-z'’-]+)?`, 'i'), rel: 1, name: 2 },
+  // "got your number from Dave", "got your info from my coworker"
+  { re: new RegExp(`\\b(?:got|found|have|grabbed) your (?:number|info|name|card|contact(?: info)?) (?:from|through|thru|off) (?:(?:my|a|our) (${REF_REL})[, ]*)?([A-Za-z][A-Za-z'’-]+)?`, 'i'), rel: 1, name: 2 },
+  // "my neighbor Dave recommended you", "Dave told me about you", "a friend gave me your number"
+  { re: new RegExp(`(?:\\b(?:my|a|our) (${REF_REL})[, ]*)?\\b([A-Za-z][A-Za-z'’-]+)? ?(?:${REF_VERB})\\b`, 'i'), rel: 1, name: 2 },
+  // "you did my neighbor's truck", "you detailed my friends car last week"
+  { re: new RegExp(`\\byou (?:did|detailed|cleaned|washed|worked on) (?:my|our) (${REF_REL})(?:'s|’s|s)? `, 'i'), rel: 1, name: 0 },
+];
+
+// Who a message says sent them, or null. Returns { name, rel, line }: `name` is
+// '' when they only said "a friend", and that is still worth asking about.
+function referralFromText(raw) {
+  const text = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (!text || text.length > 600) return null;
+  for (const p of REF_PATTERNS) {
+    const m = p.re.exec(text);
+    if (!m) continue;
+    const rel = p.rel && m[p.rel] ? m[p.rel].toLowerCase().replace('neighbour', 'neighbor') : '';
+    let name = '';
+    if (p.name && m[p.name]) {
+      // Only the words that can be a name. "Dave from work" is Dave; "my neighbor
+      // recommended" leaves nothing, because "neighbor" is a relation, not a name.
+      const words = m[p.name].split(' ').filter((w) => {
+        const low = w.toLowerCase().replace(/['’]s$/, '');
+        return !REF_NOT_PERSON.has(low) && !new RegExp(`^(?:${REF_REL})$`, 'i').test(low);
+      });
+      const got = words.length ? nameWords(words.join(' '), true, true) : '';
+      name = got && !REF_NOT_PERSON.has(got.toLowerCase().split(' ')[0]) ? got : '';
+    }
+    // "Google recommended you" matched the shape and named nobody: no person,
+    // no relation, nothing to thank. That is not a referral.
+    if (!name && !rel) {
+      const said = p.name && m[p.name] ? m[p.name].toLowerCase().split(' ')[0] : '';
+      if (said) continue;
+    }
+    return { name, rel, line: text.slice(0, 160) };
+  }
+  return null;
+}
+
+// How many of a lead's first texts are read for it. Referrals are said up
+// front, in the hello; an existing customer saying "my wife told me about you
+// ages ago" in their fortieth text is not news, and it's the long threads
+// where a false match would cost the most attention.
+const REF_READ_FIRST = 4;
+
+// Put a guess on a thread when a message says who sent them. Pure apart from
+// mutating the thread, and a no-op unless it changes something, so callers can
+// run it on every inbound text without a thought.
+function noteReferral(thread, body) {
+  if (!thread || thread.referredBy || thread.refGuess || thread.refNo) return false;
+  const found = referralFromText(body);
+  if (!found) return false;
+  thread.refGuess = { name: found.name, rel: found.rel, line: found.line, at: Date.now() };
+  return true;
+}
+
+// The row a referral leaves on the index. Everything the Word of mouth screen
+// needs, so building it never loads a thread (and never clears an unread).
+function referralIndexFields(thread) {
+  const r = thread.referredBy;
+  const g = (!r && thread.refGuess && !thread.refNo) ? thread.refGuess : null;
+  return {
+    refBy: r ? r.phone : '',
+    refByName: r ? (r.name || '') : '',
+    refAt: r ? (r.at || 0) : 0,
+    refThanked: r ? (r.thankedAt || 0) : 0,
+    refGuess: g ? (g.name || g.rel || '?') : '',
+    refGuessLine: g ? (g.line || '').slice(0, 160) : '',
+  };
+}
+
+// The thank-you, in his words. Names everyone they sent that he hasn't thanked
+// them for yet, so three referrals is one text rather than three. `reward` is
+// his own sentence ("Your next one's $20 off on me."), typed once in the sheet;
+// the app never invents one, because an offer he didn't make is a promise he
+// has to keep.
+function referralThanks(referrer, names, cfg) {
+  const first = jdFirst(referrer.name) || 'there';
+  const list = (names || []).map((n) => jdFirst(n)).filter(Boolean);
+  const who = !list.length ? 'somebody' : list.length === 1 ? list[0] :
+    list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1];
+  const reward = String((cfg && cfg.referralReward) || '').trim();
+  const pick = (...v) => sayOneOf(`${referrer.phone || ''}:refthanks`, v, cfg, 'refthanks');
+  const body = pick(
+    `Hey ${first}, it's Mikey. Just wanted to say thanks for sending ${who} my way. That means a lot.`,
+    `Hey ${first}, it's Mikey. Thank you for sending ${who} my way, I really appreciate it.`);
+  if (!body) return '';
+  return sayFinish(reward ? `${body} ${reward}` : body, cfg, 'every');
+}
+
+// The whole picture, from one index read and the money ledger. Who sends him
+// the most business, in dollars first, because a referrer whose two referrals
+// became regulars is worth more than one who sent five people who never booked.
+async function buildReferrals(cfg) {
+  const index = await loadIndex();
+  const spendMap = await moneySpendMap(cfg, 18);
+  const byPhone = {};
+  for (const t of index) byPhone[t.phone] = t;
+
+  const refs = {};
+  const guesses = [];
+  let people = 0, dollars = 0;
+  for (const t of index) {
+    if (t.refBy) {
+      const sp = spendMap[t.phone] || { jobs: 0, total: 0 };
+      const src = byPhone[t.refBy] || {};
+      const r = refs[t.refBy] = refs[t.refBy] || {
+        phone: t.refBy, name: src.name || t.refByName || '', optedOut: !!src.optedOut,
+        people: [], dollars: 0, jobs: 0, unthanked: 0, draft: '',
+      };
+      r.people.push({ phone: t.phone, name: t.name || '', at: t.refAt || 0,
+        jobs: sp.jobs, total: sp.total, thankedAt: t.refThanked || 0 });
+      r.dollars = jdMoney(r.dollars + sp.total);
+      r.jobs += sp.jobs;
+      if (!t.refThanked) r.unthanked++;
+      people++; dollars = jdMoney(dollars + sp.total);
+    } else if (t.refGuess && !t.archived) {
+      guesses.push({ phone: t.phone, name: t.name || '', guess: t.refGuess === '?' ? '' : t.refGuess,
+        line: t.refGuessLine || '', at: t.lastTs || 0 });
+    }
+  }
+  const list = Object.values(refs);
+  for (const r of list) {
+    // The thank-you names them in the order they arrived; the list shows the newest first.
+    const owed = r.people.filter((p) => !p.thankedAt)
+      .sort((a, b) => a.at - b.at || String(a.name).localeCompare(String(b.name)))
+      .map((p) => p.name).filter(Boolean);
+    r.people.sort((a, b) => b.at - a.at);
+    r.draft = r.unthanked ? referralThanks(r, owed, cfg) : '';
+  }
+  list.sort((a, b) => b.dollars - a.dollars || b.people.length - a.people.length);
+  guesses.sort((a, b) => b.at - a.at);
+
+  // What share of the customers who have actually paid came from somebody.
+  // That one number is the whole argument for asking for referrals at all.
+  let paying = 0, payingReferred = 0;
+  for (const t of index) {
+    if (!(spendMap[t.phone] && spendMap[t.phone].jobs)) continue;
+    paying++;
+    if (t.refBy) payingReferred++;
+  }
+  return {
+    referrers: list.slice(0, 60),
+    guesses: guesses.slice(0, 30),
+    totals: {
+      people, dollars, referrers: list.length, paying, payingReferred,
+      unthanked: list.reduce((s, r) => s + r.unthanked, 0),
+    },
+    reward: String(cfg.referralReward || ''),
+  };
+}
+
+async function apiReferrals() {
+  const cfg = await loadConfig();
+  return json(Object.assign({ ok: true }, await buildReferrals(cfg)));
+}
+
+// set    — `by` sent `phone` (also how a guess gets confirmed)
+// clear  — nobody sent them after all
+// no     — the guess is wrong; stop asking about this conversation
+// thanked — he thanked `by` for everyone they've sent so far
+// reward — his thank-you sentence, or '' for none
+async function apiReferralAction(request) {
+  const d = await readJson(request);
+  const action = jdStr(d.action, 12);
+  const cfg = await loadConfig();
+
+  if (action === 'reward') {
+    const next = Object.assign({}, cfg, { referralReward: jdStr(d.reward, 140) });
+    await kv().put('config', JSON.stringify(next));
+    cacheConfig(next);
+    return json(Object.assign({ ok: true }, await buildReferrals(next)));
+  }
+
+  if (action === 'thanked') {
+    const by = normalizePhone(d.by);
+    if (!by) return json({ ok: false, error: 'bad_phone' }, 422);
+    const now = Date.now();
+    const index = await loadIndex();
+    for (const t of index) {
+      if (t.refBy !== by || t.refThanked) continue;
+      const th = await loadThread(t.phone);
+      if (!th.referredBy || th.referredBy.phone !== by) continue;
+      th.referredBy.thankedAt = now;
+      await saveThread(th);
+      applyIndexSummary(index, buildIndexSummary(th, cfg));
+    }
+    await saveIndex(index);
+    return json(Object.assign({ ok: true }, await buildReferrals(cfg)));
+  }
+
+  const phone = normalizePhone(d.phone);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  const thread = await loadThread(phone);
+  if (action === 'set') {
+    const by = normalizePhone(d.by);
+    if (!by) return json({ ok: false, error: 'bad_phone' }, 422);
+    // Nobody refers themselves, and a loop of two people who each "sent" the
+    // other is a misclick, not a business.
+    if (by === phone) return json({ ok: false, error: 'self' }, 422);
+    const src = await loadThread(by);
+    if (src.referredBy && src.referredBy.phone === phone) return json({ ok: false, error: 'loop' }, 422);
+    const was = thread.referredBy;
+    thread.referredBy = {
+      phone: by, name: src.name || '', at: (was && was.phone === by && was.at) || Date.now(),
+      // Changing who sent them is a new person to thank; re-saving the same one isn't.
+      thankedAt: (was && was.phone === by) ? (was.thankedAt || 0) : 0,
+      how: thread.refGuess ? 'said' : 'set',
+    };
+    thread.refGuess = null;
+  } else if (action === 'clear') {
+    thread.referredBy = null;
+    thread.refGuess = null;
+    thread.refNo = true;
+  } else if (action === 'no') {
+    thread.refGuess = null;
+    thread.refNo = true;
+  } else return json({ ok: false, error: 'bad_action' }, 422);
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+  return json({ ok: true, thread });
 }
 
 // ===========================================================================
