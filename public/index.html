@@ -1234,6 +1234,16 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .ref-row .ref-who{display:inline-flex;align-items:center;gap:6px;font-weight:700;color:var(--text);cursor:pointer}
   .ref-row .ref-when{color:var(--muted2);font-size:12px}
   #dtRef .ref-acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  /* ---- their pages: what I did, opened / tapped ---- */
+  .did-wrap{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .did-chip{font:inherit;font-size:12.5px;font-weight:600;padding:7px 11px;border-radius:999px;background:var(--panel2);
+    border:1px solid var(--line);color:var(--muted);cursor:pointer}
+  .did-chip.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text)}
+  .did-sub{font-size:12px;color:var(--muted2);margin-top:2px}
+  .pg-row{font-size:13px;color:var(--muted);padding:6px 0;border-bottom:1px solid var(--line);line-height:1.45}
+  .pg-row:last-child{border-bottom:none}
+  .pg-row b{color:var(--text);font-weight:700}
+  .pg-row .pg-open{color:#4ade80;font-weight:700}
   .ref-h{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted2);margin:18px 0 0}
   .ref-sent{margin-top:8px;font-size:12.5px;color:var(--muted);line-height:1.45}
   .ref-sent .ref-amt{color:#4ade80;font-weight:700}
@@ -4270,6 +4280,14 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
           <div class="lbl">Who sent them</div>
           <div id="dtRef"></div>
         </div>
+        <div class="dt-sec" id="dtDidSec" style="display:none">
+          <div class="lbl">What I did on the last job</div>
+          <div id="dtDid"></div>
+        </div>
+        <div class="dt-sec" id="dtPagesSec" style="display:none">
+          <div class="lbl">Their pages</div>
+          <div id="dtPages"></div>
+        </div>
         <div class="dt-sec" id="dtAssignSec" style="display:none">
           <div class="lbl">Assigned to</div>
           <div id="dtAssign"></div>
@@ -4534,7 +4552,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-24·own-links";
+  var APP_BUILD="2026-09-24·before-after-pages";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -6926,13 +6944,15 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var d=linkDue(t);
     if(!d||LINK_PUT[t.phone+":"+d.kind]){b.style.display="none";b.innerHTML="";return}
     var sub={before:"Water and power, getting into the car, how long, paying. They tap one button when they're set.",
-      after:"How to look after it, a box to tell you if something's off, and your review link.",
+      after:t.lastJob?"How to look after it and when to have you back, plus what you did. Tick it first:":"How to look after it, and when to have you back.",
       friend:"Their own share link. You both get a free exterior once the friend's first detail is paid."}[d.kind];
     b.style.display="flex";
     b.innerHTML='<span class="hb-ic">'+ic("link",15)+'</span><div class="hb-txt"><b>'+esc(linkHead(d))+'?</b>'+
       '<span class="hb-when">'+esc(sub)+'</span>'+
+      (d.kind==="after"&&t.lastJob?'<div class="did-wrap" id="linkDid"></div>':'')+
       '<div class="ref-acts"><button class="hb-x pri" data-link-put="'+d.kind+'">Put it in the box</button>'+
       '<button class="hb-x" data-link-skip="'+d.kind+'">Not now</button></div></div>';
+    if(el("linkDid"))renderDidChips(el("linkDid"),t);
     b.querySelector("[data-link-put]").onclick=function(){
       putLinkDraft(t.phone,d.kind,function(){LINK_PUT[t.phone+":"+d.kind]=1;renderLinkBanner(t)})};
     b.querySelector("[data-link-skip]").onclick=function(){
@@ -6977,6 +6997,58 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       return;
     }
     b.style.display="none";b.innerHTML="";
+  }
+  // ---- What I did / their pages (Details) ---------------------------------
+  // "What I did today" on the after page is these chips, ticked here. One tap
+  // saves; the after page reads it off the last finished job.
+  var DID_ITEMS=[
+    ["Outside",["Hand wash","Wheels and tires","Bug and tar removal","Clay bar","Sealant or wax","Door jambs","Exterior glass","Tire shine"]],
+    ["Inside",["Full vacuum","Seats and carpets shampooed","Leather cleaned and conditioned","Dash, console and doors wiped","Interior glass","Pet hair removed","Odor treatment"]],
+    ["Paint",["Ceramic coating","Paint correction"]]];
+  function renderDidChips(box,t){
+    var on=((t.lastJob&&t.lastJob.did)||[]).slice();
+    box.innerHTML=DID_ITEMS.map(function(g){return g[1].map(function(x){
+      return '<button type="button" class="did-chip'+(on.indexOf(x)>=0?" on":"")+'" data-did="'+esc(x)+'">'+esc(x)+'</button>'}).join("")}).join("");
+    Array.prototype.forEach.call(box.querySelectorAll("[data-did]"),function(b){b.onclick=function(){
+      var x=b.getAttribute("data-did"),cur=((t.lastJob&&t.lastJob.did)||[]).slice(),i=cur.indexOf(x);
+      if(i>=0)cur.splice(i,1);else cur.push(x);
+      b.classList.toggle("on",i<0);
+      post("/api/cust/did",{phone:t.phone,did:cur}).then(function(d){
+        if(!(d&&d.ok)){b.classList.toggle("on",i>=0);return toast("Couldn't save that",{bad:true})}
+        t.lastJob=d.lastJob;
+        if(state.thread&&state.thread.phone===t.phone)state.thread.lastJob=d.lastJob;
+        // The banner and Details both show these; keep the other one honest.
+        if(box.id!=="linkDid"&&el("linkDid"))renderDidChips(el("linkDid"),t);
+        if(box.id!=="dtDidChips"&&el("dtDidChips"))renderDidChips(el("dtDidChips"),t);
+      }).catch(function(){b.classList.toggle("on",i>=0);toast("Network error",{bad:true})});
+    }});
+  }
+  function renderDidDetail(t){
+    var sec=el("dtDidSec"),box=el("dtDid");if(!sec||!box)return;
+    if(!(t.lastJob&&t.lastJob.at)){sec.style.display="none";box.innerHTML="";return}
+    sec.style.display="";
+    box.innerHTML='<div class="did-sub">'+esc((t.lastJob.service||"Detail")+" · "+new Date(t.lastJob.at).toLocaleDateString([],{month:"short",day:"numeric"}))+
+      '. Shows on their after page.</div><div class="did-wrap" id="dtDidChips"></div>';
+    renderDidChips(el("dtDidChips"),t);
+  }
+  // Sent, opened, and which buttons they used, per page. Opened is counted by
+  // the page itself, so a link preview never reads as a person.
+  var PAGE_TAPS={calendar:"Add to calendar",book:"Book the next one",plan:"Put me on a plan",friend:"Send a friend",
+    review:"Leave a review",website:"Website",address:"Fix address",share:"Share my link"};
+  function renderPagesDetail(t){
+    var sec=el("dtPagesSec"),box=el("dtPages");if(!sec||!box)return;
+    var sent=t.linkSent||t.linkAt||{},open=t.linkOpen||{},taps=t.linkTaps||{};
+    var fmt=function(ts){return new Date(ts).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})};
+    var rows=[["before","Before link"],["after","After link"],["friend","Friend link"]].map(function(k){
+      var tp=Object.keys(taps).filter(function(x){return x.indexOf(k[0]+":")===0}).map(function(x){
+        var n=taps[x].n||1;return (PAGE_TAPS[x.split(":")[1]]||x.split(":")[1])+(n>1?" ×"+n:"")});
+      if(!sent[k[0]]&&!open[k[0]]&&!tp.length)return "";
+      var opened=open[k[0]]&&open[k[0]]>=(sent[k[0]]||0);
+      return '<div class="pg-row"><b>'+k[1]+'</b>'+(sent[k[0]]?" · sent "+esc(fmt(sent[k[0]])):"")+
+        (opened?' · <span class="pg-open">opened '+esc(fmt(open[k[0]]))+'</span>':sent[k[0]]?" · not opened yet":"")+
+        (tp.length?'<br>Tapped: '+esc(tp.join(", ")):"")+'</div>';
+    }).join("");
+    sec.style.display=rows?"":"none";box.innerHTML=rows;
   }
   // Details → Who sent them. Always there, so a referral he knows about but the
   // customer never typed can still go on file.
@@ -8570,6 +8642,11 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     api("/api/ai/usage?days=14").then(function(d){AIUSE=d;paint(d)}).catch(function(){paint(null)});
   }
 
+  // The boxes under Settings → Customer pages wording: [config key, label, textarea rows (0 = one line)].
+  var CUST_PAGE_FIELDS=[["stars","Rating line",0],["beforeIntro","Before page: opening line",0],
+    ["expect","Before page: how it goes (one step per line)",3],["rain","Before page: if it rains",2],
+    ["afterThanks","After page: thank-you line",0],["care_full","Care tips: full detail",3],["care_interior","Care tips: interior",3],
+    ["care_exterior","Care tips: exterior",3],["care_ceramic","Care tips: ceramic coating",4],["care_correction","Care tips: paint correction",4]];
   function renderFuSettings(){
     var wrap=el("fuSettings");if(!wrap)return;var c=state.config||{};
     wrap.innerHTML=
@@ -8675,7 +8752,20 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       '<div class="hint">How well it sounds like you, where it\'s weak, and everything for teaching it — on one screen.</div>'+
       '<div class="fu-col"><span class="lbl2">Rules you\'ve told the AI</span><span style="display:flex;gap:6px"><input type="text" id="cfgRuleNew" placeholder="e.g. never quote a full detail under $150" style="flex:1"><button id="cfgRuleAdd" class="btn" style="white-space:nowrap">Add</button></span></div>'+
       '<div class="hint">Hard instructions the AI follows every time it writes for you. You can also just say one in the command centre — "stop using exclamation points" — and approve it there.</div>'+
-      '<div id="cfgRules"></div>';
+      '<div id="cfgRules"></div>'+
+      '<details class="fu-col" id="cfgPages"><summary class="lbl2" style="cursor:pointer">Customer pages wording <span style="color:var(--muted2);font-weight:400">\u00b7 before / after links</span></summary>'+
+        '<div class="hint">What your /before and /after pages say. Leave a box empty to use the wording shown in grey. Tips are one per line.</div>'+
+        CUST_PAGE_FIELDS.map(function(f){
+          var cp=c.custPages||{},df=(c.custPagesDefaults||{})[f[0]]||"";
+          return '<span class="lbl2" style="margin-top:8px">'+esc(f[1])+'</span>'+
+            (f[2]?'<textarea rows="'+f[2]+'" data-cp="'+f[0]+'" placeholder="'+esc(df)+'">'+esc(cp[f[0]]||"")+'</textarea>'
+                 :'<input type="text" data-cp="'+f[0]+'" placeholder="'+esc(df)+'" value="'+esc(cp[f[0]]||"")+'">');
+        }).join("")+
+      '</details>';
+    Array.prototype.forEach.call(wrap.querySelectorAll("[data-cp]"),function(x){x.onchange=function(){
+      var p={};p[x.getAttribute("data-cp")]=x.value.trim();
+      saveConfig({custPages:p}).then(function(d){if(d&&d.ok){toast("Saved. Live on the pages now");var dd=el("cfgPages");if(dd)dd.open=true}});
+    }});
     el("cfgSayOpen").onclick=openHowITalk;
     el("cfgEnabled").onclick=function(){saveConfig({followupsEnabled:!(c.followupsEnabled!==false)})};
     el("cfgAuto").onclick=function(){saveConfig({autopilot:!c.autopilot})};
@@ -10885,6 +10975,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     el("dtName").textContent=displayName(t);el("dtNum").textContent=prettyPhone(t.phone);
     renderNameAuto(t);
     renderRefDetail(t);
+    renderDidDetail(t);
+    renderPagesDetail(t);
     el("dtPinTxt").textContent=t.pinned?"Unpin":"Pin";
     el("dtArchTxt").textContent=t.archived?"Restore":"Archive";
 

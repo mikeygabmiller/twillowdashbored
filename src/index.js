@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-24·own-links';
+const BUILD = '2026-09-24·before-after-pages';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -454,6 +454,8 @@ async function handle(request) {
     const m = /^\/(before|after|friend)(?:\/([A-Za-z0-9_-]{0,80}))?\/?$/.exec(pathname);
     if (request.method === 'GET' && m) return custSubPage(m[1], m[2] || '');
   }
+  // /cal/<token>.ics — "Add to calendar" off the before page.
+  if (request.method === 'GET'  && pathname.startsWith('/cal/'))    return custCalendar(pathname.slice(5).replace(/\.ics$/, '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80));
   // /i/<id> — a photo he sent. Public on purpose: Twilio fetches this URL itself,
   // with no cookie and no credentials, or the MMS never goes out. See servePhoto.
   if (request.method === 'GET'  && pathname.startsWith('/i/'))      return servePhoto(pathname.slice(3));
@@ -650,6 +652,7 @@ async function handle(request) {
   // The customer's own link — minted once per customer, then reused forever
   if (request.method === 'POST' && pathname === '/api/cust/link')      return apiCustLink(request);
   if (request.method === 'POST' && pathname === '/api/cust/linkskip')  return apiCustLinkSkip(request);
+  if (request.method === 'POST' && pathname === '/api/cust/did')       return apiCustDid(request);
 
   // Maintenance plans — the every-N-weeks rhythm behind a rebook
   if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/plan') return apiPlan(request, url);
@@ -10121,6 +10124,9 @@ function publicConfig(cfg) {
   // never been saved since this shipped.
   out.autoAi = autoAiCfg(cfg);
   out.aiKey = { set: !!(cfg && cfg.anthropicApiKey), hint: keyHint(cfg && cfg.anthropicApiKey) };
+  // What each customer-page box says when left blank, so Settings can show it.
+  out.custPagesDefaults = Object.assign({}, CUST_COPY_DEFAULTS,
+    ...['full', 'interior', 'exterior', 'ceramic', 'correction'].map((k) => ({ ['care_' + k]: CARE_TIPS[k].join('\n') })));
   return out;
 }
 function keyHint(k) {
@@ -10133,6 +10139,15 @@ async function apiSaveConfig(request) {
   if (typeof data.followupsEnabled === 'boolean') next.followupsEnabled = data.followupsEnabled;
   if (typeof data.autopilot === 'boolean') next.autopilot = data.autopilot;
   if (typeof data.reviewUrl === 'string') next.reviewUrl = data.reviewUrl.slice(0, 300);
+  // Customer-page wording, one box at a time: a field sent is replaced, a field
+  // not sent is kept, a blank one falls back to the default (see custCopy).
+  if (data.custPages && typeof data.custPages === 'object') {
+    const cp = Object.assign({}, next.custPages || {});
+    for (const k of Object.keys(CUST_COPY_DEFAULTS)) {
+      if (typeof data.custPages[k] === 'string') cp[k] = data.custPages[k].slice(0, CUST_COPY_MAX[k] || 900);
+    }
+    next.custPages = cp;
+  }
   if (data.rebookDays != null && !isNaN(+data.rebookDays)) next.rebookDays = Math.max(1, Math.min(365, Math.round(+data.rebookDays)));
   if (data.quietStart != null && !isNaN(+data.quietStart)) next.quietStart = Math.max(0, Math.min(23, Math.round(+data.quietStart)));
   if (data.quietEnd != null && !isNaN(+data.quietEnd)) next.quietEnd = Math.max(0, Math.min(23, Math.round(+data.quietEnd)));
@@ -12253,6 +12268,7 @@ function buildIndexSummary(thread, cfg) {
     lastJobAt: (thread.lastJob && thread.lastJob.at) || 0,
     linkAt: thread.linkSent || null,
     linkSkip: thread.linkSkip || null,
+    linkOpen: thread.linkOpen || null,
     issueAt: ((thread.afterIssues || [])[0] || {}).at || 0,
     // A maintenance plan, mirrored whole so "who is due" can be answered from
     // the index alone — null for almost everyone, so it costs nothing.
@@ -16361,6 +16377,12 @@ async function apiPushTest() {
 // What the service worker shows after a payload-less push. Read-only: it builds
 // the headline from the thread index that's already in memory-cheap KV.
 async function apiPushPeek() {
+  // A push sent with its own headline (pushOnly) says that, once, if it's fresh.
+  const note = await kv().get('push:note', { type: 'json' });
+  if (note && note.title && Date.now() - (note.at || 0) < 5 * 60000) {
+    await kv().delete('push:note');
+    return json({ ok: true, title: note.title, body: note.body || '', url: '/' });
+  }
   const index = await loadIndex();
   const active = index.filter((t) => !t.archived);
   const unread = active.filter((t) => t.unread > 0).sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
@@ -17216,6 +17238,39 @@ const CARE_TIPS = {
 // the ceramic cure and the "I only just noticed" window, and then it gets out
 // of the way.
 const CUST_AFTER_DAYS = 21;
+// How far out the after page points at the next detail. Mikey's own answer
+// ("6–8 weeks"), not a per-service table: one number is one he can say out loud.
+const CUST_NEXT_WEEKS = [6, 8];
+
+// The wording on the before and after pages he can change from Settings
+// without asking anybody. Blank in config = this default, so clearing a box
+// always puts his original words back rather than leaving a hole on the page.
+// The stars line is here and not a constant because it goes stale the day the
+// 41st review lands.
+const CUST_COPY_DEFAULTS = {
+  stars: '5.0 across 40 Google reviews',
+  beforeIntro: "Here's what I need from you and how the day goes.",
+  expect: "I show up with everything except water and power.\nI do the work. You don't need to be home for it.\nWe walk around it together, and you pay once you've seen it.",
+  rain: "I'll text you and we'll figure it out: under cover if there's room, or another day.",
+  afterThanks: 'Thanks for having me out.',
+  care_full: '', care_interior: '', care_exterior: '', care_ceramic: '', care_correction: '',
+};
+const CUST_COPY_MAX = { stars: 80, beforeIntro: 200, expect: 600, rain: 240, afterThanks: 200 };
+function custCopy(cfg) {
+  const saved = (cfg && cfg.custPages) || {};
+  const out = {};
+  for (const k of Object.keys(CUST_COPY_DEFAULTS)) {
+    const v = typeof saved[k] === 'string' ? saved[k].trim() : '';
+    out[k] = v || CUST_COPY_DEFAULTS[k];
+  }
+  return out;
+}
+// One line per tip, so a textarea in Settings is the whole editor.
+function custCopyLines(s) { return String(s || '').split(/\n+/).map((x) => x.trim()).filter(Boolean); }
+function custCareList(kind, copy) {
+  const own = custCopyLines(copy && copy['care_' + kind]);
+  return own.length ? own : (CARE_TIPS[kind] || CARE_TIPS.full);
+}
 
 // The next job and the last one, from wherever each actually gets recorded.
 // A job agreed over text only ever sets thread.appointmentAt; a job finished on
@@ -17272,6 +17327,11 @@ async function custState(phone) {
     .map((b) => ({ date: b.date, service: b.serviceName || '', vehicle: b.vehicle || '', price: b.estimate || 0 }));
   const ready = next && t.prepReady && t.prepReady.forAt === next.at ? t.prepReady : null;
   const issue = recent ? (t.afterIssues || []).find((x) => x.forAt === recent.at) : null;
+  // "What I did today" is ticked on the job he closed out (thread.lastJob);
+  // only trust it for the job the page is actually about.
+  const did = last && t.lastJob && Array.isArray(t.lastJob.did) && Math.abs((t.lastJob.at || 0) - last.at) < 2 * 86400000
+    ? t.lastJob.did : [];
+  const addrFix = next && t.addrFix && t.addrFix.forAt === next.at ? t.addrFix : null;
   // The friend page is for people who've actually had a detail. Asking a
   // stranger who hasn't met Mikey yet to vouch for him reads as a pyramid scheme.
   let refer = null;
@@ -17290,6 +17350,13 @@ async function custState(phone) {
     ready: ready ? { at: ready.at, note: ready.note || '' } : null,
     after: recent ? { at: recent.at, dateLabel: bkNiceDate(localDateStr(recent.at, cfg.tz)), service: recent.service,
       care: careKind(recent.service), issueAt: issue ? issue.at : 0 } : null,
+    // The after PAGE always shows their last job, however long ago: the care
+    // tips and "when's the next one" don't expire. `after` above is only the
+    // hub's "you just had one" window.
+    lastDone: last ? { at: last.at, dateLabel: bkNiceDate(localDateStr(last.at, cfg.tz)), service: last.service,
+      care: careKind(last.service), did } : null,
+    addrFix: addrFix ? { at: addrFix.at, address: addrFix.address } : null,
+    planAskAt: (t.planAsk && t.planAsk.at) || 0,
     // Shown to everybody, happy or not. Only sending the happy ones to Google
     // is "review gating" and it's against Google's rules; the "something not
     // right?" box sits right next to it instead.
@@ -17321,6 +17388,75 @@ async function apiCustAction(request, url) {
   const action = jdStr(d.action, 12);
   const now = Date.now();
 
+  // The page was opened, or a button on it was tapped. Written only the first
+  // time per link he sent (and per button, at most every 10 minutes), so a
+  // customer reloading the page can't turn it into a stream of KV writes or
+  // buzz his phone twice. Beacons from page script, never the GET itself:
+  // iMessage fetches the URL to draw the preview, and that isn't a person.
+  if (action === 'seen' || action === 'tap') {
+    const kind = CUST_PAGES[d.kind] ? d.kind : '';
+    if (!kind) return cors(json({ ok: false, error: 'bad_request' }, 422));
+    const t = await loadThread(rec.phone);
+    if (action === 'seen') {
+      const sentAt = (t.linkSent || {})[kind] || 0;
+      const was = (t.linkOpen || {})[kind] || 0;
+      if (was && was >= sentAt) return cors(json({ ok: true, noted: false }));
+      t.linkOpen = Object.assign({}, t.linkOpen || {}, { [kind]: now });
+      await saveThread(t); await updateIndexEntry(t);
+      const label = { before: 'before-job', after: 'after-job', friend: 'friend' }[kind];
+      await pushOnly(`👀 ${t.name || rec.phone} opened their ${label} link`, 'Tap to open their conversation.');
+      return cors(json({ ok: true, noted: true }));
+    }
+    const btn = CUST_TAPS[d.name] ? d.name : '';
+    if (!btn) return cors(json({ ok: false, error: 'bad_request' }, 422));
+    const key = kind + ':' + btn;
+    const prev = (t.linkTaps || {})[key];
+    if (prev && now - (prev.at || 0) < 10 * 60000) return cors(json({ ok: true, noted: false }));
+    t.linkTaps = Object.assign({}, t.linkTaps || {}, { [key]: { at: now, n: ((prev && prev.n) || 0) + 1 } });
+    await saveThread(t);
+    return cors(json({ ok: true, noted: true }));
+  }
+
+  // "That's not my address." Told to him and put on the notes, never written
+  // over what's on file: he's the one who knows whether they moved or typo'd,
+  // and a public link that can rewrite where he drives is a link to lean on.
+  if (action === 'address') {
+    const cfg = await loadConfig();
+    const t = await loadThread(rec.phone);
+    const next = custNext(t, (await loadBookings()).filter((b) => b.phone === rec.phone), now, cfg.tz);
+    if (!next) return cors(json({ ok: false, error: 'nothing_booked' }, 409));
+    const address = jdStr(d.address, 160);
+    if (!address) return cors(json({ ok: false, error: 'empty' }, 422));
+    const was = t.addrFix && t.addrFix.forAt === next.at ? t.addrFix : null;
+    if (was && (was.n || 0) >= 3) return cors(json({ ok: false, error: 'too_many' }, 429));
+    t.addrFix = { at: now, address, forAt: next.at, n: ((was && was.n) || 0) + 1 };
+    const stamp = new Date(now).toLocaleString('en-US', { timeZone: cfg.tz });
+    t.notes = (t.notes ? t.notes + '\n\n' : '') + `📍 Address for ${next.dateLabel}: ${address}\n(from their link, ${stamp})`;
+    await saveThread(t); await updateIndexEntry(t);
+    const g = t.garage || {};
+    await notifyMikey(
+      `📍 ${t.name || rec.phone} fixed their address for ${next.dateLabel}`,
+      [`They say it's: ${address}`, g.address ? `On file: ${g.address}${g.city ? ', ' + g.city : ''}` : 'Nothing was on file.',
+        'Nothing on file was changed. Update it yourself if it\'s right.'].join('\n'),
+    );
+    return cors(json(Object.assign({ ok: true }, await custState(rec.phone))));
+  }
+
+  // "Put me on a plan." A request to him, not a plan: price and spacing are
+  // his to agree, and a plan is what schedules texts to this person.
+  if (action === 'plan') {
+    const t = await loadThread(rec.phone);
+    if (t.planAsk && now - (t.planAsk.at || 0) < 86400000) return cors(json(Object.assign({ ok: true }, await custState(rec.phone))));
+    t.planAsk = { at: now };
+    await saveThread(t);
+    await notifyMikey(
+      `🔁 ${t.name || rec.phone} wants to go on a plan`,
+      [`They tapped "Put me on a plan" on their after-job page.`,
+        t.plan && !t.plan.paused ? `They're already on one: every ${Math.round(t.plan.every / 7)} weeks.` : 'Text them to set the spacing and price.'].join('\n'),
+    );
+    return cors(json(Object.assign({ ok: true }, await custState(rec.phone))));
+  }
+
   // "I've got water and power, here's the gate code." The spigot and the outlet
   // are the one thing that turns a booked job into a wasted drive, so a yes
   // from the customer is worth telling him about. Keyed to the next job, not to
@@ -17337,12 +17473,16 @@ async function apiCustAction(request, url) {
       const was = t.prepReady && t.prepReady.forAt === next.at ? t.prepReady : null;
       if (was && (was.n || 0) >= 3) return cors(json({ ok: false, error: 'too_many' }, 429));
       const note = jdStr(d.note, 300);
-      t.prepReady = { at: now, note, forAt: next.at, n: ((was && was.n) || 0) + 1 };
+      // What they ticked, in their words, from a fixed list — never free text
+      // dressed up as a checkbox.
+      const checks = (Array.isArray(d.checks) ? d.checks : []).map(String).filter((c) => CUST_CHECKS[c]).slice(0, 8);
+      t.prepReady = { at: now, note, forAt: next.at, n: ((was && was.n) || 0) + 1, checks };
       await saveThread(t); await updateIndexEntry(t);
       await notifyMikey(
         `✅ ${t.name || rec.phone} is set for ${next.dateLabel}`,
         [`${next.service || 'Detail'} · ${next.dateLabel} at ${bkFmt12(next.slot)}`,
-          'They confirmed water and power on site, and that you can get into the car.',
+          checks.length ? 'They ticked: ' + checks.map((c) => CUST_CHECKS[c]).join(', ') + '.'
+            : 'They confirmed water and power on site, and that you can get into the car.',
           note ? `They added: ${note}` : null].filter(Boolean).join('\n'),
       );
       return cors(json(Object.assign({ ok: true }, await custState(rec.phone))));
@@ -17397,6 +17537,29 @@ async function apiCustAction(request, url) {
 // send exactly the one that fits the moment. Same token as /c/: it's that
 // customer's identity, and every one of these only ever shows them their own.
 const CUST_PAGES = { before: 'before', after: 'after', friend: 'friend' };
+// The before-page checklist: the four things that turn a booked job into a
+// wasted drive when they're missing. Keys are what's stored; labels are what
+// both the customer and Mikey read.
+const CUST_CHECKS = {
+  water: 'Outdoor water spigot',
+  power: 'Power outlet you can reach',
+  keys: 'Keys or car unlocked',
+  room: 'Room to work around the car',
+};
+// The buttons whose taps get counted, so he can see what people actually use.
+const CUST_TAPS = { calendar: 'Add to calendar', book: 'Book the next one', plan: 'Put me on a plan',
+  friend: 'Send a friend', review: 'Leave a review', website: 'Website', address: 'Fix address', share: 'Share my link' };
+
+// A phone notification with its own headline, and nothing else: no email, and
+// never the SMS fallback notifyMikey has, because "they opened it" is nice to
+// know and not worth a Twilio segment. The push carries no payload (see
+// pushNotify), so the headline waits in KV for /api/push/peek to pick up.
+async function pushOnly(title, body) {
+  try {
+    await kv().put('push:note', JSON.stringify({ title, body, at: Date.now() }), { expirationTtl: 900 });
+    await pushNotify();
+  } catch { /* a nicety: never let it break the page */ }
+}
 function custPageUrl(kind, token) { return `${publicBase()}/${CUST_PAGES[kind]}${token ? '/' + token : ''}`; }
 
 // What he texts with each link, in his words. Drafts only: they land in the
@@ -17451,6 +17614,21 @@ async function apiCustLinkSkip(request) {
   return json({ ok: true, thread: t });
 }
 
+// "What I did today", ticked in the dashboard, shown on their after page.
+// Written onto thread.lastJob because that IS the job the after page is about;
+// with no finished job on file there's nothing for the list to belong to.
+async function apiCustDid(request) {
+  const d = await readJson(request);
+  const phone = normalizePhone(d.phone);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  const t = await loadThread(phone);
+  if (!t.lastJob || !t.lastJob.at) return json({ ok: false, error: 'no_job' }, 409);
+  const seen = {};
+  t.lastJob.did = (Array.isArray(d.did) ? d.did : []).map((x) => jdStr(x, 60)).filter((x) => x && !seen[x] && (seen[x] = 1)).slice(0, 20);
+  await saveThread(t); await updateIndexEntry(t);
+  return json({ ok: true, lastJob: t.lastJob });
+}
+
 // Remember which of the page links went out, and when — off the text itself,
 // so it counts however he sent it (the banner, the sheet, pasted by hand).
 // That's what stops the dashboard suggesting a link he already sent.
@@ -17477,19 +17655,37 @@ function custDurationLabel(m) {
   if (!m) return '';
   return m < 120 ? `About ${m} minutes` : `About ${Math.round(m / 30) / 2} hours`.replace('.5 hours', '½ hours');
 }
-// Ordered by what actually costs a wasted drive, not by what reads nicely:
-// water and power first, then getting into the car.
-function custPrepTips(next) {
-  const long = next ? custDurationLabel(next.durationMin) : '';
-  return `<div class="tip"><b>Water and power.</b> I need an outdoor water spigot and a power outlet I can reach from the driveway. That's the one thing I can't bring.</div>
-      <div class="tip"><b>You don't need to be home.</b> I just need to get into the car. Leave it unlocked or tell me where the keys are.</div>
-      <div class="tip"><b>Clear it out.</b> Take out valuables and car seats. Anything else I'll work around.</div>
-      <div class="tip"><b>How long.</b> ${long ? jdEsc(long) + ' for this one.' : 'A full detail takes 3–5 hours. A basic interior is about 90 minutes.'}</div>
-      <div class="tip"><b>If it rains.</b> I'll text you and we'll figure it out: under cover if there's room, or another day.</div>
-      <div class="tip"><b>Paying.</b> After the work, once you've seen it. Cash, check or Zelle. No deposit.</div>`;
+// Morning or afternoon, never the minute: Mikey's call. A job runs long and an
+// exact time on the page is a promise the one before it can break.
+function custArrival(slot) {
+  const h = Number(String(slot || '').split(':')[0]);
+  if (!String(slot || '') || isNaN(h)) return '';
+  return h < 12 ? 'Morning' : h < 17 ? 'Afternoon' : 'Evening';
 }
-function custCareHtml(kind) {
-  return (CARE_TIPS[kind] || CARE_TIPS.full).map((x) => `<div class="tip">${jdEsc(x)}</div>`).join('');
+// Exterior-only work (and coating or correction, which are paint jobs) never
+// needs the inside of the car, so the page stops asking for keys and car seats.
+function custOutsideOnly(kind) { return kind === 'exterior' || kind === 'ceramic' || kind === 'correction'; }
+// Ordered by what actually costs a wasted drive, not by what reads nicely:
+// water and power first, then getting into the car. `next` is null on the
+// generic page, which can't know the job, so it says what's true of all of them.
+function custPrepTips(next, copy) {
+  const long = next ? custDurationLabel(next.durationMin) : '';
+  const kind = next && next.service ? careKind(next.service) : '';
+  const out = custOutsideOnly(kind);
+  const tips = [
+    `<div class="tip"><b>Water and power.</b> I need an outdoor water spigot and a power outlet I can reach from the driveway. That's the one thing I can't bring.</div>`,
+    out ? `<div class="tip"><b>You don't need to be home.</b> This one's all outside, so I don't need to get into the car.</div>`
+      : `<div class="tip"><b>You don't need to be home.</b> I just need to get into the car. Leave it unlocked or tell me where the keys are.</div>`,
+  ];
+  if (!out) tips.push(`<div class="tip"><b>Clear it out.</b> Take out valuables and car seats. Anything else I'll work around.</div>`);
+  if (kind === 'ceramic') tips.push(`<div class="tip"><b>Keep it dry after.</b> The coating wants 24 hours out of the rain, so a garage or carport that night is ideal.</div>`);
+  tips.push(`<div class="tip"><b>How long.</b> ${long ? jdEsc(long) + ' for this one.' : 'A full detail takes 3–5 hours. A basic interior is about 90 minutes.'}</div>`);
+  tips.push(`<div class="tip"><b>If it rains.</b> ${jdEsc(copy.rain)}</div>`);
+  tips.push(`<div class="tip"><b>Paying.</b> After the work, once you've seen it. Cash, check or Zelle. No deposit.</div>`);
+  return tips.join('\n      ');
+}
+function custCareHtml(kind, copy) {
+  return custCareList(kind, copy).map((x) => `<div class="tip">${jdEsc(x)}</div>`).join('');
 }
 function custSmsHref(tel, body) {
   return `sms:${jdEsc(tel)}${body ? '?&body=' + encodeURIComponent(body) : ''}`;
@@ -17503,8 +17699,17 @@ async function custBizInfo() {
   const bcfg = await loadBookingConfig();
   const cfg = await loadConfig();
   return { biz: bcfg.bizName || "Mikey's Mobile Detailing", tel: String(ENV.TWILIO_FROM || '').replace(/[^0-9+]/g, ''),
-    review: cfg.reviewUrl && sayRules(cfg).reviewAsk ? cfg.reviewUrl : '' };
+    review: cfg.reviewUrl && sayRules(cfg).reviewAsk ? cfg.reviewUrl : '', copy: custCopy(cfg), tz: cfg.tz };
 }
+// The bottom of every before/after/friend page: the rating and the website,
+// in place of the contact card. They got this link by text, so the thread
+// they're reading it from already IS the way to reach him.
+function custFoot(info) {
+  return `<div class="foot"><div class="stars"><span aria-hidden="true">★★★★★</span> ${jdEsc(info.copy.stars)}</div>
+    <a href="${CUST_SITE}" target="_blank" rel="noopener" data-tap="website">mikeysdetailing.com</a>
+    <div>${jdEsc(info.biz)}</div></div>`;
+}
+const CUST_SITE = 'https://mikeysdetailing.com';
 
 // The hub. Server-rendered identity (so it says their name before a single
 // request lands), then it drives the SAME public booking endpoints the website
@@ -17577,169 +17782,363 @@ function custDeadLink() {
 
 // /before, /after, /friend — with a token, that customer's own page; without
 // one, the generic version he keeps saved and can paste to anybody. The
-// generic page has no buttons that need to know who you are: its buttons open
-// a text to him instead.
+// generic page has no buttons that need to know who you are: its one action
+// opens a text to him instead.
+//
+// No "Text / Call Mikey" card on any of them (his call): the link arrived as a
+// text, so the conversation it came from is already how they reach him.
 async function custSubPage(kind, token) {
   if (!CUST_PAGES[kind]) return custDeadLink();
   const rec = token ? await custResolve(token) : null;
   if (token && !rec) return custDeadLink();
   const s = rec ? await custState(rec.phone) : null;
   const info = await custBizInfo();
+  const copy = info.copy;
   const tel = info.tel;
   const hub = rec ? `<a class="back" href="/c/${jdEsc(token)}">‹ Your detailing</a>` : '';
-  let title = '', body = '';
+  let title = '', body = '', intro = '', og = {};
 
   if (kind === 'before') {
     title = 'Before I get there';
+    og = { title: 'Before your detail', desc: "What I need from you, when I'll be there, and how paying works." };
+    intro = copy.beforeIntro;
     const n = s && s.next;
-    const head = n
-      ? `<div class="card next"><div class="lbl">You're booked</div><div class="big">${jdEsc(n.dateLabel)}</div>
-         <div class="sub" style="margin:0">${jdEsc(bkFmt12(n.slot))}${n.service ? ' · ' + jdEsc(n.service) : ''}</div></div>`
-      : '';
+    const k = n && n.service ? careKind(n.service) : '';
+    let head = '';
+    if (n) {
+      const when = [custArrival(n.slot), n.service].filter(Boolean).join(' · ');
+      const where = s.address ? s.address + (s.city ? ', ' + s.city : '') : '';
+      const fixed = s.addrFix
+        ? `<div class="pill ok">Sent to Mikey: ${jdEsc(s.addrFix.address)}</div>` : '';
+      head = `<div class="card next"><div class="lbl">Your detail</div><div class="big">${jdEsc(n.dateLabel)}</div>
+        ${when ? `<div class="sub m0">${jdEsc(when)}</div>` : ''}
+        ${s.vehicle ? `<div class="line">${jdEsc(s.vehicle)}</div>` : ''}
+        <div class="addr"><div class="line">${where ? jdEsc(where) : '<span class="muted">No address on file yet</span>'}</div>
+          <button class="linkbtn" id="addrBtn" type="button" data-tap="address">${where ? 'Wrong? Fix it' : 'Add it'}</button></div>
+        ${fixed}
+        <div id="addrForm" hidden><input class="fld" id="addrIn" maxlength="160" autocomplete="street-address" placeholder="Street address and city">
+          <button class="btn" id="addrSend" type="button">Send to Mikey</button><div class="note" id="addrMsg"></div></div>
+        <a class="btn ghost mt" href="/cal/${jdEsc(token)}.ics" data-tap="calendar">Add to calendar</a></div>`;
+    }
+    const steps = custCopyLines(copy.expect);
+    const expect = steps.length ? `<div class="card"><div class="lbl">How it goes</div><ol class="steps">${steps.map((x) => `<li>${jdEsc(x)}</li>`).join('')}</ol></div>` : '';
+    // The checklist. Every box ticked is the only way to say "I'm set": the
+    // four things are the four that waste a drive, and half-set is not set.
+    const items = Object.keys(CUST_CHECKS).filter((c) => !(c === 'keys' && custOutsideOnly(k)));
+    const boxes = items.map((c) => `<label class="chk"><input type="checkbox" name="chk" value="${c}"><span>${jdEsc(CUST_CHECKS[c])}</span></label>`).join('');
     let foot;
     if (n) {
       const said = s.ready
         ? `<div class="pill ok">✓ You told me you're set</div>${s.ready.note ? `<div class="note">You added: ${jdEsc(s.ready.note)}</div>` : ''}`
         : '';
       foot = `${said}<div id="prepForm"${s.ready ? ' hidden' : ''}>
+        <div class="lbl mt">Tick these off</div>${boxes}
         <textarea class="fld" id="prepNote" maxlength="300" rows="2" placeholder="Anything I should know? Gate code, where it's parked, pet hair, a stain you care about"></textarea>
-        <button class="btn" id="readyBtn" style="margin-top:10px">I've got water and power</button>
-        <div class="note" id="prepMsg"></div></div>`;
+        <button class="btn mt" id="readyBtn" type="button" disabled>I'm all set</button>
+        <div class="note" id="prepMsg">Missing one? Reply to my text and we'll sort it out.</div></div>`;
     } else {
-      foot = tel ? `<a class="btn" href="${custSmsHref(tel, "I'm set: water and power are good.")}" style="margin-top:12px">Text me you're set</a>` : '';
+      foot = tel ? `<div id="prepForm"><div class="lbl mt">Tick these off</div>${boxes}
+        <textarea class="fld" id="prepNote" maxlength="300" rows="2" placeholder="Anything I should know? Gate code, where it's parked, pet hair, a stain you care about"></textarea>
+        <button class="btn mt" id="smsSet" type="button" data-tel="${jdEsc(tel)}" disabled>Text Mikey I'm set</button>
+        <div class="note" id="prepMsg">Missing one? Reply to my text and we'll sort it out.</div></div>` : '';
     }
-    body = `${head}<div class="card" id="prepCard"><div class="lbl">What I need from you</div>${custPrepTips(n)}${foot}</div>`;
+    body = `${head}${expect}<div class="card" id="prepCard"><div class="lbl">What I need from you</div>${custPrepTips(n, copy)}${foot}</div>`;
   }
 
   if (kind === 'after') {
     title = 'Looking after it';
-    const a = s && s.after;
-    let care;
+    og = { title: 'After your detail', desc: 'How to look after it, and when to have me back.' };
+    const a = s && s.lastDone;
+    const parts = [];
+    if (!a) intro = copy.afterThanks;   // with a job, the thanks sits on its card instead
     if (a) {
-      care = `<div class="card next"><div class="lbl">Thanks for having me out</div>
-        <div class="sub" style="margin:0 0 12px">${jdEsc(a.service || 'Your detail')} · ${jdEsc(a.dateLabel)}</div>
-        <div class="lbl">Looking after it</div>${custCareHtml(a.care)}</div>`;
-    } else {
-      // Generic: every kind, headed, because it can't know which he did.
-      care = [['full', 'After a detail'], ['ceramic', 'After a ceramic coating'], ['correction', 'After paint correction']]
-        .map(([k, h]) => `<div class="card"><div class="lbl">${h}</div>${custCareHtml(k)}</div>`).join('');
+      const did = (a.did || []).length
+        ? `<div class="lbl mt">What I did</div><ul class="did">${a.did.map((x) => `<li>${jdEsc(x)}</li>`).join('')}</ul>` : '';
+      parts.push(`<div class="card next"><div class="lbl">Your last detail</div><div class="big">${jdEsc(a.service || 'Your detail')}</div>
+        <div class="sub m0">${jdEsc(a.dateLabel)}${s.vehicle ? ' · ' + jdEsc(s.vehicle) : ''}</div>
+        <p class="thanks">${jdEsc(copy.afterThanks)}</p>${did}</div>`);
     }
-    let issue;
-    if (a && a.issueAt) issue = '<div class="pill warn">Got it. I\'ll be in touch</div>';
-    else if (a) {
-      issue = `<div class="sub" style="margin:0">Tell me and I'll make it right. This goes straight to me.</div>
-      <textarea class="fld" id="issueNote" maxlength="600" rows="2" placeholder="What did you notice?"></textarea>
-      <button class="btn ghost" id="issueBtn" style="margin-top:10px">Send to Mikey</button>
-      <div class="note" id="issueMsg"></div>`;
+    // Near the top, his call: right after the job is when they're most likely to mention you.
+    if (s && s.refer) parts.push(`<a class="golink solo" href="/friend/${jdEsc(token)}" data-tap="friend"><span><b>Send a friend</b><small>You both get a free exterior</small></span><i>›</i></a>`);
+    if (a) {
+      parts.push(`<div class="card"><div class="lbl">Looking after it</div>${custCareHtml(a.care, copy)}</div>`);
     } else {
-      issue = `<div class="sub" style="margin:0 0 10px">Tell me and I'll make it right.</div>
-      ${tel ? `<a class="btn ghost" href="${custSmsHref(tel, '')}">Text Mikey</a>` : ''}`;
+      // Generic: they tap what they got and see only that. Five lists at once
+      // was a wall of advice for a job they didn't have.
+      const kinds = [['full', 'Full detail'], ['interior', 'Interior'], ['exterior', 'Exterior'], ['ceramic', 'Ceramic coating'], ['correction', 'Paint correction']];
+      parts.push(`<div class="card"><div class="lbl">What did I do?</div><div class="picks">${kinds.map(([id, l]) =>
+        `<button type="button" data-care="${id}">${l}</button>`).join('')}</div>
+        ${kinds.map(([id, l]) => `<div class="care" data-care-list="${id}" hidden><div class="lbl mt">After a ${jdEsc(l.toLowerCase())}</div>${custCareHtml(id, copy)}</div>`).join('')}
+        <div class="note" id="careHint">Tap one and I'll show you how to look after it.</div></div>`);
     }
-    const review = info.review ? `<div class="lbl" style="margin-top:16px">Happy with it?</div>
-      <div class="sub" style="margin:0 0 10px">A Google review helps a one-man shop more than anything else.</div>
-      <a class="btn" href="${jdEsc(info.review)}" target="_blank" rel="noopener">Leave a review</a>` : '';
-    body = `${care}<div class="card" id="afterCard"><div class="lbl">Something not right?</div>${issue}${review}</div>`;
-    if (s && s.refer) body += `<a class="golink solo" href="/friend/${jdEsc(token)}"><span><b>Send a friend</b><small>You both get a free exterior</small></span><i>›</i></a>`;
+    // The next one. On a plan: say so and stop. Otherwise the 6–8 week window
+    // from THIS job, and two ways to act on it.
+    let next;
+    if (s && s.plan) {
+      next = `<div class="sub m0">You're on a plan: every ${Math.round(s.plan.every / 7)} weeks. I'll text you when it's coming up.</div>`;
+    } else if (a) {
+      const fmt = (ts) => new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: info.tz || 'America/Los_Angeles' });
+      const lo = a.at + CUST_NEXT_WEEKS[0] * 7 * 86400000, hi = a.at + CUST_NEXT_WEEKS[1] * 7 * 86400000;
+      const due = hi < Date.now()
+        ? `It's been a while, so you're due.`
+        : `For you that's around ${fmt(lo)}–${fmt(hi)}.`;
+      const plan = s.planAskAt
+        ? `<div class="pill ok">Got it. I'll text you about a plan</div>`
+        : `<button class="btn ghost" id="planBtn" type="button" data-tap="plan">Put me on a plan</button>`;
+      next = `<div class="sub">Most people have me back every ${CUST_NEXT_WEEKS[0]}–${CUST_NEXT_WEEKS[1]} weeks. ${due}</div>
+        <a class="btn" href="/c/${jdEsc(token)}#book" data-tap="book">Book the next one</a><div class="mt">${plan}</div>
+        <div class="note" id="planMsg"></div>`;
+    } else {
+      next = `<div class="sub">Most people have me back every ${CUST_NEXT_WEEKS[0]}–${CUST_NEXT_WEEKS[1]} weeks.</div>
+        <a class="btn" href="${CUST_SITE}" target="_blank" rel="noopener" data-tap="book">Book the next one</a>`;
+    }
+    parts.push(`<div class="card"><div class="lbl">Your next one</div>${next}</div>`);
+    if (info.review) {
+      parts.push(`<div class="card" id="afterCard"><div class="lbl">Happy with it?</div>
+      <div class="sub">A Google review helps a one-man shop more than anything else.</div>
+      <a class="btn" href="${jdEsc(info.review)}" target="_blank" rel="noopener" data-tap="review">Leave a review</a></div>`);
+    }
+    body = parts.join('');
   }
 
   if (kind === 'friend') {
     title = 'Send a friend';
+    og = { title: 'Send a friend', desc: 'You both get a free Exterior Detail.' };
     const r = s && s.refer;
     if (r) {
       body = `<div class="card next" id="referCard"><div class="lbl">Send a friend</div>
-        <div class="sub" style="margin:0 0 12px">${jdEsc(r.offer)}</div>
+        <div class="sub">${jdEsc(r.offer)}</div>
         ${r.owed ? `<div class="pill ok">You've got ${r.owed} free Exterior Detail${r.owed === 1 ? '' : 's'} waiting. Mention it when you book.</div>` : ''}
         ${r.friends ? `<div class="note">${r.friends} friend${r.friends === 1 ? '' : 's'} booked with your link so far${r.friendsDone < r.friends ? `, ${r.friendsDone} done` : ''}.</div>` : ''}
-        <button class="btn" id="shareBtn" data-url="${jdEsc(r.url)}" style="margin-top:12px">Share my link</button>
+        <button class="btn mt" id="shareBtn" type="button" data-url="${jdEsc(r.url)}" data-tap="share">Share my link</button>
         <div class="note tiny">${jdEsc(r.url)}</div></div>`;
     } else {
       body = `<div class="card next"><div class="lbl">Send a friend</div>
-        <div class="sub" style="margin:0 0 12px">${jdEsc(REF_OFFER)}</div>
-        <div class="sub" style="margin:0 0 12px">Text me and I'll send you your own link to share.</div>
+        <div class="sub">${jdEsc(REF_OFFER)}</div>
+        <div class="sub">Text me and I'll send you your own link to share.</div>
         ${tel ? `<a class="btn" href="${custSmsHref(tel, 'Can I get my referral link?')}">Text Mikey</a>` : ''}</div>`;
     }
   }
 
-  const inner = `<div class="pad">${hub}<h1>${jdEsc(title)}</h1>
-    ${s && s.first ? `<p class="sub">Hi ${jdEsc(s.first)}. This page stays up to date, so save it.</p>` : ''}${body}${custContact(tel)}
-    <div class="foot">${jdEsc(info.biz)}</div></div>`;
-  return htmlResponse(custShell(inner, rec ? token : '', { title }));
+  const hi = s && s.first ? `Hi ${jdEsc(s.first)}. ` : '';
+  const lede = hi || intro ? `<p class="sub">${hi}${jdEsc(intro)}</p>` : '';
+  const inner = `<div class="pad">${hub}<div class="brand">${jdEsc(info.biz)}</div><h1>${jdEsc(title)}</h1>
+    ${lede}${body}${custFoot(info)}</div>`;
+  return htmlResponse(custShell(inner, rec ? token : '', { title, kind, og }));
+}
+
+// "Add to calendar": an all-day event, because the page only promises morning
+// or afternoon and a calendar entry at 9:00 sharp would promise more than he does.
+async function custCalendar(token) {
+  const rec = token ? await custResolve(token) : null;
+  if (!rec) return custDeadLink();
+  const s = await custState(rec.phone);
+  const n = s.next;
+  if (!n || !n.date) return htmlResponse(custShell(`<div class="pad"><h1>Nothing booked</h1>
+      <p class="sub">There's no detail on the books for this link right now.</p></div>`, '', {}), 404);
+  const esc = (v) => String(v || '').replace(/\\/g, '\\\\').replace(/([,;])/g, '\\$1').replace(/\r?\n/g, '\\n');
+  const d0 = n.date.replace(/-/g, '');
+  const d1 = new Date(Date.parse(n.date + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10).replace(/-/g, '');
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z');
+  const when = custArrival(n.slot);
+  const where = s.address ? s.address + (s.city ? ', ' + s.city : '') : '';
+  const lines = [
+    'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Mikeys Mobile Detailing//Before page//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    `UID:${n.at}-${token.slice(0, 12)}@mikeysdetailing.com`,
+    `DTSTAMP:${stamp}`,
+    `DTSTART;VALUE=DATE:${d0}`, `DTEND;VALUE=DATE:${d1}`,
+    `SUMMARY:${esc("Mikey's Mobile Detailing" + (n.service ? ': ' + n.service : ''))}`,
+    where ? `LOCATION:${esc(where)}` : '',
+    `DESCRIPTION:${esc((when ? `Mikey gets there in the ${when.toLowerCase()}. ` : '') +
+      'He needs an outdoor water spigot and a power outlet.\n' + custPageUrl('before', token))}`,
+    'END:VEVENT', 'END:VCALENDAR',
+  ].filter(Boolean);
+  return new Response(lines.join('\r\n') + '\r\n', { headers: {
+    'Content-Type': 'text/calendar; charset=utf-8', 'Content-Disposition': 'inline; filename="detail.ics"', 'Cache-Control': 'no-store' } });
 }
 
 function custShell(inner, token, opts) {
   opts = opts || {};
+  // The preview a phone draws when the link is texted: a finished car, and a
+  // title that says what the page is for. Without these it's a bare grey URL,
+  // which is exactly what a spam text looks like.
+  const og = opts.og || {};
+  const base = publicBase();
+  const ogTitle = (og.title || opts.title || 'Your detailing') + " | Mikey's Mobile Detailing";
+  const ogTags = `<meta property="og:type" content="website"><meta property="og:site_name" content="Mikey's Mobile Detailing">
+<meta property="og:title" content="${jdEsc(ogTitle)}">${og.desc ? `<meta property="og:description" content="${jdEsc(og.desc)}"><meta name="description" content="${jdEsc(og.desc)}">` : ''}
+${base ? `<meta property="og:image" content="${jdEsc(base)}/og-car.jpg"><meta property="og:image:width" content="680"><meta property="og:image:height" content="356">
+<meta property="og:image:alt" content="A black SUV in a driveway just after a detail"><meta name="twitter:card" content="summary_large_image">` : ''}`;
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0a0a0c"><title>${jdEsc(opts.title || 'Your detailing')}</title>
-<link rel="icon" href="/favicon.svg"><style>
+<meta name="theme-color" content="#0a0a0a"><title>${jdEsc(opts.title || 'Your detailing')}</title>
+${ogTags}
+<link rel="icon" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap">
+<style>
+/* mikeysdetailing.com's own palette and face, so the link feels like the
+   site they found him on and not a different company's app. Dark only, same
+   as the site. */
+:root{--bg:#0a0a0a;--card:#141414;--card2:#1a1a1a;--line:#2a2a2a;--ink:#fff;--gray:#c2c2c2;--muted:#9a9a9a;
+  --red:#C8102E;--red2:#A00C24;--gold:#C9A24B;--gold2:#E4CD8B;--ok:#2fb358;color-scheme:dark}
 *{box-sizing:border-box}html,body{margin:0;min-height:100%}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-background:radial-gradient(1200px 600px at 50% -10%,#1d1f27,#0a0a0c 60%);color:#f2f4f8;padding:0 0 40px}
-.pad{max-width:460px;margin:0 auto;padding:26px 18px}
-h1{font-size:28px;letter-spacing:-.03em;margin:0 0 6px}
-.sub{color:#9aa3b2;font-size:14px;margin:0 0 18px;line-height:1.5}
+body{font-family:Outfit,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+background:radial-gradient(900px 480px at 50% -12%,rgba(200,16,46,.16),transparent 70%),var(--bg);color:var(--ink);padding:0 0 40px}
+.pad{max-width:480px;margin:0 auto;padding:24px 16px}
+.brand{font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--red);margin-bottom:6px}
+h1{font-size:30px;font-weight:800;letter-spacing:-.02em;line-height:1.08;margin:0 0 8px;text-wrap:balance}
+.sub{color:var(--gray);font-size:15px;margin:0 0 16px;line-height:1.5}
+.sub.m0{margin:2px 0 0}
 .sub.tiny{font-size:12px;margin:10px 0 0}
-.card{background:#121216;border:1px solid #26293a55;border-radius:18px;padding:16px 15px;margin-bottom:12px}
-.card.next{background:linear-gradient(160deg,#1a1218,#121216 60%);border-color:#4d222955}
-.lbl{font-size:10.5px;font-weight:800;letter-spacing:.11em;text-transform:uppercase;color:#6b7280;margin-bottom:8px}
-.big{font-size:22px;font-weight:800;letter-spacing:-.02em}
-.line{font-size:15px;font-weight:600;padding:3px 0}
-.pill{display:inline-block;font-size:11px;font-weight:800;border-radius:999px;padding:5px 11px;margin-top:10px}
-.pill.ok{color:#22c55e;background:rgba(34,197,94,.13)}
-.pill.warn{color:#f5b842;background:rgba(245,184,66,.13)}
+.muted{color:var(--muted)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 15px;margin-bottom:12px}
+.card.next{background:linear-gradient(165deg,rgba(200,16,46,.13),var(--card) 55%);border-color:rgba(200,16,46,.35)}
+.lbl{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.lbl.mt,.mt{margin-top:14px}
+.big{font-size:24px;font-weight:800;letter-spacing:-.02em}
+.line{font-size:15.5px;font-weight:600;padding:3px 0}
+.pill{display:inline-block;font-size:12px;font-weight:700;border-radius:999px;padding:5px 11px;margin-top:10px}
+.pill.ok{color:var(--ok);background:rgba(47,179,88,.14)}
+.pill.warn{color:var(--gold2);background:rgba(201,162,75,.14)}
 .row{display:flex;gap:8px;margin-top:13px;flex-wrap:wrap}
-.btn{flex:1;min-width:130px;display:block;text-align:center;background:#ff2e43;border:1px solid #ff2e43;color:#fff;
-  border-radius:12px;padding:13px 14px;font-size:14.5px;font-weight:700;text-decoration:none;cursor:pointer;font-family:inherit}
-.btn.ghost{background:#1a1b21;border-color:#2a2d36;color:#f2f4f8}
+.btn{flex:1;min-width:130px;display:block;text-align:center;background:var(--red);border:1px solid var(--red);color:#fff;
+  border-radius:12px;padding:13px 14px;font-size:15px;font-weight:700;text-decoration:none;cursor:pointer;font-family:inherit;width:100%}
+.row .btn{width:auto}
+.btn:active{background:var(--red2)}
+.btn.ghost{background:var(--card2);border-color:var(--line);color:var(--ink)}
 .btn.ghost.danger{color:#ff8a93}
-.btn:disabled{opacity:.5}
-.hrow{display:flex;gap:10px;align-items:baseline;padding:8px 0;border-bottom:1px solid #23252d;font-size:14px}
+.btn:disabled{opacity:.45;cursor:default}
+.btn:focus-visible,.linkbtn:focus-visible,.picks button:focus-visible,.chk input:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.linkbtn{background:none;border:0;padding:4px 0;color:var(--gold2);font:600 14px/1.2 inherit;font-family:inherit;cursor:pointer;text-decoration:underline;text-underline-offset:3px}
+.addr{display:flex;align-items:baseline;justify-content:space-between;gap:10px;flex-wrap:wrap;border-top:1px solid var(--line);margin-top:10px;padding-top:8px}
+.hrow{display:flex;gap:10px;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
 .hrow:last-of-type{border-bottom:none}
-.hrow .hs{flex:1;color:#9aa3b2;font-size:13px}
+.hrow .hs{flex:1;color:var(--muted);font-size:13px}
 .contact{display:flex;flex-direction:column;gap:8px}
 .contact .btn{flex:none}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:7px;margin-top:4px}
-.grid button{background:#1a1b21;border:1px solid #2a2d36;color:#f2f4f8;border-radius:11px;padding:11px 6px;
-  font-size:13px;font-weight:700;cursor:pointer;font-family:inherit}
-.grid button.on{background:#ff2e43;border-color:#ff2e43;color:#fff}
-.fld{width:100%;background:#1a1b21;border:1px solid #2a2d36;color:#f2f4f8;border-radius:11px;
-  padding:12px;font-size:15px;margin-top:7px;font-family:inherit}
-.note{color:#9aa3b2;font-size:13px;margin:10px 0 0;line-height:1.5}
+.grid button,.picks button{background:var(--card2);border:1px solid var(--line);color:var(--ink);border-radius:11px;padding:11px 8px;
+  font-size:13.5px;font-weight:700;cursor:pointer;font-family:inherit}
+.grid button.on,.picks button.on{background:var(--red);border-color:var(--red);color:#fff}
+.picks{display:flex;flex-wrap:wrap;gap:7px}
+.fld{width:100%;background:var(--card2);border:1px solid var(--line);color:var(--ink);border-radius:11px;
+  padding:12px;font-size:16px;margin-top:8px;font-family:inherit}
+.note{color:var(--muted);font-size:13px;margin:10px 0 0;line-height:1.5}
 .note.tiny{font-size:11.5px;word-break:break-all}
-.tip{font-size:14px;line-height:1.5;padding:7px 0;border-bottom:1px solid #23252d}
+.tip{font-size:14.5px;line-height:1.5;padding:8px 0;border-bottom:1px solid var(--line);color:var(--gray)}
 .tip:last-of-type{border-bottom:none}
-.tip b{font-weight:700}
+.tip b{font-weight:700;color:var(--ink)}
+.steps{margin:0;padding:0;list-style:none;counter-reset:s;display:flex;flex-direction:column;gap:10px}
+.steps li{counter-increment:s;display:flex;gap:11px;font-size:15px;line-height:1.45;color:var(--gray)}
+.steps li::before{content:counter(s);flex:none;width:24px;height:24px;border-radius:50%;background:rgba(201,162,75,.16);color:var(--gold2);
+  font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center;margin-top:-1px}
+.chk{display:flex;align-items:center;gap:11px;padding:10px 0;border-bottom:1px solid var(--line);font-size:15px;cursor:pointer}
+.chk input{width:22px;height:22px;accent-color:var(--red);flex:none;margin:0}
+.did{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
+.did li{font-size:15px;color:var(--gray);display:flex;gap:9px}
+.did li::before{content:"✓";color:var(--ok);font-weight:800}
+.thanks{margin:12px 0 0;font-size:15px;color:var(--ink)}
 textarea.fld{resize:vertical;min-height:58px}
 [hidden]{display:none!important}
-.golink{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid #23252d;color:inherit;text-decoration:none}
+.golink{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line);color:inherit;text-decoration:none}
 .golink:last-child{border-bottom:none}
 .golink span{flex:1;display:flex;flex-direction:column;gap:2px}
-.golink small{color:#9aa3b2;font-size:12.5px}
-.golink i{font-style:normal;font-size:22px;color:#6b7280}
-.golink.solo{background:#121216;border:1px solid #26293a55;border-radius:18px;padding:14px 15px;margin-bottom:12px}
-.back{display:inline-block;color:#9aa3b2;text-decoration:none;font-size:14px;margin-bottom:12px}
-.foot{text-align:center;color:#6b7280;font-size:12px;margin-top:22px}
-@media (prefers-color-scheme:light){
-  body{background:radial-gradient(1200px 600px at 50% -10%,#fff,#eef0f3 60%);color:#161820}
-  .card{background:#fff;border-color:#d7dbe2}
-  .card.next{background:linear-gradient(160deg,#fff4f5,#fff 60%);border-color:#f0c4ca}
-  .sub,.hrow .hs,.note{color:#5a626f}.lbl,.foot{color:#8a93a1}
-  .btn.ghost{background:#f4f6f8;border-color:#d7dbe2;color:#161820}
-  .btn.ghost.danger{color:#c81e30}
-  .grid button{background:#f4f6f8;border-color:#d7dbe2;color:#161820}
-  .grid button.on{background:#c81e30;border-color:#c81e30;color:#fff}
-  .fld{background:#f4f6f8;border-color:#d7dbe2;color:#161820}
-  .hrow,.tip,.golink{border-bottom-color:#e3e6eb}
-  .golink small,.back{color:#5a626f}.golink.solo{background:#fff;border-color:#d7dbe2}}
+.golink small{color:var(--muted);font-size:13px}
+.golink i{font-style:normal;font-size:22px;color:var(--muted)}
+.golink.solo{background:var(--card);border:1px solid rgba(201,162,75,.34);border-radius:16px;padding:14px 15px;margin-bottom:12px}
+.golink.solo b{color:var(--gold2)}
+.back{display:inline-block;color:var(--muted);text-decoration:none;font-size:14px;margin-bottom:12px}
+.foot{text-align:center;color:var(--muted);font-size:12.5px;margin-top:24px;display:flex;flex-direction:column;gap:6px;align-items:center}
+.foot a{color:var(--gray);font-weight:600;text-decoration:none}
+.stars{color:var(--gray);font-size:13.5px;font-weight:600}
+.stars span{color:var(--gold);letter-spacing:1px}
 </style></head><body>${inner}
-<script>
+${opts.book ? custHubScript(token) : opts.kind ? custSubScript(token, opts.kind) : ''}</body></html>`;
+}
+
+// The before/after/friend pages' only script: their own buttons and the two
+// beacons (opened, tapped). No booking code — that lives on the hub alone.
+function custSubScript(token, kind) {
+  return `<script>
+var TOK=${JSON.stringify(token || '')},KIND=${JSON.stringify(kind || '')};
+function $(i){return document.getElementById(i)}
+function post(b){return fetch("/api/cust/action?t="+encodeURIComponent(TOK),{method:"POST",keepalive:true,
+  headers:{"Content-Type":"application/json"},body:JSON.stringify(b)}).then(function(r){return r.json()})}
+// Opened and tapped: only on a personal link (the generic page is nobody's).
+// Script, not the page GET, so a link-preview fetch never counts as a person.
+if(TOK)post({action:"seen",kind:KIND}).catch(function(){});
+function tap(n){if(TOK)post({action:"tap",kind:KIND,name:n}).catch(function(){})}
+function act(body,btn,msgId,okFn){
+  var was=btn.textContent;btn.disabled=true;btn.textContent="Sending…";
+  post(body).then(function(d){
+      if(d&&d.ok){okFn(d);return}
+      btn.disabled=false;btn.textContent=was;
+      $(msgId).textContent=d&&d.error==="empty"?"Type it in first.":
+        d&&d.error==="too_many"?"Got your earlier ones. Reply to my text if there's more.":"That didn't go through. Try again, or reply to my text.";
+    }).catch(function(){btn.disabled=false;btn.textContent=was;$(msgId).textContent="That didn't go through. Try again, or reply to my text."});
+}
+function checked(){return Array.prototype.map.call(document.querySelectorAll('input[name="chk"]:checked'),function(x){return x.value})}
+function allChecked(){var a=document.querySelectorAll('input[name="chk"]');return a.length&&checked().length===a.length}
+document.addEventListener("change",function(e){
+  if(e.target.name==="chk"){var b=$("readyBtn")||$("smsSet");if(b)b.disabled=!allChecked()}
+});
+document.addEventListener("click",function(e){
+  var t=e.target.closest?e.target.closest("[data-tap]"):null;
+  if(t)tap(t.getAttribute("data-tap"));
+  var id=e.target.id;
+  if(id==="readyBtn"){
+    act({action:"ready",note:$("prepNote").value.trim(),checks:checked()},e.target,"prepMsg",function(){
+      $("prepForm").hidden=true;
+      var p=document.createElement("div");p.className="pill ok";p.textContent="✓ Thanks. See you then";
+      $("prepCard").appendChild(p);
+    });return}
+  if(id==="smsSet"){
+    var labels=Array.prototype.map.call(document.querySelectorAll('input[name="chk"]:checked'),function(x){return x.nextElementSibling.textContent.toLowerCase()});
+    var n=$("prepNote").value.trim();
+    var body="I'm set for my detail: "+labels.join(", ")+"."+(n?" "+n:"");
+    location.href="sms:"+e.target.getAttribute("data-tel")+"?&body="+encodeURIComponent(body);return}
+  if(id==="addrBtn"){$("addrForm").hidden=false;$("addrIn").focus();e.target.hidden=true;return}
+  if(id==="addrSend"){
+    act({action:"address",address:$("addrIn").value.trim()},e.target,"addrMsg",function(d){
+      $("addrForm").hidden=true;
+      var p=document.createElement("div");p.className="pill ok";p.textContent="Sent to Mikey: "+(d.addrFix?d.addrFix.address:"");
+      $("addrForm").parentNode.insertBefore(p,$("addrForm"));
+    });return}
+  if(id==="planBtn"){
+    act({action:"plan"},e.target,"planMsg",function(){
+      var p=document.createElement("div");p.className="pill ok";p.textContent="Got it. I'll text you about a plan";
+      e.target.parentNode.replaceChild(p,e.target);
+    });return}
+  var c=e.target.getAttribute&&e.target.getAttribute("data-care");
+  if(c){
+    Array.prototype.forEach.call(document.querySelectorAll("[data-care]"),function(x){x.classList.toggle("on",x===e.target)});
+    Array.prototype.forEach.call(document.querySelectorAll("[data-care-list]"),function(x){x.hidden=x.getAttribute("data-care-list")!==c});
+    if($("careHint"))$("careHint").hidden=true;return}
+  if(id==="shareBtn"){
+    var u=e.target.getAttribute("data-url");
+    var txt="I use Mikey for detailing, he comes to you. Book with my link and once your first detail is done we both get a free exterior: "+u;
+    // The share sheet where there is one (every phone); a text to nobody yet
+    // where there isn't, so the customer picks the friend.
+    if(navigator.share){navigator.share({text:txt}).catch(function(){})}
+    else location.href="sms:?&body="+encodeURIComponent(txt);
+    return}
+});
+</script>`;
+}
+
+// The hub's script: booking, moving and cancelling.
+function custHubScript(token) {
+  return `<script>
 var TOK=${JSON.stringify(token || '')};
 var S=null,pick={date:"",slot:"",service:"",size:""};
 function $(i){return document.getElementById(i)}
 function api(p,o){return fetch(p,o).then(function(r){return r.json()})}
 function load(then){api("/api/cust/state?t="+encodeURIComponent(TOK)).then(function(d){if(d&&d.ok){S=d;if(then)then(d)}})}
 // Only the hub books, so only the hub needs the state up front.
-if(TOK&&${opts.book ? 'true' : 'false'})load();
+// "Book the next one" on the after page lands here with #book: open the picker.
+if(TOK)load(function(){if(location.hash==="#book"&&$("bookCard")){startBook();$("bookCard").scrollIntoView()}});
 function days(){
   var out=[],d=new Date();
   for(var i=1;i<=14;i++){
@@ -17847,7 +18246,7 @@ document.addEventListener("click",function(e){
       });
   }
 });
-</script></body></html>`;
+</script>`;
 }
 
 // ===========================================================================

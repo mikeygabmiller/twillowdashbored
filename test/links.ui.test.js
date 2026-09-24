@@ -13,7 +13,7 @@ import fs from 'fs';
 const HTML = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
 const now = Date.now(), D = 86400000, H = 3600000;
 const P = (n) => '+1425555' + String(n).padStart(4, '0');
-const ANA = P(101), BEN = P(102), CAL = P(103), DEE = P(104), EVE = P(105), FAY = P(106), GUS = P(107), HAL = P(108);
+const ANA = P(101), BEN = P(102), CAL = P(103), DEE = P(104), EVE = P(105), FAY = P(106), GUS = P(107), HAL = P(108), IVY = P(109);
 const base = { unread: 0, tags: [], lastDir: 'out', lastBody: 'see you then', status: 'won' };
 const rows = [
   Object.assign({ phone: ANA, name: 'Ana Reyes', lastTs: now - 3 * D, appointmentAt: now + 2 * D }, base),            // before
@@ -24,6 +24,7 @@ const rows = [
   Object.assign({ phone: FAY, name: 'Fay Holt', lastTs: now - 9 * D, lastJobAt: now - 10 * D, issueAt: now - 9 * D }, base),  // complained
   Object.assign({ phone: GUS, name: 'Gus Lind', lastTs: now - D, appointmentAt: now + 10 * D }, base),                // too far out
   Object.assign({ phone: HAL, name: 'Hal Wu', lastTs: now - D, appointmentAt: now + D, optedOut: true }, base),       // do not text
+  Object.assign({ phone: IVY, name: 'Ivy Lane', lastTs: now - H, lastJobAt: now - 5 * H }, base),                       // after, ticks
 ];
 const thread = (r, extra) => Object.assign({ phone: r.phone, name: r.name, status: 'won', tags: [], scheduled: [], linked: [], notes: '',
   appointmentAt: r.appointmentAt || null, lastJob: r.lastJobAt ? { at: r.lastJobAt, service: 'Full Detail' } : null,
@@ -31,6 +32,8 @@ const thread = (r, extra) => Object.assign({ phone: r.phone, name: r.name, statu
   messages: [{ id: 'm1', dir: 'out', body: 'see you then', ts: r.lastTs }] }, extra || {});
 const THREADS = {};
 for (const r of rows) THREADS[r.phone] = thread(r);
+// Ivy: her before link went out and she opened it and added it to her calendar.
+Object.assign(THREADS[IVY], { linkSent: { before: now - 3 * D }, linkOpen: { before: now - 3 * D + H }, linkTaps: { 'before:calendar': { at: now - 3 * D + H, n: 1 } } });
 const tokOf = (ph) => 'tok' + ph.slice(-4) + 'abcdefghijkl';
 const LINKS = (ph) => {
   const t = tokOf(ph), b = 'https://texting.test';
@@ -48,7 +51,7 @@ const errs = [];
 page.on('pageerror', (e) => errs.push('PAGEERROR: ' + e.message));
 page.on('console', (m) => { if (m.type() === 'error' && !/favicon|manifest|sw\.js|fetching the script/.test(m.text())) errs.push('CONSOLE: ' + m.text()); });
 
-const sent = [], skips = [], linkAsks = [];
+const sent = [], skips = [], linkAsks = [], dids = [];
 await page.route('**/*', async (route) => {
   const req = route.request();
   const u = new URL(req.url()); const path = u.pathname;
@@ -74,6 +77,11 @@ await page.route('**/*', async (route) => {
     return json({ ok: true, thread: t });
   }
   if (path === '/api/send') { sent.push(body()); return json({ ok: true }); }
+  if (path === '/api/cust/did') {
+    const b = body(); dids.push(b);
+    const t = THREADS[b.phone]; t.lastJob = Object.assign({}, t.lastJob, { did: b.did });
+    return json({ ok: true, lastJob: t.lastJob });
+  }
   if (path === '/api/money') return json({ ok: true, month: '2026-09', today: '2026-09-02', entries: [], nudges: [], owed: [], summary: {}, config: {} });
   if (path === '/api/day') return json({ ok: true, date: '2026-09-02', jobs: [], manual: [], order: [], summary: { total: 0, done: 0, remaining: 0, booked: 0, earned: 0, hours: 0 } });
   if (path === '/api/detections') return json({ ok: true, detections: [], config: { enabled: true } });
@@ -162,6 +170,22 @@ ok('the due one is marked', /Before the job[\s\S]{0,40}Send this one now/.test(s
 ok('and the two bare links to keep saved', sh.includes('https://texting.test/before') && sh.includes('https://texting.test/after') && /Keep these saved/i.test(sh));
 await page.locator('#jdSheet [data-lk-put="friend"]').click(); await page.waitForTimeout(500);
 ok('"Put in the box" from the sheet writes that one', (await page.locator('#msgInput').inputValue()) === DRAFTS(ANA).friend);
+ok('still nothing sent', sent.length === 0, sent);
+
+section('"What I did": ticked in the app, shown on their after page');
+await openConvo('Ivy Lane');
+ok('Ivy gets the after banner, with the chips in it', /after-job link/.test(await bn.innerText()) && await bn.locator('[data-did]').count() > 10);
+await bn.locator('[data-did="Hand wash"]').click(); await page.waitForTimeout(400);
+await bn.locator('[data-did="Pet hair removed"]').click(); await page.waitForTimeout(400);
+ok('each tap saves the whole list', dids.length === 2 && dids[1].phone === IVY && dids[1].did.join('|') === 'Hand wash|Pet hair removed', dids);
+ok('…and shows as ticked', await bn.locator('[data-did="Pet hair removed"].did-chip.on').count() === 1);
+await bn.locator('[data-did="Hand wash"]').click(); await page.waitForTimeout(400);
+ok('tapping again unticks it', dids[2].did.join('|') === 'Pet hair removed', dids[2]);
+await page.locator('#detailsBtn').click(); await page.waitForTimeout(400);
+ok('Details has "What I did on the last job", matching', await page.locator('#dtDidSec').isVisible() &&
+  await page.locator('#dtDid [data-did="Pet hair removed"].on').count() === 1 && await page.locator('#dtDid [data-did="Hand wash"].on').count() === 0);
+const pg = await page.locator('#dtPages').innerText();
+ok('Details shows her before link was sent, opened, and what she tapped', /Before link · sent/.test(pg) && /opened/.test(pg) && /Tapped: Add to calendar/.test(pg), pg);
 ok('still nothing sent', sent.length === 0, sent);
 
 section('nothing threw');
