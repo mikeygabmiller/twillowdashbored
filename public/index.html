@@ -1227,6 +1227,20 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .cold-row .cr-acts button.pri{flex:2 1 100%;background:var(--accent-soft);border-color:transparent;color:var(--accent-text)}
   .cold-row .cr-acts button:disabled{opacity:.5}
   .pr-tag.plan{color:#7dd3fc;background:rgba(125,211,252,.15)}
+  /* ---- word of mouth ---- */
+  .ref-banner .ref-acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .ref-banner .hb-x.pri{background:var(--accent-soft);border-color:transparent;color:var(--accent-text)}
+  .ref-row{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13.5px}
+  .ref-row .ref-who{display:inline-flex;align-items:center;gap:6px;font-weight:700;color:var(--text);cursor:pointer}
+  .ref-row .ref-when{color:var(--muted2);font-size:12px}
+  #dtRef .ref-acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+  .ref-h{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;color:var(--muted2);margin:18px 0 0}
+  .ref-sent{margin-top:8px;font-size:12.5px;color:var(--muted);line-height:1.45}
+  .ref-sent .ref-amt{color:#4ade80;font-weight:700}
+  .ref-pick{display:flex;flex-direction:column;gap:2px;max-height:52vh;overflow-y:auto}
+  .ref-reward{display:flex;gap:8px;align-items:center;margin-top:8px}
+  .ref-reward input{flex:1}
+  .ref-reward .jd-btn{width:auto;padding:11px 16px}
   /* ---- maintenance plan sheet ---- */
   .plan-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:14px 0 4px}
   .plan-grid button{background:var(--panel2);border:1px solid var(--line);color:var(--text);
@@ -4145,6 +4159,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     <div class="job-banner" id="jobBanner" style="display:none"></div>
     <div id="planChipWrap"></div>
     <div class="hold-banner" id="holdBanner" style="display:none"></div>
+    <div class="hold-banner ref-banner" id="refBanner" style="display:none"></div>
     <div class="optout-banner" id="optOutBanner" style="display:none"></div>
     <div class="logjob-banner" id="logJobBanner" style="display:none"></div>
     <div class="quote-banner" id="quoteBanner" style="display:none"></div>
@@ -4242,6 +4257,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         <div class="dt-sec">
           <div class="lbl">Lead status</div>
           <div class="statusgrid" id="dtStatus"></div>
+        </div>
+        <div class="dt-sec">
+          <div class="lbl">Who sent them</div>
+          <div id="dtRef"></div>
         </div>
         <div class="dt-sec" id="dtAssignSec" style="display:none">
           <div class="lbl">Assigned to</div>
@@ -4507,7 +4526,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-22·nudge-each-text";
+  var APP_BUILD="2026-09-24·word-of-mouth";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4972,6 +4991,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     ["trend","Revenue trend","bar-chart"],
     ["funnel","Lead pipeline","clipboard-list"],
     ["vip","Top customers","trophy"],
+    ["wom","Word of mouth","users"],
     ["weather","Weather planner","cloud-sun"],
     ["stats","Quick stats","bar-chart"]
   ];
@@ -5000,8 +5020,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // Phase 2/3
     // A fresh Home is three blocks, not eleven. Everything else ships off and
     // is one tap away in Customize → Home — earn the space, don't assume it.
-    hwidgets:["brief","money","quickactions","schedule","goal","rebook","sla","tasks","promises","trend","funnel","vip","weather","stats"],
-    hwidgetsHidden:["schedule","goal","rebook","sla","tasks","promises","trend","funnel","vip","weather","stats"],
+    hwidgets:["brief","money","quickactions","schedule","goal","rebook","sla","tasks","promises","trend","funnel","vip","wom","weather","stats"],
+    hwidgetsHidden:["schedule","goal","rebook","sla","tasks","promises","trend","funnel","vip","wom","weather","stats"],
     rowFields:["time","preview","status","tags","unread"],
     stageLabels:{}, stageColors:{}
   };}
@@ -5971,6 +5991,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     {id:"mhistory",t:"Money history",g:"Money",ic:"clock",k:"past months previous earlier entries",run:function(){openMoney("history")}},
     {id:"owed",t:"Owed to you",g:"Money",ic:"alert",k:"unpaid outstanding debt chase overdue",run:function(){openMoney()}},
     // — insight
+    {id:"wom",t:"Word of mouth",g:"Insights",ic:"users",k:"referral referrals referred who sent them friend neighbor recommended told thank you",run:function(){refSheet()}},
     {id:"insights",t:"Insights — all reports",g:"Insights",ic:"bar-chart",k:"stats numbers reports index everything analytics",run:function(){openAnalytics("index")}},
     {id:"analytics",t:"Business overview",g:"Insights",ic:"activity",k:"stats numbers overview business kpis",run:function(){openAnalytics("overview")}},
     {id:"journey",t:"Customer journey",g:"Insights",ic:"route",k:"path pages visited what they did before texting replay story",run:function(){openAnalytics("journey")}},
@@ -6254,6 +6275,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     W.rebook='<div data-hwidget="rebook">'+homeRebookWidget()+'</div>';
     W.trend='<div data-hwidget="trend">'+homeTrendWidget()+'</div>';
     W.vip='<div data-hwidget="vip">'+homeVipWidget()+'</div>';
+    // Only asked for when the card is actually on screen: it reads 18 months of
+    // the ledger, and a hidden card shouldn't cost a fetch on every Home visit.
+    W.wom=(UI&&UI.mode==="pro"&&(UI.hwidgetsHidden||[]).indexOf("wom")<0)?'<div data-hwidget="wom">'+homeRefWidget()+'</div>':'';
     W.funnel='<div data-hwidget="funnel">'+homeFunnelWidget(active)+'</div>';
     W.weather='<div data-hwidget="weather">'+homeWeatherWidget()+'</div>';
     W.tasks='<div data-hwidget="tasks">'+homeTasksWidget()+'</div>';
@@ -6771,6 +6795,215 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(!phone||!text)return;
     drafts[phone]=text;saveDrafts();
   }
+  // ---- Word of mouth — who sent them ---------------------------------------
+  // The best leads a mobile detailer gets come off a driveway, and the app
+  // couldn't see a single one. `source` says HOW someone reached him; this says
+  // WHO sent them, which is the part worth a thank-you. A new lead saying "Dave
+  // told me about you" raises a question in the conversation; nothing is
+  // decided until he taps, and nothing is ever texted on its own.
+  var REF={data:null,fetching:false,at:0,wait:[]};
+  function loadRefs(force,cb){
+    // A tap that lands while Home's own fetch is in flight rides that fetch
+    // rather than being dropped — otherwise "Thank Dave" does nothing at all.
+    if(cb)REF.wait.push(cb);
+    if(REF.fetching)return;
+    if(!force&&REF.data&&Date.now()-REF.at<120000){var w=REF.wait;REF.wait=[];w.forEach(function(f){f(REF.data)});return}
+    // Home repaints whenever any fetch lands and calls this from the repaint,
+    // so the hold is on the attempt, not the answer (see loadCold).
+    if(!force&&!cb&&REF.at&&Date.now()-REF.at<60000)return;
+    REF.fetching=true;REF.at=Date.now();
+    api("/api/referrals").then(function(d){
+      REF.fetching=false;
+      var w=REF.wait;REF.wait=[];
+      // Shape-check for the same reason as loadCold: an older Worker mid-deploy
+      // answers ok without the fields.
+      if(d&&d.ok&&d.totals&&d.referrers){REF.data=d;REF.at=Date.now();w.forEach(function(f){f(d)});if(state.tab==="home")renderHome()}
+      else if(w.length)toast("Couldn't load who sent them",{bad:true});
+    }).catch(function(){REF.fetching=false;var w=REF.wait;REF.wait=[];if(w.length)toast("Couldn't load who sent them",{bad:true})});
+  }
+  function refFirst(n){return String(n||"").trim().split(/\s+/)[0]||""}
+  // Who "Dave" is, out of everyone he has ever texted. Only people whose first
+  // name is exactly that — a guess that picks the wrong Dave thanks a stranger.
+  // Customers who've been Won come first: they're the ones who talk about him.
+  function refCandidates(name,self){
+    var f=refFirst(name).toLowerCase();if(!f)return [];
+    return (state.threads||[]).filter(function(x){
+      return x.phone!==self&&refFirst(x.name).toLowerCase()===f;
+    }).sort(function(a,b){return ((b.status==="won")-(a.status==="won"))||((b.lastTs||0)-(a.lastTs||0))}).slice(0,4);
+  }
+  function refPost(body,ok){
+    return post("/api/referral",body).then(function(d){
+      if(d&&d.ok){
+        if(d.thread&&state.thread&&d.thread.phone===state.thread.phone){state.thread=d.thread;renderThread();if(el("details")&&el("details").classList.contains("open"))renderDetails()}
+        if(d.referrers){REF.data=d;REF.at=Date.now()}else REF.at=0;
+        refreshThreads();if(ok)toast(ok);
+      }else toast(d&&d.error==="self"?"Nobody sends themselves":d&&d.error==="loop"?"They were sent by this person — that's the other way round":"Couldn't save that",{bad:true});
+      return d;
+    }).catch(function(){toast("Couldn't save that",{bad:true})});
+  }
+  function refSet(phone,by,name){return refPost({phone:phone,action:"set",by:by},(name?refFirst(name):"They")+" sent them — saved")}
+  // Opening the thank-you IS the thank-you, the same call the plan reminder
+  // makes: he's looking at the text in the box, so the list stops asking.
+  function refThank(by){
+    loadRefs(true,function(d){
+      var r=(d.referrers||[]).filter(function(x){return x.phone===by})[0];
+      if(r&&r.draft)seedDraft(by,r.draft);
+      post("/api/referral",{action:"thanked",by:by}).then(function(x){if(x&&x.ok&&x.referrers){REF.data=x;REF.at=Date.now()}refreshThreads()}).catch(function(){});
+      if(JD.sheetOpen)jdSheetClose();
+      if(typeof closeJobs==="function")closeJobs();
+      setTab("messages");openThread(by);
+    });
+  }
+  // The question in the conversation, and the one-tap thank-you after it's answered.
+  function renderRefBanner(t){
+    var b=el("refBanner");if(!b)return;
+    var g=t.refGuess,r=t.referredBy;
+    if(g&&!r&&!t.refNo){
+      var c=g.name?refCandidates(g.name,t.phone):[];
+      var head=g.name?"Sent by "+esc(g.name)+"?":(g.rel?"A "+esc(g.rel)+" sent them":"Somebody sent them");
+      b.style.display="flex";
+      b.innerHTML='<span class="hb-ic">'+ic("users",15)+'</span><div class="hb-txt"><b>'+head+'</b>'+
+        '<span class="hb-when">They said: “'+esc(g.line||"")+'”</span>'+
+        '<div class="ref-acts">'+c.slice(0,2).map(function(x){
+          return '<button class="hb-x pri" data-ref-yes="'+esc(x.phone)+'">'+esc(displayName(x))+'</button>'}).join("")+
+        '<button class="hb-x" data-ref-pick="1">'+(c.length?"Someone else":"Who was it?")+'</button>'+
+        '<button class="hb-x" data-ref-no="1">Not a referral</button></div></div>';
+      Array.prototype.forEach.call(b.querySelectorAll("[data-ref-yes]"),function(x){x.onclick=function(){
+        var ph=x.getAttribute("data-ref-yes");var who=(state.threads||[]).filter(function(y){return y.phone===ph})[0];
+        refSet(t.phone,ph,who&&who.name)}});
+      b.querySelector("[data-ref-pick]").onclick=function(){refPicker(t,g.name||"")};
+      b.querySelector("[data-ref-no]").onclick=function(){refPost({phone:t.phone,action:"no"},"Won't ask again")};
+      return;
+    }
+    // Answered, not yet thanked, and recent enough that a thank-you still reads
+    // as one. After two weeks it lives on the Word of mouth list instead.
+    if(r&&!r.thankedAt&&Date.now()-(r.at||0)<14*86400000&&!isDnt(r.phone)){
+      var nm=refFirst(r.name)||prettyPhone(r.phone);
+      b.style.display="flex";
+      b.innerHTML='<span class="hb-ic">'+ic("users",15)+'</span><div class="hb-txt"><b>'+esc(nm)+' sent them</b>'+
+        '<span class="hb-when">A thank-you now is what gets you the next one.</span></div>'+
+        '<button class="hb-x" data-ref-thank="1">Thank '+esc(nm)+'</button>';
+      b.querySelector("[data-ref-thank]").onclick=function(){refThank(r.phone)};
+      return;
+    }
+    b.style.display="none";b.innerHTML="";
+  }
+  // Details → Who sent them. Always there, so a referral he knows about but the
+  // customer never typed can still go on file.
+  function renderRefDetail(t){
+    var box=el("dtRef");if(!box)return;
+    var r=t.referredBy;
+    if(r){
+      var nm=displayName({name:r.name,phone:r.phone});
+      box.innerHTML='<div class="ref-row"><span class="ref-who" data-ref-open="'+esc(r.phone)+'">'+ic("users",14)+esc(nm)+'</span>'+
+        '<span class="ref-when">'+(r.thankedAt?"Thanked "+esc(new Date(r.thankedAt).toLocaleDateString([],{month:"short",day:"numeric"})):"Not thanked yet")+'</span></div>'+
+        '<div class="ref-acts">'+(!r.thankedAt&&!isDnt(r.phone)?'<button class="na-ok" data-ref-thank="1">Thank '+esc(refFirst(r.name)||"them")+'</button>':'')+
+        '<button class="na-ok" data-ref-change="1">Change</button><button class="na-ok" data-ref-clear="1">Nobody</button></div>';
+    }else{
+      box.innerHTML='<div class="ref-row"><span class="ref-when">Nobody on file</span>'+
+        '<button class="na-ok" data-ref-change="1">Set who</button></div>';
+    }
+    var q=function(s){return box.querySelector(s)};
+    if(q("[data-ref-thank]"))q("[data-ref-thank]").onclick=function(){closeDetails&&closeDetails();refThank(r.phone)};
+    if(q("[data-ref-change]"))q("[data-ref-change]").onclick=function(){refPicker(t,"")};
+    if(q("[data-ref-clear]"))q("[data-ref-clear]").onclick=function(){refPost({phone:t.phone,action:"clear"},"Cleared")};
+    if(q("[data-ref-open]"))q("[data-ref-open]").onclick=function(){closeDetails&&closeDetails();openThread(r.phone)};
+  }
+  // Everyone he's ever texted, searchable by name or digits. Starts filtered to
+  // the name they said, so confirming "Dave" is usually one tap.
+  function refPicker(t,start){
+    var h='<div class="jd-sh-title">Who sent '+esc(firstNameOf(t))+'?</div>'+
+      '<div class="jd-sh-sub">Pick the customer who told them about you.</div>'+
+      '<div class="jd-field" style="margin-top:12px"><input id="refPickQ" placeholder="Name or number" autocomplete="off" value="'+esc(start||"")+'"></div>'+
+      '<div class="ref-pick" id="refPickList"></div>';
+    var s=jdSheetOpen(h);
+    var q=s.querySelector("#refPickQ"),list=s.querySelector("#refPickList");
+    function draw(){
+      var v=(q.value||"").trim().toLowerCase(),dig=v.replace(/\D/g,"");
+      var rows=(state.threads||[]).filter(function(x){
+        if(x.phone===t.phone)return false;
+        if(!v)return true;
+        return (x.name||"").toLowerCase().indexOf(v)>=0||(dig.length>=3&&String(x.phone).replace(/\D/g,"").indexOf(dig)>=0);
+      }).sort(function(a,b){return ((b.status==="won")-(a.status==="won"))||((b.lastTs||0)-(a.lastTs||0))}).slice(0,40);
+      list.innerHTML=rows.length?rows.map(function(x){
+        return '<div class="prow" data-ref-choose="'+esc(x.phone)+'"><div class="pr-av" style="background:'+colorFor(x.phone)+'">'+esc(initials(x))+'</div>'+
+          '<div class="pr-b"><div class="pr-nm">'+esc(displayName(x))+'</div><div class="pr-sub">'+esc(prettyPhone(x.phone)+(x.status==="won"?" · customer":""))+'</div></div></div>'}).join("")
+        :'<div class="jd-empty"><b>Nobody by that name</b>They have to have texted you once to be picked here.</div>';
+      Array.prototype.forEach.call(list.querySelectorAll("[data-ref-choose]"),function(r){r.onclick=function(){
+        var ph=r.getAttribute("data-ref-choose");var who=(state.threads||[]).filter(function(y){return y.phone===ph})[0];
+        jdSheetClose();refSet(t.phone,ph,who&&who.name)}});
+    }
+    q.oninput=draw;draw();
+  }
+  // Home card (opt-in, like every widget since migrateUI) — a shortcut to the
+  // sheet, never the only way in: More → Insights has it too.
+  function homeRefWidget(){
+    if(!REF.data){loadRefs();return ""}
+    var d=REF.data,tt=d.totals;
+    var head='<div class="wc-h"><span class="wc-ic">'+ic("users",18)+'</span><span class="wc-t">Word of mouth</span>'+
+      (tt.unthanked?'<span class="wc-badge">'+tt.unthanked+' to thank</span>':'')+'</div>';
+    if(!tt.people&&!d.guesses.length)return '<div class="wcard">'+head+'<div class="wc-empty">'+ic("users",15)+' Nobody on file yet. When a new lead says who sent them, you\'ll be asked in the conversation.</div></div>';
+    var rows=d.referrers.slice(0,3).map(function(r){
+      var nm=r.name||prettyPhone(r.phone);
+      return '<div class="prow" data-ref-home="1"><div class="pr-av" style="background:'+colorFor(r.phone)+'">'+esc((nm[0]||"#").toUpperCase())+'</div>'+
+        '<div class="pr-b"><div class="pr-nm">'+esc(nm)+'</div><div class="pr-sub">Sent '+r.people.length+(r.dollars?" · "+fmtMoney(r.dollars)+" paid":"")+'</div></div></div>'}).join("");
+    return '<div class="wcard">'+head+
+      (tt.people?'<p class="hint" style="margin:-4px 0 11px"><b>'+tt.people+'</b> '+(tt.people===1?"customer":"customers")+' came from somebody'+(tt.dollars?", worth <b>"+fmtMoney(tt.dollars)+"</b>":"")+'.</p>':'')+
+      '<div class="plist">'+rows+'</div>'+
+      '<button class="jd-btn" id="refAll" style="margin-top:10px">'+ic("users",16)+' Who sends you business</button></div>';
+  }
+  // The sheet opens NOW and fills in when the numbers land. Opening it inside
+  // the fetch's callback raced the back-button bookkeeping: More closes itself
+  // first, its deferred history.back() fires while the fetch is out, and a
+  // sheet pushed in between left Back with one entry too few — out of the app.
+  function refSheet(){
+    var s0=jdSheetOpen('<div class="jd-sh-title">Word of mouth</div><div class="jd-empty" id="refLoading"><b>Adding it up</b>Who sent who, against what they paid.</div>');
+    loadRefs(true,function(d){
+      // Closed, or replaced by another sheet, while this was loading.
+      if(!JD.sheetOpen||!s0.querySelector("#refLoading"))return;
+      var tt=d.totals;
+      var h='<div class="jd-sh-title">Word of mouth</div>';
+      h+='<div class="jd-sh-sub">'+(tt.people
+        ?tt.people+' '+(tt.people===1?"person":"people")+' came from '+tt.referrers+' '+(tt.referrers===1?"customer":"customers")+(tt.dollars?", and they've paid you "+fmtMoney(tt.dollars):"")+'.'
+          +(tt.paying?' That\'s '+tt.payingReferred+' of your '+tt.paying+' paying customers.':'')
+        :'Nobody on file yet. When a new lead says "Dave told me about you", the conversation asks you who Dave is. You can also set it in Details → Who sent them.')+'</div>';
+      if(d.guesses.length){
+        h+='<div class="ref-h">Said who sent them — not confirmed</div><div class="cold-list">'+d.guesses.map(function(g){
+          var nm=g.name||prettyPhone(g.phone);
+          return '<div class="cold-row"><div class="cr-top"><div class="pr-av" style="background:'+colorFor(g.phone)+'">'+esc((nm[0]||"#").toUpperCase())+'</div>'+
+            '<div class="cr-b"><div class="cr-nm">'+esc(nm)+'</div><div class="cr-why">'+(g.guess?"Says "+esc(g.guess)+" sent them":"Didn't say who")+'</div></div></div>'+
+            '<div class="cr-draft">“'+esc(g.line)+'”</div>'+
+            '<div class="cr-acts"><button class="pri" data-ref-go="'+esc(g.phone)+'">'+ic("message-square",15)+' Answer it</button></div></div>'}).join("")+'</div>';
+      }
+      if(d.referrers.length){
+        h+='<div class="ref-h">Who sends you business</div><div class="cold-list">'+d.referrers.map(function(r){
+          var nm=r.name||prettyPhone(r.phone);
+          var sent=r.people.map(function(p){return esc(p.name||prettyPhone(p.phone))+(p.total?' <span class="ref-amt">'+fmtMoney(p.total)+'</span>':'')}).join(", ");
+          return '<div class="cold-row"><div class="cr-top"><div class="pr-av" style="background:'+colorFor(r.phone)+'">'+esc((nm[0]||"#").toUpperCase())+'</div>'+
+            '<div class="cr-b"><div class="cr-nm">'+esc(nm)+'</div><div class="cr-why">Sent '+r.people.length+(r.dollars?" · "+fmtMoney(r.dollars)+" paid":" · nothing paid yet")+'</div></div>'+
+            (r.unthanked?'<span class="pr-tag quote">Thank</span>':'')+'</div>'+
+            '<div class="ref-sent">'+sent+'</div>'+
+            (r.unthanked&&r.draft&&!r.optedOut?'<div class="cr-draft">'+esc(r.draft)+'</div>':'')+
+            '<div class="cr-acts">'+(r.unthanked&&!r.optedOut?'<button class="pri" data-ref-thanks="'+esc(r.phone)+'">'+ic("send",15)+' Open with this text</button>':'')+
+            '<button data-ref-go="'+esc(r.phone)+'">Open</button></div></div>'}).join("")+'</div>';
+      }
+      h+='<div class="ref-h">What you give for a referral</div>'+
+        '<div class="jd-sh-sub" style="margin-top:0">Optional. Your own sentence, added to the end of every thank-you. Leave it blank and the thank-you is just a thank-you.</div>'+
+        '<div class="ref-reward jd-field"><input id="refReward" maxlength="140" placeholder="e.g. Your next detail is $20 off, on me." value="'+esc(d.reward||"")+'">'+
+        '<button class="jd-btn" id="refRewardSave">Save</button></div>';
+      var s=s0;s.innerHTML='<div class="jd-grip"></div>'+h;hydrateIcons(s);
+      Array.prototype.forEach.call(s.querySelectorAll("[data-ref-go]"),function(b){b.onclick=function(){
+        var ph=b.getAttribute("data-ref-go");jdSheetClose();if(typeof closeJobs==="function")closeJobs();setTab("messages");openThread(ph)}});
+      Array.prototype.forEach.call(s.querySelectorAll("[data-ref-thanks]"),function(b){b.onclick=function(){refThank(b.getAttribute("data-ref-thanks"))}});
+      s.querySelector("#refRewardSave").onclick=function(){
+        var v=s.querySelector("#refReward").value.trim();
+        post("/api/referral",{action:"reward",reward:v}).then(function(x){
+          if(x&&x.ok&&x.referrers){REF.data=x;REF.at=Date.now();toast(v?"Saved — it goes on every thank-you":"Cleared");jdSheetClose();refSheet()}
+          else toast("Couldn't save that",{bad:true});
+        }).catch(function(){toast("Couldn't save that",{bad:true})});
+      };
+    });
+  }
   // 30-day revenue trend — daily gross as a bar sparkline, plus this-week vs
   // last-week delta. Uses the loaded month entries (best-effort window).
   function homeTrendWidget(){
@@ -7074,6 +7307,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     wireWxRisk(box);
     // Money on the table: open the whole list, or jump straight into one person
     // with the text already in the box.
+    // Word of mouth: the card is a door to the sheet, every row included.
+    var ra=box.querySelector("#refAll");
+    if(ra)ra.onclick=function(){vibrate(6);refSheet()};
+    Array.prototype.forEach.call(box.querySelectorAll("[data-ref-home]"),function(c){c.onclick=function(){refSheet()}});
     var ca=box.querySelector("#coldAll");
     if(ca)ca.onclick=function(){vibrate(6);COLD.group="all";coldSheet()};
     Array.prototype.forEach.call(box.querySelectorAll("[data-cold-open]"),function(c){
@@ -10062,6 +10299,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // the conversation that hasn't been saved yet.
     renderJobBanner(t);
     renderPlanChip(t);
+    renderRefBanner(t);
 
     // "You told me to leave this one alone." Shows the reason back in Mikey's own
     // words so a quiet conversation never looks like the app forgot about it.
@@ -10534,6 +10772,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     el("dtAvatar").textContent=initials(t);el("dtAvatar").style.background=colorFor(t.phone);
     el("dtName").textContent=displayName(t);el("dtNum").textContent=prettyPhone(t.phone);
     renderNameAuto(t);
+    renderRefDetail(t);
     el("dtPinTxt").textContent=t.pinned?"Unpin":"Pin";
     el("dtArchTxt").textContent=t.archived?"Restore":"Archive";
 
@@ -12960,7 +13199,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     {g:"Insights",rows:[
       // Nine reports behind one door. It lost its nav pill on the evidence and
       // gained an index in exchange, so this row is now the main way in.
-      {t:"Insights — nine reports",ic:"bar-chart",go:function(){closeMore();openAnalytics("index")}}
+      {t:"Insights — nine reports",ic:"bar-chart",go:function(){closeMore();openAnalytics("index")}},
+      {t:"Word of mouth",ic:"users",go:function(){closeMore();refSheet()}}
     ]},
     {g:"Day tools",rows:[
       // These three were only ever reachable as Home widgets, which meant
