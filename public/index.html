@@ -4552,7 +4552,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-25·helper-purple";
+  var APP_BUILD="2026-09-25·helper-messages";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -8531,6 +8531,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         '<button class="btn" id="helperPin">'+(hOn?"Change PIN":"Set a helper PIN")+'</button>'+
         '<button class="btn" id="helperName">Name</button>'+
         '<button class="btn" id="helperNotes">Notes for them</button>'+
+        (hOn?'<button class="btn" id="helperFresh">Clear their "needs reply"</button>':'')+
         (hOn?'<button class="btn" id="helperOff">Turn off</button>':'')+
         '<a class="btn" href="/helper.html" target="_blank" rel="noopener">See their page</a>'+
       '</div>'+
@@ -8563,6 +8564,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     };
     el("helperName").onclick=function(){var v=prompt("Their name (shows as \"sent by\" on their texts):",c.helperName||"");if(v!==null)saveConfig({helperName:v}).then(function(){toast("Saved")})};
     el("helperNotes").onclick=function(){var v=prompt("Notes shown at the top of their guide (this week's schedule, anything new):",c.helperNotes||"");if(v!==null)saveConfig({helperNotes:v}).then(function(){toast("Saved")})};
+    // Their page only flags texts that arrive after this. Nothing on any thread
+    // changes, so your own "waiting on you" list stays exactly as it is.
+    if(el("helperFresh"))el("helperFresh").onclick=function(){if(confirm("Start their page fresh? Texts already waiting won't be flagged for them. Anything new will be. Your own list doesn't change."))saveConfig({helperSince:Date.now()}).then(function(){toast("Their list starts fresh from now")})};
     if(el("helperOff"))el("helperOff").onclick=function(){if(confirm("Turn off the helper page? Their PIN stops working right away."))saveConfig({helperPassword:""}).then(function(){toast("Helper page off")})};
     el("cfgTeam").onclick=function(){saveConfig({teamMode:!on})};
     Array.prototype.forEach.call(wrap.querySelectorAll("[data-me]"),function(b){b.onclick=function(){

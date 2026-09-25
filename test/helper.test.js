@@ -77,6 +77,7 @@ console.log('\nSetting the helper PIN');
   ok(!('helperPassword' in set.data.config) && set.data.config.helperPinSet === true, 'the PIN never comes back out, only that one is set');
   const cfg = await call('GET', '/api/config', { cookie: owner.cookie });
   ok(!JSON.stringify(cfg.data).includes('5150'), 'GET /api/config never contains the PIN');
+  ok(cfg.data.config.helperSince > Date.now() - 60000, 'a first helper PIN starts their "needs reply" from now');
 }
 
 console.log('\nThe helper signs in and gets the helper role');
@@ -111,6 +112,9 @@ console.log('\nWhat the texting page needs is open');
   // "Sorry we couldn't work it out" is him and the customer, and it's his own
   // wording. The business "we" (we come to you, we offer) is what's banned.
   ok(!/\bwe(?:'ll| will| can| come| do| offer| bring| are| have)\b/i.test(JSON.stringify(g.data.quick)), 'quick replies are first person, no business "we"');
+  ok(g.data.since > 0, 'the guide carries the start line');
+  const fresh = await call('POST', '/api/config', { cookie: helper.cookie, body: { helperSince: 0 } });
+  ok(fresh.status === 403, 'the helper can\'t move their own start line');
   const empty = await call('POST', '/api/ai/draft', { cookie: helper.cookie, body: { phone: CUST } });
   ok(empty.status === 422 && empty.data.error === 'helper_needs_text', '"write me one" without text is Mikey\'s, not the helper\'s');
 }
@@ -143,6 +147,17 @@ console.log('\nAsk Mikey reaches Mikey and is marked on the thread');
   ok(th.data.thread.helperAsk && /RAV4/.test(th.data.thread.helperAsk.question), 'the thread shows it was asked');
   const rd = await call('POST', '/api/request-date', { cookie: helper.cookie, body: { phone: CUST, note: 'Thu or Fri', by: 'Someone else' } });
   ok(rd.status === 200 && rd.data.thread.dateRequest.by === 'Jess', 'date request is signed Jess, not what the page sent');
+}
+
+console.log('\nMikey can start them fresh, without touching a thread');
+{
+  const before = (await KV.get('thread:' + CUST, { type: 'json' }));
+  const r = await call('POST', '/api/config', { cookie: owner.cookie, body: { helperSince: Date.now() } });
+  ok(r.status === 200 && r.data.config.helperSince > 0, 'owner resets the start line');
+  const after = (await KV.get('thread:' + CUST, { type: 'json' }));
+  ok(JSON.stringify(before) === JSON.stringify(after), 'no conversation is changed by it');
+  const fut = await call('POST', '/api/config', { cookie: owner.cookie, body: { helperSince: Date.now() + 864e5 } });
+  ok(fut.data.config.helperSince <= Date.now(), 'a start line in the future is pulled back to now');
 }
 
 console.log('\nChanging or clearing the PIN signs the helper out');
