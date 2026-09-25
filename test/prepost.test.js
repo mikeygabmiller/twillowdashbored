@@ -22,7 +22,7 @@ const EXPORTS = ['custTokenFor', 'custState', 'apiCustState', 'apiCustAction', '
   'refCodeFor', 'refResolve', 'refCredits', 'careKind', 'CARE_TIPS', 'REF_OFFER', 'buildReferrals', 'apiReferralAction',
   'loadThread', 'saveThread', 'updateIndexEntry', 'loadBookings', 'saveBookings', 'loadIndex',
   'loadMonth', 'saveMonth', 'loadConfig', 'localDateStr', 'bkAvailability', 'genId',
-  'custCalendar', 'apiCustDid', 'apiSaveConfig', 'apiPushPeek', 'custPhoto', 'apiPhotoUpload'];
+  'custCalendar', 'apiCustDid', 'apiSaveConfig', 'apiPushPeek', 'custPhoto', 'apiPhotoUpload', 'apiCustPreview', 'apiGetConfig'];
 
 const store = new Map();
 const kv = {
@@ -571,9 +571,73 @@ section('Their before and after: the Jobs board shots, on their after page');
   ok('"Save the photos" taps are counted too', (await (await M.apiCustAction(req({ action: 'tap', kind: 'after', name: 'photos' }), q(tp))).json()).noted);
 }
 
+section('The page editor: every line, the order, what shows and the colour are his');
+{
+  const ED = '+14255550909';
+  await customer(ED, 'Eli Dunn');
+  const te = await M.custTokenFor(ED);
+  await booking(ED, { dateLabel: 'Friday, Oct 3', durationMin: 240 });
+  const save = async (cp) => { await M.apiSaveConfig(req({ custPages: cp })); M.__resetCfg(); };
+  let bh = await page('before', te);
+  ok('(the originals first) title, paying and the rain line read as before', /<title>Before I get there<\/title>/.test(bh) &&
+    /<b>Paying\.<\/b> After the work/.test(bh) && /<b>If it rains\.<\/b>/.test(bh));
+  await save({ title_before: 'Before I pull up', prep_pay: 'Paying. Card, cash or Zelle, after the work.', prep_long: 'Time. Plan on {length}.',
+    lineup: 'Gate code or no outlet? [Shoot me a text] and we will sort it.' });
+  bh = await page('before', te);
+  ok('the page title is his', /<title>Before I pull up<\/title>/.test(bh) && /<h1>Before I pull up<\/h1>/.test(bh));
+  ok('a checklist line is his, first sentence still the bold heading', /<b>Paying\.<\/b> Card, cash or Zelle, after the work\./.test(bh) && !/Cash, check or Zelle/.test(bh));
+  ok('{length} fills in from the booking', /<b>Time\.<\/b> Plan on About 4 hours\./.test(bh));
+  ok('[brackets] become the text-me link', /Gate code or no outlet\? <a href="sms:\+14256007897">Shoot me a text<\/a> and we will sort it\./.test(bh));
+  ok('a normal page carries none of the editor\'s markings', !/data-ed=|data-when=|data-hid=/.test(bh));
+  await save({ hide_before: 'prep_water,cal_btn' });
+  bh = await page('before', te);
+  ok('a hidden line is gone from the page', !/spigot/.test(bh) && !/Add to calendar/.test(bh) && /<b>Time\.<\/b>/.test(bh));
+  await save({ order_before: 'prep,expect,job', hide_before: 'expect' });
+  bh = await page('before', te);
+  ok('sections come in his order', bh.indexOf('id="prepCard"') < bh.indexOf('>Your detail<') && bh.indexOf('id="prepCard"') > 0);
+  ok('a hidden section is gone', !/How it goes/.test(bh) && /spigot/.test(bh));
+  await save({ order_before: 'job,bogus,prep', hide_before: '' });
+  bh = await page('before', te);
+  ok('an unknown section is ignored and a missing one goes on the end', bh.indexOf('>Your detail<') < bh.indexOf('id="prepCard"') &&
+    bh.indexOf('id="prepCard"') < bh.indexOf('How it goes'));
+  await save({ accent: '#1e90ff' });
+  ok('his colour goes on the page', /--red:#1e90ff/.test(await page('before', te)));
+  ok('…and on the hub, so they match', /--red:#1e90ff/.test(await html(te)));
+  await save({ accent: 'red;}body{display:none' });
+  ok('anything that isn\'t a colour is no colour, never CSS', !/body\{display:none/.test(await page('before', te)) && !/--red:red/.test(await page('before', te)));
+  await save({ next_weeks: '4–6', next_line: 'Every {weeks} weeks keeps it looking like this.', book_btn: 'Grab a spot' });
+  const et = await M.loadThread(ED); et.lastJob = { at: NOW - DAY, service: 'Full Detail', jobId: 'b:bkED' }; await M.saveThread(et);
+  let ah = await page('after', te);
+  ok('the after page\'s lines are his too', /Every 4–6 weeks keeps it looking like this\./.test(ah) && />Grab a spot</.test(ah));
+  ok('…and his range moves the dates window', (() => { const m = /around (\w+ \d+)–(\w+ \d+)/.exec(ah); if (!m) return false;
+    const y = new Date().getFullYear(), a = Date.parse(m[1] + ' ' + y), b = Date.parse(m[2] + ' ' + y);
+    return Math.round((b - a) / (7 * DAY)) === 2; })(), (ah.match(/around [^<]*/) || [])[0]);
+  await save({ draft_before: 'Yo {first}! Everything for {detail} is here: {link}', draft_after: 'Thanks {first}, care tips are up.' });
+  const dr = (await (await M.apiCustLink(req({ phone: ED }))).json()).drafts;
+  ok('the text with the before link is his', /^Yo Eli! Everything for Friday's detail is here: https:\/\/\S+\/before\//.test(dr.before), dr.before);
+  ok('…and a text he left the link out of still gets it', /^Thanks Eli, care tips are up\. https:\/\/\S+\/after\//.test(dr.after), dr.after);
+
+  const pv = await (await M.apiCustPreview(new URL('https://x/?kind=after&photos=pair'))).json();
+  ok('the editor preview is the real page, every line marked', pv.ok && /data-ed="review_btn"/.test(pv.html) && /data-ed="next_line"/.test(pv.html) && /data-ed="photos"/.test(pv.html));
+  ok('…with the lines a customer only sometimes sees, saying when', /data-ed="next_plan"[^>]*data-when=/.test(pv.html) && /data-ed="save_pic"/.test(pv.html) && /Care tips after an interior detail/.test(pv.html));
+  ok('…the texts that go with the link, to edit in the same place', /data-ed="draft_after"/.test(pv.html) && /Thanks Jenna, care tips are up\./.test(pv.html));
+  ok('…the review ask even with no link yet, saying why it\'s hidden', /Hidden: add your Google review link/.test(pv.html) || /g\.page/.test(pv.html));
+  ok('…and none of a real page\'s script (no beacons, no taps counted)', !/action:"seen"/.test(pv.html) && /cpEdit/.test(pv.html));
+  ok('…about a made-up customer, nobody real', /Hi Jenna\./.test(pv.html) && !/Eli/.test(pv.html));
+  const bp = await (await M.apiCustPreview(new URL('https://x/?kind=before'))).json();
+  ok('the before preview shows every checklist variant, each saying when', /data-ed="prep_home_out"[^>]*data-when="Instead, for exterior/.test(bp.html) && /data-ed="prep_ceramic"/.test(bp.html) && /data-ed="move_msg"/.test(bp.html));
+  const gc = await (await M.apiGetConfig()).json();
+  ok('Settings gets every box\'s original and what fills in', gc.config.custPagesDefaults.prep_pay.startsWith('Paying.') &&
+    gc.config.custPagesMeta.vars.prep_long.includes('length') && gc.config.custPagesMeta.sections.after.includes('friend'));
+  await save({ title_before: '', prep_pay: '', prep_long: '', lineup: '', order_before: '', accent: '', next_weeks: '', next_line: '', book_btn: '', draft_before: '', draft_after: '' });
+  bh = await page('before', te);
+  ok('empty boxes put every original back', /<title>Before I get there<\/title>/.test(bh) && /Cash, check or Zelle/.test(bh) && !/--red:#1e90ff/.test(bh),
+    [/<title>Before I get there/.test(bh), /Cash, check or Zelle/.test(bh), (bh.match(/--red:#\w+/) || [])[0]]);
+}
+
 section('Nothing here texted a customer');
 ok('no SMS to any customer across the whole suite', !sms.some((m) => [JENNA, RUTH, FRIEND, TEXTED, BOARD, '+14255550901', '+14255550902', '+14255550903',
-  '+14255550904', '+14255550905', '+14255550906', '+14255550907', '+14255550908'].includes(m.to)), sms);
+  '+14255550904', '+14255550905', '+14255550906', '+14255550907', '+14255550908', '+14255550909'].includes(m.to)), sms);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

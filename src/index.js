@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-25·after-photos';
+const BUILD = '2026-09-25·page-editor';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -531,6 +531,8 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/ai/rules')   return apiRulesPost(request);
   if (request.method === 'GET'  && pathname === '/api/config')     return apiGetConfig();
   if (request.method === 'POST' && pathname === '/api/config')     return apiSaveConfig(request);
+  // The page editor's preview: the real before/after page, for a made-up customer.
+  if (request.method === 'GET'  && pathname === '/api/cust/preview') return apiCustPreview(url);
   // "How I talk" — read the rules and see every message they produce. POST
   // because the screen previews unsaved rules; it reads and renders, no write.
   if (request.method === 'GET'  && pathname === '/api/say')        return apiSayPreview(new Request(request.url));
@@ -10161,6 +10163,7 @@ function publicConfig(cfg) {
   // What each customer-page box says when left blank, so Settings can show it.
   out.custPagesDefaults = Object.assign({}, CUST_COPY_DEFAULTS,
     ...['full', 'interior', 'exterior', 'ceramic', 'correction'].map((k) => ({ ['care_' + k]: CARE_TIPS[k].join('\n') })));
+  out.custPagesMeta = { vars: CUST_COPY_VARS, sections: CUST_SECTIONS };
   return out;
 }
 function keyHint(k) {
@@ -10179,6 +10182,11 @@ async function apiSaveConfig(request) {
     const cp = Object.assign({}, next.custPages || {});
     for (const k of Object.keys(CUST_COPY_DEFAULTS)) {
       if (typeof data.custPages[k] === 'string') cp[k] = data.custPages[k].slice(0, CUST_COPY_MAX[k] || 900);
+    }
+    // A colour that isn't one is no colour (the default), never CSS on a page.
+    if (cp.accent && !/^#[0-9a-f]{6}$/i.test(cp.accent.trim())) cp.accent = '';
+    for (const k of ['order_before', 'order_after', 'hide_before', 'hide_after']) {
+      if (cp[k]) cp[k] = String(cp[k]).replace(/[^a-z_,]/g, '');
     }
     next.custPages = cp;
   }
@@ -17693,10 +17701,6 @@ const CARE_TIPS = {
 // the ceramic cure and the "I only just noticed" window, and then it gets out
 // of the way.
 const CUST_AFTER_DAYS = 21;
-// How far out the after page points at the next detail. Mikey's own answer
-// ("6–8 weeks"), not a per-service table: one number is one he can say out loud.
-const CUST_NEXT_WEEKS = [6, 8];
-
 // ---- After the job: their before and after ---------------------------------
 // The shots he snaps on the Jobs board, handed back on the customer's own after
 // page. Of everything that page carries, this is the part people show someone
@@ -17730,24 +17734,101 @@ async function custJobPhotos(lastJob) {
 }
 function custPhotoUrl(token, id) { return `/ph/${token}/${id}`; }
 
-// The wording on the before and after pages he can change from Settings
-// without asking anybody. Blank in config = this default, so clearing a box
-// always puts his original words back rather than leaving a hole on the page.
+// Every word on the before and after pages, and the texts that carry them,
+// is his to change from the page editor (☰ Settings → Edit your customer
+// pages) without asking anybody. Blank in config = this default, so "put back
+// the original" is just saving an empty box, and a page never shows a hole.
 // The stars line is here and not a constant because it goes stale the day the
 // 41st review lands.
+//
+// Two conventions keep a text box enough for all of it:
+//   · {name} is filled in per customer: {first}, {date}, {length}, {weeks}…
+//     (CUST_COPY_VARS says which each one takes, for the editor's hint).
+//   · [words in brackets] become the "text me" link, on the lines that have one.
+// A line whose first sentence is its heading ("Paying. After the work…") is
+// shown with that sentence in bold, the same as the "How it goes" steps.
 const CUST_COPY_DEFAULTS = {
   stars: '5.0 across 40 Google reviews',
+  accent: '',                                   // the red; blank = the site's own
+  // ---- the before page
+  title_before: 'Before I get there',
   beforeIntro: "Here's what I need from you and how the day goes.",
+  lbl_job_before: 'Your detail',
+  addr_fix: 'Wrong? Fix it',
+  cal_btn: 'Add to calendar',
+  move_line: "Need a different day? [Text me] and we'll find another.",
+  move_msg: 'Hi Mikey, can we move my detail on {date}?',
+  lbl_expect: 'How it goes',
   // One step per line. The first sentence is the step's heading, the rest is
   // what happens, written the way the site's own three steps are.
   expect: "I pull up with everything. All my own gear and every product. Hand me the keys or leave it unlocked, then get on with your day: work, errands, back to bed.\n" +
     "I do it all by hand. Not a drive-through wash: I get the spots a car wash skips, like door jambs and the corners nobody reaches. I text you the moment it's finished.\n" +
     "We look it over together. Before I load up we walk around the car, and anything you're not happy with I fix right there in your driveway. You pay after that, not before.",
+  lbl_prep: 'What I need from you',
+  prep_water: "Water and power. I'll need an outdoor water spigot and a power outlet I can reach from the driveway.",
+  prep_home: "You don't need to be home. I just need to get into the car. Leave it unlocked or tell me where the keys are.",
+  prep_home_out: "You don't need to be home. This one's all outside, so I don't need to get into the car.",
+  prep_clear: "Clear it out. Take out valuables and car seats. Anything else I'll work around.",
+  prep_ceramic: 'Keep it dry after. The coating wants 24 hours out of the rain, so a garage or carport that night is ideal.',
+  prep_long: 'How long. {length} for this one.',
+  prep_long_any: 'How long. A full detail takes 2–4 hours. A basic interior is about 90 minutes.',
+  rain_head: 'If it rains.',
   rain: "I'll text you and we'll figure it out: under cover if there's room, or another day.",
+  prep_pay: "Paying. After the work, once you've seen it. Cash, check or Zelle. No deposit.",
+  lineup: "Something doesn't line up? No outlet near the driveway, a gate code, a tight spot to park? [Text me] and we'll sort it out.",
+  // ---- the after page
+  title_after: 'Looking after it',
   afterThanks: 'Thanks for having me out.',
+  lbl_last: 'Your last detail',
+  drag_hint: 'Drag to compare',
+  save_pics: 'Save the photos',
+  save_pic: 'Save the photo',
+  lbl_did: 'What I did',
+  review_head: 'Happy with it?',
+  review_sub: 'A Google review helps a one-man shop more than anything else.',
+  review_btn: 'Leave a review',
+  fix_line: "Something not right? [Text me] and I'll make it right.",
+  friend_title: 'Send a friend',
+  friend_sub: 'You both get a free exterior',
+  lbl_care: 'Looking after it',
+  care_pick: 'What did I do?',
+  care_hint: "Tap one and I'll show you how to look after it.",
   care_full: '', care_interior: '', care_exterior: '', care_ceramic: '', care_correction: '',
+  lbl_next: 'Your next one',
+  // How far out the after page points at the next detail. Mikey's own answer,
+  // not a per-service table: one range is one he can say out loud. Both
+  // numbers are used, for the sentence and for the dates window.
+  next_weeks: '6–8',
+  next_line: 'Most people have me back every {weeks} weeks.',
+  next_due: "For you that's around {window}.",
+  next_overdue: "It's been a while, so you're due.",
+  next_plan: "You're on a plan: every {every} weeks. I'll text you when it's coming up.",
+  book_btn: 'Book the next one',
+  plan_btn: 'Put me on a plan',
+  plan_done: "Got it. I'll text you about a plan",
+  // ---- the texts he sends with the links (drafts: they land in his box)
+  draft_before: "Hey {first}, here's everything for {detail}: what I need from you, how long it takes and paying. {link}",
+  draft_after: "Thanks for having me out, {first}. Here's how to look after it and when to have me back: {link} If anything's not right, just reply here and I'll make it right.",
+  draft_after_pics: "Thanks for having me out, {first}. Your before and after is up, and how to look after it: {link} If anything's not right, just reply here and I'll make it right.",
+  draft_after_pic: "Thanks for having me out, {first}. Here's how it came out, and how to look after it: {link} If anything's not right, just reply here and I'll make it right.",
+  // ---- layout: section order, and anything he's hidden (section ids or
+  // any key above), comma-separated. Blank = the order below, nothing hidden.
+  order_before: 'job,expect,prep',
+  order_after: 'job,friend,care,next,review',
+  hide_before: '',
+  hide_after: '',
 };
-const CUST_COPY_MAX = { stars: 80, beforeIntro: 200, expect: 900, rain: 240, afterThanks: 200 };
+// What the {…} in each box can say, so the editor can tell him.
+const CUST_COPY_VARS = {
+  move_msg: ['date'], prep_long: ['length'], next_line: ['weeks'], next_due: ['window'], next_plan: ['every'],
+  draft_before: ['first', 'detail', 'link'], draft_after: ['first', 'link'], draft_after_pics: ['first', 'link'], draft_after_pic: ['first', 'link'],
+};
+// The sections each page is built from, in their default order.
+const CUST_SECTIONS = {
+  before: ['job', 'expect', 'prep'],
+  after: ['job', 'friend', 'care', 'next', 'review'],
+};
+const CUST_COPY_MAX = { stars: 80, beforeIntro: 200, expect: 900, rain: 240, afterThanks: 200, accent: 7 };
 function custCopy(cfg) {
   const saved = (cfg && cfg.custPages) || {};
   const out = {};
@@ -17755,7 +17836,29 @@ function custCopy(cfg) {
     const v = typeof saved[k] === 'string' ? saved[k].trim() : '';
     out[k] = v || CUST_COPY_DEFAULTS[k];
   }
+  if (!/^#[0-9a-f]{6}$/i.test(out.accent)) out.accent = '';
   return out;
+}
+// {name} → its value. A name the line doesn't have stays as typed, so a typo
+// shows on the page where he'll see it instead of silently vanishing.
+function custFill(s, vars) {
+  return String(s || '').replace(/\{(\w+)\}/g, (m, k) => (vars && vars[k] != null ? String(vars[k]) : m));
+}
+// The two numbers in "6–8" (any separator), sane or the default.
+function custNextWeeks(copy) {
+  const m = /(\d{1,2})\D+(\d{1,2})/.exec(String((copy && copy.next_weeks) || ''));
+  const lo = m ? +m[1] : 6, hi = m ? +m[2] : 8;
+  return lo >= 1 && hi >= lo && hi <= 52 ? [lo, hi] : [6, 8];
+}
+// The page's sections in his order: anything unknown dropped, anything he
+// hasn't placed (a section added after he last reordered) on the end.
+function custOrder(copy, kind) {
+  const all = CUST_SECTIONS[kind] || [];
+  const his = String(copy['order_' + kind] || '').split(',').map((x) => x.trim()).filter((x) => all.includes(x));
+  return [...new Set(his)].concat(all.filter((x) => !his.includes(x)));
+}
+function custHidden(copy, kind) {
+  return new Set(String(copy['hide_' + kind] || '').split(',').map((x) => x.trim()).filter(Boolean));
 }
 // One line per tip, so a textarea in Settings is the whole editor.
 function custCopyLines(s) { return String(s || '').split(/\n+/).map((x) => x.trim()).filter(Boolean); }
@@ -18059,22 +18162,23 @@ function custPageUrl(kind, token) { return `${publicBase()}/${CUST_PAGES[kind]}$
 // What he texts with each link, in his words. Drafts only: they land in the
 // box and he sends them, so nothing here ever reaches a phone on its own.
 // `photos` is what the after page will show (custJobPhotos), so the text only
-// promises a before and after when there is one to open.
-//
-// The after text says to reply because the page has no complaint box (his
-// call), and it points at the photos first because they're the reason to tap.
-// The before text used to say "tap the button at the bottom once you're set";
-// that button went when the page stopped asking them to submit anything.
-function custLinkDrafts(t, token, next, photos) {
+// promises a before and after when there is one to open. The wording is his
+// (the draft_* boxes in the page editor); the link always goes in, even if he
+// deleted {link}, because a link text without the link is the one way this
+// can go wrong in front of a customer.
+function custLinkDrafts(t, token, next, photos, copy) {
+  copy = copy || custCopy(null);
   const first = jdFirst(t.name) || 'there';
   const day = next ? next.dateLabel.split(',')[0] : '';
-  const shots = photos ? (photos.before ? "your before and after is up, and how to look after it" : "here's how it came out, and how to look after it") : '';
+  const put = (tpl, link, vars) => {
+    const out = custFill(tpl, Object.assign({ first, link }, vars)).trim();
+    return out.includes(link) ? out : out + ' ' + link;
+  };
+  const afterTpl = photos ? (photos.before ? copy.draft_after_pics : copy.draft_after_pic) : copy.draft_after;
   return {
     book: `Hey ${first}, here's your own link: ${custUrl(token)} You can see what's coming up, book a time or move one, and look back at what I've done before. Save it, it doesn't expire.`,
-    before: `Hey ${first}, here's everything for ${day ? day + "'s detail" : 'your detail'}: what I need from you, how long it takes and paying. ${custPageUrl('before', token)}`,
-    after: shots
-      ? `Thanks for having me out, ${first}. ${shots[0].toUpperCase() + shots.slice(1)}: ${custPageUrl('after', token)} If anything's not right, just reply here and I'll make it right.`
-      : `Thanks for having me out, ${first}. Here's how to look after it and when to have me back: ${custPageUrl('after', token)} If anything's not right, just reply here and I'll make it right.`,
+    before: put(copy.draft_before, custPageUrl('before', token), { detail: day ? day + "'s detail" : 'your detail' }),
+    after: put(afterTpl, custPageUrl('after', token)),
     friend: `Hey ${first}, if anyone asks who did your car, here's your own link to send them. Once their first detail is done you both get a free exterior on me: ${custPageUrl('friend', token)}`,
   };
 }
@@ -18091,7 +18195,7 @@ async function apiCustLink(request) {
   const t = await loadThread(phone);
   const cfg = await loadConfig();
   const next = custNext(t, (await loadBookings()).filter((b) => b.phone === phone), Date.now(), cfg.tz);
-  const drafts = custLinkDrafts(t, token, next, await custJobPhotos(t.lastJob));
+  const drafts = custLinkDrafts(t, token, next, await custJobPhotos(t.lastJob), custCopy(cfg));
   const links = { book: url, before: custPageUrl('before', token), after: custPageUrl('after', token), friend: custPageUrl('friend', token) };
   const saved = { before: custPageUrl('before', ''), after: custPageUrl('after', '') };
   if (d.text) {
@@ -18172,24 +18276,54 @@ function custOutsideOnly(kind) { return kind === 'exterior' || kind === 'ceramic
 // Ordered by what actually costs a wasted drive, not by what reads nicely:
 // water and power first, then getting into the car. `next` is null on the
 // generic page, which can't know the job, so it says what's true of all of them.
-function custPrepTips(next, copy) {
+function custPrepTips(next, K) {
   const long = next ? custDurationLabel(next.durationMin) : '';
   const kind = next && next.service ? careKind(next.service) : '';
   const out = custOutsideOnly(kind);
-  const tips = [
-    `<div class="tip"><b>Water and power.</b> I'll need an outdoor water spigot and a power outlet I can reach from the driveway.</div>`,
-    out ? `<div class="tip"><b>You don't need to be home.</b> This one's all outside, so I don't need to get into the car.</div>`
-      : `<div class="tip"><b>You don't need to be home.</b> I just need to get into the car. Leave it unlocked or tell me where the keys are.</div>`,
-  ];
-  if (!out) tips.push(`<div class="tip"><b>Clear it out.</b> Take out valuables and car seats. Anything else I'll work around.</div>`);
-  if (kind === 'ceramic') tips.push(`<div class="tip"><b>Keep it dry after.</b> The coating wants 24 hours out of the rain, so a garage or carport that night is ideal.</div>`);
-  tips.push(`<div class="tip"><b>How long.</b> ${long ? jdEsc(long) + ' for this one.' : 'A full detail takes 2–4 hours. A basic interior is about 90 minutes.'}</div>`);
-  tips.push(`<div class="tip"><b>If it rains.</b> ${jdEsc(copy.rain)}</div>`);
-  tips.push(`<div class="tip"><b>Paying.</b> After the work, once you've seen it. Cash, check or Zelle. No deposit.</div>`);
-  return tips.join('\n      ');
+  const tip = (k, v, when) => (K.on(k) ? `<div class="tip"${K.ed(k, when)}>${K.head(k, v)}</div>` : '');
+  // In the editor every variant shows, each saying when a customer sees it:
+  // otherwise the exterior-only and coating lines could never be reached.
+  const all = K.edit;
+  const tips = [tip('prep_water')];
+  if (all || !out) tips.push(tip('prep_home', null, all ? 'Most jobs' : ''));
+  if (all || out) tips.push(tip('prep_home_out', null, all ? 'Instead, for exterior, coating and correction jobs' : ''));
+  if (all || !out) tips.push(tip('prep_clear', null, all ? 'Not shown for outside-only jobs' : ''));
+  if (all || kind === 'ceramic') tips.push(tip('prep_ceramic', null, all ? 'Only for ceramic coatings' : ''));
+  if (all || long) tips.push(tip('prep_long', { length: long || 'About 4 hours' }, all ? 'When the booking says how long ({length} fills in)' : ''));
+  if (all || !long) tips.push(tip('prep_long_any', null, all ? "When the job length isn't known" : ''));
+  if (K.on('rain')) tips.push(`<div class="tip"${K.ed('rain')}><b${K.ed('rain_head')}>${K.t('rain_head')}</b> ${K.t('rain')}</div>`);
+  tips.push(tip('prep_pay'));
+  return tips.filter(Boolean).join('\n      ');
 }
-function custCareHtml(kind, copy) {
-  return custCareList(kind, copy).map((x) => `<div class="tip">${jdEsc(x)}</div>`).join('');
+function custCareHtml(kind, copy, K) {
+  const k = 'care_' + (CARE_TIPS[kind] ? kind : 'full');
+  const list = custCareList(kind, copy).map((x) => `<div class="tip">${jdEsc(x)}</div>`).join('');
+  return K && K.edit ? `<div${K.ed(k)}>${list}</div>` : list;
+}
+// The pieces every line of the before/after pages is built with. `edit` is the
+// page editor's preview: each line carries the box it comes from (data-ed),
+// hidden things still show (dimmed) so they can be brought back, and a
+// variant a customer only sees sometimes says when (data-when).
+function custKit(copy, kind, edit) {
+  const hid = custHidden(copy, kind);
+  const K = {
+    copy, edit: !!edit,
+    on: (k) => !!edit || !hid.has(k),
+    ed: (k, when) => (edit ? ` data-ed="${k}"${hid.has(k) ? ' data-hid="1"' : ''}${when ? ` data-when="${jdEsc(when)}"` : ''}` : ''),
+    t: (k, v) => jdEsc(custFill(copy[k], v)),
+    span: (k, html) => (edit ? `<span${K.ed(k)}>${html}</span>` : html),
+    // "Paying. After the work…": the first sentence bold, like the steps.
+    head: (k, v) => {
+      const x = custFill(copy[k], v);
+      const m = /^(.+?[.!?])\s+(.+)$/.exec(x);
+      return m ? `<b>${jdEsc(m[1])}</b> ${jdEsc(m[2])}` : jdEsc(x);
+    },
+    // "[Text me]" becomes the link; with nowhere to link, just the words.
+    link: (k, href, v, attrs) => jdEsc(custFill(copy[k], v))
+      .replace(/\[([^\]]+)\]/, (m, w) => (href ? `<a href="${href}"${attrs || ''}>${w}</a>` : w)).replace(/[[\]]/g, ''),
+    sec: (id, html) => (!html ? '' : edit ? `<div data-sec="${id}"${hid.has(id) ? ' data-hid="1"' : ''}>${html}</div>` : hid.has(id) ? '' : html),
+  };
+  return K;
 }
 function custSmsHref(tel, body) {
   return `sms:${jdEsc(tel)}${body ? '?&body=' + encodeURIComponent(body) : ''}`;
@@ -18208,8 +18342,9 @@ async function custBizInfo() {
 // The bottom of every before/after/friend page: the rating and the website,
 // in place of the contact card. They got this link by text, so the thread
 // they're reading it from already IS the way to reach him.
-function custFoot(info) {
-  return `<div class="foot"><div class="stars"><span aria-hidden="true">★★★★★</span> ${jdEsc(info.copy.stars)}</div>
+function custFoot(info, K) {
+  const stars = K ? K.span('stars', K.t('stars')) : jdEsc(info.copy.stars);
+  return `<div class="foot">${K && !K.on('stars') ? '' : `<div class="stars"><span aria-hidden="true">★★★★★</span> ${stars}</div>`}
     <a href="${CUST_SITE}" target="_blank" rel="noopener" data-tap="website">mikeysdetailing.com</a>
     <div>${jdEsc(info.biz)}</div></div>`;
 }
@@ -18276,7 +18411,9 @@ async function custPage(token) {
     ${hist}${custContact(tel)}
     <div class="foot">${jdEsc(s.biz)}</div>
   </div>`;
-  return htmlResponse(custShell(inner, token, { title: 'Your detailing', book: true }));
+  // His accent colour here too, so the hub and the pages it links to match.
+  const accent = custCopy(await loadConfig()).accent;
+  return htmlResponse(custShell(inner, token, { title: 'Your detailing', book: true, accent }));
 }
 
 function custDeadLink() {
@@ -18297,18 +18434,28 @@ async function custSubPage(kind, token) {
   if (token && !rec) return custDeadLink();
   const s = rec ? await custState(rec.phone) : null;
   const info = await custBizInfo();
+  return htmlResponse(custSubHtml(kind, s, info, rec ? token : '', {}));
+}
+
+// The page itself, from the customer's state. Split from the fetch so the page
+// editor can draw the very same page for a made-up customer (custPreview).
+// opts: { edit, demo } — edit marks every line for the editor; demo swaps the
+// photo URLs for the stock car, since the made-up customer has no photos.
+function custSubHtml(kind, s, info, token, opts) {
+  opts = opts || {};
   const copy = info.copy;
   const tel = info.tel;
-  const hub = rec ? `<a class="back" href="/c/${jdEsc(token)}">‹ Your detailing</a>` : '';
-  let title = '', body = '', intro = '', og = {};
+  const K = custKit(copy, kind, opts.edit);
+  const hub = token ? `<a class="back" href="/c/${jdEsc(token)}">‹ Your detailing</a>` : '';
+  let title = '', titleKey = '', body = '', intro = '', introKey = '', og = {};
+  const secs = {};                                 // section id → html, placed in his order below
+  let top = '';                                    // the editor's "text that goes with it" card
 
   if (kind === 'before') {
-    title = 'Before I get there';
+    titleKey = 'title_before'; title = copy.title_before;
     og = { title: 'Before your detail', desc: "What I need from you, when I'll be there, and how paying works." };
-    intro = copy.beforeIntro;
+    introKey = 'beforeIntro'; intro = copy.beforeIntro;
     const n = s && s.next;
-    const k = n && n.service ? careKind(n.service) : '';
-    let head = '';
     if (n) {
       const when = [custArrival(n.slot), n.service].filter(Boolean).join(' · ');
       const where = s.address ? s.address + (s.city ? ', ' + s.city : '') : '';
@@ -18318,35 +18465,38 @@ async function custSubPage(kind, token) {
       // has to work out how to say so tends not to, and the first he hears of
       // it is an empty driveway. A text, not the hub's picker, so the day they
       // had is freed by him and not left booked behind a second request.
-      head = `<div class="card next"><div class="lbl">Your detail</div><div class="big">${jdEsc(n.dateLabel)}</div>
+      const move = tel && K.on('move_line')
+        ? `<div class="note"${K.ed('move_line')}>${K.link('move_line', custSmsHref(tel, custFill(copy.move_msg, { date: n.dateLabel })), null, ' data-tap="move"')}</div>` : '';
+      secs.job = `<div class="card next"><div class="lbl"${K.ed('lbl_job_before')}>${K.t('lbl_job_before')}</div><div class="big">${jdEsc(n.dateLabel)}</div>
         ${when ? `<div class="sub m0">${jdEsc(when)}</div>` : ''}
         ${s.vehicle ? `<div class="line">${jdEsc(s.vehicle)}</div>` : ''}
         <div class="addr"><div class="line">${where ? jdEsc(where) : '<span class="muted">No address on file yet</span>'}</div>
-          <button class="linkbtn" id="addrBtn" type="button" data-tap="address">${where ? 'Wrong? Fix it' : 'Add it'}</button></div>
+          ${K.on('addr_fix') ? `<button class="linkbtn" id="addrBtn" type="button" data-tap="address"${K.ed('addr_fix')}>${where ? K.t('addr_fix') : 'Add it'}</button>` : ''}</div>
         ${fixed}
         <div id="addrForm" hidden><input class="fld" id="addrIn" maxlength="160" autocomplete="street-address" placeholder="Street address and city">
           <button class="btn" id="addrSend" type="button">Send to Mikey</button><div class="note" id="addrMsg"></div></div>
-        <a class="btn ghost mt" href="/cal/${jdEsc(token)}.ics" data-tap="calendar">Add to calendar</a>
-        ${tel ? `<div class="note">Need a different day? <a href="${custSmsHref(tel, `Hi Mikey, can we move my detail on ${n.dateLabel}?`)}" data-tap="move">Text me</a> and we'll find another.</div>` : ''}</div>`;
+        ${K.on('cal_btn') ? `<a class="btn ghost mt" href="/cal/${jdEsc(token)}.ics" data-tap="calendar"${K.ed('cal_btn')}>${K.t('cal_btn')}</a>` : ''}
+        ${move}${opts.edit ? `<div class="note"${K.ed('move_msg', 'The text it starts for them ({date} fills in)')}>${K.t('move_msg', { date: n.dateLabel })}</div>` : ''}</div>`;
     }
     const steps = custCopyLines(copy.expect);
-    const expect = steps.length ? `<div class="card"><div class="lbl">How it goes</div><ol class="steps">${steps.map((x) => {
+    secs.expect = steps.length ? `<div class="card"><div class="lbl"${K.ed('lbl_expect')}>${K.t('lbl_expect')}</div><ol class="steps"${K.ed('expect')}>${steps.map((x) => {
       const m = /^(.+?[.!?])\s+(.+)$/.exec(x);
       return m ? `<li><span><b>${jdEsc(m[1])}</b> ${jdEsc(m[2])}</span></li>` : `<li><span>${jdEsc(x)}</span></li>`;
     }).join('')}</ol></div>` : '';
     // Nothing to fill in or submit (his call): the page tells them what's
     // needed and invites a text if something doesn't line up. The text thread
     // is where that conversation already lives.
-    const foot = `<div class="lineup">Something doesn't line up? No outlet near the driveway, a gate code, a tight spot to park?
-        ${tel ? `<a href="${custSmsHref(tel, '')}">Text me</a>` : 'Text me'} and we'll sort it out.</div>`;
-    body = `${head}${expect}<div class="card" id="prepCard"><div class="lbl">What I need from you</div>${custPrepTips(n, copy)}${foot}</div>`;
+    const foot = K.on('lineup') ? `<div class="lineup"${K.ed('lineup')}>${K.link('lineup', tel ? custSmsHref(tel, '') : '')}</div>` : '';
+    secs.prep = `<div class="card" id="prepCard"><div class="lbl"${K.ed('lbl_prep')}>${K.t('lbl_prep')}</div>${custPrepTips(n, K)}${foot}</div>`;
+    if (opts.edit && opts.drafts) {
+      top = `<div class="card ed-draft"${K.ed('draft_before', 'Not on the page: the text you send with this link')}>${jdEsc(opts.drafts.before)}</div>`;
+    }
   }
 
   if (kind === 'after') {
-    title = 'Looking after it';
+    titleKey = 'title_after'; title = copy.title_after;
     og = { title: 'After your detail', desc: 'How to look after it, and when to have me back.' };
     const a = s && s.lastDone;
-    const parts = [];
     // While the job is fresh (the hub's own "you just had one" window) the ask
     // rides on the job card, right under the result: that's when a review gets
     // written, and a day later it mostly doesn't. After that it drops to the
@@ -18354,84 +18504,109 @@ async function custSubPage(kind, token) {
     const fresh = !!(a && s.after);
     // The thanks is the greeting's second half, job or no job: on the card it
     // sat between the photos and the list, and "Hi Ruth." was left on its own.
-    intro = copy.afterThanks;
+    introKey = 'afterThanks'; intro = copy.afterThanks;
+    const [wLo, wHi] = custNextWeeks(copy);
+    const weeks = `${wLo}–${wHi}`;
+    // The review ask, the same words wherever it sits. Shown to everybody,
+    // happy or not (see custState.review). With no review link it can't show,
+    // and the editor says so rather than leaving him wondering where it went.
+    const reviewBits = (cls) => (info.review || opts.edit)
+      ? `${K.on('review_head') ? `<div class="${cls}"${K.ed('review_head', info.review ? '' : 'Hidden: add your Google review link to show it')}>${K.t('review_head')}</div>` : ''}
+        ${K.on('review_sub') ? `<div class="sub m0"${K.ed('review_sub')}>${K.t('review_sub')}</div>` : ''}
+        ${K.on('review_btn') ? `<a class="btn mt" href="${jdEsc(info.review || '#')}" target="_blank" rel="noopener" data-tap="review"${K.ed('review_btn')}>${K.t('review_btn')}</a>` : ''}` : '';
     if (a) {
-      const did = (a.did || []).length
-        ? `<div class="lbl mt">What I did</div><ul class="did">${a.did.map((x) => `<li>${jdEsc(x)}</li>`).join('')}</ul>` : '';
+      const did = (a.did || []).length && K.on('lbl_did')
+        ? `<div${K.ed('lbl_did')}><div class="lbl mt">${K.t('lbl_did')}</div><ul class="did">${a.did.map((x) => `<li>${jdEsc(x)}</li>`).join('')}</ul></div>` : '';
       const ph = a.photos;
       let shots = '';
-      if (ph) {
-        const bu = custPhotoUrl(token, ph.before), au = custPhotoUrl(token, ph.after);
-        if (publicBase()) og.image = publicBase() + au;   // a preview needs the absolute URL
+      if (ph && K.on('photos')) {
+        const src = (id) => (opts.demo ? '/og-car.jpg' : custPhotoUrl(token, id));
+        const bu = src(ph.before), au = src(ph.after);
+        if (publicBase() && !opts.demo) og.image = publicBase() + au;   // a preview needs the absolute URL
         og.desc = ph.before ? 'Your before and after, and how to look after it.' : 'How it came out, and how to look after it.';
         // Both shots in one frame with a divider they drag: the dashboard's own
         // before/after view, handed over. The range input is what makes it work
         // for a keyboard and a screen reader; a finger drags the frame itself.
         shots = ph.before
-          ? `<div class="ba" id="ba" style="--split:50%"><img src="${jdEsc(bu)}" alt="Your car before the detail">
+          ? `<div class="ba" id="ba" style="--split:50%"${K.ed('photos')}><img src="${jdEsc(bu)}" alt="Your car before the detail"${opts.demo ? ' class="demo-dirty"' : ''}>
             <img class="aft" src="${jdEsc(au)}" alt="Your car after the detail">
             <span class="ba-bar" aria-hidden="true"></span><span class="ba-tag l" aria-hidden="true">Before</span><span class="ba-tag r" aria-hidden="true">After</span>
             <input class="ba-rng" id="baRange" type="range" min="0" max="100" value="50" aria-label="Slide between before and after"></div>
-            <div class="note c">Drag to compare</div>`
-          : `<div class="ba one"><img src="${jdEsc(au)}" alt="Your car after the detail"></div>`;
-        shots += `<button class="btn ghost mt" id="savePics" type="button" data-tap="photos"
-            data-pics="${jdEsc([ph.before ? bu : '', au].filter(Boolean).join(' '))}">${ph.before ? 'Save the photos' : 'Save the photo'}</button>`;
+            ${K.on('drag_hint') ? `<div class="note c"${K.ed('drag_hint')}>${K.t('drag_hint')}</div>` : ''}`
+          : `<div class="ba one"${K.ed('photos')}><img src="${jdEsc(au)}" alt="Your car after the detail"></div>`;
+        const saveKey = ph.before ? 'save_pics' : 'save_pic';
+        if (K.on(saveKey)) {
+          shots += `<button class="btn ghost mt" id="savePics" type="button" data-tap="photos"
+            data-pics="${jdEsc([ph.before ? bu : '', au].filter(Boolean).join(' '))}"${K.ed(saveKey)}>${K.t(saveKey)}</button>`;
+        }
+        if (opts.edit) shots += `<div class="note"${K.ed('save_pic', 'Instead, when there is only an after shot')}>${K.t('save_pic')}</div>`;
       }
-      // Shown to everybody, happy or not (see custState.review). The "tell me"
-      // line sits under the button, never in front of it, so it can't read as
-      // a filter on who gets asked. And it's a text, not a form (his call):
-      // the thread they opened this from is where that conversation happens.
-      const ask = fresh
-        ? `<div class="ask">${info.review ? `<div class="ask-h">Happy with it?</div>
-            <div class="sub m0">A Google review helps a one-man shop more than anything else.</div>
-            <a class="btn mt" href="${jdEsc(info.review)}" target="_blank" rel="noopener" data-tap="review">Leave a review</a>` : ''}
-            <div class="note">Something not right? ${tel ? `<a href="${custSmsHref(tel, '')}">Text me</a>` : 'Text me'} and I'll make it right.</div></div>`
-        : '';
-      parts.push(`<div class="card next"><div class="lbl">Your last detail</div><div class="big">${jdEsc(a.service || 'Your detail')}</div>
+      // The "tell me" line sits under the button, never in front of it, so it
+      // can't read as a filter on who gets asked. And it's a text, not a form
+      // (his call): the thread they opened this from is where that happens.
+      const fix = K.on('fix_line') ? `<div class="note"${K.ed('fix_line')}>${K.link('fix_line', tel ? custSmsHref(tel, '') : '')}</div>` : '';
+      const ask = fresh ? `<div class="ask">${reviewBits('ask-h')}${fix}</div>` : '';
+      secs.job = `<div class="card next"><div class="lbl"${K.ed('lbl_last')}>${K.t('lbl_last')}</div><div class="big">${jdEsc(a.service || 'Your detail')}</div>
         <div class="sub m0">${jdEsc(a.dateLabel)}${s.vehicle ? ' · ' + jdEsc(s.vehicle) : ''}</div>
-        ${shots}${did}${ask}</div>`);
+        ${shots}${did}${ask}</div>`;
     }
     // Near the top, his call: right after the job is when they're most likely to mention you.
-    if (s && s.refer) parts.push(`<a class="golink solo" href="/friend/${jdEsc(token)}" data-tap="friend"><span><b>Send a friend</b><small>You both get a free exterior</small></span><i>›</i></a>`);
+    if (s && s.refer) secs.friend = `<a class="golink solo" href="/friend/${jdEsc(token)}" data-tap="friend"><span><b${K.ed('friend_title')}>${K.t('friend_title')}</b><small${K.ed('friend_sub')}>${K.t('friend_sub')}</small></span><i>›</i></a>`;
     if (a) {
-      parts.push(`<div class="card"><div class="lbl">Looking after it</div>${custCareHtml(a.care, copy)}</div>`);
+      let care = `<div class="card"><div class="lbl"${K.ed('lbl_care')}>${K.t('lbl_care')}</div>${custCareHtml(a.care, copy, K)}</div>`;
+      // In the editor, the other four lists too: they're only ever seen by
+      // someone who had that service, so the preview's job can't show them.
+      if (opts.edit) {
+        care += [['full', 'a full detail'], ['interior', 'an interior detail'], ['exterior', 'an exterior detail'], ['ceramic', 'a ceramic coating'], ['correction', 'a paint correction']]
+          .filter(([id]) => id !== a.care)
+          .map(([id, l]) => `<div class="card" data-when="Care tips after ${l}">${custCareHtml(id, copy, K)}</div>`).join('');
+      }
+      secs.care = care;
     } else {
       // Generic: they tap what they got and see only that. Five lists at once
       // was a wall of advice for a job they didn't have.
       const kinds = [['full', 'Full detail'], ['interior', 'Interior'], ['exterior', 'Exterior'], ['ceramic', 'Ceramic coating'], ['correction', 'Paint correction']];
-      parts.push(`<div class="card"><div class="lbl">What did I do?</div><div class="picks">${kinds.map(([id, l]) =>
+      secs.care = `<div class="card"><div class="lbl"${K.ed('care_pick')}>${K.t('care_pick')}</div><div class="picks">${kinds.map(([id, l]) =>
         `<button type="button" data-care="${id}">${l}</button>`).join('')}</div>
-        ${kinds.map(([id, l]) => `<div class="care" data-care-list="${id}" hidden><div class="lbl mt">After a ${jdEsc(l.toLowerCase())}</div>${custCareHtml(id, copy)}</div>`).join('')}
-        <div class="note" id="careHint">Tap one and I'll show you how to look after it.</div></div>`);
+        ${kinds.map(([id, l]) => `<div class="care" data-care-list="${id}" hidden><div class="lbl mt">After a ${jdEsc(l.toLowerCase())}</div>${custCareHtml(id, copy, K)}</div>`).join('')}
+        <div class="note" id="careHint"${K.ed('care_hint')}>${K.t('care_hint')}</div></div>`;
     }
     // The next one. On a plan: say so and stop. Otherwise the 6–8 week window
     // from THIS job, and two ways to act on it.
+    const line = K.on('next_line') ? K.span('next_line', K.t('next_line', { weeks })) : '';
     let next;
     if (s && s.plan) {
-      next = `<div class="sub m0">You're on a plan: every ${Math.round(s.plan.every / 7)} weeks. I'll text you when it's coming up.</div>`;
+      next = `<div class="sub m0"${K.ed('next_plan')}>${K.t('next_plan', { every: Math.round(s.plan.every / 7) })}</div>`;
     } else if (a) {
       const fmt = (ts) => new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: info.tz || 'America/Los_Angeles' });
-      const lo = a.at + CUST_NEXT_WEEKS[0] * 7 * 86400000, hi = a.at + CUST_NEXT_WEEKS[1] * 7 * 86400000;
-      const due = hi < Date.now()
-        ? `It's been a while, so you're due.`
-        : `For you that's around ${fmt(lo)}–${fmt(hi)}.`;
+      const lo = a.at + wLo * 7 * 86400000, hi = a.at + wHi * 7 * 86400000;
+      const due = hi < Date.now() ? (K.on('next_overdue') ? K.span('next_overdue', K.t('next_overdue')) : '')
+        : (K.on('next_due') ? K.span('next_due', K.t('next_due', { window: `${fmt(lo)}–${fmt(hi)}` })) : '');
       const plan = s.planAskAt
-        ? `<div class="pill ok">Got it. I'll text you about a plan</div>`
-        : `<button class="btn ghost" id="planBtn" type="button" data-tap="plan">Put me on a plan</button>`;
-      next = `<div class="sub">Most people have me back every ${CUST_NEXT_WEEKS[0]}–${CUST_NEXT_WEEKS[1]} weeks. ${due}</div>
-        <a class="btn" href="/c/${jdEsc(token)}#book" data-tap="book">Book the next one</a><div class="mt">${plan}</div>
+        ? `<div class="pill ok"${K.ed('plan_done')}>${K.t('plan_done')}</div>`
+        : K.on('plan_btn') ? `<button class="btn ghost" id="planBtn" type="button" data-tap="plan"${K.ed('plan_btn')}>${K.t('plan_btn')}</button>` : '';
+      next = `<div class="sub">${line} ${due}</div>
+        ${K.on('book_btn') ? `<a class="btn" href="/c/${jdEsc(token)}#book" data-tap="book"${K.ed('book_btn')}>${K.t('book_btn')}</a>` : ''}<div class="mt">${plan}</div>
         <div class="note" id="planMsg"></div>`;
+      if (opts.edit) {
+        next += `<div class="note"${K.ed('next_overdue', 'Instead of the dates, once they are past them')}>${K.t('next_overdue')}</div>
+          <div class="note"${K.ed('next_plan', 'Instead of all this, for someone on a plan ({every} fills in)')}>${K.t('next_plan', { every: 6 })}</div>
+          <div class="note"${K.ed('plan_done', 'After they tap the plan button')}>${K.t('plan_done')}</div>`;
+      }
     } else {
-      next = `<div class="sub">Most people have me back every ${CUST_NEXT_WEEKS[0]}–${CUST_NEXT_WEEKS[1]} weeks.</div>
-        <a class="btn" href="${CUST_SITE}" target="_blank" rel="noopener" data-tap="book">Book the next one</a>`;
+      next = `<div class="sub">${line}</div>
+        ${K.on('book_btn') ? `<a class="btn" href="${CUST_SITE}" target="_blank" rel="noopener" data-tap="book"${K.ed('book_btn')}>${K.t('book_btn')}</a>` : ''}`;
     }
-    parts.push(`<div class="card"><div class="lbl">Your next one</div>${next}</div>`);
-    if (info.review && !fresh) {
-      parts.push(`<div class="card" id="afterCard"><div class="lbl">Happy with it?</div>
-      <div class="sub">A Google review helps a one-man shop more than anything else.</div>
-      <a class="btn" href="${jdEsc(info.review)}" target="_blank" rel="noopener" data-tap="review">Leave a review</a></div>`);
+    secs.next = `<div class="card"><div class="lbl"${K.ed('lbl_next')}>${K.t('lbl_next')}</div>${next}</div>`;
+    if ((info.review || opts.edit) && !fresh) {
+      secs.review = `<div class="card" id="afterCard">${reviewBits('lbl')}</div>`;
     }
-    body = parts.join('');
+    if (opts.edit && opts.drafts) {
+      const d = opts.drafts;
+      top = `<div class="card ed-draft"${K.ed('draft_after_pics', 'Not on the page: the text you send with this link, when there is a before and after')}>${jdEsc(d.afterPics)}</div>
+        <div class="card ed-draft"${K.ed('draft_after_pic', '…when there is only an after shot')}>${jdEsc(d.afterPic)}</div>
+        <div class="card ed-draft"${K.ed('draft_after', '…when there are no photos')}>${jdEsc(d.after)}</div>`;
+    }
   }
 
   if (kind === 'friend') {
@@ -18451,13 +18626,17 @@ async function custSubPage(kind, token) {
         <div class="sub">Text me and I'll send you your own link to share.</div>
         ${tel ? `<a class="btn" href="${custSmsHref(tel, 'Can I get my referral link?')}">Text Mikey</a>` : ''}</div>`;
     }
+  } else {
+    body = custOrder(copy, kind).map((id) => K.sec(id, secs[id])).join('');
   }
 
   const hi = s && s.first ? `Hi ${jdEsc(s.first)}. ` : '';
-  const lede = hi || intro ? `<p class="sub">${hi}${jdEsc(intro)}</p>` : '';
-  const inner = `<div class="pad">${hub}<div class="brand">${jdEsc(info.biz)}</div><h1>${jdEsc(title)}</h1>
-    ${lede}${body}${custFoot(info)}</div>`;
-  return htmlResponse(custShell(inner, rec ? token : '', { title, kind, og }));
+  const introHtml = intro && K.on(introKey) ? K.span(introKey, K.t(introKey)) : '';
+  const lede = hi || introHtml ? `<p class="sub">${hi}${introHtml}</p>` : '';
+  const h1 = titleKey ? `<h1${K.ed(titleKey)}>${K.t(titleKey)}</h1>` : `<h1>${jdEsc(title)}</h1>`;
+  const inner = `<div class="pad">${hub}<div class="brand">${jdEsc(info.biz)}</div>${h1}
+    ${lede}${top}${body}${custFoot(info, K)}</div>`;
+  return custShell(inner, token, { title, kind, og, accent: copy.accent, edit: opts.edit });
 }
 
 // "Add to calendar": an all-day event, because the page only promises morning
@@ -18489,6 +18668,39 @@ async function custCalendar(token) {
   ].filter(Boolean);
   return new Response(lines.join('\r\n') + '\r\n', { headers: {
     'Content-Type': 'text/calendar; charset=utf-8', 'Content-Disposition': 'inline; filename="detail.ics"', 'Cache-Control': 'no-store' } });
+}
+
+// GET /api/cust/preview?kind=before|after&photos=pair|one|none — the page
+// editor's picture of a page. It is the real renderer (custSubHtml) fed a
+// made-up customer, so what he edits is exactly what customers get; nothing
+// here reads or touches a real customer. Behind the dashboard login, and not
+// on the helper's list, so only he can open it.
+async function apiCustPreview(url) {
+  const kind = url.searchParams.get('kind') === 'after' ? 'after' : 'before';
+  const pics = ['pair', 'one', 'none'].includes(url.searchParams.get('photos')) ? url.searchParams.get('photos') : 'pair';
+  const cfg = await loadConfig();
+  const info = await custBizInfo();
+  const now = Date.now();
+  const nextAt = now + 3 * 86400000, lastAt = now - 86400000;
+  const date = localDateStr(nextAt, cfg.tz);
+  const s = {
+    name: 'Jenna Smith', first: 'Jenna', vehicle: '2021 Toyota 4Runner', address: '1425 Cedar Ave', city: 'Everett',
+    next: { at: nextAt, id: '', date, slot: '10:00', dateLabel: bkNiceDate(date), service: 'Full Detail', price: 0, status: 'confirmed', durationMin: 240 },
+    lastDone: { at: lastAt, dateLabel: bkNiceDate(localDateStr(lastAt, cfg.tz)), service: 'Full Detail', care: 'full',
+      did: ['Hand wash and dry', 'Wheels and tires', 'Seats and carpets shampooed', 'Windows inside and out'],
+      photos: pics === 'none' ? null : { before: pics === 'one' ? '' : 'demo', after: 'demo' } },
+    after: { at: lastAt }, plan: null, planAskAt: 0, addrFix: null,
+    refer: { url: '', owed: 0, friends: 0, friendsDone: 0, offer: REF_OFFER },
+  };
+  const t = { name: s.name }, tok = 'preview';
+  const drafts = {
+    before: custLinkDrafts(t, tok, s.next, null, info.copy).before,
+    afterPics: custLinkDrafts(t, tok, null, { before: 'x', after: 'x' }, info.copy).after,
+    afterPic: custLinkDrafts(t, tok, null, { before: '', after: 'x' }, info.copy).after,
+    after: custLinkDrafts(t, tok, null, null, info.copy).after,
+  };
+  return json({ ok: true, kind, html: custSubHtml(kind, s, info, tok, { edit: true, demo: true, drafts }),
+    reviewUrl: !!cfg.reviewUrl, reviewAsk: sayRules(cfg).reviewAsk });
 }
 
 // /ph/<token>/<id> — a photo on their after page. Public the way the page is
@@ -18630,9 +18842,36 @@ textarea.fld{resize:vertical;min-height:58px}
 .ba:focus-within{outline:2px solid var(--gold);outline-offset:2px}
 .ask{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
 .ask-h{font-size:17px;font-weight:800;margin-bottom:4px}
-</style></head><body>${inner}
-${opts.book ? custHubScript(token) : opts.kind ? custSubScript(token, opts.kind) : ''}</body></html>`;
+</style>${/^#[0-9a-f]{6}$/i.test(opts.accent || '') ? `<style>:root{--red:${opts.accent};--red2:${opts.accent}}</style>` : ''}
+${opts.edit ? CUST_EDIT_KIT : ''}</head><body>${inner}
+${opts.edit ? '' : opts.book ? custHubScript(token) : opts.kind ? custSubScript(token, opts.kind) : ''}</body></html>`;
 }
+
+// The page editor's preview (custPreview) is the real page plus this: every
+// line he can change outlined, the hidden ones dimmed, the sometimes-only ones
+// labelled with when, and a tap on any of them handed up to the dashboard
+// instead of doing what it would do for a customer. Nothing on the page
+// navigates, submits or counts a tap while it's in here.
+const CUST_EDIT_KIT = `<style>
+[data-ed]{outline:1.5px dashed rgba(201,162,75,.6);outline-offset:3px;border-radius:5px;cursor:pointer}
+[data-ed]:active,[data-ed].ed-hit{outline:2px solid var(--gold2);background:rgba(201,162,75,.10)}
+[data-hid]{opacity:.35;outline-color:#ff8a93!important}
+[data-when]::before{content:attr(data-when);display:block;font-weight:800;font-size:10.5px;letter-spacing:.05em;
+  text-transform:uppercase;color:var(--gold2);margin:0 0 5px;line-height:1.35}
+.ed-draft{font-size:14px;line-height:1.5;color:var(--gray);background:var(--card2);border-style:dashed}
+.demo-dirty{filter:sepia(.55) brightness(.62) saturate(.6)}
+</style>
+<script>
+document.addEventListener("click",function(e){
+  e.preventDefault();e.stopPropagation();
+  var t=e.target.closest?e.target.closest("[data-ed]"):null;
+  if(!t)return;
+  var was=document.querySelector(".ed-hit");if(was)was.classList.remove("ed-hit");
+  t.classList.add("ed-hit");
+  try{parent.postMessage({cpEdit:t.getAttribute("data-ed")},"*")}catch(_){}
+},true);
+document.addEventListener("submit",function(e){e.preventDefault()},true);
+</script>`;
 
 // The before/after/friend pages' only script: their own buttons and the two
 // beacons (opened, tapped). No booking code — that lives on the hub alone.

@@ -1758,6 +1758,28 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .tai-hd .t{font-weight:800;font-size:17px;flex:1;line-height:1.2}
   .tai-hd .t small{display:block;font-weight:500;font-size:12px;color:var(--muted2);margin-top:2px}
   .tai-body{flex:1;overflow-y:auto;padding:16px 15px calc(24px + var(--safe-bottom))}
+  /* Customer page editor: the real page in a frame, tap a line to change it. */
+  .cpe-bar{display:flex;gap:6px;padding:9px 12px;border-bottom:1px solid var(--line);flex:none;flex-wrap:wrap;align-items:center}
+  .cpe-seg{display:flex;background:var(--panel2);border:1px solid var(--line);border-radius:11px;padding:3px;gap:3px}
+  .cpe-seg button{background:none;border:0;color:var(--muted);font:700 13.5px inherit;font-family:inherit;padding:7px 12px;border-radius:8px;cursor:pointer}
+  .cpe-seg button.on{background:var(--accent);color:#fff}
+  .cpe-hint{font-size:12.5px;color:var(--muted);padding:7px 14px 0;flex:none}
+  .cpe-warn{margin:8px 12px 0;padding:10px 12px;border-radius:12px;background:rgba(234,179,8,.10);border:1px solid rgba(234,179,8,.35);font-size:13.5px;line-height:1.45;flex:none}
+  .cpe-warn input{width:100%;margin-top:7px}
+  .cpe-frame{flex:1;width:100%;border:0;background:#0a0a0a;margin-top:8px}
+  .cpe-sheet{position:fixed;left:0;right:0;bottom:0;z-index:9001;background:var(--panel);border-radius:20px 20px 0 0;border-top:1px solid var(--line);
+    padding:16px 15px calc(16px + var(--safe-bottom));max-height:86vh;overflow-y:auto;box-shadow:var(--elev-2);animation:pop .16s ease}
+  .cpe-sheet h3{margin:0 0 3px;font-size:17px}
+  .cpe-sheet .when{font-size:12.5px;color:var(--gold);margin-bottom:6px}
+  .cpe-sheet textarea{width:100%;min-height:90px;font-size:16px;line-height:1.45;margin-top:8px}
+  .cpe-sheet .hint{font-size:12.5px;color:var(--muted);margin-top:7px;line-height:1.45}
+  .cpe-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+  .cpe-acts .btn{flex:1;min-width:120px}
+  .cpe-row{display:flex;align-items:center;gap:8px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .cpe-row b{flex:1;font-size:14.5px}
+  .cpe-row b.off{color:var(--muted2);text-decoration:line-through}
+  .cpe-row button{min-width:40px}
+  .cpe-scrim{position:fixed;inset:0;z-index:9000;background:rgba(0,0,0,.45)}
   /* --- "How I talk": the message editor -------------------------------- */
   /* A card per message, a group per part of the business. The read view and
      the edit view live in the same card so tapping Edit changes the card in
@@ -4556,7 +4578,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-25·after-photos";
+  var APP_BUILD="2026-09-25·page-editor";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -6011,6 +6033,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // — work
     {id:"leads",t:"Leads pipeline",g:"Work",ic:"clipboard-list",k:"prospects enquiries board stages funnel won lost",run:function(){openJobs("leads")}},
     {id:"run",t:"Today's run",g:"Work",ic:"route",k:"jobs schedule route day work appointments",run:function(){openJobs("run")}},
+    {id:"pages",t:"Edit your customer pages",g:"Work",ic:"pencil",k:"before after link page wording edit customize customise text colour color sections",run:function(){openPageEditor("before")}},
     {id:"quotebuild",t:"Quote builder",g:"Work",ic:"file-text",k:"estimate bid proposal price pricing quote write new",run:function(){openJobs("quotes")}},
     {id:"garage",t:"Customer garage",g:"Work",ic:"car",k:"vehicles cars customers history clients",run:function(){openJobs("garage")}},
     {id:"bookings",t:"Bookings",g:"Work",ic:"calendar-days",k:"calendar appointments online booked diary",run:function(){location.href="/bookings.html"}},
@@ -8676,11 +8699,168 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     api("/api/ai/usage?days=14").then(function(d){AIUSE=d;paint(d)}).catch(function(){paint(null)});
   }
 
-  // The boxes under Settings → Customer pages wording: [config key, label, textarea rows (0 = one line)].
-  var CUST_PAGE_FIELDS=[["stars","Rating line",0],["beforeIntro","Before page: opening line",0],
-    ["expect","Before page: how it goes (one step per line, first sentence is the heading)",7],["rain","Before page: if it rains",2],
-    ["afterThanks","After page: thank-you line",0],["care_full","Care tips: full detail",3],["care_interior","Care tips: interior",3],
-    ["care_exterior","Care tips: exterior",3],["care_ceramic","Care tips: ceramic coating",4],["care_correction","Care tips: paint correction",4]];
+  // ---- Customer page editor ------------------------------------------------
+  // The before and after pages, drawn by the Worker exactly as a customer gets
+  // them (for a made-up customer, /api/cust/preview), with every line he can
+  // change outlined. A tap on a line opens that line's box here; saving puts
+  // it live at once, and the frame redraws where he was. Blank = the original
+  // words, so "Put back original" is just saving nothing.
+  var CPE={kind:"before",photos:"pair",y:0};
+  // What each box is called on the screen, in his words, not the key's.
+  var CPE_NAMES={stars:"Rating line",title_before:"Page title",beforeIntro:"Opening line",lbl_job_before:"Job card heading",
+    addr_fix:"“Fix address” button",cal_btn:"Calendar button",move_line:"“Different day?” line",move_msg:"The text it starts for them",
+    lbl_expect:"Steps heading",expect:"How it goes (one step per line)",lbl_prep:"Checklist heading",prep_water:"Water and power",
+    prep_home:"Don't need to be home",prep_home_out:"Don't need to be home (outside-only jobs)",prep_clear:"Clear it out",
+    prep_ceramic:"Keep it dry (coatings)",prep_long:"How long (when known)",prep_long_any:"How long (when not known)",rain_head:"Rain heading",
+    rain:"If it rains",prep_pay:"Paying",lineup:"“Doesn't line up?” line",title_after:"Page title",afterThanks:"Thank-you line",
+    lbl_last:"Job card heading",drag_hint:"Slider hint",save_pics:"Save button (two photos)",save_pic:"Save button (one photo)",
+    lbl_did:"“What I did” heading",review_head:"Review heading",review_sub:"Review line",review_btn:"Review button",
+    fix_line:"“Not right?” line",friend_title:"Send a friend",friend_sub:"Send a friend (small line)",lbl_care:"Care tips heading",
+    care_pick:"“What did I do?” (saved link)",care_hint:"Care hint (saved link)",care_full:"Care tips: full detail",
+    care_interior:"Care tips: interior",care_exterior:"Care tips: exterior",care_ceramic:"Care tips: ceramic coating",
+    care_correction:"Care tips: paint correction",lbl_next:"“Next one” heading",next_line:"How often line",
+    next_due:"Their dates line",next_overdue:"Overdue line",next_plan:"On a plan line",book_btn:"Book button",plan_btn:"Plan button",
+    plan_done:"After they ask for a plan",draft_before:"Text you send with the before link",draft_after:"Text with the after link (no photos)",
+    draft_after_pics:"Text with the after link (before and after)",draft_after_pic:"Text with the after link (after shot only)",
+    photos:"Their before and after photos"};
+  var CPE_SECS={job:"The job card",expect:"How it goes",prep:"What I need from you",friend:"Send a friend",
+    care:"Care tips",next:"Your next one",review:"Review card (jobs over 3 weeks old)"};
+  var CPE_VAR={first:"their first name",date:"the day of the job",length:"how long, like “About 4 hours”",
+    weeks:"your range, like 6–8",window:"their dates, like Nov 5–Nov 19",every:"weeks between plan visits",
+    detail:"“Saturday's detail”",link:"the link (added at the end if you leave it out)"};
+  function cpeCfg(){var c=state.config||{};return {saved:c.custPages||{},defs:c.custPagesDefaults||{},meta:c.custPagesMeta||{}}}
+  function cpeVal(k){var x=cpeCfg();return (x.saved[k]&&String(x.saved[k]).trim())||x.defs[k]||""}
+  function cpeList(k){return String(cpeVal(k)).split(",").map(function(x){return x.trim()}).filter(Boolean)}
+  function cpeHidden(){return cpeList("hide_"+CPE.kind)}
+  function cpeOrder(){
+    var all=(cpeCfg().meta.sections||{})[CPE.kind]||[];
+    var his=cpeList("order_"+CPE.kind).filter(function(x){return all.indexOf(x)>=0});
+    return his.concat(all.filter(function(x){return his.indexOf(x)<0}));
+  }
+  function cpeSave(patch,msg){
+    return saveConfig({custPages:patch}).then(function(d){
+      if(d&&d.ok){toast(msg||"Saved. Live on your pages now");cpeLoad()}else toast("Couldn't save that",{bad:true});return d;
+    }).catch(function(){toast("Network error",{bad:true})});
+  }
+  function openPageEditor(kind){
+    if(typeof closeMore==="function")closeMore();
+    if(el("cpEd"))el("cpEd").remove();
+    CPE.kind=kind||"before";CPE.y=0;
+    var w=document.createElement("div");w.className="tai";w.id="cpEd";
+    w.innerHTML='<div class="tai-hd"><div class="t">Your customer pages<small>Tap anything outlined to change it</small></div>'+
+      '<button class="btn" id="cpeSecs">Sections &amp; colour</button><button class="btn" id="cpeClose">Done</button></div>'+
+      '<div class="cpe-bar"><div class="cpe-seg" id="cpeKind"><button data-k="before">Before page</button><button data-k="after">After page</button></div>'+
+      '<div class="cpe-seg" id="cpePics"><button data-p="pair">Before + after</button><button data-p="one">After only</button><button data-p="none">No photos</button></div></div>'+
+      '<div id="cpeWarn"></div>'+
+      '<iframe class="cpe-frame" id="cpeFrame" title="Your page, as a customer sees it"></iframe>';
+    document.body.appendChild(w);
+    el("cpeClose").onclick=closePageEditor;
+    el("cpeSecs").onclick=cpeSections;
+    Array.prototype.forEach.call(el("cpeKind").querySelectorAll("button"),function(b){b.onclick=function(){CPE.kind=b.getAttribute("data-k");CPE.y=0;cpeLoad()}});
+    Array.prototype.forEach.call(el("cpePics").querySelectorAll("button"),function(b){b.onclick=function(){CPE.photos=b.getAttribute("data-p");cpeLoad()}});
+    navOpen("cpEd",closePageEditor);
+    cpeLoad();
+  }
+  function closePageEditor(){navDrop("cpEd");cpeClose();var w=el("cpEd");if(w)w.remove()}
+  function cpeLoad(){
+    var w=el("cpEd");if(!w)return;
+    Array.prototype.forEach.call(el("cpeKind").querySelectorAll("button"),function(b){b.classList.toggle("on",b.getAttribute("data-k")===CPE.kind)});
+    Array.prototype.forEach.call(el("cpePics").querySelectorAll("button"),function(b){b.classList.toggle("on",b.getAttribute("data-p")===CPE.photos)});
+    el("cpePics").style.display=CPE.kind==="after"?"":"none";
+    var f=el("cpeFrame");
+    try{if(f.contentWindow&&f.contentWindow.scrollY)CPE.y=f.contentWindow.scrollY}catch(e){}
+    api("/api/cust/preview?kind="+CPE.kind+"&photos="+CPE.photos).then(function(d){
+      if(!(d&&d.ok))return toast("Couldn't load the page",{bad:true});
+      var y=CPE.y;
+      f.onload=function(){try{f.contentWindow.scrollTo(0,y)}catch(e){}};
+      f.srcdoc=d.html;
+      // The review ask can't show without a link, and the switch in How I
+      // talk turns it off: say so here, where he'd notice it missing.
+      var warn=el("cpeWarn");
+      if(CPE.kind==="after"&&!d.reviewUrl){
+        warn.innerHTML='<div class="cpe-warn"><b>Your review button is hidden.</b> Customers can\'t see it until you add your Google review link.'+
+          '<input type="text" id="cpeReview" placeholder="https://g.page/r/…"></div>';
+        el("cpeReview").onchange=function(){var v=el("cpeReview").value.trim();if(!v)return;
+          saveConfig({reviewUrl:v}).then(function(x){if(x&&x.ok){toast("Review link saved");cpeLoad()}})};
+      }else if(CPE.kind==="after"&&!d.reviewAsk){
+        warn.innerHTML='<div class="cpe-warn"><b>Your review button is hidden.</b> “Ask for a Google review” is off in How I talk.</div>';
+      }else warn.innerHTML="";
+    }).catch(function(){toast("Network error",{bad:true})});
+  }
+  window.addEventListener("message",function(e){
+    var f=el("cpeFrame");if(!f||e.source!==f.contentWindow||!e.data||!e.data.cpEdit)return;
+    cpeEdit(String(e.data.cpEdit));
+  });
+  function cpeClose(){var x=el("cpeSheet");if(x)x.remove();x=el("cpeScrim");if(x)x.remove()}
+  function cpeOpenSheet(html){
+    cpeClose();
+    var sc=document.createElement("div");sc.className="cpe-scrim";sc.id="cpeScrim";sc.onclick=cpeClose;
+    var sh=document.createElement("div");sh.className="cpe-sheet";sh.id="cpeSheet";sh.innerHTML=html;
+    document.body.appendChild(sc);document.body.appendChild(sh);return sh;
+  }
+  function cpeEdit(k){
+    var x=cpeCfg(),hid=cpeHidden(),isHid=hid.indexOf(k)>=0;
+    var hasText=Object.prototype.hasOwnProperty.call(x.defs,k);
+    var canHide=!/^draft_|^care_/.test(k);
+    var vars=(x.meta.vars||{})[k]||[];
+    var val=cpeVal(k),own=x.saved[k]&&String(x.saved[k]).trim();
+    var multi=/^(expect|care_)/.test(k);
+    var h='<h3>'+esc(CPE_NAMES[k]||k)+'</h3>'+(isHid?'<div class="when">Hidden: customers don\'t see this</div>':'');
+    if(hasText){
+      h+='<textarea id="cpeText" rows="'+(multi?8:Math.min(6,Math.max(2,Math.ceil(val.length/34))))+'">'+esc(val)+'</textarea>';
+      var hints=[];
+      if(multi)hints.push("One per line.");
+      if(/^(expect|prep_|rain$)/.test(k)&&k!=="rain")hints.push("The first sentence shows in bold as the heading.");
+      if(/\[/.test(x.defs[k]||""))hints.push("[Words in brackets] become the “text me” link.");
+      if(vars.length)hints.push("Fills in by itself: "+vars.map(function(v){return "{"+v+"} = "+(CPE_VAR[v]||v)}).join(", ")+".");
+      if(!own)hints.push("This is the original wording.");
+      if(hints.length)h+='<div class="hint">'+esc(hints.join(" "))+'</div>';
+    }
+    h+='<div class="cpe-acts">'+(hasText?'<button class="btn" id="cpeDo" style="background:var(--accent);color:#fff">Save</button>':'')+
+      (hasText&&own?'<button class="btn" id="cpeOrig">Put back original</button>':'')+
+      (canHide?'<button class="btn" id="cpeHide">'+(isHid?"Show this":"Hide this")+'</button>':'')+
+      '<button class="btn" id="cpeCancel">Cancel</button></div>';
+    cpeOpenSheet(h);
+    el("cpeCancel").onclick=cpeClose;
+    if(el("cpeDo"))el("cpeDo").onclick=function(){
+      var v=el("cpeText").value.trim(),p={};
+      p[k]=v===String(x.defs[k]||"").trim()?"":v;   // his words, or back to the original
+      cpeClose();cpeSave(p);
+    };
+    if(el("cpeOrig"))el("cpeOrig").onclick=function(){var p={};p[k]="";cpeClose();cpeSave(p,"Back to the original")};
+    if(el("cpeHide"))el("cpeHide").onclick=function(){
+      var list=cpeHidden().filter(function(z){return z!==k});if(!isHid)list.push(k);
+      var p={};p["hide_"+CPE.kind]=list.join(",");cpeClose();cpeSave(p,isHid?"Showing it again":"Hidden from customers");
+    };
+    var ta=el("cpeText");if(ta&&!("ontouchstart" in window))ta.focus();
+  }
+  // Order, what shows, and the colour.
+  function cpeSections(){
+    var order=cpeOrder(),hid=cpeHidden();
+    var acc=(cpeCfg().saved.accent||"").trim();
+    var h='<h3>'+(CPE.kind==="before"?"Before page":"After page")+' sections</h3><div class="hint">Move a section up or down, or hide it.</div>'+
+      order.map(function(id,i){var off=hid.indexOf(id)>=0;
+        return '<div class="cpe-row"><b class="'+(off?"off":"")+'">'+esc(CPE_SECS[id]||id)+'</b>'+
+          '<button class="btn" data-up="'+i+'"'+(i===0?" disabled":"")+' aria-label="Move up">↑</button>'+
+          '<button class="btn" data-dn="'+i+'"'+(i===order.length-1?" disabled":"")+' aria-label="Move down">↓</button>'+
+          '<button class="btn" data-sh="'+esc(id)+'">'+(off?"Show":"Hide")+'</button></div>'}).join("")+
+      '<h3 style="margin-top:16px">Colour</h3><div class="hint">The red on the buttons and headings.</div>'+
+      '<div class="cpe-row"><input type="color" id="cpeAccent" value="'+esc(/^#[0-9a-f]{6}$/i.test(acc)?acc:"#c8102e")+'" style="width:56px;height:40px;padding:0;border:0;background:none">'+
+      '<b>'+(acc?esc(acc):"The site's red")+'</b>'+(acc?'<button class="btn" id="cpeAccOff">Use the site\'s red</button>':'')+'</div>'+
+      '<div class="cpe-acts"><button class="btn" id="cpeCancel">Done</button></div>';
+    var sh=cpeOpenSheet(h);
+    el("cpeCancel").onclick=cpeClose;
+    var move=function(i,d){var o=cpeOrder(),j=i+d;if(j<0||j>=o.length)return;var t=o[i];o[i]=o[j];o[j]=t;
+      var p={};p["order_"+CPE.kind]=o.join(",");cpeSave(p,"Moved").then(cpeSections)};
+    Array.prototype.forEach.call(sh.querySelectorAll("[data-up]"),function(b){b.onclick=function(){move(+b.getAttribute("data-up"),-1)}});
+    Array.prototype.forEach.call(sh.querySelectorAll("[data-dn]"),function(b){b.onclick=function(){move(+b.getAttribute("data-dn"),1)}});
+    Array.prototype.forEach.call(sh.querySelectorAll("[data-sh]"),function(b){b.onclick=function(){
+      var id=b.getAttribute("data-sh"),list=cpeHidden(),off=list.indexOf(id)>=0;
+      list=list.filter(function(z){return z!==id});if(!off)list.push(id);
+      var p={};p["hide_"+CPE.kind]=list.join(",");cpeSave(p,off?"Showing it again":"Hidden from customers").then(cpeSections)}});
+    el("cpeAccent").onchange=function(){cpeSave({accent:el("cpeAccent").value},"Colour saved").then(cpeSections)};
+    if(el("cpeAccOff"))el("cpeAccOff").onclick=function(){cpeSave({accent:""},"Back to the site's red").then(cpeSections)};
+  }
   function renderFuSettings(){
     var wrap=el("fuSettings");if(!wrap)return;var c=state.config||{};
     wrap.innerHTML=
@@ -8787,19 +8967,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       '<div class="fu-col"><span class="lbl2">Rules you\'ve told the AI</span><span style="display:flex;gap:6px"><input type="text" id="cfgRuleNew" placeholder="e.g. never quote a full detail under $150" style="flex:1"><button id="cfgRuleAdd" class="btn" style="white-space:nowrap">Add</button></span></div>'+
       '<div class="hint">Hard instructions the AI follows every time it writes for you. You can also just say one in the command centre — "stop using exclamation points" — and approve it there.</div>'+
       '<div id="cfgRules"></div>'+
-      '<details class="fu-col" id="cfgPages"><summary class="lbl2" style="cursor:pointer">Customer pages wording <span style="color:var(--muted2);font-weight:400">\u00b7 before / after links</span></summary>'+
-        '<div class="hint">What your /before and /after pages say. Leave a box empty to use the wording shown in grey. Tips are one per line.</div>'+
-        CUST_PAGE_FIELDS.map(function(f){
-          var cp=c.custPages||{},df=(c.custPagesDefaults||{})[f[0]]||"";
-          return '<span class="lbl2" style="margin-top:8px">'+esc(f[1])+'</span>'+
-            (f[2]?'<textarea rows="'+f[2]+'" data-cp="'+f[0]+'" placeholder="'+esc(df)+'">'+esc(cp[f[0]]||"")+'</textarea>'
-                 :'<input type="text" data-cp="'+f[0]+'" placeholder="'+esc(df)+'" value="'+esc(cp[f[0]]||"")+'">');
-        }).join("")+
-      '</details>';
-    Array.prototype.forEach.call(wrap.querySelectorAll("[data-cp]"),function(x){x.onchange=function(){
-      var p={};p[x.getAttribute("data-cp")]=x.value.trim();
-      saveConfig({custPages:p}).then(function(d){if(d&&d.ok){toast("Saved. Live on the pages now");var dd=el("cfgPages");if(dd)dd.open=true}});
-    }});
+      '<div class="fu-col"><span class="lbl2">Customer pages <span style="color:var(--muted2);font-weight:400">\u00b7 before / after links</span></span>'+
+        '<button class="btn" id="cfgPagesOpen" style="margin-top:6px">Edit your customer pages</button>'+
+        '<div class="hint">Every word, the order of the sections, what shows and the colour, on the real page. Tap anything to change it.</div></div>';
+    el("cfgPagesOpen").onclick=function(){openPageEditor("before")};
     el("cfgSayOpen").onclick=openHowITalk;
     el("cfgEnabled").onclick=function(){saveConfig({followupsEnabled:!(c.followupsEnabled!==false)})};
     el("cfgAuto").onclick=function(){saveConfig({autopilot:!c.autopilot})};
