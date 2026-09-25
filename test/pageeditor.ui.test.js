@@ -141,7 +141,7 @@ await page.locator('#cpeSheet #cpeCancel').tap(); await page.waitForTimeout(200)
 
 section('The after page, and the text that goes with the link');
 await page.locator('#cpeKind [data-k="after"]').tap(); await settle();
-ok('it switches to the after page, with the photo choices', await frameHas('[data-ed="review_btn"]') && await page.locator('#cpePics').isVisible());
+ok('it switches to the after page, with the photo choices', await frameHas('[data-ed="rate_google"]') && await page.locator('#cpePics').isVisible());
 ok('no review link yet: he is told the button is hidden, and can add it right there', /review button is hidden/.test(await page.locator('#cpeWarn').innerText()));
 await page.locator('#cpeReview').fill('https://g.page/r/mikey-review'); await page.locator('#cpeReview').press('Enter');
 await page.locator('#cpeReview').dispatchEvent('change'); await settle();

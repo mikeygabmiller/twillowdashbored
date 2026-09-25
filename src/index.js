@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-25·page-editor';
+const BUILD = '2026-09-25·after-stars';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -17802,7 +17802,17 @@ const CUST_COPY_DEFAULTS = {
   review_head: 'Happy with it?',
   review_sub: 'A Google review helps a one-man shop more than anything else.',
   review_btn: 'Leave a review',
-  fix_line: "Something not right? [Text me] and I'll make it right.",
+  // The stars (the after page's review ask, open version: see custStars).
+  rate_head: 'How did I do?',
+  rate_hint: 'Tap a star.',
+  rate_thanks: "That means a lot. A Google review is the thing that helps a one-man shop the most.",
+  rate_google: 'Post it on Google',
+  rate_form_head: 'Tell me straight',
+  rate_form_sub: "What should I have done better? This comes to me, not posted anywhere, and I'll make it right.",
+  rate_back: 'Text me back about it',
+  rate_send: 'Send it to Mikey',
+  rate_done: "Thanks for telling me. I'll text you.",
+  rate_public: "Rather post it publicly? [Leave a Google review], that's fine too.",
   friend_title: 'Send a friend',
   friend_sub: 'You both get a free exterior',
   lbl_care: 'Looking after it',
@@ -18565,7 +18575,10 @@ async function apiRatePick(request) {
   const d = await readJson(request);
   const n = Math.round(+d.stars);
   if (!(n >= 1 && n <= 5)) return json({ ok: false, error: 'stars' }, 400);
-  if (d.preview === true || !rateCfg(await loadConfig()).on) return json({ ok: true });
+  // From a customer's after page (custStars): counted whether or not the
+  // /rate page itself is switched on, but only for a real customer's token.
+  const viaAfter = d.from === 'after' && !!(await custResolve(String(d.token || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80)));
+  if (d.preview === true || (!viaAfter && !rateCfg(await loadConfig()).on)) return json({ ok: true });
   const log = await rateLoad();
   // A five is counted as sent to Google on the tap itself: the page redirects on
   // its own, so there's no second beacon to wait for. The other way there is the
@@ -18581,9 +18594,22 @@ async function apiRateFeedback(request) {
   const stars = Math.round(+d.stars);
   if (!text || !(stars >= 1 && stars <= 4)) return json({ ok: false, error: 'text' }, 400);
   const test = d.preview === true;
-  if (!test && !rateCfg(await loadConfig()).on) return json({ ok: true });
   const rec = d.token ? await custResolve(String(d.token).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80)) : null;
+  const viaAfter = d.from === 'after' && !!rec;
+  if (!test && !viaAfter && !rateCfg(await loadConfig()).on) return json({ ok: true });
   const t = rec ? await loadThread(rec.phone) : null;
+  // A public box that emails him: three notes a day per customer is plenty,
+  // and it also goes on their conversation notes, where he'll be when he
+  // texts them back.
+  if (viaAfter && !test) {
+    const day = Date.now() - 86400000;
+    const recent = (t.rateNotes || []).filter((x) => x > day);
+    if (recent.length >= 3) return json({ ok: false, error: 'too_many' }, 429);
+    t.rateNotes = recent.concat(Date.now());
+    const stamp = new Date().toLocaleString('en-US', { timeZone: (await loadConfig()).tz });
+    t.notes = (t.notes ? t.notes + '\n\n' : '') + `${stars}★ from their after page: ${text}\n(${d.back === true ? 'wants a text back' : 'no reply asked for'}, ${stamp})`;
+    await saveThread(t); await updateIndexEntry(t);
+  }
   const phone = rec ? rec.phone : (normalizePhone(String(d.phone || '').slice(0, 20)) || '');
   const name = (t && t.name) || String(d.name || '').trim().slice(0, 60);
   const row = { at: Date.now(), stars, text, back: d.back === true, name, phone, test };
@@ -18619,6 +18645,37 @@ async function custSubPage(kind, token) {
   const s = rec ? await custState(rec.phone) : null;
   const info = await custBizInfo();
   return htmlResponse(custSubHtml(kind, s, info, rec ? token : '', {}));
+}
+
+// The after page's review ask: his star row, always the OPEN version. Five
+// stars gets the thank-you and the Google button; one to four gets "Tell me
+// straight", a note that comes to him, with the Google link right under it.
+// Everybody who taps a star is offered Google. That's the line between this
+// and review gating ("selectively soliciting positive reviews", which Google
+// forbids): the note is offered first to the unhappy ones, Google is kept
+// from nobody. The /rate page's gate mode never reaches this page, whatever
+// its switch says. In the editor every state shows at once, labelled.
+function custStars(K, info, opts) {
+  const ed = !!(opts && opts.edit);
+  const review = info.review || (ed ? '#' : '');
+  const star = (n) => `<button type="button" role="radio" aria-checked="false" data-star="${n}" aria-label="${n} star${n > 1 ? 's' : ''}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8l2.8 5.7 6.3.9-4.55 4.43 1.07 6.27L12 17.14l-5.62 2.96 1.07-6.27L2.9 9.4l6.3-.9z" stroke-linejoin="round"/></svg></button>`;
+  const pub = review && K.on('rate_public') ? `<div class="note"${K.ed('rate_public')}>${K.link('rate_public', jdEsc(review), null, ' target="_blank" rel="noopener" data-tap="review" data-google="1"')}</div>` : '';
+  return `<div class="rt"${ed ? ' data-when="Before they tap"' : ''}>
+    <div class="ask-h"${K.ed('rate_head', info.review ? '' : 'The Google button stays hidden until you add your Google review link')}>${K.t('rate_head')}</div>
+    <div class="sub m0"${K.ed('rate_hint')}>${K.t('rate_hint')}</div>
+    <div class="rt-stars" role="radiogroup" aria-label="Your rating">${[1, 2, 3, 4, 5].map(star).join('')}</div></div>
+  <div id="rtGoogle"${ed ? ' data-when="After five stars"' : ' hidden'}>
+    <p class="sub m0"${K.ed('rate_thanks')}>${K.t('rate_thanks')}</p>
+    ${review ? `<a class="btn mt" href="${jdEsc(review)}" target="_blank" rel="noopener" data-tap="review" data-google="1"${K.ed('rate_google')}>${K.t('rate_google')}</a>` : ''}</div>
+  <div id="rtForm"${ed ? ' data-when="After one to four stars"' : ' hidden'}>
+    <div class="ask-h"${K.ed('rate_form_head')}>${K.t('rate_form_head')}</div>
+    <p class="sub m0"${K.ed('rate_form_sub')}>${K.t('rate_form_sub')}</p>
+    <textarea class="fld" id="rtText" maxlength="1000" rows="4" placeholder="What wasn't right?"></textarea>
+    <label class="rt-chk"${K.ed('rate_back')}><input type="checkbox" id="rtBack" checked> ${K.t('rate_back')}</label>
+    <button class="btn mt" id="rtSend" type="button"${K.ed('rate_send')}>${K.t('rate_send')}</button>
+    <div class="note" id="rtMsg"></div>${pub}</div>
+  <div id="rtDone"${ed ? ' data-when="After they send the note"' : ' hidden'}>
+    <p class="sub m0"${K.ed('rate_done')}>${K.t('rate_done')}</p>${ed ? '' : pub}</div>`;
 }
 
 // The page itself, from the customer's state. Split from the fetch so the page
@@ -18725,11 +18782,7 @@ function custSubHtml(kind, s, info, token, opts) {
         }
         if (opts.edit) shots += `<div class="note"${K.ed('save_pic', 'Instead, when there is only an after shot')}>${K.t('save_pic')}</div>`;
       }
-      // The "tell me" line sits under the button, never in front of it, so it
-      // can't read as a filter on who gets asked. And it's a text, not a form
-      // (his call): the thread they opened this from is where that happens.
-      const fix = K.on('fix_line') ? `<div class="note"${K.ed('fix_line')}>${K.link('fix_line', tel ? custSmsHref(tel, '') : '')}</div>` : '';
-      const ask = fresh ? `<div class="ask">${reviewBits('ask-h')}${fix}</div>` : '';
+      const ask = fresh ? `<div class="ask">${token ? custStars(K, info, opts) : reviewBits('ask-h')}</div>` : '';
       secs.job = `<div class="card next"><div class="lbl"${K.ed('lbl_last')}>${K.t('lbl_last')}</div><div class="big">${jdEsc(a.service || 'Your detail')}</div>
         <div class="sub m0">${jdEsc(a.dateLabel)}${s.vehicle ? ' · ' + jdEsc(s.vehicle) : ''}</div>
         ${shots}${did}${ask}</div>`;
@@ -18782,7 +18835,9 @@ function custSubHtml(kind, s, info, token, opts) {
         ${K.on('book_btn') ? `<a class="btn" href="${CUST_SITE}" target="_blank" rel="noopener" data-tap="book"${K.ed('book_btn')}>${K.t('book_btn')}</a>` : ''}`;
     }
     secs.next = `<div class="card"><div class="lbl"${K.ed('lbl_next')}>${K.t('lbl_next')}</div>${next}</div>`;
-    if ((info.review || opts.edit) && !fresh) {
+    if (token && a && !fresh) {
+      secs.review = `<div class="card" id="afterCard">${custStars(K, info, opts)}</div>`;
+    } else if ((info.review || opts.edit) && !fresh) {
       secs.review = `<div class="card" id="afterCard">${reviewBits('lbl')}</div>`;
     }
     if (opts.edit && opts.drafts) {
@@ -19025,6 +19080,15 @@ textarea.fld{resize:vertical;min-height:58px}
 .ba-rng{position:absolute;left:0;bottom:0;width:100%;height:1px;margin:0;opacity:0;pointer-events:none}
 .ba:focus-within{outline:2px solid var(--gold);outline-offset:2px}
 .ask{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.rt-stars{display:flex;justify-content:center;gap:4px;margin:12px 0 4px}
+.rt-stars button{background:none;border:0;padding:4px;cursor:pointer;line-height:0;border-radius:8px}
+.rt-stars svg{width:42px;height:42px;display:block}
+.rt-stars path{fill:none;stroke:#80868b;stroke-width:1.6;transition:fill .12s,stroke .12s}
+.rt-stars button.lit path{fill:#fbbc04;stroke:#fbbc04}
+.rt-stars button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+#rtGoogle,#rtForm,#rtDone{margin-top:12px}
+.rt-chk{display:flex;gap:10px;align-items:center;font-size:14.5px;color:var(--gray);margin-top:12px}
+.rt-chk input{width:20px;height:20px;accent-color:var(--red);margin:0}
 .ask-h{font-size:17px;font-weight:800;margin-bottom:4px}
 </style>${/^#[0-9a-f]{6}$/i.test(opts.accent || '') ? `<style>:root{--red:${opts.accent};--red2:${opts.accent}}</style>` : ''}
 ${opts.edit ? CUST_EDIT_KIT : ''}</head><body>${inner}
@@ -19129,6 +19193,35 @@ document.addEventListener("click",function(e){
   ["pointerup","pointercancel","lostpointercapture"].forEach(function(n){ba.addEventListener(n,function(){down=false})});
   ba.addEventListener("click",function(e){if(e.target!==rng)at(e.clientX)});
   if(rng)rng.addEventListener("input",function(){set(+rng.value)});
+})();
+// The stars (custStars). Every tap is counted on his star page's tally; a
+// note goes to him. from:"after" is what lets these through while the /rate
+// page itself is switched off: the token is a real customer's.
+(function(){
+  var btns=[].slice.call(document.querySelectorAll("[data-star]"));if(!btns.length||!TOK)return;
+  var picked=0;
+  var rate=function(path,b){b.token=TOK;b.from="after";
+    return fetch(path,{method:"POST",keepalive:true,headers:{"Content-Type":"application/json"},body:JSON.stringify(b)})
+      .then(function(r){return r.json()}).catch(function(){return null})};
+  var paint=function(n){btns.forEach(function(b){b.classList.toggle("lit",+b.getAttribute("data-star")<=n)})};
+  btns.forEach(function(b){var n=+b.getAttribute("data-star");
+    b.onmouseenter=function(){paint(n)};b.onmouseleave=function(){paint(picked)};
+    b.onclick=function(){
+      picked=n;paint(n);btns.forEach(function(x){x.setAttribute("aria-checked",String(+x.getAttribute("data-star")===n))});
+      $("rtGoogle").hidden=n!==5;$("rtForm").hidden=n===5||!$("rtDone").hidden;
+      rate("/api/rate/pick",{stars:n});
+      if(n<5&&!$("rtForm").hidden)$("rtText").focus();
+    }});
+  [].forEach.call(document.querySelectorAll("[data-google]"),function(a){a.addEventListener("click",function(){if(picked<5)rate("/api/rate/pick",{stars:picked,google:true})})});
+  $("rtSend").onclick=function(){
+    var text=$("rtText").value.trim();
+    if(!text){$("rtMsg").textContent="Write a line or two first.";return}
+    $("rtSend").disabled=true;$("rtMsg").textContent="Sending…";
+    rate("/api/rate/feedback",{stars:picked,text:text,back:$("rtBack").checked}).then(function(d){
+      if(d&&d.ok){$("rtForm").hidden=true;$("rtDone").hidden=false}
+      else{$("rtSend").disabled=false;$("rtMsg").textContent=d&&d.error==="too_many"?"Got your earlier ones. Reply to my text if there's more.":"That didn't send. Try again, or just reply to my text."}
+    });
+  };
 })();
 // "Save the photos": the phone's share sheet with the files in it (Save Image,
 // Instagram, a text to whoever). Fetched as soon as the page opens, because a

@@ -4593,7 +4593,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-25·page-editor";
+  var APP_BUILD="2026-09-25·after-stars";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -8731,7 +8731,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     rain:"If it rains",prep_pay:"Paying",lineup:"“Doesn't line up?” line",title_after:"Page title",afterThanks:"Thank-you line",
     lbl_last:"Job card heading",drag_hint:"Slider hint",save_pics:"Save button (two photos)",save_pic:"Save button (one photo)",
     lbl_did:"“What I did” heading",review_head:"Review heading",review_sub:"Review line",review_btn:"Review button",
-    fix_line:"“Not right?” line",friend_title:"Send a friend",friend_sub:"Send a friend (small line)",lbl_care:"Care tips heading",
+    rate_head:"Stars heading",rate_hint:"Stars hint",rate_thanks:"After 5 stars",rate_google:"Google button (5 stars)",
+    rate_form_head:"Note heading (1\u20134 stars)",rate_form_sub:"Note line (1\u20134 stars)",rate_back:"\u201cText me back\u201d box",
+    rate_send:"Send button",rate_done:"After they send a note",rate_public:"Google link under the note",friend_title:"Send a friend",friend_sub:"Send a friend (small line)",lbl_care:"Care tips heading",
     care_pick:"“What did I do?” (saved link)",care_hint:"Care hint (saved link)",care_full:"Care tips: full detail",
     care_interior:"Care tips: interior",care_exterior:"Care tips: exterior",care_ceramic:"Care tips: ceramic coating",
     care_correction:"Care tips: paint correction",lbl_next:"“Next one” heading",next_line:"How often line",
