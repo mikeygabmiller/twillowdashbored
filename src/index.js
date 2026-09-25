@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-25·after-stars';
+const BUILD = '2026-09-25·helper-organize';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -178,6 +178,8 @@ async function runCron() {
   await seedPlaybookIfNeeded();
   await dispatchDueScheduled();
   await dispatchDueReminders();
+  // The helper's own follow-up reminders buzz THEIR phone, never Mikey's inbox.
+  await dispatchHelperFollowups().catch(() => {});
   // "Ruth has been waiting two hours." One email per unanswered text.
   await dispatchWaitNudges().catch(() => {});
   // "I'll get back to you Monday" — nudge him when the time he promised arrives.
@@ -12410,6 +12412,15 @@ function buildIndexSummary(thread, cfg) {
     // opening every thread.
     helperAskAt: (thread.helperAsk && thread.helperAsk.at) || 0,
     helperAnsweredAt: (thread.helperAsk && thread.helperAsk.answeredAt) || 0,
+    // The helper's organizing, mirrored so their list can sort and filter on it
+    // without opening threads. helperStage is what they set, or "" (the page
+    // works out a sensible default from the rest of the row).
+    helperStage: HELPER_STAGES.includes(thread.helperStage) ? thread.helperStage : '',
+    helperFollowAt: (thread.helperFollow && thread.helperFollow.at) || 0,
+    helperFollowNote: (thread.helperFollow && thread.helperFollow.note) || '',
+    helperFollowSent: !!(thread.helperFollow && thread.helperFollow.notified),
+    helperNoteCount: Array.isArray(thread.helperNotes) ? thread.helperNotes.length : 0,
+    hasCar: !!(thread.garage && Array.isArray(thread.garage.vehicles) && thread.garage.vehicles.length),
     awaitingReply: awaiting,
     // When the unanswered run started — the FIRST of their texts since his last
     // one, not the latest. The two-hour nudge counts from here, so a customer
@@ -15121,6 +15132,7 @@ const HELPER_ROUTES = {
   'POST /api/helper/contact': (request) => apiHelperContact(request),
   'POST /api/helper/done':  (request) => apiHelperDone(request),
   'POST /api/helper/push':  (request) => apiHelperPush(request),
+  'POST /api/helper/organize': (request) => apiHelperOrganize(request),
   'GET /api/push/key':      async () => json({ ok: true, key: (await vapidKeys()).pub }),
   'GET /api/push/peek':     () => apiHelperPeek(),
 };
@@ -15318,6 +15330,101 @@ async function apiHelperDone(request) {
   return json({ ok: true, thread });
 }
 
+// ---- the helper's organizing: stages, labels, notes, follow-ups, checklist ----
+// Every one of these lives in its OWN field on purpose. Mikey's `status` drives
+// automatic texts (won → review ask and rebook, lost → a win-back), so a helper
+// sorting a customer into "Done" must never be able to fire one. His reminders
+// email him, so theirs are separate too. Labels are the exception: they ARE his
+// tags, so they show in his list, but the helper can only add or remove labels
+// from the helper label set, never the tags the app itself relies on.
+const HELPER_STAGES = ['new', 'quoted', 'waiting', 'booked', 'done', 'no'];
+const HELPER_CHECKS = ['car', 'condition', 'price', 'address', 'days'];
+const SYSTEM_TAGS = ['practice', 'booking', 'quoted'];
+const HELPER_LABELS_DEFAULT = ['Two+ cars', 'Pet hair', 'Returning', 'Gift', 'Pre-sale', 'Out of area', 'Spam'];
+function helperLabels(cfg) {
+  const l = Array.isArray(cfg && cfg.helperLabels) ? cfg.helperLabels : HELPER_LABELS_DEFAULT;
+  return l.map((x) => String(x).trim().slice(0, 24)).filter((x) => x && !SYSTEM_TAGS.includes(x.toLowerCase())).slice(0, 30);
+}
+async function apiHelperOrganize(request) {
+  const data = await readJson(request);
+  const phone = normalizePhone(data.phone);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  let cfg = await loadConfig();
+  const who = helperName(cfg);
+  const now = Date.now();
+  // A new label is added to the shared set first, so it can then be put on
+  // this customer in the same tap.
+  if (typeof data.newLabel === 'string') {
+    const nl = data.newLabel.trim().slice(0, 24);
+    if (!nl || SYSTEM_TAGS.includes(nl.toLowerCase())) return json({ ok: false, error: 'bad_label' }, 422);
+    const set = helperLabels(cfg);
+    if (!set.some((x) => x.toLowerCase() === nl.toLowerCase())) {
+      if (set.length >= 30) return json({ ok: false, error: 'too_many_labels' }, 422);
+      const next = Object.assign({}, cfg, { helperLabels: set.concat([nl]) });
+      await kv().put('config', JSON.stringify(next));
+      cfg = cacheConfig(next);
+    }
+    data.addLabel = data.addLabel || nl;
+  }
+  const labels = helperLabels(cfg);
+  const known = (x) => labels.find((l) => l.toLowerCase() === String(x || '').trim().toLowerCase());
+  const thread = await loadThread(phone);
+  if (typeof data.stage === 'string') {
+    if (data.stage && !HELPER_STAGES.includes(data.stage)) return json({ ok: false, error: 'bad_stage' }, 422);
+    if (data.stage !== (thread.helperStage || '')) { thread.helperStage = data.stage; thread.helperStageAt = now; thread.helperStageBy = who; }
+  }
+  if (data.addLabel != null) {
+    const l = known(data.addLabel);
+    if (!l) return json({ ok: false, error: 'unknown_label' }, 422);
+    thread.tags = Array.isArray(thread.tags) ? thread.tags : [];
+    if (!thread.tags.some((t) => String(t).toLowerCase() === l.toLowerCase())) thread.tags.push(l);
+  }
+  if (data.removeLabel != null) {
+    const l = known(data.removeLabel);
+    if (!l) return json({ ok: false, error: 'unknown_label' }, 422);
+    thread.tags = (thread.tags || []).filter((t) => String(t).toLowerCase() !== l.toLowerCase());
+  }
+  if (typeof data.note === 'string' && data.note.trim()) {
+    thread.helperNotes = (Array.isArray(thread.helperNotes) ? thread.helperNotes : []).concat([{ id: genId(), at: now, by: who, text: data.note.trim().slice(0, 600) }]).slice(-50);
+  }
+  if (typeof data.deleteNote === 'string') thread.helperNotes = (thread.helperNotes || []).filter((n) => n.id !== data.deleteNote);
+  if ('follow' in data) {
+    const f = data.follow;
+    if (!f) thread.helperFollow = null;
+    else {
+      const at = Number(f.at);
+      if (!at || at < now - 864e5 || at > now + 366 * 864e5) return json({ ok: false, error: 'bad_time' }, 422);
+      thread.helperFollow = { at, note: String(f.note || '').trim().slice(0, 200), by: who, setAt: now, notified: false };
+    }
+  }
+  if (data.check && HELPER_CHECKS.includes(data.check.key)) {
+    thread.helperChecks = Object.assign({}, thread.helperChecks || {}, { [data.check.key]: !!data.check.on });
+  }
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+  return json({ ok: true, thread, labels });
+}
+// Each due follow-up buzzes the helper's phone once. Read from the index rows
+// (no thread loads) and written only when one is actually due.
+async function dispatchHelperFollowups() {
+  const cfg = await loadConfig();
+  if (!helperSecret(cfg)) return 0;
+  const now = Date.now();
+  const due = (await loadIndex()).filter((r) => r.helperFollowAt && r.helperFollowAt <= now && !r.helperFollowSent && !r.archived);
+  let n = 0;
+  for (const r of due.slice(0, 5)) {
+    const thread = await loadThread(r.phone);
+    const f = thread.helperFollow;
+    if (!f || f.notified || f.at > now) continue;
+    thread.helperFollow = Object.assign({}, f, { notified: true });
+    await saveThread(thread);
+    await updateIndexEntry(thread);
+    await pushHelper(`Follow up: ${thread.name || r.phone}`, f.note || 'You set a reminder for today.', r.phone).catch(() => {});
+    n++;
+  }
+  return n;
+}
+
 // ---- the helper's phone alerts ----
 // Their own device list, separate from Mikey's: his gets every alert the app
 // has (money, follow-ups, bookings), theirs only "a customer texted" and
@@ -15370,7 +15477,7 @@ async function apiHelperGuide() {
     prices = (bk.services || []).filter((x) => x.enabled !== false).map((x) => ({ name: String(x.name || '').replace(/\s*[—–-]\s*In & Out$/, ''), price: x.price || {}, blurb: x.blurb || '' }));
     addons = (bk.addons || []).filter((x) => x.enabled !== false).map((x) => ({ name: x.name, price: x.price }));
   } catch { /* the guide still works without the list */ }
-  return json({ ok: true, name: helperName(cfg), notes: String(cfg.helperNotes || ''), since: +cfg.helperSince || 0, guide: HELPER_GUIDE, quick: HELPER_QUICK, prices, addons });
+  return json({ ok: true, name: helperName(cfg), notes: String(cfg.helperNotes || ''), since: +cfg.helperSince || 0, labels: helperLabels(cfg), guide: HELPER_GUIDE, quick: HELPER_QUICK, prices, addons });
 }
 
 // Written from how Mikey actually books people, read out of his own threads

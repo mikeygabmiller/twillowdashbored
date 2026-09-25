@@ -770,6 +770,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .date-banner{display:flex;align-items:center;gap:9px;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.4);
     border-radius:12px;padding:9px 12px;margin:0 0 8px;font-size:12.5px;color:var(--text)}
   .date-banner .db-ic{color:#34d399;display:flex}.date-banner b{font-weight:650}
+  .helper-card{margin:8px 14px 0;padding:9px 12px;border-radius:11px;background:rgba(155,123,255,.07);border:1px solid rgba(155,123,255,.3);font-size:12.5px;color:var(--muted)}
+  .helper-card b{color:var(--text);font-weight:650}
+  .helper-card .hc-note{margin-top:5px;color:var(--text);white-space:pre-wrap}
+  .helper-card .hc-note small{color:var(--muted2);margin-left:4px}
   .date-banner.helper-ask{background:rgba(155,123,255,.1);border-color:rgba(155,123,255,.45)}
   .date-banner.helper-ask .db-ic{color:#c9b8ff}
   .date-banner .db-go{margin-left:auto;flex:none;background:#c9b8ff;color:#1a1033;border:0;border-radius:9px;padding:6px 12px;font-weight:700;cursor:pointer}
@@ -4231,6 +4235,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     <div class="team-id-bar" id="teamIdentityBar" style="display:none"></div>
     <div class="date-banner" id="dateBanner" style="display:none"></div>
     <div class="date-banner helper-ask" id="helperAskBanner" style="display:none"></div>
+    <div class="helper-card" id="helperCard" style="display:none"></div>
     <div class="ai-review" id="suggestBox" style="display:none"></div>
     <div class="ai-review" id="aiReview" style="display:none"></div>
     <div class="polish-bar" id="polishBar"></div>
@@ -4593,7 +4598,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-25·after-stars";
+  var APP_BUILD="2026-09-25·helper-organize";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -10856,7 +10861,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       Array.prototype.forEach.call(sb.querySelectorAll(".e"),function(b){b.onclick=function(){editScheduled(t,b.getAttribute("data-edit"))}});
     }else sb.style.display="none";
     renderFuBanner(t);
-    renderDateBanner(t);renderHelperAsk(t);
+    renderDateBanner(t);renderHelperAsk(t);renderHelperCard(t);
     renderSuggested(t);
     // Coach advice is per-conversation — clear it when the open thread changes,
     // but keep it across background polls of the SAME thread so it isn't yanked
@@ -11846,6 +11851,20 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         else toast("Couldn't send that",{bad:true});
       });
     };
+  }
+  // What the helper has written down about this customer: their stage, a
+  // follow-up they set, and their notes. Read-only here: it's their workspace,
+  // shown so nothing they learned is invisible to you.
+  var HELPER_STAGE_NAMES={"new":"New",quoted:"Quoted",waiting:"Waiting on you",booked:"Booked",done:"Done",no:"Not interested"};
+  function renderHelperCard(t){
+    var box=el("helperCard");if(!box)return;
+    var notes=(t&&t.helperNotes)||[],f=t&&t.helperFollow,st=t&&t.helperStage;
+    if(!t||(!notes.length&&!f&&!st)){box.style.display="none";box.innerHTML="";return}
+    var h='<b>Helper</b>'+(st?' · stage: <b>'+esc(HELPER_STAGE_NAMES[st]||st)+'</b>':'')+
+      (f?' · follow up '+esc(new Date(f.at).toLocaleString("en-US",{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}))+(f.note?': '+esc(f.note):''):'');
+    h+=notes.slice(-3).reverse().map(function(n){return'<div class="hc-note">'+esc(n.text)+'<small>'+esc(n.by||'')+' · '+esc(ago(n.at))+' ago</small></div>'}).join('');
+    if(notes.length>3)h+='<div class="hc-note" style="color:var(--muted2)">+'+(notes.length-3)+' older notes on their page</div>';
+    box.style.display="block";box.innerHTML=h;
   }
   function renderDateBanner(t){
     var box=el("dateBanner");if(!box)return;
