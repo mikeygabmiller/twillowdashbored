@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-25·helper-messages';
+const BUILD = '2026-09-25·helper-toolkit';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -477,9 +477,13 @@ async function handle(request) {
     return allowed(request, url);
   }
   if (request.method === 'GET'  && pathname === '/api/whoami')     return json({ ok: true, role });
-  // Mikey can open the helper page too, to see exactly what his helper sees.
-  if (request.method === 'GET'  && pathname === '/api/helper/guide') return apiHelperGuide();
-  if (request.method === 'POST' && pathname === '/api/helper/ask')  return apiHelperAsk(request);
+  // Mikey can open the helper page too, to see exactly what his helper sees, and
+  // he's the one who answers what the helper asks.
+  if (pathname.startsWith('/api/helper/')) {
+    if (request.method === 'POST' && pathname === '/api/helper/answer') return apiHelperAnswer(request);
+    const h = HELPER_ROUTES[request.method + ' ' + pathname];
+    if (h && pathname !== '/api/helper/push') return h(request, url);
+  }
   // Past the gate = a real, authenticated use of a real feature. Buffered, never
   // written here: see noteApiUse. This is the half of usage tracking that keeps
   // working when the browser is serving a stale cached shell.
@@ -1823,6 +1827,9 @@ async function handleInboundSms(request) {
       : `📱 ${who} sent a photo`;
   await notifyMikey(subject,
     assistAlertBody(alertCfg, { phone: fromNorm, who, msg: text, ask, draft, note: nameNote, media: numMedia }));
+  // The helper's phone too, if there is a helper. Their own list, their own
+  // wording, and a tap that opens this conversation on their page.
+  await pushHelper(`New text from ${who}`, tap ? `${tap.label} your message` : (gist || 'Sent a photo'), fromNorm).catch(() => {});
   // Watch for "so Saturday at 10 then?" and raise a one-tap job card if so.
   await maybeDetectJob(fromNorm);
   // No auto-reply to the customer — Mikey replies personally from the dashboard.
@@ -12371,6 +12378,10 @@ function buildIndexSummary(thread, cfg) {
       : '',
     lastDir: last ? last.dir : '',
     lastTs: last ? last.ts : (thread.updatedAt || Date.now()),
+    // The helper's list shows "Waiting on Mikey" / "Mikey answered" without
+    // opening every thread.
+    helperAskAt: (thread.helperAsk && thread.helperAsk.at) || 0,
+    helperAnsweredAt: (thread.helperAsk && thread.helperAsk.answeredAt) || 0,
     awaitingReply: awaiting,
     // When the unanswered run started — the FIRST of their texts since his last
     // one, not the latest. The two-hour nudge counts from here, so a customer
@@ -15074,9 +15085,16 @@ const HELPER_ROUTES = {
   'POST /api/read':         (request) => apiRead(request),
   'POST /api/send':         (request) => helperSend(request),
   'POST /api/ai/draft':     (request) => helperPolish(request),
-  'POST /api/request-date': (request) => helperForward(request, apiRequestDate),
+  'POST /api/request-date': (request) => helperRequestDate(request),
   'POST /api/helper/ask':   (request) => apiHelperAsk(request),
   'GET /api/helper/guide':  () => apiHelperGuide(),
+  'GET /api/helper/media':  (request, url) => apiHelperMedia(url),
+  'GET /api/helper/week':   () => apiHelperWeek(),
+  'POST /api/helper/contact': (request) => apiHelperContact(request),
+  'POST /api/helper/done':  (request) => apiHelperDone(request),
+  'POST /api/helper/push':  (request) => apiHelperPush(request),
+  'GET /api/push/key':      async () => json({ ok: true, key: (await vapidKeys()).pub }),
+  'GET /api/push/peek':     () => apiHelperPeek(),
 };
 function helperName(cfg) { return String((cfg && cfg.helperName) || '').trim() || 'Helper'; }
 // Re-issue a request with the helper's name stamped on it. The name comes from
@@ -15118,12 +15136,201 @@ async function apiHelperAsk(request) {
   const body =
     `${who} is texting ${name} and needs your call:\n\n"${question}"\n\n` +
     (lastIn ? `${name}'s last text:\n"${String(lastIn.body || '').slice(0, 240)}"\n\n` : '') +
-    `Answer them in the conversation, or text ${who} back:\n${publicBase()}/?c=${encodeURIComponent(phone)}`;
+    `Tap Answer at the top of the conversation. ${who} sees it right there, and the customer never does:\n${publicBase()}/?c=${encodeURIComponent(phone)}`;
   const sent = await notifyMikey(subject, body);
   thread.helperAsk = { at: Date.now(), by: who, question };
   await saveThread(thread);
+  await updateIndexEntry(thread);
   return json({ ok: true, sent, helperAsk: thread.helperAsk });
 }
+// "Ask Mikey for a date" is the same question as any other ask, so it lands in
+// the same place: his answer comes back on the thread where the helper is
+// already looking, instead of only in his inbox.
+async function helperRequestDate(request) {
+  const data = await readJson(request);
+  const cfg = await loadConfig();
+  const who = helperName(cfg);
+  const note = String(data.note || '').trim().slice(0, 300);
+  const res = await apiRequestDate(new Request(request.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: data.phone, note, by: who }) }));
+  const out = await res.json();
+  if (!out.ok) return json(out, res.status);
+  const thread = await loadThread(normalizePhone(data.phone));
+  thread.helperAsk = { at: Date.now(), by: who, kind: 'date', question: 'A day and time for them' + (note ? ` (${note})` : '') };
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+  return json({ ok: true, sent: out.sent, thread });
+}
+
+// Mikey's answer to whatever the helper asked. Only the helper page shows it:
+// it's a note between the two of them, never a text to the customer.
+async function apiHelperAnswer(request) {
+  const data = await readJson(request);
+  const phone = normalizePhone(data.phone);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  const answer = String(data.answer || '').trim().slice(0, 500);
+  if (!answer) return json({ ok: false, error: 'empty_answer' }, 422);
+  const thread = await loadThread(phone);
+  if (!thread.helperAsk) return json({ ok: false, error: 'nothing_asked' }, 409);
+  thread.helperAsk = Object.assign({}, thread.helperAsk, { answer, answeredAt: Date.now() });
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+  await pushHelper(`Mikey answered about ${thread.name || phone}`, answer, phone).catch(() => {});
+  return json({ ok: true, thread });
+}
+
+// A photo or voicemail from THIS conversation, fetched with the account's
+// credentials. The page names a message and a slot, never a URL: the URL comes
+// out of the stored thread, so this can only ever return what the customer
+// actually sent. (The general /api/media takes any Twilio URL, which is why the
+// helper doesn't get that one.)
+async function apiHelperMedia(url) {
+  const phone = normalizePhone(url.searchParams.get('phone'));
+  const ts = Number(url.searchParams.get('ts'));
+  if (!phone || !ts) return json({ ok: false, error: 'bad_request' }, 422);
+  const thread = await loadThread(phone);
+  const m = (thread.messages || []).find((x) => x.ts === ts);
+  if (!m) return json({ ok: false, error: 'not_found' }, 404);
+  let u = '';
+  if (url.searchParams.get('rec')) u = String(m.recording || '');
+  else { const it = (m.media || [])[Number(url.searchParams.get('n')) || 0]; u = String((it && (it.url || it)) || ''); }
+  if (!u) return json({ ok: false, error: 'not_found' }, 404);
+  if (/^\/i\//.test(u)) return Response.redirect(new URL(u, publicBase() || 'https://x').toString(), 302);
+  if (!/^https:\/\/(api|media)\.twilio\.com\//.test(u)) return json({ ok: false, error: 'bad_url' }, 400);
+  const r = await fetch(u, { headers: { Authorization: `Basic ${btoa(`${ENV.TWILIO_ACCOUNT_SID}:${ENV.TWILIO_AUTH_TOKEN}`)}` } });
+  if (!r.ok) return json({ ok: false, error: `twilio ${r.status}` }, 502);
+  return new Response(r.body, { headers: { 'Content-Type': r.headers.get('Content-Type') || 'application/octet-stream', 'Cache-Control': 'private, max-age=86400' } });
+}
+
+// What's already booked, two weeks out, straight from the conversations (the
+// time he set on a thread) and the booking page. Read-only and built from the
+// list rows, so it costs no thread reads. It shows what's taken, not what's
+// free: he still picks the time, but "Tuesday already has two" is something the
+// helper can say without asking.
+async function apiHelperWeek() {
+  const cfg = await loadConfig();
+  let bk = {};
+  try { bk = await loadBookingConfig(); } catch { bk = {}; }
+  const tz = cfg.tz || bk.tz || 'America/Los_Angeles';
+  const max = Math.max(1, Number(bk.maxJobsPerDay) || 2);
+  const work = Array.isArray(bk.workDays) && bk.workDays.length ? bk.workDays : [0, 1, 2, 3, 4, 5, 6];
+  const now = Date.now();
+  const today = localDateStr(now, tz);
+  const jobs = [];
+  const seen = new Set();
+  for (const r of await loadIndex()) {
+    const at = Number(r.appointmentAt);
+    if (!at || r.archived || at < now - 12 * 3600000 || at > now + 15 * 86400000) continue;
+    const d = localDateStr(at, tz);
+    if (d < today) continue;
+    seen.add(r.phone + '|' + d);
+    jobs.push({ date: d, at, name: r.name || r.phone, phone: r.phone, city: r.city || '', car: r.vehicleLabel || '' });
+  }
+  try {
+    for (const b of await loadBookings()) {
+      if (!b || !['pending', 'confirmed'].includes(b.status) || !b.apptAt || b.apptAt > now + 15 * 86400000) continue;
+      const d = b.date || localDateStr(b.apptAt, tz);
+      const ph = normalizePhone(b.phone) || b.phone;
+      if (d < today || seen.has(ph + '|' + d)) continue;
+      jobs.push({ date: d, at: b.apptAt, name: b.name || ph, phone: ph, city: b.city || '', car: '', pending: b.status === 'pending' });
+    }
+  } catch { /* the booking page is optional */ }
+  const days = [];
+  const dates = new Set();
+  for (let i = 0; i < 16 && days.length < 14; i++) {
+    const date = localDateStr(now + i * 86400000, tz);
+    if (dates.has(date)) continue;
+    dates.add(date);
+    const dow = new Date(date + 'T12:00:00Z').getUTCDay();
+    const mine = jobs.filter((j) => j.date === date).sort((a, b) => a.at - b.at);
+    days.push({ date, dow, work: work.includes(dow), jobs: mine, room: Math.max(0, max - mine.length) });
+  }
+  return json({ ok: true, maxPerDay: max, days });
+}
+
+// The three things a helper learns in the first few texts: who they are, where
+// the car is, what it is. Saved to the same places Mikey's own edits go, so his
+// app shows them too. Nothing else on the thread can be changed from here.
+async function apiHelperContact(request) {
+  const data = await readJson(request);
+  const phone = normalizePhone(data.phone);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  const thread = await loadThread(phone);
+  if (typeof data.name === 'string') { thread.name = data.name.trim().slice(0, 60); thread.nameAuto = ''; thread.nameAutoAt = 0; }
+  const g = Object.assign({ vehicles: [] }, thread.garage || {});
+  let touched = false;
+  if (typeof data.address === 'string') { g.address = data.address.trim(); touched = true; }
+  if (typeof data.car === 'string' && data.car.trim()) {
+    const c = data.car.trim();
+    const m = /^((?:19|20)\d{2})\s+(\S+)\s*(.*)$/.exec(c);
+    const v = m ? { year: m[1], make: m[2], model: m[3] } : { make: c.split(/\s+/)[0], model: c.split(/\s+/).slice(1).join(' ') };
+    const same = (g.vehicles || []).some((x) => `${x.year || ''} ${x.make || ''} ${x.model || ''}`.trim().toLowerCase() === `${v.year || ''} ${v.make || ''} ${v.model || ''}`.trim().toLowerCase());
+    if (!same) g.vehicles = [v].concat(g.vehicles || []);
+    touched = true;
+  }
+  if (touched) thread.garage = sanitizeGarage(g);
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+  return json({ ok: true, thread });
+}
+
+// "No reply needed" for the latest text — the same verdict the app reaches on
+// its own for a "thanks!" or a thumbs-up, so every place that counts who's
+// waiting agrees. Signed, so Mikey can see who closed it and why.
+async function apiHelperDone(request) {
+  const data = await readJson(request);
+  const phone = normalizePhone(data.phone);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  const cfg = await loadConfig();
+  const thread = await loadThread(phone);
+  const last = (thread.messages || [])[thread.messages.length - 1];
+  if (!last || last.dir !== 'in') return json({ ok: false, error: 'nothing_to_answer' }, 409);
+  thread.replyCheck = { forTs: last.ts, at: Date.now(), needed: false, reason: `${helperName(cfg)} marked it: no reply needed`, via: 'helper' };
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+  return json({ ok: true, thread });
+}
+
+// ---- the helper's phone alerts ----
+// Their own device list, separate from Mikey's: his gets every alert the app
+// has (money, follow-ups, bookings), theirs only "a customer texted" and
+// "Mikey answered you". Same payload-less push as his, so no message text ever
+// crosses the push service: the phone wakes and asks /api/push/peek, which for
+// a helper cookie comes here.
+async function loadHelperSubs() { return (await kv().get('push:helper', { type: 'json' })) || []; }
+async function apiHelperPush(request) {
+  const d = await readJson(request);
+  const endpoint = jdStr(d.endpoint, 500);
+  if (!/^https:\/\//.test(endpoint)) return json({ ok: false, error: 'bad_subscription' }, 422);
+  let subs = (await loadHelperSubs()).filter((x) => x.endpoint !== endpoint);
+  if (!d.off) subs.unshift({ endpoint, at: Date.now() });
+  await kv().put('push:helper', JSON.stringify(subs.slice(0, 6)));
+  return json({ ok: true, devices: subs.length });
+}
+async function pushHelper(title, body, phone) {
+  const cfg = await loadConfig();
+  if (!helperSecret(cfg)) return 0;
+  const subs = await loadHelperSubs();
+  if (!subs.length) return 0;
+  await kv().put('push:helpernote', JSON.stringify({ title, body: String(body || '').slice(0, 140), url: '/helper' + (phone ? '?c=' + encodeURIComponent(phone) : ''), at: Date.now() }));
+  let keys; try { keys = await vapidKeys(); } catch { return 0; }
+  let sent = 0; const dead = [];
+  for (const x of subs) {
+    try {
+      const jwt = await vapidJwt(new URL(x.endpoint).origin, keys);
+      const res = await fetch(x.endpoint, { method: 'POST', headers: { TTL: '600', Urgency: 'high', Authorization: `vapid t=${jwt},k=${keys.pub}` } });
+      if (res.status === 404 || res.status === 410) dead.push(x.endpoint);
+      else if (res.ok) sent++;
+    } catch { /* one dead phone never stops the others */ }
+  }
+  if (dead.length) await kv().put('push:helper', JSON.stringify(subs.filter((x) => !dead.includes(x.endpoint))));
+  return sent;
+}
+async function apiHelperPeek() {
+  const note = await kv().get('push:helpernote', { type: 'json' });
+  if (note && note.title && Date.now() - (note.at || 0) < 5 * 60000) return json({ ok: true, title: note.title, body: note.body || '', url: note.url || '/helper' });
+  return json({ ok: true, title: 'Texting for Mikey', body: 'Someone texted. Tap to open.', url: '/helper' });
+}
+
 // The guide, plus the live price list from the booking settings — so a price he
 // changes in one place is the price the helper quotes, and never a number
 // copied into this file that drifts.
@@ -15202,6 +15409,11 @@ const HELPER_QUICK = [
   { label: 'Power and water', text: 'All I need onsite is an outdoor water spigot and a power outlet within about 20 feet of the car. I bring everything else, and you don\'t need to be home.' },
   { label: 'Payment', text: 'Payment is after the job, once you\'ve looked it over. I take cash, check, Zelle, or Venmo.' },
   { label: 'Stains', text: 'I can\'t promise every stain comes all the way out, but I\'ll go over everything and get out as much as I can.' },
+  { label: 'How long', text: 'A full detail takes about 3 to 5 hours depending on the size and condition. An interior on its own is usually around 90 minutes.' },
+  { label: 'Don\'t need to be home', text: 'You don\'t need to be home at all. As long as I can get into the car and reach water and power, you can leave it unlocked and I\'ll let you know when it\'s done.' },
+  { label: 'Free exterior offer', text: 'Yes, I can apply the free exterior for you! It comes with an interior detail, and the exterior is a hand wash, wax and window clean.' },
+  { label: 'Cash, same price', text: 'Same price for cash, check, Zelle or Venmo.' },
+  { label: 'Gift certificate', text: 'I do gift certificates! Let me know which service you\'d like to give, and I\'ll send the certificate and schedule with them.' },
   { label: 'Need to check', text: 'Good question, let me check on that and get right back to you.' },
   { label: 'Out of area', text: 'Unfortunately that\'s just outside my service area, so I wouldn\'t be able to get out there anytime soon. Sorry we couldn\'t work it out!' },
 ];
