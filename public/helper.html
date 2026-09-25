@@ -10,12 +10,12 @@
   /* The helper's whole world: who's waiting, the conversation, a reply box, and
      the guide. Deliberately nothing else. Everything a helper could break or
      shouldn't see (money, settings, bookings, automations) lives in the main
-     app, and the Worker refuses those routes to this PIN anyway. Same palette
-     as bookings.html so it reads as part of the same product. */
+     app, and the Worker refuses those routes to this PIN anyway. Same dark base
+     as bookings.html, with light purple where that page uses red. */
   :root{
     --bg:#0c0c0e; --card:#17171b; --card2:#1f1f25; --line:#2a2a31; --line2:#37373f;
     --txt:#f4f4f6; --muted:#a2a2ac; --faint:#71717a;
-    --red:#ff2d3f; --amber:#f5a524; --green:#2fd07a; --blue:#4c9ffe; --purple:#9b7bff;
+    --lav:#c9b8ff; --amber:#f5a524; --green:#2fd07a; --blue:#4c9ffe; --purple:#9b7bff;
     --me:#1d3b5f; --them:#1f1f25;
     --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   }
@@ -38,25 +38,25 @@
   .login h1{font-size:22px;margin:0 0 6px}
   .login p{color:var(--muted);margin:0 0 18px}
   .login input{width:100%;font-size:26px;letter-spacing:8px;text-align:center;padding:12px;border-radius:12px;border:1px solid var(--line2);background:var(--card);color:var(--txt)}
-  .login button{width:100%;margin-top:12px;padding:13px;border:0;border-radius:12px;background:var(--red);font-weight:700;font-size:16px}
-  .err{color:var(--red);min-height:22px;margin-top:10px;font-size:14px}
+  .login button{width:100%;margin-top:12px;padding:13px;border:0;border-radius:12px;background:var(--lav);color:#1a1033;font-weight:700;font-size:16px}
+  .err{color:var(--lav);min-height:22px;margin-top:10px;font-size:14px}
 
   /* ---- inbox ---- */
   .search{width:100%;margin:14px 0 4px;padding:11px 14px;border-radius:12px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:16px}
   .sec{margin:18px 0 8px;font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between}
-  .sec.hot{color:var(--red)}
+  .sec.hot{color:var(--lav)}
   .row{display:flex;gap:12px;align-items:flex-start;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:8px}
-  .row.wait{border-color:#5a1a22;background:#1b1114}
+  .row.wait{border-color:#4a3d7a;background:#171329}
   .row .who{font-weight:700}
   .row .sub{color:var(--muted);font-size:13px}
   .row .last{color:var(--txt);opacity:.85;font-size:14px;margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .row .mid{flex:1;min-width:0}
   .row .age{font-size:12px;color:var(--muted);white-space:nowrap}
-  .row.wait .age{color:var(--red);font-weight:700}
+  .row.wait .age{color:var(--lav);font-weight:700}
   .tag{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:99px;margin:4px 4px 0 0}
   .tag.date{background:rgba(245,165,36,.16);color:var(--amber)}
   .tag.ask{background:rgba(155,123,255,.16);color:var(--purple)}
-  .tag.stop{background:rgba(255,45,63,.16);color:var(--red)}
+  .tag.stop{background:rgba(201,184,255,.16);color:var(--lav)}
   .dot{width:9px;height:9px;border-radius:50%;background:var(--blue);margin-top:7px;flex:none}
   .dot.off{visibility:hidden}
   .empty{color:var(--muted);text-align:center;padding:26px 10px;background:var(--card);border-radius:14px;border:1px dashed var(--line2)}
@@ -261,7 +261,7 @@
   function renderChat(jump){
     var t=S.thread;if(!t)return;
     var info=[];
-    if(t.optedOut)info.push('<div class="line" style="color:var(--red)"><b style="color:var(--red)">Do not text.</b> They replied STOP.</div>');
+    if(t.optedOut)info.push('<div class="line" style="color:var(--lav)"><b style="color:var(--lav)">Do not text.</b> They replied STOP.</div>');
     if(t.appointmentAt)info.push('<div class="line"><b>Booked:</b> '+esc(when(t.appointmentAt))+'</div>');
     if(t.dateRequest)info.push('<div class="line"><b>Asked Mikey for a date</b> '+esc(ago(t.dateRequest.at))+' ago'+(t.dateRequest.by?" ("+esc(t.dateRequest.by)+")":"")+'</div>');
     if(t.helperAsk)info.push('<div class="line"><b>Asked Mikey</b> '+esc(ago(t.helperAsk.at))+' ago: "'+esc(t.helperAsk.question)+'"</div>');
