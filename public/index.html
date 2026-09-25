@@ -770,6 +770,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .date-banner{display:flex;align-items:center;gap:9px;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.4);
     border-radius:12px;padding:9px 12px;margin:0 0 8px;font-size:12.5px;color:var(--text)}
   .date-banner .db-ic{color:#34d399;display:flex}.date-banner b{font-weight:650}
+  .date-banner.helper-ask{background:rgba(155,123,255,.1);border-color:rgba(155,123,255,.45)}
+  .date-banner.helper-ask .db-ic{color:#c9b8ff}
+  .date-banner .db-go{margin-left:auto;flex:none;background:#c9b8ff;color:#1a1033;border:0;border-radius:9px;padding:6px 12px;font-weight:700;cursor:pointer}
   .date-banner .db-x{margin-left:auto;background:transparent;border:0;color:var(--muted2);cursor:pointer;padding:2px;display:flex}
   /* conversation guide (help) — step-by-step flow with tap-to-use example texts */
   .guide-scrim{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:60;opacity:0;pointer-events:none;transition:opacity .2s}
@@ -4190,6 +4193,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     <div class="coach-panel" id="coachPanel" style="display:none"></div>
     <div class="team-id-bar" id="teamIdentityBar" style="display:none"></div>
     <div class="date-banner" id="dateBanner" style="display:none"></div>
+    <div class="date-banner helper-ask" id="helperAskBanner" style="display:none"></div>
     <div class="ai-review" id="suggestBox" style="display:none"></div>
     <div class="ai-review" id="aiReview" style="display:none"></div>
     <div class="polish-bar" id="polishBar"></div>
@@ -4552,7 +4556,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-25·helper-messages";
+  var APP_BUILD="2026-09-25·helper-toolkit";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -10662,7 +10666,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       Array.prototype.forEach.call(sb.querySelectorAll(".e"),function(b){b.onclick=function(){editScheduled(t,b.getAttribute("data-edit"))}});
     }else sb.style.display="none";
     renderFuBanner(t);
-    renderDateBanner(t);
+    renderDateBanner(t);renderHelperAsk(t);
     renderSuggested(t);
     // Coach advice is per-conversation — clear it when the open thread changes,
     // but keep it across background polls of the SAME thread so it isn't yanked
@@ -11633,6 +11637,25 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         toast(d.sent?"Sent! Mikey's been emailed for an open date.":"Flagged — but the alert didn't send. Check alert settings.",{bad:!d.sent});
       } else toast("Couldn't send: "+((d&&d.error)||"error"),{bad:true});
     }).catch(function(){toast("Network error",{bad:true})});
+  }
+  // What the helper asked on this conversation, and the one place to answer it.
+  // The answer goes back to their page, in the chat, never to the customer.
+  function renderHelperAsk(t){
+    var box=el("helperAskBanner");if(!box)return;
+    var a=t&&t.helperAsk;
+    if(!a||a.answer){box.style.display="none";box.innerHTML="";return}
+    var who=a.by||"Your helper";
+    box.style.display="flex";
+    box.innerHTML='<span class="db-ic">'+ic("help-circle",16)+'</span><div><b>'+esc(who)+' asked</b> '+esc(ago(a.at))+" ago"+': '+esc(a.question)+'</div>'+
+      '<button class="db-go">Answer</button>';
+    box.querySelector(".db-go").onclick=function(){
+      var v=prompt("Your answer for "+who+" (only they see it, not the customer):","");
+      if(v===null||!v.trim())return;
+      post("/api/helper/answer",{phone:t.phone,answer:v.trim()}).then(function(d){
+        if(d&&d.ok){if(state.phone===t.phone&&d.thread){state.thread=d.thread;renderHelperAsk(d.thread)}toast("Sent to "+who)}
+        else toast("Couldn't send that",{bad:true});
+      });
+    };
   }
   function renderDateBanner(t){
     var box=el("dateBanner");if(!box)return;

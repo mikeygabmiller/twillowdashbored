@@ -4,8 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="theme-color" content="#0c0c0e">
-<title>Texting for Mikey</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mikey Texts">
+<title>Messages</title>
 <link rel="icon" href="/favicon.svg">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="manifest" href="/helper.webmanifest">
 <style>
   /* The helper's whole world, laid out like the Messages app on their own phone
      so there is nothing to learn: a list of conversations, newest first, and a
@@ -23,6 +28,7 @@
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);font-family:var(--font);font-size:16px;line-height:1.4;-webkit-font-smoothing:antialiased}
   button{font:inherit;color:inherit;cursor:pointer;background:none;border:0;padding:0}
+  input,textarea{font:inherit}
   .hide{display:none!important}
   .screen{max-width:720px;margin:0 auto}
 
@@ -34,9 +40,10 @@
   .login button{width:100%;margin-top:12px;padding:13px;border-radius:12px;background:var(--lav);color:#1a1033;font-weight:700;font-size:16px}
   .err{color:var(--lav);min-height:22px;margin-top:10px;font-size:14px}
 
-  /* ---- conversation list ---- */
+  /* ---- top bars ---- */
   .top{position:sticky;top:0;z-index:10;background:rgba(12,12,14,.94);backdrop-filter:blur(12px);padding:8px 16px 10px;padding-top:max(8px,env(safe-area-inset-top))}
-  .toprow{display:flex;justify-content:space-between;align-items:center;min-height:34px}
+  .toprow{display:flex;justify-content:space-between;align-items:center;min-height:34px;gap:14px}
+  .toprow .grow{flex:1}
   .link{color:var(--lav);font-size:16px;padding:6px 2px}
   .big{font-size:32px;font-weight:800;margin:2px 0 0;letter-spacing:-.01em}
   .whoami{color:var(--muted);font-size:13px;margin-top:1px}
@@ -47,6 +54,13 @@
   .seg button.on{background:var(--lavbg);color:var(--lav)}
   .banner{margin:8px 16px 0;padding:9px 12px;border-radius:10px;background:var(--lavbg);color:var(--lav);font-size:13px}
   .banner a{color:#fff}
+  .card{margin:10px 16px 2px;padding:12px 14px;border-radius:14px;background:var(--lavbg);border:1px solid #3a2f73;font-size:14px;display:flex;gap:10px;align-items:flex-start}
+  .card .tx{flex:1}
+  .card b{display:block;color:var(--lav);margin-bottom:2px}
+  .card .go{margin-top:8px;background:var(--lav);color:#1a1033;font-weight:700;padding:7px 14px;border-radius:10px;font-size:14px}
+  .card .x{color:var(--muted);font-size:20px;line-height:1;padding:0 2px}
+
+  /* ---- conversation list ---- */
   .list{padding:0 0 40px}
   .row{display:flex;gap:11px;align-items:center;width:100%;text-align:left;padding:10px 16px 10px 8px}
   .row:active{background:var(--card)}
@@ -62,6 +76,7 @@
   .pill{display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:99px;margin:4px 4px 0 0}
   .pill.need{background:var(--lavbg);color:var(--lav)}
   .pill.date{background:rgba(245,165,36,.14);color:var(--amber)}
+  .pill.ans{background:rgba(47,208,122,.14);color:var(--green)}
   .pill.stop{background:var(--card2);color:var(--muted)}
   .more{display:block;width:calc(100% - 32px);margin:14px 16px;padding:11px;border-radius:12px;background:var(--card);color:var(--lav);font-weight:600}
   .empty{color:var(--muted);text-align:center;padding:40px 20px}
@@ -73,10 +88,14 @@
   .cwho{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center}
   .cwho .av{width:34px;height:34px;font-size:13px}
   .cwho .nm{font-size:13px;font-weight:600;margin-top:2px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cwho .sub{font-size:11px;color:var(--muted);max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .ibtn{width:40px;height:40px;display:flex;align-items:center;justify-content:center;color:var(--lav)}
   .ibtn span{width:22px;height:22px;border:1.6px solid var(--lav);border-radius:50%;display:flex;align-items:center;justify-content:center;font:700 13px/1 Georgia,serif}
   .scroller{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:10px 12px 6px}
   .info{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:11px 13px;margin:0 0 10px;font-size:14px;color:var(--muted);white-space:pre-wrap}
+  .info .ih{display:flex;justify-content:space-between;align-items:center;margin-bottom:4px}
+  .info .ih span{font-size:12px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.04em}
+  .info .ih button{color:var(--lav);font-weight:600;font-size:14px}
   .info b{color:var(--txt)}
   .info .line{margin:2px 0}
   .info .warn,.info .warn b{color:var(--lav)}
@@ -87,10 +106,16 @@
   .b.out{align-self:flex-end;background:var(--me);color:#fff}
   .b.in.tail{border-bottom-left-radius:5px}
   .b.out.tail{border-bottom-right-radius:5px}
-  .b.gap{margin-top:9px}
+  .b.gap,.ph.gap{margin-top:9px}
   .b.fail{background:#3a2330}
+  .ph{max-width:66%;margin-top:2px;border-radius:16px;overflow:hidden;background:var(--card2);min-height:60px}
+  .ph.in{align-self:flex-start}.ph.out{align-self:flex-end}
+  .ph img{display:block;width:100%;max-height:320px;object-fit:cover;cursor:zoom-in}
+  .ph audio{display:block;width:240px;max-width:100%;margin:6px}
   .cap{font-size:11px;color:var(--faint);margin:3px 6px 0}
   .cap.out{align-self:flex-end}
+  .ans{align-self:stretch;margin:12px 0 4px;padding:10px 12px;border-radius:14px;background:rgba(47,208,122,.08);border:1px solid rgba(47,208,122,.35);font-size:15px;white-space:pre-wrap}
+  .ans b{display:block;font-size:12px;color:var(--green);margin-bottom:3px}
   .sugg{background:var(--lavbg);border:1px solid #3a2f73;border-radius:14px;padding:10px 12px;margin:12px 0 4px}
   .sugg .h{font-size:12px;font-weight:700;color:var(--lav);margin-bottom:4px}
   .sugg .x{white-space:pre-wrap;font-size:15px}
@@ -102,7 +127,7 @@
   .inrow{display:flex;align-items:flex-end;gap:8px}
   .plus{flex:none;width:34px;height:34px;border-radius:50%;background:var(--card2);color:var(--lav);font-size:24px;line-height:1;display:flex;align-items:center;justify-content:center;margin-bottom:2px}
   .field{flex:1;display:flex;align-items:flex-end;border:1px solid var(--line2);border-radius:20px;background:var(--bg);padding:3px 3px 3px 13px}
-  textarea{flex:1;border:0;background:none;color:var(--txt);font:inherit;font-size:16px;line-height:1.35;resize:none;padding:6px 0;max-height:34vh;min-height:34px;height:34px}
+  textarea{flex:1;border:0;background:none;color:var(--txt);font-size:16px;line-height:1.35;resize:none;padding:6px 0;max-height:34vh;min-height:34px;height:34px}
   textarea:focus{outline:none}
   .send{flex:none;width:32px;height:32px;border-radius:50%;background:var(--me);color:#fff;display:flex;align-items:center;justify-content:center}
   .send:disabled{background:var(--card2);color:var(--faint)}
@@ -112,13 +137,41 @@
   .strip.pol{color:var(--lav)}
   .strip.warn{color:var(--amber)}
   .strip button{color:var(--blue);font-weight:700;padding:2px 4px}
+
+  /* ---- sheets ---- */
   .sheetbg{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center}
-  .sheet{width:100%;max-width:720px;padding:8px 10px max(10px,env(safe-area-inset-bottom))}
+  .sheet{width:100%;max-width:720px;padding:8px 10px max(10px,env(safe-area-inset-bottom));max-height:92vh;overflow-y:auto}
   .sheet .grp{background:var(--card2);border-radius:14px;overflow:hidden;margin-bottom:8px}
-  .sheet .grp button{display:block;width:100%;padding:15px;text-align:center;font-size:17px;color:var(--lav);border-bottom:1px solid var(--line2)}
-  .sheet .grp button:last-child{border-bottom:0}
-  .sheet .grp button small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+  .sheet .grp>button{display:block;width:100%;padding:15px;text-align:center;font-size:17px;color:var(--lav);border-bottom:1px solid var(--line2)}
+  .sheet .grp>button:last-child{border-bottom:0}
+  .sheet .grp>button small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
   .sheet .cancel{font-weight:700}
+  .form{padding:14px}
+  .form h3{margin:0 0 10px;font-size:17px;text-align:center}
+  .form label{display:block;font-size:12px;color:var(--muted);margin:10px 0 4px}
+  .form input{width:100%;padding:10px 12px;border-radius:10px;border:1px solid var(--line2);background:var(--bg);color:var(--txt);font-size:16px}
+  .form .save{display:block;width:100%;margin-top:14px;padding:12px;border-radius:12px;background:var(--lav);color:#1a1033;font-weight:700;font-size:16px}
+  .opts{display:flex;flex-wrap:wrap;gap:6px}
+  .opt{padding:8px 12px;border-radius:10px;background:var(--bg);border:1px solid var(--line2);font-size:14px}
+  .opt.on{background:var(--lavbg);border-color:var(--lav);color:var(--lav);font-weight:600}
+  .total{margin-top:14px;padding:12px;border-radius:12px;background:var(--bg);text-align:center}
+  .total b{display:block;font-size:28px;color:var(--lav)}
+  .total span{font-size:14px;color:var(--muted)}
+  .lightbox{position:fixed;inset:0;z-index:70;background:rgba(0,0,0,.92);display:flex;align-items:center;justify-content:center}
+  .lightbox img{max-width:100%;max-height:100%;object-fit:contain}
+
+  /* ---- schedule ---- */
+  .wk{padding:4px 16px 40px}
+  .day{margin-top:14px}
+  .day .dh{display:flex;justify-content:space-between;align-items:baseline;padding:0 2px 6px}
+  .day .dh b{font-size:16px}
+  .day .dh span{font-size:13px;font-weight:700}
+  .room{color:var(--green)}.full{color:var(--amber)}.off{color:var(--faint)}
+  .job{display:flex;gap:12px;align-items:center;width:100%;text-align:left;background:var(--card);border-radius:12px;padding:10px 12px;margin-bottom:6px}
+  .job .t{font-weight:700;min-width:64px}
+  .job .d{flex:1;min-width:0;color:var(--muted);font-size:14px}
+  .job .d b{color:var(--txt);display:block;font-size:15px}
+  .nojobs{color:var(--faint);font-size:14px;padding:0 2px 4px}
 
   /* ---- guide ---- */
   .g{padding:0 16px 40px}
@@ -133,7 +186,7 @@
   td.n{white-space:nowrap}
   .q{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:6px 0;font-size:14px}
   .q b{display:block;font-size:12px;color:var(--muted);margin-bottom:2px}
-  .toast{position:fixed;left:50%;top:max(14px,env(safe-area-inset-top));transform:translateX(-50%);background:var(--txt);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:600;font-size:14px;z-index:60;max-width:90vw}
+  .toast{position:fixed;left:50%;top:max(14px,env(safe-area-inset-top));transform:translateX(-50%);background:var(--txt);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:600;font-size:14px;z-index:80;max-width:90vw}
 </style>
 </head>
 <body>
@@ -148,25 +201,27 @@
 
 <div class="screen hide" id="listView">
   <div class="top">
-    <div class="toprow"><button class="link" id="guideBtn">Guide</button><button class="link" id="outBtn">Sign out</button></div>
+    <div class="toprow"><button class="link" id="weekBtn">Schedule</button><button class="link" id="guideBtn">Guide</button><span class="grow"></span><button class="link" id="outBtn">Sign out</button></div>
     <h1 class="big">Messages</h1>
     <div class="whoami" id="whoami"></div>
     <input class="search" id="q" type="search" placeholder="Search">
     <div class="seg"><button id="segAll" class="on">All</button><button id="segNeed">Needs reply</button></div>
   </div>
   <div class="banner hide" id="ownerBanner">This is what your helper sees. <a href="/">Back to your app</a></div>
+  <div id="alertCard"></div>
   <div class="list" id="list"></div>
 </div>
 
 <div class="screen chat hide" id="chatView">
   <div class="cbar">
     <button class="back" id="backBtn" aria-label="Back">&lsaquo;</button>
-    <div class="cwho"><span class="av" id="chatAv"></span><span class="nm" id="chatName"></span></div>
+    <div class="cwho"><span class="av" id="chatAv"></span><span class="nm" id="chatName"></span><span class="sub" id="chatSub"></span></div>
     <button class="ibtn" id="infoBtn" aria-label="Details"><span>i</span></button>
   </div>
   <div class="scroller" id="scroller">
     <div id="chatInfo"></div>
     <div class="msgs" id="msgs"></div>
+    <div id="answer"></div>
     <div id="sugg"></div>
   </div>
   <div class="composer">
@@ -182,6 +237,12 @@
   </div>
 </div>
 
+<div class="screen hide" id="weekView">
+  <div class="top"><div class="toprow"><button class="link" id="weekBack">&lsaquo; Back</button><span></span></div><h1 class="big">Schedule</h1>
+    <div class="whoami">What's already booked. Mikey still picks every time.</div></div>
+  <div class="wk" id="weekBody"></div>
+</div>
+
 <div class="screen hide" id="guideView">
   <div class="top"><div class="toprow"><button class="link" id="guideBack">&lsaquo; Back</button><span></span></div><h1 class="big">Guide</h1></div>
   <div class="g" id="guideBody"></div>
@@ -190,13 +251,17 @@
 <div class="sheetbg hide" id="sheet">
   <div class="sheet">
     <div class="grp">
+      <button id="calcBtn">Price calculator<small>Pick the service and size, get the exact price</small></button>
       <button id="askDate">Ask Mikey for a date<small>They're ready to book. He picks the day and time.</small></button>
       <button id="askQ">Ask Mikey something<small>A price, a question, anything that's his call</small></button>
+      <button id="doneBtn">No reply needed<small>Their last text doesn't need an answer ("thanks!", a thumbs up)</small></button>
+      <button id="editBtn">Save name, address or car</button>
       <button id="sheetGuide">Open the guide</button>
     </div>
     <div class="grp"><button class="cancel" id="sheetX">Cancel</button></div>
   </div>
 </div>
+<div class="sheetbg hide" id="formSheet"><div class="sheet"><div class="grp" id="formBody"></div><div class="grp"><button class="cancel" id="formX">Cancel</button></div></div></div>
 
 <script>
 (function(){
@@ -213,6 +278,10 @@
   function el(id){return document.getElementById(id)}
   function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
   function toast(t){var d=document.createElement("div");d.className="toast";d.textContent=t;document.body.appendChild(d);setTimeout(function(){d.remove()},2600)}
+  // Per-device memory (drafts, what's been seen, a dismissed card). Wrapped:
+  // private mode or blocked storage just means nothing is remembered.
+  function lsGet(k,d){try{var v=localStorage.getItem(k);return v==null?d:JSON.parse(v)}catch(e){return d}}
+  function lsSet(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
   function api(path,opts){
     return fetch(path,Object.assign({credentials:"same-origin"},opts||{})).then(function(r){
       if(r.status===401){showLogin();return{ok:false,unauthorized:true}}
@@ -253,14 +322,19 @@
     return w.length?(w[0][0]+(w.length>1?w[w.length-1][0]:"")).toUpperCase():"#";
   }
   function avHTML(t,id){return'<span class="av"'+(id?' id="'+id+'"':'')+' style="background:'+avColor(t.phone)+'">'+esc(initials(t))+'</span>'}
+  function carOf(t){var v=t&&t.garage&&t.garage.vehicles&&t.garage.vehicles[0];return v?[v.year,v.make,v.model].filter(Boolean).join(" "):""}
   // "Needs reply" on this page means: waiting on an answer AND their last text
   // came in after the helper's start line. His older backlog stays his; a
   // customer who texts again after the line shows up like anyone else.
   function needs(t){return !!(t.awaitingReply&&!t.optedOut&&!t.archived&&(t.lastTs||0)>=S.since)}
+  // Mikey answered something they asked, and they haven't opened it since.
+  var SEEN=lsGet("mkh-seen",{});
+  function answerNew(t){return !!(t.helperAnsweredAt&&t.helperAnsweredAt>(SEEN[t.phone]||0))}
+  function markSeen(p){SEEN[p]=Date.now();lsSet("mkh-seen",SEEN)}
 
   function show(v){
     S.view=v;
-    ["loginView","listView","chatView","guideView"].forEach(function(id){el(id).classList.toggle("hide",id!==v+"View")});
+    ["loginView","listView","chatView","weekView","guideView"].forEach(function(id){el(id).classList.toggle("hide",id!==v+"View")});
     el("ownerBanner").classList.toggle("hide",S.role!=="owner");
     if(v!=="chat")window.scrollTo(0,0);
   }
@@ -290,26 +364,69 @@
         renderChips();renderWho();
         if(S.view==="guide")renderGuide();if(S.view==="list")renderList();
       });
+      renderAlertCard();
       var c=new URLSearchParams(location.search).get("c");
       if(c)openThread(c);else{show("list");renderWho();loadList()}
     });
   }
   function renderWho(){el("whoami").textContent=S.role==="owner"?"Helper view":("Texting for Mikey"+(S.name?" · "+S.name:""))}
 
+  // ---- phone alerts ----
+  // The one thing that makes "answer within 15 minutes" possible: their phone
+  // buzzes when a customer texts. iPhones only allow it from a home-screen app,
+  // so on an iPhone in the browser the card says how to get there first.
+  function pushOK(){return "serviceWorker" in navigator&&"PushManager" in window&&"Notification" in window}
+  function isIOS(){return/iPhone|iPad|iPod/.test(navigator.userAgent)}
+  function standalone(){try{return window.matchMedia("(display-mode: standalone)").matches||navigator.standalone===true}catch(e){return false}}
+  function alertState(){
+    if(S.role!=="helper")return"none";
+    if(isIOS()&&!standalone())return"install";
+    if(!pushOK())return"none";
+    if(Notification.permission==="denied")return"blocked";
+    if(Notification.permission==="granted"&&lsGet("mkh-push",false))return"on";
+    return"off";
+  }
+  function renderAlertCard(){
+    var st=alertState(),box=el("alertCard");
+    if(st==="none"||st==="on"||lsGet("mkh-card-x",false)){box.innerHTML="";return}
+    var h=st==="install"
+      ?'<b>Get a buzz when a customer texts</b>Tap the Share button, then <b>Add to Home Screen</b>. Open "Mikey Texts" from your home screen and turn alerts on there.'
+      :st==="blocked"
+        ?'<b>Alerts are blocked</b>Turn notifications back on for this site in your phone\'s settings, then reload.'
+        :'<b>Get a buzz when a customer texts</b>So nobody waits. You can turn it off any time.<br><button class="go" id="alertOn">Turn on alerts</button>';
+    box.innerHTML='<div class="card"><div class="tx">'+h+'</div><button class="x" id="alertX" aria-label="Dismiss">&times;</button></div>';
+    el("alertX").onclick=function(){lsSet("mkh-card-x",true);renderAlertCard()};
+    if(el("alertOn"))el("alertOn").onclick=enableAlerts;
+  }
+  function b64u(s){var p="=".repeat((4-s.length%4)%4),b=atob((s+p).replace(/-/g,"+").replace(/_/g,"/")),a=new Uint8Array(b.length);for(var i=0;i<b.length;i++)a[i]=b.charCodeAt(i);return a}
+  function enableAlerts(){
+    var reg;
+    navigator.serviceWorker.register("/sw.js").then(function(){return navigator.serviceWorker.ready}).then(function(r){reg=r;return Notification.requestPermission()})
+      .then(function(p){if(p!=="granted")throw new Error("denied");return api("/api/push/key")})
+      .then(function(k){return reg.pushManager.getSubscription().then(function(s){return s||reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64u(k.key)})})})
+      .then(function(sub){return post("/api/helper/push",{endpoint:sub.endpoint})})
+      .then(function(d){if(d&&d.ok){lsSet("mkh-push",true);toast("Alerts are on");renderAlertCard()}else throw new Error("save")})
+      .catch(function(e){toast(e&&e.message==="denied"?"Alerts weren't allowed":"Couldn't turn alerts on. Try again.");renderAlertCard()});
+  }
+
   // ---- conversation list ----
   // One list, newest first, every conversation, like the phone's own Messages.
   // "Needs reply" is a filter you choose, not a wall of red at the top.
   function loadList(){
-    return api("/api/threads").then(function(d){if(d&&d.ok){S.threads=d.threads||[];if(S.view==="list")renderList()}});
+    return api("/api/threads").then(function(d){if(d&&d.ok){S.threads=d.threads||[];if(S.view==="list")renderList();badge()}});
+  }
+  function badge(){
+    var n=S.threads.filter(function(t){return t.unread&&!t.archived}).length;
+    document.title=(n?"("+n+") ":"")+"Messages";
   }
   function matches(t){
     if(!S.q)return true;var q=S.q.toLowerCase();
-    return [t.name,t.phone,fmtPhone(t.phone),t.lastBody,t.city,t.vehicleLabel].join(" ").toLowerCase().indexOf(q)>=0;
+    return [t.name,t.phone,fmtPhone(t.phone),t.lastBody,t.city,t.vehicleLabel,t.address].join(" ").toLowerCase().indexOf(q)>=0;
   }
   function rowHTML(t){
-    var n=needs(t);
-    var pills=(n?'<span class="pill need">Needs reply · '+esc(ago(t.lastTs))+'</span>':"")+
-      (t.dateRequested?'<span class="pill date">Date asked for</span>':"")+
+    var pills=(needs(t)?'<span class="pill need">Needs reply · '+esc(ago(t.lastTs))+'</span>':"")+
+      (answerNew(t)?'<span class="pill ans">Mikey answered</span>':(t.helperAskAt&&!t.helperAnsweredAt?'<span class="pill date">Waiting on Mikey</span>':""))+
+      (t.dateRequested&&!t.helperAskAt?'<span class="pill date">Date asked for</span>':"")+
       (t.optedOut?'<span class="pill stop">Do not text</span>':"");
     var last=(t.lastDir==="out"?"You: ":"")+(t.lastBody||"");
     return '<button class="row'+(t.unread?" unread":"")+'" data-p="'+esc(t.phone)+'">'+
@@ -336,38 +453,58 @@
   el("segAll").onclick=function(){S.seg="all";el("segAll").classList.add("on");el("segNeed").classList.remove("on");renderList()};
   el("segNeed").onclick=function(){S.seg="need";el("segNeed").classList.add("on");el("segAll").classList.remove("on");renderList()};
 
+  // ---- drafts ----
+  // Leave a half-written reply to check something and it's still there when you
+  // come back, per conversation, like a phone keeps it.
+  var DRAFTS=lsGet("mkh-drafts",{});
+  function keepDraft(){if(!S.phone)return;var v=el("box").value;if(v.trim())DRAFTS[S.phone]=v;else delete DRAFTS[S.phone];lsSet("mkh-drafts",DRAFTS)}
+
   // ---- conversation ----
   function openThread(phone){
-    if(S.phone!==phone){el("box").value="";resetPolish();sizeBox()}
+    if(S.phone!==phone){keepDraft();resetPolish();el("box").value=DRAFTS[phone]||""}
     S.phone=phone;
     return api("/api/thread?phone="+encodeURIComponent(phone)).then(function(d){
       if(!d||!d.ok||!d.thread)return;
       S.thread=d.thread;show("chat");
-      el("chatAv").outerHTML=avHTML(d.thread,"chatAv");
-      el("chatName").textContent=who(d.thread);
-      renderChat(true);sizeBox();
-      // Reading it clears the unread dot on the list without a refetch.
+      renderHead();
+      renderChat(true);sizeBox();updSend();
+      if(el("box").value.trim())schedulePolish();
+      // Reading it clears the unread dot and the "Mikey answered" pill.
       S.threads.forEach(function(t){if(t.phone===phone)t.unread=0});
+      markSeen(phone);badge();
     });
+  }
+  function renderHead(){
+    var t=S.thread;if(!t)return;
+    el("chatAv").outerHTML=avHTML(t,"chatAv");
+    el("chatName").textContent=who(t);
+    el("chatSub").textContent=[carOf(t),t.garage&&t.garage.city].filter(Boolean).join(" · ");
   }
   function nearBottom(){var s=el("scroller");return s.scrollHeight-s.scrollTop-s.clientHeight<120}
   function toBottom(){var s=el("scroller");s.scrollTop=s.scrollHeight}
   function senderOf(m){return m.by||(m.kind&&m.kind!=="manual"?"Automatic":"Mikey")}
+  function mediaSrc(t,m,j){
+    var it=(m.media||[])[j],u=String((it&&(it.url||it))||"");
+    return /^\/i\//.test(u)||/^data:/.test(u)?u:"/api/helper/media?phone="+encodeURIComponent(t.phone)+"&ts="+m.ts+"&n="+j;
+  }
   function renderChat(jump){
     var t=S.thread;if(!t)return;
     var stick=jump||nearBottom();
-    var info=[];
+    var info=[],car=carOf(t),addr=t.garage&&t.garage.address;
     if(t.optedOut)info.push('<div class="line warn"><b>Do not text.</b> They replied STOP.</div>');
     if(t.appointmentAt)info.push('<div class="line"><b>Booked:</b> '+esc(fmt(t.appointmentAt,{weekday:"short",month:"numeric",day:"numeric",hour:"numeric",minute:"2-digit"}))+'</div>');
-    if(t.dateRequest)info.push('<div class="line"><b>Asked Mikey for a date</b> '+esc(ago(t.dateRequest.at))+' ago</div>');
-    if(t.helperAsk)info.push('<div class="line"><b>Asked Mikey</b> '+esc(ago(t.helperAsk.at))+' ago: "'+esc(t.helperAsk.question)+'"</div>');
-    if(t.garage&&t.garage.address)info.push('<div class="line"><b>Address:</b> '+esc(t.garage.address)+'</div>');
+    if(t.helperAsk&&!t.helperAsk.answer)info.push('<div class="line"><b>Waiting on Mikey</b> (asked '+esc(ago(t.helperAsk.at))+' ago): "'+esc(t.helperAsk.question)+'"</div>');
+    if(car)info.push('<div class="line"><b>Car:</b> '+esc(car)+'</div>');
+    if(addr)info.push('<div class="line"><b>Address:</b> '+esc(addr)+'</div>');
+    else if(t.addressGuess)info.push('<div class="line"><b>Address they sent?</b> '+esc(t.addressGuess)+'</div>');
     if(t.notes)info.push('<div class="line">'+esc(t.notes)+'</div>');
     info.push('<div class="line">'+esc(fmtPhone(t.phone))+'</div>');
-    el("chatInfo").innerHTML='<div class="info">'+info.join("")+'</div>';
+    el("chatInfo").innerHTML='<div class="info"><div class="ih"><span>Details</span><button id="infoEdit">Edit</button></div>'+info.join("")+'</div>';
+    el("infoEdit").onclick=openContact;
     // Bubbles group the way a phone groups them: a time header after an hour's
     // gap, tight spacing inside a run from the same side, a tail on the last
-    // bubble of each run, and under Mikey's side, who sent that run.
+    // bubble of each run, and under Mikey's side, who sent that run. Photos and
+    // voicemails show in place, like they would on a phone.
     var ms=(t.messages||[]).slice(-150),h="";
     for(var i=0;i<ms.length;i++){
       var m=ms[i],p=ms[i-1],n=ms[i+1],side=m.dir==="out"?"out":"in";
@@ -376,11 +513,25 @@
       var endRun=!n||n.dir!==m.dir||n.ts-m.ts>36e5||(side==="out"&&senderOf(n)!==senderOf(m));
       var gap=!newTime&&p&&p.dir!==m.dir;
       var failed=m.status==="failed"||m.status==="undelivered"||m.error;
-      var body=m.body||(m.media&&m.media.length?"📷 Photo":"");
-      h+='<div class="b '+side+(endRun?" tail":"")+(gap?" gap":"")+(failed?" fail":"")+'">'+esc(body)+'</div>';
+      (m.media||[]).forEach(function(it,j){
+        var type=String((it&&it.type)||"");
+        var src=mediaSrc(t,m,j);
+        h+='<div class="ph '+side+(gap&&j===0?" gap":"")+'">'+(!type||/^image\//.test(type)
+          ?'<img loading="lazy" alt="Photo" src="'+esc(src)+'">'
+          :'<a href="'+esc(src)+'" target="_blank" rel="noopener" style="display:block;padding:12px;color:var(--lav)">Open attachment</a>')+'</div>';
+        gap=false;
+      });
+      if(m.recording)h+='<div class="ph '+side+'"><audio controls preload="none" src="/api/helper/media?phone='+encodeURIComponent(t.phone)+'&ts='+m.ts+'&rec=1"></audio></div>';
+      var body=String(m.body||"").replace(/\n?\[\d+ attachment\(s\)\]$/,"");
+      if(body||(!m.media||!m.media.length)&&!m.recording)h+='<div class="b '+side+(endRun?" tail":"")+(gap?" gap":"")+(failed?" fail":"")+'">'+esc(body||"(empty)")+'</div>';
       if(side==="out"&&endRun)h+='<div class="cap out">'+(failed?"Not delivered · ":"")+(m.by?"Sent by "+esc(m.by):esc(senderOf(m)))+'</div>';
     }
     el("msgs").innerHTML=h;
+    Array.prototype.forEach.call(el("msgs").querySelectorAll(".ph img"),function(img){img.onclick=function(){lightbox(img.src)};img.onload=function(){if(stick)toBottom()}});
+    // Mikey's answer to what they asked: right under the conversation, where
+    // they're already looking, not in an email they don't get.
+    var a=t.helperAsk;
+    el("answer").innerHTML=a&&a.answer?'<div class="ans"><b>Mikey says · '+esc(ago(a.answeredAt))+' ago</b>'+esc(a.answer)+'<div style="color:var(--muted);font-size:12px;margin-top:4px">You asked: "'+esc(a.question)+'"</div></div>':"";
     // The AI's own draft for this exact message, if it wrote one. Offered, never
     // sent: it goes in the box, where Send still gives it a read.
     var last=ms[ms.length-1],sg=t.suggested;
@@ -392,6 +543,10 @@
     el("box").placeholder=t.optedOut?"They texted STOP":"Text Message";
     updSend();
     if(stick)setTimeout(toBottom,0);
+  }
+  function lightbox(src){
+    var o=document.createElement("div");o.className="lightbox";o.innerHTML='<img alt="Photo" src="'+esc(src)+'">';
+    o.onclick=function(){o.remove()};document.body.appendChild(o);
   }
   function renderChips(){
     var q=(S.guide&&S.guide.quick)||[];
@@ -409,19 +564,105 @@
   }
   function updSend(){el("sendBtn").disabled=!el("box").value.trim()||!!(S.thread&&S.thread.optedOut)}
   function setBox(text,trusted){
-    el("box").value=text;sizeBox();updSend();el("box").focus();
+    el("box").value=text;sizeBox();updSend();keepDraft();el("box").focus();
     // Starters are Mikey's own words, but anything combined with typing still
     // goes through polish. Only the AI's draft is already in his voice.
     if(trusted){P.ok=text;strip("","")}else{P.ok="";schedulePolish()}
   }
-  el("backBtn").onclick=function(){S.phone="";S.thread=null;show("list");renderList();loadList()};
+  el("backBtn").onclick=function(){keepDraft();S.phone="";S.thread=null;show("list");renderList();loadList()};
   el("infoBtn").onclick=function(){el("scroller").scrollTop=0};
 
-  // ---- the + sheet ----
+  // ---- sheets ----
   function sheet(on){el("sheet").classList.toggle("hide",!on)}
-  el("plusBtn").onclick=function(){sheet(true)};
+  function form(on){el("formSheet").classList.toggle("hide",!on)}
+  el("plusBtn").onclick=function(){
+    var last=S.thread&&(S.thread.messages||[]).slice(-1)[0];
+    el("doneBtn").classList.toggle("hide",!(last&&last.dir==="in"));
+    sheet(true);
+  };
   el("sheetX").onclick=function(){sheet(false)};
   el("sheet").onclick=function(e){if(e.target===el("sheet"))sheet(false)};
+  el("formX").onclick=function(){form(false)};
+  el("formSheet").onclick=function(e){if(e.target===el("formSheet"))form(false)};
+
+  // ---- save name / address / car ----
+  function openContact(){
+    sheet(false);var t=S.thread;if(!t)return;
+    el("formBody").innerHTML='<div class="form"><h3>Save their details</h3>'+
+      '<label>Name</label><input id="fName" autocomplete="off" value="'+esc(t.name||"")+'">'+
+      '<label>Address</label><input id="fAddr" autocomplete="off" value="'+esc((t.garage&&t.garage.address)||t.addressGuess||"")+'" placeholder="Street, town">'+
+      '<label>Car</label><input id="fCar" autocomplete="off" value="'+esc(carOf(t))+'" placeholder="2019 Toyota RAV4">'+
+      '<button class="save" id="fSave">Save</button></div>';
+    form(true);
+    el("fSave").onclick=function(){
+      var body={phone:t.phone,name:el("fName").value,address:el("fAddr").value};
+      if(el("fCar").value.trim()&&el("fCar").value.trim()!==carOf(t))body.car=el("fCar").value;
+      post("/api/helper/contact",body).then(function(d){
+        if(d&&d.ok&&d.thread){S.thread=d.thread;form(false);renderHead();renderChat(false);
+          S.threads.forEach(function(r){if(r.phone===t.phone)r.name=d.thread.name});toast("Saved")}
+        else toast("Couldn't save. Try again.");
+      });
+    };
+  }
+  el("editBtn").onclick=openContact;
+
+  // ---- price calculator ----
+  // The exact number for a normal car in normal condition, from the live price
+  // list, as a sentence ready for the box. Anything rough or custom is still
+  // Mikey's call; the guide says so, and so does the line under the total.
+  var C={svc:0,size:"suv",add:{}};
+  var SIZES=[["sedan","Car"],["suv","SUV"],["truck","Truck / XL"]];
+  var SIZE_WORD={sedan:"car",suv:"SUV",truck:"truck"};
+  function openCalc(){
+    sheet(false);
+    var g=S.guide||{},ps=g.prices||[],as=g.addons||[];
+    if(!ps.length){toast("Price list isn't loaded yet");return}
+    function paint(){
+      var p=ps[C.svc]||ps[0],base=+(p.price&&p.price[C.size])||0,total=base,picked=[];
+      as.forEach(function(a,i){if(C.add[i]){total+=+a.price||0;picked.push(a.name.toLowerCase())}});
+      var line="For a "+p.name+" on your "+SIZE_WORD[C.size]+(picked.length?" with "+picked.join(" and "):"")+", it'll be $"+total+".";
+      el("formBody").innerHTML='<div class="form"><h3>Price calculator</h3>'+
+        '<label>Service</label><div class="opts">'+ps.map(function(x,i){return'<button class="opt'+(i===C.svc?" on":"")+'" data-s="'+i+'">'+esc(x.name)+'</button>'}).join("")+'</div>'+
+        '<label>Size</label><div class="opts">'+SIZES.map(function(x){return'<button class="opt'+(x[0]===C.size?" on":"")+'" data-z="'+x[0]+'">'+x[1]+'</button>'}).join("")+'</div>'+
+        (as.length?'<label>Add-ons</label><div class="opts">'+as.map(function(a,i){return'<button class="opt'+(C.add[i]?" on":"")+'" data-a="'+i+'">'+esc(a.name)+' +$'+esc(a.price)+'</button>'}).join("")+'</div>':"")+
+        '<div class="total"><b id="calcTotal">$'+total+'</b><span>Normal condition. Rough, heavy pet hair or stains: ask Mikey first.</span></div>'+
+        '<button class="save" id="calcUse">Put it in the box</button></div>';
+      Array.prototype.forEach.call(el("formBody").querySelectorAll("[data-s]"),function(b){b.onclick=function(){C.svc=+b.getAttribute("data-s");paint()}});
+      Array.prototype.forEach.call(el("formBody").querySelectorAll("[data-z]"),function(b){b.onclick=function(){C.size=b.getAttribute("data-z");paint()}});
+      Array.prototype.forEach.call(el("formBody").querySelectorAll("[data-a]"),function(b){b.onclick=function(){var i=b.getAttribute("data-a");C.add[i]=!C.add[i];paint()}});
+      el("calcUse").onclick=function(){form(false);var cur=el("box").value.trim();setBox(cur?cur+" "+line:line,false)};
+    }
+    paint();form(true);
+  }
+  el("calcBtn").onclick=openCalc;
+
+  // ---- no reply needed ----
+  el("doneBtn").onclick=function(){
+    sheet(false);if(!S.phone)return;
+    post("/api/helper/done",{phone:S.phone}).then(function(d){
+      if(d&&d.ok){if(d.thread){S.thread=d.thread;renderChat(false)}
+        S.threads.forEach(function(r){if(r.phone===S.phone)r.awaitingReply=false});toast("Marked: no reply needed")}
+      else toast("Couldn't mark it. Try again.");
+    });
+  };
+
+  // ---- schedule ----
+  function openWeek(){show("week");el("weekBody").innerHTML='<div class="empty">Loading…</div>';
+    api("/api/helper/week").then(function(d){if(d&&d.ok)renderWeek(d);else el("weekBody").innerHTML='<div class="empty">Couldn\'t load the schedule.</div>'})}
+  function renderWeek(d){
+    el("weekBody").innerHTML=d.days.map(function(day){
+      var dt=new Date(day.date+"T12:00:00Z");
+      var label=dt.toLocaleDateString("en-US",{timeZone:"UTC",weekday:"long",month:"short",day:"numeric"});
+      var status=!day.work&&!day.jobs.length?'<span class="off">No jobs set</span>':day.room>0?'<span class="room">'+day.room+' open</span>':'<span class="full">Full</span>';
+      var jobs=day.jobs.length?day.jobs.map(function(j){
+        return'<button class="job" data-p="'+esc(j.phone)+'"><span class="t">'+esc(fmt(j.at,{hour:"numeric",minute:"2-digit"}))+'</span><span class="d"><b>'+esc(j.name)+(j.pending?" (pending)":"")+'</b>'+esc([j.car,j.city].filter(Boolean).join(" · "))+'</span></button>';
+      }).join(""):'<div class="nojobs">Nothing booked</div>';
+      return'<div class="day"><div class="dh"><b>'+(day===d.days[0]?"Today · ":"")+esc(label)+'</b>'+status+'</div>'+jobs+'</div>';
+    }).join("")+'<p class="nojobs" style="margin-top:16px">Up to '+d.maxPerDay+' cars a day. "Open" means there\'s room on the calendar, not that a time is promised: use "Ask Mikey for a date" to lock one in.</p>';
+    Array.prototype.forEach.call(el("weekBody").querySelectorAll("[data-p]"),function(b){b.onclick=function(){openThread(b.getAttribute("data-p"))}});
+  }
+  el("weekBtn").onclick=openWeek;
+  el("weekBack").onclick=function(){show("list");renderList()};
 
   // ---- guide ----
   function openGuide(){S.from=S.view;sheet(false);show("guide");renderGuide()}
@@ -458,13 +699,18 @@
       var out=d.draft.trim()||text;
       var note=d.note?'<span>⚠ '+esc(d.note)+'</span>':"";
       if(out!==text){
-        P.before=text;el("box").value=out;sizeBox();P.ok=out;
+        P.before=text;el("box").value=out;sizeBox();keepDraft();P.ok=out;
         strip("pol",'✨ Polished to sound like Mikey. Read it, then send. <button id="undoP">Undo</button>'+note);
-        el("undoP").onclick=function(){el("box").value=P.before;sizeBox();P.ok=P.before;strip("","Your words are back. Send when ready.")};
+        el("undoP").onclick=function(){el("box").value=P.before;sizeBox();keepDraft();P.ok=P.before;strip("","Your words are back. Send when ready.")};
       }else{P.ok=text;strip(d.note?"warn":"pol",d.note?note:"✓ Sounds like Mikey.")}
     }).catch(function(){P.busy=false;P.ok=text;strip("warn","Auto Polish couldn't connect. Read it over once, then send.")});
   }
-  el("box").oninput=function(){sizeBox();updSend();schedulePolish()};
+  el("box").oninput=function(){sizeBox();updSend();keepDraft();schedulePolish()};
+  // On a computer, Enter sends and Shift+Enter is a new line. On a phone the
+  // return key stays a new line, the way texting apps do it.
+  el("box").onkeydown=function(e){
+    if(e.key==="Enter"&&!e.shiftKey&&window.matchMedia&&window.matchMedia("(pointer:fine)").matches){e.preventDefault();el("sendBtn").click()}
+  };
 
   // Send: if the box isn't what polish last saw, polish first and stop, so the
   // helper reads the version that will actually go out. The second tap sends it.
@@ -474,7 +720,7 @@
     if(text!==P.ok){polishNow();return}
     var b=el("sendBtn");b.disabled=true;
     post("/api/send",{phone:S.phone,body:text}).then(function(d){
-      if(d&&d.ok){el("box").value="";sizeBox();resetPolish();if(d.thread){S.thread=d.thread;renderChat(true)}updSend();return}
+      if(d&&d.ok){el("box").value="";sizeBox();keepDraft();resetPolish();if(d.thread){S.thread=d.thread;renderChat(true)}updSend();return}
       updSend();
       toast(d&&d.error==="recipient_opted_out"?"They texted STOP. Don't text them.":"Didn't send. Try again.");
     }).catch(function(){updSend();toast("No connection. Didn't send.")});
@@ -486,7 +732,7 @@
     var note=prompt("Anything Mikey should know? (which days work for them, how many cars, what they want done)","");
     if(note===null)return;
     post("/api/request-date",{phone:S.phone,note:note}).then(function(d){
-      if(d&&d.ok){if(d.thread){S.thread=d.thread;renderChat(false)}toast("Mikey's been asked for a date")}else toast("Couldn't reach Mikey. Try again.");
+      if(d&&d.ok){if(d.thread){S.thread=d.thread;renderChat(false)}toast("Mikey's been asked. His answer shows up here.")}else toast("Couldn't reach Mikey. Try again.");
     });
   };
   el("askQ").onclick=function(){
@@ -494,7 +740,7 @@
     var q=prompt("What do you need Mikey to decide?","");
     if(q===null||!q.trim())return;
     post("/api/helper/ask",{phone:S.phone,question:q.trim()}).then(function(d){
-      if(d&&d.ok){if(S.thread){S.thread.helperAsk=d.helperAsk;renderChat(false)}toast("Sent to Mikey")}else toast("Couldn't reach Mikey. Try again.");
+      if(d&&d.ok){if(S.thread){S.thread.helperAsk=d.helperAsk;renderChat(false)}toast("Sent to Mikey. His answer shows up here.")}else toast("Couldn't reach Mikey. Try again.");
     });
   };
 
@@ -514,6 +760,12 @@
         h+='<ul><li>Ceramic coating: from $500, Mikey quotes it.</li><li>Paint correction: Mikey quotes it.</li><li>Rough condition, lots of pet hair or stains can cost more. Ask Mikey before quoting those.</li></ul>';
       }
     });
+    h+='<h2>Using this app</h2><ul>'+
+      '<li><b>+</b> next to the box: price calculator, Ask Mikey, No reply needed, save their details.</li>'+
+      '<li><b>Ask Mikey</b>: his answer shows up in green inside that conversation, and the list shows "Mikey answered".</li>'+
+      '<li><b>Schedule</b>: what\'s already booked for the next two weeks.</li>'+
+      '<li>Leave a reply half-written and it\'s still there when you come back.</li>'+
+      '<li>Add it to your home screen and turn on alerts so your phone buzzes when a customer texts.</li></ul>';
     h+='<h2>Tap-to-use replies</h2>'+(g.quick||[]).map(function(x){return'<div class="q"><b>'+esc(x.label)+'</b>'+esc(x.text)+'</div>'}).join("");
     el("guideBody").innerHTML=h;
   }
@@ -526,10 +778,11 @@
     if(S.view==="list")loadList();
     else if(S.view==="chat"&&S.phone&&!el("box").value.trim()&&!P.busy){
       api("/api/thread?phone="+encodeURIComponent(S.phone)).then(function(d){
-        if(d&&d.ok&&d.thread&&S.view==="chat"&&d.thread.phone===S.phone){S.thread=d.thread;renderChat(false)}
+        if(d&&d.ok&&d.thread&&S.view==="chat"&&d.thread.phone===S.phone){S.thread=d.thread;renderChat(false);markSeen(S.phone)}
       });
     }
   },15000);
+  document.addEventListener("visibilitychange",function(){if(!document.hidden&&S.role&&S.view==="list")loadList()});
 
   boot();
 })();

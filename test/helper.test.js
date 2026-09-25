@@ -149,6 +149,84 @@ console.log('\nAsk Mikey reaches Mikey and is marked on the thread');
   ok(rd.status === 200 && rd.data.thread.dateRequest.by === 'Jess', 'date request is signed Jess, not what the page sent');
 }
 
+console.log('\nPhotos: only what the customer actually sent');
+{
+  const PH = '+14255559876';
+  const TS = Date.now() - 5000;
+  const PIC = 'https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages/MM1/Media/ME1';
+  await KV.put('thread:' + PH, JSON.stringify({ phone: PH, name: 'Photo Person', messages: [{ dir: 'in', body: '', ts: TS, media: [{ url: PIC, type: 'image/jpeg' }] }] }));
+  const before = outbound.length;
+  const r = await call('GET', `/api/helper/media?phone=${encodeURIComponent(PH)}&ts=${TS}&n=0`, { cookie: helper.cookie });
+  ok(r.status === 200, 'their photo loads');
+  ok(outbound.slice(before).some((o) => o.url === PIC), 'fetched from the URL stored on the thread');
+  const sneaky = await call('GET', `/api/helper/media?phone=${encodeURIComponent(PH)}&ts=${TS}&n=0&u=${encodeURIComponent('https://api.twilio.com/2010-04-01/Accounts/ACtest/Messages.json')}`, { cookie: helper.cookie });
+  ok(!outbound.slice(before).some((o) => /Messages\.json/.test(o.url)), 'a URL passed by the page is ignored');
+  ok(sneaky.status === 200, '(and the real photo still loads)');
+  ok((await call('GET', `/api/helper/media?phone=${encodeURIComponent(PH)}&ts=123&n=0`, { cookie: helper.cookie })).status === 404, 'a message that doesn\'t exist is a 404');
+  ok((await call('GET', `/api/helper/media?phone=${encodeURIComponent(PH)}&ts=${TS}&n=5`, { cookie: helper.cookie })).status === 404, 'a photo slot that doesn\'t exist is a 404');
+}
+
+console.log('\nSchedule: what is already booked');
+{
+  const J = '+14255550777';
+  const tomorrowNoon = Date.now() + 26 * 3600000;
+  await KV.put('thread:' + J, JSON.stringify({ phone: J, name: 'Booked Betty', appointmentAt: tomorrowNoon, messages: [{ dir: 'out', body: 'see you then', ts: Date.now() - 1000 }] }));
+  await call('POST', '/api/meta', { cookie: owner.cookie, body: { phone: J, appointmentAt: tomorrowNoon } });
+  const w = await call('GET', '/api/helper/week', { cookie: helper.cookie });
+  ok(w.status === 200 && w.data.days.length === 14, 'two weeks of days');
+  const withJob = w.data.days.find((d) => d.jobs.some((j) => j.name === 'Booked Betty'));
+  ok(!!withJob, 'the booked job shows up');
+  ok(withJob && withJob.room === w.data.maxPerDay - withJob.jobs.length, 'room left = cars a day minus booked');
+}
+
+console.log('\nSaving a name, address and car');
+{
+  const c = await call('POST', '/api/helper/contact', { cookie: helper.cookie, body: { phone: CUST, name: 'Dale H.', address: '123 Main St, Snohomish', car: '2019 Toyota RAV4' } });
+  ok(c.status === 200 && c.data.thread.name === 'Dale H.', 'name saved');
+  ok(c.data.thread.garage.address === '123 Main St, Snohomish', 'address saved');
+  const v = c.data.thread.garage.vehicles[0];
+  ok(v && v.year === '2019' && v.make === 'Toyota' && v.model === 'RAV4', 'car saved as year / make / model');
+  const again = await call('POST', '/api/helper/contact', { cookie: helper.cookie, body: { phone: CUST, car: '2019 Toyota RAV4' } });
+  ok(again.data.thread.garage.vehicles.length === 1, 'the same car twice isn\'t added twice');
+  const sneak = await call('POST', '/api/helper/contact', { cookie: helper.cookie, body: { phone: CUST, archived: true, status: 'lost', notes: 'x' } });
+  ok(!sneak.data.thread.archived && sneak.data.thread.notes !== 'x', 'nothing else on the thread can be changed from here');
+}
+
+console.log('\nNo reply needed');
+{
+  const N = '+14255550888';
+  await KV.put('thread:' + N, JSON.stringify({ phone: N, name: 'Thanks Tom', messages: [{ dir: 'out', body: 'all done!', ts: Date.now() - 9000 }, { dir: 'in', body: 'awesome', ts: Date.now() - 5000 }] }));
+  const d = await call('POST', '/api/helper/done', { cookie: helper.cookie, body: { phone: N } });
+  ok(d.status === 200 && d.data.thread.replyCheck.needed === false && /Jess/.test(d.data.thread.replyCheck.reason), 'marked, signed with who did it');
+  const rows = (await call('GET', '/api/threads', { cookie: owner.cookie })).data.threads;
+  ok(rows.find((r) => r.phone === N).awaitingReply === false, 'Mikey\'s list agrees: nobody waiting');
+  await KV.put('thread:' + N, JSON.stringify({ phone: N, messages: [{ dir: 'out', body: 'hi', ts: Date.now() }] }));
+  ok((await call('POST', '/api/helper/done', { cookie: helper.cookie, body: { phone: N } })).status === 409, 'nothing to mark when Mikey spoke last');
+}
+
+console.log('\nAsk → Mikey answers → the helper sees it');
+{
+  const rows0 = (await call('GET', '/api/threads', { cookie: helper.cookie })).data.threads;
+  ok(rows0.find((r) => r.phone === CUST).helperAskAt > 0, 'the list row knows something was asked');
+  ok((await call('POST', '/api/helper/answer', { cookie: helper.cookie, body: { phone: CUST, answer: 'yes' } })).status === 403, 'the helper can\'t answer their own question');
+  const sub = await call('POST', '/api/helper/push', { cookie: helper.cookie, body: { endpoint: 'https://push.example.test/abc' } });
+  ok(sub.status === 200 && sub.data.devices === 1, 'the helper\'s phone signs up for alerts');
+  ok((await KV.get('push:subs', { type: 'json' })) === null, 'into their own list, not Mikey\'s');
+  const before = outbound.length;
+  const a = await call('POST', '/api/helper/answer', { cookie: owner.cookie, body: { phone: CUST, answer: 'Yes, $280 each is fine.' } });
+  ok(a.status === 200 && a.data.thread.helperAsk.answer === 'Yes, $280 each is fine.', 'Mikey\'s answer is saved on the thread');
+  ok(outbound.slice(before).some((o) => o.url === 'https://push.example.test/abc'), 'the helper\'s phone gets a buzz');
+  ok(!outbound.slice(before).some((o) => o.url.includes('api.twilio.com')), 'nothing is texted to the customer');
+  const peek = await call('GET', '/api/push/peek', { cookie: helper.cookie });
+  ok(peek.status === 200 && /Mikey answered/.test(peek.data.title) && peek.data.url === '/helper?c=' + encodeURIComponent(CUST), 'the alert says Mikey answered and opens that conversation');
+  const rows1 = (await call('GET', '/api/threads', { cookie: helper.cookie })).data.threads;
+  ok(rows1.find((r) => r.phone === CUST).helperAnsweredAt > 0, 'the list row knows it was answered');
+  const th = await call('GET', '/api/thread?phone=' + encodeURIComponent(CUST), { cookie: helper.cookie });
+  ok(th.data.thread.helperAsk.answer === 'Yes, $280 each is fine.', 'the helper reads it on the thread');
+  const off = await call('POST', '/api/helper/push', { cookie: helper.cookie, body: { endpoint: 'https://push.example.test/abc', off: true } });
+  ok(off.data.devices === 0, 'alerts can be turned off again');
+}
+
 console.log('\nMikey can start them fresh, without touching a thread');
 {
   const before = (await KV.get('thread:' + CUST, { type: 'json' }));
