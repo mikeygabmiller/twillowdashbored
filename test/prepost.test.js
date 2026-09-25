@@ -22,7 +22,7 @@ const EXPORTS = ['custTokenFor', 'custState', 'apiCustState', 'apiCustAction', '
   'refCodeFor', 'refResolve', 'refCredits', 'careKind', 'CARE_TIPS', 'REF_OFFER', 'buildReferrals', 'apiReferralAction',
   'loadThread', 'saveThread', 'updateIndexEntry', 'loadBookings', 'saveBookings', 'loadIndex',
   'loadMonth', 'saveMonth', 'loadConfig', 'localDateStr', 'bkAvailability', 'genId',
-  'custCalendar', 'apiCustDid', 'apiSaveConfig', 'apiPushPeek', 'custPhoto', 'apiPhotoUpload', 'apiCustPreview', 'apiGetConfig'];
+  'custCalendar', 'apiCustDid', 'apiSaveConfig', 'apiPushPeek', 'custPhoto', 'apiPhotoUpload', 'apiCustPreview', 'apiGetConfig', 'apiRatePick', 'apiRateFeedback'];
 
 const store = new Map();
 const kv = {
@@ -184,9 +184,8 @@ ok('/after/<token> is its own page', /<title>Looking after it<\/title>/.test(h))
 ok('the after card is there', /Thanks for having me out/.test(h));
 ok('ceramic gets the ceramic advice (no wash for 7 days)', /Don't wash it for 7 days/.test(h));
 ok('the review link is offered', /g\.page\/r\/mikey-review/.test(h));
-ok('…in its own "Happy with it?" card', /Happy with it\?/.test(h));
-ok('no "something not right" box any more (his call: they reply to the text)', !/<textarea/.test(h) && !/id="issueBtn"/.test(h) &&
-  /Something not right\? <a href="sms:/.test(h));
+ok('…as a row of stars', /How did I do\?/.test(h) && (h.match(/data-star="\d"/g) || []).length === 5);
+ok('the old complaint box is still gone; the note only opens after one to four stars', !/id="issueBtn"/.test(h) && /<div id="rtForm" hidden>/.test(h));
 ok('the friend card sits near the top, above the care tips', h.indexOf('/friend/') > 0 && h.indexOf('/friend/') < h.indexOf("Don't wash it for 7 days"));
 ok('it points at the next one, 6–8 weeks out', /every 6–8 weeks/.test(h) && h.includes(`href="/c/${tok}#book"`) && /id="planBtn"/.test(h));
 hub = await html(tok);
@@ -498,11 +497,12 @@ section('Their before and after: the Jobs board shots, on their after page');
   // The ask, right under the result while the job is fresh.
   ah = await page('after', tp);
   const at = (x) => ah.indexOf(x);
-  ok('the review ask is on the job card, once', (ah.match(/>Leave a review</g) || []).length === 1 && at('Leave a review') < at('<div class="lbl">Looking after it</div>'));
-  ok('…above the friend link and the next one', at('Leave a review') < at(`/friend/${tp}`) && at('Leave a review') < at('Your next one'));
-  ok('…with "something not right?" as a text, under the button (never in front of it)',
-    at('Something not right?') > at('Leave a review') && /Something not right\? <a href="sms:\+14256007897">Text me<\/a> and I'll make it right\./.test(ah));
-  ok('…and still no form to fill in (his call)', !/<textarea/.test(ah) && !/id="issueBtn"/.test(ah));
+  ok('the stars are on the job card, once', (ah.match(/role="radiogroup"/g) || []).length === 1 && at('data-star="5"') < at('<div class="lbl">Looking after it</div>'));
+  ok('…above the friend link and the next one', at('data-star="5"') < at(`/friend/${tp}`) && at('data-star="5"') < at('Your next one'));
+  ok('five stars: thanks and the Google button', /<div id="rtGoogle" hidden>[\s\S]*?That means a lot[\s\S]*?href="https:\/\/g\.page\/r\/mikey-review"[^>]*>Post it on Google</.test(ah));
+  ok('one to four: the note to him, AND the Google link right under it (open, never gated)',
+    /<div id="rtForm" hidden>[\s\S]*?Tell me straight[\s\S]*?id="rtSend"[\s\S]*?Rather post it publicly\? <a href="https:\/\/g\.page\/r\/mikey-review"[^>]*>Leave a Google review<\/a>/.test(ah));
+  ok('…and again after the note is sent', /<div id="rtDone" hidden>[\s\S]*?Leave a Google review/.test(ah));
 
   // The photo route: this customer's shots, from this job, and nothing else.
   let r = await M.custPhoto(tp, a2);
@@ -544,8 +544,7 @@ section('Their before and after: the Jobs board shots, on their after page');
   const cfgM = await M.loadConfig();
   for (const m of [M.localDateStr(NOW, cfgM.tz).slice(0, 7)]) { const d = await M.loadMonth(m); d.entries = d.entries.filter((e) => e.phone !== PH); await M.saveMonth(m, d); }
   ah = await page('after', tp);
-  ok('a month on, the review ask is back at the bottom', /Happy with it\?/.test(ah) && ah.indexOf('Leave a review') > ah.indexOf('Your next one'));
-  ok('…and "something not right?" is gone', !/Something not right\?/.test(ah));
+  ok('a month on, the stars are back at the bottom', /How did I do\?/.test(ah) && ah.indexOf('data-star="5"') > ah.indexOf('Your next one'));
 
   // The texts he sends with these links.
   pt.lastJob = { at: NOW - 3 * 3600000, service: 'Full Detail', jobId: 'b:bkPH1' }; await M.saveThread(pt);
@@ -618,7 +617,7 @@ section('The page editor: every line, the order, what shows and the colour are h
   ok('…and a text he left the link out of still gets it', /^Thanks Eli, care tips are up\. https:\/\/\S+\/after\//.test(dr.after), dr.after);
 
   const pv = await (await M.apiCustPreview(new URL('https://x/?kind=after&photos=pair'))).json();
-  ok('the editor preview is the real page, every line marked', pv.ok && /data-ed="review_btn"/.test(pv.html) && /data-ed="next_line"/.test(pv.html) && /data-ed="photos"/.test(pv.html));
+  ok('the editor preview is the real page, every line marked', pv.ok && /data-ed="rate_google"/.test(pv.html) && /data-ed="rate_public"/.test(pv.html) && /data-ed="next_line"/.test(pv.html) && /data-ed="photos"/.test(pv.html));
   ok('…with the lines a customer only sometimes sees, saying when', /data-ed="next_plan"[^>]*data-when=/.test(pv.html) && /data-ed="save_pic"/.test(pv.html) && /Care tips after an interior detail/.test(pv.html));
   ok('…the texts that go with the link, to edit in the same place', /data-ed="draft_after"/.test(pv.html) && /Thanks Jenna, care tips are up\./.test(pv.html));
   ok('…the review ask even with no link yet, saying why it\'s hidden', /Hidden: add your Google review link/.test(pv.html) || /g\.page/.test(pv.html));
@@ -635,9 +634,37 @@ section('The page editor: every line, the order, what shows and the colour are h
     [/<title>Before I get there/.test(bh), /Cash, check or Zelle/.test(bh), (bh.match(/--red:#\w+/) || [])[0]]);
 }
 
+section('The stars on the after page: open, working with the /rate page off');
+{
+  const RS = '+14255550910';
+  await customer(RS, 'Rae Soto');
+  const tr = await M.custTokenFor(RS);
+  const cfgNow = await M.loadConfig();
+  ok('(setup) the /rate page itself is off', !(cfgNow.ratePage && cfgNow.ratePage.on));
+  const log0 = JSON.parse(store.get('rate:log') || '{"tally":{},"fb":[]}');
+  let r = await (await M.apiRatePick(req({ stars: 3, token: tr, from: 'after' }))).json();
+  const log1 = JSON.parse(store.get('rate:log'));
+  ok('a tap from their after page is counted', r.ok && (log1.tally[3] || 0) === ((log0.tally && log0.tally[3]) || 0) + 1);
+  await M.apiRatePick(req({ stars: 5, token: 'zzzzzzzzzzzzzzzz', from: 'after' }));
+  ok('…but a made-up token saying "after" is not', (JSON.parse(store.get('rate:log')).tally[5] || 0) === (log1.tally[5] || 0));
+  alerts.length = 0;
+  r = await (await M.apiRateFeedback(req({ stars: 3, text: 'Missed the door jambs', back: true, token: tr, from: 'after' }))).json();
+  ok('a one-to-four note goes through', r.ok);
+  ok('…Mikey is told, stars and words', alerts.length === 1 && /3★ private note from Rae Soto/.test(alerts[0].subject) && /Missed the door jambs/.test(alerts[0].text), alerts[0] && alerts[0].subject);
+  ok('…it is on the star page\'s list of notes', JSON.parse(store.get('rate:log')).fb[0].text === 'Missed the door jambs');
+  ok('…and on their conversation notes, for when he texts back', /3★ from their after page: Missed the door jambs/.test((await M.loadThread(RS)).notes));
+  ok('…and the customer is NOT texted by anything', !sms.some((m) => m.to === RS));
+  await M.apiRateFeedback(req({ stars: 2, text: 'b', token: tr, from: 'after' }));
+  await M.apiRateFeedback(req({ stars: 2, text: 'c', token: tr, from: 'after' }));
+  ok('a public box that emails him can\'t be leaned on (3 a day)', (await M.apiRateFeedback(req({ stars: 2, text: 'd', token: tr, from: 'after' }))).status === 429);
+  alerts.length = 0;
+  r = await (await M.apiRateFeedback(req({ stars: 2, text: 'spam', token: 'zzzzzzzzzzzzzzzz', from: 'after' }))).json();
+  ok('with /rate off, a note with no real customer behind it goes nowhere', r.ok && alerts.length === 0 && JSON.parse(store.get('rate:log')).fb[0].text !== 'spam');
+}
+
 section('Nothing here texted a customer');
 ok('no SMS to any customer across the whole suite', !sms.some((m) => [JENNA, RUTH, FRIEND, TEXTED, BOARD, '+14255550901', '+14255550902', '+14255550903',
-  '+14255550904', '+14255550905', '+14255550906', '+14255550907', '+14255550908', '+14255550909'].includes(m.to)), sms);
+  '+14255550904', '+14255550905', '+14255550906', '+14255550907', '+14255550908', '+14255550909', '+14255550910'].includes(m.to)), sms);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -30,7 +30,7 @@ const kv = {
   async list({ prefix } = {}) { return { keys: [...store.keys()].filter((k) => !prefix || k.startsWith(prefix)).map((name) => ({ name })) }; },
 };
 globalThis.fetch = async () => ({ ok: false, status: 404, text: async () => 'no', json: async () => ({}) });
-const M = new Function('__env__', src + '\n; ENV = __env__; return { custTokenFor, custSubPage, custPhoto, apiCustAction, loadThread, saveThread, updateIndexEntry,' +
+const M = new Function('__env__', src + '\n; ENV = __env__; return { custTokenFor, custSubPage, custPhoto, apiCustAction, apiRatePick, apiRateFeedback, loadThread, saveThread, updateIndexEntry,' +
   ' __reset(){ resetInvocationCaches(); BCFG_CACHE = null; } };')({
   MESSAGES: kv, TWILIO_ACCOUNT_SID: 'AC1', TWILIO_AUTH_TOKEN: 't', TWILIO_FROM: '+14256007897', MIKEY_PHONE: '+13607975831',
   RESEND_API_KEY: 'r', ALERT_EMAIL: 'a@b.c', DETECT_DISABLED: '1', PUBLIC_BASE_URL: 'https://texting.test' });
@@ -68,7 +68,11 @@ async function customerPage(init) {
     let res;
     if (m) res = await M.custSubPage(m[1], m[2]);
     else if (ph) res = await M.custPhoto(ph[1], ph[2]);
-    else if (u.pathname === '/api/cust/action') {
+    else if (u.pathname === '/api/rate/pick' || u.pathname === '/api/rate/feedback') {
+      const body = JSON.parse(route.request().postData() || '{}'); actions.push(Object.assign({ path: u.pathname }, body));
+      const fn = u.pathname === '/api/rate/pick' ? M.apiRatePick : M.apiRateFeedback;
+      res = await fn({ json: async () => body });
+    } else if (u.pathname === '/api/cust/action') {
       const body = JSON.parse(route.request().postData() || '{}'); actions.push(body);
       res = await M.apiCustAction({ json: async () => body }, u);
     } else return route.fulfill({ status: 404, body: '' });
@@ -121,6 +125,29 @@ section('The after page: their before and after, working');
   ok('with no share sheet, both photos download, named', got.sort().join(',') === 'detail-after.jpg,detail-before.jpg', got);
   ok('the tap is counted for Mikey', actions.some((a) => a.action === 'tap' && a.kind === 'after' && a.name === 'photos'), actions);
   ok('the page counted itself opened (script, never the GET)', actions.some((a) => a.action === 'seen' && a.kind === 'after'));
+  await ctx.close();
+}
+
+section('The stars: open, never gated');
+{
+  const { ctx, page } = await customerPage(null);
+  ok('five stars on the job card, nothing else open yet', await page.locator('[data-star]').count() === 5 &&
+    !(await page.locator('#rtGoogle').isVisible()) && !(await page.locator('#rtForm').isVisible()));
+  await page.locator('[data-star="3"]').click(); await page.waitForTimeout(400);
+  ok('three stars: "Tell me straight" opens, ready to type', await page.locator('#rtForm').isVisible() && await page.evaluate(() => document.activeElement.id === 'rtText'));
+  ok('…with the Google link right there too (nobody kept from Google)', await page.locator('#rtForm a[href="https://g.page/r/mikey-review"]').isVisible());
+  ok('…and three stars lit', await page.locator('[data-star].lit').count() === 3);
+  ok('the tap is counted on his star page', actions.some((a) => a.path === '/api/rate/pick' && a.stars === 3 && a.from === 'after' && a.token === TOK));
+  await page.locator('#rtSend').click(); await page.waitForTimeout(300);
+  ok('an empty note asks for a line first', /Write a line or two/.test(await page.locator('#rtMsg').innerText()));
+  await page.locator('#rtText').fill('Water spots on the hood');
+  await page.locator('#rtSend').click(); await page.waitForTimeout(600);
+  ok('sent: the thanks shows, the form goes', await page.locator('#rtDone').isVisible() && !(await page.locator('#rtForm').isVisible()));
+  ok('…still offering Google after', await page.locator('#rtDone a[href="https://g.page/r/mikey-review"]').isVisible());
+  ok('…and it reached him, on their conversation notes', /3★ from their after page: Water spots on the hood/.test((await M.loadThread(PIA)).notes || ''));
+  await page.locator('[data-star="5"]').click(); await page.waitForTimeout(400);
+  ok('five stars: the thank-you and the Google button', await page.locator('#rtGoogle').isVisible() &&
+    /Post it on Google/.test(await page.locator('#rtGoogle').innerText()) && await page.locator('#rtGoogle a[href="https://g.page/r/mikey-review"]').count() === 1);
   await ctx.close();
 }
 
