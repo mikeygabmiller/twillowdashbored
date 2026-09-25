@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-25·helper-purple';
+const BUILD = '2026-09-25·helper-messages';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -10251,8 +10251,15 @@ async function apiSaveConfig(request) {
     const pin = data.helperPassword.trim().slice(0, 64);
     if (pin && pin === String(ENV.DASHBOARD_PASSWORD || '')) return json({ ok: false, error: 'helper_pin_is_yours' }, 422);
     if (pin && pin.length < 4) return json({ ok: false, error: 'helper_pin_short' }, 422);
+    // A new helper starts with a clean "needs reply", not his backlog.
+    if (pin && !next.helperPassword && !next.helperSince) next.helperSince = Date.now();
     next.helperPassword = pin;
   }
+  // Where the helper's "needs reply" starts counting from. It's a view setting
+  // on THEIR page only: nothing on any thread changes, so his own waiting list,
+  // nudges and follow-ups are exactly what they were. "Start them fresh" moves
+  // it to now; anything a customer sends after that shows up as usual.
+  if (data.helperSince != null && !isNaN(+data.helperSince)) next.helperSince = Math.max(0, Math.min(Date.now(), Math.round(+data.helperSince)));
   await kv().put('config', JSON.stringify(next));
   cacheConfig(next);
   return json({ ok: true, config: publicConfig(next) });
@@ -15128,7 +15135,7 @@ async function apiHelperGuide() {
     prices = (bk.services || []).filter((x) => x.enabled !== false).map((x) => ({ name: String(x.name || '').replace(/\s*[—–-]\s*In & Out$/, ''), price: x.price || {}, blurb: x.blurb || '' }));
     addons = (bk.addons || []).filter((x) => x.enabled !== false).map((x) => ({ name: x.name, price: x.price }));
   } catch { /* the guide still works without the list */ }
-  return json({ ok: true, name: helperName(cfg), notes: String(cfg.helperNotes || ''), guide: HELPER_GUIDE, quick: HELPER_QUICK, prices, addons });
+  return json({ ok: true, name: helperName(cfg), notes: String(cfg.helperNotes || ''), since: +cfg.helperSince || 0, guide: HELPER_GUIDE, quick: HELPER_QUICK, prices, addons });
 }
 
 // Written from how Mikey actually books people, read out of his own threads

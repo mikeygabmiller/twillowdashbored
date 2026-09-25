@@ -2,96 +2,126 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
 <meta name="theme-color" content="#0c0c0e">
 <title>Texting for Mikey</title>
 <link rel="icon" href="/favicon.svg">
 <style>
-  /* The helper's whole world: who's waiting, the conversation, a reply box, and
-     the guide. Deliberately nothing else. Everything a helper could break or
-     shouldn't see (money, settings, bookings, automations) lives in the main
-     app, and the Worker refuses those routes to this PIN anyway. Same dark base
-     as bookings.html, with light purple where that page uses red. */
+  /* The helper's whole world, laid out like the Messages app on their own phone
+     so there is nothing to learn: a list of conversations, newest first, and a
+     chat with bubbles and a box at the bottom. Everything a helper shouldn't
+     touch (money, settings, bookings, automations) lives in the main app, and
+     the Worker refuses those routes to this PIN anyway. Same dark base as
+     bookings.html, with light purple where that page uses red. */
   :root{
     --bg:#0c0c0e; --card:#17171b; --card2:#1f1f25; --line:#2a2a31; --line2:#37373f;
     --txt:#f4f4f6; --muted:#a2a2ac; --faint:#71717a;
-    --lav:#c9b8ff; --amber:#f5a524; --green:#2fd07a; --blue:#4c9ffe; --purple:#9b7bff;
-    --me:#1d3b5f; --them:#1f1f25;
+    --lav:#c9b8ff; --lavbg:#1d1733; --amber:#f5a524; --green:#2fd07a; --blue:#4c9ffe;
+    --me:#7b5cff; --them:#26252b;
     --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
   }
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-  html,body{margin:0;background:var(--bg);color:var(--txt);font-family:var(--font);font-size:16px;line-height:1.45;-webkit-font-smoothing:antialiased}
-  button{font:inherit;color:inherit;cursor:pointer}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--txt);font-family:var(--font);font-size:16px;line-height:1.4;-webkit-font-smoothing:antialiased}
+  button{font:inherit;color:inherit;cursor:pointer;background:none;border:0;padding:0}
   .hide{display:none!important}
-  header{position:sticky;top:0;z-index:20;background:rgba(12,12,14,.94);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
-  .hin{max-width:720px;margin:0 auto;padding:10px 16px;display:flex;align-items:center;gap:10px}
-  .ttl{font-weight:800;font-size:17px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .ttl small{display:block;font-weight:500;font-size:12px;color:var(--muted)}
-  .hbtn{background:var(--card2);border:1px solid var(--line2);border-radius:10px;padding:8px 12px;font-size:14px;font-weight:600}
-  .hbtn.on{background:var(--txt);color:var(--bg)}
-  .wrap{max-width:720px;margin:0 auto;padding:0 16px 40px}
-  .banner{max-width:720px;margin:10px auto 0;padding:10px 14px;border-radius:12px;background:#221a08;border:1px solid #5b4410;color:#f7d58b;font-size:14px}
-  .banner a{color:#fff}
+  .screen{max-width:720px;margin:0 auto}
 
   /* ---- sign in ---- */
   .login{max-width:340px;margin:18vh auto 0;padding:0 16px;text-align:center}
   .login h1{font-size:22px;margin:0 0 6px}
   .login p{color:var(--muted);margin:0 0 18px}
   .login input{width:100%;font-size:26px;letter-spacing:8px;text-align:center;padding:12px;border-radius:12px;border:1px solid var(--line2);background:var(--card);color:var(--txt)}
-  .login button{width:100%;margin-top:12px;padding:13px;border:0;border-radius:12px;background:var(--lav);color:#1a1033;font-weight:700;font-size:16px}
+  .login button{width:100%;margin-top:12px;padding:13px;border-radius:12px;background:var(--lav);color:#1a1033;font-weight:700;font-size:16px}
   .err{color:var(--lav);min-height:22px;margin-top:10px;font-size:14px}
 
-  /* ---- inbox ---- */
-  .search{width:100%;margin:14px 0 4px;padding:11px 14px;border-radius:12px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font-size:16px}
-  .sec{margin:18px 0 8px;font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted);display:flex;justify-content:space-between}
-  .sec.hot{color:var(--lav)}
-  .row{display:flex;gap:12px;align-items:flex-start;width:100%;text-align:left;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin-bottom:8px}
-  .row.wait{border-color:#4a3d7a;background:#171329}
-  .row .who{font-weight:700}
-  .row .sub{color:var(--muted);font-size:13px}
-  .row .last{color:var(--txt);opacity:.85;font-size:14px;margin-top:3px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-  .row .mid{flex:1;min-width:0}
-  .row .age{font-size:12px;color:var(--muted);white-space:nowrap}
-  .row.wait .age{color:var(--lav);font-weight:700}
-  .tag{display:inline-block;font-size:11px;font-weight:700;padding:1px 7px;border-radius:99px;margin:4px 4px 0 0}
-  .tag.date{background:rgba(245,165,36,.16);color:var(--amber)}
-  .tag.ask{background:rgba(155,123,255,.16);color:var(--purple)}
-  .tag.stop{background:rgba(201,184,255,.16);color:var(--lav)}
-  .dot{width:9px;height:9px;border-radius:50%;background:var(--blue);margin-top:7px;flex:none}
-  .dot.off{visibility:hidden}
-  .empty{color:var(--muted);text-align:center;padding:26px 10px;background:var(--card);border-radius:14px;border:1px dashed var(--line2)}
+  /* ---- conversation list ---- */
+  .top{position:sticky;top:0;z-index:10;background:rgba(12,12,14,.94);backdrop-filter:blur(12px);padding:8px 16px 10px;padding-top:max(8px,env(safe-area-inset-top))}
+  .toprow{display:flex;justify-content:space-between;align-items:center;min-height:34px}
+  .link{color:var(--lav);font-size:16px;padding:6px 2px}
+  .big{font-size:32px;font-weight:800;margin:2px 0 0;letter-spacing:-.01em}
+  .whoami{color:var(--muted);font-size:13px;margin-top:1px}
+  .search{width:100%;margin-top:10px;padding:9px 12px;border-radius:10px;border:0;background:var(--card2);color:var(--txt);font-size:16px}
+  .search::placeholder{color:var(--faint)}
+  .seg{display:flex;gap:6px;margin-top:10px}
+  .seg button{flex:1;padding:7px 10px;border-radius:9px;background:var(--card);color:var(--muted);font-size:14px;font-weight:600}
+  .seg button.on{background:var(--lavbg);color:var(--lav)}
+  .banner{margin:8px 16px 0;padding:9px 12px;border-radius:10px;background:var(--lavbg);color:var(--lav);font-size:13px}
+  .banner a{color:#fff}
+  .list{padding:0 0 40px}
+  .row{display:flex;gap:11px;align-items:center;width:100%;text-align:left;padding:10px 16px 10px 8px}
+  .row:active{background:var(--card)}
+  .row .dot{width:10px;height:10px;border-radius:50%;background:var(--blue);flex:none}
+  .row .dot.off{visibility:hidden}
+  .av{width:46px;height:46px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:17px;color:#fff}
+  .row .mid{flex:1;min-width:0;display:flex;flex-direction:column;border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:-12px}
+  .row .l1{display:flex;align-items:baseline;gap:8px}
+  .row .who{font-weight:700;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .row .when{color:var(--muted);font-size:14px;white-space:nowrap}
+  .row .last{color:var(--muted);font-size:15px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .row.unread .last{color:var(--txt)}
+  .pill{display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:99px;margin:4px 4px 0 0}
+  .pill.need{background:var(--lavbg);color:var(--lav)}
+  .pill.date{background:rgba(245,165,36,.14);color:var(--amber)}
+  .pill.stop{background:var(--card2);color:var(--muted)}
+  .more{display:block;width:calc(100% - 32px);margin:14px 16px;padding:11px;border-radius:12px;background:var(--card);color:var(--lav);font-weight:600}
+  .empty{color:var(--muted);text-align:center;padding:40px 20px}
 
-  /* ---- conversation ---- */
-  .info{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;margin:14px 0;font-size:14px;color:var(--muted);white-space:pre-wrap}
+  /* ---- chat ---- */
+  .chat{display:flex;flex-direction:column;height:100vh;height:100dvh}
+  .cbar{flex:none;display:flex;align-items:center;gap:8px;padding:6px 10px;padding-top:max(6px,env(safe-area-inset-top));border-bottom:1px solid var(--line);background:rgba(12,12,14,.96)}
+  .back{color:var(--lav);font-size:30px;line-height:1;padding:2px 8px 6px 4px;width:40px}
+  .cwho{flex:1;min-width:0;display:flex;flex-direction:column;align-items:center}
+  .cwho .av{width:34px;height:34px;font-size:13px}
+  .cwho .nm{font-size:13px;font-weight:600;margin-top:2px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ibtn{width:40px;height:40px;display:flex;align-items:center;justify-content:center;color:var(--lav)}
+  .ibtn span{width:22px;height:22px;border:1.6px solid var(--lav);border-radius:50%;display:flex;align-items:center;justify-content:center;font:700 13px/1 Georgia,serif}
+  .scroller{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:10px 12px 6px}
+  .info{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:11px 13px;margin:0 0 10px;font-size:14px;color:var(--muted);white-space:pre-wrap}
   .info b{color:var(--txt)}
   .info .line{margin:2px 0}
-  .msgs{display:flex;flex-direction:column;gap:6px;padding-bottom:10px}
-  .b{max-width:82%;padding:9px 12px;border-radius:16px;white-space:pre-wrap;word-wrap:break-word;font-size:15px}
-  .b.in{align-self:flex-start;background:var(--them);border-bottom-left-radius:5px}
-  .b.out{align-self:flex-end;background:var(--me);border-bottom-right-radius:5px}
-  .b .t{display:block;font-size:11px;color:var(--muted);margin-top:4px}
-  .day{align-self:center;font-size:12px;color:var(--faint);margin:8px 0 2px}
-  .sugg{background:#15122a;border:1px solid #3a2f73;border-radius:14px;padding:11px 13px;margin:6px 0 10px}
-  .sugg .h{font-size:12px;font-weight:700;color:var(--purple);margin-bottom:4px}
+  .info .warn,.info .warn b{color:var(--lav)}
+  .msgs{display:flex;flex-direction:column}
+  .stamp{align-self:center;font-size:12px;color:var(--faint);margin:14px 0 6px}
+  .b{max-width:78%;padding:8px 13px;border-radius:19px;white-space:pre-wrap;word-wrap:break-word;font-size:16px;margin-top:2px}
+  .b.in{align-self:flex-start;background:var(--them)}
+  .b.out{align-self:flex-end;background:var(--me);color:#fff}
+  .b.in.tail{border-bottom-left-radius:5px}
+  .b.out.tail{border-bottom-right-radius:5px}
+  .b.gap{margin-top:9px}
+  .b.fail{background:#3a2330}
+  .cap{font-size:11px;color:var(--faint);margin:3px 6px 0}
+  .cap.out{align-self:flex-end}
+  .sugg{background:var(--lavbg);border:1px solid #3a2f73;border-radius:14px;padding:10px 12px;margin:12px 0 4px}
+  .sugg .h{font-size:12px;font-weight:700;color:var(--lav);margin-bottom:4px}
   .sugg .x{white-space:pre-wrap;font-size:15px}
-  .sugg button{margin-top:8px}
-  .composer{position:sticky;bottom:0;background:linear-gradient(180deg,rgba(12,12,14,0),var(--bg) 14px);padding:14px 0 max(12px,env(safe-area-inset-bottom))}
-  .chips{display:flex;gap:6px;overflow-x:auto;padding-bottom:8px;scrollbar-width:none}
+  .sugg button{margin-top:8px;color:var(--lav);font-weight:700;font-size:14px}
+  .composer{flex:none;border-top:1px solid var(--line);background:var(--bg);padding:6px 10px max(8px,env(safe-area-inset-bottom))}
+  .chips{display:flex;gap:6px;overflow-x:auto;padding:2px 0 7px;scrollbar-width:none}
   .chips::-webkit-scrollbar{display:none}
-  .chip{flex:none;background:var(--card2);border:1px solid var(--line2);border-radius:99px;padding:6px 12px;font-size:13px;white-space:nowrap}
-  textarea{width:100%;min-height:74px;max-height:40vh;resize:vertical;padding:11px 13px;border-radius:14px;border:1px solid var(--line2);background:var(--card);color:var(--txt);font:inherit;font-size:16px}
-  textarea:focus{outline:none;border-color:var(--blue)}
-  .strip{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);min-height:26px;margin:6px 2px 0}
-  .strip.pol{color:#cdbfff}
+  .chip{flex:none;background:var(--card2);border:1px solid var(--line2);border-radius:99px;padding:5px 11px;font-size:13px;white-space:nowrap}
+  .inrow{display:flex;align-items:flex-end;gap:8px}
+  .plus{flex:none;width:34px;height:34px;border-radius:50%;background:var(--card2);color:var(--lav);font-size:24px;line-height:1;display:flex;align-items:center;justify-content:center;margin-bottom:2px}
+  .field{flex:1;display:flex;align-items:flex-end;border:1px solid var(--line2);border-radius:20px;background:var(--bg);padding:3px 3px 3px 13px}
+  textarea{flex:1;border:0;background:none;color:var(--txt);font:inherit;font-size:16px;line-height:1.35;resize:none;padding:6px 0;max-height:34vh;min-height:34px;height:34px}
+  textarea:focus{outline:none}
+  .send{flex:none;width:32px;height:32px;border-radius:50%;background:var(--me);color:#fff;display:flex;align-items:center;justify-content:center}
+  .send:disabled{background:var(--card2);color:var(--faint)}
+  .send svg{width:16px;height:16px}
+  .strip{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;font-size:13px;color:var(--muted);margin:0 4px 6px}
+  .strip:empty{display:none}
+  .strip.pol{color:var(--lav)}
   .strip.warn{color:var(--amber)}
-  .strip button{background:none;border:0;color:var(--blue);font-weight:700;padding:2px 4px}
-  .acts{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
-  .btn{background:var(--card2);border:1px solid var(--line2);border-radius:12px;padding:10px 14px;font-weight:600;font-size:14px}
-  .btn.go{background:var(--blue);border-color:var(--blue);color:#fff;margin-left:auto;padding:10px 22px}
-  .btn.go:disabled{opacity:.5}
-  .btn.mk{border-color:#5b4410;color:#f7d58b}
+  .strip button{color:var(--blue);font-weight:700;padding:2px 4px}
+  .sheetbg{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center}
+  .sheet{width:100%;max-width:720px;padding:8px 10px max(10px,env(safe-area-inset-bottom))}
+  .sheet .grp{background:var(--card2);border-radius:14px;overflow:hidden;margin-bottom:8px}
+  .sheet .grp button{display:block;width:100%;padding:15px;text-align:center;font-size:17px;color:var(--lav);border-bottom:1px solid var(--line2)}
+  .sheet .grp button:last-child{border-bottom:0}
+  .sheet .grp button small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+  .sheet .cancel{font-weight:700}
 
   /* ---- guide ---- */
+  .g{padding:0 16px 40px}
   .g h2{font-size:17px;margin:22px 0 8px}
   .g ul{margin:0;padding-left:20px}
   .g li{margin:6px 0}
@@ -103,19 +133,10 @@
   td.n{white-space:nowrap}
   .q{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:6px 0;font-size:14px}
   .q b{display:block;font-size:12px;color:var(--muted);margin-bottom:2px}
-  .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--txt);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:600;font-size:14px;z-index:50;max-width:90vw}
+  .toast{position:fixed;left:50%;top:max(14px,env(safe-area-inset-top));transform:translateX(-50%);background:var(--txt);color:var(--bg);padding:10px 16px;border-radius:12px;font-weight:600;font-size:14px;z-index:60;max-width:90vw}
 </style>
 </head>
 <body>
-<header id="hdr" class="hide">
-  <div class="hin">
-    <button class="hbtn hide" id="backBtn" aria-label="Back">&larr;</button>
-    <div class="ttl" id="ttl">Texting for Mikey</div>
-    <button class="hbtn" id="guideBtn">Guide</button>
-    <button class="hbtn" id="outBtn">Sign out</button>
-  </div>
-</header>
-<div class="banner hide" id="ownerBanner">This is what your helper sees. <a href="/">Back to your app</a></div>
 
 <div class="login hide" id="loginView">
   <h1>Texting for Mikey</h1>
@@ -125,39 +146,68 @@
   <div class="err" id="pinErr"></div>
 </div>
 
-<div class="wrap hide" id="inboxView">
-  <input class="search" id="q" type="search" placeholder="Search name, number or text">
-  <div id="inboxList"></div>
+<div class="screen hide" id="listView">
+  <div class="top">
+    <div class="toprow"><button class="link" id="guideBtn">Guide</button><button class="link" id="outBtn">Sign out</button></div>
+    <h1 class="big">Messages</h1>
+    <div class="whoami" id="whoami"></div>
+    <input class="search" id="q" type="search" placeholder="Search">
+    <div class="seg"><button id="segAll" class="on">All</button><button id="segNeed">Needs reply</button></div>
+  </div>
+  <div class="banner hide" id="ownerBanner">This is what your helper sees. <a href="/">Back to your app</a></div>
+  <div class="list" id="list"></div>
 </div>
 
-<div class="wrap hide" id="chatView">
-  <div id="chatInfo"></div>
-  <div class="msgs" id="msgs"></div>
-  <div id="sugg"></div>
+<div class="screen chat hide" id="chatView">
+  <div class="cbar">
+    <button class="back" id="backBtn" aria-label="Back">&lsaquo;</button>
+    <div class="cwho"><span class="av" id="chatAv"></span><span class="nm" id="chatName"></span></div>
+    <button class="ibtn" id="infoBtn" aria-label="Details"><span>i</span></button>
+  </div>
+  <div class="scroller" id="scroller">
+    <div id="chatInfo"></div>
+    <div class="msgs" id="msgs"></div>
+    <div id="sugg"></div>
+  </div>
   <div class="composer">
-    <div class="chips" id="chips"></div>
-    <textarea id="box" placeholder="Type your reply. Auto Polish makes it sound like Mikey when you pause."></textarea>
     <div class="strip" id="strip"></div>
-    <div class="acts">
-      <button class="btn mk" id="askDate">Ask Mikey for a date</button>
-      <button class="btn mk" id="askQ">Ask Mikey</button>
-      <button class="btn go" id="sendBtn">Send</button>
+    <div class="chips" id="chips"></div>
+    <div class="inrow">
+      <button class="plus" id="plusBtn" aria-label="More">+</button>
+      <div class="field">
+        <textarea id="box" rows="1" placeholder="Text Message"></textarea>
+        <button class="send" id="sendBtn" aria-label="Send" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg></button>
+      </div>
     </div>
   </div>
 </div>
 
-<div class="wrap g hide" id="guideView"></div>
+<div class="screen hide" id="guideView">
+  <div class="top"><div class="toprow"><button class="link" id="guideBack">&lsaquo; Back</button><span></span></div><h1 class="big">Guide</h1></div>
+  <div class="g" id="guideBody"></div>
+</div>
+
+<div class="sheetbg hide" id="sheet">
+  <div class="sheet">
+    <div class="grp">
+      <button id="askDate">Ask Mikey for a date<small>They're ready to book. He picks the day and time.</small></button>
+      <button id="askQ">Ask Mikey something<small>A price, a question, anything that's his call</small></button>
+      <button id="sheetGuide">Open the guide</button>
+    </div>
+    <div class="grp"><button class="cancel" id="sheetX">Cancel</button></div>
+  </div>
+</div>
 
 <script>
 (function(){
   "use strict";
   var TZ="America/Los_Angeles";
-  var S={role:"",name:"",threads:[],phone:"",thread:null,guide:null,view:"",q:""};
+  var S={role:"",name:"",threads:[],phone:"",thread:null,guide:null,view:"",q:"",seg:"all",showArch:false,since:0,from:"list"};
   // Auto Polish state. `ok` is the exact text that has been through polish (or
-  // that the helper deliberately kept with Undo) — Send only goes out when the
+  // that the helper deliberately kept with Undo). Send only goes out when the
   // box still matches it, which is how every text gets a voice check without a
   // second button to remember.
-  var P={timer:null,busy:false,ok:"",before:"",failed:false,seq:0};
+  var P={timer:null,busy:false,ok:"",before:"",seq:0};
   var IDLE=2400, MIN=10;
 
   function el(id){return document.getElementById(id)}
@@ -175,20 +225,44 @@
     if(m<1)return"just now";if(m<60)return m+"m";var h=Math.round(m/60);if(h<48)return h+"h";return Math.round(h/24)+"d";
   }
   function fmtPhone(p){var d=String(p||"").replace(/\D/g,"");if(d.length===11&&d[0]==="1")d=d.slice(1);return d.length===10?"("+d.slice(0,3)+") "+d.slice(3,6)+"-"+d.slice(6):String(p||"")}
-  function who(t){return(t&&t.name)||fmtPhone(t&&t.phone)}
-  function when(ts){try{return new Date(ts).toLocaleString("en-US",{timeZone:TZ,weekday:"short",month:"numeric",day:"numeric",hour:"numeric",minute:"2-digit"})}catch(e){return new Date(ts).toLocaleString()}}
-  function dayKey(ts){try{return new Date(ts).toLocaleDateString("en-US",{timeZone:TZ,weekday:"long",month:"short",day:"numeric"})}catch(e){return""}}
+  function who(t){return(t&&t.name&&String(t.name).trim())||fmtPhone(t&&t.phone)}
+  function fmt(ts,o){try{return new Date(ts).toLocaleString("en-US",Object.assign({timeZone:TZ},o))}catch(e){return new Date(ts).toLocaleString()}}
+  function ymd(ts){return fmt(ts,{year:"numeric",month:"2-digit",day:"2-digit"})}
+  // The list's time column, the way a phone shows it: a time today, "Yesterday",
+  // a weekday this week, a date after that.
+  function listWhen(ts){
+    if(!ts)return"";
+    var now=Date.now();
+    if(ymd(ts)===ymd(now))return fmt(ts,{hour:"numeric",minute:"2-digit"});
+    if(ymd(ts)===ymd(now-864e5))return"Yesterday";
+    if(now-ts<6*864e5)return fmt(ts,{weekday:"long"});
+    return fmt(ts,{month:"numeric",day:"numeric",year:"2-digit"});
+  }
+  function stampText(ts){
+    var now=Date.now(),t=fmt(ts,{hour:"numeric",minute:"2-digit"});
+    if(ymd(ts)===ymd(now))return"Today "+t;
+    if(ymd(ts)===ymd(now-864e5))return"Yesterday "+t;
+    return fmt(ts,{weekday:"short",month:"short",day:"numeric"})+" at "+t;
+  }
+  var AV=["#6d5bd0","#3b82f6","#0ea5a4","#16a34a","#ca8a04","#db2777","#7c3aed","#2563eb","#059669","#9333ea"];
+  function avColor(p){var h=0,s=String(p||"");for(var i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;return AV[h%AV.length]}
+  function initials(t){
+    var n=t&&t.name&&String(t.name).trim();
+    if(!n)return"#";
+    var w=n.split(/\s+/).filter(function(x){return/[A-Za-z]/.test(x)});
+    return w.length?(w[0][0]+(w.length>1?w[w.length-1][0]:"")).toUpperCase():"#";
+  }
+  function avHTML(t,id){return'<span class="av"'+(id?' id="'+id+'"':'')+' style="background:'+avColor(t.phone)+'">'+esc(initials(t))+'</span>'}
+  // "Needs reply" on this page means: waiting on an answer AND their last text
+  // came in after the helper's start line. His older backlog stays his; a
+  // customer who texts again after the line shows up like anyone else.
+  function needs(t){return !!(t.awaitingReply&&!t.optedOut&&!t.archived&&(t.lastTs||0)>=S.since)}
 
   function show(v){
     S.view=v;
-    ["loginView","inboxView","chatView","guideView"].forEach(function(id){el(id).classList.toggle("hide",id!==v+"View")});
-    el("hdr").classList.toggle("hide",v==="login");
-    el("backBtn").classList.toggle("hide",v==="inbox");
-    el("guideBtn").classList.toggle("on",v==="guide");
-    el("ownerBanner").classList.toggle("hide",!(S.role==="owner"&&v!=="login"));
-    if(v==="inbox")el("ttl").innerHTML="Texting for Mikey"+(S.name?"<small>Signed in as "+esc(S.name)+"</small>":"");
-    if(v==="guide")el("ttl").textContent="How to text for Mikey";
-    window.scrollTo(0,0);
+    ["loginView","listView","chatView","guideView"].forEach(function(id){el(id).classList.toggle("hide",id!==v+"View")});
+    el("ownerBanner").classList.toggle("hide",S.role!=="owner");
+    if(v!=="chat")window.scrollTo(0,0);
   }
 
   // ---- sign in ----
@@ -210,81 +284,114 @@
     api("/api/whoami").then(function(d){
       if(!d||!d.ok)return;
       S.role=d.role;S.name=d.name||"";
-      api("/api/helper/guide").then(function(g){if(g&&g.ok){S.guide=g;if(!S.name)S.name=g.name||"";renderChips();if(S.view==="guide")renderGuide();if(S.view==="inbox")show("inbox")}});
+      api("/api/helper/guide").then(function(g){
+        if(!g||!g.ok)return;
+        S.guide=g;S.since=+g.since||0;if(!S.name)S.name=g.name||"";
+        renderChips();renderWho();
+        if(S.view==="guide")renderGuide();if(S.view==="list")renderList();
+      });
       var c=new URLSearchParams(location.search).get("c");
-      if(c)openThread(c);else{show("inbox");loadInbox()}
+      if(c)openThread(c);else{show("list");renderWho();loadList()}
     });
   }
+  function renderWho(){el("whoami").textContent=S.role==="owner"?"Helper view":("Texting for Mikey"+(S.name?" · "+S.name:""))}
 
-  // ---- inbox ----
-  // Who's waiting comes first, OLDEST first: the person who's waited longest is
-  // the one about to text another detailer. Everyone else is just recent.
-  function loadInbox(){
-    return api("/api/threads").then(function(d){if(d&&d.ok){S.threads=d.threads||[];if(S.view==="inbox")renderInbox()}});
+  // ---- conversation list ----
+  // One list, newest first, every conversation, like the phone's own Messages.
+  // "Needs reply" is a filter you choose, not a wall of red at the top.
+  function loadList(){
+    return api("/api/threads").then(function(d){if(d&&d.ok){S.threads=d.threads||[];if(S.view==="list")renderList()}});
   }
   function matches(t){
     if(!S.q)return true;var q=S.q.toLowerCase();
-    return [t.name,t.phone,t.lastBody,t.city,t.vehicleLabel].join(" ").toLowerCase().indexOf(q)>=0;
+    return [t.name,t.phone,fmtPhone(t.phone),t.lastBody,t.city,t.vehicleLabel].join(" ").toLowerCase().indexOf(q)>=0;
   }
-  function rowHTML(t,waiting){
-    var sub=[t.vehicleLabel,t.city].filter(Boolean).join(" · ");
-    var tags=(t.dateRequested?'<span class="tag date">date asked for</span>':"")+(t.optedOut?'<span class="tag stop">do not text</span>':"");
-    var ts=waiting?(t.waitSince||t.lastTs):t.lastTs;
-    return '<button class="row'+(waiting?" wait":"")+'" data-p="'+esc(t.phone)+'">'+
-      '<span class="dot'+(t.unread?"":" off")+'"></span>'+
-      '<span class="mid"><div class="who">'+esc(who(t))+'</div>'+(sub?'<div class="sub">'+esc(sub)+'</div>':"")+
-      '<div class="last">'+(t.lastDir==="out"?"Sent: ":"")+esc(t.lastBody||"")+'</div>'+tags+'</span>'+
-      '<span class="age">'+(ts?(waiting?"waiting "+ago(ts):ago(ts)):"")+'</span></button>';
+  function rowHTML(t){
+    var n=needs(t);
+    var pills=(n?'<span class="pill need">Needs reply · '+esc(ago(t.lastTs))+'</span>':"")+
+      (t.dateRequested?'<span class="pill date">Date asked for</span>':"")+
+      (t.optedOut?'<span class="pill stop">Do not text</span>':"");
+    var last=(t.lastDir==="out"?"You: ":"")+(t.lastBody||"");
+    return '<button class="row'+(t.unread?" unread":"")+'" data-p="'+esc(t.phone)+'">'+
+      '<span class="dot'+(t.unread?"":" off")+'"></span>'+avHTML(t)+
+      '<span class="mid"><span class="l1"><span class="who">'+esc(who(t))+'</span><span class="when">'+esc(listWhen(t.lastTs))+'</span></span>'+
+      '<span class="last">'+esc(last)+'</span>'+(pills?'<span>'+pills+'</span>':"")+'</span></button>';
   }
-  function renderInbox(){
-    var live=S.threads.filter(function(t){return !t.archived&&matches(t)});
-    var wait=live.filter(function(t){return t.awaitingReply&&!t.optedOut}).sort(function(a,b){return(a.waitSince||a.lastTs||0)-(b.waitSince||b.lastTs||0)});
-    var rest=live.filter(function(t){return wait.indexOf(t)<0}).sort(function(a,b){return(b.lastTs||0)-(a.lastTs||0)}).slice(0,80);
-    var h='<div class="sec hot"><span>Waiting on a reply</span><span>'+wait.length+'</span></div>';
-    h+=wait.length?wait.map(function(t){return rowHTML(t,true)}).join(""):'<div class="empty">Nobody\'s waiting. Nice.</div>';
-    h+='<div class="sec"><span>Everyone else</span></div>'+rest.map(function(t){return rowHTML(t,false)}).join("");
-    el("inboxList").innerHTML=h;
-    Array.prototype.forEach.call(el("inboxList").querySelectorAll("[data-p]"),function(b){b.onclick=function(){openThread(b.getAttribute("data-p"))}});
+  function renderList(){
+    var all=S.threads.filter(matches).sort(function(a,b){return(b.lastTs||0)-(a.lastTs||0)});
+    var live=all.filter(function(t){return !t.archived}),arch=all.filter(function(t){return t.archived});
+    var needN=S.threads.filter(needs).length;
+    el("segNeed").textContent="Needs reply"+(needN?" ("+needN+")":"");
+    var shown=S.seg==="need"?live.filter(needs):live;
+    var h=shown.length?shown.map(rowHTML).join(""):'<div class="empty">'+(S.seg==="need"?"Nobody's waiting on a reply. Nice.":(S.q?"No matches.":"No conversations yet."))+'</div>';
+    if(S.seg==="all"&&arch.length){
+      h+='<button class="more" id="archBtn">'+(S.showArch?"Hide archived":"Show archived ("+arch.length+")")+'</button>';
+      if(S.showArch)h+=arch.map(rowHTML).join("");
+    }
+    el("list").innerHTML=h;
+    Array.prototype.forEach.call(el("list").querySelectorAll("[data-p]"),function(b){b.onclick=function(){openThread(b.getAttribute("data-p"))}});
+    if(el("archBtn"))el("archBtn").onclick=function(){S.showArch=!S.showArch;renderList()};
   }
-  el("q").oninput=function(){S.q=this.value.trim();renderInbox()};
+  el("q").oninput=function(){S.q=this.value.trim();renderList()};
+  el("segAll").onclick=function(){S.seg="all";el("segAll").classList.add("on");el("segNeed").classList.remove("on");renderList()};
+  el("segNeed").onclick=function(){S.seg="need";el("segNeed").classList.add("on");el("segAll").classList.remove("on");renderList()};
 
   // ---- conversation ----
   function openThread(phone){
-    if(S.phone!==phone){el("box").value="";resetPolish()}
+    if(S.phone!==phone){el("box").value="";resetPolish();sizeBox()}
     S.phone=phone;
     return api("/api/thread?phone="+encodeURIComponent(phone)).then(function(d){
       if(!d||!d.ok||!d.thread)return;
-      S.thread=d.thread;show("chat");el("ttl").innerHTML=esc(who(d.thread))+'<small>'+esc(fmtPhone(d.thread.phone))+'</small>';
-      renderChat(true);
+      S.thread=d.thread;show("chat");
+      el("chatAv").outerHTML=avHTML(d.thread,"chatAv");
+      el("chatName").textContent=who(d.thread);
+      renderChat(true);sizeBox();
+      // Reading it clears the unread dot on the list without a refetch.
+      S.threads.forEach(function(t){if(t.phone===phone)t.unread=0});
     });
   }
+  function nearBottom(){var s=el("scroller");return s.scrollHeight-s.scrollTop-s.clientHeight<120}
+  function toBottom(){var s=el("scroller");s.scrollTop=s.scrollHeight}
+  function senderOf(m){return m.by||(m.kind&&m.kind!=="manual"?"Automatic":"Mikey")}
   function renderChat(jump){
     var t=S.thread;if(!t)return;
+    var stick=jump||nearBottom();
     var info=[];
-    if(t.optedOut)info.push('<div class="line" style="color:var(--lav)"><b style="color:var(--lav)">Do not text.</b> They replied STOP.</div>');
-    if(t.appointmentAt)info.push('<div class="line"><b>Booked:</b> '+esc(when(t.appointmentAt))+'</div>');
-    if(t.dateRequest)info.push('<div class="line"><b>Asked Mikey for a date</b> '+esc(ago(t.dateRequest.at))+' ago'+(t.dateRequest.by?" ("+esc(t.dateRequest.by)+")":"")+'</div>');
+    if(t.optedOut)info.push('<div class="line warn"><b>Do not text.</b> They replied STOP.</div>');
+    if(t.appointmentAt)info.push('<div class="line"><b>Booked:</b> '+esc(fmt(t.appointmentAt,{weekday:"short",month:"numeric",day:"numeric",hour:"numeric",minute:"2-digit"}))+'</div>');
+    if(t.dateRequest)info.push('<div class="line"><b>Asked Mikey for a date</b> '+esc(ago(t.dateRequest.at))+' ago</div>');
     if(t.helperAsk)info.push('<div class="line"><b>Asked Mikey</b> '+esc(ago(t.helperAsk.at))+' ago: "'+esc(t.helperAsk.question)+'"</div>');
     if(t.garage&&t.garage.address)info.push('<div class="line"><b>Address:</b> '+esc(t.garage.address)+'</div>');
     if(t.notes)info.push('<div class="line">'+esc(t.notes)+'</div>');
-    el("chatInfo").innerHTML=info.length?'<div class="info">'+info.join("")+'</div>':"";
-    var h="",lastDay="";
-    (t.messages||[]).slice(-80).forEach(function(m){
-      var dk=dayKey(m.ts);if(dk!==lastDay){h+='<div class="day">'+esc(dk)+'</div>';lastDay=dk}
-      var by=m.dir==="out"?(m.by?"sent by "+m.by:(m.kind&&m.kind!=="manual"?"automatic":"Mikey")):"";
-      h+='<div class="b '+(m.dir==="out"?"out":"in")+'">'+esc(m.body||(m.media&&m.media.length?"[photo]":""))+
-        '<span class="t">'+esc(when(m.ts))+(by?" · "+esc(by):"")+(m.status==="failed"||m.error?" · not delivered":"")+'</span></div>';
-    });
+    info.push('<div class="line">'+esc(fmtPhone(t.phone))+'</div>');
+    el("chatInfo").innerHTML='<div class="info">'+info.join("")+'</div>';
+    // Bubbles group the way a phone groups them: a time header after an hour's
+    // gap, tight spacing inside a run from the same side, a tail on the last
+    // bubble of each run, and under Mikey's side, who sent that run.
+    var ms=(t.messages||[]).slice(-150),h="";
+    for(var i=0;i<ms.length;i++){
+      var m=ms[i],p=ms[i-1],n=ms[i+1],side=m.dir==="out"?"out":"in";
+      var newTime=!p||m.ts-p.ts>36e5;
+      if(newTime)h+='<div class="stamp">'+esc(stampText(m.ts))+'</div>';
+      var endRun=!n||n.dir!==m.dir||n.ts-m.ts>36e5||(side==="out"&&senderOf(n)!==senderOf(m));
+      var gap=!newTime&&p&&p.dir!==m.dir;
+      var failed=m.status==="failed"||m.status==="undelivered"||m.error;
+      var body=m.body||(m.media&&m.media.length?"📷 Photo":"");
+      h+='<div class="b '+side+(endRun?" tail":"")+(gap?" gap":"")+(failed?" fail":"")+'">'+esc(body)+'</div>';
+      if(side==="out"&&endRun)h+='<div class="cap out">'+(failed?"Not delivered · ":"")+(m.by?"Sent by "+esc(m.by):esc(senderOf(m)))+'</div>';
+    }
     el("msgs").innerHTML=h;
     // The AI's own draft for this exact message, if it wrote one. Offered, never
     // sent: it goes in the box, where Send still gives it a read.
-    var last=(t.messages||[])[t.messages.length-1],sg=t.suggested;
+    var last=ms[ms.length-1],sg=t.suggested;
     if(sg&&sg.text&&last&&last.dir==="in"&&sg.forTs===last.ts&&!t.optedOut){
-      el("sugg").innerHTML='<div class="sugg"><div class="h">Mikey\'s AI drafted a reply</div><div class="x">'+esc(sg.text)+'</div><button class="btn" id="useSugg">Put it in the box</button></div>';
+      el("sugg").innerHTML='<div class="sugg"><div class="h">Suggested reply</div><div class="x">'+esc(sg.text)+'</div><button id="useSugg">Use this</button></div>';
       el("useSugg").onclick=function(){setBox(sg.text,true)};
     }else el("sugg").innerHTML="";
-    el("sendBtn").disabled=!!t.optedOut;
-    if(jump)setTimeout(function(){window.scrollTo(0,document.body.scrollHeight)},30);
+    el("box").disabled=!!t.optedOut;
+    el("box").placeholder=t.optedOut?"They texted STOP":"Text Message";
+    updSend();
+    if(stick)setTimeout(toBottom,0);
   }
   function renderChips(){
     var q=(S.guide&&S.guide.quick)||[];
@@ -294,51 +401,70 @@
       setBox(cur?cur+" "+x.text:x.text,false);
     }});
   }
+  // Grows with what's typed, like a phone's box. Measured only while the chat is
+  // on screen: a hidden textarea measures 0, which used to leave it squashed.
+  function sizeBox(){
+    var b=el("box");if(!b.offsetParent)return;
+    b.style.height="auto";b.style.height=Math.max(34,Math.min(b.scrollHeight,window.innerHeight*.34))+"px";
+  }
+  function updSend(){el("sendBtn").disabled=!el("box").value.trim()||!!(S.thread&&S.thread.optedOut)}
   function setBox(text,trusted){
-    el("box").value=text;el("box").focus();
+    el("box").value=text;sizeBox();updSend();el("box").focus();
     // Starters are Mikey's own words, but anything combined with typing still
     // goes through polish. Only the AI's draft is already in his voice.
     if(trusted){P.ok=text;strip("","")}else{P.ok="";schedulePolish()}
   }
-  el("backBtn").onclick=function(){S.phone="";S.thread=null;show("inbox");loadInbox()};
-  el("guideBtn").onclick=function(){if(S.view==="guide"){if(S.thread)openThread(S.phone);else{show("inbox");renderInbox()}}else{show("guide");renderGuide()}};
+  el("backBtn").onclick=function(){S.phone="";S.thread=null;show("list");renderList();loadList()};
+  el("infoBtn").onclick=function(){el("scroller").scrollTop=0};
+
+  // ---- the + sheet ----
+  function sheet(on){el("sheet").classList.toggle("hide",!on)}
+  el("plusBtn").onclick=function(){sheet(true)};
+  el("sheetX").onclick=function(){sheet(false)};
+  el("sheet").onclick=function(e){if(e.target===el("sheet"))sheet(false)};
+
+  // ---- guide ----
+  function openGuide(){S.from=S.view;sheet(false);show("guide");renderGuide()}
+  el("guideBtn").onclick=openGuide;
+  el("sheetGuide").onclick=openGuide;
+  el("guideBack").onclick=function(){if(S.from==="chat"&&S.phone){show("chat");renderChat(true)}else{show("list");renderList()}};
 
   // ---- Auto Polish ----
   function strip(kind,html){var s=el("strip");s.className="strip"+(kind?" "+kind:"");s.innerHTML=html}
-  function resetPolish(){clearTimeout(P.timer);P.ok="";P.before="";P.failed=false;P.seq++;P.busy=false;strip("","")}
+  function resetPolish(){clearTimeout(P.timer);P.ok="";P.before="";P.seq++;P.busy=false;strip("","")}
   function worth(text){return text.length>=MIN&&text.split(/\s+/).length>=2}
   function schedulePolish(){
     clearTimeout(P.timer);
     var text=el("box").value.trim();
-    if(!text||text===P.ok){return}
+    if(!text){strip("","");return}
+    if(text===P.ok)return;
     if(!worth(text)){P.ok=text;strip("","");return}
-    strip("","Auto Polish will check it when you pause…");
+    strip("","Auto Polish checks it when you pause…");
     P.timer=setTimeout(function(){polishNow()},IDLE);
   }
   function polishNow(){
     var text=el("box").value.trim();
-    if(!text||text===P.ok||!S.phone)return Promise.resolve(true);
-    if(!worth(text)){P.ok=text;return Promise.resolve(true)}
+    if(!text||text===P.ok||!S.phone)return;
+    if(!worth(text)){P.ok=text;return}
     var my=++P.seq;P.busy=true;strip("pol","✨ Polishing…");
-    return post("/api/ai/draft",{phone:S.phone,text:text}).then(function(d){
+    post("/api/ai/draft",{phone:S.phone,text:text}).then(function(d){
       P.busy=false;
-      if(my!==P.seq)return false;
-      if(el("box").value.trim()!==text)return false;       // they kept typing; the next pause catches it
+      if(my!==P.seq)return;
+      if(el("box").value.trim()!==text)return;       // they kept typing; the next pause catches it
       if(!d||!d.ok||typeof d.draft!=="string"){
         // Polish is a help, not a gate. If it can't run, say so and let them send.
-        P.failed=true;P.ok=text;strip("warn","Auto Polish is down right now. Read it over once, then Send.");return false;
+        P.ok=text;strip("warn","Auto Polish is down right now. Read it over once, then send.");return;
       }
       var out=d.draft.trim()||text;
       var note=d.note?'<span>⚠ '+esc(d.note)+'</span>':"";
       if(out!==text){
-        P.before=text;el("box").value=out;P.ok=out;
-        strip("pol",'✨ Polished to sound like Mikey. Read it, then Send. <button id="undoP">Undo</button>'+note);
-        el("undoP").onclick=function(){el("box").value=P.before;P.ok=P.before;strip("","Put your words back. Send when ready.")};
+        P.before=text;el("box").value=out;sizeBox();P.ok=out;
+        strip("pol",'✨ Polished to sound like Mikey. Read it, then send. <button id="undoP">Undo</button>'+note);
+        el("undoP").onclick=function(){el("box").value=P.before;sizeBox();P.ok=P.before;strip("","Your words are back. Send when ready.")};
       }else{P.ok=text;strip(d.note?"warn":"pol",d.note?note:"✓ Sounds like Mikey.")}
-      return false;
-    }).catch(function(){P.busy=false;P.failed=true;P.ok=text;strip("warn","Auto Polish couldn't connect. Read it over once, then Send.");return false});
+    }).catch(function(){P.busy=false;P.ok=text;strip("warn","Auto Polish couldn't connect. Read it over once, then send.")});
   }
-  el("box").oninput=schedulePolish;
+  el("box").oninput=function(){sizeBox();updSend();schedulePolish()};
 
   // Send: if the box isn't what polish last saw, polish first and stop, so the
   // helper reads the version that will actually go out. The second tap sends it.
@@ -348,15 +474,15 @@
     if(text!==P.ok){polishNow();return}
     var b=el("sendBtn");b.disabled=true;
     post("/api/send",{phone:S.phone,body:text}).then(function(d){
-      b.disabled=false;
-      if(d&&d.ok){el("box").value="";resetPolish();if(d.thread){S.thread=d.thread;renderChat(true)}toast("Sent");return}
+      if(d&&d.ok){el("box").value="";sizeBox();resetPolish();if(d.thread){S.thread=d.thread;renderChat(true)}updSend();return}
+      updSend();
       toast(d&&d.error==="recipient_opted_out"?"They texted STOP. Don't text them.":"Didn't send. Try again.");
-    }).catch(function(){b.disabled=false;toast("No connection. Didn't send.")});
+    }).catch(function(){updSend();toast("No connection. Didn't send.")});
   };
 
   // ---- asking Mikey ----
   el("askDate").onclick=function(){
-    if(!S.phone)return;
+    sheet(false);if(!S.phone)return;
     var note=prompt("Anything Mikey should know? (which days work for them, how many cars, what they want done)","");
     if(note===null)return;
     post("/api/request-date",{phone:S.phone,note:note}).then(function(d){
@@ -364,7 +490,7 @@
     });
   };
   el("askQ").onclick=function(){
-    if(!S.phone)return;
+    sheet(false);if(!S.phone)return;
     var q=prompt("What do you need Mikey to decide?","");
     if(q===null||!q.trim())return;
     post("/api/helper/ask",{phone:S.phone,question:q.trim()}).then(function(d){
@@ -375,7 +501,7 @@
   // ---- guide ----
   function money(n){return n==null||n===""?"":"$"+n}
   function renderGuide(){
-    var g=S.guide;if(!g){el("guideView").innerHTML='<div class="empty">Loading…</div>';return}
+    var g=S.guide;if(!g){el("guideBody").innerHTML='<div class="empty">Loading…</div>';return}
     var h="";
     if(g.notes)h+='<div class="notes"><b>From Mikey</b>'+esc(g.notes)+'</div>';
     (g.guide||[]).forEach(function(s,i){
@@ -389,21 +515,18 @@
       }
     });
     h+='<h2>Tap-to-use replies</h2>'+(g.quick||[]).map(function(x){return'<div class="q"><b>'+esc(x.label)+'</b>'+esc(x.text)+'</div>'}).join("");
-    el("guideView").innerHTML=h;
+    el("guideBody").innerHTML=h;
   }
 
   // ---- keep it live ----
-  // The inbox every 20s, an open conversation every 15s, but never while a
-  // reply is being written: a re-render mid-thought moves the page under them.
+  // The list every 15s, an open conversation every 15s, but never while a reply
+  // is being written: a re-render mid-thought moves the page under them.
   setInterval(function(){
     if(document.hidden||!S.role)return;
-    if(S.view==="inbox")loadInbox();
+    if(S.view==="list")loadList();
     else if(S.view==="chat"&&S.phone&&!el("box").value.trim()&&!P.busy){
       api("/api/thread?phone="+encodeURIComponent(S.phone)).then(function(d){
-        if(d&&d.ok&&d.thread&&S.view==="chat"&&d.thread.phone===S.phone){
-          var grew=(d.thread.messages||[]).length!==((S.thread&&S.thread.messages)||[]).length;
-          S.thread=d.thread;renderChat(grew);
-        }
+        if(d&&d.ok&&d.thread&&S.view==="chat"&&d.thread.phone===S.phone){S.thread=d.thread;renderChat(false)}
       });
     }
   },15000);

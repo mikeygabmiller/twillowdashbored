@@ -1,4 +1,5 @@
-// The helper page in a real browser: the inbox puts the longest wait on top,
+// The helper page in a real browser: one conversation list like a phone's,
+// "needs reply" counted from the helper's start line,
 // every reply gets an Auto Polish read before it can go out, and Undo is a real
 // way back. Plus the one hop in Mikey's own app: the helper's PIN on his
 // sign-in screen lands on the helper page, not in his dashboard.
@@ -26,7 +27,7 @@ const thread = {
   suggested: { text: 'I might have an opening Tuesday, what part of town are you in?', forTs: now - 9 * 3600000 },
 };
 const guide = {
-  ok: true, name: 'Jess', notes: 'Booked solid Thursday.',
+  ok: true, name: 'Jess', notes: 'Booked solid Thursday.', since: now - 2 * 3600000,
   guide: [{ title: 'Your job', points: ['Answer within 15 minutes.'] }, { title: 'How a booking goes', points: ['1. Year, make and model.'] }],
   quick: [{ label: 'Ask for the car', text: 'Could you send over the year, make, and model of the car?' }],
   prices: [{ name: 'Full Detail', price: { sedan: 299, suv: 339, truck: 379 } }], addons: [{ name: 'Pet hair removal', price: 30 }],
@@ -69,21 +70,36 @@ await page.fill('#pinIn', '0000'); await page.click('#pinGo');
 await page.waitForFunction(() => document.getElementById('pinErr').textContent.length > 0);
 ok(/Wrong PIN/.test(await page.textContent('#pinErr')), 'a wrong PIN says so');
 await page.fill('#pinIn', '5150'); await page.click('#pinGo');
-await page.waitForSelector('#inboxView:not(.hide) .row');
+await page.waitForSelector('#listView:not(.hide) .row');
 
-console.log('\nInbox');
-const names = await page.$$eval('#inboxList .row .who', (n) => n.map((x) => x.textContent));
-ok(names[0] === 'Oldest Waiter' && names[1] === 'Recent Waiter', 'longest wait is first, then the next');
-ok(!names.includes('Archived Person'), 'archived conversations are hidden');
-const waitingNames = await page.$$eval('#inboxList .row.wait .who', (n) => n.map((x) => x.textContent));
-ok(!waitingNames.includes('Said Stop'), 'someone who said STOP is not in "waiting"');
-ok(/waiting 9h/.test(await page.textContent('#inboxList .row.wait')), 'wait time shown');
-ok(/Signed in as Jess/.test(await page.textContent('#ttl')), 'header names the helper');
+console.log('\nOne list, like Messages');
+const names = await page.$$eval('#list .row .who', (n) => n.map((x) => x.textContent));
+ok(names.join('|') === 'Said Stop|Recent Waiter|Done Deal|Oldest Waiter', 'every conversation, newest first: ' + names.join('|'));
+ok(!names.includes('Archived Person'), 'archived ones are tucked away at the bottom');
+ok(/Texting for Mikey · Jess/.test(await page.textContent('#whoami')), 'names the helper');
+ok(await page.$$eval('#list .row .av', (n) => n.length) === 4, 'each row has a contact circle');
+
+console.log('\n"Needs reply" starts from the helper\'s start line');
+const pills = await page.$$eval('#list .row', (rows) => rows.map((r) => [r.querySelector('.who').textContent, !!r.querySelector('.pill.need')]));
+const need = Object.fromEntries(pills);
+ok(need['Recent Waiter'] === true, 'a text after the start line needs a reply');
+ok(need['Oldest Waiter'] === false, 'the older backlog is cleared for the helper');
+ok(need['Said Stop'] === false, 'someone who said STOP never needs a reply');
+ok(/Needs reply \(1\)/.test(await page.textContent('#segNeed')), 'the filter counts one');
+await page.click('#segNeed');
+const needNames = await page.$$eval('#list .row .who', (n) => n.map((x) => x.textContent));
+ok(needNames.join('|') === 'Recent Waiter', '"Needs reply" shows just that one');
+await page.click('#segAll');
+await page.click('#archBtn');
+ok((await page.$$eval('#list .row .who', (n) => n.map((x) => x.textContent))).includes('Archived Person'), 'archived conversations can still be scrolled to');
+await page.click('#archBtn');
 
 console.log('\nConversation, quick reply, suggestion');
-await page.click('#inboxList .row.wait');
+await page.click('#list .row[data-p="+14255550002"]');
 await page.waitForSelector('#chatView:not(.hide) .b.in');
+ok((await page.textContent('#chatName')) === 'Oldest Waiter', 'chat header names them');
 ok(/2019 RAV4/.test(await page.textContent('#chatInfo')), 'quote notes shown');
+ok(await page.isDisabled('#sendBtn'), 'send is grey while the box is empty');
 ok(await page.isVisible('#useSugg'), 'the AI\'s draft is offered');
 await page.click('#useSugg');
 ok((await page.inputValue('#box')).startsWith('I might have an opening Tuesday'), 'using the draft fills the box');
@@ -91,7 +107,8 @@ ok(polishes.length === 0, 'the AI draft is already in his voice, so no polish ca
 await page.click('#sendBtn');
 await page.waitForFunction(() => document.getElementById('box').value === '');
 ok(sends.length === 1 && sends[0].startsWith('I might have an opening'), 'the draft sends on one tap');
-ok(/sent by Jess/.test(await page.textContent('#msgs')), 'the sent bubble says "sent by Jess"');
+ok(/Sent by Jess/.test(await page.textContent('#msgs')), 'under the bubble: "Sent by Jess"');
+ok(await page.$$eval('#msgs .b.out', (n) => n.length) === 1 && await page.$$eval('#msgs .b.in', (n) => n.length) === 1, 'their text on the left, the reply on the right');
 
 console.log('\nAuto Polish');
 await page.fill('#box', '');
@@ -132,12 +149,16 @@ console.log('\nQuick replies and guide');
 await page.fill('#box', '');
 await page.click('.chip');
 ok(/year, make, and model/.test(await page.inputValue('#box')), 'a quick reply lands in the box, not out the door');
-await page.click('#guideBtn');
+await page.click('#plusBtn');
+ok(await page.isVisible('#askDate') && await page.isVisible('#askQ'), 'the + button offers Ask Mikey for a date / Ask Mikey');
+await page.click('#sheetGuide');
 await page.waitForSelector('#guideView:not(.hide) table');
 const g = await page.textContent('#guideView');
 ok(/Booked solid Thursday/.test(g), 'Mikey\'s notes are on top');
 ok(/\$299/.test(g) && /\$379/.test(g) && /Pet hair removal: \+\$30/.test(g), 'price list rendered');
 ok(/Ceramic coating: from \$500/.test(g), 'ceramic "from $500" fact');
+await page.click('#guideBack');
+ok(await page.isVisible('#chatView'), 'Back from the guide returns to the conversation');
 
 // ------------------------------------------------ Mikey's app: helper PIN hop
 console.log('\nHelper PIN on Mikey\'s sign-in screen');
