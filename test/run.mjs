@@ -41,7 +41,7 @@ const UI = [
   'detect.ui', 'pay.ui', 'nav.ui', 'search.ui', 'tabs.ui', 'snapshot.ui', 'place.ui',
   'newmsg.ui', 'peek.ui', 'polish.ui', 'journey.ui', 'scan.ui', 'aidiet.ui', 'autoai.ui', 'use.ui', 'layout.ui', 'stale.ui',
   'keyboard.ui', 'assist.ui', 'calls.ui', 'adsource.ui', 'askme.ui', 'photo.ui',
-  'expand.ui', 'winddown.ui', 'homeloop.ui', 'rain.ui', 'sendnow.ui', 'qol.ui', 'qol2.ui', 'name.ui', 'five.ui', 'ready.ui', 'opener.ui', 'preview.ui', 'say.ui', 'aikey.ui', 'react.ui', 'promise.ui', 'referral.ui', 'links.ui', 'helper.ui', 'afterpage.ui',
+  'expand.ui', 'winddown.ui', 'homeloop.ui', 'rain.ui', 'sendnow.ui', 'qol.ui', 'qol2.ui', 'name.ui', 'five.ui', 'ready.ui', 'opener.ui', 'preview.ui', 'say.ui', 'aikey.ui', 'react.ui', 'promise.ui', 'referral.ui', 'links.ui', 'helper.ui', 'afterpage.ui', 'ratepage.ui',
 ].map((n) => `${n}.test.js`);
 
 const argv = process.argv.slice(2);

@@ -2940,6 +2940,21 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .aa-calls{display:block;font-size:11px;margin-top:5px;color:var(--muted);font-variant-numeric:tabular-nums}
   .aa-row .sw{flex:none;margin-top:2px}
   .aa-foot{font-size:12px;line-height:1.55;color:var(--muted2);margin:14px 2px 4px}
+  .rt-warn{padding:12px 14px;border-radius:14px;margin-bottom:12px;font-size:12.5px;line-height:1.5;
+    background:color-mix(in srgb,#f59e0b 13%,var(--panel));border:1px solid color-mix(in srgb,#f59e0b 45%,var(--line));color:var(--text)}
+  .rt-warn b{font-weight:700}
+  .rt-btns{display:flex;gap:8px;margin:12px 0 4px}
+  .rt-btns .btn{flex:1;text-align:center;text-decoration:none;justify-content:center}
+  .rt-tally{display:flex;flex-wrap:wrap;gap:8px 14px;font-size:13px;color:var(--muted2);padding:4px 2px}
+  .rt-tally b{color:var(--text);font-size:15px}
+  .rt-fb{padding:12px 14px;border:1px solid var(--line);border-radius:14px;background:var(--panel);margin-bottom:8px}
+  .rt-fh{display:flex;align-items:center;gap:8px;font-size:13.5px}
+  .rt-st{color:#fbbc04;letter-spacing:1px}.rt-st i{font-style:normal;color:var(--line2)}
+  .rt-test{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;padding:2px 7px;border-radius:99px;background:var(--line);color:var(--muted2)}
+  .rt-when{margin-left:auto;font-size:12px;color:var(--muted2)}
+  .rt-tx{font-size:14px;line-height:1.5;margin-top:6px;white-space:pre-wrap}
+  .rt-back{font-size:12.5px;color:var(--muted2);margin-top:6px}
+  .rt-back a{color:var(--accent-text)}
   .mr-sec{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--muted2);padding:16px 4px 8px}
   .mr-foot{text-align:center;color:var(--muted2);font-size:11.5px;line-height:1.7;padding:18px 0 6px}
   .jd{position:fixed;inset:0;z-index:82;background:var(--bg);display:none;flex-direction:column}
@@ -4556,7 +4571,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-25·after-photos";
+  var APP_BUILD="2026-09-25·star-page";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -6023,6 +6038,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     {id:"mhistory",t:"Money history",g:"Money",ic:"clock",k:"past months previous earlier entries",run:function(){openMoney("history")}},
     {id:"owed",t:"Owed to you",g:"Money",ic:"alert",k:"unpaid outstanding debt chase overdue",run:function(){openMoney()}},
     // — insight
+    {id:"rate",t:"Star page (idea)",g:"Insights",ic:"star",k:"review reviews stars rating google gate gating private feedback unhappy",run:function(){openMore("rate")}},
     {id:"wom",t:"Word of mouth",g:"Insights",ic:"users",k:"referral referrals referred who sent them friend neighbor recommended told thank you",run:function(){refSheet()}},
     {id:"insights",t:"Insights — all reports",g:"Insights",ic:"bar-chart",k:"stats numbers reports index everything analytics",run:function(){openAnalytics("index")}},
     {id:"analytics",t:"Business overview",g:"Insights",ic:"activity",k:"stats numbers overview business kpis",run:function(){openAnalytics("overview")}},
@@ -13468,7 +13484,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       // Nine reports behind one door. It lost its nav pill on the evidence and
       // gained an index in exchange, so this row is now the main way in.
       {t:"Insights — nine reports",ic:"bar-chart",go:function(){closeMore();openAnalytics("index")}},
-      {t:"Word of mouth",ic:"users",go:function(){closeMore();refSheet()}}
+      {t:"Word of mouth",ic:"users",go:function(){closeMore();refSheet()}},
+      {t:"Star page (idea)",ic:"star",into:"rate"}
     ]},
     {g:"Day tools",rows:[
       // These three were only ever reachable as Home widgets, which meant
@@ -13495,7 +13512,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     playbook:["Business playbook","What the AI knows about your business"],
     daytool:["Day tools","Today's list, promises and the weather"],
     index:["Everything, A–Z","Every screen in this app, grouped"],
-    autoai:["AI that runs by itself","The only AI here that can spend without you"]};
+    autoai:["AI that runs by itself","The only AI here that can spend without you"],
+    rate:["Star page (idea)","Five stars to Google, the rest to you"]};
   // Park the JS-filled panels back in the holding div before wiping the body,
   // so re-rendering never destroys them.
   function mrStash(){
@@ -13533,6 +13551,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(MORE.view==="index")return mrIndex(b);
     if(MORE.view==="autoai")return mrAutoAi(b);
     if(MORE.view==="daytool")return mrDayTool(b);
+    if(MORE.view==="rate")return mrRate(b);
     if(MORE.view==="playbook"){b.appendChild(el("playbookPanel"));return}
     // Your own most-recent jumps, above the fixed menu. The list already exists
     // — it is what the empty search box offers — and putting it here means the
@@ -13674,6 +13693,80 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
           autoAiBadge();
         }).catch(function(){toast("Network error",{bad:true})});
       };
+    });
+    b.appendChild(w);
+  }
+
+  // ---- Star page (idea) -----------------------------------------------------
+  // /rate: five stars go to Google, one to four get a private note to him. He
+  // asked for it to see the idea, knowing Google calls it review gating and
+  // bans it, so this screen says that first, keeps the page off until he flips
+  // it, and offers the version closer to the rules (open) next to the one he
+  // asked for (gate). Preview never counts and never alerts: see ratePage.
+  var RATE={d:null,at:0,loading:false};
+  // The render calls this, and a load re-renders, so it has to be a no-op for a
+  // copy that's fresh or it would fetch in a loop for as long as the screen is up.
+  function rateLoad(){
+    if(RATE.loading||(RATE.d&&Date.now()-RATE.at<20000))return;RATE.loading=true;
+    api("/api/rate").then(function(d){RATE.loading=false;RATE.at=Date.now();if(d&&d.ok){RATE.d=d;if(MORE.view==="rate")mrRender()}})
+      .catch(function(){RATE.loading=false});
+  }
+  function rateSave(patch,msg){
+    vibrate(6);
+    // Painted from the answer, same as the AI switches: a save that didn't land
+    // must not leave the switch claiming the page is live.
+    saveConfig({ratePage:patch}).then(function(d){
+      if(!d||!d.ok){toast("Couldn't save that",{bad:true});return}
+      Object.assign(RATE.d,patch);toast(msg);if(MORE.view==="rate")mrRender();
+    }).catch(function(){toast("Network error",{bad:true})});
+  }
+  function mrRate(b){
+    var d=RATE.d;
+    if(!d){rateLoad();b.innerHTML='<div class="aa-intro"><b>Loading…</b></div>';return}
+    rateLoad();
+    var w=document.createElement("div");
+    var t=d.tally||{},taps=0;[1,2,3,4,5].forEach(function(n){taps+=t[n]||0});
+    var h='<div class="aa-intro"><b>Five stars go to your Google review page. One to four get a private note that comes to you.</b>'+
+      '<span>A Google-style row of stars on its own link, <b>'+esc(d.url)+'</b>. Nothing in the app links to it or texts it.</span></div>'+
+      '<div class="rt-warn"><b>Google doesn\u2019t allow this.</b> It\u2019s called review gating: their rules say don\u2019t selectively ask happy customers for reviews. '+
+      'A listing caught doing it can lose reviews or get suspended, and with 40 reviews that\u2019s the whole listing at risk. '+
+      '<b>Open</b> mode is closer to the rules: unhappy customers still see your private note first, but Google stays one tap away for them too.</div>'+
+      '<div class="aa-row'+(d.on?" on":"")+'" data-rt="on"><span class="aa-ic">'+ic("star",19)+'</span>'+
+        '<span class="aa-txt"><b>Page is '+(d.on?"on":"off")+'</b><span class="aa-what">'+
+        (d.on?"Anyone with the link can use it. Their taps are counted and a private note emails you."
+             :"The link is a dead page to anyone who opens it. Only your preview works.")+'</span></span>'+
+        '<span class="sw'+(d.on?" on":"")+'"></span></div>'+
+      '<div class="mr-sec">What one to four stars see</div>'+
+      '<div class="aa-row'+(d.mode==="gate"?" on":"")+'" data-rt-mode="gate"><span class="aa-ic">'+ic("lock",19)+'</span>'+
+        '<span class="aa-txt"><b>Gate</b><span class="aa-what">Only the private note. Google never comes up for them. The version you asked for, and the one against the rules.</span></span></div>'+
+      '<div class="aa-row'+(d.mode==="open"?" on":"")+'" data-rt-mode="open"><span class="aa-ic">'+ic("users",19)+'</span>'+
+        '<span class="aa-txt"><b>Open</b><span class="aa-what">The private note first, with \u201cLeave a Google review\u201d right under it. Nobody is kept off Google.</span></span></div>'+
+      '<div class="rt-btns"><a class="btn" target="_blank" rel="noopener" href="/rate?preview=1&mode=gate">Try gate</a>'+
+        '<a class="btn" target="_blank" rel="noopener" href="/rate?preview=1&mode=open">Try open</a></div>'+
+      (d.reviewUrl?"":'<p class="aa-foot">No Google review link is saved yet, so five stars has nowhere to go. Set it in Settings.</p>')+
+      '<div class="mr-sec">What it\u2019s done</div>'+
+      '<div class="rt-tally">'+(taps?[5,4,3,2,1].map(function(n){return '<span><b>'+(t[n]||0)+'</b> '+n+'\u2605</span>'}).join("")+
+        '<span><b>'+(d.google||0)+'</b> sent to Google</span>':'<span>No real taps yet. Previews aren\u2019t counted.</span>')+'</div>'+
+      '<div class="mr-sec">Private notes</div>';
+    var fb=d.fb||[];
+    if(!fb.length)h+='<p class="aa-foot">None yet. Send one from a preview to see where it lands.</p>';
+    fb.forEach(function(f){
+      h+='<div class="rt-fb"><div class="rt-fh"><span class="rt-st">'+"\u2605\u2605\u2605\u2605\u2605".slice(0,f.stars)+'<i>'+"\u2605\u2605\u2605\u2605\u2605".slice(f.stars)+'</i></span>'+
+        '<b>'+esc(f.name||f.phone||"No name")+'</b>'+(f.test?'<span class="rt-test">test</span>':'')+
+        '<span class="rt-when">'+esc(new Date(f.at).toLocaleDateString([], {month:"short",day:"numeric"}))+'</span></div>'+
+        '<div class="rt-tx">'+esc(f.text)+'</div>'+
+        (f.back?'<div class="rt-back">'+(f.phone?'Wants a text back \u00b7 <a href="#" data-rt-phone="'+esc(f.phone)+'">'+esc(f.phone)+'</a>':'Wants a text back, left no number')+'</div>':'')+
+        '</div>';
+    });
+    w.innerHTML=h;
+    w.querySelector('[data-rt="on"]').onclick=function(){
+      rateSave({on:!d.on},!d.on?"On \u2014 the link works for anyone now":"Off \u2014 the link is a dead page again");
+    };
+    Array.prototype.forEach.call(w.querySelectorAll("[data-rt-mode]"),function(n){
+      n.onclick=function(){var m=n.getAttribute("data-rt-mode");if(m!==d.mode)rateSave({mode:m},m==="open"?"Open \u2014 Google stays one tap away":"Gate \u2014 only five stars see Google")};
+    });
+    Array.prototype.forEach.call(w.querySelectorAll("[data-rt-phone]"),function(a){
+      a.onclick=function(e){e.preventDefault();closeMore();openThread(a.getAttribute("data-rt-phone"))};
     });
     b.appendChild(w);
   }
