@@ -123,10 +123,14 @@ check('and so does the practice-number guard',
   sendSms.indexOf('practice_number') < sendSms.indexOf('MediaUrl'), true);
 
 console.log('\n-- /i/ is public on purpose, and only /i/ is --');
+// The gate is the line that works out who's asking (owner, helper or nobody)
+// and turns nobody away. Found by that line, not by one spelling of it.
+const GATE = SRC.indexOf("await authRole(request)");
+check('the password gate is where this test thinks it is', GATE > 0 && SRC.indexOf("error: 'unauthorized' }, 401)", GATE) - GATE < 300, true);
 check('the route sits above the /api password gate',
-  SRC.indexOf("pathname.startsWith('/i/')") < SRC.indexOf("!(await isAuthed(request))"), true);
+  SRC.indexOf("pathname.startsWith('/i/')") < GATE, true);
 check('the upload sits below it',
-  SRC.indexOf("pathname === '/api/send-photo'") > SRC.indexOf("!(await isAuthed(request))"), true);
+  SRC.indexOf("pathname === '/api/send-photo'") > GATE, true);
 check('photos are not indexable', /X-Robots-Tag/.test(lift('servePhoto')), true);
 
 console.log('\n-- his own photo is not the customer\'s evidence --');

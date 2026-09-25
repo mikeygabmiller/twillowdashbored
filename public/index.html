@@ -4552,7 +4552,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-24·before-steps";
+  var APP_BUILD="2026-09-25·helper-page";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4851,13 +4851,15 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   }
 
   // ---- API ----
-  function api(path,opts){opts=opts||{};return fetch(path,opts).then(function(r){if(r.status===401){showLogin();return{ok:false,unauthorized:true}}return r.json().catch(function(){return{ok:false}})})}
+  function api(path,opts){opts=opts||{};return fetch(path,opts).then(function(r){if(r.status===401){showLogin();return{ok:false,unauthorized:true}}if(r.status===403){return r.json().catch(function(){return{ok:false}}).then(function(d){if(d&&d.error==="helper_not_allowed")location.replace("/helper.html");return d})}return r.json().catch(function(){return{ok:false}})})}
   function showLogin(msg){var o=el("loginOverlay");if(o.classList.contains("show")){if(msg)el("loginErr").textContent=msg;return}o.classList.add("show");if(msg)el("loginErr").textContent=msg;setTimeout(function(){try{if(el("passMode").style.display!=="none")el("loginPass").focus()}catch(e){}},60)}
   function hideLogin(){el("loginOverlay").classList.remove("show");el("loginErr").textContent=""}
   function submitLogin(value,wrongMsg){
     el("loginErr").textContent="";
     post("/api/login",{password:value}).then(function(d){
+      if(d&&d.ok&&d.role==="helper"){location.replace("/helper.html");return}
       if(d&&d.ok){pin="";if(el("loginPass"))el("loginPass").value="";hideLogin();refreshThreads();loadTemplates();checkHealth();startPoll();loadConfig();fetchInsights();loadMoney();showBuild();if(state.pendingC)openThread(state.pendingC)}
+      else if(d&&d.error==="locked"){el("loginErr").textContent="Too many wrong tries. Wait "+(d.minutes||15)+" min.";pin="";renderPinDots()}
       else{
         el("loginErr").textContent=wrongMsg||"Wrong PIN — try again";
         var box=el("loginBox");if(box){box.classList.remove("pin-shake");void box.offsetWidth;box.classList.add("pin-shake")}
@@ -8520,7 +8522,19 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   function renderTeam(){
     var wrap=el("teamPanel");if(!wrap)return;var c=state.config||{};
     var on=!!c.teamMode;var team=c.team||[];var me=currentMe();
-    var h='<div class="fu-row"><span class="lbl2">Team mode</span><span class="sw'+(on?" on":"")+'" id="cfgTeam"></span></div>'+
+    // The helper page comes first: it's the thing that actually hands texting to
+    // someone else. Team mode below is the older, everyone-in-the-full-app way.
+    var hOn=!!c.helperPinSet,hName=(c.helperName||"").trim()||"Helper";
+    var h='<div class="fu-col"><span class="lbl2">Helper page '+(hOn?'<span style="color:var(--green);font-weight:400">· on for '+esc(hName)+'</span>':'<span style="color:var(--muted2);font-weight:400">· off</span>')+'</span></div>'+
+      '<div class="hint">Give someone their own PIN and it opens a <b>simple texting page</b> instead of this app: the inbox, the guide, and a reply box with Auto Polish always on. It can\'t see money, settings or bookings. Everything they send is marked <b>sent by '+esc(hName)+'</b> in your threads, and their texts never train your voice. Change or clear the PIN and they\'re signed out everywhere.</div>'+
+      '<div class="fu-col" style="flex-direction:row;flex-wrap:wrap;gap:6px">'+
+        '<button class="btn" id="helperPin">'+(hOn?"Change PIN":"Set a helper PIN")+'</button>'+
+        '<button class="btn" id="helperName">Name</button>'+
+        '<button class="btn" id="helperNotes">Notes for them</button>'+
+        (hOn?'<button class="btn" id="helperOff">Turn off</button>':'')+
+        '<a class="btn" href="/helper.html" target="_blank" rel="noopener">See their page</a>'+
+      '</div>'+
+      '<div class="fu-row"><span class="lbl2">Team mode</span><span class="sw'+(on?" on":"")+'" id="cfgTeam"></span></div>'+
       '<div class="hint">Turn on when someone else is helping answer texts. Assign conversations, filter to "Mine", and every reply is signed with the sender\'s name. Turn off anytime to go back to solo.</div>';
     if(on){
       h+='<div class="team-you"><span class="lbl2">You are</span><div class="you-chips">';
@@ -8539,6 +8553,17 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       h+='</div><button class="btn ic-btn team-add" id="teamAdd" style="width:100%">'+ic("plus",15)+'<span>Add team member</span></button>';
     }
     wrap.innerHTML=h;
+    el("helperPin").onclick=function(){
+      var v=prompt("Helper PIN (4+ digits, different from yours). They type this on the sign-in screen:");
+      if(v===null)return;v=v.trim();if(!v)return;
+      saveConfig({helperPassword:v}).then(function(d){
+        if(d&&d.ok)toast("Helper PIN saved");
+        else toast(d&&d.error==="helper_pin_is_yours"?"That's your PIN. Pick a different one.":d&&d.error==="helper_pin_short"?"At least 4 characters":"Couldn't save that");
+      });
+    };
+    el("helperName").onclick=function(){var v=prompt("Their name (shows as \"sent by\" on their texts):",c.helperName||"");if(v!==null)saveConfig({helperName:v}).then(function(){toast("Saved")})};
+    el("helperNotes").onclick=function(){var v=prompt("Notes shown at the top of their guide (this week's schedule, anything new):",c.helperNotes||"");if(v!==null)saveConfig({helperNotes:v}).then(function(){toast("Saved")})};
+    if(el("helperOff"))el("helperOff").onclick=function(){if(confirm("Turn off the helper page? Their PIN stops working right away."))saveConfig({helperPassword:""}).then(function(){toast("Helper page off")})};
     el("cfgTeam").onclick=function(){saveConfig({teamMode:!on})};
     Array.prototype.forEach.call(wrap.querySelectorAll("[data-me]"),function(b){b.onclick=function(){
       var id=b.getAttribute("data-me");
