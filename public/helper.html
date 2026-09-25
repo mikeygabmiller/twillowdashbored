@@ -80,6 +80,42 @@
   .pill.stop{background:var(--card2);color:var(--muted)}
   .more{display:block;width:calc(100% - 32px);margin:14px 16px;padding:11px;border-radius:12px;background:var(--card);color:var(--lav);font-weight:600}
   .empty{color:var(--muted);text-align:center;padding:40px 20px}
+  .filters{display:flex;gap:6px;overflow-x:auto;margin-top:8px;padding-bottom:2px;scrollbar-width:none}
+  .filters::-webkit-scrollbar{display:none}
+  .fchip{flex:none;display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:99px;background:var(--card);border:1px solid var(--line);color:var(--muted);font-size:13px;white-space:nowrap}
+  .fchip.on{border-color:var(--lav);color:var(--lav);background:var(--lavbg)}
+  .fchip .n{opacity:.7}
+  .sw{display:inline-block;width:8px;height:8px;border-radius:50%;flex:none}
+  .stg{display:inline-block;font-size:11px;font-weight:700;padding:1px 8px;border-radius:6px;margin:4px 4px 0 0}
+  .lbl{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:1px 7px;border-radius:99px;margin:4px 4px 0 0;background:var(--card2);color:var(--txt)}
+  .pill.fol{background:rgba(76,159,254,.14);color:var(--blue)}
+  .pill.fol.due{background:rgba(245,165,36,.16);color:var(--amber)}
+  /* organize card in a chat */
+  .org{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:11px 13px;margin:0 0 10px;font-size:14px}
+  .org h4{margin:10px 0 6px;font-size:12px;font-weight:700;color:var(--faint);text-transform:uppercase;letter-spacing:.04em;display:flex;justify-content:space-between;align-items:center}
+  .org h4:first-child{margin-top:0}
+  .org h4 button{color:var(--lav);font-size:13px;text-transform:none;letter-spacing:0;font-weight:600}
+  .org .row2{display:flex;flex-wrap:wrap;gap:6px}
+  .sbtn{padding:6px 10px;border-radius:9px;background:var(--bg);border:1px solid var(--line2);font-size:13px;color:var(--muted)}
+  .sbtn.on{font-weight:700}
+  .lbtn{display:inline-flex;align-items:center;gap:5px;padding:5px 10px;border-radius:99px;background:var(--bg);border:1px dashed var(--line2);font-size:13px;color:var(--muted)}
+  .lbtn.on{border-style:solid;color:var(--txt);background:var(--card2)}
+  .chk{display:flex;flex-direction:column;gap:4px}
+  .chk button{display:flex;align-items:center;gap:9px;text-align:left;padding:4px 0;font-size:14px;color:var(--muted)}
+  .chk .bx{width:20px;height:20px;border-radius:6px;border:1.6px solid var(--line2);display:flex;align-items:center;justify-content:center;font-size:13px;flex:none}
+  .chk button.done{color:var(--txt)}
+  .chk button.done .bx{background:var(--green);border-color:var(--green);color:#06210f}
+  .chk small{color:var(--faint);margin-left:auto;font-size:11px}
+  .next{margin-top:6px;color:var(--lav);font-size:13px}
+  .fol-line{display:flex;align-items:center;gap:8px;color:var(--txt)}
+  .fol-line.due{color:var(--amber)}
+  .note{border-top:1px solid var(--line);padding:7px 26px 5px 0;white-space:pre-wrap;color:var(--txt);position:relative}
+  .note:first-of-type{border-top:0}
+  .note small{display:block;color:var(--faint);font-size:11px;margin-top:2px}
+  .note .del{position:absolute;right:0;top:6px;color:var(--faint);font-size:16px}
+  .addnote{display:flex;gap:6px;margin-top:6px}
+  .addnote input{flex:1;padding:8px 10px;border-radius:10px;border:1px solid var(--line2);background:var(--bg);color:var(--txt);font-size:15px}
+  .addnote button{padding:8px 12px;border-radius:10px;background:var(--lavbg);color:var(--lav);font-weight:700}
 
   /* ---- chat ---- */
   .chat{display:flex;flex-direction:column;height:100vh;height:100dvh}
@@ -205,7 +241,8 @@
     <h1 class="big">Messages</h1>
     <div class="whoami" id="whoami"></div>
     <input class="search" id="q" type="search" placeholder="Search">
-    <div class="seg"><button id="segAll" class="on">All</button><button id="segNeed">Needs reply</button></div>
+    <div class="seg"><button id="segAll" class="on">All</button><button id="segNeed">Needs reply</button><button id="segFol">Follow-ups</button></div>
+    <div class="filters" id="filters"></div>
   </div>
   <div class="banner hide" id="ownerBanner">This is what your helper sees. <a href="/">Back to your app</a></div>
   <div id="alertCard"></div>
@@ -220,6 +257,7 @@
   </div>
   <div class="scroller" id="scroller">
     <div id="chatInfo"></div>
+    <div id="org"></div>
     <div class="msgs" id="msgs"></div>
     <div id="answer"></div>
     <div id="sugg"></div>
@@ -255,6 +293,8 @@
       <button id="askDate">Ask Mikey for a date<small>They're ready to book. He picks the day and time.</small></button>
       <button id="askQ">Ask Mikey something<small>A price, a question, anything that's his call</small></button>
       <button id="doneBtn">No reply needed<small>Their last text doesn't need an answer ("thanks!", a thumbs up)</small></button>
+      <button id="folBtn">Remind me to follow up<small>It comes back to the top of your list, and your phone buzzes</small></button>
+      <button id="noteBtn">Add a note</button>
       <button id="editBtn">Save name, address or car</button>
       <button id="sheetGuide">Open the guide</button>
     </div>
@@ -267,7 +307,7 @@
 (function(){
   "use strict";
   var TZ="America/Los_Angeles";
-  var S={role:"",name:"",threads:[],phone:"",thread:null,guide:null,view:"",q:"",seg:"all",showArch:false,since:0,from:"list"};
+  var S={role:"",name:"",threads:[],phone:"",thread:null,guide:null,view:"",q:"",seg:"all",showArch:false,since:0,from:"list",stage:"",label:""};
   // Auto Polish state. `ok` is the exact text that has been through polish (or
   // that the helper deliberately kept with Undo). Send only goes out when the
   // box still matches it, which is how every text gets a voice check without a
@@ -323,6 +363,40 @@
   }
   function avHTML(t,id){return'<span class="av"'+(id?' id="'+id+'"':'')+' style="background:'+avColor(t.phone)+'">'+esc(initials(t))+'</span>'}
   function carOf(t){var v=t&&t.garage&&t.garage.vehicles&&t.garage.vehicles[0];return v?[v.year,v.make,v.model].filter(Boolean).join(" "):""}
+  // ---- stages and labels ----
+  // Their own pipeline, separate from Mikey's won/lost on purpose: his drive
+  // automatic texts, these never do. Unset, a stage is read off what's already
+  // true (a booked time, an open question to Mikey, a quote) so a new helper's
+  // list isn't a wall of "New".
+  var STAGES=[["new","New","#8b8b96"],["quoted","Quoted","#4c9ffe"],["waiting","Waiting on Mikey","#f5a524"],["booked","Booked","#2fd07a"],["done","Done","#c9b8ff"],["no","Not interested","#5c5c66"]];
+  function stageMeta(k){for(var i=0;i<STAGES.length;i++)if(STAGES[i][0]===k)return STAGES[i];return STAGES[0]}
+  function stageOf(t){
+    if(t.helperStage)return t.helperStage;
+    if(t.status==="won")return"done";
+    if(t.status==="lost")return"no";
+    if(t.appointmentAt&&t.appointmentAt>Date.now()-12*36e5)return"booked";
+    if(t.helperAskAt&&!t.helperAnsweredAt)return"waiting";
+    if(t.quoteAt||(t.tags||[]).indexOf("quoted")>=0||(t.quote&&t.quote.total))return"quoted";
+    return"new";
+  }
+  function stageHTML(k){var m=stageMeta(k);return'<span class="stg" style="background:'+m[2]+'22;color:'+m[2]+'">'+esc(m[1])+'</span>'}
+  var LCOL=["#c9b8ff","#4c9ffe","#2fd07a","#f5a524","#ff8fb1","#5eead4","#fca5a5","#a3e635","#fdba74","#93c5fd"];
+  // By position in the label set, so no two labels in the list share a color.
+  function labelColor(l){
+    var set=labelSet().map(function(x){return x.toLowerCase()}),i=set.indexOf(String(l).toLowerCase());
+    if(i<0){i=0;var s=String(l).toLowerCase();for(var j=0;j<s.length;j++)i=(i*31+s.charCodeAt(j))>>>0}
+    return LCOL[i%LCOL.length];
+  }
+  function labelSet(){return(S.guide&&S.guide.labels)||[]}
+  function labelsOn(t){var set=labelSet().map(function(x){return x.toLowerCase()});return(t.tags||[]).filter(function(x){return set.indexOf(String(x).toLowerCase())>=0})}
+  function lblHTML(l){return'<span class="lbl"><span class="sw" style="background:'+labelColor(l)+'"></span>'+esc(l)+'</span>'}
+  function folWhen(at){
+    var d=new Date(at),now=Date.now();
+    if(at<now&&ymd(at)!==ymd(now))return"overdue";
+    if(ymd(at)===ymd(now))return"today";
+    if(ymd(at)===ymd(now+864e5))return"tomorrow";
+    return fmt(at,{weekday:"short",month:"numeric",day:"numeric"});
+  }
   // "Needs reply" on this page means: waiting on an answer AND their last text
   // came in after the helper's start line. His older backlog stays his; a
   // customer who texts again after the line shows up like anyone else.
@@ -427,7 +501,9 @@
     var pills=(needs(t)?'<span class="pill need">Needs reply · '+esc(ago(t.lastTs))+'</span>':"")+
       (answerNew(t)?'<span class="pill ans">Mikey answered</span>':(t.helperAskAt&&!t.helperAnsweredAt?'<span class="pill date">Waiting on Mikey</span>':""))+
       (t.dateRequested&&!t.helperAskAt?'<span class="pill date">Date asked for</span>':"")+
-      (t.optedOut?'<span class="pill stop">Do not text</span>':"");
+      (t.optedOut?'<span class="pill stop">Do not text</span>':"")+
+      (t.helperFollowAt?'<span class="pill fol'+(/^(today|overdue)$/.test(folWhen(t.helperFollowAt))?" due":"")+'">Follow up '+esc(folWhen(t.helperFollowAt))+'</span>':"");
+    pills=stageHTML(stageOf(t))+labelsOn(t).map(lblHTML).join("")+pills;
     var last=(t.lastDir==="out"?"You: ":"")+(t.lastBody||"");
     return '<button class="row'+(t.unread?" unread":"")+'" data-p="'+esc(t.phone)+'">'+
       '<span class="dot'+(t.unread?"":" off")+'"></span>'+avHTML(t)+
@@ -439,9 +515,15 @@
     var live=all.filter(function(t){return !t.archived}),arch=all.filter(function(t){return t.archived});
     var needN=S.threads.filter(needs).length;
     el("segNeed").textContent="Needs reply"+(needN?" ("+needN+")":"");
+    renderFilters(live);
     var shown=S.seg==="need"?live.filter(needs):live;
-    var h=shown.length?shown.map(rowHTML).join(""):'<div class="empty">'+(S.seg==="need"?"Nobody's waiting on a reply. Nice.":(S.q?"No matches.":"No conversations yet."))+'</div>';
-    if(S.seg==="all"&&arch.length){
+    if(S.seg==="fol")shown=live.filter(function(t){return t.helperFollowAt}).sort(function(a,b){return a.helperFollowAt-b.helperFollowAt});
+    if(S.stage)shown=shown.filter(function(t){return stageOf(t)===S.stage});
+    if(S.label)shown=shown.filter(function(t){return labelsOn(t).some(function(x){return x.toLowerCase()===S.label.toLowerCase()})});
+    var h=shown.length?shown.map(rowHTML).join(""):'<div class="empty">'+(S.seg==="need"?"Nobody's waiting on a reply. Nice.":S.seg==="fol"?"No follow-ups set. Use + in a chat to add one.":(S.q||S.stage||S.label?"Nothing matches.":"No conversations yet."))+'</div>';
+    var folN=live.filter(function(t){return t.helperFollowAt&&t.helperFollowAt<=Date.now()}).length;
+    el("segFol").textContent="Follow-ups"+(folN?" ("+folN+")":"");
+    if(S.seg==="all"&&!S.stage&&!S.label&&arch.length){
       h+='<button class="more" id="archBtn">'+(S.showArch?"Hide archived":"Show archived ("+arch.length+")")+'</button>';
       if(S.showArch)h+=arch.map(rowHTML).join("");
     }
@@ -450,8 +532,24 @@
     if(el("archBtn"))el("archBtn").onclick=function(){S.showArch=!S.showArch;renderList()};
   }
   el("q").oninput=function(){S.q=this.value.trim();renderList()};
-  el("segAll").onclick=function(){S.seg="all";el("segAll").classList.add("on");el("segNeed").classList.remove("on");renderList()};
-  el("segNeed").onclick=function(){S.seg="need";el("segNeed").classList.add("on");el("segAll").classList.remove("on");renderList()};
+  function setSeg(k){S.seg=k;[["all","segAll"],["need","segNeed"],["fol","segFol"]].forEach(function(x){el(x[1]).classList.toggle("on",x[0]===k)});renderList()}
+  el("segAll").onclick=function(){setSeg("all")};
+  el("segNeed").onclick=function(){setSeg("need")};
+  el("segFol").onclick=function(){setSeg("fol")};
+  // One row of filter chips: every stage with its count, then every label.
+  // Tap one to narrow the list, tap it again to clear it.
+  function renderFilters(live){
+    var h=STAGES.map(function(m){
+      var n=live.filter(function(t){return stageOf(t)===m[0]}).length;
+      return'<button class="fchip'+(S.stage===m[0]?" on":"")+'" data-st="'+m[0]+'"><span class="sw" style="background:'+m[2]+'"></span>'+esc(m[1])+' <span class="n">'+n+'</span></button>';
+    }).join("")+labelSet().map(function(l){
+      var n=live.filter(function(t){return labelsOn(t).some(function(x){return x.toLowerCase()===l.toLowerCase()})}).length;
+      return'<button class="fchip'+(S.label===l?" on":"")+'" data-lb="'+esc(l)+'"><span class="sw" style="background:'+labelColor(l)+'"></span>'+esc(l)+' <span class="n">'+n+'</span></button>';
+    }).join("");
+    el("filters").innerHTML=h;
+    Array.prototype.forEach.call(el("filters").querySelectorAll("[data-st]"),function(b){b.onclick=function(){var k=b.getAttribute("data-st");S.stage=S.stage===k?"":k;renderList()}});
+    Array.prototype.forEach.call(el("filters").querySelectorAll("[data-lb]"),function(b){b.onclick=function(){var k=b.getAttribute("data-lb");S.label=S.label===k?"":k;renderList()}});
+  }
 
   // ---- drafts ----
   // Leave a half-written reply to check something and it's still there when you
@@ -501,6 +599,7 @@
     info.push('<div class="line">'+esc(fmtPhone(t.phone))+'</div>');
     el("chatInfo").innerHTML='<div class="info"><div class="ih"><span>Details</span><button id="infoEdit">Edit</button></div>'+info.join("")+'</div>';
     el("infoEdit").onclick=openContact;
+    renderOrg();
     // Bubbles group the way a phone groups them: a time header after an hour's
     // gap, tight spacing inside a run from the same side, a tail on the last
     // bubble of each run, and under Mikey's side, who sent that run. Photos and
@@ -544,6 +643,95 @@
     updSend();
     if(stick)setTimeout(toBottom,0);
   }
+  // ---- organize card ----
+  // Everything about keeping this customer straight, in one card at the top of
+  // the chat: where they are, what they're tagged, what's still missing before
+  // Mikey can book them, when to check back, and notes.
+  function checks(t){
+    var hc=t.helperChecks||{},ms=t.messages||[],notes=String(t.notes||"");
+    var auto={
+      car:!!(t.garage&&t.garage.vehicles&&t.garage.vehicles.length)||/Vehicle:/i.test(notes),
+      condition:ms.some(function(m){return m.dir==="in"&&m.media&&m.media.length})||/Condition:/i.test(notes),
+      price:!!(t.quote&&t.quote.total)||/Quote:\s*\$/i.test(notes)||ms.some(function(m){return m.dir==="out"&&/\$\s?\d{2,}/.test(m.body||"")}),
+      address:!!(t.garage&&t.garage.address),
+      days:!!(t.dateRequest||t.appointmentAt)
+    };
+    return[["car","Year, make and model"],["condition","Condition or a photo"],["price","Price given"],["address","Address"],["days","Days that work"]].map(function(x){
+      return{key:x[0],label:x[1],auto:auto[x[0]],on:auto[x[0]]||!!hc[x[0]]};
+    });
+  }
+  var NEXT={car:"ask for the year, make and model",condition:"ask for a photo or how it looks",price:"give the price (+ → Price calculator)",address:"ask for the address",days:"ask which days work, then Ask Mikey for a date"};
+  function renderOrg(){
+    var t=S.thread;if(!t){el("org").innerHTML="";return}
+    var st=stageOf(t),mine=labelsOn(t).map(function(x){return x.toLowerCase()});
+    var h='<div class="org"><h4>Stage'+(t.helperStage?"":'<button disabled style="color:var(--faint)">suggested</button>')+'</h4><div class="row2">'+
+      STAGES.map(function(m){return'<button class="sbtn'+(st===m[0]?" on":"")+'" data-stage="'+m[0]+'" style="'+(st===m[0]?"border-color:"+m[2]+";color:"+m[2]+";background:"+m[2]+"1a":"")+'">'+esc(m[1])+'</button>'}).join("")+'</div>';
+    h+='<h4>Labels <button id="newLbl">+ New label</button></h4><div class="row2">'+
+      labelSet().map(function(l){var on=mine.indexOf(l.toLowerCase())>=0;return'<button class="lbtn'+(on?" on":"")+'" data-lbl="'+esc(l)+'"><span class="sw" style="background:'+labelColor(l)+'"></span>'+esc(l)+'</button>'}).join("")+'</div>';
+    var cs=checks(t),done=cs.filter(function(c){return c.on}).length,miss=cs.filter(function(c){return!c.on})[0];
+    h+='<h4>Ready to book · '+done+' of 5</h4><div class="chk">'+cs.map(function(c){
+      return'<button class="'+(c.on?"done":"")+'" data-chk="'+c.key+'"'+(c.auto?' data-auto="1"':'')+'><span class="bx">'+(c.on?"✓":"")+'</span>'+esc(c.label)+(c.auto?'<small>from the chat</small>':'')+'</button>';
+    }).join("")+'</div>'+(miss?'<div class="next">Next: '+esc(NEXT[miss.key])+'</div>':'<div class="next" style="color:var(--green)">All set. Ask Mikey for a date.</div>');
+    var f=t.helperFollow;
+    h+='<h4>Follow-up <button id="folSet">'+(f?"Change":"+ Set")+'</button></h4>'+
+      (f?'<div class="fol-line'+(f.at<=Date.now()?" due":"")+'"><span>⏰ '+esc(fmt(f.at,{weekday:"short",month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}))+(f.note?" · "+esc(f.note):"")+'</span><button id="folClear" style="margin-left:auto;color:var(--faint)">Clear</button></div>'
+        :'<div style="color:var(--faint)">None set</div>');
+    var ns=t.helperNotes||[];
+    h+='<h4>Notes'+(ns.length?" · "+ns.length:"")+'</h4>'+ns.slice().reverse().map(function(n){
+      return'<div class="note">'+esc(n.text)+'<small>'+esc(n.by||"")+' · '+esc(fmt(n.at,{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}))+'</small><button class="del" data-del="'+esc(n.id)+'" aria-label="Delete note">&times;</button></div>';
+    }).join("")+'<div class="addnote"><input id="noteIn" placeholder="Gate code, who to ask for, anything to remember" maxlength="600"><button id="noteAdd">Add</button></div></div>';
+    el("org").innerHTML=h;
+    var q=function(sel,fn){Array.prototype.forEach.call(el("org").querySelectorAll(sel),fn)};
+    q("[data-stage]",function(b){b.onclick=function(){var k=b.getAttribute("data-stage");organize({stage:t.helperStage===k?"":k})}});
+    q("[data-lbl]",function(b){b.onclick=function(){var l=b.getAttribute("data-lbl");organize(mine.indexOf(l.toLowerCase())>=0?{removeLabel:l}:{addLabel:l})}});
+    q("[data-chk]",function(b){b.onclick=function(){if(b.getAttribute("data-auto")){toast("Ticked from the conversation");return}var k=b.getAttribute("data-chk");organize({check:{key:k,on:!(t.helperChecks&&t.helperChecks[k])}})}});
+    q("[data-del]",function(b){b.onclick=function(){if(confirm("Delete this note?"))organize({deleteNote:b.getAttribute("data-del")})}});
+    el("newLbl").onclick=function(){var v=prompt("New label (it'll be available on every conversation):","");if(v&&v.trim())organize({newLabel:v.trim()})};
+    el("folSet").onclick=openFollow;
+    if(el("folClear"))el("folClear").onclick=function(){organize({follow:null},"Follow-up cleared")};
+    el("noteAdd").onclick=function(){var v=el("noteIn").value.trim();if(v)organize({note:v},"Note saved")};
+    el("noteIn").onkeydown=function(e){if(e.key==="Enter"){e.preventDefault();el("noteAdd").click()}};
+  }
+  // One call for every organizing change. The server hands back the thread, and
+  // the list row is patched in place so the list is right when they go back.
+  function organize(patch,msg){
+    if(!S.phone)return;
+    var phone=S.phone;
+    return post("/api/helper/organize",Object.assign({phone:phone},patch)).then(function(d){
+      if(!d||!d.ok){toast(d&&d.error==="bad_label"?"That name is taken by the app":"Couldn't save that. Try again.");return}
+      if(d.labels&&S.guide)S.guide.labels=d.labels;
+      if(S.phone===phone&&d.thread){S.thread=d.thread;renderOrg()}
+      var t=d.thread;
+      S.threads.forEach(function(r){if(r.phone===phone){r.helperStage=t.helperStage||"";r.tags=t.tags||[];r.helperFollowAt=(t.helperFollow&&t.helperFollow.at)||0;r.helperNoteCount=(t.helperNotes||[]).length}});
+      if(msg)toast(msg);
+    });
+  }
+  function openFollow(){
+    sheet(false);if(!S.thread)return;
+    var d=new Date();
+    function at(days,h){var x=new Date(d.getFullYear(),d.getMonth(),d.getDate()+days,h,0,0);return x.getTime()}
+    var mon=(8-d.getDay())%7||7;
+    var opts=[["Later today",Math.max(Date.now()+2*36e5,at(0,16))],["Tomorrow 10am",at(1,10)],["In 3 days",at(3,10)],["Next Monday",at(mon,10)],["In a week",at(7,10)]];
+    var f=S.thread.helperFollow;
+    el("formBody").innerHTML='<div class="form"><h3>Remind me to follow up</h3>'+
+      '<label>What to check on</label><input id="folNote" value="'+esc((f&&f.note)||"")+'" placeholder="Checking with landlord about Friday" maxlength="200">'+
+      '<label>When</label><div class="opts">'+opts.map(function(o,i){return'<button class="opt" data-at="'+o[1]+'">'+esc(o[0])+'</button>'}).join("")+'</div>'+
+      '<label>Or pick a day and time</label><input id="folAt" type="datetime-local">'+
+      '<button class="save" id="folSave">Save reminder</button></div>';
+    form(true);
+    var pick=0;
+    Array.prototype.forEach.call(el("formBody").querySelectorAll("[data-at]"),function(b){b.onclick=function(){
+      pick=+b.getAttribute("data-at");Array.prototype.forEach.call(el("formBody").querySelectorAll("[data-at]"),function(x){x.classList.toggle("on",x===b)});el("folAt").value="";
+    }});
+    el("folSave").onclick=function(){
+      var v=el("folAt").value,when=v?new Date(v).getTime():pick;
+      if(!when){toast("Pick when");return}
+      form(false);organize({follow:{at:when,note:el("folNote").value}},"Reminder set for "+fmt(when,{weekday:"short",hour:"numeric",minute:"2-digit"}));
+    };
+  }
+  el("folBtn").onclick=openFollow;
+  el("noteBtn").onclick=function(){sheet(false);el("scroller").scrollTop=0;setTimeout(function(){if(el("noteIn"))el("noteIn").focus()},50)};
+
   function lightbox(src){
     var o=document.createElement("div");o.className="lightbox";o.innerHTML='<img alt="Photo" src="'+esc(src)+'">';
     o.onclick=function(){o.remove()};document.body.appendChild(o);
@@ -764,6 +952,7 @@
       '<li><b>+</b> next to the box: price calculator, Ask Mikey, No reply needed, save their details.</li>'+
       '<li><b>Ask Mikey</b>: his answer shows up in green inside that conversation, and the list shows "Mikey answered".</li>'+
       '<li><b>Schedule</b>: what\'s already booked for the next two weeks.</li>'+
+      '<li><b>Organize</b> (top of every chat): stage, labels, the ready-to-book checklist, a follow-up reminder, and notes. Stages and labels filter the list. None of it ever texts the customer.</li>'+
       '<li>Leave a reply half-written and it\'s still there when you come back.</li>'+
       '<li>Add it to your home screen and turn on alerts so your phone buzzes when a customer texts.</li></ul>';
     h+='<h2>Tap-to-use replies</h2>'+(g.quick||[]).map(function(x){return'<div class="q"><b>'+esc(x.label)+'</b>'+esc(x.text)+'</div>'}).join("");
@@ -776,7 +965,7 @@
   setInterval(function(){
     if(document.hidden||!S.role)return;
     if(S.view==="list")loadList();
-    else if(S.view==="chat"&&S.phone&&!el("box").value.trim()&&!P.busy){
+    else if(S.view==="chat"&&S.phone&&!el("box").value.trim()&&!P.busy&&!(el("noteIn")&&el("noteIn").value)&&el("formSheet").classList.contains("hide")){
       api("/api/thread?phone="+encodeURIComponent(S.phone)).then(function(d){
         if(d&&d.ok&&d.thread&&S.view==="chat"&&d.thread.phone===S.phone){S.thread=d.thread;renderChat(false);markSeen(S.phone)}
       });

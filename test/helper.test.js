@@ -227,6 +227,59 @@ console.log('\nAsk → Mikey answers → the helper sees it');
   ok(off.data.devices === 0, 'alerts can be turned off again');
 }
 
+console.log('\nOrganizing: stages, labels, notes, follow-ups, checklist');
+{
+  const O = '+14255550999';
+  await KV.put('thread:' + O, JSON.stringify({ phone: O, name: 'Org Olivia', status: 'active', tags: ['booking'], messages: [{ dir: 'in', body: 'hi, 2 cars', ts: Date.now() - 5000 }] }));
+  const org = (body) => call('POST', '/api/helper/organize', { cookie: helper.cookie, body: Object.assign({ phone: O }, body) });
+  const st = await org({ stage: 'done' });
+  ok(st.status === 200 && st.data.thread.helperStage === 'done', 'stage set');
+  ok(st.data.thread.status === 'active', 'Mikey\'s status (which fires review/win-back texts) is untouched');
+  ok(!st.data.thread.followup || !/won|lost/.test(JSON.stringify(st.data.thread.followup)), 'no won/lost follow-up was started');
+  ok((await org({ stage: 'won' })).status === 422, 'only the helper stages are accepted');
+  const lb = await org({ addLabel: 'pet hair' });
+  ok(lb.status === 200 && lb.data.thread.tags.includes('Pet hair'), 'a label is added in its proper spelling');
+  ok(lb.data.thread.tags.includes('booking'), 'the app\'s own tags are kept');
+  ok((await org({ removeLabel: 'booking' })).status === 422, 'the helper can\'t remove a system tag');
+  ok((await org({ addLabel: 'practice' })).status === 422, 'or add one');
+  ok((await org({ newLabel: 'Quoted' })).status === 422, 'or create a label with a system tag\'s name');
+  const nl = await org({ newLabel: 'Needs pickup' });
+  ok(nl.status === 200 && nl.data.labels.includes('Needs pickup') && nl.data.thread.tags.includes('Needs pickup'), 'a new label joins the set and goes on this customer');
+  const g = await call('GET', '/api/helper/guide', { cookie: helper.cookie });
+  ok(g.data.labels.includes('Needs pickup'), 'and is offered everywhere after');
+  const n1 = await org({ note: 'Gate code 5232' });
+  const note = n1.data.thread.helperNotes[0];
+  ok(note && note.text === 'Gate code 5232' && note.by === 'Jess' && note.at > 0, 'note saved, signed and timed');
+  ok((await org({ deleteNote: note.id })).data.thread.helperNotes.length === 0, 'note deleted');
+  const due = Date.now() - 60000;
+  const f = await org({ follow: { at: due, note: 'landlord ok?' } });
+  ok(f.status === 200 && f.data.thread.helperFollow.note === 'landlord ok?', 'follow-up set');
+  ok((await org({ follow: { at: Date.now() + 400 * 864e5 } })).status === 422, 'a follow-up a year+ out is refused');
+  await org({ follow: { at: due, note: 'landlord ok?' } });
+  const row = (await call('GET', '/api/threads', { cookie: helper.cookie })).data.threads.find((r) => r.phone === O);
+  ok(row.helperStage === 'done' && row.helperFollowAt === due && row.tags.includes('Pet hair'), 'the list row carries stage, follow-up and labels');
+  const ck = await org({ check: { key: 'days', on: true } });
+  ok(ck.data.thread.helperChecks.days === true, 'a checklist box ticks');
+  ok((await org({ check: { key: 'status', on: true } })).data.thread.helperChecks.status === undefined, 'only real checklist keys are stored');
+
+  // The reminder buzzes the helper once, and only the helper.
+  await call('POST', '/api/helper/push', { cookie: helper.cookie, body: { endpoint: 'https://push.example.test/fol' } });
+  const before = outbound.length;
+  await worker.scheduled({}, ENV, { waitUntil: (p) => p });
+  await new Promise((r) => setTimeout(r, 300));
+  const hits = outbound.slice(before).filter((o) => o.url === 'https://push.example.test/fol').length;
+  ok(hits === 1, 'a due follow-up buzzes the helper\'s phone (' + hits + ')');
+  const peek = await call('GET', '/api/push/peek', { cookie: helper.cookie });
+  ok(/Follow up: Org Olivia/.test(peek.data.title) && /landlord/.test(peek.data.body), 'the alert names who and why');
+  const before2 = outbound.length;
+  await worker.scheduled({}, ENV, { waitUntil: (p) => p });
+  await new Promise((r) => setTimeout(r, 300));
+  ok(!outbound.slice(before2).some((o) => o.url === 'https://push.example.test/fol'), 'and only once');
+  ok(!outbound.slice(before).some((o) => /api\.twilio\.com.*Messages\.json/.test(o.url) && o.body.includes(encodeURIComponent(O))), 'nothing texted to the customer');
+  await call('POST', '/api/helper/push', { cookie: helper.cookie, body: { endpoint: 'https://push.example.test/fol', off: true } });
+  ok((await call('POST', '/api/helper/organize', { cookie: owner.cookie, body: { phone: O, note: 'from Mikey' } })).status === 200, 'Mikey can organize too');
+}
+
 console.log('\nMikey can start them fresh, without touching a thread');
 {
   const before = (await KV.get('thread:' + CUST, { type: 'json' }));

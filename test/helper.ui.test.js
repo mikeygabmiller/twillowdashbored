@@ -32,7 +32,7 @@ const thread = {
   suggested: { text: 'I might have an opening Tuesday, what part of town are you in?', forTs: now - 9 * 3600000 },
 };
 const guide = {
-  ok: true, name: 'Jess', notes: 'Booked solid Thursday.', since: now - 2 * 3600000,
+  ok: true, name: 'Jess', notes: 'Booked solid Thursday.', since: now - 2 * 3600000, labels: ['Two+ cars', 'Pet hair', 'Returning'],
   guide: [{ title: 'Your job', points: ['Answer within 15 minutes.'] }, { title: 'How a booking goes', points: ['1. Year, make and model.'] }],
   quick: [{ label: 'Ask for the car', text: 'Could you send over the year, make, and model of the car?' }],
   prices: [{ name: 'Full Detail', price: { sedan: 299, suv: 339, truck: 379 } }], addons: [{ name: 'Pet hair removal', price: 30 }],
@@ -49,7 +49,7 @@ function watch(page) {
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 watch(page);
 let authed = false;
-const sends = [], polishes = [], contacts = [], dones = [];
+const sends = [], polishes = [], contacts = [], dones = [], organizes = [];
 let polishReply = (text) => ({ ok: true, draft: text.replace(/^hey/i, 'Hey').replace(/tues\b/i, 'Tuesday') + '!', note: '' });
 await page.route('**/*', async (route) => {
   const req = route.request(); const u = new URL(req.url()); const p = u.pathname;
@@ -67,6 +67,17 @@ await page.route('**/*', async (route) => {
     { date: '2026-09-26', dow: 6, work: true, room: 1, jobs: [{ date: '2026-09-26', at: now + 864e5, name: 'Booked Betty', phone: '+14255550009', city: 'Monroe', car: '2021 Tacoma' }] },
     { date: '2026-09-27', dow: 0, work: false, room: 2, jobs: [] }] });
   if (p === '/api/helper/contact') { const b = body(); contacts.push(b); return json({ ok: true, thread: Object.assign({}, thread, { name: b.name, messages: thread.messages.concat([{ dir: 'out', body: 'Got it, thanks!', ts: now - 1000 }]) }) }); }
+  if (p === '/api/helper/organize') {
+    const b = body(); organizes.push(b);
+    if ('stage' in b) thread.helperStage = b.stage;
+    if (b.addLabel) thread.tags = (thread.tags || []).concat([b.addLabel]);
+    if (b.removeLabel) thread.tags = (thread.tags || []).filter((x) => x !== b.removeLabel);
+    if (b.note) thread.helperNotes = (thread.helperNotes || []).concat([{ id: 'n' + organizes.length, at: Date.now(), by: 'Jess', text: b.note }]);
+    if ('follow' in b) thread.helperFollow = b.follow ? Object.assign({ by: 'Jess' }, b.follow) : null;
+    if (b.check) thread.helperChecks = Object.assign({}, thread.helperChecks, { [b.check.key]: b.check.on });
+    Object.assign(rows[1], { helperStage: thread.helperStage || '', tags: thread.tags || [], helperFollowAt: (thread.helperFollow && thread.helperFollow.at) || 0 });
+    return json({ ok: true, thread, labels: guide.labels });
+  }
   if (p === '/api/helper/done') { dones.push(body()); return json({ ok: true, thread }); }
   if (p === '/api/ai/draft') { const b = body(); polishes.push(b.text); return json(polishReply(b.text)); }
   if (p === '/api/send') { const b = body(); sends.push(b.body); return json({ ok: true, thread: Object.assign({}, thread, { messages: thread.messages.concat([{ dir: 'out', body: b.body, ts: Date.now(), by: 'Jess' }]) }) }); }
@@ -237,6 +248,49 @@ ok(/No jobs set/.test(wk), 'a non-work day with nothing on it says so');
 await page.click('#weekBack');
 ok(await page.isVisible('#listView'), 'Back returns to Messages');
 
+console.log('\nOrganize: stage, labels, checklist, notes, follow-up');
+ok(/New \d/.test(await page.textContent('#filters')) && /Pet hair 0/.test(await page.textContent('#filters')), 'filter chips list every stage and label with counts');
+await page.click('#list .row[data-p="+14255550002"]');
+await page.waitForSelector('#org .org');
+ok(await page.$eval('#org [data-stage="new"]', (b) => b.classList.contains('on')), 'no stage set yet: it suggests New');
+const chk = await page.textContent('#org .chk');
+ok(/Ready to book · 2 of 5/.test(await page.textContent('#org')), 'checklist counts what the chat already has (car + photo)');
+ok(await page.$eval('#org [data-chk="car"]', (b) => b.classList.contains('done') && b.hasAttribute('data-auto')), 'the car ticked itself from the saved details');
+ok(/Next: give the price/.test(await page.textContent('#org')), 'and says what to do next');
+await page.click('#org [data-stage="quoted"]');
+await page.waitForFunction(() => document.querySelector('#org [data-stage="quoted"]').classList.contains('on'));
+ok(organizes.some((o) => o.stage === 'quoted'), 'stage moved to Quoted');
+await page.click('#org [data-lbl="Pet hair"]');
+await page.waitForFunction(() => document.querySelector('#org [data-lbl="Pet hair"]').classList.contains('on'));
+ok(organizes.some((o) => o.addLabel === 'Pet hair'), 'label added');
+await page.click('#org [data-chk="price"]');
+await page.waitForFunction(() => /3 of 5/.test(document.getElementById('org').textContent));
+ok(organizes.some((o) => o.check && o.check.key === 'price' && o.check.on === true), 'a box ticks by hand');
+await page.fill('#noteIn', 'Gate code 5232');
+await page.click('#noteAdd');
+await page.waitForFunction(() => /Gate code 5232/.test(document.getElementById('org').textContent));
+ok(/Jess/.test(await page.textContent('#org .note')), 'note shows who wrote it');
+await page.click('#plusBtn'); await page.click('#folBtn');
+await page.fill('#folNote', 'checking with landlord');
+await page.click('#formBody [data-at]');
+await page.click('#folSave');
+await page.waitForFunction(() => /checking with landlord/.test(document.getElementById('org').textContent));
+const fol = organizes.find((o) => o.follow);
+ok(fol && fol.follow.note === 'checking with landlord' && fol.follow.at > Date.now(), 'follow-up reminder set');
+await page.click('#backBtn');
+await page.waitForSelector('#list .row[data-p="+14255550002"]');
+const orow = await page.textContent('#list .row[data-p="+14255550002"]');
+ok(/Quoted/.test(orow) && /Pet hair/.test(orow) && /Follow up/.test(orow), 'the row shows stage, label and follow-up');
+await page.click('#filters [data-st="quoted"]');
+ok((await page.$$eval('#list .row .who', (n) => n.map((x) => x.textContent))).join('|') === 'Oldest Waiter', 'tap a stage: only those customers');
+await page.click('#filters [data-st="quoted"]');
+await page.click('#filters [data-lb="Pet hair"]');
+ok((await page.$$eval('#list .row .who', (n) => n.map((x) => x.textContent))).join('|') === 'Oldest Waiter', 'tap a label: only those customers');
+await page.click('#filters [data-lb="Pet hair"]');
+await page.click('#segFol');
+ok((await page.$$eval('#list .row .who', (n) => n.map((x) => x.textContent))).join('|') === 'Oldest Waiter', 'Follow-ups tab: only customers with a reminder');
+await page.click('#segAll');
+
 // ------------------------------------------------ Mikey's app: helper PIN hop
 console.log('\nHelper PIN on Mikey\'s sign-in screen');
 const app = await browser.newPage({ viewport: { width: 390, height: 844 } });
@@ -282,7 +336,8 @@ const app3 = await browser.newPage({ viewport: { width: 390, height: 844 } });
 watch(app3);
 const answers = [];
 const askThread = { phone: '+14255550002', name: 'Oldest Waiter', messages: [{ dir: 'in', body: 'are you available next tuesday?', ts: now - 9 * 3600000 }],
-  helperAsk: { at: now - 600000, by: 'Jess', question: 'Can I offer $280 each for two cars?' } };
+  helperAsk: { at: now - 600000, by: 'Jess', question: 'Can I offer $280 each for two cars?' },
+  helperStage: 'quoted', helperNotes: [{ id: 'n1', at: now - 300000, by: 'Jess', text: 'Gate code 5232' }], helperFollow: { at: now + 864e5, note: 'landlord ok?' } };
 await app3.route('**/*', async (route) => {
   const req = route.request(); const u = new URL(req.url()); const p = u.pathname;
   const json = (o, st) => route.fulfill({ status: st || 200, contentType: 'application/json', body: JSON.stringify(o) });
@@ -300,6 +355,8 @@ await app3.goto('https://texting.test/?c=' + encodeURIComponent('+14255550002'))
 await app3.waitForSelector('#helperAskBanner', { state: 'visible', timeout: 15000 }).catch(() => {});
 const bannerTxt = (await app3.textContent('#helperAskBanner').catch(() => '')) || '';
 ok(/Jess asked/.test(bannerTxt) && /\$280 each/.test(bannerTxt), 'the helper\'s question shows on the conversation');
+const hcard = (await app3.textContent('#helperCard').catch(() => '')) || '';
+ok(/stage: Quoted/.test(hcard) && /Gate code 5232/.test(hcard) && /landlord ok\?/.test(hcard), 'Mikey sees the helper\'s stage, notes and follow-up');
 app3.once('dialog', (d) => d.accept('Yes, $280 each works.'));
 await app3.click('#helperAskBanner .db-go').catch(() => {});
 await app3.waitForFunction(() => document.getElementById('helperAskBanner').style.display === 'none', null, { timeout: 5000 }).catch(() => {});
