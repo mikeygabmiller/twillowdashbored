@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-24·before-steps';
+const BUILD = '2026-09-25·helper-page';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -465,7 +465,21 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/login')      return apiLogin(request);
   if (request.method === 'POST' && pathname === '/api/logout')     return apiLogout();
   // Everything else under /api/ requires the dashboard password (once one is set).
-  if (pathname.startsWith('/api/') && !(await isAuthed(request)))   return json({ ok: false, error: 'unauthorized' }, 401);
+  const role = pathname.startsWith('/api/') ? await authRole(request) : '';
+  if (pathname.startsWith('/api/') && !role)                       return json({ ok: false, error: 'unauthorized' }, 401);
+  // The helper's PIN opens the texting page and nothing else. Checked here, once,
+  // against a short list of what that page uses — not in each handler — so a
+  // route added next month is closed to the helper until someone decides it
+  // shouldn't be. Money, settings, bookings, exports: none of them are on it.
+  if (role === 'helper') {
+    const allowed = HELPER_ROUTES[request.method + ' ' + pathname];
+    if (!allowed) return json({ ok: false, error: 'helper_not_allowed' }, 403);
+    return allowed(request, url);
+  }
+  if (request.method === 'GET'  && pathname === '/api/whoami')     return json({ ok: true, role });
+  // Mikey can open the helper page too, to see exactly what his helper sees.
+  if (request.method === 'GET'  && pathname === '/api/helper/guide') return apiHelperGuide();
+  if (request.method === 'POST' && pathname === '/api/helper/ask')  return apiHelperAsk(request);
   // Past the gate = a real, authenticated use of a real feature. Buffered, never
   // written here: see noteApiUse. This is the half of usage tracking that keeps
   // working when the browser is serving a stale cached shell.
@@ -3712,7 +3726,11 @@ async function apiSend(request) {
   // because appendMessage() above has already cleared thread.suggested — asking
   // the server to remember it would cost a second read of a thread we just wrote.
   const aiBy = String((data && data.aiBy) || '').trim().slice(0, 12);
-  if (aiOriginal) { try { await recordEdit(aiOriginal, body, askedBefore(thread, msg.ts), aiBy); } catch { /* non-fatal */ } }
+  // Anything sent under someone else's name stays out of both: the voice corpus
+  // is how HE writes, and a helper's texts teaching it would slowly make every
+  // draft sound like the helper.
+  if (by) { /* not his words */ }
+  else if (aiOriginal) { try { await recordEdit(aiOriginal, body, askedBefore(thread, msg.ts), aiBy); } catch { /* non-fatal */ } }
   // A text he typed with no draft behind it is the purest voice sample there is,
   // and it used to be dropped — the corpus only grew from drafts he accepted or
   // rewrote, so the way he opens a conversation cold was never learned until the
@@ -10119,6 +10137,10 @@ async function apiGetConfig() {
 function publicConfig(cfg) {
   const out = Object.assign({}, cfg);
   delete out.anthropicApiKey;
+  // Same rule for the helper's PIN: the screen learns that one is set, never
+  // what it is.
+  delete out.helperPassword;
+  out.helperPinSet = !!helperSecret(cfg);
   // Always sent whole, defaults filled in, so the switches on the screen read the
   // same "off" the Worker reads rather than rendering blank for a config that has
   // never been saved since this shipped.
@@ -10219,6 +10241,17 @@ async function apiSaveConfig(request) {
     // nothing; the screen offers to write his own wording instead.
     const silenced = sayWouldSilence(next);
     if (silenced.length) return json({ ok: false, error: 'would_silence', silenced }, 422);
+  }
+  // The helper: a name for the "sent by" tag, a PIN for their page, and his own
+  // notes that ride on top of the built-in guide. The PIN is refused when it is
+  // his — the login can't tell two people apart by the same four digits.
+  if (typeof data.helperName === 'string') next.helperName = data.helperName.trim().slice(0, 40);
+  if (typeof data.helperNotes === 'string') next.helperNotes = data.helperNotes.slice(0, 3000);
+  if (typeof data.helperPassword === 'string') {
+    const pin = data.helperPassword.trim().slice(0, 64);
+    if (pin && pin === String(ENV.DASHBOARD_PASSWORD || '')) return json({ ok: false, error: 'helper_pin_is_yours' }, 422);
+    if (pin && pin.length < 4) return json({ ok: false, error: 'helper_pin_short' }, 422);
+    next.helperPassword = pin;
   }
   await kv().put('config', JSON.stringify(next));
   cacheConfig(next);
@@ -14940,8 +14973,15 @@ async function dispatchDueScheduled(now = Date.now()) {
 // Dashboard auth (password gate). If DASHBOARD_PASSWORD isn't set, the
 // dashboard stays open (so nothing locks up before you configure it).
 // ===========================================================================
-async function tokenFor() {
-  const data = new TextEncoder().encode('mkd:' + (ENV.DASHBOARD_PASSWORD || ''));
+// The cookie is a hash of the password, and this repo is public — so a hash of
+// the password ALONE is a cookie anyone can mint: read how it's built, hash all
+// 10,000 four-digit PINs, try each one. The server's Twilio token goes in too.
+// It never leaves the Worker, so the cookie can't be worked out from the code.
+// Changing it (or the password) signs everybody out, which is the right answer
+// to either one leaking.
+async function tokenFor(role, secret) {
+  const pepper = ENV.TWILIO_AUTH_TOKEN || ENV.DASHBOARD_PASSWORD || '';
+  const data = new TextEncoder().encode('mkd2:' + (role || 'owner') + ':' + (secret == null ? (ENV.DASHBOARD_PASSWORD || '') : secret) + ':' + pepper);
   const buf = await crypto.subtle.digest('SHA-256', data);
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
@@ -14950,16 +14990,61 @@ function getCookie(request, name) {
   const m = c.match(new RegExp('(?:^|; )' + name + '=([^;]+)'));
   return m ? m[1] : null;
 }
-async function isAuthed(request) {
-  if (!ENV.DASHBOARD_PASSWORD) return true;
-  return getCookie(request, 'mkd_auth') === (await tokenFor());
+// The helper's PIN. Mikey sets it in Settings (or as a HELPER_PASSWORD secret,
+// which wins). Blank means there is no helper — and because the PIN is part of
+// the helper's cookie, clearing or changing it signs the helper out everywhere
+// at once. That is the "take the keys back" button.
+function helperSecret(cfg) {
+  const s = String(ENV.HELPER_PASSWORD || (cfg && cfg.helperPassword) || '').trim();
+  // Never the same as his: one PIN can't open two different apps.
+  return s && s !== String(ENV.DASHBOARD_PASSWORD || '') ? s : '';
+}
+// Who is this: 'owner' (Mikey, the whole app), 'helper' (the texting page and
+// nothing else), or '' (nobody). No password set at all keeps the old behaviour:
+// the dashboard is open, and open means Mikey.
+async function authRole(request) {
+  if (!ENV.DASHBOARD_PASSWORD) return 'owner';
+  const c = getCookie(request, 'mkd_auth');
+  if (!c) return '';
+  if (c === (await tokenFor('owner'))) return 'owner';
+  const hs = helperSecret(await loadConfig());
+  if (hs && c === (await tokenFor('helper', hs))) return 'helper';
+  return '';
+}
+async function isAuthed(request) { return !!(await authRole(request)); }
+
+// Wrong guesses are counted per address and cut off after a handful. A four-digit
+// PIN is 10,000 guesses, which is nothing to a script with no limit and a long
+// afternoon to one that gets six tries every fifteen minutes. Only failures are
+// written, so a normal sign-in costs no KV write at all.
+const LOGIN_MAX_FAILS = 6;
+const LOGIN_LOCK_MS = 15 * 60 * 1000;
+function loginIp(request) {
+  return String(request.headers.get('CF-Connecting-IP') || request.headers.get('X-Forwarded-For') || 'unknown').split(',')[0].trim().slice(0, 64);
 }
 async function apiLogin(request) {
   const data = await readJson(request);
-  if (!ENV.DASHBOARD_PASSWORD) return json({ ok: true });
-  if ((data.password || '') !== ENV.DASHBOARD_PASSWORD) return json({ ok: false, error: 'wrong_password' }, 401);
-  const token = await tokenFor();
-  return new Response(JSON.stringify({ ok: true }), {
+  if (!ENV.DASHBOARD_PASSWORD) return json({ ok: true, role: 'owner' });
+  const key = 'loginfail:' + loginIp(request);
+  const now = Date.now();
+  let rec = null;
+  try { rec = await kv().get(key, { type: 'json' }); } catch { rec = null; }
+  if (rec && rec.n >= LOGIN_MAX_FAILS && now - (rec.at || 0) < LOGIN_LOCK_MS) {
+    const mins = Math.max(1, Math.ceil((LOGIN_LOCK_MS - (now - rec.at)) / 60000));
+    return json({ ok: false, error: 'locked', minutes: mins }, 429);
+  }
+  const pw = String(data.password || '');
+  const hs = helperSecret(await loadConfig());
+  const role = pw && pw === ENV.DASHBOARD_PASSWORD ? 'owner' : (hs && pw === hs ? 'helper' : '');
+  if (!role) {
+    const fresh = !rec || now - (rec.at || 0) >= LOGIN_LOCK_MS;
+    const next = { n: (fresh ? 0 : rec.n) + 1, at: now };
+    try { await kv().put(key, JSON.stringify(next), { expirationTtl: 3600 }); } catch { /* the count is a brake, not a lock */ }
+    return json({ ok: false, error: 'wrong_password' }, 401);
+  }
+  if (rec) { try { await kv().delete(key); } catch { /* expires on its own */ } }
+  const token = await tokenFor(role, role === 'helper' ? hs : undefined);
+  return new Response(JSON.stringify({ ok: true, role }), {
     status: 200,
     headers: {
       'Content-Type': 'application/json',
@@ -14968,6 +15053,152 @@ async function apiLogin(request) {
     },
   });
 }
+// ===========================================================================
+// The helper — someone texting customers for Mikey from /helper.html.
+// ===========================================================================
+// Everything the helper's PIN can reach. Each entry is the handler it runs, so
+// this list IS the permission: a route missing from it is a 403, full stop.
+// /api/media is left off on purpose: it fetches any api.twilio.com URL with the
+// account's own credentials, which is the whole Twilio account, not a photo.
+const HELPER_ROUTES = {
+  'GET /api/whoami':        async () => { const cfg = await loadConfig(); return json({ ok: true, role: 'helper', name: helperName(cfg) }); },
+  'GET /api/threads':       (request, url) => apiThreads(url),
+  'GET /api/thread':        (request, url) => apiThread(url),
+  'POST /api/read':         (request) => apiRead(request),
+  'POST /api/send':         (request) => helperSend(request),
+  'POST /api/ai/draft':     (request) => helperPolish(request),
+  'POST /api/request-date': (request) => helperForward(request, apiRequestDate),
+  'POST /api/helper/ask':   (request) => apiHelperAsk(request),
+  'GET /api/helper/guide':  () => apiHelperGuide(),
+};
+function helperName(cfg) { return String((cfg && cfg.helperName) || '').trim() || 'Helper'; }
+// Re-issue a request with the helper's name stamped on it. The name comes from
+// the config, never from the page, so the "sent by" tag can't be anyone else's.
+async function helperForward(request, handler, patch) {
+  const data = await readJson(request);
+  const cfg = await loadConfig();
+  const body = Object.assign({}, data, patch || {}, { by: helperName(cfg) });
+  return handler(new Request(request.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }));
+}
+// Text only: photos go through an upload route the helper doesn't have, and the
+// AI-draft bookkeeping (aiOriginal) is his edit history, not theirs.
+function helperSend(request) { return helperForward(request, apiSend, { media: [], aiOriginal: '', aiBy: '' }); }
+// Auto Polish, and only polish. The "write me one" path without text can park a
+// question on the thread for Mikey (needsYou) — that's his, so it stays his.
+async function helperPolish(request) {
+  const data = await readJson(request);
+  const text = String(data.text || '').trim();
+  if (!text) return json({ ok: false, error: 'helper_needs_text' }, 422);
+  const hint = 'This was typed by the person who answers texts for Mikey. It goes out as Mikey, so make it read the way he writes: "I", never "we", his casual rhythm';
+  return apiAiDraft(new Request(request.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: data.phone, text, expand: false, hint }) }));
+}
+// "Ask Mikey": the helper hit something that's his call. It reaches him the way
+// every other alert does, with the question up front so the phone banner is
+// enough to answer it, and it's marked on the thread so the helper can see it
+// went and doesn't ask twice.
+async function apiHelperAsk(request) {
+  const data = await readJson(request);
+  const phone = normalizePhone(data.phone);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  const question = String(data.question || '').trim().slice(0, 500);
+  if (!question) return json({ ok: false, error: 'empty_question' }, 422);
+  const cfg = await loadConfig();
+  const who = helperName(cfg);
+  const thread = await loadThread(phone);
+  const name = thread.name || phone;
+  const lastIn = (thread.messages || []).filter((m) => m.dir === 'in').slice(-1)[0];
+  const subject = `❓ ${who} needs you on ${name}: "${question.length > 60 ? question.slice(0, 59).trimEnd() + '…' : question}"`;
+  const body =
+    `${who} is texting ${name} and needs your call:\n\n"${question}"\n\n` +
+    (lastIn ? `${name}'s last text:\n"${String(lastIn.body || '').slice(0, 240)}"\n\n` : '') +
+    `Answer them in the conversation, or text ${who} back:\n${publicBase()}/?c=${encodeURIComponent(phone)}`;
+  const sent = await notifyMikey(subject, body);
+  thread.helperAsk = { at: Date.now(), by: who, question };
+  await saveThread(thread);
+  return json({ ok: true, sent, helperAsk: thread.helperAsk });
+}
+// The guide, plus the live price list from the booking settings — so a price he
+// changes in one place is the price the helper quotes, and never a number
+// copied into this file that drifts.
+async function apiHelperGuide() {
+  const cfg = await loadConfig();
+  let prices = [], addons = [];
+  try {
+    const bk = await loadBookingConfig();
+    prices = (bk.services || []).filter((x) => x.enabled !== false).map((x) => ({ name: String(x.name || '').replace(/\s*[—–-]\s*In & Out$/, ''), price: x.price || {}, blurb: x.blurb || '' }));
+    addons = (bk.addons || []).filter((x) => x.enabled !== false).map((x) => ({ name: x.name, price: x.price }));
+  } catch { /* the guide still works without the list */ }
+  return json({ ok: true, name: helperName(cfg), notes: String(cfg.helperNotes || ''), guide: HELPER_GUIDE, quick: HELPER_QUICK, prices, addons });
+}
+
+// Written from how Mikey actually books people, read out of his own threads
+// (Aug–Sep 2026): the same five steps nearly every time, prices from the quote
+// calculator, and the exact day and time always coming from him. The helper's
+// job is to get a customer to step five fast, so the one thing Mikey has to do
+// is pick a time.
+const HELPER_GUIDE = [
+  { title: 'Your job', points: [
+    'Answer every customer within 15 minutes, 8am to 8pm. A fast "yes, I can help" beats a perfect answer an hour later. People text two or three detailers and book whoever answers first.',
+    'You are texting as Mikey. Write "I", never "we". Keep it short and friendly, the way he texts.',
+    'Auto Polish tidies what you type into his voice. Read the polished version before you send it. If it changed what you meant, tap Undo.',
+    'Leave the day-of texts to Mikey: ETAs, "I\'m here", "finished up". He sends those from the job.',
+  ] },
+  { title: 'How a booking goes (the five steps)', points: [
+    '1. Year, make and model of the car.',
+    '2. Condition: a photo or a quick description. Ask about pet hair, stains, smells, mold.',
+    '3. The price, from the price list below.',
+    '4. Their address, or at least the town and street.',
+    '5. Which days work for them. Then tap "Ask Mikey for a date". He texts back the exact day and time.',
+    'Ask for one or two things at a time, not all five at once. Skip any step they already answered (quote requests from the website already have the car and services).',
+  ] },
+  { title: 'You can answer these yourself', points: [
+    'Prices on the price list, for a normal car in normal condition.',
+    'How long: a full detail takes 3 to 5 hours. A basic interior is about 90 minutes, 2 to 4 hours with shampoo or lots of pet hair.',
+    'What he needs: an outdoor water spigot and a power outlet within about 20 feet of the car. He brings everything else. They don\'t need to be home, and the car can be left unlocked.',
+    'Payment: after the work, once they\'ve looked it over. Cash, check, Zelle or Venmo. Never a deposit.',
+    'Where: he\'s based in Snohomish and covers Snohomish, Lake Stevens, Everett, Monroe, Mill Creek, Marysville, Bothell, Duvall, Mukilteo, Woodinville, Granite Falls and Arlington. No travel fee, same price in every town.',
+    'Stains: "I can\'t promise every stain comes all the way out, but I\'ll go over everything and get out as much as I can."',
+    'The free exterior offer: yes, with an interior detail. The free exterior is a basic hand wash, wax and window clean.',
+  ] },
+  { title: 'Send these to Mikey (tap "Ask Mikey")', points: [
+    'Picking the actual day and time. Every time. Use "Ask Mikey for a date".',
+    'Any price that isn\'t on the list: discounts, two or more cars, bundles, big trucks and RVs, campers, anything "really rough".',
+    'Paint correction, ceramic coating, scratches, road paint, overspray, mold, headlights. Get a photo first, then ask him.',
+    'Anyone upset or complaining. Don\'t argue, don\'t promise a fix. Say "I\'m sorry about that, let me look into it" and ask him right away.',
+    'Moving or cancelling a job that\'s today or tomorrow.',
+    'Towns not on the list. Lynnwood and Edmonds are a no for now. Seattle, Stanwood and farther are a no.',
+    'Anything you\'re not sure about. Guessing is how a customer gets a promise he can\'t keep.',
+  ] },
+  { title: 'Never', points: [
+    'Never confirm a day or time Mikey didn\'t give you.',
+    'Never make up a price, discount or deal.',
+    'Never say he\'s licensed or insured, and never say which days of the week he works. Both are still being decided.',
+    'Never answer salespeople: SEO, websites, "Google ranking", marketing. Leave them alone.',
+    'Never share his personal info, other customers\' info, or payment account details. He sends payment details himself after the job.',
+  ] },
+  { title: 'Scheduling, the way he does it', points: [
+    'He does up to 2 cars a day.',
+    'Weekday jobs usually start late morning or early afternoon. Saturday can start at 8am. Don\'t offer a weekday morning yourself; ask him.',
+    'He sets exact times himself, often the evening before, and may text "can we shoot for 1:30 instead?" the day of. That\'s normal.',
+    'If someone needs it today or tomorrow, don\'t say no. Say "Let me see if I can fit you in" and ask him right away. Same-day spots do open up.',
+    'If they\'re waiting on a time, tell them when they\'ll hear back, and make it true: "I\'ll text you an exact day and time tonight."',
+  ] },
+];
+// Tap-to-use starters, in his own words from his own texts. They go into the box,
+// not out the door, so the helper still reads and adjusts every one.
+const HELPER_QUICK = [
+  { label: 'Ask for the car', text: 'Thanks for reaching out! Could you send over the year, make, and model of the car?' },
+  { label: 'Ask for condition', text: 'Could you also let me know the general condition? Either a photo or just a quick explanation is fine. Just want to know if there\'s anything out of the ordinary from normal use.' },
+  { label: 'Ask for address', text: 'If you send over your address or general street area, I can let you know how soon I can come by.' },
+  { label: 'Ask which days', text: 'Are there any specific days of the week that work well for you?' },
+  { label: 'Time is coming', text: 'I\'m putting my schedule together now. I\'ll text you an exact day and time tonight.' },
+  { label: 'Power and water', text: 'All I need onsite is an outdoor water spigot and a power outlet within about 20 feet of the car. I bring everything else, and you don\'t need to be home.' },
+  { label: 'Payment', text: 'Payment is after the job, once you\'ve looked it over. I take cash, check, Zelle, or Venmo.' },
+  { label: 'Stains', text: 'I can\'t promise every stain comes all the way out, but I\'ll go over everything and get out as much as I can.' },
+  { label: 'Need to check', text: 'Good question, let me check on that and get right back to you.' },
+  { label: 'Out of area', text: 'Unfortunately that\'s just outside my service area, so I wouldn\'t be able to get out there anytime soon. Sorry we couldn\'t work it out!' },
+];
+
 function apiLogout() {
   return new Response(JSON.stringify({ ok: true }), {
     status: 200,

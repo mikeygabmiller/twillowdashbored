@@ -31,6 +31,9 @@ self.addEventListener('fetch', (e) => {
   }
 
   // App shell (the page itself): network-first, fall back to cache when offline.
+  // Only the app itself is the shell. Opening /helper.html or /bookings.html
+  // used to be saved under '/', so the next offline start opened the wrong page.
+  if (req.mode === 'navigate' && url.pathname !== '/') return;
   if (req.mode === 'navigate') {
     e.respondWith(
       fetch(req)
