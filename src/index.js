@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-25·after-photos';
+const BUILD = '2026-09-25·star-page';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -454,6 +454,14 @@ async function handle(request) {
     const m = /^\/(before|after|friend)(?:\/([A-Za-z0-9_-]{0,80}))?\/?$/.exec(pathname);
     if (request.method === 'GET' && m) return custSubPage(m[1], m[2] || '');
   }
+  // /rate, /rate/<token> — the star page he's trying out. Off unless switched
+  // on in the dashboard; see ratePage.
+  {
+    const m = /^\/rate(?:\/([A-Za-z0-9_-]{0,80}))?\/?$/.exec(pathname);
+    if (request.method === 'GET' && m) return ratePage(m[1] || '', url);
+  }
+  if (request.method === 'POST' && pathname === '/api/rate/pick')     return apiRatePick(request);
+  if (request.method === 'POST' && pathname === '/api/rate/feedback') return apiRateFeedback(request);
   // /cal/<token>.ics — "Add to calendar" off the before page.
   if (request.method === 'GET'  && pathname.startsWith('/cal/'))    return custCalendar(pathname.slice(5).replace(/\.ics$/, '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80));
   // /ph/<token>/<id> — their before and after, on the after page. See custPhoto.
@@ -495,6 +503,7 @@ async function handle(request) {
   if (pathname.startsWith('/api/')) noteApiUse(pathname, request.method);
 
   if (request.method === 'GET'  && pathname === '/api/health')     return apiHealth();
+  if (request.method === 'GET'  && pathname === '/api/rate')       return apiRate();
   if (request.method === 'GET'  && pathname === '/api/threads')    return apiThreads(url);
   if (request.method === 'GET'  && pathname === '/api/thread')     return apiThread(url);
   if (request.method === 'POST' && pathname === '/api/send')       return apiSend(request);
@@ -10173,6 +10182,12 @@ async function apiSaveConfig(request) {
   if (typeof data.followupsEnabled === 'boolean') next.followupsEnabled = data.followupsEnabled;
   if (typeof data.autopilot === 'boolean') next.autopilot = data.autopilot;
   if (typeof data.reviewUrl === 'string') next.reviewUrl = data.reviewUrl.slice(0, 300);
+  if (data.ratePage && typeof data.ratePage === 'object') {
+    const r = rateCfg(next);
+    if (typeof data.ratePage.on === 'boolean') r.on = data.ratePage.on;
+    if (data.ratePage.mode === 'gate' || data.ratePage.mode === 'open') r.mode = data.ratePage.mode;
+    next.ratePage = r;
+  }
   // Customer-page wording, one box at a time: a field sent is replaced, a field
   // not sent is kept, a blank one falls back to the default (see custCopy).
   if (data.custPages && typeof data.custPages === 'object') {
@@ -18282,6 +18297,175 @@ async function custPage(token) {
 function custDeadLink() {
   return htmlResponse(custShell(`<div class="pad"><h1>Link not found</h1>
       <p class="sub">This link isn't valid any more. Text Mikey and he'll send you a new one.</p></div>`, '', {}), 404);
+}
+
+// ---- The star page (/rate) — an idea he's trying out, OFF until he says so ----
+// A Google-style row of stars. Five goes to his Google review link; one to four
+// gets a private note that comes to him instead. That split is what Google calls
+// review gating, and its rules forbid it ("don't selectively solicit positive
+// reviews"): a listing caught doing it can lose reviews or be suspended. He asked
+// for it knowing that, to see the idea before deciding. So:
+//   · it is off by default, and off means the public page is a plain 404
+//   · nothing in the app links to it or texts it; the only door is the preview
+//     button on the dashboard, and a preview is never counted and never alerts
+//   · 'open' mode is the version closer to the rules: the private note still
+//     comes first for one to four stars, but Google stays one tap away for them
+//     too, so nobody is kept from posting
+const RATE_KEY = 'rate:log';
+const RATE_FB_MAX = 100;
+function rateCfg(cfg) {
+  const r = (cfg && cfg.ratePage) || {};
+  return { on: r.on === true, mode: r.mode === 'open' ? 'open' : 'gate' };
+}
+async function rateLoad() {
+  const d = await kv().get(RATE_KEY, { type: 'json' });
+  return Object.assign({ tally: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }, google: 0, fb: [] }, d || {});
+}
+async function ratePage(token, url) {
+  const cfg = await loadConfig();
+  const rc = rateCfg(cfg);
+  const preview = url.searchParams.get('preview') === '1';
+  if (!rc.on && !preview) return htmlResponse(custShell(`<div class="pad"><h1>Link not found</h1>
+      <p class="sub">This page isn't in use.</p></div>`, '', { title: "Mikey's Mobile Detailing" }), 404);
+  const rec = token ? await custResolve(token) : null;
+  if (token && !rec) return custDeadLink();
+  const t = rec ? await loadThread(rec.phone) : null;
+  const first = t && t.name ? String(t.name).trim().split(/\s+/)[0] : '';
+  // A dashboard preview can flip the mode without saving it, so he can put the
+  // two versions side by side before choosing one.
+  const mode = preview && /^(gate|open)$/.test(url.searchParams.get('mode') || '') ? url.searchParams.get('mode') : rc.mode;
+  const review = String(cfg.reviewUrl || '');
+  const who = rec ? '' : `<input class="fld" id="rtName" maxlength="60" autocomplete="name" placeholder="Your name (optional)">
+      <input class="fld" id="rtPhone" maxlength="20" inputmode="tel" autocomplete="tel" placeholder="Your number, if you want me to text you back">`;
+  const inner = `<style>
+.rt-stars{display:flex;justify-content:center;gap:6px;margin:18px 0 6px}
+.rt-stars button{background:none;border:0;padding:4px;cursor:pointer;line-height:0;border-radius:8px}
+.rt-stars svg{width:44px;height:44px;display:block}
+.rt-stars path{fill:none;stroke:#80868b;stroke-width:1.6;transition:fill .12s,stroke .12s}
+.rt-stars button.lit path{fill:#fbbc04;stroke:#fbbc04}
+.rt-stars button:focus-visible{outline:2px solid var(--gold);outline-offset:2px}
+.rt-word{text-align:center;color:var(--gray);font-size:15px;font-weight:600;min-height:22px}
+.rt-prev{background:rgba(201,162,75,.14);border:1px solid rgba(201,162,75,.4);color:var(--gold2);border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.45;margin-bottom:14px}
+.rt-chk{display:flex;gap:10px;align-items:center;font-size:14.5px;color:var(--gray);margin-top:12px}
+.rt-chk input{width:20px;height:20px;accent-color:var(--red);margin:0}
+</style>
+<div class="pad">
+  ${preview ? `<div class="rt-prev" id="rtPrev"><b>Preview (${mode === 'gate' ? 'gate' : 'open'} mode).</b> Only you can see this. Nothing here is counted and nothing alerts you, but a note you send is saved as a test so you can see where it lands.</div>` : ''}
+  <div class="brand">Mikey's Mobile Detailing</div>
+  <h1>${first ? `How did I do, ${jdEsc(first)}?` : 'How did I do?'}</h1>
+  <p class="sub">Tap a star.</p>
+  <div class="card">
+    <div class="rt-stars" role="radiogroup" aria-label="Your rating">
+      ${[1, 2, 3, 4, 5].map((n) => `<button type="button" role="radio" aria-checked="false" data-star="${n}" aria-label="${n} star${n > 1 ? 's' : ''}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.8l2.8 5.7 6.3.9-4.55 4.43 1.07 6.27L12 17.14l-5.62 2.96 1.07-6.27L2.9 9.4l6.3-.9z" stroke-linejoin="round"/></svg></button>`).join('')}
+    </div>
+    <div class="rt-word" id="rtWord" aria-live="polite"></div>
+  </div>
+  <div class="card" id="rtGoogle" hidden>
+    <div class="lbl">Thank you</div>
+    <p class="sub m0">That means a lot. ${review ? "I'm taking you to Google so you can say it there. It's the thing that helps a one-man shop the most." : ''}</p>
+    ${review ? `<a class="btn mt" id="rtGo" href="${jdEsc(review)}" rel="noopener">Post it on Google</a>`
+      : '<p class="note">No Google review link is set in the dashboard yet, so there is nowhere to send you.</p>'}
+  </div>
+  <div class="card" id="rtForm" hidden>
+    <div class="lbl">Tell me straight</div>
+    <p class="sub m0">What should I have done better? This comes to me, not posted anywhere, and I'll make it right.</p>
+    <textarea class="fld" id="rtText" maxlength="1000" rows="4" placeholder="What wasn't right?"></textarea>
+    ${who}
+    <label class="rt-chk"><input type="checkbox" id="rtBack" checked> Text me back about it</label>
+    <button class="btn mt" id="rtSend" type="button">Send it to Mikey</button>
+    <div class="note" id="rtMsg"></div>
+    ${mode === 'open' && review ? `<div class="note" id="rtAlso">Rather post it publicly? <a href="${jdEsc(review)}" rel="noopener" data-google="1">Leave a Google review</a>, that's fine too.</div>` : ''}
+  </div>
+  <div class="card" id="rtDone" hidden>
+    <div class="lbl">Got it</div>
+    <p class="sub m0">Thanks for telling me. ${rec ? "I'll text you." : "If you left your number, I'll text you."}</p>
+    ${mode === 'open' && review ? `<p class="note">Still want to post it? <a href="${jdEsc(review)}" rel="noopener" data-google="1">Leave a Google review</a>.</p>` : ''}
+  </div>
+</div>
+<script>
+(function(){
+  var TOK=${JSON.stringify(token || '')},PREVIEW=${preview ? 'true' : 'false'};
+  var WORDS=["","Terrible","Poor","Okay","Good","Excellent"];
+  var picked=0,btns=[].slice.call(document.querySelectorAll("[data-star]"));
+  function $(i){return document.getElementById(i)}
+  function paint(n){btns.forEach(function(b){var s=+b.getAttribute("data-star");b.classList.toggle("lit",s<=n)});$("rtWord").textContent=WORDS[n]||""}
+  function post(path,body){
+    body.token=TOK;body.preview=PREVIEW;
+    return fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body),keepalive:true})
+      .then(function(r){return r.json()}).catch(function(){return null});
+  }
+  function pick(n){
+    picked=n;paint(n);
+    btns.forEach(function(b){b.setAttribute("aria-checked",String(+b.getAttribute("data-star")===n))});
+    $("rtGoogle").hidden=n!==5;$("rtForm").hidden=n===5||!$("rtDone").hidden;
+    post("/api/rate/pick",{stars:n});
+    if(n===5){var go=$("rtGo");if(go)setTimeout(function(){location.href=go.href},1200)}
+    else if(!$("rtForm").hidden)$("rtText").focus();
+  }
+  btns.forEach(function(b){
+    var n=+b.getAttribute("data-star");
+    b.onmouseenter=function(){paint(n)};b.onmouseleave=function(){paint(picked)};
+    b.onclick=function(){pick(n)};
+  });
+  [].forEach.call(document.querySelectorAll("[data-google]"),function(a){a.addEventListener("click",function(){post("/api/rate/pick",{stars:picked,google:true})})});
+  $("rtSend").onclick=function(){
+    var text=$("rtText").value.trim();
+    if(!text){$("rtMsg").textContent="Write a line or two first.";return}
+    $("rtSend").disabled=true;$("rtMsg").textContent="Sending…";
+    post("/api/rate/feedback",{stars:picked,text:text,back:$("rtBack").checked,
+      name:$("rtName")?$("rtName").value:"",phone:$("rtPhone")?$("rtPhone").value:""}).then(function(d){
+      if(d&&d.ok){$("rtForm").hidden=true;$("rtDone").hidden=false}
+      else{$("rtSend").disabled=false;$("rtMsg").textContent="That didn't send. Try again, or just text me."}
+    });
+  };
+})();
+</script>`;
+  return htmlResponse(custShell(inner, '', { title: 'How did I do?', og: { title: 'How did I do?', desc: 'Tap a star. Takes ten seconds.' } }));
+}
+// Both public writes answer {ok:true} for a switched-off page without writing:
+// the page itself 404s then, so the only caller is someone poking the endpoint.
+async function apiRatePick(request) {
+  const d = await readJson(request);
+  const n = Math.round(+d.stars);
+  if (!(n >= 1 && n <= 5)) return json({ ok: false, error: 'stars' }, 400);
+  if (d.preview === true || !rateCfg(await loadConfig()).on) return json({ ok: true });
+  const log = await rateLoad();
+  // A five is counted as sent to Google on the tap itself: the page redirects on
+  // its own, so there's no second beacon to wait for. The other way there is the
+  // open mode's link under the note, which beacons with google:true.
+  if (d.google === true) log.google += 1;
+  else { log.tally[n] = (log.tally[n] || 0) + 1; if (n === 5) log.google += 1; }
+  await kv().put(RATE_KEY, JSON.stringify(log));
+  return json({ ok: true });
+}
+async function apiRateFeedback(request) {
+  const d = await readJson(request);
+  const text = String(d.text || '').trim().slice(0, 1000);
+  const stars = Math.round(+d.stars);
+  if (!text || !(stars >= 1 && stars <= 4)) return json({ ok: false, error: 'text' }, 400);
+  const test = d.preview === true;
+  if (!test && !rateCfg(await loadConfig()).on) return json({ ok: true });
+  const rec = d.token ? await custResolve(String(d.token).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80)) : null;
+  const t = rec ? await loadThread(rec.phone) : null;
+  const phone = rec ? rec.phone : (normalizePhone(String(d.phone || '').slice(0, 20)) || '');
+  const name = (t && t.name) || String(d.name || '').trim().slice(0, 60);
+  const row = { at: Date.now(), stars, text, back: d.back === true, name, phone, test };
+  const log = await rateLoad();
+  log.fb = [row].concat(log.fb || []).slice(0, RATE_FB_MAX);
+  await kv().put(RATE_KEY, JSON.stringify(log));
+  if (!test) {
+    const who = name || phone || 'Someone';
+    notifyMikey(`${stars}★ private note from ${who}`,
+      `${who} gave you ${stars} star${stars > 1 ? 's' : ''} and wrote:\n\n"${text}"\n\n` +
+      (row.back && phone ? `They want a text back: ${phone}` : row.back ? 'They asked for a text back but left no number.' : 'They didn\'t ask for a reply.')).catch(() => {});
+  }
+  return json({ ok: true });
+}
+// The dashboard's view of it: the switch, the tally and the private notes.
+async function apiRate() {
+  const cfg = await loadConfig();
+  const log = await rateLoad();
+  return json(Object.assign({ ok: true, url: `${publicBase()}/rate`, reviewUrl: String(cfg.reviewUrl || '') }, rateCfg(cfg), log));
 }
 
 // /before, /after, /friend — with a token, that customer's own page; without
