@@ -4556,7 +4556,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-25·helper-toolkit";
+  var APP_BUILD="2026-09-25·after-photos";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -7040,7 +7040,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Sent, opened, and which buttons they used, per page. Opened is counted by
   // the page itself, so a link preview never reads as a person.
   var PAGE_TAPS={calendar:"Add to calendar",book:"Book the next one",plan:"Put me on a plan",friend:"Send a friend",
-    review:"Leave a review",website:"Website",address:"Fix address",share:"Share my link"};
+    review:"Leave a review",website:"Website",address:"Fix address",share:"Share my link",
+    photos:"Saved the photos",move:"Asked to move it"};
   function renderPagesDetail(t){
     var sec=el("dtPagesSec"),box=el("dtPages");if(!sec||!box)return;
     var sent=t.linkSent||t.linkAt||{},open=t.linkOpen||{},taps=t.linkTaps||{};
@@ -18506,7 +18507,16 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         jdPhotoSlot("after","After",after)+
         '</div><div class="jd-note">Tap a box to snap it. Before/after sells the next job better than any ad — and it lands in the customer\'s thread.</div>';
     }
-    if(before||after)h+='<button class="jd-btn ghost" data-basend="1" style="margin-top:9px">'+ic("send",16)+' Text these to the customer</button>';
+    // Once the job's marked done the pair is on the customer's after page, so
+    // the after link IS the photos, plus the care tips and the review ask, and
+    // it's still there next month when they want them again. Until then there's
+    // no after page for them to be on, so it's the thread, to attach them.
+    // The page shows their LATEST job, so a stop from weeks back on an old day
+    // may not be what it shows any more: those go the old way too.
+    var onPage=j.state==="done"&&!!after&&!!j.doneAt&&Date.now()-j.doneAt<21*86400000;
+    if(before||after)h+='<button class="jd-btn ghost" data-basend="'+(onPage?"link":"attach")+'" style="margin-top:9px">'+ic("send",16)+
+      (onPage?' Send their after link (these are on it)':' Text these to the customer')+'</button>'+
+      (!onPage&&after?'<div class="jd-note">Mark the job done and these go on their after page.</div>':'');
     box.innerHTML=h;
     hydrateIcons(box);
     jdWirePhotos(j,box);
@@ -18531,8 +18541,12 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var send=box.querySelector("[data-basend]");
     if(send)send.onclick=function(){
       if(!j.phone)return toast("No phone number on this job",{bad:true});
-      toast("Opening the thread — attach from there");
+      var link=send.getAttribute("data-basend")==="link";
+      if(!link)toast("Opening the thread — attach from there");
       jdSheetClose();closeJobs();openThread(j.phone);
+      // Into the box, never out the door: the same draft the "Job done" banner
+      // puts there, so the banner stands down once this has.
+      if(link)putLinkDraft(j.phone,"after",function(){LINK_PUT[j.phone+":after"]=1;if(state.thread&&state.thread.phone===j.phone)renderLinkBanner(state.thread)});
     };
     var wrap=box.querySelector("#baWrap");
     if(wrap)jdWireSlider(wrap);

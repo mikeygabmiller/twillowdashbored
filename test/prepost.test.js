@@ -22,7 +22,7 @@ const EXPORTS = ['custTokenFor', 'custState', 'apiCustState', 'apiCustAction', '
   'refCodeFor', 'refResolve', 'refCredits', 'careKind', 'CARE_TIPS', 'REF_OFFER', 'buildReferrals', 'apiReferralAction',
   'loadThread', 'saveThread', 'updateIndexEntry', 'loadBookings', 'saveBookings', 'loadIndex',
   'loadMonth', 'saveMonth', 'loadConfig', 'localDateStr', 'bkAvailability', 'genId',
-  'custCalendar', 'apiCustDid', 'apiSaveConfig', 'apiPushPeek'];
+  'custCalendar', 'apiCustDid', 'apiSaveConfig', 'apiPushPeek', 'custPhoto', 'apiPhotoUpload'];
 
 const store = new Map();
 const kv = {
@@ -185,7 +185,8 @@ ok('the after card is there', /Thanks for having me out/.test(h));
 ok('ceramic gets the ceramic advice (no wash for 7 days)', /Don't wash it for 7 days/.test(h));
 ok('the review link is offered', /g\.page\/r\/mikey-review/.test(h));
 ok('…in its own "Happy with it?" card', /Happy with it\?/.test(h));
-ok('no "something not right" box any more (his call: they reply to the text)', !/Something not right/.test(h) && !/id="issueBtn"/.test(h));
+ok('no "something not right" box any more (his call: they reply to the text)', !/<textarea/.test(h) && !/id="issueBtn"/.test(h) &&
+  /Something not right\? <a href="sms:/.test(h));
 ok('the friend card sits near the top, above the care tips', h.indexOf('/friend/') > 0 && h.indexOf('/friend/') < h.indexOf("Don't wash it for 7 days"));
 ok('it points at the next one, 6–8 weeks out', /every 6–8 weeks/.test(h) && h.includes(`href="/c/${tok}#book"`) && /id="planBtn"/.test(h));
 hub = await html(tok);
@@ -468,8 +469,111 @@ section('He can change the page wording from Settings');
   })());
 }
 
+section('Their before and after: the Jobs board shots, on their after page');
+{
+  const PH = '+14255550904', OT = '+14255550905';
+  const JPG = '/9j/4AAQSkZJRgABAQ';                  // bytes are never decoded here, only passed through
+  const up = async (job, phase) => (await (await M.apiPhotoUpload(req({ job, phase, img: 'data:image/jpeg;base64,' + JPG }))).json()).id;
+  const pt = await customer(PH, 'Pia Hart');
+  await paid(PH, 339, NOW - 3 * 3600000);             // a paid job: she gets a friend link, like anyone after a detail
+  pt.lastJob = { at: NOW - 3 * 3600000, service: 'Full Detail', jobId: 'b:bkPH1' };
+  await M.saveThread(pt); await M.updateIndexEntry(pt);
+  const tp = await M.custTokenFor(PH);
+  let ah = await page('after', tp);
+  ok('nothing snapped: no frame, no save button, the stock preview', !/class="ba[ "]/.test(ah) && !/id="savePics"/.test(ah) && /og-car\.jpg/.test(ah));
+  const b1 = await up('b:bkPH1', 'before');
+  ah = await page('after', tp);
+  ok('a before with no after shows nothing (a dirty car is not the result)', !/class="ba[ "]/.test(ah));
+  const a1 = await up('b:bkPH1', 'after');
+  ah = await page('after', tp);
+  ok('with both, one frame with both shots in it', /id="ba"/.test(ah) && ah.includes(`src="/ph/${tp}/${b1}"`) && ah.includes(`src="/ph/${tp}/${a1}"`));
+  ok('…a divider a keyboard can move too', /id="baRange" type="range"/.test(ah) && /aria-label="Slide between before and after"/.test(ah));
+  ok('…and a button to keep them', /id="savePics"[^>]*data-tap="photos"/.test(ah) && ah.includes(`data-pics="/ph/${tp}/${b1} /ph/${tp}/${a1}"`) && />Save the photos</.test(ah));
+  ok('the text preview is their own car, not the stock one', ah.includes(`og:image" content="https://texting.example.workers.dev/ph/${tp}/${a1}"`) && !/og-car\.jpg/.test(ah));
+  ok('…and says what is behind it', /og:description" content="Your before and after/.test(ah));
+  ok('the thanks is in the greeting now', /Hi Pia\. Thanks for having me out\./.test(ah));
+  const a2 = await up('b:bkPH1', 'after');
+  ok('a retaken after shot replaces the first', (await page('after', tp)).includes(`/ph/${tp}/${a2}"`) && !(await page('after', tp)).includes(`/ph/${tp}/${a1}"`));
+
+  // The ask, right under the result while the job is fresh.
+  ah = await page('after', tp);
+  const at = (x) => ah.indexOf(x);
+  ok('the review ask is on the job card, once', (ah.match(/>Leave a review</g) || []).length === 1 && at('Leave a review') < at('<div class="lbl">Looking after it</div>'));
+  ok('…above the friend link and the next one', at('Leave a review') < at(`/friend/${tp}`) && at('Leave a review') < at('Your next one'));
+  ok('…with "something not right?" as a text, under the button (never in front of it)',
+    at('Something not right?') > at('Leave a review') && /Something not right\? <a href="sms:\+14256007897">Text me<\/a> and I'll make it right\./.test(ah));
+  ok('…and still no form to fill in (his call)', !/<textarea/.test(ah) && !/id="issueBtn"/.test(ah));
+
+  // The photo route: this customer's shots, from this job, and nothing else.
+  let r = await M.custPhoto(tp, a2);
+  const bytes = new Uint8Array(await r.arrayBuffer());
+  ok('/ph/<token>/<id> serves the shot', r.status === 200 && r.headers.get('Content-Type') === 'image/jpeg' && bytes[0] === 0xFF && bytes[1] === 0xD8);
+  ok('…kept out of search', /noindex/.test(r.headers.get('X-Robots-Tag') || ''));
+  ok('…the before one too', (await M.custPhoto(tp, b1)).status === 200);
+  ok('…but not the after he retook over', (await M.custPhoto(tp, a1)).status === 404);
+  await customer(OT, 'Otto Reyes');
+  const to = await M.custTokenFor(OT);
+  const ot = await M.loadThread(OT); ot.lastJob = { at: NOW - 3600000, service: 'Exterior Detail', jobId: 'b:bkOT1' }; await M.saveThread(ot);
+  const oa = await up('b:bkOT1', 'after');
+  ok('her token cannot fetch someone else\'s photo', (await M.custPhoto(tp, oa)).status === 404);
+  ok('…nor his token hers', (await M.custPhoto(to, a2)).status === 404);
+  ok('a made-up token gets nothing', (await M.custPhoto('zzzzzzzzzzzzzzzz', a2)).status === 404);
+
+  // Closed out on the Bookings tab: lastJob carries the bare booking id, the
+  // board filed the photos under "b:<id>".
+  pt.lastJob = { at: NOW - 3 * 3600000, service: 'Full Detail', jobId: 'bkPH1' }; await M.saveThread(pt);
+  ok('a job closed on the Bookings tab still finds the board\'s photos', (await page('after', tp)).includes(`/ph/${tp}/${a2}"`) && (await M.custPhoto(tp, a2)).status === 200);
+
+  // A job agreed over text is "t:<phone>" every visit: last visit's shots
+  // share the index and must not show up as this one's.
+  const TX = '+14255550906';
+  const xt = await customer(TX, 'Tess Xu');
+  const tx = await M.custTokenFor(TX);
+  store.set('ph:img:oldbefore01', 'data:image/jpeg;base64,' + JPG); store.set('ph:img:oldafter001', 'data:image/jpeg;base64,' + JPG);
+  store.set('ph:idx:t:' + TX, JSON.stringify([{ id: 'oldbefore01', phase: 'before', ts: NOW - 40 * DAY }, { id: 'oldafter001', phase: 'after', ts: NOW - 40 * DAY }]));
+  xt.lastJob = { at: NOW - 2 * 3600000, service: 'Interior Detail', jobId: 't:' + TX }; await M.saveThread(xt);
+  ah = await page('after', tx);
+  ok('last visit\'s shots are not this visit\'s', !/class="ba[ "]/.test(ah) && (await M.custPhoto(tx, 'oldafter001')).status === 404);
+  const xa = await up('t:' + TX, 'after');
+  ah = await page('after', tx);
+  ok('an after shot on its own shows on its own', /class="ba one"/.test(ah) && ah.includes(`/ph/${tx}/${xa}"`) && !/id="baRange"/.test(ah) && />Save the photo</.test(ah));
+  ok('…and the preview says so', /og:description" content="How it came out/.test(ah));
+
+  // A month on: the ask goes back to the bottom and the "not right" line goes.
+  pt.lastJob = { at: NOW - 30 * DAY, service: 'Full Detail', jobId: 'b:bkPH1' }; await M.saveThread(pt);
+  const cfgM = await M.loadConfig();
+  for (const m of [M.localDateStr(NOW, cfgM.tz).slice(0, 7)]) { const d = await M.loadMonth(m); d.entries = d.entries.filter((e) => e.phone !== PH); await M.saveMonth(m, d); }
+  ah = await page('after', tp);
+  ok('a month on, the review ask is back at the bottom', /Happy with it\?/.test(ah) && ah.indexOf('Leave a review') > ah.indexOf('Your next one'));
+  ok('…and "something not right?" is gone', !/Something not right\?/.test(ah));
+
+  // The texts he sends with these links.
+  pt.lastJob = { at: NOW - 3 * 3600000, service: 'Full Detail', jobId: 'b:bkPH1' }; await M.saveThread(pt);
+  let dr = (await (await M.apiCustLink(req({ phone: PH }))).json()).drafts;
+  ok('with photos, the after text leads with them', /^Thanks for having me out, Pia\. Your before and after is up, and how to look after it: https:\/\/\S+\/after\//.test(dr.after), dr.after);
+  ok('…and says to reply, because the page has no complaint box', /just reply here and I'll make it right\./.test(dr.after) && !/tell me there/.test(dr.after));
+  dr = (await (await M.apiCustLink(req({ phone: TX }))).json()).drafts;
+  ok('with only an after shot, it says how it came out', /Here's how it came out, and how to look after it:/.test(dr.after), dr.after);
+  dr = (await (await M.apiCustLink(req({ phone: '+14255550907' }))).json()).drafts;   // nobody's had a job
+  ok('with none, it promises no photos', !/before and after|came out/.test(dr.after) && /Here's how to look after it and when to have me back:/.test(dr.after), dr.after);
+  ok('the before text no longer points at a button the page dropped', !/Tap the button/.test(dr.before), dr.before);
+
+  // Moving the day, from the before page.
+  const MV = '+14255550908';
+  await customer(MV, 'Max Vo');
+  const tm = await M.custTokenFor(MV);
+  await booking(MV, { dateLabel: 'Saturday, Oct 4' });
+  const bh = await page('before', tm);
+  ok('the before page offers moving the day as a text, already worded',
+    bh.includes('Need a different day?') && bh.includes('href="sms:+14256007897?&body=' + encodeURIComponent('Hi Mikey, can we move my detail on Saturday, Oct 4?') + '"'), (bh.match(/Need a different day\?[^\n]*/) || [])[0]);
+  ok('…counted when tapped', /data-tap="move"/.test(bh) && (await (await M.apiCustAction(req({ action: 'tap', kind: 'before', name: 'move' }), q(tm))).json()).noted);
+  ok('the saved /before (nobody\'s job) has no such line', !(await page('before')).includes('Need a different day?'));
+  ok('"Save the photos" taps are counted too', (await (await M.apiCustAction(req({ action: 'tap', kind: 'after', name: 'photos' }), q(tp))).json()).noted);
+}
+
 section('Nothing here texted a customer');
-ok('no SMS to any customer across the whole suite', !sms.some((m) => [JENNA, RUTH, FRIEND, TEXTED, BOARD, '+14255550901', '+14255550902', '+14255550903'].includes(m.to)), sms);
+ok('no SMS to any customer across the whole suite', !sms.some((m) => [JENNA, RUTH, FRIEND, TEXTED, BOARD, '+14255550901', '+14255550902', '+14255550903',
+  '+14255550904', '+14255550905', '+14255550906', '+14255550907', '+14255550908'].includes(m.to)), sms);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-25·helper-toolkit';
+const BUILD = '2026-09-25·after-photos';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -456,6 +456,11 @@ async function handle(request) {
   }
   // /cal/<token>.ics — "Add to calendar" off the before page.
   if (request.method === 'GET'  && pathname.startsWith('/cal/'))    return custCalendar(pathname.slice(5).replace(/\.ics$/, '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80));
+  // /ph/<token>/<id> — their before and after, on the after page. See custPhoto.
+  {
+    const m = /^\/ph\/([A-Za-z0-9_-]{12,80})\/([A-Za-z0-9]{6,24})$/.exec(pathname);
+    if (request.method === 'GET' && m) return custPhoto(m[1], m[2]);
+  }
   // /i/<id> — a photo he sent. Public on purpose: Twilio fetches this URL itself,
   // with no cookie and no credentials, or the MMS never goes out. See servePhoto.
   if (request.method === 'GET'  && pathname.startsWith('/i/'))      return servePhoto(pathname.slice(3));
@@ -17692,6 +17697,39 @@ const CUST_AFTER_DAYS = 21;
 // ("6–8 weeks"), not a per-service table: one number is one he can say out loud.
 const CUST_NEXT_WEEKS = [6, 8];
 
+// ---- After the job: their before and after ---------------------------------
+// The shots he snaps on the Jobs board, handed back on the customer's own after
+// page. Of everything that page carries, this is the part people show someone
+// else, and seeing the result is the moment a review is easiest to ask for, so
+// it sits at the top with the ask right under it.
+//
+// A job's photos are filed under its Jobs board id, and the customer's lastJob
+// doesn't always carry that id: a booking closed out on the Bookings tab stamps
+// the bare booking id, where the board filed it under "b:<id>". A job agreed
+// over text is "t:<phone>" on EVERY day he does one for them, so that index
+// holds every visit's shots; the window around this job keeps it to this one.
+const CUST_PHOTO_BEFORE_MS = 3 * 86400000;   // a two-day correction starts early
+const CUST_PHOTO_AFTER_MS = 2 * 86400000;    // the after shot often goes up that night
+async function custJobPhotos(lastJob) {
+  if (!lastJob || !lastJob.jobId || !lastJob.at) return null;
+  const id = String(lastJob.jobId);
+  const keys = /^[bt]:/.test(id) ? [id] : [id, 'b:' + id];
+  let list = [];
+  for (const k of keys) {
+    const idx = await kv().get(photoIdxKey(k), { type: 'json' });
+    if (Array.isArray(idx) && idx.length) { list = idx; break; }
+  }
+  const lo = lastJob.at - CUST_PHOTO_BEFORE_MS, hi = lastJob.at + CUST_PHOTO_AFTER_MS;
+  const mine = list.filter((p) => p && p.id && p.ts >= lo && p.ts <= hi);
+  const latest = (phase) => (mine.filter((p) => p.phase === phase).slice(-1)[0] || {}).id || '';
+  const after = latest('after');
+  // A before with no after is a picture of a dirty car on the page that's meant
+  // to show the finished one. Nothing at all beats that.
+  if (!after) return null;
+  return { before: latest('before'), after };
+}
+function custPhotoUrl(token, id) { return `/ph/${token}/${id}`; }
+
 // The wording on the before and after pages he can change from Settings
 // without asking anybody. Blank in config = this default, so clearing a box
 // always puts his original words back rather than leaving a hole on the page.
@@ -17781,10 +17819,11 @@ async function custState(phone) {
     .map((b) => ({ date: b.date, service: b.serviceName || '', vehicle: b.vehicle || '', price: b.estimate || 0 }));
   const ready = next && t.prepReady && t.prepReady.forAt === next.at ? t.prepReady : null;
   const issue = recent ? (t.afterIssues || []).find((x) => x.forAt === recent.at) : null;
-  // "What I did today" is ticked on the job he closed out (thread.lastJob);
-  // only trust it for the job the page is actually about.
-  const did = last && t.lastJob && Array.isArray(t.lastJob.did) && Math.abs((t.lastJob.at || 0) - last.at) < 2 * 86400000
-    ? t.lastJob.did : [];
+  // "What I did today" and the photos are both on the job he closed out
+  // (thread.lastJob); only trust them for the job the page is actually about.
+  const lastIsJob = !!(last && t.lastJob && Math.abs((t.lastJob.at || 0) - last.at) < 2 * 86400000);
+  const did = lastIsJob && Array.isArray(t.lastJob.did) ? t.lastJob.did : [];
+  const photos = lastIsJob ? await custJobPhotos(t.lastJob) : null;
   const addrFix = next && t.addrFix && t.addrFix.forAt === next.at ? t.addrFix : null;
   // The friend page is for people who've actually had a detail. Asking a
   // stranger who hasn't met Mikey yet to vouch for him reads as a pyramid scheme.
@@ -17808,7 +17847,7 @@ async function custState(phone) {
     // tips and "when's the next one" don't expire. `after` above is only the
     // hub's "you just had one" window.
     lastDone: last ? { at: last.at, dateLabel: bkNiceDate(localDateStr(last.at, cfg.tz)), service: last.service,
-      care: careKind(last.service), did } : null,
+      care: careKind(last.service), did, photos } : null,
     addrFix: addrFix ? { at: addrFix.at, address: addrFix.address } : null,
     planAskAt: (t.planAsk && t.planAsk.at) || 0,
     // Shown to everybody, happy or not. Only sending the happy ones to Google
@@ -18002,7 +18041,8 @@ const CUST_CHECKS = {
 };
 // The buttons whose taps get counted, so he can see what people actually use.
 const CUST_TAPS = { calendar: 'Add to calendar', book: 'Book the next one', plan: 'Put me on a plan',
-  friend: 'Send a friend', review: 'Leave a review', website: 'Website', address: 'Fix address', share: 'Share my link' };
+  friend: 'Send a friend', review: 'Leave a review', website: 'Website', address: 'Fix address', share: 'Share my link',
+  photos: 'Saved the photos', move: 'Asked to move it' };
 
 // A phone notification with its own headline, and nothing else: no email, and
 // never the SMS fallback notifyMikey has, because "they opened it" is nice to
@@ -18018,13 +18058,23 @@ function custPageUrl(kind, token) { return `${publicBase()}/${CUST_PAGES[kind]}$
 
 // What he texts with each link, in his words. Drafts only: they land in the
 // box and he sends them, so nothing here ever reaches a phone on its own.
-function custLinkDrafts(t, token, next) {
+// `photos` is what the after page will show (custJobPhotos), so the text only
+// promises a before and after when there is one to open.
+//
+// The after text says to reply because the page has no complaint box (his
+// call), and it points at the photos first because they're the reason to tap.
+// The before text used to say "tap the button at the bottom once you're set";
+// that button went when the page stopped asking them to submit anything.
+function custLinkDrafts(t, token, next, photos) {
   const first = jdFirst(t.name) || 'there';
   const day = next ? next.dateLabel.split(',')[0] : '';
+  const shots = photos ? (photos.before ? "your before and after is up, and how to look after it" : "here's how it came out, and how to look after it") : '';
   return {
     book: `Hey ${first}, here's your own link: ${custUrl(token)} You can see what's coming up, book a time or move one, and look back at what I've done before. Save it, it doesn't expire.`,
-    before: `Hey ${first}, here's everything for ${day ? day + "'s detail" : 'your detail'}: what I need from you, how long it takes and paying. ${custPageUrl('before', token)} Tap the button at the bottom once you're set.`,
-    after: `Thanks for having me out, ${first}. Here's how to look after it, and if anything's not right tell me there and I'll make it right: ${custPageUrl('after', token)}`,
+    before: `Hey ${first}, here's everything for ${day ? day + "'s detail" : 'your detail'}: what I need from you, how long it takes and paying. ${custPageUrl('before', token)}`,
+    after: shots
+      ? `Thanks for having me out, ${first}. ${shots[0].toUpperCase() + shots.slice(1)}: ${custPageUrl('after', token)} If anything's not right, just reply here and I'll make it right.`
+      : `Thanks for having me out, ${first}. Here's how to look after it and when to have me back: ${custPageUrl('after', token)} If anything's not right, just reply here and I'll make it right.`,
     friend: `Hey ${first}, if anyone asks who did your car, here's your own link to send them. Once their first detail is done you both get a free exterior on me: ${custPageUrl('friend', token)}`,
   };
 }
@@ -18041,7 +18091,7 @@ async function apiCustLink(request) {
   const t = await loadThread(phone);
   const cfg = await loadConfig();
   const next = custNext(t, (await loadBookings()).filter((b) => b.phone === phone), Date.now(), cfg.tz);
-  const drafts = custLinkDrafts(t, token, next);
+  const drafts = custLinkDrafts(t, token, next, await custJobPhotos(t.lastJob));
   const links = { book: url, before: custPageUrl('before', token), after: custPageUrl('after', token), friend: custPageUrl('friend', token) };
   const saved = { before: custPageUrl('before', ''), after: custPageUrl('after', '') };
   if (d.text) {
@@ -18264,6 +18314,10 @@ async function custSubPage(kind, token) {
       const where = s.address ? s.address + (s.city ? ', ' + s.city : '') : '';
       const fixed = s.addrFix
         ? `<div class="pill ok">Sent to Mikey: ${jdEsc(s.addrFix.address)}</div>` : '';
+      // Two taps to move it, already worded. Someone who can't make the day and
+      // has to work out how to say so tends not to, and the first he hears of
+      // it is an empty driveway. A text, not the hub's picker, so the day they
+      // had is freed by him and not left booked behind a second request.
       head = `<div class="card next"><div class="lbl">Your detail</div><div class="big">${jdEsc(n.dateLabel)}</div>
         ${when ? `<div class="sub m0">${jdEsc(when)}</div>` : ''}
         ${s.vehicle ? `<div class="line">${jdEsc(s.vehicle)}</div>` : ''}
@@ -18272,7 +18326,8 @@ async function custSubPage(kind, token) {
         ${fixed}
         <div id="addrForm" hidden><input class="fld" id="addrIn" maxlength="160" autocomplete="street-address" placeholder="Street address and city">
           <button class="btn" id="addrSend" type="button">Send to Mikey</button><div class="note" id="addrMsg"></div></div>
-        <a class="btn ghost mt" href="/cal/${jdEsc(token)}.ics" data-tap="calendar">Add to calendar</a></div>`;
+        <a class="btn ghost mt" href="/cal/${jdEsc(token)}.ics" data-tap="calendar">Add to calendar</a>
+        ${tel ? `<div class="note">Need a different day? <a href="${custSmsHref(tel, `Hi Mikey, can we move my detail on ${n.dateLabel}?`)}" data-tap="move">Text me</a> and we'll find another.</div>` : ''}</div>`;
     }
     const steps = custCopyLines(copy.expect);
     const expect = steps.length ? `<div class="card"><div class="lbl">How it goes</div><ol class="steps">${steps.map((x) => {
@@ -18292,13 +18347,49 @@ async function custSubPage(kind, token) {
     og = { title: 'After your detail', desc: 'How to look after it, and when to have me back.' };
     const a = s && s.lastDone;
     const parts = [];
-    if (!a) intro = copy.afterThanks;   // with a job, the thanks sits on its card instead
+    // While the job is fresh (the hub's own "you just had one" window) the ask
+    // rides on the job card, right under the result: that's when a review gets
+    // written, and a day later it mostly doesn't. After that it drops to the
+    // bottom, where someone back for the care tips can still find it.
+    const fresh = !!(a && s.after);
+    // The thanks is the greeting's second half, job or no job: on the card it
+    // sat between the photos and the list, and "Hi Ruth." was left on its own.
+    intro = copy.afterThanks;
     if (a) {
       const did = (a.did || []).length
         ? `<div class="lbl mt">What I did</div><ul class="did">${a.did.map((x) => `<li>${jdEsc(x)}</li>`).join('')}</ul>` : '';
+      const ph = a.photos;
+      let shots = '';
+      if (ph) {
+        const bu = custPhotoUrl(token, ph.before), au = custPhotoUrl(token, ph.after);
+        if (publicBase()) og.image = publicBase() + au;   // a preview needs the absolute URL
+        og.desc = ph.before ? 'Your before and after, and how to look after it.' : 'How it came out, and how to look after it.';
+        // Both shots in one frame with a divider they drag: the dashboard's own
+        // before/after view, handed over. The range input is what makes it work
+        // for a keyboard and a screen reader; a finger drags the frame itself.
+        shots = ph.before
+          ? `<div class="ba" id="ba" style="--split:50%"><img src="${jdEsc(bu)}" alt="Your car before the detail">
+            <img class="aft" src="${jdEsc(au)}" alt="Your car after the detail">
+            <span class="ba-bar" aria-hidden="true"></span><span class="ba-tag l" aria-hidden="true">Before</span><span class="ba-tag r" aria-hidden="true">After</span>
+            <input class="ba-rng" id="baRange" type="range" min="0" max="100" value="50" aria-label="Slide between before and after"></div>
+            <div class="note c">Drag to compare</div>`
+          : `<div class="ba one"><img src="${jdEsc(au)}" alt="Your car after the detail"></div>`;
+        shots += `<button class="btn ghost mt" id="savePics" type="button" data-tap="photos"
+            data-pics="${jdEsc([ph.before ? bu : '', au].filter(Boolean).join(' '))}">${ph.before ? 'Save the photos' : 'Save the photo'}</button>`;
+      }
+      // Shown to everybody, happy or not (see custState.review). The "tell me"
+      // line sits under the button, never in front of it, so it can't read as
+      // a filter on who gets asked. And it's a text, not a form (his call):
+      // the thread they opened this from is where that conversation happens.
+      const ask = fresh
+        ? `<div class="ask">${info.review ? `<div class="ask-h">Happy with it?</div>
+            <div class="sub m0">A Google review helps a one-man shop more than anything else.</div>
+            <a class="btn mt" href="${jdEsc(info.review)}" target="_blank" rel="noopener" data-tap="review">Leave a review</a>` : ''}
+            <div class="note">Something not right? ${tel ? `<a href="${custSmsHref(tel, '')}">Text me</a>` : 'Text me'} and I'll make it right.</div></div>`
+        : '';
       parts.push(`<div class="card next"><div class="lbl">Your last detail</div><div class="big">${jdEsc(a.service || 'Your detail')}</div>
         <div class="sub m0">${jdEsc(a.dateLabel)}${s.vehicle ? ' · ' + jdEsc(s.vehicle) : ''}</div>
-        <p class="thanks">${jdEsc(copy.afterThanks)}</p>${did}</div>`);
+        ${shots}${did}${ask}</div>`);
     }
     // Near the top, his call: right after the job is when they're most likely to mention you.
     if (s && s.refer) parts.push(`<a class="golink solo" href="/friend/${jdEsc(token)}" data-tap="friend"><span><b>Send a friend</b><small>You both get a free exterior</small></span><i>›</i></a>`);
@@ -18335,7 +18426,7 @@ async function custSubPage(kind, token) {
         <a class="btn" href="${CUST_SITE}" target="_blank" rel="noopener" data-tap="book">Book the next one</a>`;
     }
     parts.push(`<div class="card"><div class="lbl">Your next one</div>${next}</div>`);
-    if (info.review) {
+    if (info.review && !fresh) {
       parts.push(`<div class="card" id="afterCard"><div class="lbl">Happy with it?</div>
       <div class="sub">A Google review helps a one-man shop more than anything else.</div>
       <a class="btn" href="${jdEsc(info.review)}" target="_blank" rel="noopener" data-tap="review">Leave a review</a></div>`);
@@ -18400,6 +18491,25 @@ async function custCalendar(token) {
     'Content-Type': 'text/calendar; charset=utf-8', 'Content-Disposition': 'inline; filename="detail.ics"', 'Cache-Control': 'no-store' } });
 }
 
+// /ph/<token>/<id> — a photo on their after page. Public the way the page is
+// (the token is the key, and the phone's link preview fetches it with no
+// cookie), but it only ever serves a shot that page itself would show: this
+// customer's, from their last job. Any other id is a 404, so a token can't be
+// walked through the rest of the photo store.
+async function custPhoto(token, id) {
+  const none = () => new Response('Not found', { status: 404, headers: { 'Cache-Control': 'no-store' } });
+  const rec = id ? await custResolve(token) : null;
+  if (!rec) return none();
+  const ph = await custJobPhotos((await loadThread(rec.phone)).lastJob);
+  if (!ph || (id !== ph.before && id !== ph.after)) return none();
+  const img = photoBytes(await kv().get('ph:img:' + id));
+  if (!img) return none();
+  return new Response(img.bin, { headers: {
+    'Content-Type': img.type, 'Cache-Control': 'private, max-age=86400',
+    // Their car in their driveway: nobody else's search results.
+    'X-Robots-Tag': 'noindex, noimageindex' } });
+}
+
 function custShell(inner, token, opts) {
   opts = opts || {};
   // The preview a phone draws when the link is texted: a finished car, and a
@@ -18410,7 +18520,10 @@ function custShell(inner, token, opts) {
   const ogTitle = (og.title || opts.title || 'Your detailing') + " | Mikey's Mobile Detailing";
   const ogTags = `<meta property="og:type" content="website"><meta property="og:site_name" content="Mikey's Mobile Detailing">
 <meta property="og:title" content="${jdEsc(ogTitle)}">${og.desc ? `<meta property="og:description" content="${jdEsc(og.desc)}"><meta name="description" content="${jdEsc(og.desc)}">` : ''}
-${base ? `<meta property="og:image" content="${jdEsc(base)}/og-car.jpg"><meta property="og:image:width" content="680"><meta property="og:image:height" content="356">
+${og.image ? `<meta property="og:image" content="${jdEsc(og.image)}"><meta property="og:image:alt" content="Your car after the detail"><meta name="twitter:card" content="summary_large_image">`
+    // Their own car, when the after page has one: the preview in their texts is
+    // the result, not a stock SUV. Otherwise the stock SUV.
+    : base ? `<meta property="og:image" content="${jdEsc(base)}/og-car.jpg"><meta property="og:image:width" content="680"><meta property="og:image:height" content="356">
 <meta property="og:image:alt" content="A black SUV in a driveway just after a detail"><meta name="twitter:card" content="summary_large_image">` : ''}`;
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -18484,7 +18597,6 @@ h1{font-size:30px;font-weight:800;letter-spacing:-.02em;line-height:1.08;margin:
 .did{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:6px}
 .did li{font-size:15px;color:var(--gray);display:flex;gap:9px}
 .did li::before{content:"✓";color:var(--ok);font-weight:800}
-.thanks{margin:12px 0 0;font-size:15px;color:var(--ink)}
 textarea.fld{resize:vertical;min-height:58px}
 [hidden]{display:none!important}
 .golink{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line);color:inherit;text-decoration:none}
@@ -18499,6 +18611,25 @@ textarea.fld{resize:vertical;min-height:58px}
 .foot a{color:var(--gray);font-weight:600;text-decoration:none}
 .stars{color:var(--gray);font-size:13.5px;font-weight:600}
 .stars span{color:var(--gold);letter-spacing:1px}
+.note a{color:var(--gold2);font-weight:700}
+.note.c{text-align:center;margin-top:7px;font-size:12.5px}
+/* Their before and after: one frame, the after shot clipped to the right of a
+   divider they drag. pan-y so a thumb scrolling the page still scrolls it. */
+.ba{position:relative;margin-top:14px;border-radius:12px;overflow:hidden;background:var(--card2);aspect-ratio:4/3;
+  touch-action:pan-y;user-select:none;-webkit-user-select:none;cursor:ew-resize}
+.ba.one{cursor:default}
+.ba img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;pointer-events:none;-webkit-user-drag:none}
+.ba .aft{clip-path:inset(0 0 0 var(--split))}
+.ba-bar{position:absolute;top:0;bottom:0;left:var(--split);width:2px;margin-left:-1px;background:#fff;box-shadow:0 0 6px rgba(0,0,0,.5)}
+.ba-bar::after{content:"‹ ›";position:absolute;top:50%;left:50%;width:34px;height:34px;margin:-17px 0 0 -17px;border-radius:50%;
+  background:#fff;color:#111;font-weight:800;font-size:15px;line-height:34px;text-align:center;box-shadow:0 1px 8px rgba(0,0,0,.5)}
+.ba-tag{position:absolute;top:10px;font-size:10.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;
+  padding:4px 9px;border-radius:999px;background:rgba(0,0,0,.62);color:#fff}
+.ba-tag.l{left:10px}.ba-tag.r{right:10px}
+.ba-rng{position:absolute;left:0;bottom:0;width:100%;height:1px;margin:0;opacity:0;pointer-events:none}
+.ba:focus-within{outline:2px solid var(--gold);outline-offset:2px}
+.ask{margin-top:16px;padding-top:14px;border-top:1px solid var(--line)}
+.ask-h{font-size:17px;font-weight:800;margin-bottom:4px}
 </style></head><body>${inner}
 ${opts.book ? custHubScript(token) : opts.kind ? custSubScript(token, opts.kind) : ''}</body></html>`;
 }
@@ -18553,7 +18684,57 @@ document.addEventListener("click",function(e){
     if(navigator.share){navigator.share({text:txt}).catch(function(){})}
     else location.href="sms:?&body="+encodeURIComponent(txt);
     return}
+  if(id==="savePics"){savePics(e.target);return}
 });
+// Their before and after. A finger drags the frame, a tap jumps the divider,
+// and the hidden range input carries it for a keyboard or a screen reader.
+(function(){
+  var ba=$("ba"),rng=$("baRange"),down=false;
+  var fit=function(box){
+    // The frame takes the after shot's own shape, within reason, so a tall
+    // phone shot isn't cropped to a letterbox.
+    var img=box&&box.querySelector("img:last-of-type");if(!img)return;
+    var go=function(){if(img.naturalWidth)box.style.aspectRatio=String(Math.max(.75,Math.min(1.78,img.naturalWidth/img.naturalHeight)))};
+    if(img.complete)go();else img.addEventListener("load",go);
+  };
+  fit(document.querySelector(".ba"));
+  if(!ba)return;
+  var set=function(p){p=Math.max(0,Math.min(100,p));ba.style.setProperty("--split",p+"%");if(rng)rng.value=String(Math.round(p))};
+  var at=function(x){var r=ba.getBoundingClientRect();if(r.width)set((x-r.left)/r.width*100)};
+  ba.addEventListener("pointerdown",function(e){down=true;try{ba.setPointerCapture(e.pointerId)}catch(_){}});
+  ba.addEventListener("pointermove",function(e){if(down)at(e.clientX)});
+  ["pointerup","pointercancel","lostpointercapture"].forEach(function(n){ba.addEventListener(n,function(){down=false})});
+  ba.addEventListener("click",function(e){if(e.target!==rng)at(e.clientX)});
+  if(rng)rng.addEventListener("input",function(){set(+rng.value)});
+})();
+// "Save the photos": the phone's share sheet with the files in it (Save Image,
+// Instagram, a text to whoever). Fetched as soon as the page opens, because a
+// share sheet only opens straight off a tap and a fetch in between can lose
+// it. Anywhere without a files share sheet, they download.
+var PICS=null;
+(function(){
+  var b=$("savePics");if(!b||!window.fetch||typeof File==="undefined")return;
+  var urls=(b.getAttribute("data-pics")||"").split(" ").filter(Boolean);
+  Promise.all(urls.map(function(u,i){
+    return fetch(u).then(function(r){if(!r.ok)throw new Error("photo");return r.blob()}).then(function(bl){
+      var ext=((bl.type||"").split("/")[1]||"jpg").replace("jpeg","jpg");
+      return new File([bl],"detail-"+(urls.length>1&&i===0?"before":"after")+"."+ext,{type:bl.type||"image/jpeg"});
+    });
+  })).then(function(f){PICS=f}).catch(function(){});
+})();
+function savePics(b){
+  if(PICS&&navigator.canShare&&navigator.share&&navigator.canShare({files:PICS})){
+    navigator.share({files:PICS}).catch(function(){});return}
+  // The fetched copies when there are some (they carry the right names); the
+  // photo URLs otherwise. The Jobs board only ever uploads JPEGs.
+  var list=PICS?PICS.map(function(f){return {href:URL.createObjectURL(f),name:f.name}})
+    :(b.getAttribute("data-pics")||"").split(" ").filter(Boolean).map(function(u,i,all){
+      return {href:u,name:"detail-"+(all.length>1&&i===0?"before":"after")+".jpg"}});
+  list.forEach(function(x){
+    var a=document.createElement("a");a.href=x.href;a.download=x.name;
+    document.body.appendChild(a);a.click();a.remove();
+  });
+}
 </script>`;
 }
 
@@ -19301,14 +19482,18 @@ async function apiPhotoUpload(request) {
   }
   return json({ ok: true, id, photos: idx });
 }
+// The stored data URL as image bytes, or null if it isn't one we wrote.
+function photoBytes(data) {
+  const m = String(data || '').match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/s);
+  return m ? { type: m[1], bin: Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0)) } : null;
+}
 async function apiPhotoImg(url) {
   const id = jdStr(url.searchParams.get('id'), 24);
   const data = id ? await kv().get('ph:img:' + id) : null;
   if (!data) return json({ ok: false, error: 'not_found' }, 404);
-  const m = String(data).match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/s);
-  if (!m) return json({ ok: false, error: 'bad_data' }, 500);
-  const bin = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
-  return new Response(bin, { headers: { 'Content-Type': m[1], 'Cache-Control': 'private, max-age=86400' } });
+  const img = photoBytes(data);
+  if (!img) return json({ ok: false, error: 'bad_data' }, 500);
+  return new Response(img.bin, { headers: { 'Content-Type': img.type, 'Cache-Control': 'private, max-age=86400' } });
 }
 async function apiPhotoDelete(request) {
   const d = await readJson(request);
