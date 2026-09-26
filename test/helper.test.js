@@ -115,8 +115,15 @@ console.log('\nWhat the texting page needs is open');
   ok(g.data.since > 0, 'the guide carries the start line');
   const fresh = await call('POST', '/api/config', { cookie: helper.cookie, body: { helperSince: 0 } });
   ok(fresh.status === 403, 'the helper can\'t move their own start line');
-  const empty = await call('POST', '/api/ai/draft', { cookie: helper.cookie, body: { phone: CUST } });
-  ok(empty.status === 422 && empty.data.error === 'helper_needs_text', '"write me one" without text is Mikey\'s, not the helper\'s');
+  // Ideas, not rewrites: the route that rewrites text is closed to the helper,
+  // and the coach that advises is open.
+  const rw = await call('POST', '/api/ai/draft', { cookie: helper.cookie, body: { phone: CUST, text: 'hey i can do thursday' } });
+  ok(rw.status === 403 && rw.data.error === 'helper_not_allowed', 'the AI can\'t rewrite the helper\'s text: /api/ai/draft is closed to them');
+  const co = await call('POST', '/api/helper/coach', { cookie: helper.cookie, body: { phone: CUST, draft: 'hey i can do thursday' } });
+  ok(co.status !== 403 && co.status !== 401, 'the ideas route is open to the helper (' + co.status + ')');
+  const coBad = await call('POST', '/api/helper/coach', { cookie: helper.cookie, body: { phone: 'nope' } });
+  ok(coBad.status === 422, 'and it still checks the phone number');
+  ok(/What should I say/.test(JSON.stringify(g.data.guide)) && !/Auto Polish/.test(JSON.stringify(g.data.guide)), 'the guide explains ideas and no longer mentions Auto Polish');
 }
 
 console.log('\nA helper text goes out tagged with their name — and only their name');
