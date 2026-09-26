@@ -245,5 +245,13 @@ check('and not on every cron tick', /getUTCMinutes\(\) !== 7/.test(refresh), tru
 check('it never runs the expensive full rebuild', /buildVoiceProfile|loadThread/.test(refresh), false);
 check('the cron actually calls it', /await maybeRefreshVoice\(\)/.test(SRC), true);
 
+console.log('\n=== the helper gets ideas, not rewrites ===');
+const coach = lift('apiAiCoach');
+check('the coach reads the draft they typed', /data\.draft/.test(coach), true);
+check('and is told not to rewrite it', /Do not rewrite it/.test(coach), true);
+check('the draft is capped before it reaches the prompt', /slice\(0, 800\)/.test(coach), true);
+check('for the helper it reminds them: "I", never "we"', /data\.helper === true/.test(coach) && /never "we"/.test(coach), true);
+check('the helper route marks itself as the helper, server side', /helperForward\(request, apiAiCoach, \{ helper: true \}\)/.test(lift('helperCoach')), true);
+
 console.log(`\n================  ${PASS} passed, ${FAIL} failed  ================`);
 process.exit(FAIL ? 1 : 0);

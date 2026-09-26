@@ -1,7 +1,7 @@
 // The helper page in a real browser: one conversation list like a phone's,
 // "needs reply" counted from the helper's start line,
-// every reply gets an Auto Polish read before it can go out, and Undo is a real
-// way back. Plus the one hop in Mikey's own app: the helper's PIN on his
+// the AI never rewrites what the helper types (it gives ideas for what to say
+// instead), and Send sends their words on the first tap. Plus the one hop in Mikey's own app: the helper's PIN on his
 // sign-in screen lands on the helper page, not in his dashboard.
 //
 //   node test/helper.ui.test.js
@@ -49,8 +49,10 @@ function watch(page) {
 const page = await browser.newPage({ viewport: { width: 390, height: 844 } });
 watch(page);
 let authed = false;
-const sends = [], polishes = [], contacts = [], dones = [], organizes = [];
-let polishReply = (text) => ({ ok: true, draft: text.replace(/^hey/i, 'Hey').replace(/tues\b/i, 'Tuesday') + '!', note: '' });
+const sends = [], polishes = [], coaches = [], contacts = [], dones = [], organizes = [];
+let coachReply = (b) => b.draft
+  ? { ok: true, reply: '', points: ['Ask what year the car is'], watchouts: ['Don\'t promise Tuesday until Mikey says so'], tone: '' }
+  : { ok: true, reply: 'Hey! Tuesday might work, let me check with Mikey.', points: ['Say Tuesday might work', 'Ask what car it is'], watchouts: ['Never promise a day, Mikey picks'], tone: 'Quick and friendly' };
 await page.route('**/*', async (route) => {
   const req = route.request(); const u = new URL(req.url()); const p = u.pathname;
   const json = (o, s) => route.fulfill({ status: s || 200, contentType: 'application/json', body: JSON.stringify(o) });
@@ -79,7 +81,8 @@ await page.route('**/*', async (route) => {
     return json({ ok: true, thread, labels: guide.labels });
   }
   if (p === '/api/helper/done') { dones.push(body()); return json({ ok: true, thread }); }
-  if (p === '/api/ai/draft') { const b = body(); polishes.push(b.text); return json(polishReply(b.text)); }
+  if (p === '/api/ai/draft') { const b = body(); polishes.push(b.text); return json({ ok: true, draft: 'REWRITTEN' }); }
+  if (p === '/api/helper/coach') { const b = body(); coaches.push(b); return json(coachReply(b)); }
   if (p === '/api/send') { const b = body(); sends.push(b.body); return json({ ok: true, thread: Object.assign({}, thread, { messages: thread.messages.concat([{ dir: 'out', body: b.body, ts: Date.now(), by: 'Jess' }]) }) }); }
   if (p.startsWith('/api/')) return json({ ok: true });
   return route.fulfill({ status: 404, body: '' });
@@ -131,47 +134,72 @@ ok(await page.isDisabled('#sendBtn'), 'send is grey while the box is empty');
 ok(await page.isVisible('#useSugg'), 'the AI\'s draft is offered');
 await page.click('#useSugg');
 ok((await page.inputValue('#box')).startsWith('I might have an opening Tuesday'), 'using the draft fills the box');
-ok(polishes.length === 0, 'the AI draft is already in his voice, so no polish call');
+ok(polishes.length === 0, 'nothing is sent off to be rewritten');
 await page.click('#sendBtn');
 await page.waitForFunction(() => document.getElementById('box').value === '');
 ok(sends.length === 1 && sends[0].startsWith('I might have an opening'), 'the draft sends on one tap');
 ok(/Sent by Jess/.test(await page.textContent('#msgs')), 'under the bubble: "Sent by Jess"');
 ok(await page.$$eval('#msgs .b.out', (n) => n.length) === 1 && await page.$$eval('#msgs .b.in', (n) => n.length) === 1, 'their text on the left, the reply on the right');
 
-console.log('\nAuto Polish');
+console.log('\nThe AI never touches what they type');
 await page.fill('#box', '');
 await page.type('#box', 'hey I can do tues at 1pm');
-await page.waitForFunction(() => /Polished/.test(document.getElementById('strip').textContent), null, { timeout: 8000 });
-ok(await page.inputValue('#box') === 'Hey I can do Tuesday at 1pm!', 'after a pause the box is rewritten into his voice');
-ok(polishes.length === 1, 'one polish call');
-await page.click('#undoP');
-ok(await page.inputValue('#box') === 'hey I can do tues at 1pm', 'Undo puts their exact words back');
-await page.click('#sendBtn');
-await page.waitForFunction((n) => window.__n = n, sends.length);
-await page.waitForTimeout(300);
-ok(sends[sends.length - 1] === 'hey I can do tues at 1pm', 'after Undo their own words send, without a second polish');
-ok(polishes.length === 1, 'Undo is respected, no re-polish loop');
-
-console.log('\nSend never skips the read');
+await page.waitForTimeout(3200);   // longer than the old 2.4s polish pause
+ok(await page.inputValue('#box') === 'hey I can do tues at 1pm', 'after a pause their words are still their words');
+ok(polishes.length === 0, 'and nothing was sent off to be rewritten');
 const nBefore = sends.length;
-await page.fill('#box', 'could you send the year of the car');
-await page.click('#sendBtn');   // straight to Send, no pause
-await page.waitForFunction(() => /Polished/.test(document.getElementById('strip').textContent));
-ok(sends.length === nBefore, 'first tap polishes instead of sending');
-ok(await page.inputValue('#box') === 'could you send the year of the car!', 'and shows the version that will go out');
 await page.click('#sendBtn');
-await page.waitForFunction((n) => true, null);
-await page.waitForTimeout(300);
-ok(sends.length === nBefore + 1 && sends[sends.length - 1] === 'could you send the year of the car!', 'second tap sends what they read');
+await page.waitForFunction(() => document.getElementById('box').value === '');
+ok(sends.length === nBefore + 1 && sends[sends.length - 1] === 'hey I can do tues at 1pm', 'Send sends exactly what they wrote, on the first tap');
+ok(polishes.length === 0, 'still no rewrite');
 
-console.log('\nPolish down is not a dead end');
-polishReply = () => ({ ok: false, error: 'ai_down' });
-await page.fill('#box', 'running a little late today');
-await page.click('#sendBtn');
-await page.waitForFunction(() => /down right now/.test(document.getElementById('strip').textContent));
+console.log('\nIdeas for what to say');
+ok(/What should I say/.test(await page.textContent('#strip')), 'the ideas button sits right above the box');
+ok(await page.isDisabled('#ideaCheck'), '"Check my text" waits until something is typed');
+ok(coaches.length === 0, 'nothing is asked of the AI until they tap');
+await page.click('#ideaGo');
+await page.waitForFunction(() => /What to say next/.test(document.getElementById('ideas').textContent));
+ok(coaches.length === 1 && !coaches[0].draft, 'one call, on the tap');
+const idea = await page.textContent('#ideas');
+ok(/Ask what car it is/.test(idea), 'what to say next');
+ok(/Keep in mind/.test(idea) && /Mikey picks/.test(idea) && /Quick and friendly/.test(idea), 'and what to keep in mind');
+ok(!(await page.isVisible('#ideas .ex')), 'the example stays folded until they ask for it');
+ok(await page.inputValue('#box') === '', 'the box is left empty');
+
+console.log('\nAn example goes in only on a tap, and never over their words without asking');
+await page.type('#box', 'hi there');
+await page.click('#ideas summary');
+page.once('dialog', (d) => d.dismiss());
+await page.click('#ideaUse');
+ok(await page.inputValue('#box') === 'hi there', 'said no, so what they typed stays');
+page.once('dialog', (d) => d.accept());
+await page.click('#ideaUse');
+ok(/^Hey! Tuesday might work/.test(await page.inputValue('#box')), 'said yes, so the example is in');
+
+console.log('\nCheck my text: what it still needs, without changing it');
+await page.fill('#box', '');
+await page.type('#box', 'tuesday works, see you then');
+await page.click('#ideaCheck');
+await page.waitForFunction(() => /Still to say/.test(document.getElementById('ideas').textContent));
+ok(coaches.length === 2 && coaches[1].draft === 'tuesday works, see you then', 'their draft went along to be read');
+ok(/what year/.test(await page.textContent('#ideas')) && /promise Tuesday/.test(await page.textContent('#ideas')), 'it says what\'s missing and what to watch');
+ok(await page.inputValue('#box') === 'tuesday works, see you then', 'and the box is untouched');
+await page.click('#ideasX');
+ok((await page.textContent('#ideas')) === '', 'closes');
+await page.fill('#box', '');
+await page.click('#ideaGo');
+await page.waitForFunction(() => /What to say next/.test(document.getElementById('ideas').textContent));
+ok(coaches.length === 2, 'asking again about the same texts is free');
+
+console.log('\nIdeas down is not a dead end');
+coachReply = () => ({ ok: false, error: 'ai_down' });
+await page.type('#box', 'running a little late today');
+await page.click('#ideaCheck');
+await page.waitForFunction(() => /Couldn't get ideas/.test(document.getElementById('ideas').textContent));
 await page.click('#sendBtn');
 await page.waitForTimeout(300);
-ok(sends[sends.length - 1] === 'running a little late today', 'with polish down, the second tap still sends');
+ok(sends[sends.length - 1] === 'running a little late today', 'with the AI down, Send still sends');
+ok((await page.textContent('#ideas')) === '', 'and sending clears the ideas, they were about the last text');
 
 console.log('\nQuick replies and guide');
 await page.fill('#box', '');

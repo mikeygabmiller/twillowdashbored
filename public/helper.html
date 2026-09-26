@@ -173,6 +173,21 @@
   .strip.pol{color:var(--lav)}
   .strip.warn{color:var(--amber)}
   .strip button{color:var(--blue);font-weight:700;padding:2px 4px}
+  .strip .idea{color:var(--lav);font-weight:700;padding:4px 2px}
+  .strip .idea:disabled{color:var(--faint)}
+  /* Ideas from the AI: what to say, never words put in the box for them. */
+  .ideas{background:var(--lavbg);border:1px solid #3a2f73;border-radius:14px;padding:10px 12px;margin:12px 0 4px;font-size:15px}
+  .ideas .ih{display:flex;align-items:center;justify-content:space-between;font-size:12px;font-weight:700;color:var(--lav);margin-bottom:6px}
+  .ideas .ih button{color:var(--muted);font-size:18px;line-height:1;padding:0 4px}
+  .ideas h5{margin:8px 0 3px;font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px}
+  .ideas h5.keep{color:var(--amber)}
+  .ideas ul{margin:0;padding-left:18px}
+  .ideas li{margin:2px 0}
+  .ideas details{margin-top:8px}
+  .ideas summary{color:var(--lav);font-weight:700;font-size:14px;cursor:pointer}
+  .ideas .ex{white-space:pre-wrap;margin-top:6px;padding:8px 10px;border-radius:10px;background:rgba(0,0,0,.2)}
+  .ideas .exu{margin-top:6px;color:var(--lav);font-weight:700;font-size:14px}
+  .ideas .wait{color:var(--muted)}
 
   /* ---- sheets ---- */
   .sheetbg{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.5);display:flex;align-items:flex-end;justify-content:center}
@@ -261,6 +276,7 @@
     <div class="msgs" id="msgs"></div>
     <div id="answer"></div>
     <div id="sugg"></div>
+    <div id="ideas"></div>
   </div>
   <div class="composer">
     <div class="strip" id="strip"></div>
@@ -308,12 +324,18 @@
   "use strict";
   var TZ="America/Los_Angeles";
   var S={role:"",name:"",threads:[],phone:"",thread:null,guide:null,view:"",q:"",seg:"all",showArch:false,since:0,from:"list",stage:"",label:""};
-  // Auto Polish state. `ok` is the exact text that has been through polish (or
-  // that the helper deliberately kept with Undo). Send only goes out when the
-  // box still matches it, which is how every text gets a voice check without a
-  // second button to remember.
-  var P={timer:null,busy:false,ok:"",before:"",seq:0};
-  var IDLE=2400, MIN=10;
+  // Ideas. This page used to run every text through Auto Polish, which
+  // rewrote the helper's words and wouldn't let Send go until it had. The helper
+  // said it kept changing what they wrote, they couldn't turn it off, and what
+  // they needed was to know WHAT to say. So the AI here only ever advises: what
+  // to say next, what to keep in mind, and on request a read of their draft that
+  // says what's missing. It never touches the box unless they tap to put an
+  // example in, and even then it asks before replacing anything they typed.
+  //
+  // One call per tap, nothing on its own. Answers are kept per conversation
+  // until the customer texts again, so asking twice or coming back is free.
+  var I={phone:"",d:null,draft:"",busy:false,err:""};
+  var IDEAS={};   // phone -> {key: answer}
 
   function el(id){return document.getElementById(id)}
   function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
@@ -559,14 +581,13 @@
 
   // ---- conversation ----
   function openThread(phone){
-    if(S.phone!==phone){keepDraft();resetPolish();el("box").value=DRAFTS[phone]||""}
+    if(S.phone!==phone){keepDraft();closeIdeas();el("box").value=DRAFTS[phone]||""}
     S.phone=phone;
     return api("/api/thread?phone="+encodeURIComponent(phone)).then(function(d){
       if(!d||!d.ok||!d.thread)return;
       S.thread=d.thread;show("chat");
       renderHead();
       renderChat(true);sizeBox();updSend();
-      if(el("box").value.trim())schedulePolish();
       // Reading it clears the unread dot and the "Mikey answered" pill.
       S.threads.forEach(function(t){if(t.phone===phone)t.unread=0});
       markSeen(phone);badge();
@@ -636,8 +657,9 @@
     var last=ms[ms.length-1],sg=t.suggested;
     if(sg&&sg.text&&last&&last.dir==="in"&&sg.forTs===last.ts&&!t.optedOut){
       el("sugg").innerHTML='<div class="sugg"><div class="h">Suggested reply</div><div class="x">'+esc(sg.text)+'</div><button id="useSugg">Use this</button></div>';
-      el("useSugg").onclick=function(){setBox(sg.text,true)};
+      el("useSugg").onclick=function(){putInBox(sg.text)};
     }else el("sugg").innerHTML="";
+    renderIdeas();ideaBtns();
     el("box").disabled=!!t.optedOut;
     el("box").placeholder=t.optedOut?"They texted STOP":"Text Message";
     updSend();
@@ -741,7 +763,7 @@
     el("chips").innerHTML=q.map(function(x,i){return'<button class="chip" data-i="'+i+'">'+esc(x.label)+'</button>'}).join("");
     Array.prototype.forEach.call(el("chips").querySelectorAll("[data-i]"),function(b){b.onclick=function(){
       var x=q[+b.getAttribute("data-i")];var cur=el("box").value.trim();
-      setBox(cur?cur+" "+x.text:x.text,false);
+      setBox(cur?cur+" "+x.text:x.text);
     }});
   }
   // Grows with what's typed, like a phone's box. Measured only while the chat is
@@ -751,11 +773,13 @@
     b.style.height="auto";b.style.height=Math.max(34,Math.min(b.scrollHeight,window.innerHeight*.34))+"px";
   }
   function updSend(){el("sendBtn").disabled=!el("box").value.trim()||!!(S.thread&&S.thread.optedOut)}
-  function setBox(text,trusted){
-    el("box").value=text;sizeBox();updSend();keepDraft();el("box").focus();
-    // Starters are Mikey's own words, but anything combined with typing still
-    // goes through polish. Only the AI's draft is already in his voice.
-    if(trusted){P.ok=text;strip("","")}else{P.ok="";schedulePolish()}
+  function setBox(text){el("box").value=text;sizeBox();updSend();keepDraft();ideaBtns();el("box").focus()}
+  // Anything the AI wrote goes in only on a tap, and never over their words
+  // without asking first.
+  function putInBox(text){
+    var cur=el("box").value.trim();
+    if(cur&&cur!==text.trim()&&!confirm("Replace what you typed?"))return;
+    setBox(text);
   }
   el("backBtn").onclick=function(){keepDraft();S.phone="";S.thread=null;show("list");renderList();loadList()};
   el("infoBtn").onclick=function(){el("scroller").scrollTop=0};
@@ -858,57 +882,73 @@
   el("sheetGuide").onclick=openGuide;
   el("guideBack").onclick=function(){if(S.from==="chat"&&S.phone){show("chat");renderChat(true)}else{show("list");renderList()}};
 
-  // ---- Auto Polish ----
+  // ---- Ideas ----
   function strip(kind,html){var s=el("strip");s.className="strip"+(kind?" "+kind:"");s.innerHTML=html}
-  function resetPolish(){clearTimeout(P.timer);P.ok="";P.before="";P.seq++;P.busy=false;strip("","")}
-  function worth(text){return text.length>=MIN&&text.split(/\s+/).length>=2}
-  function schedulePolish(){
-    clearTimeout(P.timer);
-    var text=el("box").value.trim();
-    if(!text){strip("","");return}
-    if(text===P.ok)return;
-    if(!worth(text)){P.ok=text;strip("","");return}
-    strip("","Auto Polish checks it when you pause…");
-    P.timer=setTimeout(function(){polishNow()},IDLE);
+  // The two ways in, always right above the box: ask what to say, or have what
+  // you wrote checked. Nothing to check until something's typed.
+  function ideaBtns(){
+    if(!S.thread||S.thread.optedOut||!(S.thread.messages||[]).length){strip("","");return}
+    var typed=!!el("box").value.trim();
+    strip("",'<button class="idea" id="ideaGo"'+(I.busy?" disabled":"")+'>💡 What should I say?</button>'+
+      '<button class="idea" id="ideaCheck"'+(I.busy||!typed?" disabled":"")+'>✓ Check my text</button>');
+    el("ideaGo").onclick=function(){askIdeas(false)};
+    el("ideaCheck").onclick=function(){askIdeas(true)};
   }
-  function polishNow(){
-    var text=el("box").value.trim();
-    if(!text||text===P.ok||!S.phone)return;
-    if(!worth(text)){P.ok=text;return}
-    var my=++P.seq;P.busy=true;strip("pol","✨ Polishing…");
-    post("/api/ai/draft",{phone:S.phone,text:text}).then(function(d){
-      P.busy=false;
-      if(my!==P.seq)return;
-      if(el("box").value.trim()!==text)return;       // they kept typing; the next pause catches it
-      if(!d||!d.ok||typeof d.draft!=="string"){
-        // Polish is a help, not a gate. If it can't run, say so and let them send.
-        P.ok=text;strip("warn","Auto Polish is down right now. Read it over once, then send.");return;
-      }
-      var out=d.draft.trim()||text;
-      var note=d.note?'<span>⚠ '+esc(d.note)+'</span>':"";
-      if(out!==text){
-        P.before=text;el("box").value=out;sizeBox();keepDraft();P.ok=out;
-        strip("pol",'✨ Polished to sound like Mikey. Read it, then send. <button id="undoP">Undo</button>'+note);
-        el("undoP").onclick=function(){el("box").value=P.before;sizeBox();keepDraft();P.ok=P.before;strip("","Your words are back. Send when ready.")};
-      }else{P.ok=text;strip(d.note?"warn":"pol",d.note?note:"✓ Sounds like Mikey.")}
-    }).catch(function(){P.busy=false;P.ok=text;strip("warn","Auto Polish couldn't connect. Read it over once, then send.")});
+  function ideaKey(draft){var ms=(S.thread&&S.thread.messages)||[],l=ms[ms.length-1];return (l?l.ts:"")+"|"+(draft||"")}
+  function closeIdeas(){I.phone="";I.d=null;I.draft="";I.err="";el("ideas").innerHTML=""}
+  function askIdeas(withDraft){
+    if(!S.phone||I.busy)return;
+    var draft=withDraft?el("box").value.trim():"";
+    if(withDraft&&!draft)return;
+    var phone=S.phone,key=ideaKey(draft),hit=(IDEAS[phone]||{})[key];
+    I.phone=phone;I.draft=draft;I.err="";
+    if(hit){I.d=hit;renderIdeas();toBottom();return}
+    I.d=null;I.busy=true;renderIdeas();ideaBtns();toBottom();
+    post("/api/helper/coach",{phone:phone,draft:draft}).then(function(d){
+      I.busy=false;
+      if(d&&d.ok){
+        // Only answers about the conversation as it stands are worth keeping.
+        var keep={},old=IDEAS[phone]||{},base=key.split("|")[0];
+        Object.keys(old).forEach(function(k){if(k.split("|")[0]===base)keep[k]=old[k]});
+        keep[key]=d;IDEAS[phone]=keep;
+        if(I.phone===phone&&I.draft===draft)I.d=d;
+      }else if(I.phone===phone)I.err="Couldn't get ideas right now. Try again, or ask Mikey.";
+    }).catch(function(){I.busy=false;if(I.phone===phone)I.err="No connection. Try again."})
+    // The card lands under the last text; bring it up to where they're looking.
+    .then(function(){if(S.phone===phone){renderIdeas();ideaBtns();toBottom()}});
   }
-  el("box").oninput=function(){sizeBox();updSend();keepDraft();schedulePolish()};
+  function renderIdeas(){
+    var box=el("ideas");
+    if(!S.phone||I.phone!==S.phone){box.innerHTML="";return}
+    var list=function(a){return '<ul>'+a.map(function(x){return '<li>'+esc(x)+'</li>'}).join("")+'</ul>'};
+    var h='<div class="ideas"><div class="ih"><span>'+(I.draft?"💡 Your text":"💡 Ideas")+'</span><button id="ideasX" aria-label="Close">×</button></div>';
+    if(I.busy)h+='<div class="wait">'+(I.draft?"Reading your text…":"Thinking about what to say…")+'</div>';
+    else if(I.err)h+='<div class="wait">'+esc(I.err)+'</div>';
+    else if(I.d){
+      var d=I.d,keep=(d.watchouts||[]).slice();if(d.tone)keep.push(d.tone);
+      if(d.points&&d.points.length)h+='<h5>'+(I.draft?"Still to say":"What to say next")+'</h5>'+list(d.points);
+      if(keep.length)h+='<h5 class="keep">Keep in mind</h5>'+list(keep);
+      if(!(d.points&&d.points.length)&&!keep.length)h+='<div class="wait">Nothing special here. Keep it short and friendly.</div>';
+      if(d.reply&&!I.draft)h+='<details><summary>See an example</summary><div class="ex">'+esc(d.reply)+'</div>'+
+        '<button class="exu" id="ideaUse">Put it in the box</button></details>';
+    }
+    box.innerHTML=h+'</div>';
+    el("ideasX").onclick=closeIdeas;
+    if(el("ideaUse"))el("ideaUse").onclick=function(){putInBox(I.d.reply)};
+  }
+  el("box").oninput=function(){sizeBox();updSend();keepDraft();ideaBtns()};
   // On a computer, Enter sends and Shift+Enter is a new line. On a phone the
   // return key stays a new line, the way texting apps do it.
   el("box").onkeydown=function(e){
     if(e.key==="Enter"&&!e.shiftKey&&window.matchMedia&&window.matchMedia("(pointer:fine)").matches){e.preventDefault();el("sendBtn").click()}
   };
 
-  // Send: if the box isn't what polish last saw, polish first and stop, so the
-  // helper reads the version that will actually go out. The second tap sends it.
+  // Send sends what they wrote, the first time they tap it.
   el("sendBtn").onclick=function(){
-    var text=el("box").value.trim();if(!text||!S.phone||P.busy)return;
-    clearTimeout(P.timer);
-    if(text!==P.ok){polishNow();return}
+    var text=el("box").value.trim();if(!text||!S.phone)return;
     var b=el("sendBtn");b.disabled=true;
     post("/api/send",{phone:S.phone,body:text}).then(function(d){
-      if(d&&d.ok){el("box").value="";sizeBox();keepDraft();resetPolish();if(d.thread){S.thread=d.thread;renderChat(true)}updSend();return}
+      if(d&&d.ok){el("box").value="";sizeBox();keepDraft();closeIdeas();if(d.thread){S.thread=d.thread;renderChat(true)}updSend();ideaBtns();return}
       updSend();
       toast(d&&d.error==="recipient_opted_out"?"They texted STOP. Don't text them.":"Didn't send. Try again.");
     }).catch(function(){updSend();toast("No connection. Didn't send.")});
@@ -965,7 +1005,7 @@
   setInterval(function(){
     if(document.hidden||!S.role)return;
     if(S.view==="list")loadList();
-    else if(S.view==="chat"&&S.phone&&!el("box").value.trim()&&!P.busy&&!(el("noteIn")&&el("noteIn").value)&&el("formSheet").classList.contains("hide")){
+    else if(S.view==="chat"&&S.phone&&!el("box").value.trim()&&!I.busy&&!(el("noteIn")&&el("noteIn").value)&&el("formSheet").classList.contains("hide")){
       api("/api/thread?phone="+encodeURIComponent(S.phone)).then(function(d){
         if(d&&d.ok&&d.thread&&S.view==="chat"&&d.thread.phone===S.phone){S.thread=d.thread;renderChat(false);markSeen(S.phone)}
       });

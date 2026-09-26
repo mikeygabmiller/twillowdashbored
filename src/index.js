@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-25·helper-organize';
+const BUILD = '2026-09-26·helper-ideas';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -8963,10 +8963,26 @@ async function apiAiCoach(request) {
   if (!thread.messages.length) return json({ ok: false, error: 'no_messages' }, 422);
   const cfg = await loadConfig();
   const spend = await customerSpend(phone, cfg);
+  // What they've already typed. The point is to check it, not replace it: a
+  // coach that answers "here's a better text" is the rewrite the helper asked
+  // to be rid of, so with a draft the points become "what's still missing".
+  const draft = String(data.draft || '').trim().slice(0, 800);
+  const draftAsk = draft
+    ? `\n\nThe team member has ALREADY typed this reply (not sent yet):\n<<<${draft}>>>\n` +
+      `Do not rewrite it. In "points", list ONLY what their reply still needs to say or answer that it doesn't yet. ` +
+      `If it already covers everything, make the single point "Your reply covers it, send it". ` +
+      `Put anything in it that could go wrong (a price, a promise, a date, saying "we") in "watchouts".`
+    : '';
+  // The helper's texts go out as Mikey, so the one habit worth a reminder
+  // every time is his: "I", never "we".
+  const asMikey = data.helper === true
+    ? `Their texts go out as Mikey himself, a one-man business: they must say "I", never "we". `
+    : '';
   const prompt =
     businessContext(cfg) +
     (await rulesContext()) +
     customerContext(thread, spend) +
+    asMikey +
     `You are coaching a NEW team member at Mikey's Mobile Detailing on how to answer this customer text. ` +
     `Use the business playbook above as the single source of truth. ` +
     `Return ONLY JSON with this shape:\n` +
@@ -8976,7 +8992,7 @@ async function apiAiCoach(request) {
     `"tone": "one short sentence describing the tone to use"}\n` +
     `Never invent a specific price, date, or appointment time — if one is needed, tell them to confirm with Mikey. ` +
     `If the playbook is thin, still give your best general detailing-business guidance.` +
-    `\n\nConversation:\n${transcript(thread)}`;
+    `\n\nConversation:\n${transcript(thread)}` + draftAsk;
   try {
     const text = await geminiGenerate(prompt, { surface: 'coach', json: true, maxTokens: 1500 });
     let parsed = {};
@@ -15123,7 +15139,7 @@ const HELPER_ROUTES = {
   'GET /api/thread':        (request, url) => apiThread(url),
   'POST /api/read':         (request) => apiRead(request),
   'POST /api/send':         (request) => helperSend(request),
-  'POST /api/ai/draft':     (request) => helperPolish(request),
+  'POST /api/helper/coach': (request) => helperCoach(request),
   'POST /api/request-date': (request) => helperRequestDate(request),
   'POST /api/helper/ask':   (request) => apiHelperAsk(request),
   'GET /api/helper/guide':  () => apiHelperGuide(),
@@ -15150,12 +15166,15 @@ async function helperForward(request, handler, patch) {
 function helperSend(request) { return helperForward(request, apiSend, { media: [], aiOriginal: '', aiBy: '' }); }
 // Auto Polish, and only polish. The "write me one" path without text can park a
 // question on the thread for Mikey (needsYou) — that's his, so it stays his.
-async function helperPolish(request) {
-  const data = await readJson(request);
-  const text = String(data.text || '').trim();
-  if (!text) return json({ ok: false, error: 'helper_needs_text' }, 422);
-  const hint = 'This was typed by the person who answers texts for Mikey. It goes out as Mikey, so make it read the way he writes: "I", never "we", his casual rhythm';
-  return apiAiDraft(new Request(request.url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone: data.phone, text, expand: false, hint }) }));
+// Ideas, not rewrites. Auto Polish used to rewrite every helper text before
+// Send would let it go, and the helper said it kept changing their words, they
+// couldn't turn it off, and what they needed was to know WHAT to say. So the
+// AI on their page coaches instead: what to say next, what to keep in mind,
+// and on request a read of their draft that says what's missing without
+// touching a word of it. /api/ai/draft is closed to them now; nothing on their
+// page can rewrite their text.
+function helperCoach(request) {
+  return helperForward(request, apiAiCoach, { helper: true });
 }
 // "Ask Mikey": the helper hit something that's his call. It reaches him the way
 // every other alert does, with the question up front so the phone banner is
@@ -15489,7 +15508,7 @@ const HELPER_GUIDE = [
   { title: 'Your job', points: [
     'Answer every customer within 15 minutes, 8am to 8pm. A fast "yes, I can help" beats a perfect answer an hour later. People text two or three detailers and book whoever answers first.',
     'You are texting as Mikey. Write "I", never "we". Keep it short and friendly, the way he texts.',
-    'Auto Polish tidies what you type into his voice. Read the polished version before you send it. If it changed what you meant, tap Undo.',
+    'Stuck on what to say? Tap "What should I say?" above the box for ideas and things to keep in mind. Typed something? "Check my text" says what it still needs. The AI never changes your words, and you always say "I", never "we".',
     'Leave the day-of texts to Mikey: ETAs, "I\'m here", "finished up". He sends those from the job.',
   ] },
   { title: 'How a booking goes (the five steps)', points: [
