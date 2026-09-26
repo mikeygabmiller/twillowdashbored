@@ -245,5 +245,19 @@ check('and not on every cron tick', /getUTCMinutes\(\) !== 7/.test(refresh), tru
 check('it never runs the expensive full rebuild', /buildVoiceProfile|loadThread/.test(refresh), false);
 check('the cron actually calls it', /await maybeRefreshVoice\(\)/.test(SRC), true);
 
+console.log('\n=== the helper gets coached, not rewritten ===');
+// A helper marked in Settings > Team keeps that mark through a save, and the
+// coach reads what they typed as something to CHECK, not something to replace.
+const team = {};
+new Function('ctx', 'const genId = () => "x";' + lift('sanitizeTeam') + 'ctx.sanitizeTeam = sanitizeTeam;')(team);
+const saved = team.sanitizeTeam([{ id: 'a', name: 'Sam', helper: true }, { id: 'b', name: 'Mikey' }, { id: 'c', name: 'Jo', helper: 'yes' }]);
+check('the helper mark survives a save', saved[0].helper, true);
+check('nobody is a helper unless marked', saved[1].helper, false);
+check('only a real true counts', saved[2].helper, false);
+const coach = lift('apiAiCoach');
+check('the coach reads the draft they typed', /data\.draft/.test(coach), true);
+check('and is told not to rewrite it', /Do not rewrite it/.test(coach), true);
+check('the draft is capped before it reaches the prompt', /slice\(0, 800\)/.test(coach), true);
+
 console.log(`\n================  ${PASS} passed, ${FAIL} failed  ================`);
 process.exit(FAIL ? 1 : 0);

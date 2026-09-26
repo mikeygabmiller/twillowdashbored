@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-22·nudge-each-text';
+const BUILD = '2026-09-26·helper-ideas';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -8902,6 +8902,16 @@ async function apiAiCoach(request) {
   if (!thread.messages.length) return json({ ok: false, error: 'no_messages' }, 422);
   const cfg = await loadConfig();
   const spend = await customerSpend(phone, cfg);
+  // What the helper has already typed. The point is to check it, not replace
+  // it: a coach that answers "here's a better text" is the rewrite they asked
+  // to be rid of, so with a draft the points become "what's still missing".
+  const draft = String(data.draft || '').trim().slice(0, 800);
+  const draftAsk = draft
+    ? `\n\nThe team member has ALREADY typed this reply (not sent yet):\n<<<${draft}>>>\n` +
+      `Do not rewrite it. In "points", list ONLY what their reply still needs to say or answer that it doesn't yet. ` +
+      `If it already covers everything, make the single point "Your reply covers it, send it". ` +
+      `Put anything in it that could go wrong (a price, a promise, a date) in "watchouts".`
+    : '';
   const prompt =
     businessContext(cfg) +
     (await rulesContext()) +
@@ -8915,7 +8925,7 @@ async function apiAiCoach(request) {
     `"tone": "one short sentence describing the tone to use"}\n` +
     `Never invent a specific price, date, or appointment time — if one is needed, tell them to confirm with Mikey. ` +
     `If the playbook is thin, still give your best general detailing-business guidance.` +
-    `\n\nConversation:\n${transcript(thread)}`;
+    `\n\nConversation:\n${transcript(thread)}` + draftAsk;
   try {
     const text = await geminiGenerate(prompt, { surface: 'coach', json: true, maxTokens: 1500 });
     let parsed = {};
@@ -12059,6 +12069,10 @@ function sanitizeTeam(arr) {
       id: String(m.id || genId()).slice(0, 24),
       name: String(m.name || '').trim().slice(0, 40),
       role: String(m.role || '').trim().slice(0, 40),
+      // A helper answers texts for Mikey but isn't Mikey. On the phone that has
+      // picked a helper, the AI stops rewriting what they type and coaches
+      // instead: ideas for what to say next, not words put in their mouth.
+      helper: m.helper === true,
     }))
     .filter((m) => m.name)
     .slice(0, 25);

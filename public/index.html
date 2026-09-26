@@ -646,6 +646,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
      to a slice of what's actually on screen (--vvh), never the window height. */
   html.kb-up .chat>.ai-review,
   html.kb-up .chat>.polish-bar{max-height:calc(var(--vvh,100vh) * .26);overflow-y:auto}
+  /* The helper types with the ideas in view. Only while shown (.keep is removed
+     on hide), so this can never force a closed panel back open. */
+  html.kb-up .chat>.coach-panel.keep{display:block!important;max-height:calc(var(--vvh,100vh) * .26)}
   /* A long draft must not grow the box until it swallows its own screen. */
   html.kb-up .crow textarea{max-height:min(140px,calc(var(--vvh,100vh) * .34))}
   .ctools{display:flex;gap:4px;align-items:center;margin-bottom:7px;position:relative}
@@ -1837,6 +1840,17 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .coach-sec.watch b{color:#f5b842}
   .coach-tone{margin-top:11px;font-size:12px;color:#c9a4f7;display:flex;align-items:center;gap:6px;font-style:italic}
   .coach-note{margin-top:8px;font-size:12.5px;color:var(--muted)}
+  .coach-sec.next b{color:#9fe0b4}
+  .coach-ex{margin-top:11px;font-size:12.5px;color:#d8d3e6}
+  .coach-ex summary{cursor:pointer;color:#c9a4f7;font-size:12px;font-weight:600}
+  .coach-strip{display:flex;align-items:center;gap:10px;width:100%;background:none;border:none;color:#ece7f6;text-align:left;padding:0;cursor:pointer}
+  .coach-strip>span{display:flex;flex-direction:column;gap:1px}
+  .coach-strip b{font-size:13.5px;font-weight:650}
+  .coach-strip small{font-size:11.5px;color:var(--muted)}
+  .coach-strip svg{color:#f5b842;flex:none}
+  /* Helper badge in the team roster: on = the AI coaches them, never rewrites. */
+  .tm-helper{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:4px 9px;border-radius:20px;background:var(--panel2);border:1px solid var(--line);color:var(--muted2);flex:none}
+  .tm-helper.on{background:#2a2410;border-color:#6b5716;color:#f5d27a}
 
   /* team identity nudge above composer */
   .team-id-bar{margin:8px 14px 0;background:#15212e;border:1px solid #1f3a52;border-radius:11px;padding:9px 12px;font-size:12.5px;color:#9cd3f5;cursor:pointer;display:flex;align-items:center;gap:7px}
@@ -4507,7 +4521,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-22·nudge-each-text";
+  var APP_BUILD="2026-09-26·helper-ideas";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4609,6 +4623,13 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   function currentMe(){return localStorage.getItem(ME_KEY)||""}
   function memberById(id){var l=teamList();for(var i=0;i<l.length;i++)if(l[i].id===id)return l[i];return null}
   function meName(){var m=memberById(currentMe());return m?m.name:""}
+  // The helper's phone: team mode on and "You are" set to someone marked Helper.
+  // Theirs is a different job from Mikey's — they don't know the business by
+  // heart, so what helps is knowing WHAT to say, not having their words swapped
+  // out under them. Auto Polish rewriting their text with no obvious off switch
+  // was the complaint that built this, so on this phone it can't run at all and
+  // the Coach takes its place. Per device, because "You are" is per device.
+  function helperMode(){var m=teamOn()&&memberById(currentMe());return !!(m&&m.helper===true)}
   function memberInitials(m){var p=String(m&&m.name||"").replace(/[^a-zA-Z ]/g,"").split(/\s+/).filter(Boolean);return(p.length?(p[0][0]+(p[1]?p[1][0]:"")):"?").toUpperCase()}
   function assignBadge(id){var m=memberById(id);if(!m)return"";return '<span class="assign-chip"><span class="mini-av" style="background:'+colorFor(id)+'">'+esc(memberInitials(m))+'</span>'+esc(m.name.split(/\s+/)[0])+'</span>'}
 
@@ -8089,6 +8110,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Per-conversation team chrome: the coach button and the "who are you?" nudge.
   function renderTeamBits(){
     var cb=el("coachBtn");if(cb)cb.style.display=teamOn()?"":"none";
+    renderCoachStrip();
     var bar=el("teamIdentityBar");
     if(bar){
       if(teamOn()&&!currentMe()&&state.phone){bar.style.display="flex";bar.innerHTML='<span>'+ic("bot",15)+'</span><span>Team mode is on — tap to set who you are, so your replies get signed.</span>';bar.onclick=function(){openMore("settings")}}
@@ -8113,18 +8135,22 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       team.forEach(function(m){
         h+='<div class="team-mem"><span class="mini-av" style="background:'+colorFor(m.id)+'">'+esc(memberInitials(m))+'</span>'+
           '<span class="tm-info"><b>'+esc(m.name)+'</b>'+(m.role?'<small>'+esc(m.role)+'</small>':'')+'</span>'+
+          '<button class="tm-helper'+(m.helper?" on":"")+'" data-helper="'+esc(m.id)+'" aria-pressed="'+(m.helper?"true":"false")+'" '+
+            'title="Helper: the AI gives them ideas and never rewrites their text">'+ic("lightbulb",13)+'<span>Helper</span></button>'+
           '<button class="tm-act" data-edit="'+esc(m.id)+'" title="Edit">'+ic("pencil",14)+'</button>'+
           '<button class="tm-act" data-del="'+esc(m.id)+'" title="Remove">'+ic("x",15)+'</button></div>';
       });
-      h+='</div><button class="btn ic-btn team-add" id="teamAdd" style="width:100%">'+ic("plus",15)+'<span>Add team member</span></button>';
+      h+='</div><div class="hint">Mark someone <b>Helper</b> and, on their phone, the AI stops rewriting what they type. It gives them ideas instead: what to say next and what to keep in mind.</div>';
+      h+='<button class="btn ic-btn team-add" id="teamAdd" style="width:100%">'+ic("plus",15)+'<span>Add team member</span></button>';
     }
     wrap.innerHTML=h;
     el("cfgTeam").onclick=function(){saveConfig({teamMode:!on})};
     Array.prototype.forEach.call(wrap.querySelectorAll("[data-me]"),function(b){b.onclick=function(){
       var id=b.getAttribute("data-me");
       localStorage.setItem(ME_KEY,currentMe()===id?"":id);
-      renderTeam();renderTeamBits();vibrate(6);
+      renderTeam();renderTeamBits();renderPolishBar();vibrate(6);
     }});
+    Array.prototype.forEach.call(wrap.querySelectorAll("[data-helper]"),function(b){b.onclick=function(){toggleHelper(b.getAttribute("data-helper"))}});
     Array.prototype.forEach.call(wrap.querySelectorAll("[data-edit]"),function(b){b.onclick=function(){editMember(b.getAttribute("data-edit"))}});
     Array.prototype.forEach.call(wrap.querySelectorAll("[data-del]"),function(b){b.onclick=function(){removeMember(b.getAttribute("data-del"))}});
     if(el("teamAdd"))el("teamAdd").onclick=addMember;
@@ -8136,11 +8162,20 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var team=(state.config.team||[]).concat([{id:genMemberId(),name:name.trim(),role:(role||"").trim()}]);
     saveConfig({team:team}).then(function(){toast("Team member added")});
   }
+  function toggleHelper(id){
+    var m=memberById(id);if(!m)return;var next=!m.helper;
+    var team=(state.config.team||[]).map(function(x){return x.id===id?Object.assign({},x,{helper:next}):x});
+    vibrate(6);
+    saveConfig({team:team}).then(function(){
+      renderTeam();renderTeamBits();renderPolishBar();
+      toast(next?(m.name+" gets ideas now — the AI won't touch their text"):(m.name+" is back to the normal AI tools"));
+    });
+  }
   function editMember(id){
     var m=memberById(id);if(!m)return;
     var name=prompt("Name:",m.name);if(name===null)return;
     var role=prompt("Role (optional):",m.role||"");if(role===null)role=m.role||"";
-    var team=(state.config.team||[]).map(function(x){return x.id===id?{id:id,name:(name.trim()||m.name),role:(role||"").trim()}:x});
+    var team=(state.config.team||[]).map(function(x){return x.id===id?{id:id,name:(name.trim()||m.name),role:(role||"").trim(),helper:x.helper===true}:x});
     saveConfig({team:team});
   }
   function removeMember(id){
@@ -10198,7 +10233,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // Coach advice is per-conversation — clear it when the open thread changes,
     // but keep it across background polls of the SAME thread so it isn't yanked
     // away while it's being read.
-    var cp=el("coachPanel");if(cp._phone!==t.phone){cp.style.display="none";cp.innerHTML="";cp._phone=t.phone}
+    var cp=el("coachPanel");if(cp._phone!==t.phone){coachPanelShow(false);cp._strip=false;cp._phone=t.phone}
     renderTeamBits();
 
     var box=el("messages");
@@ -10988,9 +11023,12 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // sheet opens scrolled to the top, so "turn that off" is always one tap from
     // the Tools button instead of a scroll to the bottom of ten actions.
     var h='<div class="ts-hd">Typing help</div>'+
-      '<div class="ts-row ts-sw" id="tsAutoPolish"><span class="ts-ic">'+ic("wand",19)+'</span>'+
-      '<span class="ts-txt"><b>Auto Polish</b><span>Rewrites your text when you pause — undo is always one tap</span></span>'+
-      '<span class="sw'+(autoPolishOn()?" on":"")+'" id="tsAutoPolishSw"></span></div>'+
+      (helperMode()
+        ?'<div class="ts-row" id="tsHelperNote"><span class="ts-ic">'+ic("lightbulb",19)+'</span>'+
+         '<span class="ts-txt"><b>The AI never changes your words</b><span>You\u2019re set up as a helper, so it gives you ideas for what to say instead. Tap Ideas above the box.</span></span></div>'
+        :'<div class="ts-row ts-sw" id="tsAutoPolish"><span class="ts-ic">'+ic("wand",19)+'</span>'+
+         '<span class="ts-txt"><b>Auto Polish</b><span>Rewrites your text when you pause — undo is always one tap</span></span>'+
+         '<span class="sw'+(autoPolishOn()?" on":"")+'" id="tsAutoPolishSw"></span></div>')+
       '<div class="ts-row ts-sw" id="tsExpand"><span class="ts-ic">'+ic("sparkles",19)+'</span>'+
       '<span class="ts-txt"><b>Expand it</b><span>When your reply is short, offers the fuller one \u2014 says back what they told you, shows you pictured the job, makes your question easy to answer. You tap it; it never lands on its own</span></span>'+
       '<span class="sw'+(expandOn()?" on":"")+'" id="tsExpandSw"></span></div>'+
@@ -11472,7 +11510,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   var polishNotes={};        // exact draft text -> the one warning it had ("" = none)
   var polishExpands={};      // exact draft text -> the fuller version ("" = nothing worth adding)
   var polishDeclined={};     // exact draft text -> true (already your call — never re-polish this)
-  function autoPolishOn(){return UI.autoPolish!==false}
+  function autoPolishOn(){return !helperMode()&&UI.autoPolish!==false}
   function expandOn(){return UI.expand!==false}
   function curDraft(){var i=el("msgInput");return i?(i.value||"").trim():""}
   function polishWorthIt(text){
@@ -11670,14 +11708,19 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     else if(note){icon="alert-triangle";label="Reads fine — one thing to look at";}
     else if(expanded){icon="sparkles";label="Expanded — your words are one tap away";}
     else if(fuller){icon="wand";label="Reads fine — or send the fuller version";}
+    else if(paused&&helperMode())label=null;
     else if(paused){icon="wand";label="Polish is in Tools when you want it";}
     else {icon="wand";label="Polishes when you pause";}
+    // A helper's phone has no auto mode to advertise — the strip is only for a
+    // polish they asked for with the wand.
+    if(label===null){hidePolishBar();return}
     var h='<div class="pb-top"><span class="pb-ic">'+ic(icon,15)+'</span><span class="pb-t">'+esc(label)+'</span>';
     if(offer)h+='<button class="pb-use" id="pbUse">'+ic("check",13)+'Use it</button>'+
                 '<button class="pb-no" id="pbNo" aria-label="Keep my wording" title="Keep my wording">'+ic("x",15)+'</button>';
     if(polish.applied)h+='<button class="pb-undo" id="pbUndo">'+ic("undo",13)+'Undo</button>';
-    h+='<button class="pb-pp" id="pbPP" aria-label="'+(paused?"Resume Auto Polish":"Pause Auto Polish")+'" '+
-       'title="'+(paused?"Resume Auto Polish":"Pause Auto Polish")+'">'+ic(paused?"play":"pause",16)+'</button></div>';
+    if(!helperMode())h+='<button class="pb-pp" id="pbPP" aria-label="'+(paused?"Resume Auto Polish":"Pause Auto Polish")+'" '+
+       'title="'+(paused?"Resume Auto Polish":"Pause Auto Polish")+'">'+ic(paused?"play":"pause",16)+'</button>';
+    h+='</div>';
     // The offered version, in full where it fits. "Use it" with nothing to read
     // is a coin flip, and this is the one state where the words aren't in the box.
     if(offer)h+='<div class="pb-prev" id="pbPrev">'+esc(polishClip(offer.out,220))+'</div>';
@@ -11716,7 +11759,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var u=bar.querySelector("#pbUndo");if(u)u.onclick=function(e){e.stopPropagation();polishUndoAll()};
     var yes=bar.querySelector("#pbUse");if(yes)yes.onclick=function(e){e.stopPropagation();polishUseOffer()};
     var no=bar.querySelector("#pbNo");if(no)no.onclick=function(e){e.stopPropagation();polishRefuseOffer()};
-    bar.querySelector("#pbPP").onclick=function(e){e.stopPropagation();setAutoPolish(!autoPolishOn())};
+    var pp=bar.querySelector("#pbPP");if(pp)pp.onclick=function(e){e.stopPropagation();setAutoPolish(!autoPolishOn())};
     var sc=bar.querySelector("#pbExpChip");if(sc)sc.onclick=function(e){e.stopPropagation();polish.expandOpen=true;renderPolishBar()};
     var su=bar.querySelector("#pbExpUse");if(su)su.onclick=function(e){e.stopPropagation();expandUse()};
     var sn=bar.querySelector("#pbExpNo");if(sn)sn.onclick=function(e){e.stopPropagation();expandRefuse()};
@@ -11920,33 +11963,97 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     .then(function(){var bb=el("writeGo");if(bb)bb.disabled=false});
   }
 
-  // ---- AI Coach: tells a team member exactly what to say (and why) ----
-  function aiCoach(){
+  // ---- AI Coach: tells a team member what to say next (and why) ----
+  // Built for the helper, whose problem is "I don't know what to say", not "my
+  // wording is off". So the answer leads with WHAT needs saying and what to keep
+  // in mind, and the example text sits last, behind a tap — ideas they write in
+  // their own words, not a script. It never lands in the box on its own, and
+  // it never overwrites anything they've typed without asking.
+  //
+  // Cost: one call per tap, and each answer is kept per conversation until the
+  // customer texts again (or the draft it checked changes), so reopening the
+  // thread shows it again for free. Nothing here fires without a tap.
+  // phone -> {key: answer}. Keyed by key, not just phone, so checking a draft
+  // doesn't throw away the plain ideas it was asked alongside.
+  var COACH={};
+  function coachKey(t,draft){
+    var ms=(t&&t.messages)||[],last=ms[ms.length-1];
+    return (last?(last.id||last.ts):"")+"|"+(draft||"");
+  }
+  function coachPanelShow(on){
+    var p=el("coachPanel");if(!p)return;
+    p.style.display=on?"block":"none";
+    // A helper types WITH the ideas in view, so on their phone the panel stays
+    // up when the keyboard opens (capped, like the polish strip). Only while it
+    // is showing — the class must never force a hidden panel back open.
+    p.classList.toggle("keep",!!(on&&helperMode()));
+    if(!on)p.innerHTML="";
+  }
+  // The strip above the box on a helper's phone. It's the front door: the bot
+  // icon in the header was the only way in before, and nobody finds an icon.
+  function renderCoachStrip(){
+    var p=el("coachPanel"),t=state.thread;if(!p)return;
+    if(!helperMode()||!t||!(t.messages&&t.messages.length)){
+      if(p._strip)coachPanelShow(false);p._strip=false;return;
+    }
+    if(p.style.display!=="none"&&!p._strip)return;   // advice already showing — leave it
+    // Closed advice comes back as the strip, not as the advice: a poll must not
+    // reopen what they just shut. Tapping it again is free while it's cached.
+    p._phone=t.phone;p._strip=true;
+    p.innerHTML='<button class="coach-strip" id="coachStripGo">'+ic("lightbulb",15)+
+      '<span><b>Ideas for your reply</b><small>What to say next and what to keep in mind</small></span></button>';
+    coachPanelShow(true);
+    el("coachStripGo").onclick=function(){aiCoach(false)};
+  }
+  function aiCoach(withDraft){
     var t=state.thread;if(!t)return;
     if(!(t.messages&&t.messages.length)){toast("No messages yet to coach on",{bad:true});return}
-    var b=el("coachBtn");b.disabled=true;b.innerHTML='<span class="spin"></span>';
-    var panel=el("coachPanel");panel._phone=t.phone;panel.style.display="block";
-    panel.innerHTML='<div class="coach-head"><span>'+ic("bot",14)+' Coaching…</span></div>';
-    post("/api/ai/coach",{phone:t.phone}).then(function(d){
-      if(d&&d.ok)renderCoach(d);
-      else panel.innerHTML='<div class="coach-head"><span>'+ic("bot",14)+' Coach</span><button class="coach-x" id="coachClose">'+ic("x",15)+'</button></div><div class="coach-note">Couldn\'t generate advice: '+esc((d&&d.error)||"error")+'</div>';
-      if(el("coachClose"))el("coachClose").onclick=function(){panel.style.display="none"};
-    }).catch(function(){panel.style.display="none";toast("Network error",{bad:true})})
+    var draft=withDraft?curDraft():"";
+    if(withDraft&&!draft){toast("Type your reply first, then check it",{bad:true});return}
+    var hit=(COACH[t.phone]||{})[coachKey(t,draft)];
+    if(hit){renderCoach(hit,draft);return}
+    var b=el("coachBtn");if(b){b.disabled=true;b.innerHTML='<span class="spin"></span>'}
+    var panel=el("coachPanel");panel._phone=t.phone;panel._strip=false;coachPanelShow(true);
+    panel.innerHTML='<div class="coach-head"><span>'+ic("lightbulb",14)+(draft?' Reading your reply…':' Thinking about what to say…')+'</span></div>';
+    var forPhone=t.phone,key=coachKey(t,draft);
+    post("/api/ai/coach",{phone:forPhone,draft:draft}).then(function(d){
+      if(d&&d.ok){
+        // Only answers about the conversation as it stands now are worth keeping.
+        var keep={};Object.keys(COACH[forPhone]||{}).forEach(function(k){if(k.split("|")[0]===key.split("|")[0])keep[k]=COACH[forPhone][k]});
+        keep[key]=d;COACH[forPhone]=keep;
+        if(state.phone===forPhone)renderCoach(d,draft);return;
+      }
+      if(state.phone!==forPhone)return;
+      panel.innerHTML='<div class="coach-head"><span>'+ic("lightbulb",14)+' Ideas</span><button class="coach-x" id="coachClose" aria-label="Close">'+ic("x",15)+'</button></div><div class="coach-note">Couldn\'t get ideas: '+esc((d&&d.error)||"error")+'</div>';
+      el("coachClose").onclick=function(){coachPanelShow(false)};
+    }).catch(function(){if(state.phone===forPhone)coachPanelShow(false);toast("Network error",{bad:true})})
     .then(function(){var bb=el("coachBtn");if(bb){bb.disabled=false;bb.innerHTML=ic("bot",21)}});
   }
-  function renderCoach(d){
-    var panel=el("coachPanel");
-    var use=function(){el("msgInput").value=d.reply;autoGrow();updateCount();el("msgInput").focus();toast("Loaded — edit & send")};
-    var h='<div class="coach-head"><span>'+ic("bot",14)+' Coach · what to say</span><button class="coach-x" id="coachClose">'+ic("x",15)+'</button></div>';
-    if(d.reply)h+='<div class="coach-reply" id="coachReply">'+esc(d.reply)+'</div><div class="coach-acts"><button class="btn accent ic-btn" id="coachUse">'+ic("pencil",14)+'<span>Use this reply</span></button></div>';
-    if(d.points&&d.points.length)h+='<div class="coach-sec"><b>Key points to hit</b><ul>'+d.points.map(function(p){return '<li>'+esc(p)+'</li>'}).join("")+'</ul></div>';
-    if(d.watchouts&&d.watchouts.length)h+='<div class="coach-sec watch"><b>Watch out</b><ul>'+d.watchouts.map(function(p){return '<li>'+esc(p)+'</li>'}).join("")+'</ul></div>';
-    if(d.tone)h+='<div class="coach-tone">'+ic("sparkles",12)+' '+esc(d.tone)+'</div>';
-    if(!d.reply&&!(d.points&&d.points.length))h+='<div class="coach-note">No specific advice — reply naturally and keep it friendly.</div>';
-    panel.innerHTML=h;
-    el("coachClose").onclick=function(){panel.style.display="none"};
+  function renderCoach(d,checked){
+    var panel=el("coachPanel");panel._strip=false;
+    // Never clobber. An empty box takes the example; words already in it are
+    // theirs, and replacing them is a question, not a side effect.
+    var use=function(){
+      var inp=el("msgInput"),cur=(inp.value||"").trim();
+      if(cur&&cur!==d.reply&&!confirm("Replace what you typed with the example?"))return;
+      inp.value=d.reply;autoGrow();updateCount();if(state.phone)stashDraft(state.phone);inp.focus();toast("It's in the box — change it to your own words, then send");
+    };
+    var list=function(a){return '<ul>'+a.map(function(p){return '<li>'+esc(p)+'</li>'}).join("")+'</ul>'};
+    var keep=(d.watchouts||[]).slice();if(d.tone)keep.push(d.tone);
+    var h='<div class="coach-head"><span>'+ic("lightbulb",14)+(checked?' Your reply · what it still needs':' Ideas for your reply')+'</span><button class="coach-x" id="coachClose" aria-label="Close">'+ic("x",15)+'</button></div>';
+    if(d.points&&d.points.length)h+='<div class="coach-sec next"><b>'+(checked?'Still to say':'What to say next')+'</b>'+list(d.points)+'</div>';
+    if(keep.length)h+='<div class="coach-sec watch"><b>Keep in mind</b>'+list(keep)+'</div>';
+    if(!(d.points&&d.points.length)&&!keep.length&&!d.reply)h+='<div class="coach-note">No specific advice — reply naturally and keep it friendly.</div>';
+    if(d.reply){
+      h+='<details class="coach-ex" id="coachEx"><summary>See an example</summary>'+
+         '<div class="coach-reply" id="coachReply">'+esc(d.reply)+'</div>'+
+         '<div class="coach-acts"><button class="btn ic-btn" id="coachUse">'+ic("pencil",14)+'<span>Put it in the box</span></button></div></details>';
+    }
+    h+='<div class="coach-acts"><button class="btn ic-btn" id="coachCheck">'+ic("check-circle",14)+'<span>Check what I wrote</span></button></div>';
+    coachPanelShow(true);panel.innerHTML=h;
+    el("coachClose").onclick=function(){coachPanelShow(false)};
     if(el("coachUse"))el("coachUse").onclick=use;
-    if(el("coachReply"))el("coachReply").onclick=use;
+    el("coachCheck").onclick=function(){aiCoach(true)};
   }
 
   // ---- voice-to-text (free, built into the browser) ----
@@ -13544,7 +13651,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   el("writeHint").onkeydown=function(e){if(e.key==="Enter"){e.preventDefault();aiWrite()}};
   el("draftBtn").onclick=aiDraft;
   el("polishBtn").onclick=aiPolish;
-  el("coachBtn").onclick=aiCoach;
+  el("coachBtn").onclick=function(){aiCoach(false)};
   el("guideBtn").onclick=openGuide;
   el("guideClose").onclick=closeGuide;
   el("guideScrim").onclick=closeGuide;
