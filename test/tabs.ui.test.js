@@ -97,7 +97,7 @@ await page.waitForTimeout(700);
 ok('Insights opened', await page.locator('#growApp').evaluate((e) => e.classList.contains('show')));
 ok('lands on the index', await page.$eval('#grTitle', (n) => n.textContent.trim()) === 'Insights');
 const ixCards = await page.$$eval('.ix-card', (ns) => ns.map((n) => n.getAttribute('data-ix')));
-ok('nine reports, one card each', ixCards.length === 9, ixCards);
+ok('ten reports, one card each', ixCards.length === 10, ixCards);
 // The old collision: the quote builder in Work and the quote report in
 // Insights were both called "Quotes" and both claimed the feature id "quotes",
 // so fxById only ever found the second one.
