@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-26·helper-ideas';
+const BUILD = '2026-09-27·door-hangers';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -592,6 +592,8 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/use')           return apiUse(url);
   if (request.method === 'GET'  && pathname === '/api/use/export')    return apiUseExport(url);
   if (request.method === 'GET'  && pathname === '/api/quotes')        return apiQuotes(url);
+  if (request.method === 'GET'  && pathname === '/api/hangers')       return apiHangers();
+  if (request.method === 'POST' && pathname === '/api/hangers')       return apiHangersPost(request);
   if (request.method === 'GET'  && pathname === '/api/quotes/export') return apiQuotesExport(url);
   if (request.method === 'POST' && pathname === '/api/quotes/import') return apiQuotesImport(request);
   if (request.method === 'POST' && pathname === '/api/quote-preview')  return apiQuotePreview(request);
@@ -1263,6 +1265,9 @@ async function handleSubmit(request) {
   // "Referred by my neighbor Dave" in the notes box is the form saying who sent them.
   noteReferral(thread, notes);
   if (!thread.status) { thread.status = 'new'; thread.statusAt = thread.statusAt || Date.now(); }
+  // Scanned the QR on a door hanger: tag it so the Hangers screen counts it.
+  const fromHanger = (await journeyUtm(body.vid)) === 'doorhanger';
+  if (fromHanger) thread.tags = Array.from(new Set((thread.tags || []).concat('hanger')));
   const detail = [
     vehicle ? `Vehicle: ${vehicle}` : null, condition ? `Condition: ${condition}` : null,
     serviceList ? `Services: ${serviceList}` : null, `Quote: ${quoteLine}`,
@@ -1301,6 +1306,7 @@ async function handleSubmit(request) {
   // Put a name on whatever browsing led here. The form carries the visitor id
   // from site-stats.js; without it this is a no-op and the lead is unaffected.
   await journeyLink(body.vid, clientPhone, name || guessed);
+  if (fromHanger) await hangerCredit(clientPhone, { how: 'qr', name: name || guessed, where: location });
 
   const ok = mikeyAlert;
   return cors(json({ ok, clientSms, mikeyAlert }, ok ? 200 : 207));
@@ -1752,6 +1758,172 @@ async function apiQuotesImport(request) {
   }
   return json({ ok: true, months: byMonth.size, stored: added, skipped });
 }
+
+// ===========================================================================
+// Door hangers (Insights → Hangers)
+// ---------------------------------------------------------------------------
+// One KV doc holds every drop he logs (zone, date, count, minutes, the GPS
+// trail he walked) and every lead credited to a hanger. The zones themselves
+// are a static file, public/hanger-zones.json, generated in the website repo
+// by print/tools/hanger-zones.py; the browser draws them and does the
+// point-in-zone matching, so the Worker never has to parse polygons.
+//
+// A lead gets credited three ways:
+//   qr      the quote came from a browser that landed on ?utm_source=doorhanger
+//           (the QR on the hanger). Stamped at /submit, automatic.
+//   tag     any conversation tagged "hanger" (he taps it after "saw your
+//           hanger" in a text or call). Read off the index, automatic.
+//   address a booking whose address geocodes inside a zone he hung in the six
+//           weeks before it. Geocoded here (Census geocoder, free, no key) a
+//           few per page load; matched in the browser.
+// ===========================================================================
+const HANGER_KEY = 'hangers:v1';
+const HANGER_SINCE = '2026-10-01';          // nothing before the first batch counts
+const HANGER_TRACK_MAX = 1500;              // points kept per drop, thinned evenly
+
+async function loadHangers() {
+  const d = (await kv().get(HANGER_KEY, { type: 'json' })) || {};
+  return { drops: d.drops || [], leads: d.leads || {}, geo: d.geo || {} };
+}
+async function saveHangers(doc) { await kv().put(HANGER_KEY, JSON.stringify(doc)); }
+
+// Credit one phone to hangers. First credit wins: a QR scan that later gets a
+// hand tag is still a QR lead.
+async function hangerCredit(phone, info) {
+  if (!phone) return;
+  const doc = await loadHangers();
+  if (doc.leads[phone]) return;
+  doc.leads[phone] = { how: info.how, at: Date.now(), zone: String(info.zone || '').slice(0, 8),
+    name: String(info.name || '').slice(0, 60), where: String(info.where || '').slice(0, 60) };
+  await saveHangers(doc);
+}
+
+// The utm_source the visitor landed with, off their journey doc. '' if none.
+async function journeyUtm(vid) {
+  vid = cleanVid(vid);
+  if (!vid) return '';
+  try {
+    const doc = await kv().get(journeyKey(vid), { type: 'json' });
+    return (doc && doc.utm) || '';
+  } catch (e) { return ''; }
+}
+
+async function geocodeUS(line) {
+  const u = 'https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?benchmark=Public_AR_Current&format=json&address=' + encodeURIComponent(line);
+  try {
+    const r = await fetch(u, { cf: { cacheTtl: 86400 } });
+    if (!r.ok) return null;
+    const d = await r.json();
+    const m = d && d.result && d.result.addressMatches && d.result.addressMatches[0];
+    return m ? { lat: Math.round(m.coordinates.y * 1e5) / 1e5, lon: Math.round(m.coordinates.x * 1e5) / 1e5 } : { miss: 1 };
+  } catch (e) { return null; }
+}
+
+// GET /api/hangers — everything the Hangers screen draws.
+async function apiHangers() {
+  const doc = await loadHangers();
+  const cfg = await loadConfig();
+  const since = Date.parse(HANGER_SINCE + 'T00:00:00-07:00');
+  const now = Date.now();
+  const [index, bookingsAll] = await Promise.all([loadIndex(), loadBookings()]);
+
+  // Geocode a few new bookings per load. Four keeps the page quick; the rest
+  // catch up on the next open.
+  const bookings = bookingsAll.filter((b) => (b.createdAt || 0) >= since && b.address);
+  let geocoded = 0, changed = false;
+  for (const b of bookings) {
+    if (doc.geo[b.id] || geocoded >= 4) continue;
+    geocoded++;
+    const g = await geocodeUS(`${b.address}, ${b.city || ''}, WA`);
+    if (g) { doc.geo[b.id] = g; changed = true; }
+  }
+  if (changed) await saveHangers(doc);
+
+  // Tagged conversations count as credited leads.
+  const leads = Object.assign({}, doc.leads);
+  const byPhone = {};
+  index.forEach((t) => { byPhone[t.phone] = t; });
+  index.forEach((t) => {
+    if (leads[t.phone]) return;
+    if ((t.tags || []).some((x) => /hanger/i.test(String(x))) && (t.sourceAt || t.statusAt || now) >= since) {
+      leads[t.phone] = { how: 'tag', at: t.sourceAt || t.statusAt || now, zone: '', name: t.name || '' };
+    }
+  });
+
+  // What each phone has paid since the hangers went out.
+  const months = [];
+  for (let m = localDateStr(now, cfg.tz).slice(0, 7); m >= HANGER_SINCE.slice(0, 7); m = prevMonthKey(m)) months.push(m);
+  const docs = await Promise.all(months.map(loadMonth));
+  const revenue = {};
+  docs.forEach((md) => (md.entries || []).forEach((e) => {
+    if (e.type === 'job' && e.phone && e.amount > 0) revenue[e.phone] = money2((revenue[e.phone] || 0) + e.amount);
+  }));
+
+  const people = {};
+  const note = (p) => { const t = byPhone[p]; if (t) people[p] = { name: t.name || '', status: t.status || '' }; };
+  Object.keys(leads).forEach(note);
+  bookings.forEach((b) => note(b.phone));
+
+  return json({
+    ok: true, today: localDateStr(now, cfg.tz), since: HANGER_SINCE,
+    drops: doc.drops, leads, people, revenue,
+    bookings: bookings.map((b) => ({ id: b.id, phone: b.phone, name: b.name || '', city: b.city || '',
+      address: b.address, createdAt: b.createdAt, apptAt: b.apptAt || 0, dateLabel: b.dateLabel || '',
+      estimate: b.estimate || 0, status: b.status || '', geo: doc.geo[b.id] || null })),
+  });
+}
+
+// POST /api/hangers { action, ... }
+//   drop          { drop: { zone, date, count, minutes, kind: 'zone'|'job', note, track: [[lat,lon],…] } }
+//   delete-drop   { id }
+//   credit        { phone, zone, name }      one-tap "they saw my hanger"
+//   uncredit      { phone }
+async function apiHangersPost(request) {
+  let b;
+  try { b = await request.json(); } catch { return json({ ok: false, error: 'bad_json' }, 400); }
+  const doc = await loadHangers();
+  const act = String(b.action || '');
+  if (act === 'drop') {
+    const d = b.drop || {};
+    const count = Math.max(0, Math.min(2000, parseInt(d.count, 10) || 0));
+    if (!count) return json({ ok: false, error: 'count' }, 422);
+    let track = Array.isArray(d.track) ? d.track.filter((p) => Array.isArray(p) && isFinite(p[0]) && isFinite(p[1])) : [];
+    if (track.length > HANGER_TRACK_MAX) {
+      const step = track.length / HANGER_TRACK_MAX;
+      track = Array.from({ length: HANGER_TRACK_MAX }, (_, i) => track[Math.floor(i * step)]);
+    }
+    track = track.map((p) => [Math.round(p[0] * 1e5) / 1e5, Math.round(p[1] * 1e5) / 1e5]);
+    const date = /^\d{4}-\d{2}-\d{2}$/.test(d.date || '') ? d.date : localDateStr(Date.now(), (await loadConfig()).tz);
+    const rec = { id: genId(), zone: String(d.zone || '').slice(0, 8), kind: d.kind === 'job' ? 'job' : 'zone',
+      date, count, minutes: Math.max(0, Math.min(600, parseInt(d.minutes, 10) || 0)),
+      note: String(d.note || '').slice(0, 200), track, at: Date.now() };
+    doc.drops.push(rec);
+    doc.drops.sort((x, y) => (x.date < y.date ? -1 : x.date > y.date ? 1 : x.at - y.at));
+    await saveHangers(doc);
+    return json({ ok: true, drop: rec });
+  }
+  if (act === 'delete-drop') {
+    const n = doc.drops.length;
+    doc.drops = doc.drops.filter((d) => d.id !== b.id);
+    if (doc.drops.length === n) return json({ ok: false, error: 'not_found' }, 404);
+    await saveHangers(doc);
+    return json({ ok: true });
+  }
+  if (act === 'credit') {
+    const phone = normalizePhone(b.phone);
+    if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+    doc.leads[phone] = { how: 'said', at: Date.now(), zone: String(b.zone || '').slice(0, 8), name: String(b.name || '').slice(0, 60) };
+    await saveHangers(doc);
+    return json({ ok: true });
+  }
+  if (act === 'uncredit') {
+    delete doc.leads[b.phone];
+    await saveHangers(doc);
+    return json({ ok: true });
+  }
+  return json({ ok: false, error: 'bad_action' }, 400);
+}
+
 
 async function handleInboundSms(request) {
   const params = await formParams(request);
@@ -4131,7 +4303,7 @@ function refHostOf(ref) {
 // phone call in his driveway ever gets credited to the ad he paid for. The id
 // exists for the length of one page load and cannot be reconstructed later.
 function adFromLanding(landing, refHost) {
-  const out = { ad: '', camp: '', clid: '', clidk: '' };
+  const out = { ad: '', camp: '', clid: '', clidk: '', utm: '' };
   const s = String(landing || '');
   const q = s.indexOf('?') >= 0 ? s.slice(s.indexOf('?') + 1) : s;
   let p = null;
@@ -4153,6 +4325,9 @@ function adFromLanding(landing, refHost) {
       const src = String(p.get('utm_source') || '').toLowerCase().replace(/[^a-z]/g, '');
       out.ad = AD_NAMES[src] ? src : 'ads';
     }
+    // Unpaid sources too, so a print piece can be told apart: the door hanger's
+    // QR lands on ?utm_source=doorhanger.
+    out.utm = String(p.get('utm_source') || '').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 24);
     // Kept whether or not it's paid: "Snohomish Detailing - Search - 2026" is
     // the answer to "which campaign", and he named them himself.
     out.camp = String(p.get('utm_campaign') || '').replace(/[^\w .-]+/g, ' ').trim().slice(0, 40);
@@ -4230,7 +4405,7 @@ async function handlePixel(url, request) {
     const vid = url.searchParams.get('v');
     if (vid) {
       const step = await journeyStep(vid, { t: now, p: path, r: refHost },
-        { ad: ad.ad, camp: ad.camp, city, clid: ad.clid, clidk: ad.clidk });
+        { ad: ad.ad, camp: ad.camp, city, clid: ad.clid, clidk: ad.clidk, utm: ad.utm });
       if (step && step.isNew) await alertNewClick(step.doc, { ad, city, path, refHost, day, doc });
     }
     await kv().put(analyticsDayKey(day), JSON.stringify(doc));
@@ -4502,6 +4677,7 @@ function stampJourneyInfo(doc, info) {
   if (i.ad && !doc.ad) doc.ad = String(i.ad).slice(0, 12);
   if (i.camp && !doc.camp) doc.camp = String(i.camp).slice(0, 40);
   if (i.city && !doc.city) doc.city = String(i.city).slice(0, 40);
+  if (i.utm && !doc.utm) doc.utm = String(i.utm).slice(0, 24);
   // Stamped as a pair so the id and the parameter it came from can never
   // disagree — gclid and gbraid go to different places on the Google side.
   if (i.clid && !doc.clid) {
@@ -4560,7 +4736,7 @@ async function handlePixelEvents(request) {
         // The click id only ever comes off the query string — a referrer can say
         // Google was paid, it can't say which click.
         stampJourneyInfo(doc, { ad: byRef.ad, camp: byRef.camp || landed.camp, city: visitorCity(request),
-          clid: landed.clid, clidk: landed.clidk });
+          clid: landed.clid, clidk: landed.clidk, utm: landed.utm });
       }
       else step.k = k;
       appendStep(doc, step);

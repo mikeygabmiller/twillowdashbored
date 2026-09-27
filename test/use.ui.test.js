@@ -292,7 +292,7 @@ ok('the nav still works after every screen function was wrapped',
 await page.locator('#grBack').click();
 await page.waitForTimeout(400);
 ok('backing out of a report lands on the index, not out of the hub',
-  await page.locator('#growApp.show').count() === 1 && (await page.$$eval('.ix-card', (n) => n.length)) === 9);
+  await page.locator('#growApp.show').count() === 1 && (await page.$$eval('.ix-card', (n) => n.length)) === 10);
 await page.locator('#grBack').click();
 await page.waitForTimeout(400);
 ok('and backing out of the index lands on the list', await page.locator('#growApp.show').count() === 0);

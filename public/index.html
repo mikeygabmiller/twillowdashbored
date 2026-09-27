@@ -2374,6 +2374,30 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .qv-who .qv-svc{color:var(--muted)}
   .qv-tag{font-size:10px;font-weight:800;color:#fff;background:var(--accent);border-radius:999px;padding:2px 7px;vertical-align:1px}
   .qv-amt{flex:none;font-size:15px;font-weight:850;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+  /* Insights → Hangers */
+  .hg-map{height:52vh;min-height:300px;border-radius:14px;overflow:hidden;border:1px solid var(--line2);background:var(--panel2);z-index:0}
+  .hg-legend{display:flex;flex-wrap:wrap;gap:12px;font-size:11.5px;color:var(--muted2);margin-top:-6px}
+  .hg-legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px}
+  .hg-card,.hg-live{background:var(--panel2);border:1px solid var(--line2);border-radius:14px;padding:13px;display:flex;flex-direction:column;gap:9px}
+  .hg-live{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent-soft)}
+  .hg-live-top,.hg-card-h{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .hg-gps{font-size:11.5px;color:var(--muted2)}
+  .hg-live-row{display:flex;justify-content:space-around;text-align:center}
+  .hg-live-row small{color:var(--muted2);font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+  .hg-big{font-size:30px;font-weight:800;letter-spacing:-.5px}
+  .hg-tapbar{display:flex;gap:9px}.hg-tapbar .btn{padding:16px 10px;font-size:16px}.hg-plus{flex:1;font-size:20px!important;font-weight:800}
+  .hg-facts{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px}
+  .hg-sub{font-size:12.5px;color:var(--muted2);line-height:1.45}
+  .hg-warn{color:var(--gold)}
+  .hg-streets{font-size:12px;color:var(--muted2);line-height:1.5}
+  .hg-acts{display:flex;flex-wrap:wrap;gap:8px}.hg-acts .btn{flex:1 1 auto;display:inline-flex;align-items:center;justify-content:center;gap:6px;text-decoration:none;font-size:13px}
+  .hg-row{width:100%;background:none;border:none;border-bottom:1px solid var(--line2);color:inherit;text-align:left;font:inherit}
+  .hg-row.on{background:var(--accent-soft)}
+  .hg-f{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px}
+  .hg-f input,.hg-f select{flex:1;max-width:62%;background:var(--panel3);color:var(--text);border:1px solid var(--line);border-radius:9px;padding:8px 10px;font:inherit}
+  .hg-note{font-size:12px;color:var(--muted2);line-height:1.45;padding:0 2px 18px}
+  .hg-linkbtn{background:none;border:none;font:inherit;cursor:pointer}
+  .hg .leaflet-container{font:inherit}
   .qv-empty{padding:26px 16px;text-align:center;color:var(--muted2);font-size:13px;background:var(--panel);border:1px solid var(--line);border-radius:14px}
 
   /* Grow hub landing hero */
@@ -4499,6 +4523,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     <button data-gv="pulse"><span class="e" data-ic="activity" data-ic-size="20"></span>Pulse</button>
     <button data-gv="analytics"><span class="e" data-ic="bar-chart" data-ic-size="20"></span>Website</button>
     <button data-gv="journey"><span class="e" data-ic="route" data-ic-size="20"></span>Journey</button>
+    <button data-gv="hangers"><span class="e" data-ic="map-pin" data-ic-size="20"></span>Hangers</button>
     <button data-gv="usage"><span class="e" data-ic="target" data-ic-size="20"></span>Usage</button>
     <button data-gv="map"><span class="e" data-ic="pin" data-ic-size="20"></span>Map</button>
   </nav>
@@ -4598,7 +4623,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-26·helper-ideas";
+  var APP_BUILD="2026-09-27·door-hangers";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -6071,6 +6096,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     {id:"insights",t:"Insights — all reports",g:"Insights",ic:"bar-chart",k:"stats numbers reports index everything analytics",run:function(){openAnalytics("index")}},
     {id:"analytics",t:"Business overview",g:"Insights",ic:"activity",k:"stats numbers overview business kpis",run:function(){openAnalytics("overview")}},
     {id:"journey",t:"Customer journey",g:"Insights",ic:"route",k:"path pages visited what they did before texting replay story",run:function(){openAnalytics("journey")}},
+    {id:"hangers",t:"Door hangers",g:"Insights",ic:"map-pin",k:"door hanger hangers flyers route zones neighborhoods map canvass",run:function(){openAnalytics("hangers")}},
     {id:"website",t:"Website analytics",g:"Insights",ic:"activity",k:"traffic visitors ga4 clarity seo google site stats",run:function(){openAnalytics("analytics")}},
     {id:"quoteresults",t:"Quote results",g:"Insights",ic:"clipboard-list",k:"qqc quote form submissions leads history value average month over time",run:function(){openAnalytics("quotes")}},
     {id:"customers",t:"Who your customers are",g:"Insights",ic:"users",k:"repeat churn slipping loyal segments",run:function(){openAnalytics("customers")}},
@@ -13675,7 +13701,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     {g:"Insights",rows:[
       // Nine reports behind one door. It lost its nav pill on the evidence and
       // gained an index in exchange, so this row is now the main way in.
-      {t:"Insights — nine reports",ic:"bar-chart",go:function(){closeMore();openAnalytics("index")}},
+      {t:"Insights — ten reports",ic:"bar-chart",go:function(){closeMore();openAnalytics("index")}},
       {t:"Word of mouth",ic:"users",go:function(){closeMore();refSheet()}},
       {t:"Star page (idea)",ic:"star",into:"rate"}
     ]},
@@ -14447,7 +14473,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Each view names itself. Six of these used to be titled "Analytics", so the
   // header said the same thing everywhere and the only way to tell which screen
   // you were on was to read the chart.
-  var GROW_VIEWS={index:["Insights","Nine reports · open one"],
+  var GROW_VIEWS={index:["Insights","Ten reports · open one"],
     overview:["Overview","Business overview · Mikey's Mobile Detailing"],
     quotes:["Quote results","Every QQC quote, over time"],
     customers:["Customers","Who your customers are — and who's slipping away"],
@@ -14456,7 +14482,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     analytics:["Website","Your website, decoded — live"],
     journey:["Journey","What one customer actually did"],
     usage:["Usage","How you actually use this dashboard"],
-    map:["Map","Where the work and the rankings are"]};
+    map:["Map","Where the work and the rankings are"],
+    hangers:["Door hangers","Where to hang, what you hung, what it brought in"]};
   // view is optional. With no view named this lands on the index — the screen
   // that says what the nine reports are — because the tracker showed four of
   // them had never been opened at all. Naming a view (a search hit, a deep
@@ -14507,7 +14534,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(nv){var mark=function(){nv.classList.toggle("ovf",nv.scrollWidth>nv.clientWidth+1)};
       mark();setTimeout(mark,60);window.addEventListener("resize",mark);}
     Array.prototype.forEach.call(el("grNav").querySelectorAll("[data-gv]"),function(b){b.onclick=function(){vibrate(6);growSet(b.getAttribute("data-gv"))}});
-    el("grRefresh").onclick=function(){vibrate(6);if(GROW.view==="analytics"){growLoadWeb(true)}else if(GROW.view==="journey"){GROW.journey.steps={};jnLoadList(true)}else if(GROW.view==="quotes"){GROW.quotes.data=null;growLoadQuotes()}else if(GROW.view==="map"){if(GROW.map.mode==="rank")ggLoadRank(true);else growRender();}else if(IV[GROW.view]){ivLoad(GROW.view,true)}else{refreshThreads();fetchInsights();api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.entries=d.entries||[];MO.today=d.today;MO.week=d.week;MO.allTime=d.allTime}growRender()});}toast("Refreshed")};
+    el("grRefresh").onclick=function(){vibrate(6);if(GROW.view==="analytics"){growLoadWeb(true)}else if(GROW.view==="journey"){GROW.journey.steps={};jnLoadList(true)}else if(GROW.view==="quotes"){GROW.quotes.data=null;growLoadQuotes()}else if(GROW.view==="hangers"){hgLoad(true)}else if(GROW.view==="map"){if(GROW.map.mode==="rank")ggLoadRank(true);else growRender();}else if(IV[GROW.view]){ivLoad(GROW.view,true)}else{refreshThreads();fetchInsights();api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.entries=d.entries||[];MO.today=d.today;MO.week=d.week;MO.allTime=d.allTime}growRender()});}toast("Refreshed")};
   }
   function growRender(){
     var meta=GROW_VIEWS[GROW.view]||GROW_VIEWS.overview;
@@ -14521,10 +14548,354 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(GROW.view==="usage")return growUsage(b);
     if(GROW.view==="quotes")return growQuotes(b);
     if(GROW.view==="map")return growMap(b);
+    if(GROW.view==="hangers")return growHangers(b);
     if(GROW.view==="customers")return ivRender(b,"customers");
     if(GROW.view==="profit")return ivRender(b,"profit");
     if(GROW.view==="pulse")return ivRender(b,"pulse");
     return growOverview(b);
+  }
+
+  // ============================================================
+  // Insights → Hangers. The door hanger plan, the map, the log, and what it
+  // brought in. Zones come from /hanger-zones.json (generated in the website
+  // repo by print/tools/hanger-zones.py); drops and credited leads from
+  // /api/hangers. Leaflet loads only when this screen opens.
+  //
+  // Hanging mode keeps the screen awake (Wake Lock) because a web app loses
+  // GPS the moment the phone locks. The live session is saved to
+  // localStorage on every point, so a reload or a crash mid-street loses
+  // nothing.
+  // ============================================================
+  var HG_TOTAL=2000,HG_COST=240,HG_WINDOW_DAYS=42,HG_SESSION="mkd-hang-session";
+  GROW.hang={data:null,zones:null,loading:false,err:"",sel:"",form:null,session:null,map:null,layers:null,
+    watch:null,wake:null,tick:null,gps:"",creditOpen:false};
+  try{var hs0=localStorage.getItem(HG_SESSION);if(hs0)GROW.hang.session=JSON.parse(hs0)}catch(e){}
+  function hgSaveSession(){try{var s=GROW.hang.session;if(s)localStorage.setItem(HG_SESSION,JSON.stringify(s));else localStorage.removeItem(HG_SESSION)}catch(e){}}
+  function hgLoad(force){
+    var H=GROW.hang;if(H.loading)return;
+    if(!force&&H.data&&H.zones)return;
+    H.loading=true;H.err="";
+    var zp=H.zones&&!force?Promise.resolve(H.zones):fetch("/hanger-zones.json",{cache:"no-cache"}).then(function(r){return r.json()});
+    Promise.all([zp,api("/api/hangers")]).then(function(res){
+      H.loading=false;H.zones=res[0];
+      if(res[1]&&res[1].ok)H.data=res[1];else H.err=(res[1]&&res[1].error)||"Couldn't load";
+      if(GROW.view==="hangers"&&el("growApp").classList.contains("show"))growRender();
+    }).catch(function(){H.loading=false;H.err="Network error";if(GROW.view==="hangers")growRender()});
+  }
+  function hgLoadLeaflet(cb){
+    if(window.L&&window.L.map)return cb();
+    if(!document.getElementById("lfCss")){var l=document.createElement("link");l.id="lfCss";l.rel="stylesheet";
+      l.href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css";document.head.appendChild(l);}
+    var s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js";
+    s.onload=cb;s.onerror=function(){var m=el("hgMap");if(m)m.innerHTML='<div class="qv-empty">Map didn\'t load. Check your signal and tap refresh.</div>'};
+    document.head.appendChild(s);
+  }
+  // --- geometry ---
+  function hgInRing(lon,lat,ring){var inside=false;for(var i=0,j=ring.length-1;i<ring.length;j=i++){var xi=ring[i][0],yi=ring[i][1],xj=ring[j][0],yj=ring[j][1];
+    if(((yi>lat)!==(yj>lat))&&(lon<(xj-xi)*(lat-yi)/(yj-yi)+xi))inside=!inside}return inside}
+  function hgInPoly(lon,lat,g){
+    var polys=g.type==="Polygon"?[g.coordinates]:g.type==="MultiPolygon"?g.coordinates:[];
+    for(var p=0;p<polys.length;p++){if(hgInRing(lon,lat,polys[p][0])){var hole=false;for(var h=1;h<polys[p].length;h++)if(hgInRing(lon,lat,polys[p][h]))hole=true;if(!hole)return true}}
+    return false;
+  }
+  function hgZoneAt(lat,lon){var z=GROW.hang.zones;if(!z)return null;for(var i=0;i<z.features.length;i++)if(hgInPoly(lon,lat,z.features[i].geometry))return z.features[i].properties;return null}
+  function hgMeters(a,b){var dy=(a[0]-b[0])*111320,dx=(a[1]-b[1])*111320*Math.cos(a[0]*Math.PI/180);return Math.sqrt(dx*dx+dy*dy)}
+  function hgZone(id){var z=GROW.hang.zones;if(!z)return null;for(var i=0;i<z.features.length;i++)if(z.features[i].properties.id===id)return z.features[i].properties;return null}
+  function hgDay(s){return s?Date.parse(s+"T12:00:00"):0}
+  function hgNav(p){return "https://www.google.com/maps/dir/?api=1&destination="+p.start.lat+","+p.start.lon}
+
+  // Everything the screen needs, worked out once per render.
+  function hgModel(){
+    var H=GROW.hang,d=H.data||{},drops=d.drops||[],zones=(H.zones&&H.zones.features)||[];
+    var byZone={},out=0,mins=0,paceN=0,paceM=0;
+    drops.forEach(function(x){out+=x.count;mins+=x.minutes||0;
+      if(x.kind==="zone"&&x.minutes>0){paceN+=x.count;paceM+=x.minutes}
+      if(x.zone){(byZone[x.zone]=byZone[x.zone]||[]).push(x)}});
+    var pace=paceM>=30?Math.round(paceN/(paceM/60)):0;   // doors an hour, once he's logged half an hour
+    // Credited leads, with a zone guessed where the credit didn't carry one.
+    var leads=[],seen={};
+    function zoneBefore(zid,ts){var ds=byZone[zid]||[];for(var i=ds.length-1;i>=0;i--){var t=hgDay(ds[i].date);if(t<=ts&&ts-t<=HG_WINDOW_DAYS*864e5)return ds[i]}return null}
+    function guessZone(l){
+      var w=String(l.where||"").toLowerCase(),best=null,bt=0;
+      drops.forEach(function(x){if(!x.zone)return;var p=hgZone(x.zone);if(!p)return;var t=hgDay(x.date);
+        if(t>l.at||l.at-t>HG_WINDOW_DAYS*864e5)return;
+        if(w&&(w.indexOf(p.zip)>=0||w.indexOf(String(p.town).toLowerCase())>=0||w.indexOf(String(p.place).toLowerCase())>=0)&&t>bt){best=x.zone;bt=t}});
+      return best;
+    }
+    var L=d.leads||{};
+    Object.keys(L).forEach(function(ph){var l=L[ph];var z=l.zone||guessZone(l);
+      leads.push({phone:ph,how:l.how,at:l.at,zone:z||"",zoneGuess:!l.zone&&!!z,name:l.name||""});seen[ph]=1});
+    (d.bookings||[]).forEach(function(b){
+      if(seen[b.phone]||!b.geo||!b.geo.lat)return;
+      var p=hgZoneAt(b.geo.lat,b.geo.lon);if(!p)return;
+      if(!zoneBefore(p.id,b.createdAt))return;
+      leads.push({phone:b.phone,how:"address",at:b.createdAt,zone:p.id,name:b.name});seen[b.phone]=1;
+    });
+    var people=d.people||{},rev=d.revenue||{},won=0,money=0,perZone={};
+    leads.forEach(function(l){var pp=people[l.phone]||{};l.status=pp.status||"";if(!l.name)l.name=pp.name||"";
+      l.revenue=rev[l.phone]||0;if(l.status==="won"||l.revenue>0){won++;l.won=true}money+=l.revenue;
+      if(l.zone){var pz=perZone[l.zone]=perZone[l.zone]||{leads:0,won:0,money:0};pz.leads++;if(l.won)pz.won++;pz.money+=l.revenue}});
+    leads.sort(function(a,b){return b.at-a.at});
+    // What's next: the plan's first-wave zones not hung yet, then re-drops that are due.
+    var today=hgDay(d.today)||Date.now(),next=[],due=[];
+    zones.forEach(function(f){var p=f.properties,ds=(byZone[p.id]||[]).filter(function(x){return x.kind==="zone"});
+      if(/1/.test(p.wave||"")&&!ds.length)next.push(p);
+      if(ds.length===1){var age=(today-hgDay(ds[0].date))/864e5;if(age>=21&&(/2/.test(p.wave||"")||(perZone[p.id]&&perZone[p.id].leads)))due.push({p:p,age:Math.round(age)})}});
+    next.sort(function(a,b){return a.rank-b.rank});
+    var soon=(d.bookings||[]).filter(function(b){return b.apptAt&&b.apptAt>Date.now()-6*36e5&&b.apptAt<Date.now()+10*864e5&&b.status!=="cancelled"&&b.status!=="declined"})
+      .sort(function(a,b){return a.apptAt-b.apptAt});
+    return {drops:drops,byZone:byZone,out:out,mins:mins,pace:pace,leads:leads,won:won,money:money,perZone:perZone,next:next,due:due,soon:soon};
+  }
+  function hgWalkMin(p,M){return M.pace?Math.round(p.doors/M.pace*60):p.walk_min}
+
+  function growHangers(box){
+    var H=GROW.hang;
+    if(!H.data&&!H.loading&&!H.err){hgLoad();box.innerHTML='<div class="ins"><div class="qv-empty">Loading the hanger plan…</div></div>';return}
+    if(H.loading&&!H.data){box.innerHTML='<div class="ins"><div class="qv-empty">Loading the hanger plan…</div></div>';return}
+    if(H.err&&!H.data){box.innerHTML='<div class="ins"><div class="qv-empty">'+esc(H.err)+'</div></div>';return}
+    var M=hgModel(),S=H.session,h='<div class="ins hg">';
+
+    if(S){
+      var zp=hgZone(S.zone),el2=Math.round((Date.now()-S.start)/60000);
+      var dist=0;for(var i=1;i<S.track.length;i++)dist+=hgMeters(S.track[i-1],S.track[i]);
+      h+='<div class="hg-live">'+
+        '<div class="hg-live-top"><b>'+(S.kind==="job"?"Around a job":esc(zp?zp.id+" "+zp.name:"Hanging"))+'</b>'+
+        '<span class="hg-gps" id="hgGps">'+esc(H.gps||"Finding you…")+'</span></div>'+
+        '<div class="hg-live-row"><div><div class="hg-big" id="hgTaps">'+S.taps+'</div><small>hung</small></div>'+
+        '<div><div class="hg-big" id="hgMins">'+el2+'</div><small>minutes</small></div>'+
+        '<div><div class="hg-big" id="hgDist">'+(dist/1609).toFixed(1)+'</div><small>miles</small></div></div>'+
+        '<div class="hg-tapbar"><button class="btn" id="hgMinus">−1</button><button class="btn accent hg-plus" id="hgPlus">+1 hanger</button></div>'+
+        '<button class="btn" id="hgFinish" style="width:100%">Finish and log it</button>'+
+      '</div>';
+    }
+
+    h+='<div class="hg-map" id="hgMap"></div>';
+    h+='<div class="hg-legend"><span><i style="background:var(--accent)"></i>planned</span><span><i style="background:#8a93a3"></i>other zones</span><span><i style="background:var(--green)"></i>hung</span><span><i style="background:var(--blue)"></i>where you walked</span></div>';
+
+    if(H.form)h+=hgFormHtml(M);
+
+    // Selected zone card.
+    var sp=H.sel&&hgZone(H.sel);
+    if(sp&&!H.form){
+      var ds=M.byZone[sp.id]||[],pz=M.perZone[sp.id];
+      var hung=ds.reduce(function(a,x){return a+x.count},0);
+      h+='<div class="hg-card">'+
+        '<div class="hg-card-h"><b>'+esc(sp.id)+' · '+esc(sp.name)+'</b><button class="btn icon" id="hgClose" aria-label="Close">'+ic("chevron-down",18)+'</button></div>'+
+        '<div class="hg-facts">'+
+          '<span><b>'+sp.doors+'</b> doors</span><span><b>'+(Math.round(hgWalkMin(sp,M)/30)/2)+' hrs</b> walking</span>'+
+          '<span><b>'+sp.drive_min+' min</b> drive</span><span><b>$'+Math.round(sp.income/1000)+'k</b> median income</span>'+
+          '<span><b>'+Math.round(sp.own*100)+'%</b> own</span><span>score <b>'+sp.score+'</b></span></div>'+
+        '<div class="hg-sub">'+esc(sp.town)+' ('+esc(sp.zip)+') · '+(sp.permit?'<span class="hg-warn">Permit: '+esc(sp.permit)+'</span>':'No city permit needed (unincorporated county)')+
+          (sp.private_roads>=2?' · <span class="hg-warn">private roads here, watch for gates and HOA signs</span>':'')+'</div>'+
+        (ds.length?'<div class="hg-sub">Hung '+ds.length+'× ('+hung+' hangers), last on '+esc(ds[ds.length-1].date)+(pz?' · <b>'+pz.leads+' lead'+(pz.leads===1?"":"s")+'</b>, '+pz.won+' won, '+fmtMoney(pz.money):' · no leads yet')+'</div>':'')+
+        '<div class="hg-streets">'+esc((sp.streets||[]).join(" · "))+'</div>'+
+        '<div class="hg-acts">'+
+          '<a class="btn" href="'+hgNav(sp)+'" target="_blank" rel="noopener">'+ic("navigation",15)+' Navigate</a>'+
+          (S?'':'<button class="btn accent" data-hgstart="'+esc(sp.id)+'">'+ic("play",15)+' Start hanging</button>')+
+          '<button class="btn" data-hglog="'+esc(sp.id)+'">Log without GPS</button>'+
+        '</div></div>';
+    }
+
+    // Numbers.
+    var cost=HG_COST,left=HG_TOTAL-M.out;
+    h+='<div class="an-lbl">'+ic("target",15)+'So far</div><div class="stat-grid">'+
+      '<div class="stat"><div class="v">'+M.out+'</div><div class="k">Hung · '+Math.max(left,0)+' left</div></div>'+
+      '<div class="stat"><div class="v">'+(M.mins?(M.mins/60).toFixed(1):"0")+'</div><div class="k">Hours hanging</div></div>'+
+      '<div class="stat"><div class="v">'+M.leads.length+'</div><div class="k">Leads from hangers</div></div>'+
+      '<div class="stat'+(M.money>cost?" hot":"")+'"><div class="v">'+fmtMoney(M.money)+'</div><div class="k">'+M.won+' job'+(M.won===1?"":"s")+' · cost '+fmtMoney(cost)+'</div></div>'+
+      '<div class="stat"><div class="v">'+(M.out?(M.leads.length/M.out*100).toFixed(1)+"%":"–")+'</div><div class="k">Leads per 100 hung</div></div>'+
+      '<div class="stat"><div class="v">'+(M.pace||"–")+'</div><div class="k">Your doors / hour</div></div>'+
+    '</div>';
+
+    // Up next.
+    if(!S){
+      h+='<div class="an-lbl">'+ic("calendar-days",15)+'Up next</div><div class="qv-list">';
+      M.due.forEach(function(x){h+=hgRow(x.p,M,'<span class="qv-tag">second drop due · '+x.age+' days</span>')});
+      M.next.slice(0,3).forEach(function(p,i){h+=hgRow(p,M,i===0?'<span class="qv-tag">this week</span>':'')});
+      if(!M.due.length&&!M.next.length)h+='<div class="qv-empty">Plan zones are all hung. Pick the next zone from the list below, or re-drop the zone with the most leads.</div>';
+      h+='</div>';
+      if(M.soon.length){
+        h+='<div class="an-lbl">'+ic("car",15)+'Hang 20 to 30 around these jobs</div><div class="qv-list">';
+        M.soon.forEach(function(b){
+          h+='<div class="qv-row"><div class="qv-date">'+esc(b.dateLabel||"")+'</div><div class="qv-who"><b>'+esc(b.name||prettyPhone(b.phone))+'</b><small>'+esc(b.address+(b.city?", "+b.city:""))+'</small></div>'+
+            '<button class="btn" data-hgjob="'+esc(b.id)+'">Start</button></div>';
+        });
+        h+='</div><div class="hg-note">Tick "I just detailed a car on your street" on these. They answer 2 to 3 times as often as cold doors.</div>';
+      }
+    }
+
+    // Leads.
+    h+='<div class="an-lbl">'+ic("users",15)+'Leads from hangers <button class="qv-csv hg-linkbtn" id="hgCreditBtn">+ Add one</button></div>';
+    if(H.creditOpen)h+=hgCreditHtml(M);
+    if(!M.leads.length)h+='<div class="qv-empty">None yet. QR scans land here on their own, and so does any booking inside a zone you hung in the last 6 weeks. When someone texts or calls about a hanger, tap <b>+ Add one</b>.</div>';
+    else{
+      var HOW={qr:"scanned the QR",tag:"tagged hanger",address:"lives in the zone",said:"said so"};
+      h+='<div class="qv-list">';
+      M.leads.forEach(function(l){
+        h+='<div class="qv-row"><div class="qv-who"><b>'+esc(l.name||prettyPhone(l.phone))+(l.won?' <span class="qv-tag">Won</span>':'')+'</b>'+
+          '<small>'+esc(HOW[l.how]||l.how)+(l.zone?' · '+esc(l.zone)+(l.zoneGuess?' (likely)':''):'')+' · '+new Date(l.at).toLocaleDateString("en-US",{month:"short",day:"numeric"})+'</small></div>'+
+          '<div class="qv-amt">'+(l.revenue?fmtMoney(l.revenue):"–")+'</div>'+
+          '<button class="btn icon" data-hgopen="'+esc(l.phone)+'" aria-label="Open conversation">'+ic("message-square",16)+'</button></div>';
+      });
+      h+='</div>';
+    }
+
+    // All zones.
+    h+='<div class="an-lbl">'+ic("map-pin",15)+'Every zone, best first</div><div class="qv-list">';
+    ((H.zones&&H.zones.features)||[]).forEach(function(f){h+=hgRow(f.properties,M,'')});
+    h+='</div>';
+
+    // Log.
+    if(M.drops.length){
+      h+='<div class="an-lbl">'+ic("list-checks",15)+'Every drop</div><div class="qv-list">';
+      M.drops.slice().reverse().forEach(function(x){var p=hgZone(x.zone);
+        h+='<div class="qv-row"><div class="qv-date">'+esc(x.date.slice(5))+'</div><div class="qv-who"><b>'+(x.kind==="job"?"Around a job":esc(p?p.id+" "+p.name:x.zone||"Zone"))+'</b>'+
+          '<small>'+x.count+' hung'+(x.minutes?' · '+x.minutes+' min':'')+(x.note?' · '+esc(x.note):'')+'</small></div>'+
+          '<button class="btn icon" data-hgdel="'+esc(x.id)+'" aria-label="Delete">'+ic("trash",15)+'</button></div>';
+      });
+      h+='</div>';
+    }
+    h+='<div class="hg-note">Doorknob or handle only, never the mailbox. Skip "No Soliciting" signs. The whole plan: print/door-hanger/ROUTES.md in the website repo.</div>';
+    h+='</div>';
+    box.innerHTML=h;
+    hgWire(box,M);
+    hgDrawMap(M);
+  }
+  function hgRow(p,M,tag){
+    var ds=M.byZone[p.id]||[],pz=M.perZone[p.id];
+    return '<button class="qv-row hg-row'+(GROW.hang.sel===p.id?" on":"")+'" data-hgsel="'+esc(p.id)+'">'+
+      '<div class="qv-date">'+esc(p.id)+'</div><div class="qv-who"><b>'+esc(p.name)+' '+tag+'</b>'+
+      '<small>'+p.doors+' doors · '+(Math.round(hgWalkMin(p,M)/30)/2)+' hrs · '+p.drive_min+' min away · $'+Math.round(p.income/1000)+'k'+
+      (ds.length?' · hung '+ds.length+'×'+(pz?', '+pz.leads+' lead'+(pz.leads===1?"":"s"):''):'')+(p.permit?' · permit':'')+'</small></div>'+
+      '<div class="qv-amt">'+p.score+'</div></button>';
+  }
+  function hgFormHtml(M){
+    var f=GROW.hang.form,p=hgZone(f.zone);
+    return '<div class="hg-card"><div class="hg-card-h"><b>Log '+(f.kind==="job"?"an around-the-job drop":esc(p?p.id+" "+p.name:"a drop"))+'</b></div>'+
+      '<label class="hg-f">Hangers hung<input type="number" inputmode="numeric" id="hgFCount" value="'+(f.count||"")+'"></label>'+
+      '<label class="hg-f">Minutes<input type="number" inputmode="numeric" id="hgFMin" value="'+(f.minutes||"")+'"></label>'+
+      '<label class="hg-f">Date<input type="date" id="hgFDate" value="'+esc(f.date)+'"></label>'+
+      '<label class="hg-f">Note<input type="text" id="hgFNote" placeholder="Streets, weather, anything" value="'+esc(f.note||"")+'"></label>'+
+      (f.track&&f.track.length?'<div class="hg-sub">GPS trail: '+f.track.length+' points</div>':'')+
+      '<div class="hg-acts"><button class="btn" id="hgFCancel">'+(f.fromSession?"Back to hanging":"Cancel")+'</button><button class="btn accent" id="hgFSave">Save</button></div></div>';
+  }
+  function hgCreditHtml(M){
+    var ts=((typeof state==="object"&&state.threads)||[]).filter(function(t){return !t.archived}).slice().sort(function(a,b){return (b.lastTs||0)-(a.lastTs||0)}).slice(0,40);
+    var zs=((GROW.hang.zones&&GROW.hang.zones.features)||[]).map(function(f){return f.properties});
+    return '<div class="hg-card"><div class="hg-sub">Someone said they saw a hanger? Pick the conversation.</div>'+
+      '<label class="hg-f">Who<select id="hgCPhone">'+ts.map(function(t){return '<option value="'+esc(t.phone)+'">'+esc((t.name||prettyPhone(t.phone)))+'</option>'}).join("")+'</select></label>'+
+      '<label class="hg-f">Zone<select id="hgCZone"><option value="">Not sure</option>'+zs.map(function(p){return '<option value="'+esc(p.id)+'">'+esc(p.id+" "+p.name)+'</option>'}).join("")+'</select></label>'+
+      '<div class="hg-acts"><button class="btn" id="hgCCancel">Cancel</button><button class="btn accent" id="hgCSave">Add</button></div></div>';
+  }
+  function hgWire(box,M){
+    var H=GROW.hang;
+    function on(sel,fn){Array.prototype.forEach.call(box.querySelectorAll(sel),fn)}
+    on("[data-hgsel]",function(b){b.onclick=function(){vibrate(6);H.sel=b.getAttribute("data-hgsel");H.form=null;growRender();el("grBody").scrollTop=0}});
+    on("[data-hgstart]",function(b){b.onclick=function(){hgStart(b.getAttribute("data-hgstart"),"zone")}});
+    on("[data-hglog]",function(b){b.onclick=function(){var p=hgZone(b.getAttribute("data-hglog"));
+      H.form={zone:p.id,kind:"zone",count:p.doors,minutes:hgWalkMin(p,M),date:(H.data&&H.data.today)||"",track:null};growRender()}});
+    on("[data-hgjob]",function(b){b.onclick=function(){hgStart("","job")}});
+    on("[data-hgopen]",function(b){b.onclick=function(){var ph=b.getAttribute("data-hgopen");closeAnalytics();openThread(ph)}});
+    on("[data-hgdel]",function(b){b.onclick=function(){if(!confirm("Delete this drop from the log?"))return;
+      post("/api/hangers",{action:"delete-drop",id:b.getAttribute("data-hgdel")}).then(function(d){if(d&&d.ok){toast("Deleted");hgLoad(true)}else toast("Couldn't delete")})}});
+    var c=el("hgClose");if(c)c.onclick=function(){H.sel="";growRender()};
+    var cb=el("hgCreditBtn");if(cb)cb.onclick=function(){H.creditOpen=!H.creditOpen;growRender()};
+    var cc=el("hgCCancel");if(cc)cc.onclick=function(){H.creditOpen=false;growRender()};
+    var cs=el("hgCSave");if(cs)cs.onclick=function(){var s=el("hgCPhone");if(!s||!s.value)return;
+      var t=(state.threads||[]).filter(function(x){return x.phone===s.value})[0]||{};
+      post("/api/hangers",{action:"credit",phone:s.value,zone:el("hgCZone").value,name:t.name||""}).then(function(d){
+        if(d&&d.ok){H.creditOpen=false;toast("Credited to hangers");hgLoad(true)}else toast("Couldn't save")})};
+    // Hanging session controls.
+    var S=H.session;
+    var plus=el("hgPlus");if(plus)plus.onclick=function(){S.taps++;vibrate(8);hgSaveSession();var t=el("hgTaps");if(t)t.textContent=S.taps};
+    var minus=el("hgMinus");if(minus)minus.onclick=function(){if(S.taps>0)S.taps--;hgSaveSession();var t=el("hgTaps");if(t)t.textContent=S.taps};
+    var fin=el("hgFinish");if(fin)fin.onclick=function(){var p=hgZone(S.zone);
+      H.form={zone:S.zone,kind:S.kind,count:S.taps||(p?p.doors:""),minutes:Math.max(1,Math.round((Date.now()-S.start)/60000)),
+        date:(H.data&&H.data.today)||"",track:S.track,fromSession:true};growRender();el("grBody").scrollTop=0};
+    // Log form.
+    var fc=el("hgFCancel");if(fc)fc.onclick=function(){H.form=null;growRender()};
+    var fs=el("hgFSave");if(fs)fs.onclick=function(){var f=H.form;
+      var body={zone:f.zone,kind:f.kind,count:el("hgFCount").value,minutes:el("hgFMin").value,date:el("hgFDate").value,note:el("hgFNote").value,track:f.track||[]};
+      if(!(parseInt(body.count,10)>0)){toast("How many did you hang?");return}
+      fs.disabled=true;
+      post("/api/hangers",{action:"drop",drop:body}).then(function(d){
+        if(d&&d.ok){if(f.fromSession)hgStop();H.form=null;toast("Logged "+body.count+" hangers");hgLoad(true)}
+        else{fs.disabled=false;toast("Couldn't save. Your session is still here, try again.")}
+      }).catch(function(){fs.disabled=false;toast("No signal. Your session is still here, try again.")})};
+    if(S&&!H.watch)hgResume();
+  }
+
+  // --- the map ---
+  function hgDrawMap(M){
+    var H=GROW.hang,box=el("hgMap");if(!box)return;
+    hgLoadLeaflet(function(){
+      if(!el("hgMap"))return;
+      if(H.map){try{H.map.remove()}catch(e){}H.map=null}
+      var map=L.map("hgMap",{zoomControl:true,attributionControl:true});H.map=map;
+      var hung={};M.drops.forEach(function(x){if(x.zone)hung[x.zone]=1});
+      var zl=L.geoJSON(H.zones,{style:function(f){var p=f.properties,planned=/1/.test(p.wave||""),sel=H.sel===p.id;
+        var col=hung[p.id]?"#22c55e":planned?"#ff2e43":"#8a93a3";
+        return {color:col,weight:sel?4:2,fillColor:col,fillOpacity:sel?.35:(.08+.25*p.score/100)}},
+        onEachFeature:function(f,layer){layer.on("click",function(){H.sel=f.properties.id;H.form=null;growRender();el("grBody").scrollTop=0});
+          layer.bindTooltip(f.properties.id,{permanent:false,direction:"center"})}});
+      // The view has to exist before any layer goes on, or Leaflet can't clip lines.
+      var sel=H.sel&&zl.getLayers().filter(function(l){return l.feature.properties.id===H.sel})[0];
+      var last=H.session&&H.session.track[H.session.track.length-1];
+      if(last)map.setView(last,17);
+      else if(sel)map.fitBounds(sel.getBounds(),{padding:[20,20]});
+      else{
+        // Open on the zones that matter now: the plan and anything already hung.
+        var focus=zl.getLayers().filter(function(l){var p=l.feature.properties;return /1/.test(p.wave||"")||hung[p.id]});
+        map.fitBounds((focus.length?L.featureGroup(focus):zl).getBounds(),{padding:[16,16]});
+      }
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(map);
+      zl.addTo(map);
+      M.drops.forEach(function(x){if(x.track&&x.track.length>1)L.polyline(x.track,{color:"#3b82f6",weight:3,opacity:.8}).addTo(map)});
+      if(H.session&&H.session.track.length>1)H.liveLine=L.polyline(H.session.track,{color:"#3b82f6",weight:5}).addTo(map);else H.liveLine=null;
+      H.meDot=null;
+      var base=H.zones.base;if(base)L.circleMarker([base.lat,base.lon],{radius:6,color:"#fff",weight:2,fillColor:"#ff2e43",fillOpacity:1}).bindTooltip("Home base").addTo(map);
+      M.soon.forEach(function(b){if(b.geo&&b.geo.lat)L.circleMarker([b.geo.lat,b.geo.lon],{radius:7,color:"#fff",weight:2,fillColor:"#eab308",fillOpacity:1}).bindTooltip("Job: "+(b.name||"")+" "+(b.dateLabel||"")).addTo(map)});
+    });
+  }
+
+  // --- hanging mode ---
+  function hgStart(zone,kind){
+    var H=GROW.hang;
+    if(!navigator.geolocation){toast("This phone won't share location. Log it without GPS instead.");return}
+    H.session={zone:zone||"",kind:kind,start:Date.now(),taps:0,track:[]};hgSaveSession();
+    H.sel=zone||"";H.form=null;vibrate(12);
+    hgResume();growRender();el("grBody").scrollTop=0;
+    toast("Hanging. Keep this screen open so GPS keeps drawing.");
+  }
+  function hgResume(){
+    var H=GROW.hang;if(!H.session||H.watch!=null)return;
+    H.watch=navigator.geolocation.watchPosition(function(pos){
+      var S=H.session;if(!S)return;
+      var c=pos.coords,pt=[Math.round(c.latitude*1e5)/1e5,Math.round(c.longitude*1e5)/1e5];
+      H.gps=c.accuracy<=35?"GPS good (±"+Math.round(c.accuracy)+" m)":"GPS weak (±"+Math.round(c.accuracy)+" m)";
+      var g=el("hgGps");if(g)g.textContent=H.gps;
+      if(c.accuracy>35)return;
+      var last=S.track[S.track.length-1];
+      if(!last||hgMeters(last,pt)>=8){S.track.push(pt);hgSaveSession();
+        if(H.map&&window.L&&el("hgMap")){if(H.liveLine)H.liveLine.addLatLng(pt);else H.liveLine=L.polyline(S.track,{color:"#3b82f6",weight:5}).addTo(H.map);}
+        var dist=0;for(var i=1;i<S.track.length;i++)dist+=hgMeters(S.track[i-1],S.track[i]);var dd=el("hgDist");if(dd)dd.textContent=(dist/1609).toFixed(1);}
+      if(H.map&&window.L&&el("hgMap")){if(H.meDot)H.meDot.setLatLng(pt);else H.meDot=L.circleMarker(pt,{radius:8,color:"#fff",weight:3,fillColor:"#3b82f6",fillOpacity:1}).addTo(H.map);H.map.panTo(pt,{animate:true})}
+    },function(err){H.gps=err&&err.code===1?"Location blocked: allow it in Settings":"No GPS fix yet";var g=el("hgGps");if(g)g.textContent=H.gps},
+    {enableHighAccuracy:true,maximumAge:5000,timeout:20000});
+    hgWake();
+    if(!H.tick)H.tick=setInterval(function(){var S=H.session,m=el("hgMins");if(S&&m)m.textContent=Math.round((Date.now()-S.start)/60000)},30000);
+  }
+  function hgWake(){
+    var H=GROW.hang;
+    try{if(navigator.wakeLock&&!H.wake)navigator.wakeLock.request("screen").then(function(w){H.wake=w;w.addEventListener("release",function(){H.wake=null})}).catch(function(){})}catch(e){}
+  }
+  document.addEventListener("visibilitychange",function(){if(document.visibilityState==="visible"&&GROW.hang.session)hgWake()});
+  function hgStop(){
+    var H=GROW.hang;
+    if(H.watch!=null){try{navigator.geolocation.clearWatch(H.watch)}catch(e){}H.watch=null}
+    if(H.wake){try{H.wake.release()}catch(e){}H.wake=null}
+    if(H.tick){clearInterval(H.tick);H.tick=null}
+    H.session=null;H.gps="";H.liveLine=null;H.meDot=null;hgSaveSession();
   }
 
   // ---- the Insights index ------------------------------------------------
@@ -14542,6 +14913,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     ["pulse","Pulse","activity","Where does this month land if nothing changes?"],
     ["journey","Journey","route","What did one customer do before they texted?"],
     ["map","Map & rankings","pin","Where's the work, and where do you rank?"],
+    ["hangers","Door hangers","map-pin","Where do I hang next, and did it pay?"],
     ["usage","Usage","target","Which parts of this dashboard do you actually use?"]
   ];
   // Read-only: pull from caches other screens filled, never trigger a load.
