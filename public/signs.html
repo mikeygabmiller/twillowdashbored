@@ -10,7 +10,12 @@
 <title>Mikey's Sign Crew</title>
 <link rel="icon" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/icon-180.png">
-<link rel="manifest" href="/signs.webmanifest">
+<link rel="manifest" href="/signs.webmanifest" id="mf">
+<script>
+  // Mikey's own copy (/yardsigns, or ?owner=1) installs as its own home-screen
+  // app that opens straight back to his view, not to the crew's join screen.
+  if(/[?&]owner=1/.test(location.search))document.getElementById("mf").href="/signs-owner.webmanifest";
+</script>
 <style>
   /* Used outside, in daylight, often with one hand on a sign: a light page
      with dark text and big buttons reads best in the sun. Dark mode follows the
@@ -415,7 +420,7 @@
   // ---- the screens -----------------------------------------------------------------
   function render(){
     var app=el("app");
-    if(S.err==="owner-login"){app.innerHTML='<div class="card"><h2>Sign in first</h2><p>Open <a href="/">your dashboard</a>, sign in, then come back to Insights → Yard signs.</p></div>';return}
+    if(S.err==="owner-login")return renderOwnerLogin();
     if(S.err==="link_off"){app.innerHTML='<div class="card"><h2>This link was turned off</h2><p>Ask Mikey for the new crew link. Anything saved on this phone is still here and uploads once you are back on.</p></div>';return}
     if(S.err==="helper_off"){app.innerHTML='<div class="card"><h2>You are off the crew for now</h2><p>Mikey paused your account. Text him if that is a mistake.</p></div>';return}
     if(!OWNER&&(!ID||S.err==="who"))return renderJoin();
@@ -839,6 +844,23 @@
       (live(s)?'<div class="row"><button data-pev="up">Still up</button><button data-pev="gone">Gone</button><button data-pev="down">Fixed</button><button data-pev="picked">Picked up</button></div>':'')+'</div>';
   }
   function wirePopup(node,s){Array.prototype.forEach.call(node.querySelectorAll("[data-pev]"),function(b){b.onclick=function(){addEvent(s.pid,b.getAttribute("data-pev"));S.map.closePopup()}})}
+
+  // ---- Mikey signing in on his own link --------------------------------------------------
+  // /yardsigns is his dedicated link. Safari and the installed dashboard keep
+  // separate cookies on an iPhone, so this page can't lean on the dashboard's
+  // login: it signs in itself, with the same password, through the same
+  // /api/login (same lockout after wrong guesses).
+  function renderOwnerLogin(){
+    el("app").innerHTML='<div class="card"><h2>Yard signs</h2><p class="muted">Sign in with your dashboard password.</p>'+
+      '<label class="f">Password<input id="oPw" type="password" autocomplete="current-password"></label>'+
+      '<button class="btn red block" id="oGo">Sign in</button><div class="bad small" id="oErr" style="margin-top:8px"></div></div>';
+    var go=function(){var pw=el("oPw").value;if(!pw)return;el("oGo").disabled=true;
+      post("/api/login",{password:pw}).then(function(d){
+        if(d&&d.ok&&d.role==="owner"){S.err="";render();Promise.all([getSpots(),getState()]).then(render)}
+        else{el("oGo").disabled=false;el("oErr").textContent=d&&d.error==="locked"?"Too many tries. Wait "+d.minutes+" min.":d&&d.role==="helper"?"That's the helper PIN. Use your own password.":"That password didn't work."}
+      }).catch(function(){el("oGo").disabled=false;el("oErr").textContent="No signal. Try again."})};
+    el("oGo").onclick=go;el("oPw").onkeydown=function(e){if(e.key==="Enter")go()};
+  }
 
   // ---- joining ------------------------------------------------------------------------
   function renderJoin(){
