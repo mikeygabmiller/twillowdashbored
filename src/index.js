@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-29·instant-booking';
+const BUILD = '2026-09-29·yard-signs';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -476,6 +476,15 @@ async function handle(request) {
   // with no cookie and no credentials, or the MMS never goes out. See servePhoto.
   if (request.method === 'GET'  && pathname.startsWith('/i/'))      return servePhoto(pathname.slice(3));
   if (request.method === 'POST' && pathname === '/api/cust/action') return apiCustAction(request, url);
+  // The Sign Crew app (/signs.html). Public because a helper has no dashboard
+  // login: each route checks the crew link and the helper's own device secret
+  // itself (see signWho), and none of them reach texts, customers or money.
+  if (request.method === 'POST' && pathname === '/api/crew/hello')  return apiCrewHello(request);
+  if (request.method === 'POST' && pathname === '/api/crew/join')   return apiCrewJoin(request);
+  if (request.method === 'POST' && pathname === '/api/crew/state')  return apiCrewState(request);
+  if (request.method === 'POST' && pathname === '/api/crew/sync')   return apiCrewSync(request);
+  if (request.method === 'GET'  && pathname === '/api/crew/photo')  return apiCrewPhoto(request, url);
+  if (request.method === 'GET'  && (pathname === '/signs' || pathname === '/crew')) return Response.redirect(new URL('/signs.html' + url.search, request.url).toString(), 302);
 
   if (request.method === 'GET'  && pathname === '/api/version')    return json({ ok: true, build: BUILD });
   if (request.method === 'POST' && pathname === '/api/login')      return apiLogin(request);
@@ -595,6 +604,8 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/quotes')        return apiQuotes(url);
   if (request.method === 'GET'  && pathname === '/api/hangers')       return apiHangers();
   if (request.method === 'POST' && pathname === '/api/hangers')       return apiHangersPost(request);
+  if (request.method === 'GET'  && pathname === '/api/signs')         return apiSigns();
+  if (request.method === 'POST' && pathname === '/api/signs')         return apiSignsPost(request);
   if (request.method === 'GET'  && pathname === '/api/quotes/export') return apiQuotesExport(url);
   if (request.method === 'POST' && pathname === '/api/quotes/import') return apiQuotesImport(request);
   if (request.method === 'POST' && pathname === '/api/quote-preview')  return apiQuotePreview(request);
@@ -1266,9 +1277,13 @@ async function handleSubmit(request) {
   // "Referred by my neighbor Dave" in the notes box is the form saying who sent them.
   noteReferral(thread, notes);
   if (!thread.status) { thread.status = 'new'; thread.statusAt = thread.statusAt || Date.now(); }
-  // Scanned the QR on a door hanger: tag it so the Hangers screen counts it.
-  const fromHanger = (await journeyUtm(body.vid)) === 'doorhanger';
+  // Scanned the QR on a door hanger or a yard sign: tag it so the Hangers or
+  // Yard signs screen counts it. One journey read answers both.
+  const landedFrom = await journeyUtm(body.vid);
+  const fromHanger = landedFrom === 'doorhanger';
+  const fromSign = landedFrom === 'yardsign';
   if (fromHanger) thread.tags = Array.from(new Set((thread.tags || []).concat('hanger')));
+  if (fromSign) thread.tags = Array.from(new Set((thread.tags || []).concat('sign')));
   const detail = [
     vehicle ? `Vehicle: ${vehicle}` : null, condition ? `Condition: ${condition}` : null,
     serviceList ? `Services: ${serviceList}` : null, `Quote: ${quoteLine}`,
@@ -1308,6 +1323,7 @@ async function handleSubmit(request) {
   // from site-stats.js; without it this is a no-op and the lead is unaffected.
   await journeyLink(body.vid, clientPhone, name || guessed);
   if (fromHanger) await hangerCredit(clientPhone, { how: 'qr', name: name || guessed, where: location });
+  if (fromSign) await signCredit(clientPhone, { how: 'qr', name: name || guessed, where: location });
 
   const ok = mikeyAlert;
   return cors(json({ ok, clientSms, mikeyAlert }, ok ? 200 : 207));
@@ -1923,6 +1939,396 @@ async function apiHangersPost(request) {
     return json({ ok: true });
   }
   return json({ ok: false, error: 'bad_action' }, 400);
+}
+
+// ===========================================================================
+// Yard signs (Insights → Yard signs, and the Sign Crew app at /signs.html)
+// ---------------------------------------------------------------------------
+// Friends and family put signs out from a link Mikey texts them. The page does
+// the thinking (which spots, which route, what's already covered) against the
+// static public/sign-spots.json, made in the website repo by
+// print/tools/sign-spots.py. This side only keeps the record and the keys.
+//
+// Storage, chosen around the KV write budget (see the box at the top):
+//   signs:v1         Mikey's doc: settings, crew links, who's on the crew,
+//                    no-go circles, his verdicts on signs, credited leads.
+//                    Written only when HE changes something, or someone joins.
+//   signs:h:<id>     one helper's own record: every sign they placed, every
+//                    check they did, the spots they skipped, the route they
+//                    have reserved. Only that helper's phone writes it, so two
+//                    helpers syncing at once can never erase each other.
+//   signs:ha:<id>    the hash of that helper's device secret. Kept apart so
+//                    helper docs can be handed to the whole crew as-is.
+//   signs:ph:<batch> the photos from one upload, as one JSON doc.
+//
+// The phone holds everything first and uploads in batches (a dozen signs,
+// fifteen minutes, or Finish), and each upload costs at most two writes however
+// many signs it carries. A daily cap on top (cfg.cap, default 150) means a big
+// Saturday can never spend the writes Mikey's texting needs: past it, uploads
+// wait on the phone until the UTC day turns over. The count comes from each
+// helper doc's metadata, read with one list call, so keeping it costs nothing.
+//
+// Reads hand the helper docs back as the raw strings KV stored, never parsed
+// here: the crew map is every doc at once, and parsing them all is exactly the
+// CPU the 10 ms limit doesn't have.
+// ===========================================================================
+const SIGN_KEY = 'signs:v1';
+const SIGN_SINCE = '2026-09-29';            // nothing before the first sign counts
+const SIGN_CAP_DEFAULT = 150;               // KV writes a day the whole sign system may spend
+const SIGN_HELPER_CAP = 40;                 // …and one helper's share of it
+const SIGN_JOIN_CAP = 15;                   // new people a day, so a leaked link can't run up writes
+const SIGN_MAX_PLACED = 4000;               // per helper doc; oldest closed ones would go first
+const SIGN_PHOTO_TTL = 400 * 86400;         // photos clean themselves up after a year and a bit
+const SIGN_PHOTO_MAX = 90000;               // base64 chars, about 65 KB of JPEG
+const SIGN_STATUS = { up: 1, gone: 1, down: 1, picked: 1, hoa: 1, moved: 1 };
+const SIGN_SKIP = { none: 1, taken: 1, hoa: 1, unsafe: 1, private: 1, other: 1 };
+
+async function loadSigns() {
+  const d = (await kv().get(SIGN_KEY, { type: 'json' })) || {};
+  return {
+    cfg: Object.assign({ pay: 0, photo: 'ask', recheck: 7, cap: SIGN_CAP_DEFAULT, cost: 0, stock: 0 }, d.cfg || {}),
+    links: d.links || [], crew: d.crew || {}, nogo: d.nogo || [], marks: d.marks || {},
+    leads: d.leads || {}, joins: d.joins || { d: '', n: 0 },
+  };
+}
+async function saveSigns(doc) { await kv().put(SIGN_KEY, JSON.stringify(doc)); }
+
+async function sha256hex(s) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(s)));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+function signHid(v) { const s = String(v || ''); return /^[a-z0-9]{8,24}$/.test(s) ? s : ''; }
+function signNum(v, lo, hi) { const n = Number(v); return isFinite(n) && n >= lo && n <= hi ? n : null; }
+function signTxt(v, max) { return String(v == null ? '' : v).replace(/[\u0000-\u001f<>]/g, ' ').trim().slice(0, max); }
+function signNextUtcMidnight(now) { const d = new Date(now); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1); }
+
+// Credit one phone to yard signs. First credit wins, same as the hangers.
+async function signCredit(phone, info) {
+  if (!phone) return;
+  try {
+    const doc = await loadSigns();
+    if (doc.leads[phone]) return;
+    doc.leads[phone] = { how: info.how, at: Date.now(), name: signTxt(info.name, 60), where: signTxt(info.where, 60) };
+    await saveSigns(doc);
+  } catch (e) { /* a lost credit is a number off on a chart; a thrown one is a lost lead */ }
+}
+
+// Who is asking. Mikey, signed in to the dashboard, is always allowed and
+// places signs as the helper "mikey" — but only when the page says it is the
+// owner's view, so an open dashboard (no password set) can't turn every helper
+// into Mikey. Everyone else needs a live crew link, their device id, and the
+// secret their phone made when they joined.
+async function signWho(request, b, doc) {
+  if (b && b.asOwner) {
+    if ((await authRole(request)) === 'owner') return { hid: 'mikey', name: 'Mikey', owner: true };
+    return { err: 'unauthorized' };
+  }
+  const k = String((b && b.k) || '');
+  const link = doc.links.find((l) => l.k === k);
+  if (!link || link.off) return { err: 'link_off' };
+  const hid = signHid(b.h);
+  if (!hid || hid === 'mikey') return { err: 'who' };
+  const want = await kv().get('signs:ha:' + hid);
+  if (!want || want !== (await sha256hex(String(b.s || '')))) return { err: 'who' };
+  const c = doc.crew[hid];
+  if (c && c.off) return { err: 'helper_off' };
+  return { hid, name: (c && c.name) || '', link: k, missing: !c };
+}
+
+// Everything the crew map draws. `extra` is what only Mikey sees.
+async function signState(doc, who, extra) {
+  const ids = Object.keys(doc.crew);
+  if (ids.indexOf('mikey') < 0) ids.push('mikey');
+  const texts = await Promise.all(ids.map((id) => kv().get('signs:h:' + id)));
+  const crew = {};
+  ids.forEach((id) => {
+    const c = doc.crew[id] || {};
+    crew[id] = who.owner ? Object.assign({}, c, { name: c.name || (id === 'mikey' ? 'Mikey' : '') })
+      : { name: c.name || (id === 'mikey' ? 'Mikey' : ''), off: c.off ? 1 : 0 };
+  });
+  const c = doc.cfg;
+  const head = Object.assign({
+    ok: true, now: Date.now(), me: { id: who.hid, name: who.name || (crew[who.hid] && crew[who.hid].name) || '' },
+    owner: !!who.owner, cfg: who.owner ? c : { pay: c.pay, photo: c.photo, recheck: c.recheck },
+    crew, nogo: doc.nogo, marks: doc.marks,
+  }, extra || {});
+  // The head's closing brace is swapped for the docs array and put back after
+  // it. (Spelled as a char code: the test suite lifts functions out of this
+  // file by counting braces, and a brace inside a string would fool it.)
+  const s = JSON.stringify(head);
+  return new Response(s.slice(0, -1) + ',"docs":[' + texts.filter(Boolean).join(',') + ']' + String.fromCharCode(125),
+    { headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' } });
+}
+
+// POST /api/crew/hello { k } — is this link alive? Read-only, before anyone joins.
+async function apiCrewHello(request) {
+  const b = await readJson(request);
+  const doc = await loadSigns();
+  const link = doc.links.find((l) => l.k === String(b.k || ''));
+  return json({ ok: true, valid: !!(link && !link.off), pay: doc.cfg.pay, photo: doc.cfg.photo });
+}
+
+// POST /api/crew/join { k, h, s, name, phone }
+async function apiCrewJoin(request) {
+  const b = await readJson(request);
+  const doc = await loadSigns();
+  const k = String(b.k || '');
+  const link = doc.links.find((l) => l.k === k);
+  if (!link || link.off) return json({ ok: false, error: 'link_off' }, 403);
+  const hid = signHid(b.h);
+  const secret = String(b.s || '');
+  const name = signTxt(b.name, 30);
+  if (!hid || hid === 'mikey' || secret.length < 16) return json({ ok: false, error: 'who' }, 422);
+  if (!name) return json({ ok: false, error: 'name' }, 422);
+  const hash = await sha256hex(secret);
+  const had = await kv().get('signs:ha:' + hid);
+  if (had) {
+    // Same phone joining again (cleared the app, tapped the link twice): fine
+    // if it's the same secret, never a way to take over someone else's id.
+    if (had !== hash) return json({ ok: false, error: 'who' }, 403);
+    return json({ ok: true, name: (doc.crew[hid] && doc.crew[hid].name) || name });
+  }
+  const today = utcDayStr(Date.now());
+  const n = doc.joins.d === today ? doc.joins.n : 0;
+  if (n >= SIGN_JOIN_CAP) return json({ ok: false, error: 'join_cap' }, 429);
+  await kv().put('signs:ha:' + hid, hash);
+  doc.crew[hid] = { name, phone: normalizePhone(b.phone) || '', at: Date.now(), link: k };
+  doc.joins = { d: today, n: n + 1 };
+  await saveSigns(doc);
+  notifyMikey(`🪧 ${name} joined your sign crew`,
+    `${name} opened your crew link (${link.label || 'Crew link'}) and joined.\n\nSee what they put out: Insights → Yard signs.` +
+    (publicBase() ? `\n${publicBase()}/signs.html?owner=1` : '')).catch(() => {});
+  return json({ ok: true, name });
+}
+
+// POST /api/crew/state { k, h, s } or { asOwner: 1 }
+async function apiCrewState(request) {
+  const b = await readJson(request);
+  const doc = await loadSigns();
+  const who = await signWho(request, b, doc);
+  if (who.err) return json({ ok: false, error: who.err }, 403);
+  return signState(doc, who);
+}
+
+function signCleanPlaced(r, now) {
+  if (!Array.isArray(r)) return null;
+  const pid = String(r[0] || '');
+  if (!/^[a-z0-9]{6,24}$/i.test(pid)) return null;
+  const lat = signNum(r[1], 46.5, 49.5), lon = signNum(r[2], -123.5, -120.5);
+  if (lat == null || lon == null) return null;
+  let t = Number(r[3]) || now;
+  if (t > now + 600000 || t < now - 14 * 864e5) t = now;
+  const spot = /^[a-z0-9]{2,20}$/i.test(String(r[4] || '')) ? String(r[4]) : '';
+  const kind = r[5] === 'y' ? 'y' : 'r';
+  const acc = Math.round(signNum(r[6], 0, 5000) || 0);
+  return [pid, Math.round(lat * 1e5) / 1e5, Math.round(lon * 1e5) / 1e5, Math.round(t), spot, kind, acc, '', signTxt(r[8], 120)];
+}
+function signCleanEvent(r, now) {
+  if (!Array.isArray(r)) return null;
+  const pid = String(r[0] || '');
+  if (!/^[a-z0-9]{6,24}$/i.test(pid) || !SIGN_STATUS[r[2]]) return null;
+  let t = Number(r[1]) || now;
+  if (t > now + 600000 || t < now - 14 * 864e5) t = now;
+  const lat = signNum(r[3], 46.5, 49.5), lon = signNum(r[4], -123.5, -120.5);
+  return [pid, Math.round(t), r[2], lat == null ? 0 : Math.round(lat * 1e5) / 1e5, lon == null ? 0 : Math.round(lon * 1e5) / 1e5, signTxt(r[5], 120)];
+}
+
+// POST /api/crew/sync { k, h, s | asOwner, p:[…], e:[…], sk:[…], plan, photos:{pid:b64}, name }
+//   p   placed:  [pid, lat, lon, t, spot, kind 'r'|'y', gps accuracy m, _, note]
+//   e   checks:  [pid, t, status, lat, lon, note] — on anyone's sign
+//   sk  skipped: [spot, t, why]
+//   plan the route they reserved: { spots:[…], until, area } or null to let it go
+async function apiCrewSync(request) {
+  const b = await readJson(request);
+  const doc = await loadSigns();
+  const who = await signWho(request, b, doc);
+  if (who.err) return json({ ok: false, error: who.err }, 403);
+  const now = Date.now();
+  const today = utcDayStr(now);
+  const key = 'signs:h:' + who.hid;
+  const h = (await kv().get(key, { type: 'json' })) || { id: who.hid, name: who.name, at: now, p: [], e: [], sk: [], plan: null };
+  h.p = h.p || []; h.e = h.e || []; h.sk = h.sk || [];
+  const photos = {};
+  let nPhotos = 0;
+  if (b.photos && typeof b.photos === 'object') {
+    for (const pid of Object.keys(b.photos).slice(0, 12)) {
+      const v = String(b.photos[pid] || '');
+      if (/^[a-z0-9]{6,24}$/i.test(pid) && v.length > 100 && v.length <= SIGN_PHOTO_MAX && /^[A-Za-z0-9+/=]+$/.test(v)) { photos[pid] = v; nPhotos++; }
+    }
+  }
+  const cost = nPhotos ? 2 : 1;
+  const mine = h.wd === today ? (h.wn || 0) : 0;
+  if (!who.owner) {
+    const resume = signNextUtcMidnight(now);
+    if (mine + cost > SIGN_HELPER_CAP) return json({ ok: false, error: 'daily_cap', resume }, 429);
+    let all = 0;
+    try {
+      const page = await kv().list({ prefix: 'signs:h:' });
+      for (const k of page.keys) { const m = k.metadata; if (m && m.d === today) all += m.n || 0; }
+    } catch (e) { /* no count is no reason to lose a sign; the per-helper cap still holds */ }
+    if (all + cost > (Number(doc.cfg.cap) || SIGN_CAP_DEFAULT)) return json({ ok: false, error: 'daily_cap', resume }, 429);
+  }
+  const have = new Set(h.p.map((r) => r[0]));
+  const ack = [];
+  (Array.isArray(b.p) ? b.p : []).slice(0, 80).forEach((r) => {
+    const c = signCleanPlaced(r, now);
+    if (!c) return;
+    ack.push(c[0]);
+    if (have.has(c[0])) return;           // a retry of an upload that landed
+    have.add(c[0]);
+    h.p.push(c);
+  });
+  const evKey = (r) => r[0] + '|' + r[1] + '|' + r[2];
+  const haveEv = new Set(h.e.map(evKey));
+  let nEv = 0;
+  (Array.isArray(b.e) ? b.e : []).slice(0, 200).forEach((r) => {
+    const c = signCleanEvent(r, now);
+    if (!c) return;
+    nEv++;
+    if (haveEv.has(evKey(c))) return;
+    haveEv.add(evKey(c));
+    h.e.push(c);
+  });
+  let nSk = 0;
+  (Array.isArray(b.sk) ? b.sk : []).slice(0, 100).forEach((r) => {
+    if (!Array.isArray(r) || !/^[a-z0-9]{2,20}$/i.test(String(r[0] || '')) || !SIGN_SKIP[r[2]]) return;
+    nSk++;
+    let t = Number(r[1]) || now;
+    if (t > now + 600000 || t < now - 14 * 864e5) t = now;
+    if (!h.sk.some((x) => x[0] === r[0] && x[1] === t)) h.sk.push([String(r[0]), Math.round(t), r[2]]);
+  });
+  if (b.plan === null) h.plan = null;
+  else if (b.plan && Array.isArray(b.plan.spots)) {
+    const until = Math.min(Number(b.plan.until) || now + 3 * 36e5, now + 12 * 36e5);
+    h.plan = { t: now, until, area: signTxt(b.plan.area, 40),
+      spots: b.plan.spots.filter((x) => /^[a-z0-9]{2,20}$/i.test(String(x))).slice(0, 80) };
+  }
+  if (who.owner) h.name = 'Mikey';
+  else if (!h.name && who.name) h.name = who.name;
+  if (nPhotos) {
+    const batch = genId();
+    const byPid = {};
+    h.p.forEach((r) => { byPid[r[0]] = r; });
+    const kept = {};
+    Object.keys(photos).forEach((pid) => { if (byPid[pid]) { byPid[pid][7] = batch; kept[pid] = photos[pid]; } });
+    if (Object.keys(kept).length) await kv().put('signs:ph:' + batch, JSON.stringify(kept), { expirationTtl: SIGN_PHOTO_TTL });
+  }
+  if (h.p.length > SIGN_MAX_PLACED) h.p = h.p.slice(-SIGN_MAX_PLACED);
+  if (h.e.length > SIGN_MAX_PLACED * 2) h.e = h.e.slice(-SIGN_MAX_PLACED * 2);
+  if (h.sk.length > 1000) h.sk = h.sk.slice(-1000);
+  h.wd = today;
+  h.wn = mine + cost;
+  await kv().put(key, JSON.stringify(h), { metadata: { d: today, n: h.wn } });
+  // The join's registry write can lose a race with another join; the helper's
+  // own upload puts them back on the list.
+  if (who.missing && !who.owner) {
+    doc.crew[who.hid] = { name: h.name || 'Helper', phone: '', at: h.at || now, link: who.link };
+    await saveSigns(doc);
+  }
+  return json({ ok: true, ack, events: nEv, skips: nSk, photos: nPhotos, writesToday: h.wn });
+}
+
+// GET /api/crew/photo?b=<batch>&p=<pid>&k=<link> — one placement photo. The
+// crew link (or Mikey's cookie) is enough: it's a picture of a street corner.
+async function apiCrewPhoto(request, url) {
+  const batch = String(url.searchParams.get('b') || '');
+  const pid = String(url.searchParams.get('p') || '');
+  if (!/^[a-z0-9]{6,24}$/i.test(batch) || !/^[a-z0-9]{6,24}$/i.test(pid)) return new Response('Not found', { status: 404 });
+  const k = String(url.searchParams.get('k') || '');
+  let okd = false;
+  if (k) { const doc = await loadSigns(); okd = doc.links.some((l) => l.k === k && !l.off); }
+  if (!okd) okd = (await authRole(request)) === 'owner';
+  if (!okd) return new Response('Forbidden', { status: 403 });
+  const d = await kv().get('signs:ph:' + batch, { type: 'json' });
+  const b64 = d && d[pid];
+  if (!b64) return new Response('Not found', { status: 404 });
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Response(bytes, { headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'private, max-age=31536000, immutable',
+    'X-Robots-Tag': 'noindex, noimageindex' } });
+}
+
+// GET /api/signs — the crew map plus what only Mikey sees: links, phones,
+// credited leads and what those people have paid.
+async function apiSigns() {
+  const doc = await loadSigns();
+  const cfg = await loadConfig();
+  const now = Date.now();
+  const since = Date.parse(SIGN_SINCE + 'T00:00:00-07:00');
+  const index = await loadIndex();
+  const leads = Object.assign({}, doc.leads);
+  const byPhone = {};
+  index.forEach((t) => { byPhone[t.phone] = t; });
+  index.forEach((t) => {
+    if (leads[t.phone]) return;
+    if ((t.tags || []).some((x) => /^(yard ?)?signs?$/i.test(String(x).trim())) && (t.sourceAt || t.statusAt || now) >= since) {
+      leads[t.phone] = { how: 'tag', at: t.sourceAt || t.statusAt || now, name: t.name || '' };
+    }
+  });
+  const months = [];
+  for (let m = localDateStr(now, cfg.tz).slice(0, 7); m >= SIGN_SINCE.slice(0, 7); m = prevMonthKey(m)) months.push(m);
+  const mdocs = await Promise.all(months.map(loadMonth));
+  const revenue = {};
+  mdocs.forEach((md) => (md.entries || []).forEach((e) => {
+    if (leads[e.phone] && e.type === 'job' && e.amount > 0) revenue[e.phone] = money2((revenue[e.phone] || 0) + e.amount);
+  }));
+  const people = {};
+  Object.keys(leads).forEach((p) => { const t = byPhone[p]; if (t) people[p] = { name: t.name || '', status: t.status || '' }; });
+  return signState(doc, { hid: 'mikey', name: 'Mikey', owner: true },
+    { links: doc.links, leads, people, revenue, today: localDateStr(now, cfg.tz), since: SIGN_SINCE });
+}
+
+// POST /api/signs { action, … } — Mikey's switches.
+async function apiSignsPost(request) {
+  const b = await readJson(request);
+  const doc = await loadSigns();
+  const act = String(b.action || '');
+  const now = Date.now();
+  if (act === 'settings') {
+    const c = b.cfg || {};
+    const put = (k, lo, hi) => { const v = signNum(c[k], lo, hi); if (v != null) doc.cfg[k] = v; };
+    put('pay', 0, 50); put('recheck', 2, 60); put('cap', 20, 400); put('cost', 0, 50); put('stock', 0, 100000);
+    if (['need', 'ask', 'off'].indexOf(c.photo) >= 0) doc.cfg.photo = c.photo;
+  } else if (act === 'link-new') {
+    const link = { k: jdToken(), label: signTxt(b.label, 40) || 'Crew link', at: now, off: 0 };
+    doc.links.push(link);
+    await saveSigns(doc);
+    return json({ ok: true, link });
+  } else if (act === 'link-off' || act === 'link-on') {
+    const l = doc.links.find((x) => x.k === b.k);
+    if (!l) return json({ ok: false, error: 'not_found' }, 404);
+    l.off = act === 'link-off' ? 1 : 0;
+  } else if (act === 'crew-off' || act === 'crew-on' || act === 'crew-paid' || act === 'crew-edit') {
+    const c = doc.crew[signHid(b.h)];
+    if (!c) return json({ ok: false, error: 'not_found' }, 404);
+    if (act === 'crew-off') c.off = 1;
+    if (act === 'crew-on') c.off = 0;
+    if (act === 'crew-paid') { const a = signNum(b.amount, -10000, 10000); if (a == null) return json({ ok: false, error: 'amount' }, 422); c.paid = money2((c.paid || 0) + a); c.paidAt = now; }
+    if (act === 'crew-edit') { if (b.name) c.name = signTxt(b.name, 30); if (b.phone != null) c.phone = normalizePhone(b.phone) || ''; }
+  } else if (act === 'nogo-add') {
+    const lat = signNum(b.lat, 46.5, 49.5), lon = signNum(b.lon, -123.5, -120.5);
+    if (lat == null || lon == null) return json({ ok: false, error: 'where' }, 422);
+    doc.nogo.push({ id: genId(), lat, lon, r: Math.round(signNum(b.r, 30, 3000) || 300),
+      why: ['hoa', 'mikey', 'private', 'complaint'].indexOf(b.why) >= 0 ? b.why : 'mikey', note: signTxt(b.note, 80), at: now });
+  } else if (act === 'nogo-del') {
+    doc.nogo = doc.nogo.filter((z) => z.id !== b.id);
+  } else if (act === 'mark') {
+    const pid = String(b.pid || '');
+    if (!/^[a-z0-9]{6,24}$/i.test(pid)) return json({ ok: false, error: 'pid' }, 422);
+    if (['ok', 'bad', 'gone'].indexOf(b.st) >= 0) doc.marks[pid] = [b.st, now];
+    else delete doc.marks[pid];
+  } else if (act === 'credit') {
+    const phone = normalizePhone(b.phone);
+    if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+    doc.leads[phone] = { how: 'said', at: now, name: signTxt(b.name, 60), where: signTxt(b.where, 60) };
+  } else if (act === 'uncredit') {
+    delete doc.leads[b.phone];
+  } else {
+    return json({ ok: false, error: 'bad_action' }, 400);
+  }
+  await saveSigns(doc);
+  return json({ ok: true });
 }
 
 
@@ -16163,6 +16569,12 @@ async function apiBook(request) {
   if (!thread.status) { thread.status = 'new'; thread.statusAt = Date.now(); }
   markSource(thread, 'booking');
   if (!thread.tags.includes('booking')) thread.tags.push('booking');
+  // The calculator books here instead of /submit now, so a sign or hanger QR
+  // that ends in a booked time has to be caught here too, or the warmest
+  // print leads never get credited. The site sends the visitor id with it.
+  const landedFrom = b.vid ? await journeyUtm(b.vid) : '';
+  if (landedFrom === 'yardsign' && !thread.tags.includes('sign')) thread.tags.push('sign');
+  if (landedFrom === 'doorhanger' && !thread.tags.includes('hanger')) thread.tags.push('hanger');
   if (refBy && !thread.referredBy) {
     thread.referredBy = { phone: refBy, name: refName, at: Date.now(), thankedAt: 0, how: 'link' };
     thread.refGuess = null;
@@ -16186,6 +16598,8 @@ async function apiBook(request) {
   await logQuote({ type: 'booking', name, phone, total: estimate, vehicle: rec.vehicle || rec.sizeLabel,
     condition: String(b.condition || ''), services: rec.addons.length ? [rec.serviceName].concat(rec.addons) : [rec.serviceName],
     location: city, notes: rec.notes, appointment: `${dateLabel} at ${bkFmt12(slot)}` });
+  if (landedFrom === 'yardsign') await signCredit(phone, { how: 'qr', name, where: city });
+  if (landedFrom === 'doorhanger') await hangerCredit(phone, { how: 'qr', name, where: city });
   notifyMikey(`🗓 New booking — ${name}`, `${detail}\n\n` + (instant
     ? `It's on your schedule. Dashboard → Bookings if you need to move or cancel it.`
     : `Open your dashboard → Bookings to confirm.`)).catch(() => {});

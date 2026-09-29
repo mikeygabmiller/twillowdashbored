@@ -562,6 +562,28 @@ everything using the key, also set a daily cap in **Google Cloud Console → API
 ## Website quote form
 Point the form's submit URL to: `https://texting.mikeysdetailingsnohomish.workers.dev/submit`
 
+## Yard signs (Insights → Yard signs, `/signs.html`)
+The Sign Crew app. Mikey makes a crew link in the app's **Crew** tab and texts it
+to anyone helping; they join with a first name and get: suggested areas (best
+open spots, how long since anyone covered the town, how far away), a route in
+driving order that holds its spots for 3 hours, drive mode (navigate, "You're
+here" buzz, one tap to log the sign with GPS and a photo, skip with a reason),
+checks and pickups, and a how-to. Mikey opens the same page with `?owner=1` and
+also gets **Crew** (links, who placed what, pay owed), **Results** (live signs,
+median days a sign lasts, which towns keep them, leads and money) and
+**Settings** (pay per sign, photo rule, sign cost, stock, no-go areas, the daily
+upload cap).
+
+- Spots are `public/sign-spots.json`, made in the website repo by
+  `print/tools/sign-spots.py` (HPMS traffic counts + OpenStreetMap lights and
+  stop signs + Census households). The plan is `print/yard-signs/README.md` there.
+- Storage and the write budget: see the Yard signs block in `src/index.js`.
+  Uploads are batched on the phone and cost at most 2 KV writes each; the crew
+  shares a daily cap (default 150) so a big Saturday can't starve texting.
+- Leads: a quote or booking whose visit landed on `?utm_source=yardsign` (the
+  QR on the sign) is tagged **sign** and credited; so is any conversation Mikey
+  tags `sign`, or adds in Results.
+
 ## Quote history (Analytics → Quotes)
 Every QQC submission that reaches `/submit` (or `/qqc-text`) is now also appended
 to a **quote log**, so you can see what came in over time instead of digging
@@ -690,6 +712,7 @@ Dashboard API: `/api/health` `/api/threads` `/api/thread` `/api/send` `/api/meta
 `/api/alert-test` `/api/templates` `/api/migrate`
 `/api/followups` `/api/followup` `/api/config` `/api/block`
 Quotes: `/api/quotes` `/api/quotes/export` `/api/quotes/import`
+Yard signs: `/api/signs` (owner) · public, link-checked: `/api/crew/hello` `/api/crew/join` `/api/crew/state` `/api/crew/sync` `/api/crew/photo`
 Website analytics: `/api/analytics` (pixel) `/api/webstats` `/api/webstats/status`
 `/api/webstats/connect` `/api/webstats/disconnect` `/api/webstats/ai`
 AI (Gemini): `/api/ai/summary` `/api/ai/draft` `/api/ai/triage` `/api/ai/agent`
