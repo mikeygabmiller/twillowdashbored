@@ -3,7 +3,7 @@
   "name": "Mikey's Sign Crew",
   "short_name": "Sign Crew",
   "description": "Put out yard signs for Mikey's Mobile Detailing.",
-  "start_url": "/signs.html",
+  "start_url": "/signs",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",

@@ -175,7 +175,7 @@ await op.waitForSelector('[data-tab="crew"]', { timeout: 10000 });
 await op.click('[data-tab="crew"]');
 ok('Jess is on the crew list', /Jess/.test(await op.textContent('#app')));
 ok('with what she is owed at $1.50 a sign', /\$1\.50/.test(await op.textContent('#app')));
-ok('the link shows as a full URL', /signs\.html#k=LINKLINKLINK123/.test(await op.textContent('#app')));
+ok('the link shows as a full URL', /signs#k=LINKLINKLINK123/.test(await op.textContent('#app')));
 await op.click('#linkNew');
 await op.waitForTimeout(500);
 ok('a new link can be made', SERVER.links.length === 2 && /NEWLINKNEWLINK99/.test(await op.textContent('#app')));
@@ -187,6 +187,18 @@ await op.click('#sSave');
 await op.waitForTimeout(300);
 ok('settings save', SERVER.cfg.pay === 2, SERVER.cfg);
 ok('no page errors (owner)', !errs.length, errs);
+ok('Mikey can get back to the dashboard', await op.isVisible('#hBack'));
+
+section('When the server breaks, the page says so');
+const bp = await context.newPage();
+await bp.route('**/api/signs', (r) => r.fulfill({ status: 500, contentType: 'text/html', body: '<html>Error 1101</html>' }));
+await bp.goto('https://crew.test/signs.html?owner=1');
+await bp.waitForSelector('#retry', { timeout: 8000 }).catch(() => {});
+ok('"That didn\'t load" with the reason, not an endless Loading', /didn't load/.test(await bp.textContent('#app')) && /500/.test(await bp.textContent('#app')), await bp.textContent('#app'));
+
+section('The dashboard button goes straight to the page');
+const IDX = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+ok('no redirect in between', (IDX.match(/location\.assign\("\/signs\?owner=1"\)/g) || []).length === 2 && !/signs\.html\?owner/.test(IDX));
 
 await browser.close();
 console.log(`\n${pass} passed, ${fail} failed`);
