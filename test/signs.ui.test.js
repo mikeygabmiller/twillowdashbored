@@ -196,6 +196,25 @@ await bp.goto('https://crew.test/signs.html?owner=1');
 await bp.waitForSelector('#retry', { timeout: 8000 }).catch(() => {});
 ok('"That didn\'t load" with the reason, not an endless Loading', /didn't load/.test(await bp.textContent('#app')) && /500/.test(await bp.textContent('#app')), await bp.textContent('#app'));
 
+section("Mikey's own link signs in by itself");
+const lp = await context.newPage();
+let authed = false;
+await lp.route('**/api/signs', (r) => authed ? r.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(stateFor(true, 'mikey')) })
+  : r.fulfill({ status: 401, contentType: 'application/json', body: '{"ok":false,"error":"unauthorized"}' }));
+await lp.route('**/api/login', (r) => { const b = JSON.parse(r.request().postData() || '{}'); authed = b.password === 'right';
+  r.fulfill({ status: authed ? 200 : 401, contentType: 'application/json', body: JSON.stringify(authed ? { ok: true, role: 'owner' } : { ok: false, error: 'wrong_password' }) }); });
+await lp.goto('https://crew.test/signs.html?owner=1');
+await lp.waitForSelector('#oPw', { timeout: 8000 });
+ok('asks for the password instead of sending him back to the dashboard', /dashboard password/.test(await lp.textContent('#app')));
+ok('installs as its own app', (await lp.getAttribute('#mf', 'href')) === '/signs-owner.webmanifest');
+await lp.fill('#oPw', 'wrong'); await lp.click('#oGo'); await lp.waitForTimeout(300);
+ok('a wrong password says so', /didn't work/.test(await lp.textContent('#oErr')));
+await lp.fill('#oPw', 'right'); await lp.click('#oGo');
+await lp.waitForSelector('[data-tab="crew"]', { timeout: 8000 }).catch(() => {});
+ok('the right one opens his view', await lp.isVisible('[data-tab="crew"]'));
+const YS = fs.readFileSync(new URL('../public/yardsigns.html', import.meta.url), 'utf8');
+ok('/yardsigns opens his view', /location\.replace\("\/signs\?owner=1"\)/.test(YS));
+
 section('The dashboard button goes straight to the page');
 const IDX = fs.readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
 ok('no redirect in between', (IDX.match(/location\.assign\("\/signs\?owner=1"\)/g) || []).length === 2 && !/signs\.html\?owner/.test(IDX));
