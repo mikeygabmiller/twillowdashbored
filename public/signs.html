@@ -96,6 +96,7 @@
   .pop .row{margin-top:6px;flex-wrap:wrap;gap:4px}
   .pop button{padding:6px 9px;border-radius:8px;background:#eee;font-size:12px;font-weight:700;color:#111}
   .pop img{width:100%;border-radius:8px;margin-top:6px}
+  .pop .side{border-top:1px solid #e5e7eb;margin-top:8px;padding-top:6px}
   /* drive mode */
   .drive{position:fixed;inset:0;z-index:40;background:var(--bg);overflow:auto;padding-bottom:env(safe-area-inset-bottom)}
   .drive .top{background:var(--red);color:#fff;padding:12px 16px;padding-top:max(12px,env(safe-area-inset-top))}
@@ -395,6 +396,12 @@
     if(sp.flags.indexOf("c")>=0)h+='<span class="tag a">store frontage</span>';
     if(sp.flags.indexOf("f")>=0)h+='<span class="tag a">45 mph: wide grass only</span>';
     return h;
+  }
+  // Street View standing on the road at the pin, turned to the right-hand verge
+  // where the sign goes: grass or a ditch, a fence, a tree in the way. The
+  // spot list can't see any of that, so this is the look before the drive.
+  function svUrl(sp){
+    return "https://www.google.com/maps/@?api=1&map_action=pano&viewpoint="+sp.lat+","+sp.lon+"&heading="+Math.round(((sp.head||0)+90)%360)+"&pitch=-5&fov=90";
   }
   function navUrl(lat,lon){
     var ios=/iPhone|iPad|iPod/.test(navigator.userAgent);
@@ -708,7 +715,7 @@
       '<div class="row" style="margin-top:6px"><span class="arrow" style="transform:rotate('+Math.round(dir)+'deg)">⬆</span><div><div class="dist">'+(dist==null?"…":fmtDist(dist))+'</div><div class="small">'+(dist==null?"Finding you":(here?"You're here":compass(dir)))+'</div></div></div>'+
       '<p class="where">'+title+'</p></div><div class="wrap">';
     if(R.mode==="place"&&sp){
-      h+='<div class="card"><p class="how">'+esc(howTo(sp))+'</p><p class="small muted" style="margin-top:6px">'+esc(why(sp))+'</p>'+flagTags(sp)+'</div>';
+      h+='<div class="card"><p class="how">'+esc(howTo(sp))+'</p><p class="small muted" style="margin-top:6px">'+esc(why(sp))+' · <a id="dSv" target="_blank" rel="noopener" href="'+svUrl(sp)+'">See it on Street View</a></p>'+flagTags(sp)+'</div>';
       h+='<button class="btn block huge '+(here?"green here":"red")+'" id="dPlaced">📸 Sign placed</button>';
       h+='<div class="grid2" style="margin-top:10px"><a class="btn" id="dNav" target="_blank" rel="noopener" href="'+navUrl(st.lat,st.lon)+'">🧭 Navigate</a><button class="btn" id="dSkip">Skip</button></div>';
       h+='<button class="btn ghost block" id="dExtra" style="margin-top:10px">+ Put an extra sign right here</button>';
@@ -808,7 +815,13 @@
       var box=el("map");if(!box)return;
       var map=L.map(box,{zoomControl:true});S.map=map;
       var center=S.me||[47.93,-122.12];map.setView(center,S.me?14:11);
-      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(map);
+      // Satellite shows grass, ditches, fences and driveways the spot list can't
+      // see. Whichever view was last used comes back next time.
+      var street=L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"});
+      var sat=L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{maxZoom:19,attribution:"Imagery © Esri"});
+      (PREF.sat?sat:street).addTo(map);
+      L.control.layers({"Map":street,"Satellite":sat},null,{collapsed:false,position:"topright"}).addTo(map);
+      map.on("baselayerchange",function(e){PREF.sat=e.layer===sat;save(LS_PREF,PREF)});
       var spotL=L.layerGroup().addTo(map),signL=L.layerGroup().addTo(map),other=L.layerGroup().addTo(map);
       (S.data.nogo||[]).forEach(function(z){L.circle([z.lat,z.lon],{radius:z.r,color:"#E31924",weight:1,fillOpacity:.12,dashArray:"4"}).addTo(other)});
       (S.plans||[]).forEach(function(p){p.spots.forEach(function(id){var sp=S.spotById[id];if(sp)L.circleMarker([sp.lat,sp.lon],{radius:6,color:"#7c3aed",weight:2,fillOpacity:.2}).bindTooltip(((S.data.crew[p.by]||{}).name||"Someone")+"'s route").addTo(other)})});
@@ -819,10 +832,20 @@
       // Only the best open spots in view get drawn: a phone can't hold 5,000 markers.
       function drawSpots(){
         spotL.clearLayers();var b=map.getBounds();
-        var inView=openSpots(function(sp){return b.contains([sp.lat,sp.lon])}).sort(function(a,c){return c._st.eff-a._st.eff}).slice(0,map.getZoom()>=14?300:150);
-        inView.forEach(function(sp){var e=sp._st.eff,col=e>=60?"#E31924":e>=35?"#f97316":"#facc15";
-          L.circleMarker([sp.lat,sp.lon],{radius:e>=60?8:6,color:"#fff",weight:1.5,fillColor:col,fillOpacity:.95}).bindPopup(spotPopup(sp)).on("popupopen",function(ev){
-            var n=ev.popup.getElement().querySelector("[data-add]");if(n)n.onclick=function(){S.plan=S.plan||{stops:[],area:""};if(S.plan.stops.indexOf(sp)<0)S.plan.stops.push(sp);S.plan.stops=order(S.plan.stops,S.me);toast("Added. "+S.plan.stops.length+" stops on the Go tab.")};
+        var inView=openSpots(function(sp){return b.contains([sp.lat,sp.lon])}).sort(function(a,c){return c._st.eff-a._st.eff});
+        // One dot per corner, at its best open side. Two dots a few feet apart
+        // read as a duplicate; the popup lists both sides instead.
+        var corners=[],byJx={};
+        inView.forEach(function(sp){var g=byJx[sp.jx];if(g){g.push(sp);return}if(corners.length>=(map.getZoom()>=14?300:150))return;byJx[sp.jx]=g=[sp];corners.push(g)});
+        corners.forEach(function(g){var sp=g[0],e=sp._st.eff,col=e>=60?"#E31924":e>=35?"#f97316":"#facc15";
+          L.circleMarker([sp.lat,sp.lon],{radius:e>=60?8:6,color:"#fff",weight:g.length>1?2.5:1.5,fillColor:col,fillOpacity:.95}).bindPopup(cornerPopup(g)).on("popupopen",function(ev){
+            Array.prototype.forEach.call(ev.popup.getElement().querySelectorAll("[data-add]"),function(n){n.onclick=function(){var p=S.spotById[n.getAttribute("data-add")];if(!p)return;
+              S.plan=S.plan||{stops:[],area:""};if(S.plan.stops.indexOf(p)<0)S.plan.stops.push(p);S.plan.stops=order(S.plan.stops,S.me);n.textContent="Added";n.disabled=true;toast("Added. "+S.plan.stops.length+" stops on the Go tab.")}});
+            // Mikey saw it on Street View and it's no good (a ditch, a fence,
+            // no grass): a small no-go circle takes the corner off every map.
+            var hb=ev.popup.getElement().querySelector("[data-hide]");
+            if(hb)hb.onclick=function(){if(!confirm("Take this corner off the map for everyone? You can undo it in Settings, under no-go areas."))return;map.closePopup();
+              ownerPost({action:"nogo-add",lat:sp.lat,lon:sp.lon,r:40,why:"mikey",note:"Not a good spot: "+sp.road+" at "+(sp.cross||"the corner")},"Taken off the map")};
           }).addTo(spotL)});
       }
       map.on("moveend",drawSpots);drawSpots();
@@ -833,9 +856,15 @@
         ownerPost({action:"nogo-add",lat:e.latlng.lat,lon:e.latlng.lng,r:Math.max(30,(+r||1000)/3.28/2),why:w,note:why},"No-go area added")});
     });
   }
-  function spotPopup(sp){
-    return '<div class="pop"><b>'+esc(sp.road)+' at '+esc(sp.cross||"the corner")+'</b><small>'+esc(sp.town)+' · score '+Math.round(sp._st.eff)+'</small><small>'+esc(why(sp))+'</small><small>'+esc(howTo(sp))+'</small>'+
-      '<div class="row"><button data-add="1">Add to my route</button><a href="'+navUrl(sp.lat,sp.lon)+'" target="_blank" rel="noopener"><button>Navigate</button></a></div></div>';
+  function spotPopup(sp,sub){
+    return (sub?'<div class="side">':'<b>'+esc(sp.road)+' at '+esc(sp.cross||"the corner")+'</b>')+
+      '<small>'+(sub?'<b>Facing cars heading '+esc(compass(sp.head))+' on '+esc(sp.road)+'</b> · ':esc(sp.town)+' · ')+'score '+Math.round(sp._st.eff)+'</small><small>'+esc(why(sp))+'</small><small>'+esc(howTo(sp))+'</small>'+
+      '<div class="row"><button data-add="'+esc(sp.id)+'">Add to my route</button><a href="'+svUrl(sp)+'" target="_blank" rel="noopener"><button>Street View</button></a><a href="'+navUrl(sp.lat,sp.lon)+'" target="_blank" rel="noopener"><button>Navigate</button></a></div>'+(sub?'</div>':'');
+  }
+  function cornerPopup(g){
+    var hide=OWNER?'<div class="row"><button data-hide="1">Not a good spot: hide this corner</button></div>':'';
+    if(g.length<2)return '<div class="pop">'+spotPopup(g[0])+hide+'</div>';
+    return '<div class="pop"><b>'+esc(g[0].road)+' at '+esc(g[0].cross||"the corner")+'</b><small>'+esc(g[0].town)+' · '+g.length+' good sides of this corner</small>'+g.map(function(sp){return spotPopup(sp,true)}).join("")+hide+'</div>';
   }
   function signPopup(s){
     var who=(S.data.crew[s.by]||{}).name||"";

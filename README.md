@@ -574,6 +574,12 @@ median days a sign lasts, which towns keep them, leads and money) and
 **Settings** (pay per sign, photo rule, sign cost, stock, no-go areas, the daily
 upload cap).
 
+The Map tab draws one dot per corner (its best open side; the popup lists both
+sides), switches to **Satellite**, and every spot has a **Street View** button
+turned to the verge where the sign goes. In Mikey's view a corner can be hidden
+from its popup ("Not a good spot"), which is a 40 m no-go circle he can remove
+in Settings.
+
 - Spots are `public/sign-spots.json`, made in the website repo by
   `print/tools/sign-spots.py` (HPMS traffic counts + OpenStreetMap lights and
   stop signs + Census households). The plan is `print/yard-signs/README.md` there.

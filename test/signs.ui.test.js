@@ -29,6 +29,8 @@ ok('never Lynnwood or Edmonds', ![...towns].some((t) => /Lynnwood|Edmonds/.test(
 ok('ids are unique', new Set(SJ.spots.map((r) => r[ix.id])).size === SJ.spots.length);
 ok('scores are 1 to 100', SJ.spots.every((r) => r[ix.score] >= 1 && r[ix.score] <= 100));
 ok('nothing on a 50 mph road', SJ.spots.every((r) => r[ix.spd] < 50));
+ok('passing traffic only on counted roads with 10,000+ cars', SJ.spots.every((r) => r[ix.ctrl] !== 'thru' || (r[ix.aadt] >= 10000 && !/e/.test(r[ix.flags]))));
+ok('at most two sides of any corner', Object.values(SJ.spots.reduce((a, r) => { a[r[ix.jx]] = (a[r[ix.jx]] || 0) + 1; return a; }, {})).every((n) => n <= 2));
 
 // A tiny fake Worker.
 const SERVER = { docs: {}, crew: {}, links: [{ k: 'LINKLINKLINK123', label: 'Family', at: 1, off: 0 }], cfg: { pay: 1.5, photo: 'ask', recheck: 7, cap: 150, cost: 3, stock: 200 }, nogo: [], marks: {}, leads: {} };
@@ -68,7 +70,7 @@ await context.route('**/*', async (route) => {
     if (LEAF[f]) return route.fulfill({ status: 200, contentType: f.endsWith('.css') ? 'text/css' : 'application/javascript', body: LEAF[f] });
     return route.fulfill({ status: 503, body: '' });
   }
-  if (u.hostname.endsWith('openstreetmap.org')) return route.fulfill({ status: 204, body: '' });
+  if (u.hostname.endsWith('openstreetmap.org') || u.hostname.endsWith('arcgisonline.com')) return route.fulfill({ status: 204, body: '' });
   if (p === '/signs.html') return route.fulfill({ status: 200, contentType: 'text/html', body: HTML });
   if (p === '/sign-spots.json') return route.fulfill({ status: 200, contentType: 'application/json', body: SPOTS });
   const b = req.method() === 'POST' ? JSON.parse(req.postData() || '{}') : {};
@@ -132,6 +134,7 @@ await page.waitForTimeout(600);
 ok('the reservation went up right away', syncs.some((s) => s.plan && s.plan.spots.length === 5), syncs.map((s) => s.plan));
 ok('drive mode shows the first stop', /Stop 1 of 5/.test(await page.textContent('#drive')));
 ok('it says which side and which way', /Right side of .+ facing cars heading/.test(await page.textContent('#drive')));
+ok('with a Street View look at the verge first', /map_action=pano&viewpoint=/.test(await page.getAttribute('#dSv', 'href')));
 await context.setGeolocation({ latitude: plan[0].lat, longitude: plan[0].lon, accuracy: 5 });
 await page.waitForFunction(() => /You're here/.test(document.querySelector('#drive').textContent), null, { timeout: 12000 }).catch(() => {});
 ok('arriving is noticed', /You're here/.test(await page.textContent('#drive')));
@@ -162,8 +165,23 @@ await page.click('[data-tab="how"]');
 ok('the how-to is there', /Where a sign goes/.test(await page.textContent('#app')) && /Never/.test(await page.textContent('#app')));
 await page.click('[data-tab="map"]');
 await page.waitForTimeout(1200);
-if (LEAF['leaflet.min.js']) ok('the map draws spots', (await page.$$('.leaflet-interactive')).length > 5);
-else console.log('  (map skipped: no route to cdnjs)');
+if (LEAF['leaflet.min.js']) {
+  ok('the map draws spots', (await page.$$('.leaflet-interactive')).length > 5);
+  ok('a Satellite view to switch to', /Satellite/.test(await page.textContent('.leaflet-control-layers')));
+  const dots = await page.evaluate(() => { const out = []; window.__signs.S.map.eachLayer((l) => { if (l.getPopup && l.getPopup() && l.getLatLng && /#E31924|#f97316|#facc15/.test(l.options.fillColor)) out.push(l.getLatLng()); }); return out; });
+  const jxAt = await page.evaluate((d) => d.map((p) => { const s = window.__signs.S.spots.find((x) => x.lat === p.lat && x.lon === p.lng); return s ? s.jx : null; }).filter((x) => x !== null), dots);
+  ok('one dot per corner', jxAt.length > 5 && new Set(jxAt).size === jxAt.length, jxAt.length);
+  const two = await page.evaluate(() => { let hit = null; window.__signs.S.map.eachLayer((l) => { if (!hit && l.getPopup && l.getPopup() && /good sides/.test(l.getPopup().getContent())) hit = l; }); if (hit) hit.openPopup(); return !!hit; });
+  if (two) {
+    ok('a two-sided corner lists both sides', (await page.$$('.leaflet-popup [data-add]')).length === 2);
+    ok('each with Street View', (await page.$$('.leaflet-popup a[href*="map_action=pano"]')).length === 2);
+    const before = await page.evaluate(() => (window.__signs.S.plan && window.__signs.S.plan.stops.length) || 0);
+    await page.click('.leaflet-popup [data-add] >> nth=1');
+    ok('and either side can go on the route', (await page.evaluate(() => window.__signs.S.plan.stops.length)) === before + 1);
+  } else console.log('  (no two-sided corner in view)');
+  await page.click('.leaflet-control-layers-base label:has-text("Satellite")');
+  ok('the choice is remembered', await page.evaluate(() => JSON.parse(localStorage.getItem('mkd-crew-pref')).sat === true));
+} else console.log('  (map skipped: no route to cdnjs)');
 ok('no page errors (helper)', !errs.length, errs);
 
 section("Mikey's view");
@@ -186,6 +204,17 @@ await op.fill('#sPay', '2');
 await op.click('#sSave');
 await op.waitForTimeout(300);
 ok('settings save', SERVER.cfg.pay === 2, SERVER.cfg);
+if (LEAF['leaflet.min.js']) {
+  const nogoPosts = [];
+  op.on('request', (r) => { if (r.url().endsWith('/api/signs') && r.method() === 'POST') { const b = JSON.parse(r.postData() || '{}'); if (b.action === 'nogo-add') nogoPosts.push(b); } });
+  await op.click('[data-tab="map"]');
+  await op.waitForTimeout(1200);
+  await op.evaluate(() => { let hit = null; window.__signs.S.map.eachLayer((l) => { if (!hit && l.getPopup && l.getPopup() && /hide this corner/.test(l.getPopup().getContent())) hit = l; }); if (hit) hit.openPopup(); });
+  ok('Mikey can hide a corner he saw on Street View', !!(await op.$('.leaflet-popup [data-hide]')));
+  await op.click('.leaflet-popup [data-hide]');
+  await op.waitForTimeout(400);
+  ok('as a small no-go circle, so it can be undone', nogoPosts.length === 1 && nogoPosts[0].r === 40 && /Not a good spot/.test(nogoPosts[0].note), nogoPosts);
+}
 ok('no page errors (owner)', !errs.length, errs);
 ok('Mikey can get back to the dashboard', await op.isVisible('#hBack'));
 
