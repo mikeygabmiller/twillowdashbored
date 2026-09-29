@@ -1,0 +1,875 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#E31924">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Sign Crew">
+<meta name="robots" content="noindex, nofollow">
+<title>Mikey's Sign Crew</title>
+<link rel="icon" href="/favicon.svg">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="manifest" href="/signs.webmanifest">
+<style>
+  /* Used outside, in daylight, often with one hand on a sign: a light page
+     with dark text and big buttons reads best in the sun. Dark mode follows the
+     phone for Friday-evening runs. Brand red for anything you tap. */
+  :root{
+    --bg:#f6f4ef; --card:#fff; --card2:#efece5; --line:#e2ddd2; --txt:#16161a; --muted:#5d5d66; --faint:#8b8b94;
+    --red:#E31924; --redbg:#fde8e9; --green:#15803d; --greenbg:#dcfce7; --amber:#b45309; --amberbg:#fef3c7;
+    --blue:#1d4ed8; --bluebg:#dbeafe; --shadow:0 1px 3px rgba(0,0,0,.08);
+    --font:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --bg:#0e0e10; --card:#18181c; --card2:#222228; --line:#2e2e35; --txt:#f3f3f5; --muted:#a8a8b2; --faint:#76767f;
+      --redbg:#3a1216; --greenbg:#0f2e1b; --green:#4ade80; --amberbg:#3a2a0a; --amber:#fbbf24; --bluebg:#15213d; --blue:#8ab4ff; --shadow:none }
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--bg);color:var(--txt);font-family:var(--font);font-size:16px;line-height:1.4;-webkit-font-smoothing:antialiased}
+  body{padding-bottom:calc(76px + env(safe-area-inset-bottom))}
+  button{font:inherit;color:inherit;cursor:pointer;border:0;background:none;padding:0}
+  input,select,textarea{font:inherit;color:var(--txt)}
+  a{color:var(--red)}
+  .hide{display:none!important}
+  .wrap{max-width:640px;margin:0 auto;padding:0 16px}
+  header{position:sticky;top:0;z-index:20;background:var(--red);color:#fff;padding:10px 16px;padding-top:max(10px,env(safe-area-inset-top))}
+  header .row{max-width:640px;margin:0 auto;display:flex;align-items:center;gap:10px}
+  header h1{font-size:18px;margin:0;flex:1;font-weight:800;letter-spacing:.01em}
+  header small{display:block;font-weight:500;opacity:.85;font-size:12px}
+  .pill{font-size:12px;font-weight:700;padding:4px 9px;border-radius:99px;background:rgba(255,255,255,.2);white-space:nowrap}
+  nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:30;background:var(--card);border-top:1px solid var(--line);display:flex;padding-bottom:env(safe-area-inset-bottom)}
+  nav.tabs button{flex:1;padding:9px 2px 8px;font-size:12px;font-weight:600;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:2px}
+  nav.tabs button b{font-size:20px;line-height:1}
+  nav.tabs button.on{color:var(--red)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin:12px 0;box-shadow:var(--shadow)}
+  .card h2{font-size:17px;margin:0 0 8px}
+  .card h3{font-size:15px;margin:10px 0 6px}
+  .muted{color:var(--muted)} .faint{color:var(--faint)} .small{font-size:13px}
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:12px 16px;border-radius:12px;background:var(--card2);font-weight:700;font-size:15px;text-decoration:none;color:var(--txt)}
+  .btn.red{background:var(--red);color:#fff}
+  .btn.green{background:var(--green);color:#fff}
+  .btn.ghost{background:transparent;border:1px solid var(--line)}
+  .btn.block{display:flex;width:100%}
+  .btn.huge{font-size:22px;padding:20px;border-radius:18px}
+  .btn[disabled]{opacity:.5}
+  .row{display:flex;gap:8px;align-items:center}
+  .row>.grow{flex:1}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+  .stat{background:var(--card2);border-radius:12px;padding:10px}
+  .stat b{display:block;font-size:22px;line-height:1.1}
+  .stat span{font-size:12px;color:var(--muted)}
+  .seg{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin:8px 0}
+  .seg button{padding:10px 4px;border-radius:10px;background:var(--card2);font-size:13px;font-weight:700;color:var(--muted)}
+  .seg button.on{background:var(--redbg);color:var(--red)}
+  .stepper{display:flex;align-items:center;gap:10px}
+  .stepper button{width:48px;height:48px;border-radius:12px;background:var(--card2);font-size:24px;font-weight:700}
+  .stepper input{width:80px;text-align:center;font-size:26px;font-weight:800;border:0;background:transparent}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .chips button{padding:6px 12px;border-radius:99px;background:var(--card2);font-size:14px;font-weight:600}
+  .chips button.on{background:var(--redbg);color:var(--red)}
+  .list{display:flex;flex-direction:column;gap:8px}
+  .item{display:flex;gap:10px;align-items:flex-start;padding:10px;border-radius:12px;background:var(--card2)}
+  .item .n{width:28px;height:28px;border-radius:99px;background:var(--red);color:#fff;font-weight:800;font-size:13px;display:flex;align-items:center;justify-content:center;flex:none}
+  .item .n.done{background:var(--green)} .item .n.skip{background:var(--faint)}
+  .item .tx{flex:1;min-width:0}
+  .item .tx b{display:block;font-size:15px}
+  .item .tx small{display:block;color:var(--muted);font-size:13px}
+  .tag{display:inline-block;font-size:11px;font-weight:700;padding:2px 7px;border-radius:99px;background:var(--card);color:var(--muted);margin-right:4px}
+  .tag.g{background:var(--greenbg);color:var(--green)} .tag.a{background:var(--amberbg);color:var(--amber)} .tag.r{background:var(--redbg);color:var(--red)} .tag.b{background:var(--bluebg);color:var(--blue)}
+  .sugg{display:block;width:100%;text-align:left;padding:12px;border-radius:14px;background:var(--card2);margin-top:8px}
+  .sugg b{font-size:16px}
+  .sugg.best{background:var(--redbg)}
+  label.f{display:block;margin:8px 0;font-size:14px;color:var(--muted)}
+  label.f input,label.f select{display:block;width:100%;margin-top:4px;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-size:16px}
+  .banner{padding:10px 12px;border-radius:12px;margin:10px 0;font-size:14px}
+  .banner.a{background:var(--amberbg);color:var(--amber)} .banner.g{background:var(--greenbg);color:var(--green)} .banner.r{background:var(--redbg);color:var(--red)} .banner.b{background:var(--bluebg);color:var(--blue)}
+  #map{height:62vh;border-radius:16px;margin-top:12px;border:1px solid var(--line);background:var(--card2)}
+  .leaflet-container{font:inherit}
+  .pop b{display:block;font-size:14px} .pop small{display:block;color:#555;font-size:12px}
+  .pop .row{margin-top:6px;flex-wrap:wrap;gap:4px}
+  .pop button{padding:6px 9px;border-radius:8px;background:#eee;font-size:12px;font-weight:700;color:#111}
+  .pop img{width:100%;border-radius:8px;margin-top:6px}
+  /* drive mode */
+  .drive{position:fixed;inset:0;z-index:40;background:var(--bg);overflow:auto;padding-bottom:env(safe-area-inset-bottom)}
+  .drive .top{background:var(--red);color:#fff;padding:12px 16px;padding-top:max(12px,env(safe-area-inset-top))}
+  .drive .top .row{justify-content:space-between}
+  .dist{font-size:44px;font-weight:900;line-height:1;margin:6px 0 2px}
+  .arrow{display:inline-block;font-size:40px;transition:transform .3s}
+  .where{font-size:20px;font-weight:800;margin:0}
+  .how{font-size:16px;margin:8px 0 0}
+  .here{animation:pulse 1.2s ease-in-out infinite}
+  /* A glow, not a grow: the button never moves while a thumb is on its way. */
+  @keyframes pulse{50%{box-shadow:0 0 0 8px rgba(21,128,61,.28)}}
+  .sheet{position:fixed;left:0;right:0;bottom:0;z-index:60;background:var(--card);border-radius:18px 18px 0 0;padding:16px;padding-bottom:calc(16px + env(safe-area-inset-bottom));box-shadow:0 -6px 30px rgba(0,0,0,.25);max-height:85vh;overflow:auto}
+  .veil{position:fixed;inset:0;z-index:55;background:rgba(0,0,0,.35)}
+  .toast{position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:70;background:#111;color:#fff;padding:10px 16px;border-radius:12px;font-size:14px;max-width:90vw;text-align:center}
+  table.t{width:100%;border-collapse:collapse;font-size:14px}
+  table.t td,table.t th{padding:7px 4px;border-bottom:1px solid var(--line);text-align:left}
+  table.t th{font-size:12px;color:var(--muted);font-weight:600}
+  .guide p,.guide li{font-size:15px}
+  .guide li{margin:6px 0}
+  .ok{color:var(--green)} .bad{color:var(--red)}
+</style>
+</head>
+<body>
+<header><div class="row"><h1 id="hTitle">Mikey's Sign Crew<small id="hSub">Yard signs for Mikey's Mobile Detailing</small></h1><span class="pill" id="hSync">Saved</span></div></header>
+<main class="wrap" id="app"><div class="card"><p class="muted">Loading…</p></div></main>
+<nav class="tabs hide" id="tabs"></nav>
+<input type="file" id="cam" accept="image/*" capture="environment" class="hide">
+<script>
+(function(){
+  "use strict";
+  // ---------------------------------------------------------------------------
+  // The Sign Crew app. One page for two people:
+  //   a helper, who arrived on Mikey's crew link (#k=…) and joined with a name;
+  //   Mikey, who opens it from Insights → Yard signs (?owner=1) with his
+  //   dashboard login, and gets the Crew, Results and Settings tabs on top.
+  // The thinking happens here, against /sign-spots.json (every ranked spot,
+  // made in the website repo): what's still open, which area is worth a trip,
+  // the route. The Worker only stores what happened.
+  //
+  // Nothing a helper does waits on the network. Every sign, check and skip goes
+  // into a queue in localStorage first and uploads in batches, because a
+  // corner in Duvall with one bar is exactly where the next sign goes, and
+  // because each upload costs the dashboard a write out of a small daily budget.
+  // ---------------------------------------------------------------------------
+  var LS_ID="mkd-crew-id", LS_Q="mkd-crew-q", LS_ROUTE="mkd-crew-route", LS_PREF="mkd-crew-pref";
+  var SYNC_EVERY_N=10, SYNC_AFTER_MS=15*60000, RESERVE_MS=3*3600000;
+  var SPACING_M=500, ARRIVE_M=70, COVER_M=60;
+  var TOWNS=["Snohomish","Lake Stevens","Everett","Monroe","Mill Creek","Marysville","Bothell","Duvall","Mukilteo","Woodinville","Granite Falls","Arlington"];
+  var COMPASS=["north","northeast","east","southeast","south","southwest","west","northwest"];
+  var SKIPS=[["none","No good spot (curb, no grass)"],["taken","Already a sign here"],["hoa","HOA or private, it'll get pulled"],["unsafe","Not safe to stop"],["private","Someone asked me not to"],["other","Something else"]];
+  var qs=new URLSearchParams(location.search);
+  var OWNER=qs.get("owner")==="1";
+  var S={tab:"go",data:null,spots:null,err:"",count:10,where:"near",town:"",plan:null,me:null,watch:null,wake:null,
+    map:null,layers:null,nogoMode:false,filter:"mine",arrivedAt:"",pendingPhoto:"",busy:false,capUntil:0};
+  var ID=load(LS_ID)||null;
+  var Q=load(LS_Q)||{p:[],e:[],sk:[],photos:{},since:0};
+  var ROUTE=load(LS_ROUTE)||null;
+  var PREF=load(LS_PREF)||{};
+  if(PREF.count)S.count=PREF.count;
+
+  function load(k){try{var v=localStorage.getItem(k);return v?JSON.parse(v):null}catch(e){return null}}
+  function save(k,v){try{if(v==null)localStorage.removeItem(k);else localStorage.setItem(k,JSON.stringify(v));return true}catch(e){return false}}
+  function el(id){return document.getElementById(id)}
+  function esc(s){return String(s==null?"":s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
+  function rid(n){var a="abcdefghijklmnopqrstuvwxyz0123456789",s="",b=new Uint8Array(n);(window.crypto||window.msCrypto).getRandomValues(b);for(var i=0;i<n;i++)s+=a[b[i]%36];return s}
+  function toast(m){var t=document.createElement("div");t.className="toast";t.textContent=m;document.body.appendChild(t);setTimeout(function(){t.remove()},2600)}
+  function vibrate(ms){try{navigator.vibrate&&navigator.vibrate(ms)}catch(e){}}
+  function meters(a,b){var dy=(a[0]-b[0])*111320,dx=(a[1]-b[1])*111320*Math.cos(a[0]*Math.PI/180);return Math.sqrt(dx*dx+dy*dy)}
+  function brg(a,b){var y=Math.sin((b[1]-a[1])*Math.PI/180)*Math.cos(b[0]*Math.PI/180),x=Math.cos(a[0]*Math.PI/180)*Math.sin(b[0]*Math.PI/180)-Math.sin(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.cos((b[1]-a[1])*Math.PI/180);return (Math.atan2(y,x)*180/Math.PI+360)%360}
+  function compass(h){return COMPASS[Math.floor(((h+22.5)%360)/45)]}
+  function ago(t){var m=Math.round((Date.now()-t)/60000);if(m<60)return m+" min ago";var h=Math.round(m/60);if(h<36)return h+" h ago";return Math.round(h/24)+" days ago"}
+  function day(t){return new Date(t).toLocaleDateString("en-US",{month:"short",day:"numeric"})}
+  function money(n){return "$"+(Math.round(n*100)/100).toFixed(n%1?2:0)}
+  function fmtDist(m){return m<300?Math.round(m*3.28084/10)*10+" ft":(m/1609.34).toFixed(m<16000?1:0)+" mi"}
+
+  // ---- talking to the Worker -------------------------------------------------
+  function auth(b){b=b||{};if(OWNER)b.asOwner=1;else if(ID){b.k=ID.k;b.h=ID.h;b.s=ID.s}return b}
+  function post(path,body){
+    return fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})})
+      .then(function(r){return r.json().catch(function(){return {ok:false,error:"bad_reply"}}).then(function(j){j._status=r.status;return j})});
+  }
+  function getState(){
+    var p=OWNER?fetch("/api/signs",{credentials:"same-origin"}).then(function(r){return r.json().then(function(j){j._status=r.status;return j})}):post("/api/crew/state",auth({}));
+    return p.then(function(d){
+      if(d&&d.ok){S.data=d;S.err="";model();}
+      else if(d&&(d._status===401||d.error==="unauthorized"))S.err="owner-login";
+      else if(d&&d.error==="link_off")S.err="link_off";
+      else if(d&&d.error==="helper_off")S.err="helper_off";
+      else if(d&&d.error==="who"){
+        // The server doesn't know this phone (its record was lost or it joined
+        // on another link): join again on the same link. The queue stays and
+        // uploads under the new id.
+        S.err="who";if(ID){S.joinK=ID.k;ID=null;save(LS_ID,null)}
+      }
+      else S.err=(d&&d.error)||"offline";
+      return d;
+    }).catch(function(){S.err=S.data?"":"offline";});
+  }
+  function getSpots(){
+    if(S.spots)return Promise.resolve(S.spots);
+    return fetch("/sign-spots.json").then(function(r){return r.json()}).then(function(j){
+      var c=j.cols,ix={};c.forEach(function(k,i){ix[k]=i});
+      S.spotMeta=j;
+      S.spots=j.spots.map(function(r){return {id:r[ix.id],lat:r[ix.lat],lon:r[ix.lon],score:r[ix.score],ctrl:r[ix.ctrl],aadt:r[ix.aadt],spd:r[ix.spd],
+        head:r[ix.head],road:r[ix.road],cross:r[ix.cross],town:r[ix.town],flags:r[ix.flags]||"",jx:r[ix.jx]}});
+      S.spotById={};S.spots.forEach(function(s){S.spotById[s.id]=s});
+      return S.spots;
+    });
+  }
+
+  // ---- the queue -------------------------------------------------------------
+  function qCount(){return Q.p.length+Q.e.length+Q.sk.length}
+  function qSave(){
+    if(!save(LS_Q,Q)){
+      // Storage full is photos. The sign itself matters more than its picture.
+      Q.photos={};save(LS_Q,Q);toast("Phone storage is full, so the photos wait. The signs are saved.");
+    }
+    syncPill();
+  }
+  function syncPill(){
+    var n=qCount()+(Q.plan!==undefined?1:0),p=el("hSync");if(!p)return;
+    if(S.capUntil>Date.now())p.textContent=n+" saved on phone";
+    else p.textContent=n?n+" to upload":"All uploaded";
+  }
+  function maybeSync(force){
+    if(S.busy||!(ID||OWNER))return;
+    var n=qCount();
+    if(!n&&Q.plan===undefined&&!Object.keys(Q.photos).length)return;
+    if(!force&&S.capUntil>Date.now())return;
+    if(!force&&n<SYNC_EVERY_N&&Q.plan===undefined&&!(Q.since&&Date.now()-Q.since>SYNC_AFTER_MS))return;
+    syncNow();
+  }
+  function syncNow(){
+    if(S.busy)return Promise.resolve();
+    S.busy=true;
+    // What goes up is a snapshot: anything added while it's in flight waits
+    // for the next one instead of being dropped by the acknowledgement.
+    var p=Q.p.slice(0,60),e=Q.e.slice(0,150),sk=Q.sk.slice(0,80),ph={},np=0;
+    Object.keys(Q.photos).forEach(function(k){if(np<8){ph[k]=Q.photos[k];np++}});
+    var body=auth({p:p,e:e,sk:sk,photos:ph});
+    var hadPlan=Q.plan!==undefined;if(hadPlan)body.plan=Q.plan;
+    el("hSync").textContent="Uploading…";
+    return post("/api/crew/sync",body).then(function(d){
+      S.busy=false;
+      if(d&&d.ok){
+        var ack={};(d.ack||[]).forEach(function(x){ack[x]=1});
+        Q.p=Q.p.filter(function(r){return !ack[r[0]]});
+        Q.e=Q.e.slice(e.length);Q.sk=Q.sk.slice(sk.length);
+        Object.keys(ph).forEach(function(k){delete Q.photos[k]});
+        if(hadPlan&&Q.plan===body.plan)delete Q.plan;
+        Q.since=qCount()?Date.now():0;qSave();S.capUntil=0;
+        getState().then(render);
+        if(qCount()>=SYNC_EVERY_N||Object.keys(Q.photos).length)setTimeout(function(){syncNow()},400);
+      }else if(d&&d.error==="daily_cap"){
+        S.capUntil=d.resume||Date.now()+3600000;syncPill();
+        toast("Saved on your phone. It uploads after "+new Date(S.capUntil).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})+".");
+      }else if(d&&(d.error==="link_off"||d.error==="helper_off"||d.error==="who")){S.err=d.error;render()}
+      else syncPill();
+    }).catch(function(){S.busy=false;syncPill()});
+  }
+  setInterval(function(){maybeSync(false)},60000);
+  document.addEventListener("visibilitychange",function(){if(document.visibilityState==="hidden")maybeSync(true);else if(ROUTE)wake()});
+  window.addEventListener("online",function(){maybeSync(true)});
+
+  // ---- putting it all together -------------------------------------------------
+  // Every sign anyone has placed, with where it stands now: the latest check
+  // wins, Mikey's verdict wins over that, and what's still on this phone counts.
+  function model(){
+    var d=S.data||{docs:[]},signs={},plans=[],skips={},mineId=OWNER?"mikey":(ID&&ID.h);
+    var evs=[];
+    (d.docs||[]).forEach(function(h){
+      (h.p||[]).forEach(function(r){signs[r[0]]={pid:r[0],lat:r[1],lon:r[2],t:r[3],spot:r[4],kind:r[5],acc:r[6],batch:r[7],note:r[8],by:h.id,st:"up",last:r[3]}});
+      (h.e||[]).forEach(function(r){evs.push({pid:r[0],t:r[1],st:r[2],by:h.id})});
+      (h.sk||[]).forEach(function(r){(skips[r[0]]=skips[r[0]]||[]).push(r[2])});
+      if(h.plan&&h.plan.until>Date.now()&&h.id!==mineId)plans.push({by:h.id,spots:h.plan.spots,area:h.plan.area,until:h.plan.until});
+    });
+    Q.p.forEach(function(r){if(!signs[r[0]])signs[r[0]]={pid:r[0],lat:r[1],lon:r[2],t:r[3],spot:r[4],kind:r[5],acc:r[6],note:r[8],by:mineId,st:"up",last:r[3],local:1}});
+    Q.e.forEach(function(r){evs.push({pid:r[0],t:r[1],st:r[2],by:mineId})});
+    Q.sk.forEach(function(r){(skips[r[0]]=skips[r[0]]||[]).push(r[2])});
+    evs.sort(function(a,b){return a.t-b.t}).forEach(function(v){
+      var s=signs[v.pid];if(!s||v.t<s.t)return;
+      if(v.st==="up"||v.st==="down"){s.st="up";s.last=v.t;s.fixed=v.st==="down"?(s.fixed||0)+1:s.fixed}
+      else{s.st=v.st;s.closed=v.t}
+    });
+    var marks=d.marks||{};
+    Object.keys(marks).forEach(function(pid){var s=signs[pid];if(!s)return;var m=marks[pid];
+      if(m[0]==="bad")s.bad=1;if(m[0]==="ok")s.ok=1;if(m[0]==="gone"&&!s.closed){s.st="gone";s.closed=m[1]}});
+    S.signs=signs;S.plans=plans;S.skips=skips;S.mineId=mineId;
+    S.list=Object.keys(signs).map(function(k){return signs[k]});
+    // A grid of ~110 m cells, so "is there a sign at this corner" looks at a
+    // handful of signs, not all of them, for each of 5,000 spots.
+    var g={};S.list.forEach(function(s){var k=cell(s.lat,s.lon);(g[k]=g[k]||[]).push(s)});
+    S.grid=g;S.stVer=(S.stVer||0)+1;
+  }
+  function cell(lat,lon){return Math.floor(lat*1000)+":"+Math.floor(lon*700)}
+  function nearSigns(lat,lon){var a=Math.floor(lat*1000),b=Math.floor(lon*700),out=[];
+    for(var i=-1;i<=1;i++)for(var j=-1;j<=1;j++){var c=S.grid&&S.grid[(a+i)+":"+(b+j)];if(c)out=out.concat(c)}return out}
+  function live(s){return !s.closed}
+  function recheckMs(){return ((S.data&&S.data.cfg&&S.data.cfg.recheck)||7)*864e5}
+  function due(s){return live(s)&&Date.now()-s.last>(s.kind==="y"?30*864e5:recheckMs())}
+
+  // How much a spot is worth right now: its score, less what we've learned.
+  function spotState(sp){
+    if(sp._stv===S.stVer&&sp._st)return sp._st;
+    sp._stv=S.stVer;
+    return (sp._st=spotStateNow(sp));
+  }
+  function spotStateNow(sp){
+    var sk=S.skips[sp.id]||[],hard=0,soft=0;
+    sk.forEach(function(w){if(w==="hoa"||w==="private")hard++;else if(w==="none"||w==="unsafe")soft++});
+    if(hard>=2||soft>=2)return {out:1,why:hard>=2?"HOA / private":"no good place to put it"};
+    var nogo=(S.data&&S.data.nogo)||[];
+    for(var i=0;i<nogo.length;i++)if(meters([sp.lat,sp.lon],[nogo[i].lat,nogo[i].lon])<=nogo[i].r)return {out:1,why:"no-go area"};
+    var mult=1,fast=0,covered=null;
+    nearSigns(sp.lat,sp.lon).forEach(function(s){
+      var near=s.spot===sp.id||meters([sp.lat,sp.lon],[s.lat,s.lon])<=COVER_M;if(!near)return;
+      if(live(s))covered=s;
+      else if((s.st==="gone"||s.st==="hoa")&&s.closed-s.t<3*864e5)fast++;
+    });
+    if(fast)mult*=Math.pow(.5,fast);
+    if(hard)mult*=.5;if(soft)mult*=.6;
+    var res=null;(S.plans||[]).forEach(function(p){if(p.spots.indexOf(sp.id)>=0)res=p});
+    return {eff:sp.score*mult,covered:covered,reserved:res,fast:fast};
+  }
+  function openSpots(filter){
+    return (S.spots||[]).filter(function(sp){if(filter&&!filter(sp))return false;var st=spotState(sp);return !st.out&&!st.covered&&!st.reserved&&st.eff>=3});
+  }
+
+  // A route: best spots first, spread out, at most two per corner, then put in
+  // driving order from where you are.
+  function buildRoute(cands,n,start){
+    cands=cands.slice().sort(function(a,b){return b._st.eff-a._st.eff});
+    var pick=[],perJx={};
+    for(var i=0;i<cands.length&&pick.length<n;i++){
+      var c=cands[i],ok=true;
+      if((perJx[c.jx]||0)>=2)continue;
+      for(var j=0;j<pick.length;j++){if(pick[j].jx!==c.jx&&meters([c.lat,c.lon],[pick[j].lat,pick[j].lon])<SPACING_M){ok=false;break}}
+      if(!ok)continue;
+      pick.push(c);perJx[c.jx]=(perJx[c.jx]||0)+1;
+    }
+    return order(pick,start);
+  }
+  function order(pts,start){
+    if(!pts.length)return [];
+    var left=pts.slice(),out=[],cur=start||[pts[0].lat,pts[0].lon];
+    while(left.length){var bi=0,bd=1e12;for(var i=0;i<left.length;i++){var d=meters(cur,[left[i].lat,left[i].lon]);if(d<bd){bd=d;bi=i}}
+      var p=left.splice(bi,1)[0];out.push(p);cur=[p.lat,p.lon]}
+    // 2-opt: undo the crossings nearest-neighbour leaves behind.
+    var improved=true,guard=0;
+    function D(a,b){return meters([a.lat,a.lon],[b.lat,b.lon])}
+    while(improved&&guard++<40){improved=false;
+      for(var a=0;a<out.length-2;a++)for(var b=a+2;b<out.length-1;b++){
+        if(D(out[a],out[a+1])+D(out[b],out[b+1])>D(out[a],out[b])+D(out[a+1],out[b+1])+1){out=out.slice(0,a+1).concat(out.slice(a+1,b+1).reverse(),out.slice(b+1));improved=true}}}
+    return out;
+  }
+  function routeStats(stops,start){
+    var m=0,cur=start;stops.forEach(function(s){if(cur)m+=meters(cur,[s.lat,s.lon])*1.35;cur=[s.lat,s.lon]});
+    return {miles:m/1609.34,mins:Math.round(m/1000/40*60+stops.length*3)};
+  }
+  // Which area is worth the trip right now.
+  function suggestions(){
+    var here=S.me,out=[];
+    TOWNS.forEach(function(t){
+      var open=openSpots(function(sp){return sp.town===t});if(!open.length)return;
+      open.sort(function(a,b){return b._st.eff-a._st.eff});
+      var top=open.slice(0,15),val=top.reduce(function(a,s){return a+s._st.eff},0);
+      var last=0;(S.list||[]).forEach(function(s){var sp=S.spotById[s.spot];if(sp&&sp.town===t&&s.t>last)last=s.t});
+      var stale=last?Math.min(14,(Date.now()-last)/864e5)/14:1;
+      var c=[top[0].lat,top[0].lon],km=here?meters(here,c)/1000:0;
+      var busy=(S.plans||[]).some(function(p){return p.area===t});
+      var score=val*(1+.5*stale)/(1+km/15)*(busy?.3:1);
+      out.push({town:t,open:open.length,val:val,km:km,last:last,busy:busy,score:score,best:top[0]});
+    });
+    return out.sort(function(a,b){return b.score-a.score}).slice(0,3);
+  }
+
+  // Plain words for one stop.
+  function howTo(sp){
+    var at={sig:"the light",stop:"the stop sign",all:"the stop sign",minor:"the corner",rab:"the roundabout",thru:"the intersection"}[sp.ctrl]||"the corner";
+    var back={sig:"About 100 ft before it, where the line of cars stops",stop:"Right beside the stop sign, where the car waits",all:"Right beside the stop sign, where the car waits",
+      minor:"Right at the corner, where cars wait to pull out",rab:"About 80 ft before the roundabout",thru:"About 150 ft before the intersection"}[sp.ctrl];
+    return "Right side of "+sp.road+", facing cars heading "+compass(sp.head)+" toward "+at+". "+back+", on the grass. Turn it a little toward the cars.";
+  }
+  function why(sp){
+    var c={sig:"stop at a light",stop:"stop at a stop sign",all:"stop at an all-way stop",minor:"wait to pull out",rab:"slow for the roundabout",thru:"drive past"}[sp.ctrl];
+    return (sp.aadt||0).toLocaleString()+" cars a day"+(sp.flags.indexOf("e")>=0?" (est.)":"")+" "+c;
+  }
+  function flagTags(sp){
+    var h="";if(sp.flags.indexOf("s")>=0)h+='<span class="tag a">state hwy: gets pulled sooner</span>';
+    if(sp.flags.indexOf("c")>=0)h+='<span class="tag a">store frontage</span>';
+    if(sp.flags.indexOf("f")>=0)h+='<span class="tag a">45 mph: wide grass only</span>';
+    return h;
+  }
+  function navUrl(lat,lon){
+    var ios=/iPhone|iPad|iPod/.test(navigator.userAgent);
+    return ios&&PREF.maps==="apple"?"https://maps.apple.com/?daddr="+lat+","+lon+"&dirflg=d":"https://www.google.com/maps/dir/?api=1&destination="+lat+","+lon+"&travelmode=driving";
+  }
+
+  // ---- location ------------------------------------------------------------------
+  function locate(cb){
+    if(!navigator.geolocation){cb&&cb(null);return}
+    navigator.geolocation.getCurrentPosition(function(p){S.me=[p.coords.latitude,p.coords.longitude];S.acc=p.coords.accuracy;cb&&cb(S.me)},
+      function(){cb&&cb(null)},{enableHighAccuracy:true,timeout:12000,maximumAge:30000});
+  }
+  function watch(){
+    if(S.watch!=null||!navigator.geolocation)return;
+    S.watch=navigator.geolocation.watchPosition(function(p){
+      S.me=[p.coords.latitude,p.coords.longitude];S.acc=p.coords.accuracy;S.speed=p.coords.speed;S.fixAt=Date.now();
+      if(ROUTE)driveTick();
+    },function(){},{enableHighAccuracy:true,maximumAge:3000,timeout:20000});
+  }
+  function unwatch(){if(S.watch!=null){try{navigator.geolocation.clearWatch(S.watch)}catch(e){}S.watch=null}}
+  function wake(){try{if(navigator.wakeLock&&!S.wake)navigator.wakeLock.request("screen").then(function(w){S.wake=w;w.addEventListener("release",function(){S.wake=null})}).catch(function(){})}catch(e){}}
+
+  // ---- the screens -----------------------------------------------------------------
+  function render(){
+    var app=el("app");
+    if(S.err==="owner-login"){app.innerHTML='<div class="card"><h2>Sign in first</h2><p>Open <a href="/">your dashboard</a>, sign in, then come back to Insights → Yard signs.</p></div>';return}
+    if(S.err==="link_off"){app.innerHTML='<div class="card"><h2>This link was turned off</h2><p>Ask Mikey for the new crew link. Anything saved on this phone is still here and uploads once you are back on.</p></div>';return}
+    if(S.err==="helper_off"){app.innerHTML='<div class="card"><h2>You are off the crew for now</h2><p>Mikey paused your account. Text him if that is a mistake.</p></div>';return}
+    if(!OWNER&&(!ID||S.err==="who"))return renderJoin();
+    if(!S.data||!S.spots){app.innerHTML='<div class="card"><p class="muted">'+(S.err==="offline"?"No signal. Try again in a moment.":"Loading the map of spots…")+'</p></div>';return}
+    if(ROUTE){renderDrive();return}
+    el("drive")&&el("drive").remove();
+    renderTabs();
+    var h="";
+    if(S.capUntil>Date.now())h+='<div class="banner a">Uploads are paused until '+new Date(S.capUntil).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"})+' to save the dashboard\'s daily limit. Everything is saved on this phone.</div>';
+    if(S.tab==="go")h+=goTab();
+    else if(S.tab==="map")h+=mapTab();
+    else if(S.tab==="signs")h+=signsTab();
+    else if(S.tab==="how")h+=howTab();
+    else if(S.tab==="crew")h+=crewTab();
+    else if(S.tab==="results")h+=resultsTab();
+    else if(S.tab==="settings")h+=settingsTab();
+    app.innerHTML=h;
+    wire();
+    if(S.tab==="map")drawMap();
+    syncPill();
+  }
+  function renderTabs(){
+    var t=[["go","🚗","Go"],["map","🗺️","Map"],["signs","🪧","Signs"],["how","📘","How-to"]];
+    if(OWNER)t=[["go","🚗","Go"],["map","🗺️","Map"],["signs","🪧","Signs"],["crew","👥","Crew"],["results","📈","Results"],["settings","⚙️","Settings"]];
+    var n=el("tabs");n.classList.remove("hide");
+    n.innerHTML=t.map(function(x){return '<button data-tab="'+x[0]+'" class="'+(S.tab===x[0]?"on":"")+'"><b>'+x[1]+'</b>'+x[2]+'</button>'}).join("");
+    Array.prototype.forEach.call(n.querySelectorAll("[data-tab]"),function(b){b.onclick=function(){S.tab=b.getAttribute("data-tab");S.map=null;render();window.scrollTo(0,0)}});
+    el("hSub").textContent=OWNER?"Mikey · everything the crew is doing":((S.data.me&&S.data.me.name)||(ID&&ID.name)||"")+" · Mikey's Mobile Detailing";
+  }
+
+  function mine(){return (S.list||[]).filter(function(s){return s.by===S.mineId})}
+  function earned(list){var c=S.data.cfg||{},need=c.photo==="need";return list.filter(function(s){return !s.bad&&(!need||s.batch||s.local)}).length*(c.pay||0)}
+
+  function goTab(){
+    var m=mine(),up=m.filter(live).length,c=S.data.cfg||{};
+    var h='<div class="card"><div class="grid3"><div class="stat"><b>'+m.length+'</b><span>signs you put out</span></div><div class="stat"><b>'+up+'</b><span>still up</span></div>'+
+      (c.pay?'<div class="stat"><b>'+money(earned(m))+'</b><span>earned at '+money(c.pay)+'/sign</span></div>':'<div class="stat"><b>'+m.filter(due).length+'</b><span>due a check</span></div>')+'</div></div>';
+    h+='<div class="card"><h2>How many signs do you have with you?</h2><div class="stepper"><button id="cMinus">−</button><input id="cN" type="number" inputmode="numeric" value="'+S.count+'"><button id="cPlus">+</button></div>'+
+      '<div class="chips">'+[5,10,20,30,50].map(function(n){return '<button data-cn="'+n+'" class="'+(S.count===n?"on":"")+'">'+n+'</button>'}).join("")+'</div></div>';
+    h+='<div class="card"><h2>Where?</h2><div class="seg">'+
+      [["near","Near me"],["suggest","Suggest"],["town","A town"],["mapv","Map area"]].map(function(x){return '<button data-where="'+x[0]+'" class="'+(S.where===x[0]?"on":"")+'">'+x[1]+'</button>'}).join("")+'</div>';
+    if(S.where==="suggest"){
+      var sg=suggestions();
+      if(!sg.length)h+='<p class="muted">Every good spot is covered right now. Check signs instead, from the Signs tab.</p>';
+      sg.forEach(function(x,i){h+='<button class="sugg'+(i===0?" best":"")+'" data-town="'+esc(x.town)+'"><b>'+(i===0?"Best right now: ":"")+esc(x.town)+'</b><br><span class="small muted">'+x.open+' open spots, best: '+esc(x.best.road)+' at '+esc(x.best.cross||"a light")+
+        (S.me?' · '+Math.round(x.km/1.609)+' mi away':'')+' · '+(x.last?'last covered '+ago(x.last):'nobody has covered it yet')+(x.busy?' · someone is there now':'')+'</span></button>'});
+      if(!S.me)h+='<p class="small muted">Turn on location for suggestions that know how far away you are. <button class="btn ghost" id="locBtn" style="padding:6px 10px">Use my location</button></p>';
+    }else if(S.where==="town"){
+      h+='<div class="chips">'+TOWNS.map(function(t){var n=openSpots(function(sp){return sp.town===t}).length;return '<button data-town="'+esc(t)+'" class="'+(S.town===t?"on":"")+'">'+esc(t)+' <span class="faint">'+n+'</span></button>'}).join("")+'</div>';
+    }else if(S.where==="mapv"){
+      h+='<p class="small muted">Open the Map tab, move it to the area you want, and tap <b>Plan a route here</b>.</p><button class="btn block" data-tab2="map">Open the map</button>';
+    }else{
+      h+='<p class="small muted">The best open spots closest to you, spaced out, in driving order.</p><button class="btn red block" id="nearBtn">Find spots near me</button>';
+    }
+    h+='</div>';
+    if(S.plan)h+=planCard();
+    var d=m.filter(due);
+    if(d.length)h+='<div class="card"><h2>'+d.length+' of your signs need a look</h2><p class="small muted">Not checked in '+Math.round(recheckMs()/864e5)+' days. A quick drive-by tells Mikey which corners keep a sign.</p><button class="btn block" id="checkBtn">Check them in driving order</button></div>';
+    return h;
+  }
+  function planCard(){
+    var P=S.plan,st=routeStats(P.stops,S.me);
+    var h='<div class="card"><h2>'+P.stops.length+' stops'+(P.area?' in '+esc(P.area):'')+'</h2><p class="small muted">About '+st.mins+' min and '+st.miles.toFixed(1)+' mi of driving, 3 min a stop. Starting it holds these spots for you for 3 hours so nobody else doubles up.</p><div class="list">';
+    P.stops.forEach(function(sp,i){h+='<div class="item"><span class="n">'+(i+1)+'</span><div class="tx"><b>'+esc(sp.road)+' at '+esc(sp.cross||"the corner")+'</b><small>'+esc(sp.town)+' · '+esc(why(sp))+' · score '+Math.round(sp._st?sp._st.eff:sp.score)+'</small>'+flagTags(sp)+'</div><button class="btn ghost" data-drop="'+i+'" aria-label="Remove stop" style="padding:6px 10px">✕</button></div>'});
+    h+='</div><div class="grid2" style="margin-top:10px"><button class="btn" id="planClear">Clear</button><button class="btn red" id="planGo">Start route</button></div></div>';
+    return h;
+  }
+
+  function mapTab(){
+    var h='<div class="card"><div class="row"><div class="grow small muted"><span style="color:#16a34a">●</span> sign up <span style="color:#9ca3af">●</span> gone <span style="color:#E31924">●</span> best open spots <span style="color:#7c3aed">●</span> someone\'s route</div></div>'+
+      '<div id="map"></div><div class="grid2" style="margin-top:10px"><button class="btn red" id="mapPlan">Plan a route here</button><button class="btn" id="mapMe">Where am I</button></div>'+
+      (OWNER?'<button class="btn ghost block" id="nogoBtn" style="margin-top:8px">'+(S.nogoMode?"Tap the map where signs should never go…":"Add a no-go area")+'</button>':'')+'</div>';
+    return h;
+  }
+  function signsTab(){
+    var list=OWNER&&S.filter==="all"?S.list:mine();
+    list=list.slice().sort(function(a,b){return (due(b)-due(a))||(live(b)-live(a))||(b.t-a.t)});
+    var h='<div class="card"><h2>'+(OWNER&&S.filter==="all"?"Every sign":"Your signs")+'</h2>';
+    if(OWNER)h+='<div class="seg" style="grid-template-columns:1fr 1fr"><button data-filter="mine" class="'+(S.filter==="mine"?"on":"")+'">Mine</button><button data-filter="all" class="'+(S.filter==="all"?"on":"")+'">Everyone\'s</button></div>';
+    var d=list.filter(due);
+    if(d.length)h+='<button class="btn red block" id="checkBtn">Check '+d.length+' due in driving order</button>';
+    h+='<button class="btn block" id="pickBtn" style="margin-top:8px">Pick up signs (route past the ones still up)</button>';
+    h+='<button class="btn ghost block" id="yardBtn" style="margin-top:8px">Log a yard sign with permission (friend, customer)</button></div>';
+    if(!list.length)return h+'<div class="card"><p class="muted">Nothing yet. Plan a route on the Go tab and your signs show up here.</p></div>';
+    h+='<div class="list">';
+    list.slice(0,300).forEach(function(s){
+      var sp=S.spotById[s.spot],who=S.data.crew&&S.data.crew[s.by];
+      var stTag=live(s)?(due(s)?'<span class="tag a">due a check</span>':'<span class="tag g">up</span>'):'<span class="tag">'+esc({gone:"gone",picked:"picked up",hoa:"pulled (HOA)",moved:"moved"}[s.st]||s.st)+'</span>';
+      h+='<div class="item"><div class="tx"><b>'+(sp?esc(sp.road)+' at '+esc(sp.cross||"the corner"):(s.kind==="y"?"Yard sign":"Extra sign"))+'</b>'+
+        '<small>'+stTag+(s.kind==="y"?'<span class="tag b">yard</span>':'')+(s.bad?'<span class="tag r">not counted</span>':'')+(s.local?'<span class="tag">on phone</span>':'')+
+        'Placed '+day(s.t)+(OWNER&&who?' by '+esc(who.name):'')+(live(s)?' · checked '+ago(s.last):' · '+(s.closed?day(s.closed):''))+(s.note?' · '+esc(s.note):'')+'</small>'+
+        (live(s)?'<div class="row" style="margin-top:6px;flex-wrap:wrap"><button class="btn" style="padding:7px 10px" data-ev="up" data-pid="'+s.pid+'">Still up</button><button class="btn" style="padding:7px 10px" data-ev="gone" data-pid="'+s.pid+'">Gone</button><button class="btn" style="padding:7px 10px" data-ev="down" data-pid="'+s.pid+'">Fixed it</button><button class="btn" style="padding:7px 10px" data-ev="picked" data-pid="'+s.pid+'">Picked up</button></div>':'')+
+        (OWNER?'<div class="row" style="margin-top:6px"><button class="btn ghost" style="padding:5px 9px;font-size:13px" data-mark="'+(s.bad?"":"bad")+'" data-pid="'+s.pid+'">'+(s.bad?"Count it again":"Don't count it")+'</button>'+(s.batch?'<a class="btn ghost" style="padding:5px 9px;font-size:13px" target="_blank" href="'+photoUrl(s)+'">Photo</a>':'')+'</div>':'')+
+        '</div></div>';
+    });
+    return h+'</div>';
+  }
+  function photoUrl(s){return "/api/crew/photo?b="+encodeURIComponent(s.batch)+"&p="+encodeURIComponent(s.pid)+(OWNER?"":"&k="+encodeURIComponent(ID.k))}
+
+  function howTab(){
+    return '<div class="card guide"><h2>Where a sign goes</h2><ul>'+
+      '<li><b>Right side of the road</b>, as cars come up to the light or stop sign. The app tells you which road and which direction.</li>'+
+      '<li>At a light: <b>about 100 ft before it</b>, where the line of cars stops. At a stop sign: right beside it.</li>'+
+      '<li><b>On the grass</b>, facing the oncoming cars, turned a little toward them.</li>'+
+      '<li>Push the stake in until the bottom of the sign is about <b>a foot off the grass</b>. Straight, not leaning.</li>'+
+      '<li><b>One sign per corner.</b> If there is already one of ours, skip it ("Already a sign here").</li></ul>'+
+      '<h2>Never</h2><ul><li>In a median, on a freeway ramp, or anywhere you have to stand on a busy shoulder.</li>'+
+      '<li>Where it blocks a driver\'s view of cross traffic or a crosswalk.</li><li>Stapled or taped to a pole.</li>'+
+      '<li>On someone\'s mowed front lawn without asking, or inside an HOA neighborhood.</li></ul>'+
+      '<h2>Stay safe</h2><ul><li>Park legally with your hazards on. Never cross a busy road on foot to reach a corner: skip it.</li>'+
+      '<li>After dark, wear something bright.</li><li>If anyone asks you to take it down: say sorry, take it, tap <b>Picked up</b>.</li></ul>'+
+      '<h2>The photo</h2><p>Step back about 20 ft so the sign and the corner are both in the picture. It\'s how Mikey sees it went up'+((S.data.cfg||{}).pay?' and how you get paid for it':'')+'.</p>'+
+      '<h2>No signal?</h2><p>Keep going. Everything saves on your phone and uploads when you have signal. The top-right corner shows what is still waiting.</p>'+
+      '<h2>Checking signs</h2><p>Drive past one of ours? Open Signs and tap <b>Still up</b> or <b>Gone</b>. That is how the app learns which corners keep a sign.</p></div>'+
+      '<div class="card"><h2>Maps app</h2><div class="seg" style="grid-template-columns:1fr 1fr"><button data-maps="google" class="'+(PREF.maps!=="apple"?"on":"")+'">Google Maps</button><button data-maps="apple" class="'+(PREF.maps==="apple"?"on":"")+'">Apple Maps</button></div></div>'+
+      '<div class="card small muted">Questions? Text Mikey at <a href="sms:+14256007897">(425) 600-7897</a>.</div>';
+  }
+
+  // ---- Mikey's tabs --------------------------------------------------------------
+  function crewStats(){
+    var out={};Object.keys(S.data.crew||{}).forEach(function(id){out[id]={placed:0,up:0,gone:0,photo:0,bad:0,list:[]}});
+    (S.list||[]).forEach(function(s){var o=out[s.by]=out[s.by]||{placed:0,up:0,gone:0,photo:0,bad:0,list:[]};o.placed++;o.list.push(s);if(live(s))o.up++;else if(s.st!=="picked")o.gone++;if(s.batch)o.photo++;if(s.bad)o.bad++});
+    return out;
+  }
+  function crewTab(){
+    var D=S.data,base=location.origin+"/signs.html#k=";
+    var h='<div class="card"><h2>Crew links</h2><p class="small muted">Anyone with a link can join and log signs. They see the map and the crew\'s signs, never your texts, customers or money. Turning a link off stops everyone on it.</p>';
+    (D.links||[]).forEach(function(l){
+      h+='<div class="item" style="margin-top:8px"><div class="tx"><b>'+esc(l.label)+(l.off?' <span class="tag">off</span>':'')+'</b><small style="word-break:break-all">'+esc(base+l.k)+'</small>'+
+        (l.off?'':'<div class="row" style="margin-top:6px;flex-wrap:wrap"><button class="btn" style="padding:7px 10px" data-copy="'+esc(base+l.k)+'">Copy</button><a class="btn" style="padding:7px 10px" href="sms:?&body='+encodeURIComponent("Here's the link for putting out my yard signs. It shows you the best spots and logs each one: "+base+l.k)+'">Text it</a></div>')+
+        '</div><button class="btn ghost" style="padding:6px 10px" data-link="'+esc(l.k)+'" data-on="'+(l.off?1:0)+'">'+(l.off?"Turn on":"Turn off")+'</button></div>';
+    });
+    h+='<button class="btn red block" id="linkNew" style="margin-top:10px">'+((D.links||[]).length?"Make another link":"Make the crew link")+'</button></div>';
+    var cs=crewStats(),pay=(D.cfg&&D.cfg.pay)||0,need=D.cfg&&D.cfg.photo==="need";
+    h+='<div class="card"><h2>The crew</h2>';
+    var ids=Object.keys(cs).sort(function(a,b){return cs[b].placed-cs[a].placed});
+    if(!ids.length)h+='<p class="muted">Nobody yet. Text the link to your first helper.</p>';
+    else{
+      h+='<table class="t"><tr><th>Who</th><th>Placed</th><th>Up</th><th>Gone</th>'+(pay?'<th>Owed</th>':'')+'<th></th></tr>';
+      ids.forEach(function(id){var o=cs[id],c=(D.crew&&D.crew[id])||{};
+        var counted=o.list.filter(function(s){return !s.bad&&(!need||s.batch)}).length,owed=Math.max(0,counted*pay-(c.paid||0));
+        h+='<tr><td><b>'+esc(c.name||"Mikey")+'</b>'+(c.off?' <span class="tag">off</span>':'')+(c.phone?'<br><a class="small" href="sms:'+esc(c.phone)+'">text</a>':'')+'</td><td>'+o.placed+'</td><td>'+o.up+'</td><td>'+o.gone+'</td>'+
+          (pay?'<td>'+money(owed)+(owed?'<br><button class="btn ghost" style="padding:3px 7px;font-size:12px" data-paid="'+id+'" data-amt="'+owed+'">Paid</button>':'')+'</td>':'')+
+          '<td>'+(id==="mikey"?'':'<button class="btn ghost" style="padding:4px 8px;font-size:12px" data-crew="'+id+'" data-on="'+(c.off?1:0)+'">'+(c.off?"Turn on":"Turn off")+'</button>')+'</td></tr>'});
+      h+='</table>';
+    }
+    return h+'</div>';
+  }
+  function resultsTab(){
+    var D=S.data,L=S.list||[],now=Date.now();
+    var placed=L.length,up=L.filter(live).length,week=L.filter(function(s){return now-s.t<7*864e5}).length;
+    var closed=L.filter(function(s){return s.closed&&(s.st==="gone"||s.st==="hoa")}).map(function(s){return (s.closed-s.t)/864e5}).sort(function(a,b){return a-b});
+    var med=closed.length?closed[Math.floor(closed.length/2)]:null;
+    var leads=Object.keys(D.leads||{}).map(function(p){var l=D.leads[p],pp=(D.people||{})[p]||{};return {phone:p,how:l.how,at:l.at,name:l.name||pp.name||p,status:pp.status||"",rev:(D.revenue||{})[p]||0}}).sort(function(a,b){return b.at-a.at});
+    var rev=leads.reduce(function(a,l){return a+l.rev},0),won=leads.filter(function(l){return l.status==="won"||l.rev>0}).length;
+    var c=D.cfg||{},spend=placed*((c.cost||0)+(c.pay||0));
+    var h='<div class="card"><h2>So far</h2><div class="grid3">'+
+      '<div class="stat"><b>'+placed+'</b><span>signs placed · '+week+' this week</span></div><div class="stat"><b>'+up+'</b><span>up right now</span></div>'+
+      '<div class="stat"><b>'+(med==null?"–":med.toFixed(1))+'</b><span>median days a sign lasts'+(closed.length?' ('+closed.length+' gone)':'')+'</span></div>'+
+      '<div class="stat"><b>'+leads.length+'</b><span>leads from signs</span></div><div class="stat"><b>'+money(rev)+'</b><span>'+won+' job'+(won===1?"":"s")+' paid</span></div>'+
+      '<div class="stat"><b>'+(placed?(leads.length/placed*100).toFixed(1):"–")+'</b><span>leads per 100 signs</span></div></div>'+
+      (spend?'<p class="small muted" style="margin-top:8px">Spent about '+money(spend)+' ('+money((c.cost||0)+(c.pay||0))+' a sign). '+(leads.length?money(spend/leads.length)+' a lead.':'')+(c.stock?' '+Math.max(0,c.stock-placed+L.filter(function(s){return s.st==="picked"}).length)+' signs left in stock.':'')+'</p>':'<p class="small muted" style="margin-top:8px">Set what a sign costs in Settings to see cost per lead.</p>')+'</div>';
+    // Survival by town: which towns keep a sign.
+    var by={};L.forEach(function(s){var sp=S.spotById[s.spot],t=sp?sp.town:"Other";var o=by[t]=by[t]||{n:0,up:0,gone:0,fast:0};o.n++;if(live(s))o.up++;else if(s.st!=="picked"){o.gone++;if(s.closed-s.t<3*864e5)o.fast++}});
+    var towns=Object.keys(by).sort(function(a,b){return by[b].n-by[a].n});
+    if(towns.length){h+='<div class="card"><h2>Which towns keep a sign</h2><table class="t"><tr><th>Town</th><th>Placed</th><th>Up</th><th>Gone</th><th>Gone in 3 days</th></tr>';
+      towns.forEach(function(t){var o=by[t];h+='<tr><td>'+esc(t)+'</td><td>'+o.n+'</td><td>'+o.up+'</td><td>'+o.gone+'</td><td class="'+(o.gone&&o.fast/o.gone>.5?"bad":"")+'">'+o.fast+'</td></tr>'});h+='</table></div>'}
+    h+='<div class="card"><h2>Leads from signs</h2><p class="small muted">QR scans that became a quote or booking land here on their own, and so does any conversation you tag <b>sign</b>. Someone said "saw your sign"? Add them.</p>';
+    leads.forEach(function(l){h+='<div class="item"><div class="tx"><b>'+esc(l.name)+(l.status==="won"?' <span class="tag g">won</span>':'')+'</b><small>'+esc({qr:"scanned the QR",tag:"tagged sign",said:"said so"}[l.how]||l.how)+' · '+day(l.at)+(l.rev?' · '+money(l.rev):'')+'</small></div><a class="btn ghost" style="padding:6px 10px" href="/?c='+encodeURIComponent(l.phone)+'">Open</a></div>'});
+    h+='<div class="row" style="margin-top:10px"><input id="crPhone" type="tel" placeholder="Their phone number" style="flex:1;padding:11px;border-radius:10px;border:1px solid var(--line);background:var(--card)"><button class="btn red" id="crAdd">Add</button></div></div>';
+    return h;
+  }
+  function settingsTab(){
+    var c=S.data.cfg||{};
+    var h='<div class="card"><h2>Settings</h2>'+
+      '<label class="f">Pay per sign placed ($, 0 for none)<input id="sPay" type="number" step="0.25" min="0" value="'+(c.pay||0)+'"></label>'+
+      '<label class="f">Photo of each sign<select id="sPhoto"><option value="need"'+(c.photo==="need"?" selected":"")+'>Needed to get paid</option><option value="ask"'+(c.photo==="ask"?" selected":"")+'>Asked for, can skip</option><option value="off"'+(c.photo==="off"?" selected":"")+'>Off</option></select></label>'+
+      '<label class="f">Ask for a check after (days)<input id="sRecheck" type="number" min="2" max="60" value="'+(c.recheck||7)+'"></label>'+
+      '<label class="f">What one sign and stake cost you ($)<input id="sCost" type="number" step="0.05" min="0" value="'+(c.cost||0)+'"></label>'+
+      '<label class="f">Signs you have ordered in total<input id="sStock" type="number" min="0" value="'+(c.stock||0)+'"></label>'+
+      '<label class="f">Uploads a day the crew may use (dashboard writes)<input id="sCap" type="number" min="20" max="400" value="'+(c.cap||150)+'"></label>'+
+      '<p class="small muted">The dashboard gets about 1,000 saves a day for everything, texts included. The crew\'s uploads stop at this number so a big Saturday can never block your texts; what doesn\'t fit waits on their phones until the next day.</p>'+
+      '<button class="btn red block" id="sSave">Save</button></div>';
+    var ng=S.data.nogo||[];
+    h+='<div class="card"><h2>No-go areas</h2><p class="small muted">Spots inside these never get suggested. Add one from the Map tab.</p>';
+    if(!ng.length)h+='<p class="muted small">None yet. The Mill Creek Community Association neighborhoods are already left out.</p>';
+    ng.forEach(function(z){h+='<div class="item"><div class="tx"><b>'+esc({hoa:"HOA",private:"Private",complaint:"Complaint",mikey:"Keep out"}[z.why]||z.why)+' · '+Math.round(z.r*3.28)+' ft</b><small>'+esc(z.note||"")+' '+day(z.at)+'</small></div><button class="btn ghost" style="padding:6px 10px" data-nogo="'+esc(z.id)+'">Remove</button></div>'});
+    h+='</div><div class="card small muted">Spots: '+(S.spots?S.spots.length.toLocaleString():0)+' ranked corners, made '+esc((S.spotMeta&&S.spotMeta.generated)||"")+'. '+esc((S.spotMeta&&S.spotMeta.source)||"")+'</div>';
+    return h;
+  }
+
+  // ---- wiring ------------------------------------------------------------------------
+  function wire(){
+    var app=el("app");
+    function on(sel,fn){Array.prototype.forEach.call(app.querySelectorAll(sel),fn)}
+    var n=el("cN");
+    function setCount(v){S.count=Math.max(1,Math.min(200,v|0));PREF.count=S.count;save(LS_PREF,PREF);if(n)n.value=S.count;on("[data-cn]",function(b){b.classList.toggle("on",+b.getAttribute("data-cn")===S.count)})}
+    if(n)n.onchange=function(){setCount(+n.value)};
+    if(el("cMinus"))el("cMinus").onclick=function(){setCount(S.count-1)};
+    if(el("cPlus"))el("cPlus").onclick=function(){setCount(S.count+1)};
+    on("[data-cn]",function(b){b.onclick=function(){setCount(+b.getAttribute("data-cn"))}});
+    on("[data-where]",function(b){b.onclick=function(){S.where=b.getAttribute("data-where");if(S.where==="suggest"&&!S.me)locate(function(){render()});render()}});
+    on("[data-tab2]",function(b){b.onclick=function(){S.tab=b.getAttribute("data-tab2");render()}});
+    on("[data-town]",function(b){b.onclick=function(){var t=b.getAttribute("data-town");S.town=t;planFor(function(sp){return sp.town===t},t)}});
+    if(el("locBtn"))el("locBtn").onclick=function(){locate(function(){render()})};
+    if(el("nearBtn"))el("nearBtn").onclick=function(){toast("Finding you…");locate(function(me){
+      if(!me){toast("Location is off. Pick a town instead.");S.where="town";render();return}
+      planFor(function(sp){return meters(me,[sp.lat,sp.lon])<25000},"")})};
+    on("[data-drop]",function(b){b.onclick=function(){S.plan.stops.splice(+b.getAttribute("data-drop"),1);if(!S.plan.stops.length)S.plan=null;render()}});
+    if(el("planClear"))el("planClear").onclick=function(){S.plan=null;render()};
+    if(el("planGo"))el("planGo").onclick=startRoute;
+    if(el("checkBtn"))el("checkBtn").onclick=function(){startCheck("check")};
+    if(el("pickBtn"))el("pickBtn").onclick=function(){startCheck("pick")};
+    if(el("yardBtn"))el("yardBtn").onclick=yardSheet;
+    on("[data-ev]",function(b){b.onclick=function(){addEvent(b.getAttribute("data-pid"),b.getAttribute("data-ev"));render()}});
+    on("[data-filter]",function(b){b.onclick=function(){S.filter=b.getAttribute("data-filter");render()}});
+    on("[data-maps]",function(b){b.onclick=function(){PREF.maps=b.getAttribute("data-maps");save(LS_PREF,PREF);render()}});
+    on("[data-mark]",function(b){b.onclick=function(){ownerPost({action:"mark",pid:b.getAttribute("data-pid"),st:b.getAttribute("data-mark")})}});
+    on("[data-copy]",function(b){b.onclick=function(){var t=b.getAttribute("data-copy");(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){toast("Copied")}).catch(function(){prompt("Copy this link",t)})}});
+    on("[data-link]",function(b){b.onclick=function(){var off=b.getAttribute("data-on")!=="1";if(off&&!confirm("Turn this link off? Everyone who joined with it stops being able to log signs."))return;ownerPost({action:off?"link-off":"link-on",k:b.getAttribute("data-link")})}});
+    if(el("linkNew"))el("linkNew").onclick=function(){var l=prompt("Name this link (who it's for)","Crew link");if(l==null)return;ownerPost({action:"link-new",label:l})};
+    on("[data-crew]",function(b){b.onclick=function(){ownerPost({action:b.getAttribute("data-on")==="1"?"crew-on":"crew-off",h:b.getAttribute("data-crew")})}});
+    on("[data-paid]",function(b){b.onclick=function(){var a=prompt("How much did you pay them?",b.getAttribute("data-amt"));if(a==null)return;ownerPost({action:"crew-paid",h:b.getAttribute("data-paid"),amount:+a})}});
+    on("[data-nogo]",function(b){b.onclick=function(){ownerPost({action:"nogo-del",id:b.getAttribute("data-nogo")})}});
+    if(el("crAdd"))el("crAdd").onclick=function(){var p=el("crPhone").value;if(!p)return;ownerPost({action:"credit",phone:p})};
+    if(el("sSave"))el("sSave").onclick=function(){ownerPost({action:"settings",cfg:{pay:+el("sPay").value,photo:el("sPhoto").value,recheck:+el("sRecheck").value,cost:+el("sCost").value,stock:+el("sStock").value,cap:+el("sCap").value}},"Saved")};
+    if(el("mapPlan"))el("mapPlan").onclick=function(){if(!S.map)return;var b=S.map.getBounds();planFor(function(sp){return b.contains([sp.lat,sp.lon])},"")};
+    if(el("mapMe"))el("mapMe").onclick=function(){locate(function(me){if(me&&S.map)S.map.setView(me,15)})};
+    if(el("nogoBtn"))el("nogoBtn").onclick=function(){S.nogoMode=!S.nogoMode;el("nogoBtn").textContent=S.nogoMode?"Tap the map where signs should never go…":"Add a no-go area"};
+  }
+  function ownerPost(body,msg){post("/api/signs",body).then(function(d){if(d&&d.ok){toast(msg||"Done");getState().then(render)}else toast("Couldn't save: "+((d&&d.error)||"no signal"))})}
+
+  function planFor(filter,area){
+    var c=openSpots(filter);
+    if(!c.length){toast("No open spots there right now.");return}
+    var start=S.me;
+    if(!start){var best=c.slice().sort(function(a,b){return b._st.eff-a._st.eff})[0];start=[best.lat,best.lon]}
+    var stops=buildRoute(c,S.count,start);
+    S.plan={stops:stops,area:area||""};S.tab="go";render();
+    setTimeout(function(){var p=document.querySelector("#planGo");if(p)p.scrollIntoView({behavior:"smooth",block:"center"})},50);
+  }
+  function startRoute(){
+    var P=S.plan;if(!P||!P.stops.length)return;
+    ROUTE={mode:"place",area:P.area,stops:P.stops.map(function(sp){return {id:sp.id,lat:sp.lat,lon:sp.lon,done:""}}),i:0,start:Date.now()};
+    save(LS_ROUTE,ROUTE);S.plan=null;
+    Q.plan={spots:ROUTE.stops.map(function(s){return s.id}),until:Date.now()+RESERVE_MS,area:P.area||""};qSave();
+    syncNow();                             // the reservation is only worth something if others see it now
+    watch();wake();render();
+  }
+  function startCheck(kind){
+    var list=(OWNER&&S.filter==="all"?S.list:mine()).filter(kind==="pick"?live:due);
+    if(!list.length){toast(kind==="pick"?"No signs up to pick up.":"Nothing due a check.");return}
+    locate(function(me){
+      var stops=order(list.map(function(s){return {pid:s.pid,lat:s.lat,lon:s.lon}}),me);
+      ROUTE={mode:kind,stops:stops.map(function(s){return {pid:s.pid,lat:s.lat,lon:s.lon,done:""}}),i:0,start:Date.now()};
+      save(LS_ROUTE,ROUTE);watch();wake();render();
+    });
+  }
+  function addEvent(pid,st,note){
+    var me=S.me||[0,0];Q.e.push([pid,Date.now(),st,me[0],me[1],note||""]);if(!Q.since)Q.since=Date.now();qSave();model();maybeSync(false);
+    toast({up:"Marked still up",gone:"Marked gone",down:"Marked fixed",picked:"Marked picked up"}[st]||"Saved");
+  }
+
+  // ---- drive mode ------------------------------------------------------------------
+  function curStop(){return ROUTE&&ROUTE.stops[ROUTE.i]}
+  function renderDrive(){
+    el("tabs").classList.add("hide");
+    var R=ROUTE,st=curStop(),app=el("app");app.innerHTML="";
+    var d=el("drive");if(!d){d=document.createElement("div");d.id="drive";d.className="drive";document.body.appendChild(d)}
+    if(!st){
+      var done=R.stops.filter(function(s){return s.done==="placed"||s.done==="checked"}).length;
+      d.innerHTML='<div class="top"><div class="where">Route finished</div></div><div class="wrap"><div class="card"><h2>'+done+' of '+R.stops.length+' '+(R.mode==="place"?"signs placed":"signs checked")+'</h2><p class="muted">Nice work. Uploading everything now.</p><button class="btn red block huge" id="dFinish">Done</button></div></div>';
+      el("dFinish").onclick=finishRoute;return;
+    }
+    var sp=st.id?S.spotById[st.id]:null,sg=st.pid?S.signs[st.pid]:null,me=S.me;
+    var dist=me?meters(me,[st.lat,st.lon]):null,here=dist!=null&&dist<=ARRIVE_M,dir=me?brg(me,[st.lat,st.lon]):0;
+    var title=sp?esc(sp.road)+' at '+esc(sp.cross||"the corner"):(sg&&S.spotById[sg.spot]?esc(S.spotById[sg.spot].road)+' at '+esc(S.spotById[sg.spot].cross||"the corner"):"Your sign");
+    var h='<div class="top"><div class="row"><span>Stop '+(R.i+1)+' of '+R.stops.length+(R.mode==="place"?"":R.mode==="pick"?" · pick up":" · check")+'</span><button class="pill" id="dEnd">End</button></div>'+
+      '<div class="row" style="margin-top:6px"><span class="arrow" style="transform:rotate('+Math.round(dir)+'deg)">⬆</span><div><div class="dist">'+(dist==null?"…":fmtDist(dist))+'</div><div class="small">'+(dist==null?"Finding you":(here?"You're here":compass(dir)))+'</div></div></div>'+
+      '<p class="where">'+title+'</p></div><div class="wrap">';
+    if(R.mode==="place"&&sp){
+      h+='<div class="card"><p class="how">'+esc(howTo(sp))+'</p><p class="small muted" style="margin-top:6px">'+esc(why(sp))+'</p>'+flagTags(sp)+'</div>';
+      h+='<button class="btn block huge '+(here?"green here":"red")+'" id="dPlaced">📸 Sign placed</button>';
+      h+='<div class="grid2" style="margin-top:10px"><a class="btn" id="dNav" target="_blank" rel="noopener" href="'+navUrl(st.lat,st.lon)+'">🧭 Navigate</a><button class="btn" id="dSkip">Skip</button></div>';
+      h+='<button class="btn ghost block" id="dExtra" style="margin-top:10px">+ Put an extra sign right here</button>';
+    }else{
+      h+='<div class="card"><p class="how">'+(R.mode==="pick"?"Pull the sign and stake, then tap Picked up.":"Is our sign still standing here?")+'</p>'+(sg?'<p class="small muted">Placed '+day(sg.t)+', last checked '+ago(sg.last)+'</p>':'')+'</div>';
+      if(R.mode==="pick")h+='<button class="btn block huge green" id="dPicked">Picked up</button>';
+      else h+='<div class="grid2"><button class="btn huge green" id="dUp">Still up</button><button class="btn huge red" id="dGone">Gone</button></div><button class="btn block" id="dFixed" style="margin-top:10px">It was down, I fixed it</button>';
+      h+='<div class="grid2" style="margin-top:10px"><a class="btn" target="_blank" rel="noopener" href="'+navUrl(st.lat,st.lon)+'">🧭 Navigate</a><button class="btn" id="dNext">Skip</button></div>';
+    }
+    h+='<div class="card small"><b>Next:</b> '+R.stops.slice(R.i+1,R.i+4).map(function(s){var p=s.id&&S.spotById[s.id];return esc(p?p.road+" at "+(p.cross||"corner"):"a sign")}).join(" · ")+(R.stops.length>R.i+4?" …":"")+
+      '<br><span class="muted">'+qCount()+' waiting to upload · GPS '+(S.acc?"±"+Math.round(S.acc)+" m":"searching")+'</span></div></div>';
+    d.innerHTML=h;
+    if(here&&S.arrivedAt!==ROUTE.i+":"+(st.id||st.pid)){S.arrivedAt=ROUTE.i+":"+(st.id||st.pid);vibrate([120,80,120])}
+    el("dEnd").onclick=function(){if(confirm("End this route? What you placed is saved."))finishRoute()};
+    if(el("dPlaced"))el("dPlaced").onclick=function(){placeHere(sp,"r")};
+    if(el("dExtra"))el("dExtra").onclick=function(){placeHere(null,"r",true)};
+    if(el("dSkip"))el("dSkip").onclick=skipSheet;
+    if(el("dUp"))el("dUp").onclick=function(){addEvent(st.pid,"up");next("checked")};
+    if(el("dGone"))el("dGone").onclick=function(){addEvent(st.pid,"gone");next("checked")};
+    if(el("dFixed"))el("dFixed").onclick=function(){addEvent(st.pid,"down");next("checked")};
+    if(el("dPicked"))el("dPicked").onclick=function(){addEvent(st.pid,"picked");next("checked")};
+    if(el("dNext"))el("dNext").onclick=function(){next("skipped")};
+  }
+  var lastDraw=0;
+  // Redrawn on a slow clock, and at once on arrival, so a button never moves
+  // out from under a thumb mid-tap.
+  var lastHere=false;
+  function driveTick(){
+    var st=curStop();if(!st||el("sheet"))return;
+    var here=S.me&&meters(S.me,[st.lat,st.lon])<=ARRIVE_M;
+    if(here!==lastHere||Date.now()-lastDraw>5000){lastHere=here;lastDraw=Date.now();renderDrive()}
+  }
+  function next(done){if(!ROUTE)return;ROUTE.stops[ROUTE.i].done=done;ROUTE.i++;save(LS_ROUTE,ROUTE);S.arrivedAt="";renderDrive();window.scrollTo(0,0)}
+  function finishRoute(){
+    ROUTE=null;save(LS_ROUTE,null);Q.plan=null;qSave();unwatch();if(S.wake){try{S.wake.release()}catch(e){}S.wake=null}
+    var d=el("drive");if(d)d.remove();syncNow();S.tab=OWNER?"results":"signs";render();
+  }
+  // The photo has to be asked for inside the tap, or iPhone won't open the
+  // camera. So the sign is recorded first, with the freshest GPS we have, and
+  // the picture attaches to it when it comes back.
+  function placeHere(sp,kind,extra,note){
+    var photo=(S.data.cfg||{}).photo!=="off";
+    if(photo){var cam=el("cam");cam.value="";cam.click()}
+    var me=S.me||(sp?[sp.lat,sp.lon]:null);
+    if(!me){toast("No GPS fix yet. Wait a second and tap again.");return}
+    var spot=sp?sp.id:"";
+    if(!sp&&S.spots){var best=null,bd=COVER_M;S.spots.forEach(function(x){var d=meters(me,[x.lat,x.lon]);if(d<bd){bd=d;best=x}});if(best)spot=best.id}
+    var pid=rid(12);
+    Q.p.push([pid,+me[0].toFixed(5),+me[1].toFixed(5),Date.now(),spot,kind||"r",Math.round(S.acc||0),"",note||""]);
+    if(!Q.since)Q.since=Date.now();qSave();model();
+    S.pendingPhoto=photo?pid:"";
+    vibrate(40);toast(kind==="y"?"Yard sign saved":"Sign saved"+(photo?". Take the photo from about 20 ft back.":""));
+    if(ROUTE&&!extra&&ROUTE.mode==="place")next("placed");else if(ROUTE)renderDrive();else render();
+    maybeSync(false);
+  }
+  el("cam").addEventListener("change",function(){
+    var f=this.files&&this.files[0],pid=S.pendingPhoto;S.pendingPhoto="";
+    if(!f||!pid)return;
+    shrink(f,function(b64){if(!b64)return;Q.photos[pid]=b64;qSave();maybeSync(false)});
+  });
+  function shrink(file,cb){
+    var img=new Image(),url=URL.createObjectURL(file);
+    img.onload=function(){var s=Math.min(1,720/Math.max(img.width,img.height)),c=document.createElement("canvas");
+      c.width=Math.round(img.width*s);c.height=Math.round(img.height*s);c.getContext("2d").drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);
+      var q=.6,out=c.toDataURL("image/jpeg",q);while(out.length>85000&&q>.25){q-=.1;out=c.toDataURL("image/jpeg",q)}
+      cb(out.split(",")[1]||"")};
+    img.onerror=function(){URL.revokeObjectURL(url);cb("")};
+    img.src=url;
+  }
+  function sheet(html,wireFn){
+    closeSheet();var v=document.createElement("div");v.className="veil";v.id="veil";v.onclick=closeSheet;document.body.appendChild(v);
+    var s=document.createElement("div");s.className="sheet";s.id="sheet";s.innerHTML=html;document.body.appendChild(s);wireFn(s);
+  }
+  function closeSheet(){var a=el("veil"),b=el("sheet");if(a)a.remove();if(b)b.remove()}
+  function skipSheet(){
+    sheet('<h2 style="margin-top:0">Why skip this one?</h2><div class="list">'+SKIPS.map(function(s){return '<button class="btn block" data-why="'+s[0]+'">'+esc(s[1])+'</button>'}).join("")+'</div><button class="btn ghost block" id="sx" style="margin-top:10px">Cancel</button>',
+      function(s){s.querySelector("#sx").onclick=closeSheet;Array.prototype.forEach.call(s.querySelectorAll("[data-why]"),function(b){b.onclick=function(){
+        var st=curStop();if(st&&st.id){Q.sk.push([st.id,Date.now(),b.getAttribute("data-why")]);if(!Q.since)Q.since=Date.now();qSave();model()}
+        closeSheet();next("skipped")}})});
+  }
+  function yardSheet(){
+    sheet('<h2 style="margin-top:0">Yard sign, with permission</h2><p class="small muted">A friend\'s yard or a customer\'s, where the owner said yes. These last weeks, so they get checked monthly. Stand next to it when you tap save.</p>'+
+      '<label class="f">Whose yard (for Mikey, optional)<input id="yNote" placeholder="e.g. Aunt Linda, 4th St"></label><button class="btn red block" id="ySave">Save it here</button><button class="btn ghost block" id="yx" style="margin-top:8px">Cancel</button>',
+      function(s){s.querySelector("#yx").onclick=closeSheet;s.querySelector("#ySave").onclick=function(){var n=s.querySelector("#yNote").value;
+        closeSheet();locate(function(){placeHere(null,"y",true,n)})}});
+  }
+
+  // ---- the map ------------------------------------------------------------------------
+  function loadLeaflet(cb){
+    if(window.L&&window.L.map)return cb();
+    if(!el("lfCss")){var l=document.createElement("link");l.id="lfCss";l.rel="stylesheet";l.href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css";document.head.appendChild(l)}
+    var s=document.createElement("script");s.src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js";s.onload=cb;
+    s.onerror=function(){var m=el("map");if(m)m.innerHTML='<p class="muted" style="padding:16px">The map didn\'t load. Check your signal.</p>'};document.head.appendChild(s);
+  }
+  function drawMap(){
+    loadLeaflet(function(){
+      var box=el("map");if(!box)return;
+      var map=L.map(box,{zoomControl:true});S.map=map;
+      var center=S.me||[47.93,-122.12];map.setView(center,S.me?14:11);
+      L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(map);
+      var spotL=L.layerGroup().addTo(map),signL=L.layerGroup().addTo(map),other=L.layerGroup().addTo(map);
+      (S.data.nogo||[]).forEach(function(z){L.circle([z.lat,z.lon],{radius:z.r,color:"#E31924",weight:1,fillOpacity:.12,dashArray:"4"}).addTo(other)});
+      (S.plans||[]).forEach(function(p){p.spots.forEach(function(id){var sp=S.spotById[id];if(sp)L.circleMarker([sp.lat,sp.lon],{radius:6,color:"#7c3aed",weight:2,fillOpacity:.2}).bindTooltip(((S.data.crew[p.by]||{}).name||"Someone")+"'s route").addTo(other)})});
+      (S.list||[]).forEach(function(s){var ok=live(s);
+        var m=L.circleMarker([s.lat,s.lon],{radius:ok?7:5,color:"#fff",weight:2,fillColor:ok?(s.kind==="y"?"#2563eb":"#16a34a"):"#9ca3af",fillOpacity:1}).addTo(signL);
+        m.bindPopup(function(){return signPopup(s)});
+        m.on("popupopen",function(e){wirePopup(e.popup.getElement(),s)})});
+      // Only the best open spots in view get drawn: a phone can't hold 5,000 markers.
+      function drawSpots(){
+        spotL.clearLayers();var b=map.getBounds();
+        var inView=openSpots(function(sp){return b.contains([sp.lat,sp.lon])}).sort(function(a,c){return c._st.eff-a._st.eff}).slice(0,map.getZoom()>=14?300:150);
+        inView.forEach(function(sp){var e=sp._st.eff,col=e>=60?"#E31924":e>=35?"#f97316":"#facc15";
+          L.circleMarker([sp.lat,sp.lon],{radius:e>=60?8:6,color:"#fff",weight:1.5,fillColor:col,fillOpacity:.95}).bindPopup(spotPopup(sp)).on("popupopen",function(ev){
+            var n=ev.popup.getElement().querySelector("[data-add]");if(n)n.onclick=function(){S.plan=S.plan||{stops:[],area:""};if(S.plan.stops.indexOf(sp)<0)S.plan.stops.push(sp);S.plan.stops=order(S.plan.stops,S.me);toast("Added. "+S.plan.stops.length+" stops on the Go tab.")};
+          }).addTo(spotL)});
+      }
+      map.on("moveend",drawSpots);drawSpots();
+      if(S.me)L.circleMarker(S.me,{radius:8,color:"#fff",weight:3,fillColor:"#2563eb",fillOpacity:1}).addTo(other);
+      map.on("click",function(e){if(!S.nogoMode)return;S.nogoMode=false;var why=prompt("Why? hoa / private / complaint / keep out","hoa");if(why==null)return;
+        var w=/hoa/i.test(why)?"hoa":/priv/i.test(why)?"private":/compl/i.test(why)?"complaint":"mikey";
+        var r=prompt("How big, in feet across the middle?","1000");if(r==null)return;
+        ownerPost({action:"nogo-add",lat:e.latlng.lat,lon:e.latlng.lng,r:Math.max(30,(+r||1000)/3.28/2),why:w,note:why},"No-go area added")});
+    });
+  }
+  function spotPopup(sp){
+    return '<div class="pop"><b>'+esc(sp.road)+' at '+esc(sp.cross||"the corner")+'</b><small>'+esc(sp.town)+' · score '+Math.round(sp._st.eff)+'</small><small>'+esc(why(sp))+'</small><small>'+esc(howTo(sp))+'</small>'+
+      '<div class="row"><button data-add="1">Add to my route</button><a href="'+navUrl(sp.lat,sp.lon)+'" target="_blank" rel="noopener"><button>Navigate</button></a></div></div>';
+  }
+  function signPopup(s){
+    var who=(S.data.crew[s.by]||{}).name||"";
+    return '<div class="pop"><b>'+(s.kind==="y"?"Yard sign":"Sign")+(live(s)?"":" ("+esc(s.st)+")")+'</b><small>Placed '+day(s.t)+(who?' by '+esc(who):'')+' · checked '+ago(s.last)+'</small>'+(s.note?'<small>'+esc(s.note)+'</small>':'')+
+      (s.batch?'<img alt="The sign" src="'+photoUrl(s)+'">':'')+
+      (live(s)?'<div class="row"><button data-pev="up">Still up</button><button data-pev="gone">Gone</button><button data-pev="down">Fixed</button><button data-pev="picked">Picked up</button></div>':'')+'</div>';
+  }
+  function wirePopup(node,s){Array.prototype.forEach.call(node.querySelectorAll("[data-pev]"),function(b){b.onclick=function(){addEvent(s.pid,b.getAttribute("data-pev"));S.map.closePopup()}})}
+
+  // ---- joining ------------------------------------------------------------------------
+  function renderJoin(){
+    var app=el("app"),k=S.joinK;
+    if(!k){app.innerHTML='<div class="card"><h2>Mikey\'s Sign Crew</h2><p>This app is for people putting out yard signs for Mikey\'s Mobile Detailing. Open the link Mikey texted you to get started.</p></div>';return}
+    if(S.linkValid===false){app.innerHTML='<div class="card"><h2>This link was turned off</h2><p>Ask Mikey for the new one.</p></div>';return}
+    app.innerHTML='<div class="card"><h2>Join Mikey\'s sign crew</h2><p>You\'ll put out yard signs for Mikey\'s Mobile Detailing. This app shows you the best corners near you, gets you there, and logs every sign with its spot and a photo'+(S.helloPay?', so you get paid '+money(S.helloPay)+' for each one':', so Mikey knows where they all are')+'.</p>'+
+      '<label class="f">Your first name<input id="jName" autocomplete="given-name" maxlength="30"></label>'+
+      '<label class="f">Your phone (so Mikey can reach you, optional)<input id="jPhone" type="tel" autocomplete="tel"></label>'+
+      '<button class="btn red block" id="jGo">Join the crew</button><p class="small muted" style="margin-top:10px">The app asks for your location so it can find spots near you and pin each sign. It never tracks you when the app is closed.</p><div class="bad small" id="jErr"></div></div>';
+    el("jGo").onclick=function(){
+      var name=el("jName").value.trim();if(!name){el("jErr").textContent="Put your first name in so Mikey knows who placed what.";return}
+      var id={k:k,h:rid(14),s:rid(32),name:name};
+      el("jGo").disabled=true;
+      post("/api/crew/join",{k:id.k,h:id.h,s:id.s,name:name,phone:el("jPhone").value}).then(function(d){
+        if(d&&d.ok){ID=id;ID.name=d.name||name;save(LS_ID,ID);S.err="";boot()}
+        else{el("jGo").disabled=false;el("jErr").textContent=d&&d.error==="join_cap"?"Too many people joined today. Try again tomorrow or text Mikey.":"That didn't work ("+((d&&d.error)||"no signal")+"). Try again."}
+      }).catch(function(){el("jGo").disabled=false;el("jErr").textContent="No signal. Try again."});
+    };
+  }
+
+  // ---- start ----------------------------------------------------------------------------
+  function boot(){
+    render();
+    Promise.all([getSpots(),getState()]).then(function(){
+      if(ROUTE){watch();wake()}
+      locate(function(){if(!ROUTE)render()});
+      render();maybeSync(false);
+    }).catch(function(){S.err="offline";render()});
+    setInterval(function(){if(document.visibilityState==="visible"&&!ROUTE)getState().then(function(){if(!el("sheet")&&!S.map)render()})},180000);
+  }
+  var hk=(location.hash.match(/k=([A-Za-z0-9_-]{10,40})/)||[])[1];
+  if(OWNER){boot()}
+  else if(hk&&(!ID||ID.k!==hk)){
+    // A new link on this phone. Same person, new link: keep their id if the
+    // server still knows them, otherwise they join again.
+    S.joinK=hk;
+    if(ID&&ID.h){ID.k=hk;save(LS_ID,ID);history.replaceState(null,"",location.pathname);boot()}
+    else post("/api/crew/hello",{k:hk}).then(function(d){S.linkValid=!!(d&&d.valid);S.helloPay=d&&d.pay;history.replaceState(null,"",location.pathname);render()}).catch(function(){render()});
+  }
+  else if(ID){if(hk)history.replaceState(null,"",location.pathname);boot()}
+  else render();
+  window.__signs={S:S,Q:Q,buildRoute:buildRoute,openSpots:openSpots,suggestions:suggestions,howTo:howTo,model:model};
+})();
+</script>
+</body>
+</html>

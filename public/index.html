@@ -4623,7 +4623,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-09-29·instant-booking";
+  var APP_BUILD="2026-09-29·yard-signs";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -6097,6 +6097,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     {id:"analytics",t:"Business overview",g:"Insights",ic:"activity",k:"stats numbers overview business kpis",run:function(){openAnalytics("overview")}},
     {id:"journey",t:"Customer journey",g:"Insights",ic:"route",k:"path pages visited what they did before texting replay story",run:function(){openAnalytics("journey")}},
     {id:"hangers",t:"Door hangers",g:"Insights",ic:"map-pin",k:"door hanger hangers flyers route zones neighborhoods map canvass",run:function(){openAnalytics("hangers")}},
+    {id:"signs",t:"Yard signs",g:"Insights",ic:"map-pin",k:"yard signs bandit sign crew helpers placement corners map route",run:function(){location.href="/signs.html?owner=1"}},
     {id:"website",t:"Website analytics",g:"Insights",ic:"activity",k:"traffic visitors ga4 clarity seo google site stats",run:function(){openAnalytics("analytics")}},
     {id:"quoteresults",t:"Quote results",g:"Insights",ic:"clipboard-list",k:"qqc quote form submissions leads history value average month over time",run:function(){openAnalytics("quotes")}},
     {id:"customers",t:"Who your customers are",g:"Insights",ic:"users",k:"repeat churn slipping loyal segments",run:function(){openAnalytics("customers")}},
@@ -14520,6 +14521,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(on&&on.scrollIntoView)try{on.scrollIntoView({block:"nearest",inline:"center"})}catch(e){}
   }
   function growSet(v){
+    // Yard signs is its own page: the same Sign Crew app the helpers use, with
+    // Mikey's Crew, Results and Settings tabs on top. One app, not two copies
+    // of the map, the spot list and the route builder.
+    if(v==="signs"){location.href="/signs.html?owner=1";return}
     // Index → report is a layer, so back comes back here. Report → report is
     // not: hopping along the segment bar shouldn't build a history to unwind.
     if(v==="index")navDrop("grview");
@@ -14914,6 +14919,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     ["journey","Journey","route","What did one customer do before they texted?"],
     ["map","Map & rankings","pin","Where's the work, and where do you rank?"],
     ["hangers","Door hangers","map-pin","Where do I hang next, and did it pay?"],
+    ["signs","Yard signs","map-pin","Where do signs go, who put them out, and did they pay?"],
     ["usage","Usage","target","Which parts of this dashboard do you actually use?"]
   ];
   // Read-only: pull from caches other screens filled, never trigger a load.
