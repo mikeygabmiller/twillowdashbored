@@ -114,7 +114,7 @@
 </style>
 </head>
 <body>
-<header><div class="row"><h1 id="hTitle">Mikey's Sign Crew<small id="hSub">Yard signs for Mikey's Mobile Detailing</small></h1><span class="pill" id="hSync">Saved</span></div></header>
+<header><div class="row"><a href="/" id="hBack" class="pill hide" style="color:#fff;text-decoration:none">‹ Dashboard</a><h1 id="hTitle">Mikey's Sign Crew<small id="hSub">Yard signs for Mikey's Mobile Detailing</small></h1><span class="pill" id="hSync">Saved</span></div></header>
 <main class="wrap" id="app"><div class="card"><p class="muted">Loading…</p></div></main>
 <nav class="tabs hide" id="tabs"></nav>
 <input type="file" id="cam" accept="image/*" capture="environment" class="hide">
@@ -143,6 +143,8 @@
   var SKIPS=[["none","No good spot (curb, no grass)"],["taken","Already a sign here"],["hoa","HOA or private, it'll get pulled"],["unsafe","Not safe to stop"],["private","Someone asked me not to"],["other","Something else"]];
   var qs=new URLSearchParams(location.search);
   var OWNER=qs.get("owner")==="1";
+  // Opened from the installed dashboard there's no browser back button.
+  if(OWNER)document.getElementById("hBack").classList.remove("hide");
   var S={tab:"go",data:null,spots:null,err:"",count:10,where:"near",town:"",plan:null,me:null,watch:null,wake:null,
     map:null,layers:null,nogoMode:false,filter:"mine",arrivedAt:"",pendingPhoto:"",busy:false,capUntil:0};
   var ID=load(LS_ID)||null;
@@ -173,8 +175,13 @@
       .then(function(r){return r.json().catch(function(){return {ok:false,error:"bad_reply"}}).then(function(j){j._status=r.status;return j})});
   }
   function getState(){
-    var p=OWNER?fetch("/api/signs",{credentials:"same-origin"}).then(function(r){return r.json().then(function(j){j._status=r.status;return j})}):post("/api/crew/state",auth({}));
-    return p.then(function(d){
+    // A reply that isn't JSON (a Worker error page) still says what happened,
+    // and a request that never answers gives up after 15 s: "Loading…"
+    // forever reads as "the button did nothing".
+    var p=OWNER?fetch("/api/signs",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.text().then(function(t){
+      var j;try{j=JSON.parse(t)}catch(e){j={ok:false,error:"server said "+r.status}}j._status=r.status;return j})}):post("/api/crew/state",auth({}));
+    var clock=new Promise(function(res){setTimeout(function(){res({ok:false,error:"no answer in 15 seconds"})},15000)});
+    return Promise.race([p,clock]).then(function(d){
       if(d&&d.ok){S.data=d;S.err="";model();}
       else if(d&&(d._status===401||d.error==="unauthorized"))S.err="owner-login";
       else if(d&&d.error==="link_off")S.err="link_off";
@@ -412,7 +419,13 @@
     if(S.err==="link_off"){app.innerHTML='<div class="card"><h2>This link was turned off</h2><p>Ask Mikey for the new crew link. Anything saved on this phone is still here and uploads once you are back on.</p></div>';return}
     if(S.err==="helper_off"){app.innerHTML='<div class="card"><h2>You are off the crew for now</h2><p>Mikey paused your account. Text him if that is a mistake.</p></div>';return}
     if(!OWNER&&(!ID||S.err==="who"))return renderJoin();
-    if(!S.data||!S.spots){app.innerHTML='<div class="card"><p class="muted">'+(S.err==="offline"?"No signal. Try again in a moment.":"Loading the map of spots…")+'</p></div>';return}
+    if(S.err&&!S.data){
+      app.innerHTML='<div class="card"><h2>That didn\'t load</h2><p class="muted">'+(S.err==="offline"?"No signal. Try again in a moment.":"Reason: "+esc(S.err))+'</p>'+
+        '<button class="btn red block" id="retry">Try again</button>'+(OWNER?'<a class="btn ghost block" style="margin-top:8px" href="/">Back to the dashboard</a>':'')+'</div>';
+      el("retry").onclick=function(){S.err="";render();Promise.all([getSpots(),getState()]).then(render).catch(function(){S.err="offline";render()})};
+      return;
+    }
+    if(!S.data||!S.spots){app.innerHTML='<div class="card"><p class="muted">Loading the map of spots…</p></div>';return}
     if(ROUTE){renderDrive();return}
     el("drive")&&el("drive").remove();
     renderTabs();
@@ -534,7 +547,7 @@
     return out;
   }
   function crewTab(){
-    var D=S.data,base=location.origin+"/signs.html#k=";
+    var D=S.data,base=location.origin+"/signs#k=";
     var h='<div class="card"><h2>Crew links</h2><p class="small muted">Anyone with a link can join and log signs. They see the map and the crew\'s signs, never your texts, customers or money. Turning a link off stops everyone on it.</p>';
     (D.links||[]).forEach(function(l){
       h+='<div class="item" style="margin-top:8px"><div class="tx"><b>'+esc(l.label)+(l.off?' <span class="tag">off</span>':'')+'</b><small style="word-break:break-all">'+esc(base+l.k)+'</small>'+
