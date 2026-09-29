@@ -278,7 +278,26 @@ function renderSettings(c){
     grid2(fld("First job start (HH:MM)", input("dayStart", c.dayStart)), fld("Latest job start (HH:MM)", input("lastStart", c.lastStart)))+
     grid3(fld("Max jobs / day", inputNum("maxJobsPerDay", c.maxJobsPerDay)), fld("Buffer between (min)", inputNum("bufferMin", c.bufferMin)), fld("Slot step (min)", inputNum("stepMin", c.stepMin)))+
     grid2(fld("Min notice (hours)", inputNum("minLeadHours", Math.round((c.minLeadMin||0)/60))), fld("Book up to (days out)", inputNum("windowDays", c.windowDays)));
-  H.push(sec("🗓️ Hours & booking rules","When the calendar offers open slots.",hours));
+  // Fixed start times. When these are on they ARE the calendar, and the grid
+  // settings below it stop deciding anything, so say that where he'd look.
+  var R=c.slotRules||{}, RD=R.days||{}, RJ=R.jobMin||{};
+  if(c.slotRules){
+    var slotDays=DOW.map(function(nm,i){ return fld(nm,'<input class="in" data-slotday="'+i+'" placeholder="off" '+inNum((RD[i]||[]).join(", "))+'>'); }).join("");
+    var slotsH=
+      '<label class="chk" style="margin-bottom:10px"><input type="checkbox" data-f="slotRules.on" '+(R.on!==false?"checked":"")+'> Use my fixed start times (instead of the grid below)</label>'+
+      '<div class="hint" style="margin-bottom:8px">Start times per day, like <b>13:00</b> or <b>07:00, 13:00</b>. Leave a day empty to take it off.</div>'+
+      '<div class="grid3">'+slotDays+'</div>'+
+      '<div class="hint" style="margin:10px 0 6px">Your <b>longest</b> honest time for each job, in minutes. A time is only offered if the job would finish before dark.</div>'+
+      grid3(fld("Exterior (min)", inputNum("slotRules.jobMin.exterior", RJ.exterior)), fld("Interior (min)", inputNum("slotRules.jobMin.interior", RJ.interior)), fld("Full Detail (min)", inputNum("slotRules.jobMin.full", RJ.full)))+
+      '<label class="chk"><input type="checkbox" data-f="slotRules.lights" '+(R.lights?"checked":"")+'> My work lights are ready (interiors can run past dark)</label>'+
+      '<div class="hint" style="margin:0 0 8px 27px">On: only the outside part of a job has to finish before dark (Full Details are done exterior first), so weekday Full Details come back in winter.</div>'+
+      '<label class="chk"><input type="checkbox" data-f="slotRules.autoConfirm" '+(R.autoConfirm!==false?"checked":"")+'> Confirm bookings instantly in my 12 towns</label>'+
+      '<div class="hint" style="margin:0 0 8px 27px">They get your confirm text and reminders right away. Anywhere else still comes in as a request for you to confirm.</div>'+
+      fld("Tomorrow's times close at (tonight, HH:MM)", input("slotRules.cutoff", R.cutoff))+
+      '<div class="hint">Never same day. Anything on your Google Calendar still blocks a time.</div>';
+    H.push(sec("⏰ My start times","What the website actually offers. Customers pick one of these.",slotsH));
+  }
+  H.push(sec("🗓️ Hours & booking rules",(c.slotRules&&R.on!==false)?"Only used if fixed start times are off. Days you work now come from your start times.":"When the calendar offers open slots.",hours));
 
   // Booking texts
   var at=c.autoTexts||{};
@@ -352,6 +371,9 @@ function collect(){
   if(c.minLeadHours!=null){ c.minLeadMin=Math.round(Number(c.minLeadHours)*60)||0; delete c.minLeadHours; }
   // work days
   c.workDays=$$(".day-c.on").map(function(d){return Number(d.getAttribute("data-day"));});
+  // fixed start times, one box per day: "07:00, 13:00"
+  if(c.slotRules){ c.slotRules.days={};
+    $$("[data-slotday]").forEach(function(el){ c.slotRules.days[el.getAttribute("data-slotday")]=el.value.split(/[,\s]+/).map(function(x){return x.trim();}).filter(Boolean); }); }
   // sizes
   c.sizes=$$("[data-size]").map(function(el){ return {id:el.getAttribute("data-size"), label:el.value}; });
   // services

@@ -39,6 +39,10 @@ const call = async (qs) => (await M.apiOpenings(new URL('https://x.test/api/open
 const cfg = await M.loadBookingConfig();
 cfg.workDays = [0, 1, 2, 3, 4, 5, 6];
 cfg.blockedDates = [];
+// These checks drive the step-grid knobs (work days, jobs per day). With his
+// fixed slots on, the slots decide the days instead; that calendar has its
+// own suite in slots.test.js.
+cfg.slotRules = Object.assign({}, cfg.slotRules, { on: false });
 await M.saveBookingConfig(cfg);
 M.__reset();
 
