@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-27·door-hangers';
+const BUILD = '2026-09-29·instant-booking';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -440,6 +440,7 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/book-config')  return apiBookConfig();
   if (request.method === 'GET'  && pathname === '/api/availability') return apiAvailability(url);
   if (request.method === 'POST' && pathname === '/api/book')         return apiBook(request);
+  if (request.method === 'GET'  && pathname === '/api/next-openings') return apiNextOpenings(url);
 
   // ---- Public customer pages (MUST stay above the /api auth gate) ----
   // /t/<token> — the live "Mikey's on his way" ETA tracker the customer opens.
@@ -15841,6 +15842,34 @@ function bookingDefaults() {
     proof: { rating: '5.0', reviews: 39, cars: '300+' },
     calendar: { icalUrl: '', enabled: false },   // Google Calendar "secret iCal" URL
     blockedDates: [],                             // ['2026-08-01', …] days Mikey is off
+    // Mikey's real week, from him on 2026-09-29: school until noon, so a weekday
+    // is one job at 1:00; Saturday takes a morning and an afternoon; never
+    // Sunday. With this on, these start times ARE the calendar: dayStart,
+    // lastStart, stepMin and maxJobsPerDay stop mattering, because a step grid
+    // offered 8:00, 8:30, 9:00... to people when he was sitting in class.
+    slotRules: {
+      on: true,
+      days: { 0: [], 1: ['13:00'], 2: ['13:00'], 3: ['13:00'], 4: ['13:00'], 5: ['13:00'], 6: ['07:00', '13:00'] },
+      // His LONGEST honest time per job, any size or condition. The calendar
+      // plans on the worst case, because the failure it prevents is a War Zone
+      // van finishing its exterior by flashlight in a stranger's driveway.
+      jobMin: { exterior: 120, interior: 180, full: 270 },
+      // The part of each job that needs daylight. A Full Detail in the
+      // afternoon is done exterior first, so only its first two hours do.
+      outsideMin: { exterior: 120, interior: 0, full: 120 },
+      // Off until his work lights are ready. Off: the whole job finishes by
+      // dusk. On: only the outside part has to, so the interior of an
+      // afternoon Full Detail can run into the dark and weekday Full Details
+      // come back all winter.
+      lights: false,
+      // Never same day: he's in class until noon and can't see a booking made
+      // at 10 for 1:00. Tomorrow's slots close at this time tonight.
+      cutoff: '21:00',
+      // A booking from one of the twelve towns he serves is confirmed on the
+      // spot, with the same confirm text and reminders his Confirm tap sends.
+      // Anywhere else stays a request he answers himself.
+      autoConfirm: true,
+    },
     // Booking-lifecycle texts. Each is a fixed template filled in from the booking
     // record — no AI writes them, so none can invent a price or a time. Individually
     // switchable. (Day-of messages — on my way, I'm here, all finished — belong to
@@ -15858,7 +15887,7 @@ function bookingDefaults() {
 async function loadBookingConfig() {
   const saved = (await kv().get(BK_CONFIG_KEY, { type: 'json' })) || {};
   const d = bookingDefaults();
-  return Object.assign({}, d, saved, {
+  const out = Object.assign({}, d, saved, {
     content:  Object.assign({}, d.content,  saved.content  || {}),
     proof:    Object.assign({}, d.proof,    saved.proof    || {}),
     calendar: Object.assign({}, d.calendar, saved.calendar || {}),
@@ -15868,7 +15897,53 @@ async function loadBookingConfig() {
     addons:   saved.addons   || d.addons,
     cities:   saved.cities   || d.cities,
     blockedDates: saved.blockedDates || d.blockedDates,
+    slotRules: bkMergeSlotRules(d.slotRules, saved.slotRules),
   });
+  // With fixed slots on, the days that have a slot are the work days. Derived
+  // here so every reader (the booking page greying days out, the helper's
+  // week) agrees with the calendar instead of with a toggle that no longer
+  // decides anything.
+  if (out.slotRules.on) out.workDays = [0, 1, 2, 3, 4, 5, 6].filter((i) => (out.slotRules.days[i] || []).length);
+  return out;
+}
+function bkMergeSlotRules(d, saved) {
+  const s = saved || {};
+  return Object.assign({}, d, s, {
+    days: Object.assign({}, d.days, s.days || {}),
+    jobMin: Object.assign({}, d.jobMin, s.jobMin || {}),
+    outsideMin: Object.assign({}, d.outsideMin, s.outsideMin || {}),
+  });
+}
+// The twelve towns he's in most weeks (the site's CLAUDE.md is the source of
+// truth). Lynnwood and Edmonds are deliberately absent: he was asked and said no.
+const SERVED_TOWNS = ['snohomish', 'lake stevens', 'everett', 'monroe', 'mill creek', 'marysville',
+  'bothell', 'duvall', 'mukilteo', 'woodinville', 'granite falls', 'arlington'];
+function bkServedTown(city) {
+  const c = String(city || '').toLowerCase().replace(/,?\s*(wa|washington)\b.*$/, '').replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim();
+  return SERVED_TOWNS.includes(c);
+}
+
+// Minutes after local midnight when it's too dark to work (civil dusk, sun 6
+// degrees down) at his base in Snohomish, on a date. The NOAA sunrise equation:
+// within a couple of minutes of the almanac, which is plenty when the question
+// is whether a job ends before 4:52 or after it. Computed, not tabled, so the
+// calendar follows the season (and the November clock change) on its own.
+function bkDuskMin(date) {
+  const lat = 47.9129, lon = -122.0982, rad = Math.PI / 180;
+  const t0 = Date.parse(date + 'T00:00:00Z');
+  const n = Math.round((t0 - Date.UTC(new Date(t0).getUTCFullYear(), 0, 0)) / 86400000);
+  const lngH = lon / 15, t = n + (18 - lngH) / 24;
+  const M = 0.9856 * t - 3.289;
+  const L = (M + 1.916 * Math.sin(M * rad) + 0.020 * Math.sin(2 * M * rad) + 282.634 + 360) % 360;
+  let RA = (Math.atan(0.91764 * Math.tan(L * rad)) / rad + 360) % 360;
+  RA = (RA + (Math.floor(L / 90) * 90 - Math.floor(RA / 90) * 90)) / 15;
+  const sinD = 0.39782 * Math.sin(L * rad), cosD = Math.cos(Math.asin(sinD));
+  const cosH = (Math.cos(96 * rad) - sinD * Math.sin(lat * rad)) / (cosD * Math.cos(lat * rad));
+  if (cosH < -1 || cosH > 1) return 1440;
+  const H = Math.acos(cosH) / rad / 15;
+  const UT = ((H + RA - 0.06571 * t - 6.622 - lngH) % 24 + 24) % 24;
+  const off = bkLaOffsetMin(bkLaEpoch(date, '12:00'));      // -420 in summer time, -480 after November
+  return Math.round(((UT * 60 + off) % 1440 + 1440) % 1440);
 }
 // ⚠ KV WRITE — only when Mikey saves settings (rare). Cheap.
 async function saveBookingConfig(cfg) { await kv().put(BK_CONFIG_KEY, JSON.stringify(cfg)); }
@@ -15905,6 +15980,7 @@ async function bkAvailability(date, service, size) {
   if ((cfg.blockedDates || []).includes(date)) return [];      // Mikey marked the day off
   const svc = bkSvc(cfg, service);
   if (!svc) return [];
+  if (cfg.slotRules && cfg.slotRules.on) return bkSlotAvailability(cfg, date, service);
   const dur = (svc.duration && svc.duration[size]) || (svc.duration && svc.duration.suv) || 180;
   const dow = new Date(date + 'T12:00:00Z').getUTCDay();
   if (!(cfg.workDays || []).includes(dow)) return [];
@@ -15931,6 +16007,44 @@ async function bkAvailability(date, service, size) {
     if (bkLaEpoch(date, bkMin2hm(t)) < now + cfg.minLeadMin * 60000) continue;   // too soon / past
     if (occ.some((o) => start < o.e + B && o.s < end + B)) continue;             // clashes w/ buffer
     out.push(bkMin2hm(t));
+  }
+  return out;
+}
+
+// The fixed-slot calendar (slotRules.on). Same inputs the step grid above
+// reads (his jobs, held texts, Google Calendar, blocked dates), but the only
+// candidates are his real start times, and each one has to pass three things
+// the grid never asked: it isn't today, the job ends before dark, and nothing
+// he's already got overlaps it.
+async function bkSlotAvailability(cfg, date, service) {
+  const R = cfg.slotRules;
+  const dow = new Date(date + 'T12:00:00Z').getUTCDay();
+  const starts = (R.days[dow] || []).slice().sort();
+  if (!starts.length) return [];
+  const now = Date.now(), here = bkLocalParts(now);
+  if (date <= here.date) return [];                            // never same day
+  const tomorrow = new Date(Date.parse(here.date + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10);
+  if (date === tomorrow && here.min >= bkHm2min(R.cutoff || '21:00')) return [];
+  if (bkLaEpoch(date, '00:00') - now > cfg.windowDays * 86400000) return [];
+  const dur = Number(R.jobMin[service]) || 240;
+  const outside = Math.min(dur, Number(R.outsideMin[service]) || 0);
+  const dusk = bkDuskMin(date);
+  const day = (await loadBookings()).filter((b) => b.date === date && (b.status === 'pending' || b.status === 'confirmed'));
+  const held = await detHeldSlots(date);
+  if (held === 'all') return [];
+  const occ = day.map((b) => ({ s: bkHm2min(b.slot), e: bkHm2min(b.slot) + (Number(R.jobMin[b.service]) || b.durationMin || dur) }))
+    .concat(Array.isArray(held) ? held : []);
+  for (const iv of await bkCalBusy(cfg, date)) {
+    if (iv.s <= 0 && iv.e >= 1440) return [];                  // all-day event → whole day off
+    occ.push(iv);
+  }
+  const B = Number(cfg.bufferMin) || 0, out = [];
+  for (const hm of starts) {
+    const start = bkHm2min(hm), end = start + dur;
+    // Before dark: the whole job, or with his lights only the outside part.
+    if ((R.lights ? start + outside : end) > dusk) continue;
+    if (occ.some((o) => start < o.e + B && o.s < end + B)) continue;
+    out.push(hm);
   }
   return out;
 }
@@ -15981,12 +16095,25 @@ async function apiBook(request) {
   if (!(await bkAvailability(date, service, size)).includes(slot)) return cors(json({ ok: false, error: 'slot_taken' }, 409));
 
   const first = name.split(/\s+/)[0];
-  const durationMin = svc.duration[size], base = svc.price[size];
+  const R = cfg.slotRules || {};
+  const durationMin = (R.on && Number(R.jobMin && R.jobMin[service])) || svc.duration[size], base = svc.price[size];
+  // Instant only where he actually goes. Anything else is a request he answers
+  // himself, which is also how a far-off address gets a human "that's a stretch".
+  const instant = !!(R.on && R.autoConfirm && bkServedTown(city));
+  // Rain-Ready: book a Full Detail by December 31, 2026 and polish, ceramic wax
+  // and RainX are free. Decided on the day it's BOOKED, so a January job booked
+  // in December keeps it (Mikey, 2026-09-29: the appointment can run to Jan 31).
+  const rainReady = service === 'full' && Date.now() < bkLaEpoch('2027-01-01', '00:00') && date <= '2027-01-31';
+  // He said people can give just their street or a cross street if they'd
+  // rather not type the house number. No digit in it = a general area.
+  const areaOnly = !/\d/.test(address);
   const addons = Array.isArray(b.addons) ? b.addons.map((x) => String(x)).slice(0, 12) : [];
   const estimate = Math.max(0, Math.round(Number(b.estimate) || base));
   const dateLabel = String(b.dateLabel || bkNiceDate(date));
   const rec = {
-    id: genId(), status: 'pending', createdAt: Date.now(),
+    id: genId(), status: instant ? 'confirmed' : 'pending', createdAt: Date.now(),
+    confirmedAt: instant ? Date.now() : undefined, autoConfirmed: instant || undefined,
+    rainReady: rainReady || undefined, areaOnly: areaOnly || undefined,
     service, serviceName: svc.name, size, sizeLabel: String(b.sizeLabel || size),
     vehicle: String(b.vehicle || '').trim(), addons, wantQuote: !!b.wantQuote,
     date, slot, dateLabel, apptAt: bkLaEpoch(date, slot), durationMin,
@@ -16016,12 +16143,13 @@ async function apiBook(request) {
   }
 
   const detail = [
-    `🗓 BOOKING REQUEST (pending)`,
-    `${rec.serviceName} · ${rec.sizeLabel}${rec.vehicle ? ` · ${rec.vehicle}` : ''}`,
+    instant ? `🗓 BOOKED (confirmed automatically, they got your confirm text)` : `🗓 BOOKING REQUEST (pending)`,
+    `${rec.serviceName} · ${rec.sizeLabel}${rec.vehicle ? ` · ${rec.vehicle}` : ''}${b.condition ? ` · ${String(b.condition).slice(0, 30)}` : ''}`,
     rec.addons.length ? `Add-ons: ${rec.addons.join(', ')}` : null,
+    rainReady ? `Rain-Ready: polish, ceramic wax & RainX free` : null,
     rec.wantQuote ? `Also wants: ceramic / paint quote` : null,
     `When: ${dateLabel} at ${bkFmt12(slot)}`,
-    `Where: ${address}, ${city}`,
+    `Where: ${address}, ${city}${areaOnly ? ' (general area only, get the house number)' : ''}`,
     `Estimate: $${estimate}`,
     rec.email ? `Email: ${rec.email}` : null,
     `Water & power on site: ${rec.ackWaterPower ? 'yes' : 'NEEDS to sort out'}`,
@@ -16042,7 +16170,9 @@ async function apiBook(request) {
   thread.appointmentAt = rec.apptAt;
   const stamp = new Date().toLocaleString('en-US', { timeZone: cfg.tz });
   thread.notes = (thread.notes ? thread.notes + '\n\n' : '') + `${detail}\n(received ${stamp})`;
-  if (rec.smsConsent) {
+  if (instant) {
+    await bkConfirmTexts(thread, rec, cfg, await loadConfig());
+  } else if (rec.smsConsent) {
     const msg = sayOneOf(`${phone}:bkack`, [
       `Hey ${first}, it's Mikey! Got your request for ${dateLabel} at ${bkFmt12(slot)} (${rec.serviceName}). I'll text you shortly to confirm and lock it in. Talk soon! - Mikey`,
       `Hey ${first}, it's Mikey. Got your request for ${dateLabel} at ${bkFmt12(slot)} for the ${rec.serviceName}. Let me check it against my week and I'll text you right back to lock it in. - Mikey`,
@@ -16051,9 +16181,16 @@ async function apiBook(request) {
   }
   await saveThread(thread);
   await updateIndexEntry(thread);
-  notifyMikey(`🗓 New booking — ${name}`, `${detail}\n\nOpen your dashboard → Bookings to confirm.`).catch(() => {});
+  // The quote calculator books here now instead of posting to /submit, so the
+  // Quotes log would lose its warmest leads without this. Never throws.
+  await logQuote({ type: 'booking', name, phone, total: estimate, vehicle: rec.vehicle || rec.sizeLabel,
+    condition: String(b.condition || ''), services: rec.addons.length ? [rec.serviceName].concat(rec.addons) : [rec.serviceName],
+    location: city, notes: rec.notes, appointment: `${dateLabel} at ${bkFmt12(slot)}` });
+  notifyMikey(`🗓 New booking — ${name}`, `${detail}\n\n` + (instant
+    ? `It's on your schedule. Dashboard → Bookings if you need to move or cancel it.`
+    : `Open your dashboard → Bookings to confirm.`)).catch(() => {});
 
-  return cors(json({ ok: true, id: rec.id }, 200));
+  return cors(json({ ok: true, id: rec.id, status: rec.status }, 200));
 }
 
 // "Can you do Saturday?" is the question a texting conversation asks more than
@@ -16089,6 +16226,32 @@ async function apiOpenings(url) {
     if (slots.length) out.push({ date, slots: slots.slice(0, 4) });
   }
   return json({ ok: true, service, size, days: out });
+}
+
+// The quote calculator's "Pick my time" and the site's "Next opening" line.
+// Public, so it hands out only what the booking page already shows: the next
+// few open start times for one service. Same bkAvailability as everything
+// else, so it can't offer a time /api/book would then refuse.
+async function apiNextOpenings(url) {
+  const service = url.searchParams.get('service') || 'exterior';
+  const size = url.searchParams.get('size') || 'suv';
+  const want = Math.min(12, Math.max(1, parseInt(url.searchParams.get('n') || '3', 10) || 3));
+  const cfg = await loadBookingConfig();
+  const out = [], seen = new Set();
+  for (let i = 0; i < cfg.windowDays + 2 && out.length < want; i++) {
+    const date = localDateStr(Date.now() + i * 86400000, cfg.tz);
+    if (seen.has(date)) continue;
+    seen.add(date);
+    for (const slot of await bkAvailability(date, service, size)) {
+      if (out.length < want) out.push({ date, slot, label: bkNiceDate(date), time: bkFmt12(slot) });
+    }
+  }
+  // Every page view of the site asks this (the "Next opening" line), so let
+  // browsers and Cloudflare hold it for a few minutes. Stale by five minutes is
+  // harmless: /api/book re-checks the slot before it takes it.
+  const res = json({ ok: true, service, openings: out });
+  res.headers.set('Cache-Control', 'public, max-age=300');
+  return res;
 }
 
 async function apiBookings(url) {
@@ -16175,6 +16338,41 @@ function bkPurgeScheduled(thread, bkId) {
   return before - thread.scheduled.length;
 }
 
+// What confirming a booking sends: the confirm text now, the day-before and
+// morning-of reminders queued. One function because two things confirm a job,
+// his Confirm tap and a website booking from a town he serves, and the customer
+// must get the same messages either way. Mutates the thread; the caller saves.
+async function bkConfirmTexts(thread, bk, bcfg, cfg) {
+  if (!bk.smsConsent) return false;
+  const now = Date.now();
+  let texted = false;
+  if (bkAutoOn(bcfg, 'confirm')) {
+    const body = bkMessage('confirm', bk, cfg);
+    try {
+      const r = await sendSms(bk.phone, body);
+      // Record it — this text used to go out without ever landing in the
+      // conversation, so the thread read as if nothing was sent.
+      thread.messages.push({ id: genId(), dir: 'out', body, ts: Date.now(), kind: 'booking', status: 'sent', sid: (r && r.sid) || undefined });
+      texted = true;
+    } catch (e) { /* the booking is still confirmed even if the text fails */ }
+  }
+  // Reminders ride the existing reserve-then-send cron, so they're at-most-once
+  // and opt-out aware for free. Tagged with bkId so a later cancel can pull them.
+  const r24 = bk.apptAt - 86400000, rAm = bkLaEpoch(bk.date, '07:30');
+  const add = [];
+  // Built before it is queued, because a reminder his "How I talk" rules
+  // left with no legal wording must not sit in the queue as a blank waiting
+  // to fail at send time. No wording, no reminder.
+  const b24 = bkAutoOn(bcfg, 'remind24') ? bkMessage('remind24', bk, cfg) : '';
+  // Morning-of at 7:30 is pointless for a 7:00 Saturday job; the rAm < apptAt
+  // check below already drops it.
+  const bAm = bkAutoOn(bcfg, 'remindAm') ? bkMessage('remindAm', bk, cfg) : '';
+  if (b24 && r24 > now + 60000) add.push({ id: genId(), bkId: bk.id, kind: 'booking', body: b24, sendAt: r24 });
+  if (bAm && rAm > now + 60000 && rAm < bk.apptAt) add.push({ id: genId(), bkId: bk.id, kind: 'booking', body: bAm, sendAt: rAm });
+  if (add.length) { thread.scheduled.push(...add); thread.scheduled.sort((a, b) => a.sendAt - b.sendAt); }
+  return texted;
+}
+
 // Confirm / decline / cancel / complete a booking. Confirm texts the customer and
 // queues the 24h + morning-of reminders through the existing scheduled-send cron;
 // cancel and complete pull any reminders that are no longer wanted.
@@ -16197,30 +16395,7 @@ async function apiBookingAction(request) {
     markSource(thread, 'booking');
     if (!thread.tags.includes('booking')) thread.tags.push('booking');
     thread.appointmentAt = bk.apptAt;
-    if (bk.smsConsent) {
-      if (bkAutoOn(bcfg, 'confirm')) {
-        const body = bkMessage('confirm', bk, cfg);
-        try {
-          const r = await sendSms(bk.phone, body);
-          // Record it — this text used to go out without ever landing in the
-          // conversation, so the thread read as if nothing was sent.
-          thread.messages.push({ id: genId(), dir: 'out', body, ts: Date.now(), kind: 'booking', status: 'sent', sid: (r && r.sid) || undefined });
-          texted = true;
-        } catch (e) { /* the booking is still confirmed even if the text fails */ }
-      }
-      // Reminders ride the existing reserve-then-send cron, so they're at-most-once
-      // and opt-out aware for free. Tagged with bkId so a later cancel can pull them.
-      const r24 = bk.apptAt - 86400000, rAm = bkLaEpoch(bk.date, '07:30');
-      const add = [];
-      // Built before it is queued, because a reminder his "How I talk" rules
-      // left with no legal wording must not sit in the queue as a blank waiting
-      // to fail at send time. No wording, no reminder.
-      const b24 = bkAutoOn(bcfg, 'remind24') ? bkMessage('remind24', bk, cfg) : '';
-      const bAm = bkAutoOn(bcfg, 'remindAm') ? bkMessage('remindAm', bk, cfg) : '';
-      if (b24 && r24 > now + 60000) add.push({ id: genId(), bkId: bk.id, kind: 'booking', body: b24, sendAt: r24 });
-      if (bAm && rAm > now + 60000 && rAm < bk.apptAt) add.push({ id: genId(), bkId: bk.id, kind: 'booking', body: bAm, sendAt: rAm });
-      if (add.length) { thread.scheduled.push(...add); thread.scheduled.sort((a, b) => a.sendAt - b.sendAt); }
-    }
+    texted = await bkConfirmTexts(thread, bk, bcfg, cfg);
     await saveThread(thread);
     await updateIndexEntry(thread);
 
@@ -16395,6 +16570,28 @@ async function apiCalTest(request) {
   try { CAL_CACHE = { url: '', at: 0, events: [] }; const evs = await bkFetchCal(url); return json({ ok: true, count: evs.length }); }
   catch (e) { return json({ ok: false, error: 'Could not read that calendar feed (' + String(e.message || e) + ')' }); }
 }
+// Rebuilt from scratch like the rest of the config, so a Settings save can't
+// smuggle in a malformed time or switch a rule off by leaving it out.
+function bkSanitizeSlotRules(c, d) {
+  c = c || {};
+  const hm = (v) => { const x = String(v || '').trim(); return /^\d{1,2}:\d{2}$/.test(x) ? (x.length === 4 ? '0' + x : x) : null; };
+  const mins = (src, def) => Object.keys(def).reduce((o, k) => {
+    const n = Number(src && src[k]); o[k] = isFinite(n) && n >= 0 ? Math.min(720, Math.round(n)) : def[k]; return o; }, {});
+  const days = {};
+  for (let i = 0; i < 7; i++) {
+    const v = c.days && c.days[i];
+    days[i] = Array.isArray(v) ? [...new Set(v.map(hm).filter(Boolean))].sort().slice(0, 6) : d.days[i];
+  }
+  return {
+    on: c.on === false ? false : true,
+    days,
+    jobMin: mins(c.jobMin, d.jobMin),
+    outsideMin: mins(c.outsideMin, d.outsideMin),
+    lights: c.lights === true,
+    cutoff: hm(c.cutoff) || d.cutoff,
+    autoConfirm: c.autoConfirm === false ? false : true,
+  };
+}
 function bkSanitizeConfig(input) {
   const d = bookingDefaults(), c = input || {};
   const num = (v, def) => { const n = Number(v); return isFinite(n) ? n : def; };
@@ -16451,6 +16648,7 @@ function bkSanitizeConfig(input) {
     // Booking texts: keep whatever the caller sent, fall back to the default for
     // any key it didn't send, so a settings save can never silently switch one
     // back on (this function rebuilds the whole config from scratch).
+    slotRules: bkSanitizeSlotRules(c.slotRules, d.slotRules),
     autoTexts: Object.keys(d.autoTexts).reduce((o, k) => {
       const v = c.autoTexts && c.autoTexts[k];
       o[k] = (v === true || v === false) ? v : d.autoTexts[k];
