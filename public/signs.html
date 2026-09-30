@@ -95,7 +95,9 @@
   label.f input,label.f select{display:block;width:100%;margin-top:4px;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-size:16px}
   .banner{padding:10px 12px;border-radius:12px;margin:10px 0;font-size:14px}
   .banner.a{background:var(--amberbg);color:var(--amber)} .banner.g{background:var(--greenbg);color:var(--green)} .banner.r{background:var(--redbg);color:var(--red)} .banner.b{background:var(--bluebg);color:var(--blue)}
-  #map{height:62vh;border-radius:16px;margin-top:12px;border:1px solid var(--line);background:var(--card2)}
+  /* Its own stacking layer: Leaflet's panes and buttons sit at z-index 400 to
+     1000, which drew the map over the red header when the page scrolled. */
+  #map{height:62vh;border-radius:16px;margin-top:12px;border:1px solid var(--line);background:var(--card2);position:relative;z-index:0;isolation:isolate}
   .leaflet-container{font:inherit}
   .pop b{display:block;font-size:14px} .pop small{display:block;color:#555;font-size:12px}
   .pop .row{margin-top:6px;flex-wrap:wrap;gap:4px}
@@ -167,6 +169,10 @@
   var Q=load(LS_Q)||{p:[],e:[],sk:[],photos:{},since:0};
   var ROUTE=load(LS_ROUTE)||null;
   var PREF=load(LS_PREF)||{};
+  // Mikey's pin check, saved on the phone first and sent in batches of ten:
+  // a run of fifty taps is five dashboard writes, not fifty.
+  var LS_REV="mkd-signs-rev";
+  var REVQ=load(LS_REV)||{};
   if(PREF.count)S.count=PREF.count;
 
   function load(k){try{var v=localStorage.getItem(k);return v?JSON.parse(v):null}catch(e){return null}}
@@ -231,7 +237,7 @@
       var c=j.cols,ix={};c.forEach(function(k,i){ix[k]=i});
       S.spotMeta=j;
       S.spots=j.spots.map(function(r){return {id:r[ix.id],lat:r[ix.lat],lon:r[ix.lon],score:r[ix.score],ctrl:r[ix.ctrl],aadt:r[ix.aadt],spd:r[ix.spd],
-        head:r[ix.head],road:r[ix.road],cross:r[ix.cross],town:r[ix.town],flags:r[ix.flags]||"",jx:r[ix.jx]}});
+        head:r[ix.head],road:r[ix.road],cross:r[ix.cross],town:r[ix.town],flags:r[ix.flags]||"",jx:r[ix.jx],back:ix.back!=null?r[ix.back]:0,side:ix.side!=null?r[ix.side]:0}});
       S.spotById={};S.spots.forEach(function(s){S.spotById[s.id]=s});
       return S.spots;
     });
@@ -288,7 +294,7 @@
     }).catch(function(){S.busy=false;syncPill()});
   }
   setInterval(function(){maybeSync(false)},60000);
-  document.addEventListener("visibilitychange",function(){if(document.visibilityState==="hidden")maybeSync(true);else if(ROUTE)wake()});
+  document.addEventListener("visibilitychange",function(){if(document.visibilityState==="hidden"){maybeSync(true);flushRev(true)}else if(ROUTE)wake()});
   window.addEventListener("online",function(){maybeSync(true)});
 
   // ---- putting it all together -------------------------------------------------
@@ -334,10 +340,13 @@
     sp._stv=S.stVer;
     return (sp._st=spotStateNow(sp));
   }
+  function revOf(id){if(id in REVQ)return REVQ[id];var r=S.data&&S.data.rev;return r&&(id in r)?r[id]:null}
   function spotStateNow(sp){
     var sk=S.skips[sp.id]||[],hard=0,soft=0;
     sk.forEach(function(w){if(w==="hoa"||w==="private")hard++;else if(w==="none"||w==="unsafe")soft++});
     if(hard>=2||soft>=2)return {out:1,why:hard>=2?"HOA / private":"no good place to put it"};
+    var rv=revOf(sp.id);
+    if(rv===0)return {out:1,why:"Mikey marked it a bad spot"};
     var nogo=(S.data&&S.data.nogo)||[];
     for(var i=0;i<nogo.length;i++)if(meters([sp.lat,sp.lon],[nogo[i].lat,nogo[i].lon])<=nogo[i].r)return {out:1,why:"no-go area"};
     var mult=1,fast=0,covered=null;
@@ -347,9 +356,11 @@
       else if((s.st==="gone"||s.st==="hoa")&&s.closed-s.t<3*864e5)fast++;
     });
     if(fast)mult*=Math.pow(.5,fast);
+    // A pin Mikey has looked at on the photo goes ahead of one nobody has.
+    if(rv===1)mult*=1.15;
     if(hard)mult*=.5;if(soft)mult*=.6;
     var res=null;(S.plans||[]).forEach(function(p){if(p.spots.indexOf(sp.id)>=0)res=p});
-    return {eff:sp.score*mult,covered:covered,reserved:res,fast:fast};
+    return {eff:sp.score*mult,covered:covered,reserved:res,fast:fast,checked:rv===1};
   }
   function openSpots(filter){
     return (S.spots||[]).filter(function(sp){if(filter&&!filter(sp))return false;var st=spotState(sp);return !st.out&&!st.covered&&!st.reserved&&st.eff>=3});
@@ -406,6 +417,14 @@
   // Plain words for one stop.
   function howTo(sp){
     var at={sig:"the light",stop:"the stop sign",all:"the stop sign",minor:"the corner",rab:"the roundabout",thru:"the intersection"}[sp.ctrl]||"the corner";
+    // The pin is checked against the aerial photo and sits on grass, so the
+    // words give its real distance back and past the curb, not a rule of thumb.
+    if(sp.back){
+      var ft=function(m){return Math.max(10,Math.round(m*3.28084/10)*10)+" ft"};
+      var where={sig:"before the light, where the line of cars stops",stop:"before the stop sign, beside where the car waits",all:"before the stop sign, beside where the car waits",
+        minor:"back from the corner, where cars wait to pull out",rab:"before the roundabout",thru:"before the intersection"}[sp.ctrl]||"before the corner";
+      return "Right side of "+sp.road+", facing cars heading "+compass(sp.head)+" toward "+at+". About "+ft(sp.back)+" "+where+", on the grass about "+ft(Math.max(1,sp.side||0))+" past the curb. The pin is the spot. Turn the sign a little toward the cars.";
+    }
     var back={sig:"About 100 ft before it, where the line of cars stops",stop:"Right beside the stop sign, where the car waits",all:"Right beside the stop sign, where the car waits",
       minor:"Right at the corner, where cars wait to pull out",rab:"About 80 ft before the roundabout",thru:"About 150 ft before the intersection"}[sp.ctrl];
     return "Right side of "+sp.road+", facing cars heading "+compass(sp.head)+" toward "+at+". "+back+", on the grass. Turn it a little toward the cars.";
@@ -473,17 +492,19 @@
     else if(S.tab==="crew")h+=crewTab();
     else if(S.tab==="results")h+=resultsTab();
     else if(S.tab==="settings")h+=settingsTab();
+    else if(S.tab==="check")h+=checkTab();
     app.innerHTML=h;
     wire();
     if(S.tab==="map")drawMap();
+    if(S.tab==="check")drawCheck();
     syncPill();
   }
   function renderTabs(){
     var t=[["go","🚗","Go"],["map","🗺️","Map"],["signs","🪧","Signs"],["how","📘","How-to"]];
-    if(OWNER)t=[["go","🚗","Go"],["map","🗺️","Map"],["signs","🪧","Signs"],["crew","👥","Crew"],["results","📈","Results"],["settings","⚙️","Settings"]];
+    if(OWNER)t=[["go","🚗","Go"],["map","🗺️","Map"],["check","✅","Check"],["signs","🪧","Signs"],["crew","👥","Crew"],["results","📈","Results"],["settings","⚙️","Settings"]];
     var n=el("tabs");n.classList.remove("hide");
     n.innerHTML=t.map(function(x){return '<button data-tab="'+x[0]+'" class="'+(S.tab===x[0]?"on":"")+'"><b>'+x[1]+'</b>'+x[2]+'</button>'}).join("");
-    Array.prototype.forEach.call(n.querySelectorAll("[data-tab]"),function(b){b.onclick=function(){S.tab=b.getAttribute("data-tab");S.map=null;render();window.scrollTo(0,0)}});
+    Array.prototype.forEach.call(n.querySelectorAll("[data-tab]"),function(b){b.onclick=function(){if(S.tab==="check")flushRev(true);S.tab=b.getAttribute("data-tab");S.map=null;S.cmap=null;render();window.scrollTo(0,0)}});
     el("hSub").textContent=OWNER?"Mikey · everything the crew is doing":((S.data.me&&S.data.me.name)||(ID&&ID.name)||"")+" · Mikey's Mobile Detailing";
   }
 
@@ -523,6 +544,67 @@
     P.stops.forEach(function(sp,i){h+='<div class="item"><span class="n">'+(i+1)+'</span><div class="tx"><b>'+esc(sp.road)+' at '+esc(sp.cross||"the corner")+'</b><small>'+esc(sp.town)+' · '+esc(why(sp))+' · score '+Math.round(sp._st?sp._st.eff:sp.score)+'</small>'+flagTags(sp)+'</div><button class="btn ghost" data-drop="'+i+'" aria-label="Remove stop" style="padding:6px 10px">✕</button></div>'});
     h+='</div><div class="grid2" style="margin-top:10px"><button class="btn" id="planClear">Clear</button><button class="btn red" id="planGo">Start route</button></div></div>';
     return h;
+  }
+
+  // ---- Mikey's pin check ------------------------------------------------------------------
+  // The spot list puts each pin on grass it finds in the aerial photo, and about
+  // one in ten to one in five still sits against a shrub or small tree the data
+  // can't see. A person can tell in two seconds, so the best spots come here one
+  // at a time on the satellite view: Good goes ahead of unchecked spots, Bad is
+  // off the map for everyone.
+  function checkQueue(){
+    var town=S.checkTown||"";
+    var skip=S.checkSkipped||{};
+    return (S.spots||[]).filter(function(sp){if(town&&sp.town!==town)return false;if(skip[sp.id]||revOf(sp.id)!==null)return false;var st=spotState(sp);return !st.out&&!st.covered})
+      .sort(function(a,b){return b.score-a.score});
+  }
+  function checkTab(){
+    if(!OWNER)return "";
+    var all=S.spots||[],done=all.filter(function(sp){return revOf(sp.id)!==null}),good=done.filter(function(sp){return revOf(sp.id)===1}).length;
+    var q=checkQueue(),sp=q[0],pend=Object.keys(REVQ).length;
+    var h='<div class="card"><h2>Check the pins</h2><p class="small muted">Best spots first. Is the ring on grass beside the road, clear of trees and bushes, where a driver coming the way of the arrow would see a sign? '+done.length+' checked ('+good+' good)'+(pend?', '+pend+' waiting to upload':'')+'.</p>'+
+      '<div class="chips" style="margin-top:6px"><button data-ctown="" class="'+(!S.checkTown?"on":"")+'">All towns</button>'+TOWNS.map(function(t){return '<button data-ctown="'+esc(t)+'" class="'+(S.checkTown===t?"on":"")+'">'+esc(t)+'</button>'}).join("")+'</div></div>';
+    if(!sp)return h+'<div class="card"><p>Nothing left to check'+(S.checkTown?' in '+esc(S.checkTown):'')+'. Every open spot has been looked at.</p></div>';
+    S.checkSpot=sp.id;
+    h+='<div class="card"><b>'+esc(sp.road)+' at '+esc(sp.cross||"the corner")+'</b><small class="muted" style="display:block">'+esc(sp.town)+' · score '+sp.score+' · '+esc(why(sp))+' · '+q.length+' left</small>'+
+      '<div id="cmap" style="height:52vh;border-radius:14px;margin-top:10px;position:relative;z-index:0;isolation:isolate;background:#222"></div>'+
+      '<div class="grid2" style="margin-top:10px"><button class="btn green huge" id="ckGood">Good spot</button><button class="btn red huge" id="ckBad">Bad spot</button></div>'+
+      '<div class="grid2" style="margin-top:8px"><button class="btn" id="ckSkip">Not sure, next</button><a class="btn" target="_blank" rel="noopener" href="'+svUrl(sp)+'">Street View</a></div>'+
+      (S.checkLast?'<button class="btn ghost block" id="ckUndo" style="margin-top:8px">Undo the last one</button>':'')+'</div>';
+    return h;
+  }
+  function drawCheck(){
+    var sp=S.spotById[S.checkSpot],box=el("cmap");if(!sp||!box)return;
+    loadLeaflet(function(){
+      if(!el("cmap"))return;
+      var m=L.map(box,{zoomControl:true,attributionControl:true});S.cmap=m;
+      L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",{maxZoom:20,maxNativeZoom:19,attribution:"Imagery © Esri"}).addTo(m);
+      m.setView([sp.lat,sp.lon],19);
+      // the arrow: where the cars come from, to the pin
+      var h=(sp.head||0)*Math.PI/180,dl=40/111320,dlo=dl/Math.cos(sp.lat*Math.PI/180);
+      L.polyline([[sp.lat-Math.cos(h)*dl,sp.lon-Math.sin(h)*dlo],[sp.lat,sp.lon]],{color:"#38bdf8",weight:4}).addTo(m);
+      L.circleMarker([sp.lat,sp.lon],{radius:11,color:"#facc15",weight:3,fill:false}).addTo(m);
+    });
+  }
+  function reviewSpot(id,v){
+    S.checkLast={id:id,prev:(id in REVQ)?REVQ[id]:undefined};
+    REVQ[id]=v;save(LS_REV,REVQ);S.stVer=(S.stVer||0)+1;
+    flushRev(false);S.cmap=null;render();window.scrollTo(0,0);
+  }
+  function flushRev(force){
+    var ids=Object.keys(REVQ);if(!ids.length||S.revBusy)return;
+    if(!force&&ids.length<10)return;
+    var body={action:"review",good:[],bad:[]},sent={};ids.forEach(function(id){sent[id]=REVQ[id];(REVQ[id]===1?body.good:body.bad).push(id)});
+    S.revBusy=true;
+    post("/api/signs",body).then(function(d){
+      S.revBusy=false;
+      if(d&&d.ok){
+        // only what went up leaves the phone; a tap changed mid-flight stays queued
+        S.data.rev=S.data.rev||{};
+        ids.forEach(function(id){S.data.rev[id]=sent[id];if(REVQ[id]===sent[id])delete REVQ[id]});
+        save(LS_REV,REVQ);if(S.tab==="check"&&!S.cmap)render();
+      }
+    }).catch(function(){S.revBusy=false});
   }
 
   function mapTab(){
@@ -655,6 +737,13 @@
   function wire(){
     var app=el("app");
     function on(sel,fn){Array.prototype.forEach.call(app.querySelectorAll(sel),fn)}
+    if(el("ckGood"))el("ckGood").onclick=function(){reviewSpot(S.checkSpot,1)};
+    if(el("ckBad"))el("ckBad").onclick=function(){reviewSpot(S.checkSpot,0)};
+    if(el("ckSkip"))el("ckSkip").onclick=function(){S.checkSkipped=S.checkSkipped||{};S.checkSkipped[S.checkSpot]=1;S.cmap=null;render()};
+    if(el("ckUndo"))el("ckUndo").onclick=function(){var l=S.checkLast;if(!l)return;
+      if(l.prev===undefined){delete REVQ[l.id];if(S.data.rev&&(l.id in S.data.rev)){post("/api/signs",{action:"review",undo:[l.id]});delete S.data.rev[l.id]}}else REVQ[l.id]=l.prev;
+      save(LS_REV,REVQ);S.checkLast=null;S.stVer=(S.stVer||0)+1;S.cmap=null;render()};
+    on("[data-ctown]",function(b){b.onclick=function(){S.checkTown=b.getAttribute("data-ctown");S.cmap=null;render()}});
     var n=el("cN");
     function setCount(v){S.count=Math.max(1,Math.min(200,v|0));PREF.count=S.count;save(LS_PREF,PREF);if(n)n.value=S.count;on("[data-cn]",function(b){b.classList.toggle("on",+b.getAttribute("data-cn")===S.count)})}
     if(n)n.onchange=function(){setCount(+n.value)};
@@ -888,7 +977,7 @@
   }
   function spotPopup(sp,sub){
     return (sub?'<div class="side">':'<b>'+esc(sp.road)+' at '+esc(sp.cross||"the corner")+'</b>')+
-      '<small>'+(sub?'<b>Facing cars heading '+esc(compass(sp.head))+' on '+esc(sp.road)+'</b> · ':esc(sp.town)+' · ')+'score '+Math.round(sp._st.eff)+'</small><small>'+esc(why(sp))+'</small><small>'+esc(howTo(sp))+'</small>'+
+      '<small>'+(sub?'<b>Facing cars heading '+esc(compass(sp.head))+' on '+esc(sp.road)+'</b> · ':esc(sp.town)+' · ')+'score '+Math.round(sp._st.eff)+(sp._st.checked?' · <b style="color:#16a34a">✓ checked by Mikey</b>':'')+'</small><small>'+esc(why(sp))+'</small><small>'+esc(howTo(sp))+'</small>'+
       '<div class="row"><button data-add="'+esc(sp.id)+'">Add to my route</button><a href="'+svUrl(sp)+'" target="_blank" rel="noopener"><button>Street View</button></a><a href="'+navUrl(sp.lat,sp.lon)+'" target="_blank" rel="noopener"><button>Navigate</button></a></div>'+(sub?'</div>':'');
   }
   function cornerPopup(g){

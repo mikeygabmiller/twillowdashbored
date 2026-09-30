@@ -21,7 +21,7 @@ const section = (s) => console.log('\n' + s);
 
 // The spot data itself.
 section('The spot list');
-ok('has thousands of spots', SJ.spots.length > 2000, SJ.spots.length);
+ok('has well over a thousand spots (more than 1,000 signs can fill)', SJ.spots.length > 1500, SJ.spots.length);
 const ix = {}; SJ.cols.forEach((c, i) => { ix[c] = i; });
 const towns = new Set(SJ.spots.map((r) => r[ix.town]));
 ok('covers all twelve towns', towns.size === 12, [...towns]);
@@ -30,15 +30,17 @@ ok('ids are unique', new Set(SJ.spots.map((r) => r[ix.id])).size === SJ.spots.le
 ok('scores are 1 to 100', SJ.spots.every((r) => r[ix.score] >= 1 && r[ix.score] <= 100));
 ok('nothing on a 50 mph road', SJ.spots.every((r) => r[ix.spd] < 50));
 ok('passing traffic only on counted roads with 10,000+ cars', SJ.spots.every((r) => r[ix.ctrl] !== 'thru' || (r[ix.aadt] >= 10000 && !/e/.test(r[ix.flags]))));
+ok('every pin says how far back and past the curb it is', SJ.spots.every((r) => r[ix.back] >= 4 && r[ix.back] <= 100 && r[ix.side] >= 0 && r[ix.side] <= 10.5));
+ok('the Avenue D bridge pin is gone', !SJ.spots.some((r) => r[ix.id] === 'u6b59S'));
 ok('at most two sides of any corner', Object.values(SJ.spots.reduce((a, r) => { a[r[ix.jx]] = (a[r[ix.jx]] || 0) + 1; return a; }, {})).every((n) => n <= 2));
 
 // A tiny fake Worker.
-const SERVER = { docs: {}, crew: {}, links: [{ k: 'LINKLINKLINK123', label: 'Family', at: 1, off: 0 }], cfg: { pay: 1.5, photo: 'ask', recheck: 7, cap: 150, cost: 3, stock: 200 }, nogo: [], marks: {}, leads: {} };
+const SERVER = { docs: {}, crew: {}, links: [{ k: 'LINKLINKLINK123', label: 'Family', at: 1, off: 0 }], cfg: { pay: 1.5, photo: 'ask', recheck: 7, cap: 150, cost: 3, stock: 200 }, nogo: [], marks: {}, leads: {}, rev: {}, reviews: [] };
 const syncs = [];
 function stateFor(owner, hid) {
   const docs = Object.values(SERVER.docs);
   return Object.assign({ ok: true, now: Date.now(), me: { id: hid, name: owner ? 'Mikey' : (SERVER.crew[hid] || {}).name }, owner,
-    cfg: SERVER.cfg, crew: SERVER.crew, nogo: SERVER.nogo, marks: SERVER.marks, docs },
+    cfg: SERVER.cfg, crew: SERVER.crew, nogo: SERVER.nogo, marks: SERVER.marks, rev: SERVER.rev, docs },
   owner ? { links: SERVER.links, leads: SERVER.leads, people: {}, revenue: {}, today: '2026-10-03', since: '2026-09-29' } : {});
 }
 function handleSync(b, hid) {
@@ -86,6 +88,7 @@ await context.route('**/*', async (route) => {
   if (p === '/api/signs') {
     if (b.action === 'link-new') { const l = { k: 'NEWLINKNEWLINK99', label: b.label, at: Date.now(), off: 0 }; SERVER.links.push(l); return json({ ok: true, link: l }); }
     if (b.action === 'settings') { Object.assign(SERVER.cfg, b.cfg); return json({ ok: true }); }
+    if (b.action === 'review') { SERVER.reviews.push(b); (b.good || []).forEach((id) => { SERVER.rev[id] = 1; }); (b.bad || []).forEach((id) => { SERVER.rev[id] = 0; }); return json({ ok: true }); }
     return json({ ok: true });
   }
   return route.fulfill({ status: 404, body: '' });
@@ -134,6 +137,11 @@ await page.waitForTimeout(600);
 ok('the reservation went up right away', syncs.some((s) => s.plan && s.plan.spots.length === 5), syncs.map((s) => s.plan));
 ok('drive mode shows the first stop', /Stop 1 of 5/.test(await page.textContent('#drive')));
 ok('it says which side and which way', /Right side of .+ facing cars heading/.test(await page.textContent('#drive')));
+ok('directions give the checked distance back and past the curb', await page.evaluate(() => {
+  const t = window.__signs.howTo({ road: 'Main St', head: 0, ctrl: 'sig', back: 37, side: 2.5 });
+  return /About 120 ft before the light/.test(t) && /about 10 ft past the curb/.test(t) && /The pin is the spot/.test(t);
+}));
+ok('and an old list without them still reads', /About 100 ft before it/.test(await page.evaluate(() => window.__signs.howTo({ road: 'Main St', head: 0, ctrl: 'sig' }))));
 ok('with a Street View look at the verge first', /map_action=pano&viewpoint=/.test(await page.getAttribute('#dSv', 'href')));
 await context.setGeolocation({ latitude: plan[0].lat, longitude: plan[0].lon, accuracy: 5 });
 await page.waitForFunction(() => /You're here/.test(document.querySelector('#drive').textContent), null, { timeout: 12000 }).catch(() => {});
@@ -167,6 +175,7 @@ await page.click('[data-tab="map"]');
 await page.waitForTimeout(1200);
 if (LEAF['leaflet.min.js']) {
   ok('the map draws spots', (await page.$$('.leaflet-interactive')).length > 5);
+  ok('the map stays under the header when the page scrolls', await page.evaluate(() => { const c = getComputedStyle(document.getElementById('map')); return c.position === 'relative' && c.zIndex === '0' && c.isolation === 'isolate'; }));
   ok('a Satellite view to switch to', /Satellite/.test(await page.textContent('.leaflet-control-layers')));
   const dots = await page.evaluate(() => { const out = []; window.__signs.S.map.eachLayer((l) => { if (l.getPopup && l.getPopup() && l.getLatLng && /#E31924|#f97316|#facc15/.test(l.options.fillColor)) out.push(l.getLatLng()); }); return out; });
   const jxAt = await page.evaluate((d) => d.map((p) => { const s = window.__signs.S.spots.find((x) => x.lat === p.lat && x.lon === p.lng); return s ? s.jx : null; }).filter((x) => x !== null), dots);
@@ -217,6 +226,29 @@ if (LEAF['leaflet.min.js']) {
 }
 ok('no page errors (owner)', !errs.length, errs);
 ok('Mikey can get back to the dashboard', await op.isVisible('#hBack'));
+
+section("Mikey checks the pins");
+await op.click('[data-tab="check"]');
+await op.waitForSelector('#ckGood', { timeout: 8000 });
+const first = await op.evaluate(() => window.__signs.S.checkSpot);
+const top = await op.evaluate(() => window.__signs.S.spots.filter((s) => { const st = s._st; return !st || (!st.out && !st.covered); }).sort((a, b) => b.score - a.score)[0].score);
+ok('it starts with the best spot', await op.evaluate(() => window.__signs.S.spotById[window.__signs.S.checkSpot].score) === top);
+if (LEAF['leaflet.min.js']) ok('on the satellite photo, zoomed in on the pin', await op.evaluate(() => !!window.__signs.S.cmap && window.__signs.S.cmap.getZoom() === 19));
+await op.click('#ckBad');
+const second = await op.evaluate(() => window.__signs.S.checkSpot);
+ok('Bad moves on to the next', second && second !== first);
+ok('and the bad pin is off the map', await op.evaluate((id) => { const s = window.__signs.S.spotById[id]; s._stv = -1; return !!window.__signs.S.spots && window.__signs.openSpots().every((x) => x.id !== id); }, first));
+ok('nothing uploaded yet: marks go up ten at a time', SERVER.reviews.length === 0);
+for (let i = 0; i < 9; i++) await op.click('#ckGood');
+await op.waitForTimeout(500);
+ok('the tenth mark sends the batch in one upload', SERVER.reviews.length === 1 && SERVER.reviews[0].bad[0] === first && SERVER.reviews[0].good.length === 9, SERVER.reviews);
+await op.click('#ckGood');
+await op.click('#ckUndo');
+ok('Undo takes back the last one', await op.evaluate(() => Object.keys(JSON.parse(localStorage.getItem('mkd-signs-rev') || '{}')).length === 0));
+await op.click('[data-tab="map"]');
+await op.waitForTimeout(300);
+ok('leaving the tab sends whatever is left', SERVER.reviews.length >= 1);
+ok('no page errors (pin check)', !errs.length, errs);
 
 section('When the server breaks, the page says so');
 const bp = await context.newPage();
