@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-29·signs-map';
+const BUILD = '2026-09-30·signs-private-link';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -484,6 +484,13 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/crew/state')  return apiCrewState(request);
   if (request.method === 'POST' && pathname === '/api/crew/sync')   return apiCrewSync(request);
   if (request.method === 'GET'  && pathname === '/api/crew/photo')  return apiCrewPhoto(request, url);
+  // Mikey's yard-sign view. Above the gate because his private link opens it
+  // with no password: each route checks his dashboard login OR the private
+  // link's key itself (see signOwner), and the key opens this page and
+  // nothing else in the dashboard.
+  if (request.method === 'GET'  && pathname === '/api/signs')         return apiSigns(request);
+  if (request.method === 'POST' && pathname === '/api/signs')         return apiSignsPost(request);
+  if (request.method === 'GET'  && pathname === '/api/signs/manifest') return apiSignsManifest(url);
   if (request.method === 'GET'  && (pathname === '/signs' || pathname === '/crew')) return Response.redirect(new URL('/signs.html' + url.search, request.url).toString(), 302);
 
   if (request.method === 'GET'  && pathname === '/api/version')    return json({ ok: true, build: BUILD });
@@ -604,8 +611,6 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/quotes')        return apiQuotes(url);
   if (request.method === 'GET'  && pathname === '/api/hangers')       return apiHangers();
   if (request.method === 'POST' && pathname === '/api/hangers')       return apiHangersPost(request);
-  if (request.method === 'GET'  && pathname === '/api/signs')         return apiSigns();
-  if (request.method === 'POST' && pathname === '/api/signs')         return apiSignsPost(request);
   if (request.method === 'GET'  && pathname === '/api/quotes/export') return apiQuotesExport(url);
   if (request.method === 'POST' && pathname === '/api/quotes/import') return apiQuotesImport(request);
   if (request.method === 'POST' && pathname === '/api/quote-preview')  return apiQuotePreview(request);
@@ -1988,7 +1993,7 @@ async function loadSigns() {
   return {
     cfg: Object.assign({ pay: 0, photo: 'ask', recheck: 7, cap: SIGN_CAP_DEFAULT, cost: 0, stock: 0 }, d.cfg || {}),
     links: d.links || [], crew: d.crew || {}, nogo: d.nogo || [], marks: d.marks || {},
-    leads: d.leads || {}, joins: d.joins || { d: '', n: 0 },
+    leads: d.leads || {}, joins: d.joins || { d: '', n: 0 }, okey: d.okey || '',
   };
 }
 async function saveSigns(doc) { await kv().put(SIGN_KEY, JSON.stringify(doc)); }
@@ -2013,6 +2018,23 @@ async function signCredit(phone, info) {
   } catch (e) { /* a lost credit is a number off on a chart; a thrown one is a lost lead */ }
 }
 
+// Is this Mikey? His dashboard login, or the key in his private yard-sign
+// link (/yardsigns?o=…), sent by the page as X-Signs-Key. The key is 256 bits,
+// so it can't be guessed, and "Make a new link" in Settings kills the old one.
+// It never opens the dashboard itself: only the yard-sign routes ask here.
+function signKeyEq(a, b) {
+  a = String(a || ''); b = String(b || '');
+  if (!a || a.length !== b.length) return false;
+  let x = 0;
+  for (let i = 0; i < a.length; i++) x |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return x === 0;
+}
+async function signOwner(request, doc, key) {
+  const k = key || (request && request.headers && request.headers.get('X-Signs-Key')) || '';
+  if (k && doc.okey && signKeyEq(k, doc.okey)) return true;
+  return (await authRole(request)) === 'owner';
+}
+
 // Who is asking. Mikey, signed in to the dashboard, is always allowed and
 // places signs as the helper "mikey" — but only when the page says it is the
 // owner's view, so an open dashboard (no password set) can't turn every helper
@@ -2020,7 +2042,7 @@ async function signCredit(phone, info) {
 // secret their phone made when they joined.
 async function signWho(request, b, doc) {
   if (b && b.asOwner) {
-    if ((await authRole(request)) === 'owner') return { hid: 'mikey', name: 'Mikey', owner: true };
+    if (await signOwner(request, doc)) return { hid: 'mikey', name: 'Mikey', owner: true };
     return { err: 'unauthorized' };
   }
   const k = String((b && b.k) || '');
@@ -2235,8 +2257,11 @@ async function apiCrewPhoto(request, url) {
   const pid = String(url.searchParams.get('p') || '');
   if (!/^[a-z0-9]{6,24}$/i.test(batch) || !/^[a-z0-9]{6,24}$/i.test(pid)) return new Response('Not found', { status: 404 });
   const k = String(url.searchParams.get('k') || '');
+  const o = String(url.searchParams.get('o') || '');
   let okd = false;
-  if (k) { const doc = await loadSigns(); okd = doc.links.some((l) => l.k === k && !l.off); }
+  const doc = (k || o) ? await loadSigns() : null;
+  if (k) okd = doc.links.some((l) => l.k === k && !l.off);
+  if (!okd && o) okd = signKeyEq(o, doc.okey);
   if (!okd) okd = (await authRole(request)) === 'owner';
   if (!okd) return new Response('Forbidden', { status: 403 });
   const d = await kv().get('signs:ph:' + batch, { type: 'json' });
@@ -2251,8 +2276,12 @@ async function apiCrewPhoto(request, url) {
 
 // GET /api/signs — the crew map plus what only Mikey sees: links, phones,
 // credited leads and what those people have paid.
-async function apiSigns() {
+async function apiSigns(request) {
   const doc = await loadSigns();
+  if (!(await signOwner(request, doc))) return json({ ok: false, error: 'unauthorized' }, 401);
+  // His private link is made the first time he opens this signed in: one
+  // write, once. After that it's in Settings to copy, share or replace.
+  if (!doc.okey) { doc.okey = jdToken() + jdToken(); await saveSigns(doc); }
   const cfg = await loadConfig();
   const now = Date.now();
   const since = Date.parse(SIGN_SINCE + 'T00:00:00-07:00');
@@ -2276,16 +2305,39 @@ async function apiSigns() {
   const people = {};
   Object.keys(leads).forEach((p) => { const t = byPhone[p]; if (t) people[p] = { name: t.name || '', status: t.status || '' }; });
   return signState(doc, { hid: 'mikey', name: 'Mikey', owner: true },
-    { links: doc.links, leads, people, revenue, today: localDateStr(now, cfg.tz), since: SIGN_SINCE });
+    { links: doc.links, leads, people, revenue, today: localDateStr(now, cfg.tz), since: SIGN_SINCE, ownerKey: doc.okey });
+}
+
+// GET /api/signs/manifest?o=<key> — his yard-sign app's home-screen manifest.
+// An iPhone home-screen app keeps its own storage, apart from Safari, so it
+// opens start_url knowing nothing: the key has to ride in start_url or the
+// installed app would ask for a password. A wrong key gets the plain one.
+async function apiSignsManifest(url) {
+  const o = String(url.searchParams.get('o') || '');
+  const good = /^[A-Za-z0-9_-]{20,100}$/.test(o) && signKeyEq(o, (await loadSigns()).okey);
+  const m = {
+    id: '/yardsigns', name: "Mikey's Yard Signs", short_name: 'Yard Signs',
+    description: 'Where the signs are, who put them out, and what they brought in.',
+    start_url: '/signs?owner=1' + (good ? '&o=' + o : ''), scope: '/', display: 'standalone', orientation: 'portrait',
+    background_color: '#f6f4ef', theme_color: '#E31924',
+    icons: [{ src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any maskable' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any maskable' }],
+  };
+  return new Response(JSON.stringify(m), { headers: { 'Content-Type': 'application/manifest+json', 'Cache-Control': 'no-store' } });
 }
 
 // POST /api/signs { action, … } — Mikey's switches.
 async function apiSignsPost(request) {
   const b = await readJson(request);
   const doc = await loadSigns();
+  if (!(await signOwner(request, doc))) return json({ ok: false, error: 'unauthorized' }, 401);
   const act = String(b.action || '');
   const now = Date.now();
-  if (act === 'settings') {
+  if (act === 'key-new') {
+    doc.okey = jdToken() + jdToken();
+    await saveSigns(doc);
+    return json({ ok: true, ownerKey: doc.okey });
+  } else if (act === 'settings') {
     const c = b.cfg || {};
     const put = (k, lo, hi) => { const v = signNum(c[k], lo, hi); if (v != null) doc.cfg[k] = v; };
     put('pay', 0, 50); put('recheck', 2, 60); put('cap', 20, 400); put('cost', 0, 50); put('stock', 0, 100000);
