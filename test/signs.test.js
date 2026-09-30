@@ -62,11 +62,11 @@ const CODE = [
   'SIGN_PHOTO_TTL', 'SIGN_PHOTO_MAX', 'SIGN_STATUS', 'SIGN_SKIP',
 ].map(constant).concat([
   'loadSigns', 'saveSigns', 'sha256hex', 'signHid', 'signNum', 'signTxt', 'signNextUtcMidnight', 'signCredit',
-  'signWho', 'signState', 'apiCrewHello', 'apiCrewJoin', 'apiCrewState', 'signCleanPlaced', 'signCleanEvent',
-  'apiCrewSync', 'apiCrewPhoto', 'apiSignsPost',
+  'signKeyEq', 'signOwner', 'signWho', 'signState', 'apiCrewHello', 'apiCrewJoin', 'apiCrewState', 'signCleanPlaced', 'signCleanEvent',
+  'apiCrewSync', 'apiCrewPhoto', 'apiSignsPost', 'apiSignsManifest',
 ].map(lift)).join('\n\n');
 const X = new Function(...Object.keys(ctx), CODE + `
-  return { loadSigns, saveSigns, sha256hex, signCredit, apiCrewHello, apiCrewJoin, apiCrewState, apiCrewSync, apiCrewPhoto, apiSignsPost };`)(...Object.values(ctx));
+  return { loadSigns, saveSigns, sha256hex, signCredit, apiCrewHello, apiCrewJoin, apiCrewState, apiCrewSync, apiCrewPhoto, apiSignsPost, apiSignsManifest };`)(...Object.values(ctx));
 
 let pass = 0, fail = 0;
 const ok = (n, c, x) => { if (c) { pass++; console.log('  ✓', n); } else { fail++; console.log('  ✗', n, x !== undefined ? '→ ' + JSON.stringify(x) : ''); } };
@@ -218,6 +218,37 @@ section('Lead credit');
 await X.signCredit('+14255550199', { how: 'qr', name: 'Q', where: 'Everett' });
 await X.signCredit('+14255550199', { how: 'said', name: 'Q' });
 ok('first credit wins', (await X.loadSigns()).leads['+14255550199'].how === 'qr');
+
+section("Mikey's private link");
+const hreq = (body, key) => ({ __body: body, headers: { get: (n) => (n === 'X-Signs-Key' ? key : null) } });
+ROLE = '';
+r = await X.apiSignsPost(hreq({ action: 'settings', cfg: { pay: 3 } }));
+ok('no login and no key: refused', r.status === 401);
+ROLE = 'owner';
+const KEY1 = out(await X.apiSignsPost(req({ action: 'key-new' }))).ownerKey;
+ok('signed in, he can make his private link', typeof KEY1 === 'string' && KEY1.length >= 20, KEY1);
+ok('it is kept for next time', (await X.loadSigns()).okey === KEY1);
+ROLE = '';
+r = await X.apiSignsPost(hreq({ action: 'settings', cfg: { pay: 3 } }, KEY1));
+ok('the key alone opens his switches, no password', r.__json && r.__json.ok && (await X.loadSigns()).cfg.pay === 3, r);
+r = await X.apiSignsPost(hreq({ action: 'settings', cfg: { pay: 4 } }, KEY1.slice(0, -1) + 'Z'));
+ok('a wrong key is refused', r.status === 401 && (await X.loadSigns()).cfg.pay === 3);
+r = await X.apiSignsPost(hreq({ action: 'settings', cfg: { pay: 4 } }, ''));
+ok('an empty key is refused', r.status === 401);
+r = await X.apiCrewState(hreq({ asOwner: 1 }, KEY1));
+ok('his own sign placing works with the key', r.status !== 403 && r.status !== 401);
+ok('photos open with the key', (await X.apiCrewPhoto({}, new URL('https://x/api/crew/photo?b=' + batch + '&p=pid000003&o=' + KEY1))).status !== 403);
+ok('and not with a wrong one', (await X.apiCrewPhoto({}, new URL('https://x/api/crew/photo?b=' + batch + '&p=pid000003&o=nope'))).status === 403);
+let mf = JSON.parse(await (await X.apiSignsManifest(new URL('https://x/api/signs/manifest?o=' + KEY1))).text());
+ok('the home-screen app starts with the key in it', mf.start_url === '/signs?owner=1&o=' + KEY1, mf.start_url);
+mf = JSON.parse(await (await X.apiSignsManifest(new URL('https://x/api/signs/manifest?o=' + 'x'.repeat(40)))).text());
+ok('a wrong key gets the plain app, not an echo', mf.start_url === '/signs?owner=1', mf.start_url);
+const KEY2 = out(await X.apiSignsPost(hreq({ action: 'key-new' }, KEY1))).ownerKey;
+ok('a new link can be made from the key', KEY2 && KEY2 !== KEY1);
+r = await X.apiSignsPost(hreq({ action: 'settings', cfg: { pay: 5 } }, KEY1));
+ok('and the old one stops working', r.status === 401);
+const crewView = await (await X.apiCrewState(req({ k: K, h: A.h, s: A.s }))).text();
+ok('the key never goes to the crew', /"ok":true/.test(crewView) && crewView.indexOf(KEY2) < 0 && !/okey|ownerKey/.test(crewView), crewView.slice(0, 200));
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

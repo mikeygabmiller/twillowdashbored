@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="same-origin">
 <meta name="theme-color" content="#E31924">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Yard Signs">
@@ -12,9 +13,10 @@
 <link rel="apple-touch-icon" href="/icon-180.png">
 <link rel="manifest" href="/signs-owner.webmanifest">
 <!-- Mikey's dedicated link: https://texting.mikeysdetailingsnohomish.workers.dev/yardsigns
-     It is the Sign Crew app in his view (Crew, Results, Settings), which
-     signs in on its own. -->
-<script>location.replace("/signs?owner=1");</script>
+     It is the Sign Crew app in his view (Crew, Results, Settings). With his
+     private key (/yardsigns?o=...) it opens with no password; the key rides
+     along to the page. -->
+<script>var o=(location.search.match(/[?&]o=([A-Za-z0-9_-]{20,100})/)||[])[1];location.replace("/signs?owner=1"+(o?"&o="+o:""));</script>
 </head>
 <body style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;padding:24px"><a href="/signs?owner=1">Open Yard signs</a></body>
 </html>

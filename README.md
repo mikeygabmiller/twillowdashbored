@@ -574,6 +574,13 @@ median days a sign lasts, which towns keep them, leads and money) and
 **Settings** (pay per sign, photo rule, sign cost, stock, no-go areas, the daily
 upload cap).
 
+**Mikey's private link** is `/yardsigns?o=<key>` (Settings → Your private link:
+copy, share, or make a new one, which kills the old). It opens his view with no
+password on any phone and installs as its own home-screen app with the key in
+its start address. The key is made the first time he opens the page signed in,
+is checked by `signOwner` on `/api/signs` and the crew routes only, and never
+opens the rest of the dashboard.
+
 The Map tab draws one dot per corner (its best open side; the popup lists both
 sides), switches to **Satellite**, and every spot has a **Street View** button
 turned to the verge where the sign goes. In Mikey's view a corner can be hidden

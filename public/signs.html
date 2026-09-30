@@ -7,6 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Sign Crew">
 <meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="same-origin">
 <title>Mikey's Sign Crew</title>
 <link rel="icon" href="/favicon.svg">
 <link rel="apple-touch-icon" href="/icon-180.png">
@@ -14,7 +15,11 @@
 <script>
   // Mikey's own copy (/yardsigns, or ?owner=1) installs as its own home-screen
   // app that opens straight back to his view, not to the crew's join screen.
-  if(/[?&]owner=1/.test(location.search))document.getElementById("mf").href="/signs-owner.webmanifest";
+  // With his private link's key, the installed app carries the key in its own
+  // start address, because a home-screen app on an iPhone can't see Safari's storage.
+  (function(){var o=(location.search.match(/[?&]o=([A-Za-z0-9_-]{20,100})/)||[])[1];
+    if(!o){try{o=JSON.parse(localStorage.getItem("mkd-signs-owner")||"null")}catch(e){}}
+    if(/[?&](owner=1|o=)/.test(location.search))document.getElementById("mf").href=o?"/api/signs/manifest?o="+o:"/signs-owner.webmanifest";})();
 </script>
 <style>
   /* Used outside, in daylight, often with one hand on a sign: a light page
@@ -148,7 +153,12 @@
   var COMPASS=["north","northeast","east","southeast","south","southwest","west","northwest"];
   var SKIPS=[["none","No good spot (curb, no grass)"],["taken","Already a sign here"],["hoa","HOA or private, it'll get pulled"],["unsafe","Not safe to stop"],["private","Someone asked me not to"],["other","Something else"]];
   var qs=new URLSearchParams(location.search);
-  var OWNER=qs.get("owner")==="1";
+  // Mikey's private link: /yardsigns?o=<key>. The key opens his view with no
+  // password and is kept on the phone, so next time the plain /yardsigns works too.
+  var LS_OKEY="mkd-signs-owner";
+  var OKEY=(/^[A-Za-z0-9_-]{20,100}$/.test(qs.get("o")||"")?qs.get("o"):"")||load(LS_OKEY)||"";
+  if(qs.get("o")&&OKEY===qs.get("o"))save(LS_OKEY,OKEY);
+  var OWNER=qs.get("owner")==="1"||!!qs.get("o");
   // Opened from the installed dashboard there's no browser back button.
   if(OWNER)document.getElementById("hBack").classList.remove("hide");
   var S={tab:"go",data:null,spots:null,err:"",count:10,where:"near",town:"",plan:null,me:null,watch:null,wake:null,
@@ -176,20 +186,33 @@
 
   // ---- talking to the Worker -------------------------------------------------
   function auth(b){b=b||{};if(OWNER)b.asOwner=1;else if(ID){b.k=ID.k;b.h=ID.h;b.s=ID.s}return b}
+  function ownerHeaders(h){h=h||{};if(OWNER&&OKEY)h["X-Signs-Key"]=OKEY;return h}
+  // Keep the key he has now: in storage, in the address (so Add to Home Screen
+  // takes it along) and in the manifest.
+  function setOwnerKey(k){
+    if(!k||k===OKEY)return;OKEY=k;save(LS_OKEY,k);
+    try{history.replaceState(null,"",location.pathname+"?owner=1&o="+k)}catch(e){}
+    var mf=el("mf");if(mf)mf.href="/api/signs/manifest?o="+k;
+  }
+  function ownerLink(){return location.origin+"/yardsigns?o="+OKEY}
   function post(path,body){
-    return fetch(path,{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})})
+    return fetch(path,{method:"POST",credentials:"same-origin",headers:ownerHeaders({"Content-Type":"application/json"}),body:JSON.stringify(body||{})})
       .then(function(r){return r.json().catch(function(){return {ok:false,error:"bad_reply"}}).then(function(j){j._status=r.status;return j})});
   }
   function getState(){
     // A reply that isn't JSON (a Worker error page) still says what happened,
     // and a request that never answers gives up after 15 s: "Loading…"
     // forever reads as "the button did nothing".
-    var p=OWNER?fetch("/api/signs",{credentials:"same-origin",cache:"no-store"}).then(function(r){return r.text().then(function(t){
+    var p=OWNER?fetch("/api/signs",{credentials:"same-origin",cache:"no-store",headers:ownerHeaders()}).then(function(r){return r.text().then(function(t){
       var j;try{j=JSON.parse(t)}catch(e){j={ok:false,error:"server said "+r.status}}j._status=r.status;return j})}):post("/api/crew/state",auth({}));
     var clock=new Promise(function(res){setTimeout(function(){res({ok:false,error:"no answer in 15 seconds"})},15000)});
     return Promise.race([p,clock]).then(function(d){
-      if(d&&d.ok){S.data=d;S.err="";model();}
-      else if(d&&(d._status===401||d.error==="unauthorized"))S.err="owner-login";
+      if(d&&d.ok){S.data=d;S.err="";if(OWNER&&d.ownerKey)setOwnerKey(d.ownerKey);model();}
+      else if(d&&(d._status===401||d.error==="unauthorized")){
+        // A key that stopped working was replaced by a newer link.
+        if(OKEY){S.keyGone=true;OKEY="";save(LS_OKEY,null)}
+        S.err="owner-login";
+      }
       else if(d&&d.error==="link_off")S.err="link_off";
       else if(d&&d.error==="helper_off")S.err="helper_off";
       else if(d&&d.error==="who"){
@@ -531,7 +554,7 @@
     });
     return h+'</div>';
   }
-  function photoUrl(s){return "/api/crew/photo?b="+encodeURIComponent(s.batch)+"&p="+encodeURIComponent(s.pid)+(OWNER?"":"&k="+encodeURIComponent(ID.k))}
+  function photoUrl(s){return "/api/crew/photo?b="+encodeURIComponent(s.batch)+"&p="+encodeURIComponent(s.pid)+(OWNER?(OKEY?"&o="+encodeURIComponent(OKEY):""):"&k="+encodeURIComponent(ID.k))}
 
   function howTab(){
     return '<div class="card guide"><h2>Where a sign goes</h2><ul>'+
@@ -608,7 +631,10 @@
   }
   function settingsTab(){
     var c=S.data.cfg||{};
-    var h='<div class="card"><h2>Settings</h2>'+
+    var h='<div class="card"><h2>Your private link</h2><p class="small muted">Opens this page with no password, on any phone. Keep it to yourself: it shows your leads\' names and numbers. Add it to your home screen once and it\'s an app.</p>'+
+      (OKEY?'<p class="small" style="word-break:break-all;margin:8px 0"><b id="okLink">'+esc(ownerLink())+'</b></p><div class="grid2"><button class="btn red" id="okCopy">Copy link</button><button class="btn" id="okShare">Share</button></div>':'')+
+      '<button class="btn ghost block" id="okNew" style="margin-top:8px">'+(OKEY?'Make a new link (the old one stops working)':'Make my private link')+'</button></div>';
+    h+='<div class="card"><h2>Settings</h2>'+
       '<label class="f">Pay per sign placed ($, 0 for none)<input id="sPay" type="number" step="0.25" min="0" value="'+(c.pay||0)+'"></label>'+
       '<label class="f">Photo of each sign<select id="sPhoto"><option value="need"'+(c.photo==="need"?" selected":"")+'>Needed to get paid</option><option value="ask"'+(c.photo==="ask"?" selected":"")+'>Asked for, can skip</option><option value="off"'+(c.photo==="off"?" selected":"")+'>Off</option></select></label>'+
       '<label class="f">Ask for a check after (days)<input id="sRecheck" type="number" min="2" max="60" value="'+(c.recheck||7)+'"></label>'+
@@ -662,6 +688,10 @@
     if(el("sSave"))el("sSave").onclick=function(){ownerPost({action:"settings",cfg:{pay:+el("sPay").value,photo:el("sPhoto").value,recheck:+el("sRecheck").value,cost:+el("sCost").value,stock:+el("sStock").value,cap:+el("sCap").value}},"Saved")};
     if(el("mapPlan"))el("mapPlan").onclick=function(){if(!S.map)return;var b=S.map.getBounds();planFor(function(sp){return b.contains([sp.lat,sp.lon])},"")};
     if(el("mapMe"))el("mapMe").onclick=function(){locate(function(me){if(me&&S.map)S.map.setView(me,15)})};
+    if(el("okCopy"))el("okCopy").onclick=function(){var t=ownerLink();(navigator.clipboard?navigator.clipboard.writeText(t):Promise.reject()).then(function(){toast("Copied")}).catch(function(){prompt("Copy your link:",t)})};
+    if(el("okShare"))el("okShare").onclick=function(){if(navigator.share)navigator.share({title:"Yard signs",url:ownerLink()}).catch(function(){});else el("okCopy").click()};
+    if(el("okNew"))el("okNew").onclick=function(){if(OKEY&&!confirm("Make a new private link? The old one stops working on every phone that has it, this one included until it loads the new one."))return;
+      post("/api/signs",{action:"key-new"}).then(function(d){if(d&&d.ok&&d.ownerKey){OKEY="";setOwnerKey(d.ownerKey);toast("New link made. Copy it now.");render()}else toast("Couldn't make it: "+((d&&d.error)||"no signal"))})};
     if(el("nogoBtn"))el("nogoBtn").onclick=function(){S.nogoMode=!S.nogoMode;el("nogoBtn").textContent=S.nogoMode?"Tap the map where signs should never go…":"Add a no-go area"};
   }
   function ownerPost(body,msg){post("/api/signs",body).then(function(d){if(d&&d.ok){toast(msg||"Done");getState().then(render)}else toast("Couldn't save: "+((d&&d.error)||"no signal"))})}
@@ -880,7 +910,8 @@
   // login: it signs in itself, with the same password, through the same
   // /api/login (same lockout after wrong guesses).
   function renderOwnerLogin(){
-    el("app").innerHTML='<div class="card"><h2>Yard signs</h2><p class="muted">Sign in with your dashboard password.</p>'+
+    el("app").innerHTML='<div class="card"><h2>Yard signs</h2>'+(S.keyGone?'<p class="bad small">That private link was replaced by a newer one. Open the new link, or sign in here once.</p>':'')+
+      '<p class="muted">Sign in once with your dashboard password. After that this phone opens straight in, and Settings has a private link that needs no password at all.</p>'+
       '<label class="f">Password<input id="oPw" type="password" autocomplete="current-password"></label>'+
       '<button class="btn red block" id="oGo">Sign in</button><div class="bad small" id="oErr" style="margin-top:8px"></div></div>';
     var go=function(){var pw=el("oPw").value;if(!pw)return;el("oGo").disabled=true;
