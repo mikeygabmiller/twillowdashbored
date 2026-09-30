@@ -134,6 +134,11 @@ await page.waitForTimeout(600);
 ok('the reservation went up right away', syncs.some((s) => s.plan && s.plan.spots.length === 5), syncs.map((s) => s.plan));
 ok('drive mode shows the first stop', /Stop 1 of 5/.test(await page.textContent('#drive')));
 ok('it says which side and which way', /Right side of .+ facing cars heading/.test(await page.textContent('#drive')));
+ok('directions give the checked distance back and past the curb', await page.evaluate(() => {
+  const t = window.__signs.howTo({ road: 'Main St', head: 0, ctrl: 'sig', back: 37, side: 2.5 });
+  return /About 120 ft before the light/.test(t) && /about 10 ft past the curb/.test(t) && /The pin is the spot/.test(t);
+}));
+ok('and an old list without them still reads', /About 100 ft before it/.test(await page.evaluate(() => window.__signs.howTo({ road: 'Main St', head: 0, ctrl: 'sig' }))));
 ok('with a Street View look at the verge first', /map_action=pano&viewpoint=/.test(await page.getAttribute('#dSv', 'href')));
 await context.setGeolocation({ latitude: plan[0].lat, longitude: plan[0].lon, accuracy: 5 });
 await page.waitForFunction(() => /You're here/.test(document.querySelector('#drive').textContent), null, { timeout: 12000 }).catch(() => {});
@@ -167,6 +172,7 @@ await page.click('[data-tab="map"]');
 await page.waitForTimeout(1200);
 if (LEAF['leaflet.min.js']) {
   ok('the map draws spots', (await page.$$('.leaflet-interactive')).length > 5);
+  ok('the map stays under the header when the page scrolls', await page.evaluate(() => { const c = getComputedStyle(document.getElementById('map')); return c.position === 'relative' && c.zIndex === '0' && c.isolation === 'isolate'; }));
   ok('a Satellite view to switch to', /Satellite/.test(await page.textContent('.leaflet-control-layers')));
   const dots = await page.evaluate(() => { const out = []; window.__signs.S.map.eachLayer((l) => { if (l.getPopup && l.getPopup() && l.getLatLng && /#E31924|#f97316|#facc15/.test(l.options.fillColor)) out.push(l.getLatLng()); }); return out; });
   const jxAt = await page.evaluate((d) => d.map((p) => { const s = window.__signs.S.spots.find((x) => x.lat === p.lat && x.lon === p.lng); return s ? s.jx : null; }).filter((x) => x !== null), dots);

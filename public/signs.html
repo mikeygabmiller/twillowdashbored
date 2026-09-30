@@ -95,7 +95,9 @@
   label.f input,label.f select{display:block;width:100%;margin-top:4px;padding:11px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);font-size:16px}
   .banner{padding:10px 12px;border-radius:12px;margin:10px 0;font-size:14px}
   .banner.a{background:var(--amberbg);color:var(--amber)} .banner.g{background:var(--greenbg);color:var(--green)} .banner.r{background:var(--redbg);color:var(--red)} .banner.b{background:var(--bluebg);color:var(--blue)}
-  #map{height:62vh;border-radius:16px;margin-top:12px;border:1px solid var(--line);background:var(--card2)}
+  /* Its own stacking layer: Leaflet's panes and buttons sit at z-index 400 to
+     1000, which drew the map over the red header when the page scrolled. */
+  #map{height:62vh;border-radius:16px;margin-top:12px;border:1px solid var(--line);background:var(--card2);position:relative;z-index:0;isolation:isolate}
   .leaflet-container{font:inherit}
   .pop b{display:block;font-size:14px} .pop small{display:block;color:#555;font-size:12px}
   .pop .row{margin-top:6px;flex-wrap:wrap;gap:4px}
@@ -231,7 +233,7 @@
       var c=j.cols,ix={};c.forEach(function(k,i){ix[k]=i});
       S.spotMeta=j;
       S.spots=j.spots.map(function(r){return {id:r[ix.id],lat:r[ix.lat],lon:r[ix.lon],score:r[ix.score],ctrl:r[ix.ctrl],aadt:r[ix.aadt],spd:r[ix.spd],
-        head:r[ix.head],road:r[ix.road],cross:r[ix.cross],town:r[ix.town],flags:r[ix.flags]||"",jx:r[ix.jx]}});
+        head:r[ix.head],road:r[ix.road],cross:r[ix.cross],town:r[ix.town],flags:r[ix.flags]||"",jx:r[ix.jx],back:ix.back!=null?r[ix.back]:0,side:ix.side!=null?r[ix.side]:0}});
       S.spotById={};S.spots.forEach(function(s){S.spotById[s.id]=s});
       return S.spots;
     });
@@ -406,6 +408,14 @@
   // Plain words for one stop.
   function howTo(sp){
     var at={sig:"the light",stop:"the stop sign",all:"the stop sign",minor:"the corner",rab:"the roundabout",thru:"the intersection"}[sp.ctrl]||"the corner";
+    // The pin is checked against the aerial photo and sits on grass, so the
+    // words give its real distance back and past the curb, not a rule of thumb.
+    if(sp.back){
+      var ft=function(m){return Math.max(10,Math.round(m*3.28084/10)*10)+" ft"};
+      var where={sig:"before the light, where the line of cars stops",stop:"before the stop sign, beside where the car waits",all:"before the stop sign, beside where the car waits",
+        minor:"back from the corner, where cars wait to pull out",rab:"before the roundabout",thru:"before the intersection"}[sp.ctrl]||"before the corner";
+      return "Right side of "+sp.road+", facing cars heading "+compass(sp.head)+" toward "+at+". About "+ft(sp.back)+" "+where+", on the grass about "+ft(Math.max(1,sp.side||0))+" past the curb. The pin is the spot. Turn the sign a little toward the cars.";
+    }
     var back={sig:"About 100 ft before it, where the line of cars stops",stop:"Right beside the stop sign, where the car waits",all:"Right beside the stop sign, where the car waits",
       minor:"Right at the corner, where cars wait to pull out",rab:"About 80 ft before the roundabout",thru:"About 150 ft before the intersection"}[sp.ctrl];
     return "Right side of "+sp.road+", facing cars heading "+compass(sp.head)+" toward "+at+". "+back+", on the grass. Turn it a little toward the cars.";
