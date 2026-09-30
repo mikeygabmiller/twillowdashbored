@@ -581,6 +581,14 @@ its start address. The key is made the first time he opens the page signed in,
 is checked by `signOwner` on `/api/signs` and the crew routes only, and never
 opens the rest of the dashboard.
 
+**Check** (Mikey only) steps through open spots best first on a zoomed
+satellite view with the pin and the drivers' direction drawn: Good puts a spot
+ahead of unchecked ones and badges it "checked by Mikey", Bad takes it off every
+map (`rev` in `signs:v1`, 1 good / 0 bad). Taps queue on the phone and go up ten
+at a time as one write. The spot list places pins on grass from the aerial
+photo, and about 1 in 10 to 1 in 5 still sits against a shrub or small tree the
+data can't see; this is how those get caught before a helper drives there.
+
 The Map tab draws one dot per corner (its best open side; the popup lists both
 sides), switches to **Satellite**, and every spot has a **Street View** button
 turned to the verge where the sign goes. In Mikey's view a corner can be hidden

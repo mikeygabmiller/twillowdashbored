@@ -219,6 +219,20 @@ await X.signCredit('+14255550199', { how: 'qr', name: 'Q', where: 'Everett' });
 await X.signCredit('+14255550199', { how: 'said', name: 'Q' });
 ok('first credit wins', (await X.loadSigns()).leads['+14255550199'].how === 'qr');
 
+section("Mikey's pin check");
+ROLE = 'owner';
+r = out(await X.apiSignsPost(req({ action: 'review', good: ['u6b59N', 'abc12NE'], bad: ['u6tyrW', '<script>'] })));
+let d0 = await X.loadSigns();
+ok('good and bad marks are stored in one write', r.ok && d0.rev.u6b59N === 1 && d0.rev.abc12NE === 1 && d0.rev.u6tyrW === 0, d0.rev);
+ok('anything that is not a spot id is ignored', !('<script>' in d0.rev));
+await X.apiSignsPost(req({ action: 'review', undo: ['abc12NE'] }));
+ok('a mark can be undone', !('abc12NE' in (await X.loadSigns()).rev));
+const crewSees = await (await X.apiCrewState(req({ k: K, h: A.h, s: A.s }))).text();
+ok('the crew gets the marks, so a bad pin is off their map too', /"rev":\{[^}]*"u6tyrW":0/.test(crewSees), crewSees.slice(0, 200));
+ROLE = '';
+r = await X.apiSignsPost(req({ action: 'review', good: ['zzz99N'] }));
+ok('a helper cannot mark pins', r.status === 401 && !('zzz99N' in (await X.loadSigns()).rev));
+
 section("Mikey's private link");
 const hreq = (body, key) => ({ __body: body, headers: { get: (n) => (n === 'X-Signs-Key' ? key : null) } });
 ROLE = '';

@@ -140,7 +140,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-30·signs-private-link';
+const BUILD = '2026-09-30·signs-pin-check';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -1993,7 +1993,7 @@ async function loadSigns() {
   return {
     cfg: Object.assign({ pay: 0, photo: 'ask', recheck: 7, cap: SIGN_CAP_DEFAULT, cost: 0, stock: 0 }, d.cfg || {}),
     links: d.links || [], crew: d.crew || {}, nogo: d.nogo || [], marks: d.marks || {},
-    leads: d.leads || {}, joins: d.joins || { d: '', n: 0 }, okey: d.okey || '',
+    leads: d.leads || {}, joins: d.joins || { d: '', n: 0 }, okey: d.okey || '', rev: d.rev || {},
   };
 }
 async function saveSigns(doc) { await kv().put(SIGN_KEY, JSON.stringify(doc)); }
@@ -2072,7 +2072,7 @@ async function signState(doc, who, extra) {
   const head = Object.assign({
     ok: true, now: Date.now(), me: { id: who.hid, name: who.name || (crew[who.hid] && crew[who.hid].name) || '' },
     owner: !!who.owner, cfg: who.owner ? c : { pay: c.pay, photo: c.photo, recheck: c.recheck },
-    crew, nogo: doc.nogo, marks: doc.marks,
+    crew, nogo: doc.nogo, marks: doc.marks, rev: doc.rev,
   }, extra || {});
   // The head's closing brace is swapped for the docs array and put back after
   // it. (Spelled as a char code: the test suite lifts functions out of this
@@ -2333,7 +2333,20 @@ async function apiSignsPost(request) {
   if (!(await signOwner(request, doc))) return json({ ok: false, error: 'unauthorized' }, 401);
   const act = String(b.action || '');
   const now = Date.now();
-  if (act === 'key-new') {
+  if (act === 'review') {
+    // Mikey's pin check: 1 = he looked at the photo and it's a good spot,
+    // 0 = bad (off the map for everyone). Sent in batches from his phone, so a
+    // run of fifty taps is one write, not fifty.
+    const idOk = (v) => /^[a-z0-9]{2,20}$/i.test(String(v || ''));
+    const take = (v) => (Array.isArray(v) ? v.slice(0, 300).filter(idOk) : []);
+    take(b.good).forEach((id) => { doc.rev[id] = 1; });
+    take(b.bad).forEach((id) => { doc.rev[id] = 0; });
+    take(b.undo).forEach((id) => { delete doc.rev[id]; });
+    const keys = Object.keys(doc.rev);
+    if (keys.length > 8000) return json({ ok: false, error: 'too_many' }, 422);
+    await saveSigns(doc);
+    return json({ ok: true, reviewed: keys.length });
+  } else if (act === 'key-new') {
     doc.okey = jdToken() + jdToken();
     await saveSigns(doc);
     return json({ ok: true, ownerKey: doc.okey });
