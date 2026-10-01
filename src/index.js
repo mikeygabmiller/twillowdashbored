@@ -157,7 +157,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-01·signs-learner';
+const BUILD = '2026-10-01·booking-calendar-2';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -196,6 +196,8 @@ async function runCron() {
   await seedPlaybookIfNeeded();
   await dispatchDueScheduled();
   await dispatchDueReminders();
+  // A week, 3 days and a day before every booked job: email and a push.
+  await dispatchBookingHeadsUps().catch(() => {});
   // The helper's own follow-up reminders buzz THEIR phone, never Mikey's inbox.
   await dispatchHelperFollowups().catch(() => {});
   // "Ruth has been waiting two hours." One email per unanswered text.
@@ -590,6 +592,8 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/booking-settings') return apiBookingSettings();
   if (request.method === 'POST' && pathname === '/api/booking-settings') return apiSaveBookingSettings(request);
   if (request.method === 'POST' && pathname === '/api/booking-cal-test') return apiCalTest(request);
+  if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/gcal-setup') return apiGcalSetup(request);
+  if (request.method === 'POST' && pathname === '/api/gcal-sync-all') return apiGcalSyncAll();
   if (request.method === 'POST' && pathname === '/api/block')      return apiBlock(request);
   // ---- Calls (the phone log Google Voice used to be the only place to see) ----
   if (request.method === 'GET'  && pathname === '/api/calls')      return apiCalls();
@@ -15455,7 +15459,7 @@ function mailBtn(href, label, bg, opts = {}) {
 // leads, anything the sender put in quotes becomes the loud block, and each
 // "📱 HEADER"-style line starts a new section. Text stays the source of truth,
 // so an alert that's never seen this function still looks right.
-function alertHtml(subject, text) {
+function alertHtml(subject, text, extra) {
   const src = String(text || '').replace(/\r\n/g, '\n');
   const blocks = [];
   let lead = true;
@@ -15492,6 +15496,9 @@ function alertHtml(subject, text) {
   }
   if (!blocks.length) blocks.push(mailCard(`<div style="font:600 18px/1.55 ${MAILF};color:${MAILC.ink};">${mailLines(src) || htmlEsc(subject)}</div>`));
   const base = publicBase();
+  // `extra` is a ready-made card the caller wants above the dashboard button,
+  // like a booking's "Add to Google Calendar".
+  if (extra) blocks.push(extra);
   if (base) blocks.push(mailCard(mailBtn(base, 'Open the dashboard', MAILC.ink)));
   // The cut marker has to be the first thing in the email and the ref the last,
   // or a reply to this alert stops routing (see assistAlertHtml). An alert that
@@ -16710,9 +16717,13 @@ async function apiBook(request) {
     location: city, notes: rec.notes, appointment: `${dateLabel} at ${bkFmt12(slot)}` });
   if (landedFrom === 'yardsign') await signCredit(phone, { how: 'qr', name, where: city });
   if (landedFrom === 'doorhanger') await hangerCredit(phone, { how: 'qr', name, where: city });
-  notifyMikey(`🗓 New booking — ${name}`, `${detail}\n\n` + (instant
+  // Onto his Google Calendar (if he's connected it), then the alert with a
+  // headline on the push and a calendar button in the email.
+  background(bkGcalSync(rec));
+  try { await kv().put('push:note', JSON.stringify({ title: `🗓 New booking: ${name}`, body: `${rec.serviceName}, ${dateLabel} at ${bkFmt12(slot)}${city ? `, ${city}` : ''}`, at: Date.now() }), { expirationTtl: 900 }); } catch (e) {}
+  notifyMikey(`🗓 New booking — ${name}`, bkAlertBody(rec, `${detail}\n\n` + (instant
     ? `It's on your schedule. Dashboard → Bookings if you need to move or cancel it.`
-    : `Open your dashboard → Bookings to confirm.`)).catch(() => {});
+    : `Open your dashboard → Bookings to confirm.`))).catch(() => {});
 
   return cors(json({ ok: true, id: rec.id, status: rec.status }, 200));
 }
@@ -16956,7 +16967,252 @@ async function apiBookingAction(request) {
   }
 
   await saveBookings(all);
+  // Keep his Google Calendar in step: the title drops "NOT CONFIRMED" on a
+  // confirm, the event goes on a cancel or decline.
+  background(bkGcalSync(bk));
   return json({ ok: true, booking: bk, texted });
+}
+
+// ===========================================================================
+// Bookings ONTO his Google Calendar
+// ===========================================================================
+// The iCal sync below only READS his calendar, to hide times he's busy. Nothing
+// ever wrote a booking back, so a job booked on the site never showed up on his
+// phone's calendar, and "✓ Connected" on that test made it look like it would.
+//
+// Writing needs Google to trust us with his calendar. A service account would
+// put events on it, but the reminders on an event belong to whoever made it,
+// so Google's own notifications would ring the robot, not him. A tiny Apps
+// Script deployed from HIS account runs as him: the events are his, and the
+// popups he asked for (a week, 3 days, a day, 2 hours, 30 minutes) are his.
+// The dashboard posts to it with a key only it and the script know.
+//
+// Best-effort by design: a Google hiccup must never cost a booking, so every
+// call here is backgrounded and never throws. The dashboard's own reminders
+// (dispatchBookingHeadsUps) don't depend on any of this.
+const GCAL_KV = 'gcal:push';                 // { url, key } — written only during setup
+const GCAL_POPUPS = [10080, 4320, 1440, 120, 30];  // minutes before; Google allows 5
+const GCAL_SCRIPT = `// Mikey's Detailing: puts every booking on your Google Calendar.
+//
+// This runs inside YOUR Google account, as you, so the events are yours and
+// Google's own phone notifications fire for them. The dashboard sends it each
+// new booking, each confirm and each cancel. Setup steps are in the dashboard:
+// Bookings, Settings, "Put bookings on my Google Calendar".
+//
+// Don't share the link you get when you deploy this. The key below is what
+// stops anyone else adding events to your calendar, and the dashboard fills it in.
+var KEY = '__KEY__';
+var TAG = 'mikeyBookingId';
+
+function doPost(e) {
+  try {
+    var d = JSON.parse(e.postData.contents);
+    if (d.key !== KEY) return reply({ ok: false, error: 'wrong key' });
+    var cal = CalendarApp.getDefaultCalendar();
+    if (d.op === 'ping') return reply({ ok: true, calendar: cal.getName() });
+    var found = findEvent(cal, d.id);
+    if (d.op === 'delete') {
+      if (found) found.deleteEvent();
+      return reply({ ok: true, deleted: !!found });
+    }
+    if (d.op === 'upsert') {
+      var start = new Date(d.start), end = new Date(d.end);
+      var ev = found;
+      if (ev) {
+        ev.setTime(start, end);
+        ev.setTitle(d.title);
+        ev.setLocation(d.location || '');
+        ev.setDescription(d.description || '');
+      } else {
+        ev = cal.createEvent(d.title, start, end, { location: d.location || '', description: d.description || '' });
+        ev.setTag(TAG, String(d.id));
+      }
+      ev.removeAllReminders();
+      (d.popups || []).slice(0, 5).forEach(function (m) { ev.addPopupReminder(m); });
+      return reply({ ok: true, created: !found });
+    }
+    return reply({ ok: false, error: 'unknown op' });
+  } catch (err) {
+    return reply({ ok: false, error: String(err) });
+  }
+}
+
+// Finds the event for a booking by the tag it was created with, so a confirm or
+// a cancel lands on the same event instead of adding a second one.
+function findEvent(cal, id) {
+  if (!id) return null;
+  var from = new Date(Date.now() - 90 * 86400000), to = new Date(Date.now() + 400 * 86400000);
+  var evs = cal.getEvents(from, to);
+  for (var i = 0; i < evs.length; i++) if (evs[i].getTag(TAG) === String(id)) return evs[i];
+  return null;
+}
+
+function reply(o) {
+  return ContentService.createTextOutput(JSON.stringify(o)).setMimeType(ContentService.MimeType.JSON);
+}
+`;
+
+async function gcalLoad() { return (await kv().get(GCAL_KV, { type: 'json' })) || {}; }
+
+async function gcalPost(payload, g) {
+  g = g || await gcalLoad();
+  if (!g.url || !g.key) return { ok: false, error: 'not_set_up' };
+  try {
+    // text/plain, because Apps Script reads the body the same either way and
+    // a plain POST is the one it never answers with a login page.
+    const res = await fetch(g.url, { method: 'POST', redirect: 'follow',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify(Object.assign({ key: g.key }, payload)) });
+    const txt = await res.text();
+    try { return JSON.parse(txt); }
+    catch { return { ok: false, error: `Google answered with a page, not the script (${res.status}). Check "Who has access" is set to Anyone.` }; }
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+}
+
+// What lands on the calendar. The title leads with what he needs at a glance in
+// the week view, and a request he hasn't confirmed says so loudly.
+function bkGcalEvent(bk) {
+  const head = bk.status === 'pending' ? '❓ NOT CONFIRMED: ' : bk.status === 'done' ? '✅ ' : '🚗 ';
+  const base = publicBase();
+  return {
+    id: bk.id,
+    title: `${head}${bk.serviceName} · ${bk.name}${bk.city ? ` (${bk.city})` : ''}`,
+    start: bk.apptAt,
+    end: bk.apptAt + (Number(bk.durationMin) || 180) * 60000,
+    location: [bk.address, bk.city].filter(Boolean).join(', '),
+    description: [
+      `${bk.serviceName} · ${bk.sizeLabel || bk.size}${bk.vehicle ? ` · ${bk.vehicle}` : ''}`,
+      bk.addons && bk.addons.length ? `Add-ons: ${bk.addons.join(', ')}` : '',
+      `Estimate: $${bk.estimate}`,
+      `Phone: ${bk.phone}`,
+      bk.notes ? `Notes: ${bk.notes}` : '',
+      bk.status === 'pending' ? 'Not confirmed yet: Dashboard → Bookings to confirm it.' : '',
+      base ? `${base}/?c=${bk.phone}` : '',
+    ].filter(Boolean).join('\n'),
+    popups: GCAL_POPUPS,
+  };
+}
+
+// One booking, whatever its state: on the calendar while it's a job, off it
+// once it's declined or cancelled. Never throws.
+async function bkGcalSync(bk) {
+  try {
+    if (!bk || !bk.id) return { ok: false };
+    if (bk.status === 'declined' || bk.status === 'cancelled') return await gcalPost({ op: 'delete', id: bk.id });
+    return await gcalPost(Object.assign({ op: 'upsert' }, bkGcalEvent(bk)));
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+}
+
+// "Add to Google Calendar" as a link, for the booking emails. Works with no
+// setup at all, so the button is there even before the script is.
+function bkGcalLink(bk) {
+  const ev = bkGcalEvent(bk);
+  const p = new URLSearchParams({
+    action: 'TEMPLATE',
+    text: ev.title.replace(/^❓ NOT CONFIRMED: /, ''),
+    dates: `${icsStamp(ev.start)}/${icsStamp(ev.end)}`,
+    location: ev.location,
+    details: ev.description,
+  });
+  return `https://calendar.google.com/calendar/render?${p.toString()}`;
+}
+
+// A booking alert as an email with the calendar button under the words.
+function bkAlertBody(bk, text) {
+  return { text, html: alertHtml(text.split('\n')[0], text,
+    mailCard(mailBtn(bkGcalLink(bk), '📅  Add to Google Calendar', MAILC.blue))) };
+}
+
+// Settings → "Put bookings on my Google Calendar". GET hands back the script
+// with his key already in it (made once, here); POST saves the link he got
+// from deploying it and proves it works with a ping.
+async function apiGcalSetup(request) {
+  let g = await gcalLoad();
+  if (request.method === 'GET') {
+    if (!g.key) {
+      g = { url: g.url || '', key: genId() + genId() + genId() };
+      await kv().put(GCAL_KV, JSON.stringify(g));
+    }
+    return json({ ok: true, connected: !!g.url, url: g.url || '', script: GCAL_SCRIPT.replace('__KEY__', g.key) });
+  }
+  const d = await readJson(request);
+  const url = jdStr(d.url, 300);
+  if (url && !/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(url)) {
+    return json({ ok: false, error: 'That isn\'t a web app link. It starts https://script.google.com/macros/s/ and ends /exec.' });
+  }
+  if (!g.key) return json({ ok: false, error: 'Copy the script first.' });
+  const next = { url, key: g.key };
+  if (url) {
+    const r = await gcalPost({ op: 'ping' }, next);
+    if (!r.ok) return json({ ok: false, error: r.error || 'The script did not answer.' });
+    await kv().put(GCAL_KV, JSON.stringify(next));
+    return json({ ok: true, connected: true, calendar: r.calendar || '' });
+  }
+  await kv().put(GCAL_KV, JSON.stringify(next));
+  return json({ ok: true, connected: false });
+}
+
+// Puts every upcoming job on the calendar in one go: the bookings that came in
+// before this existed, and the fix if a sync ever failed. Safe to tap twice,
+// because the script finds a booking's event before it makes one.
+async function apiGcalSyncAll() {
+  const g = await gcalLoad();
+  if (!g.url) return json({ ok: false, error: 'Connect the script first.' });
+  const now = Date.now();
+  const list = (await loadBookings()).filter((b) => (b.status === 'pending' || b.status === 'confirmed') && b.apptAt > now - 86400000);
+  let added = 0, failed = 0, lastError = '';
+  for (const bk of list.slice(0, 40)) {
+    const r = await bkGcalSync(bk);
+    if (r && r.ok) added++; else { failed++; lastError = (r && r.error) || lastError; }
+  }
+  return json({ ok: failed === 0, added, failed, error: lastError });
+}
+
+// ===========================================================================
+// Heads-ups before each job: a week, 3 days and a day out
+// ===========================================================================
+// An email (with the calendar button) and a phone push for every booked job,
+// from the dashboard itself, so they arrive whether or not Google is set up.
+// A threshold that had already passed when the job was booked is skipped: a
+// job booked Tuesday for Thursday doesn't need a "one week to go".
+// Write-frugal: one KV read every fifth minute, and a write only when a
+// reminder actually goes out (marking it sent, so it never goes twice).
+const BK_HEADS = [
+  { key: 'w1', ms: 7 * 86400000, when: 'in one week' },
+  { key: 'd3', ms: 3 * 86400000, when: 'in 3 days' },
+  { key: 'd1', ms: 1 * 86400000, when: 'tomorrow' },
+];
+function bkHeadsDue(bk, now) {
+  if (!(bk.status === 'confirmed' || bk.status === 'pending') || !(bk.apptAt > now)) return [];
+  const sent = bk.heads || {};
+  return BK_HEADS.filter((h) => !sent[h.key] && now >= bk.apptAt - h.ms && (bk.createdAt || 0) < bk.apptAt - h.ms);
+}
+async function dispatchBookingHeadsUps(now = Date.now()) {
+  if (Math.floor(now / 60000) % 5) return;
+  const all = await loadBookings();
+  const out = [];
+  for (const bk of all) {
+    const due = bkHeadsDue(bk, now);
+    if (!due.length) continue;
+    bk.heads = Object.assign({}, bk.heads);
+    for (const h of due) bk.heads[h.key] = now;
+    out.push({ bk, h: due[due.length - 1] });   // a missed tick sends the nearest one, not all three
+  }
+  if (!out.length) return;
+  await saveBookings(all);   // marked before sending: at most once, even if a send fails
+  for (const { bk, h } of out) {
+    const subject = `🚗 ${h.when}: ${bk.serviceName}, ${bk.name}`;
+    const text = [
+      `${subject}`,
+      `${bk.dateLabel || bkNiceDate(bk.date)} at ${bkFmt12(bk.slot)}`,
+      `Where: ${[bk.address, bk.city].filter(Boolean).join(', ')}`,
+      `${bk.sizeLabel || bk.size}${bk.vehicle ? ` · ${bk.vehicle}` : ''} · $${bk.estimate}`,
+      `Phone: ${bk.phone}`,
+      bk.status === 'pending' ? `\n⚠️ You still haven't confirmed this one. Dashboard → Bookings.` : '',
+    ].filter(Boolean).join('\n');
+    try { await kv().put('push:note', JSON.stringify({ title: subject, body: `${bk.dateLabel || bk.date} at ${bkFmt12(bk.slot)}, ${bk.city || ''}`, at: Date.now() }), { expirationTtl: 900 }); } catch (e) {}
+    await notifyMikey(subject, bkAlertBody(bk, text));
+  }
 }
 
 // ===========================================================================
