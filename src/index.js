@@ -120,6 +120,23 @@ let IDX_CACHE = null;
 // the CPU limit crept up on us is that "this is memoized" was knowledge living in
 // four separate places, and the next cache added has to be freed here too.
 function resetInvocationCaches() { CFG_CACHE = null; IDX_CACHE = null; }
+
+// Work that has to finish after the response goes out. A Worker cancels any
+// promise nobody awaits the moment it returns, so a fire-and-forget alert
+// (`notifyMikey(...).catch(() => {})` right before `return`) was being killed
+// mid-send: every booking from the site landed in the dashboard and no email
+// ever reached him. Anything started through background() is handed to
+// ctx.waitUntil when the request (or cron run) ends, so it gets to finish.
+// A Set rather than a stored ctx, because requests can overlap in one isolate
+// and waiting on someone else's alert is harmless where losing one isn't.
+const PENDING = new Set();
+function background(p) {
+  const q = Promise.resolve(p).catch(() => {});
+  PENDING.add(q);
+  q.finally(() => PENDING.delete(q));
+  return p;
+}
+function settleBackground() { return Promise.allSettled([...PENDING]); }
 // Which index rows a given copy of the index has deliberately changed, keyed by
 // the array itself rather than by a module global — and deliberately NOT cleared
 // by resetInvocationCaches. One isolate runs several invocations at once, so a
@@ -140,7 +157,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-09-30·signs-pin-check';
+const BUILD = '2026-10-01·booking-email';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -164,11 +181,12 @@ export default {
       // costs a KV write at most once every USE_FLUSH_MS however hard he taps —
       // and a slow KV day can never show up as a slow dashboard.
       try { if (ctx && ctx.waitUntil) ctx.waitUntil(useMaybeFlush(false)); } catch (e) {}
+      try { if (ctx && ctx.waitUntil && PENDING.size) ctx.waitUntil(settleBackground()); } catch (e) {}
     }
   },
   async scheduled(event, env, ctx) {
     ENV = env; resetInvocationCaches();
-    ctx.waitUntil(runCron());
+    ctx.waitUntil(runCron().finally(settleBackground));
   },
 };
 
@@ -15281,14 +15299,17 @@ async function geminiGenerate(prompt, opts = {}) {
 // only — the promise reminders use it for a calendar invite. `sms` overrides what
 // the fallback text says, because a text message can't carry an attachment and
 // shouldn't point at one.
-async function notifyMikey(subject, body) {
+// Every caller gets the send registered with background(), so the 16 places
+// that fire an alert and return straight away actually deliver it.
+function notifyMikey(subject, body) { return background(notifyMikeyNow(subject, body)); }
+async function notifyMikeyNow(subject, body) {
   const text = typeof body === 'string' ? body : String((body && body.text) || '');
   const html = (body && typeof body === 'object' && body.html) || '';
   const attachments = (body && typeof body === 'object' && body.attachments) || null;
   const smsText = (body && typeof body === 'object' && body.sms) || text;
   // Ring the phone too. Web push is free, instant, and doesn't wait on email or
   // Twilio — but it's a bonus channel, never the only one, so failures are silent.
-  pushNotify().catch(() => {});
+  background(pushNotify().catch(() => {}));
   if (ENV.RESEND_API_KEY && ENV.ALERT_EMAIL) {
     try { await sendEmail(subject, text, html, attachments); return true; }
     catch { /* fall through to SMS so the alert still reaches Mikey */ }
