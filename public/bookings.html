@@ -321,6 +321,10 @@ function renderSettings(c){
     '<button class="testbtn" id="calTest">Test calendar</button> <span id="calResult" class="hint" style="display:inline"></span>'+
     '<div class="hint"><b>Where to get it:</b> Google Calendar (on a computer) → hover your calendar → ⋮ → <b>Settings and sharing</b> → scroll to <b>Integrate calendar</b> → copy <b>“Secret address in iCal format.”</b> Keep it private. (Google may take a little while to reflect brand-new events — your approval on each booking is still the final check.)</div>';
   H.push(sec("📆 Google Calendar sync","",cal));
+  // The sync above only READS his calendar. This puts bookings ON it, through
+  // a script he deploys from his own Google account (see apiGcalSetup).
+  var gc='<div id="gcalBox"><div class="hint">Loading…</div></div>';
+  H.push(sec("📲 Put bookings on my Google Calendar","Every booking lands on your calendar the moment it comes in, with phone alerts a week, 3 days, a day, 2 hours and 30 minutes before. Confirm and cancel update it too.",gc));
 
   // Blocked dates
   H.push(sec("🚫 Days off / blocked dates","One date per line (YYYY-MM-DD). Great for vacations — the calendar shows nothing those days.",
@@ -355,9 +359,50 @@ function wireSettings(){
   $$(".day-c").forEach(function(d){ d.onclick=function(){ d.classList.toggle("on"); }; });
   $$("[data-rm]").forEach(function(x){ x.onclick=function(){ x.closest(".addon-row").remove(); }; });
   var add=$("#addAddon"); if(add) add.onclick=function(){ var w=document.createElement("div"); w.innerHTML=addonRow(null); var row=w.firstChild; $("#addonRows").appendChild(row); row.querySelector("[data-rm]").onclick=function(){row.remove();}; };
+  loadGcal();
   var t=$("#calTest"); if(t) t.onclick=function(){ var url=$("#icalUrl").value.trim(); var res=$("#calResult"); res.textContent="Testing…"; res.style.color="var(--faint)";
     api("/api/booking-cal-test",{method:"POST",body:JSON.stringify({url:url})}).then(function(d){ if(d&&d.ok){ res.textContent="✓ Connected — "+d.count+" events found"; res.style.color="var(--green)"; } else { res.textContent="✕ "+((d&&d.error)||"failed"); res.style.color="#ff6b78"; } }).catch(function(){ res.textContent="✕ error"; res.style.color="#ff6b78"; }); };
 }
+// One-time setup, five steps. Each is something he does in Google, not here,
+// so the steps say exactly which button, in the order he'll meet them.
+function loadGcal(){
+  var box=$("#gcalBox"); if(!box) return;
+  api("/api/gcal-setup").then(function(d){
+    if(!d||!d.ok){ box.innerHTML='<div class="hint">Could not load this. Refresh and try again.</div>'; return; }
+    box.innerHTML=
+      '<div class="hint" id="gcalState" style="margin-bottom:10px;font-weight:600;color:'+(d.connected?'var(--green)':'var(--faint)')+'">'+(d.connected?'✓ Connected. New bookings go on your calendar.':'Not connected yet. Takes about 5 minutes, once, on a computer.')+'</div>'+
+      '<ol class="hint" style="padding-left:18px;line-height:1.6">'+
+        '<li>Open <a href="https://script.google.com/home/projects/create" target="_blank" rel="noopener">script.google.com</a>, signed in as the Google account whose calendar you use. It opens a new project.</li>'+
+        '<li>Delete everything in the editor, tap <b>Copy script</b> below, paste it in, and press the 💾 save icon.</li>'+
+        '<li>Top right: <b>Deploy</b> → <b>New deployment</b> → the ⚙️ next to "Select type" → <b>Web app</b>. Set <b>Execute as: Me</b> and <b>Who has access: Anyone</b>. Press <b>Deploy</b>.</li>'+
+        '<li>Google asks you to authorize. Pick your account → <b>Advanced</b> → <b>Go to (project name) (unsafe)</b> → <b>Allow</b>. It says unsafe only because you wrote the script, not Google.</li>'+
+        '<li>Copy the <b>Web app URL</b> it shows (ends in <b>/exec</b>), paste it below and press <b>Connect</b>.</li>'+
+      '</ol>'+
+      '<button class="testbtn" id="gcalCopy">Copy script</button> <span id="gcalCopied" class="hint" style="display:inline"></span>'+
+      '<div class="fld" style="margin-top:12px"><label>Web app URL</label><input class="in" id="gcalUrl" placeholder="https://script.google.com/macros/s/…/exec" '+inNum(d.url||"")+'></div>'+
+      '<button class="testbtn" id="gcalConnect">Connect</button> <button class="testbtn" id="gcalSync"'+(d.connected?'':' style="display:none"')+'>Add my upcoming bookings now</button> <span id="gcalResult" class="hint" style="display:inline"></span>';
+    var script=d.script;
+    $("#gcalCopy").onclick=function(){
+      var done=function(){ $("#gcalCopied").textContent="✓ Copied"; };
+      if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(script).then(done,function(){ fallbackCopy(script); done(); });
+      else { fallbackCopy(script); done(); }
+    };
+    var res=$("#gcalResult");
+    function say(ok,msg){ res.textContent=msg; res.style.color=ok?"var(--green)":"#ff6b78"; }
+    $("#gcalConnect").onclick=function(){ say(true,"Checking…"); res.style.color="var(--faint)";
+      api("/api/gcal-setup",{method:"POST",body:JSON.stringify({url:$("#gcalUrl").value.trim()})}).then(function(r){
+        if(r&&r.ok&&r.connected){ say(true,"✓ Connected to "+(r.calendar||"your calendar")); $("#gcalState").textContent="✓ Connected. New bookings go on your calendar."; $("#gcalState").style.color="var(--green)"; $("#gcalSync").style.display=""; }
+        else if(r&&r.ok){ say(true,"Disconnected."); }
+        else say(false,"✕ "+((r&&r.error)||"failed"));
+      }).catch(function(){ say(false,"✕ error"); }); };
+    $("#gcalSync").onclick=function(){ say(true,"Adding…"); res.style.color="var(--faint)";
+      api("/api/gcal-sync-all",{method:"POST",body:"{}"}).then(function(r){
+        if(r&&r.ok) say(true,"✓ "+r.added+" booking"+(r.added===1?"":"s")+" on your calendar");
+        else say(false,"✕ "+((r&&r.added)||0)+" added, "+((r&&r.failed)||0)+" failed"+(r&&r.error?": "+r.error:""));
+      }).catch(function(){ say(false,"✕ error"); }); };
+  }).catch(function(){ box.innerHTML='<div class="hint">Could not load this. Refresh and try again.</div>'; });
+}
+function fallbackCopy(txt){ var ta=document.createElement("textarea"); ta.value=txt; ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta); ta.select(); try{ document.execCommand("copy"); }catch(e){} ta.remove(); }
 function collect(){
   var c=JSON.parse(JSON.stringify(state.cfg)); // start from loaded, overwrite edited
   function setPath(o,path,val){ var p=path.split("."); var t=o; for(var i=0;i<p.length-1;i++){ t[p[i]]=t[p[i]]||{}; t=t[p[i]]; } t[p[p.length-1]]=val; }
