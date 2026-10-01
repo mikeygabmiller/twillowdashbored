@@ -589,6 +589,22 @@ at a time as one write. The spot list places pins on grass from the aerial
 photo, and about 1 in 10 to 1 in 5 still sits against a shrub or small tree the
 data can't see; this is how those get caught before a helper drives there.
 
+**The learner** (in `signs.html`) learns what a good pin looks like from
+Mikey's Good/Bad, plus the field at half weight (a sign placed = good, a "no
+good spot" skip = bad). It reads the ground measurements the spot list carries
+per pin (`fx`, 17 numbers: greenness, shade, texture, tree cover at 3 to 20 m,
+pavement), the kind of spot, the town, and his marks within 600 m. Model: 40
+boosted two-level decision trees, fitted on his phone, re-fitted every 10
+checks, and sent up with the next batch of marks (`model` in `signs:v1`, shape
+checked by `signModelOk`). The Check tab alternates the best unchecked spot
+with the one the learner is least sure of, rotating towns, and shows its guess
+and its live score on every card. It is **on** only after 30 of his checks (8+
+each way) while it scores 75%+ balanced accuracy on checks it didn't learn
+from (5-fold); on, it sinks pins it doubts below the rest for everyone. It never
+removes a pin. A model is ignored if the spot list's `fxv` has changed. In the
+tests (hidden rule, 1 answer in 10 wrong) it turned on within 200 checks and
+was right on 85%+ of the unchecked spots; on random answers it stays off.
+
 The Map tab draws one dot per corner (its best open side; the popup lists both
 sides), switches to **Satellite**, and every spot has a **Street View** button
 turned to the verge where the sign goes. In Mikey's view a corner can be hidden

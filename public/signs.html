@@ -237,7 +237,7 @@
       var c=j.cols,ix={};c.forEach(function(k,i){ix[k]=i});
       S.spotMeta=j;
       S.spots=j.spots.map(function(r){return {id:r[ix.id],lat:r[ix.lat],lon:r[ix.lon],score:r[ix.score],ctrl:r[ix.ctrl],aadt:r[ix.aadt],spd:r[ix.spd],
-        head:r[ix.head],road:r[ix.road],cross:r[ix.cross],town:r[ix.town],flags:r[ix.flags]||"",jx:r[ix.jx],back:ix.back!=null?r[ix.back]:0,side:ix.side!=null?r[ix.side]:0}});
+        head:r[ix.head],road:r[ix.road],cross:r[ix.cross],town:r[ix.town],flags:r[ix.flags]||"",jx:r[ix.jx],back:ix.back!=null?r[ix.back]:0,side:ix.side!=null?r[ix.side]:0,fx:ix.fx!=null?r[ix.fx]:null}});
       S.spotById={};S.spots.forEach(function(s){S.spotById[s.id]=s});
       return S.spots;
     });
@@ -320,7 +320,7 @@
     var marks=d.marks||{};
     Object.keys(marks).forEach(function(pid){var s=signs[pid];if(!s)return;var m=marks[pid];
       if(m[0]==="bad")s.bad=1;if(m[0]==="ok")s.ok=1;if(m[0]==="gone"&&!s.closed){s.st="gone";s.closed=m[1]}});
-    S.signs=signs;S.plans=plans;S.skips=skips;S.mineId=mineId;
+    S.signs=signs;S.plans=plans;S.skips=skips;S.mineId=mineId;S.learnDirty=true;
     S.list=Object.keys(signs).map(function(k){return signs[k]});
     // A grid of ~110 m cells, so "is there a sign at this corner" looks at a
     // handful of signs, not all of them, for each of 5,000 spots.
@@ -358,9 +358,13 @@
     if(fast)mult*=Math.pow(.5,fast);
     // A pin Mikey has looked at on the photo goes ahead of one nobody has.
     if(rv===1)mult*=1.15;
+    // One he hasn't: once the learner has proved itself on his checks, a pin it
+    // thinks is bad sinks (it never removes one; only Mikey's Bad does that).
+    var lp=null,Lm=learner();
+    if(rv===null&&Lm&&Lm.on){lp=predGood(sp,Lm);if(lp!=null&&lp<0.3)mult*=0.4}
     if(hard)mult*=.5;if(soft)mult*=.6;
     var res=null;(S.plans||[]).forEach(function(p){if(p.spots.indexOf(sp.id)>=0)res=p});
-    return {eff:sp.score*mult,covered:covered,reserved:res,fast:fast,checked:rv===1};
+    return {eff:sp.score*mult,covered:covered,reserved:res,fast:fast,checked:rv===1,likelyBad:lp!=null&&lp<0.3};
   }
   function openSpots(filter){
     return (S.spots||[]).filter(function(sp){if(filter&&!filter(sp))return false;var st=spotState(sp);return !st.out&&!st.covered&&!st.reserved&&st.eff>=3});
@@ -552,21 +556,162 @@
   // can't see. A person can tell in two seconds, so the best spots come here one
   // at a time on the satellite view: Good goes ahead of unchecked spots, Bad is
   // off the map for everyone.
-  function checkQueue(){
-    var town=S.checkTown||"";
-    var skip=S.checkSkipped||{};
-    return (S.spots||[]).filter(function(sp){if(town&&sp.town!==town)return false;if(skip[sp.id]||revOf(sp.id)!==null)return false;var st=spotState(sp);return !st.out&&!st.covered})
-      .sort(function(a,b){return b.score-a.score});
+  // ---- the learner ------------------------------------------------------------------
+  // Learns what a good pin looks like from Mikey's Good/Bad and the crew's field
+  // results, using what the spot list measured on the ground at each pin (fx:
+  // greenness, shade, texture, tree cover at 3 to 20 m, pavement nearby), the
+  // kind of spot, the town, and what he said about spots within 600 m.
+  //
+  // The model is 40 small boosted decision trees, two questions deep ("tree
+  // cover within 10 m above X, and greenness below Y?"). Trees, not a straight
+  // line, because real rules are thresholds and combinations: on a hidden
+  // "under trees or not green" rule with one answer in ten wrong, trees reached
+  // 90% on spots they hadn't seen after 150 to 300 checks, where a straight
+  // line stopped near 75%. Given random answers it stays at 50%: it can't learn
+  // what isn't there, and the gate below keeps it off.
+  //
+  // What keeps it from doing damage: it only ever reorders. It is "on" only
+  // after 30 of Mikey's own checks (8+ of each) and while it gets 75% of them
+  // right when tested on ones it didn't learn from (balanced, so "everything's
+  // good" scores 50%). Even then a pin it doubts sinks; only Mikey's Bad takes
+  // one off the map. The fitted trees (a few KB) ride up with his next batch of
+  // marks, so every crew phone ranks with the same model.
+  var LEARN={minN:30,minEach:8,minAcc:0.75,rounds:40,eta:0.3,lam:1,minLeaf:3,nth:12,nbrM:600,cvCap:400,trainCap:900,fieldW:0.5};
+  function fxReady(){return !!(S.spotMeta&&S.spotMeta.fxv&&S.spots&&S.spots.length&&S.spots[0].fx)}
+  function baseVec(sp){
+    if(sp._bv)return sp._bv;
+    var f=sp.fx.map(function(v){return v/255});
+    ["sig","stop","all","minor","rab","thru"].forEach(function(c){f.push(sp.ctrl===c?1:0)});
+    ["s","c","f","e"].forEach(function(c){f.push((sp.flags||"").indexOf(c)>=0?1:0)});
+    f.push(Math.min(1,(sp.side||0)/10),Math.min(1,(sp.back||0)/100),Math.log(Math.max(100,sp.aadt||100))/Math.log(1e5),(sp.spd||25)/50);
+    TOWNS.forEach(function(t){f.push(sp.town===t?1:0)});
+    return (sp._bv=f);
   }
+  // What Mikey (and the field) said nearby: the distance-weighted share of good
+  // among labelled spots within 600 m, not counting this one, and how much
+  // there is to go on. This is how an HOA pocket he keeps marking bad spreads.
+  function nbrVec(sp,LB){
+    var s=0,w=0,R=LEARN.nbrM,k=Math.cos(sp.lat*Math.PI/180);
+    for(var i=0;i<LB.length;i++){var o=LB[i];if(o.id===sp.id)continue;var dy=(o.lat-sp.lat)*111320;if(dy>R||dy<-R)continue;var dx=(o.lon-sp.lon)*111320*k;if(dx>R||dx<-R)continue;
+      var d=Math.sqrt(dx*dx+dy*dy);if(d>R)continue;var ww=(1-d/R)*o.w;s+=ww*o.y;w+=ww}
+    return [w?s/w:0.5,Math.min(1,w/3)];
+  }
+  function fullVec(sp,LB){return baseVec(sp).concat(nbrVec(sp,LB))}
+  function sigm(z){return 1/(1+Math.exp(-Math.max(-30,Math.min(30,z))))}
+  function walk(t,x){var v=x[t[0]]<=t[1]?t[2]:t[3];return typeof v==="number"?v:walk(v,x)}
+  function predGood(sp,M){
+    if(!sp.fx||!M||!M.trees)return null;
+    var LB=M.lb||labelBag(),x=fullVec(sp,LB),z=0;
+    for(var i=0;i<M.trees.length;i++)z+=walk(M.trees[i],x);
+    return sigm(z);
+  }
+  // Every label there is: Mikey's own (weight 1), and from the field at half
+  // weight: a sign really placed at a spot = the crew found ground there; a
+  // "no good spot" skip = they didn't. HOA, unsafe and taken skips say nothing
+  // about the ground and are left out. Mikey's mark wins over the field's.
+  function labels(){
+    var out={};
+    (S.list||[]).forEach(function(s){if(s.spot&&S.spotById[s.spot])out[s.spot]={y:1,w:LEARN.fieldW,src:"field"}});
+    Object.keys(S.skips||{}).forEach(function(id){if(!S.spotById[id]||(id in out))return;if((S.skips[id]||[]).indexOf("none")>=0)out[id]={y:0,w:LEARN.fieldW,src:"field"}});
+    Object.keys(Object.assign({},(S.data&&S.data.rev)||{},REVQ)).forEach(function(id){var v=revOf(id);if(v!==null&&S.spotById[id])out[id]={y:v,w:1,src:"mikey"}});
+    return Object.keys(out).filter(function(id){return S.spotById[id].fx}).map(function(id){var sp=S.spotById[id];return {id:id,y:out[id].y,w:out[id].w,src:out[id].src,lat:sp.lat,lon:sp.lon}});
+  }
+  function labelBag(){if(!S.lbag||S.lbagVer!==S.stVer){S.lbag=labels();S.lbagVer=S.stVer}return S.lbag}
+  function fit(L,LB){
+    var n=L.length;if(n<2)return null;
+    var X=L.map(function(l){return fullVec(S.spotById[l.id],LB)}),Y=L.map(function(l){return l.y}),d=X[0].length;
+    var pos=0,neg=0;L.forEach(function(l){if(l.y)pos+=l.w;else neg+=l.w});if(!pos||!neg)return null;
+    var W=L.map(function(l){return l.w*(l.y?(pos+neg)/(2*pos):(pos+neg)/(2*neg))});
+    var th=[];for(var j=0;j<d;j++){var v=X.map(function(x){return x[j]}).sort(function(a,b){return a-b}),seen={},tj=[];
+      for(var q=1;q<LEARN.nth;q++){var t=v[Math.floor(q*n/LEARN.nth)];if(!seen[t]){seen[t]=1;tj.push(t)}}th.push(tj)}
+    var F=new Array(n).fill(0),trees=[],g=new Array(n),h=new Array(n);
+    function split(idx){var best=null;
+      for(var j=0;j<d;j++)for(var a=0;a<th[j].length;a++){var t=th[j][a],gl=0,hl=0,gr=0,hr=0,nl=0,nr=0;
+        for(var b=0;b<idx.length;b++){var k=idx[b];if(X[k][j]<=t){gl+=g[k];hl+=h[k];nl+=W[k]}else{gr+=g[k];hr+=h[k];nr+=W[k]}}
+        if(nl<LEARN.minLeaf||nr<LEARN.minLeaf)continue;var gain=gl*gl/(hl+LEARN.lam)+gr*gr/(hr+LEARN.lam);if(!best||gain>best.gain)best={gain:gain,j:j,t:t}}
+      return best}
+    function leaf(idx){var G=0,H=0;idx.forEach(function(k){G+=g[k];H+=h[k]});return Math.round(LEARN.eta*(-G/(H+LEARN.lam))*1e4)/1e4}
+    function side(idx,sp,left){return idx.filter(function(k){return (X[k][sp.j]<=sp.t)===left})}
+    var all=[];for(var k=0;k<n;k++)all.push(k);
+    for(var r=0;r<LEARN.rounds;r++){
+      for(k=0;k<n;k++){var p=sigm(F[k]);g[k]=(p-Y[k])*W[k];h[k]=Math.max(1e-6,p*(1-p))*W[k]}
+      var s0=split(all);if(!s0)break;
+      var Lx=side(all,s0,true),Rx=side(all,s0,false),sl=split(Lx),sr=split(Rx);
+      var tree=[s0.j,s0.t,sl?[sl.j,sl.t,leaf(side(Lx,sl,true)),leaf(side(Lx,sl,false))]:leaf(Lx),sr?[sr.j,sr.t,leaf(side(Rx,sr,true)),leaf(side(Rx,sr,false))]:leaf(Rx)];
+      trees.push(tree);for(k=0;k<n;k++)F[k]+=walk(tree,X[k]);
+    }
+    return {trees:trees};
+  }
+  function hash5(id){var h=0;for(var i=0;i<id.length;i++)h=(h*31+id.charCodeAt(i))|0;return Math.abs(h)%5}
+  // Tested only on Mikey's own checks, each scored by a model that never saw
+  // it (5 folds, neighbourhood signal rebuilt without the held-out marks).
+  function crossCheck(L){
+    var mine=L.filter(function(l){return l.src==="mikey"});if(mine.length>LEARN.cvCap)mine=mine.slice(-LEARN.cvCap);
+    var tp=0,p=0,tn=0,n=0;
+    for(var k=0;k<5;k++){
+      var test=mine.filter(function(l){return hash5(l.id)===k});if(!test.length)continue;
+      var train=L.filter(function(l){return !(l.src==="mikey"&&hash5(l.id)===k)});if(train.length>LEARN.trainCap)train=train.slice(-LEARN.trainCap);
+      var M=fit(train,train);if(!M)continue;M.lb=train;
+      test.forEach(function(l){var g=predGood(S.spotById[l.id],M)>=0.5;if(l.y){p++;if(g)tp++}else{n++;if(!g)tn++}});
+    }
+    return p&&n?{acc:(tp/p+tn/n)/2,good:tp/p,bad:tn/n}:null;
+  }
+  function learner(){
+    if(!fxReady())return null;
+    if(!OWNER){var m=S.data&&S.data.model;return m&&m.v===S.spotMeta.fxv&&Array.isArray(m.trees)&&m.trees.length?m:null}
+    if(S.learn&&!S.learnDirty)return S.learn;
+    // Refit every ten of his checks, not every tap: a fit with its five-fold
+    // test runs to most of a second at a few hundred checks, and the card
+    // should change the instant he taps. Guesses meanwhile come from a model at
+    // most nine checks old.
+    if(S.learn&&S.learn.trees&&!S.learnForce){var cnt=0,cg=0,ks=Object.assign({},(S.data&&S.data.rev)||{},REVQ);
+      for(var kk in ks){var rv=revOf(kk);if(rv!==null&&S.spotById[kk]){cnt++;if(rv===1)cg++}}
+      if(Math.abs(cnt-S.learn.trainedN)<10){S.learn.n=cnt;S.learn.good=cg;S.learn.bad=cnt-cg;S.learnDirty=false;return S.learn}}
+    S.learnForce=false;
+    var L=labels(),mine=L.filter(function(l){return l.src==="mikey"}),good=mine.filter(function(l){return l.y}).length,bad=mine.length-good;
+    var T=L.length>LEARN.trainCap*2?L.slice(-LEARN.trainCap*2):L;
+    var M=fit(T,L)||{trees:null},cv=mine.length>=12&&good>=3&&bad>=3?crossCheck(L):null;
+    S.learnDirty=false;
+    return (S.learn={v:S.spotMeta.fxv,trees:M.trees,n:mine.length,trainedN:mine.length,good:good,bad:bad,field:L.length-mine.length,
+      acc:cv?cv.acc:null,cv:cv,on:!!(M.trees&&mine.length>=LEARN.minN&&good>=LEARN.minEach&&bad>=LEARN.minEach&&cv&&cv.acc>=LEARN.minAcc)});
+  }
+  function learnPayload(){var M=learner();if(!M||!M.trees)return null;
+    return {v:M.v,trees:M.trees,n:M.n,acc:M.acc==null?null:Math.round(M.acc*1000)/1000,on:M.on}}
+  // What to show Mikey next. Alternates the best unchecked spot (so the spots
+  // the crew will use first always get his eyes) with the one the learner is
+  // least sure of (the answer that teaches it most), and avoids the town of the
+  // last two cards, so he keeps seeing different kinds of places.
+  function nextCheck(){
+    var town=S.checkTown||"",skip=S.checkSkipped||{},recent=S.checkRecent||[];
+    var c=(S.spots||[]).filter(function(sp){if(town&&sp.town!==town)return false;if(skip[sp.id]||revOf(sp.id)!==null)return false;var st=spotState(sp);return !st.out&&!st.covered});
+    S.checkLeft=c.length;
+    if(!c.length){S.checkSpot=null;S.checkWhy="";return}
+    c.sort(function(a,b){return b.score-a.score});
+    var M=learner(),step=S.checkStep||0,pool=c.slice(0,600),fresh=pool.filter(function(sp){return recent.indexOf(sp.town)<0});
+    if(!fresh.length||town)fresh=pool;
+    var pick,why;
+    if(M&&M.trees&&M.n>=10&&step%2===1){
+      var best=-1;fresh.forEach(function(sp){var p=predGood(sp,M);if(p==null)return;var u=(sp.score/100)*(1-Math.abs(2*p-1));if(u>best){best=u;pick=sp}});
+      why="I'm not sure about this one";
+    }
+    if(!pick){pick=fresh[0];why="One of the best spots left"}
+    S.checkSpot=pick.id;S.checkWhy=why;S.checkStep=step+1;
+    S.checkRecent=[pick.town].concat(recent).slice(0,2);
+  }
+  function guessFor(sp){var M=learner();if(!M||!M.trees||M.n<10)return null;return predGood(sp,M)}
+
   function checkTab(){
     if(!OWNER)return "";
     var all=S.spots||[],done=all.filter(function(sp){return revOf(sp.id)!==null}),good=done.filter(function(sp){return revOf(sp.id)===1}).length;
-    var q=checkQueue(),sp=q[0],pend=Object.keys(REVQ).length;
+    if(!S.checkSpot||revOf(S.checkSpot)!==null||!S.spotById[S.checkSpot]||(S.checkTown&&S.spotById[S.checkSpot].town!==S.checkTown))nextCheck();
+    var sp=S.checkSpot?S.spotById[S.checkSpot]:null,pend=Object.keys(REVQ).length,q={length:S.checkLeft||0};
     var h='<div class="card"><h2>Check the pins</h2><p class="small muted">Best spots first. Is the ring on grass beside the road, clear of trees and bushes, where a driver coming the way of the arrow would see a sign? '+done.length+' checked ('+good+' good)'+(pend?', '+pend+' waiting to upload':'')+'.</p>'+
       '<div class="chips" style="margin-top:6px"><button data-ctown="" class="'+(!S.checkTown?"on":"")+'">All towns</button>'+TOWNS.map(function(t){return '<button data-ctown="'+esc(t)+'" class="'+(S.checkTown===t?"on":"")+'">'+esc(t)+'</button>'}).join("")+'</div></div>';
+    h+=learnCard();
     if(!sp)return h+'<div class="card"><p>Nothing left to check'+(S.checkTown?' in '+esc(S.checkTown):'')+'. Every open spot has been looked at.</p></div>';
-    S.checkSpot=sp.id;
+    var gp=guessFor(sp);S.checkGuess=gp;
     h+='<div class="card"><b>'+esc(sp.road)+' at '+esc(sp.cross||"the corner")+'</b><small class="muted" style="display:block">'+esc(sp.town)+' · score '+sp.score+' · '+esc(why(sp))+' · '+q.length+' left</small>'+
+      '<small style="display:block;margin-top:4px"><b>'+esc(S.checkWhy||"")+'</b>'+(gp==null?'':' · its guess: <b id="ckGuess" style="color:'+(gp>=0.5?'#16a34a':'#E31924')+'">'+(gp>=0.5?'good':'bad')+' ('+Math.round(100*Math.max(gp,1-gp))+'% sure)</b>')+'</small>'+
       '<div id="cmap" style="height:52vh;border-radius:14px;margin-top:10px;position:relative;z-index:0;isolation:isolate;background:#222"></div>'+
       '<div class="grid2" style="margin-top:10px"><button class="btn green huge" id="ckGood">Good spot</button><button class="btn red huge" id="ckBad">Bad spot</button></div>'+
       '<div class="grid2" style="margin-top:8px"><button class="btn" id="ckSkip">Not sure, next</button><a class="btn" target="_blank" rel="noopener" href="'+svUrl(sp)+'">Street View</a></div>'+
@@ -586,15 +731,27 @@
       L.circleMarker([sp.lat,sp.lon],{radius:11,color:"#facc15",weight:3,fill:false}).addTo(m);
     });
   }
+  // The live score: every time a guess was on the card, was it right? These are
+  // pins it had not learned from, so this is the honest number.
+  function learnCard(){
+    var M=learner();if(!M)return '<div class="card small muted">The learner needs the newer spot list (with ground measurements) to run.</div>';
+    var lg=PREF.lg||[],right=lg.filter(function(x){return x}).length;
+    var st=M.on?'<b style="color:#16a34a">On.</b> Spots it thinks are bad sink below the rest for you and the crew. It never removes one.':
+      '<b>Learning.</b> It switches on after 30 of your checks (at least 8 good and 8 bad) once it gets 75% of them right. Until then it only guesses.';
+    return '<div class="card"><h2>What it has learned</h2><p class="small">'+st+'</p><p class="small muted" style="margin-top:6px">From '+M.n+' of your checks ('+M.good+' good, '+M.bad+' bad)'+(M.field?' and '+M.field+' crew results':'')+'.'+
+      (M.acc!=null?' Tested on '+M.trainedN+' of your checks it hadn\'t learned from: <b>'+Math.round(M.acc*100)+'% right</b> (good ones '+Math.round(M.cv.good*100)+'%, bad ones '+Math.round(M.cv.bad*100)+'%). It re-learns every 10 checks.':'')+
+      (lg.length?' Its last '+lg.length+' guesses on this screen: <b>'+right+' right</b>.':'')+'</p></div>';
+  }
   function reviewSpot(id,v){
-    S.checkLast={id:id,prev:(id in REVQ)?REVQ[id]:undefined};
-    REVQ[id]=v;save(LS_REV,REVQ);S.stVer=(S.stVer||0)+1;
-    flushRev(false);S.cmap=null;render();window.scrollTo(0,0);
+    S.checkLast={id:id,prev:(id in REVQ)?REVQ[id]:undefined,lg:S.checkGuess!=null};
+    if(S.checkGuess!=null){PREF.lg=(PREF.lg||[]).concat([(S.checkGuess>=0.5?1:0)===v?1:0]).slice(-50);save(LS_PREF,PREF)}
+    REVQ[id]=v;save(LS_REV,REVQ);S.stVer=(S.stVer||0)+1;S.learnDirty=true;
+    nextCheck();flushRev(false);S.cmap=null;render();window.scrollTo(0,0);
   }
   function flushRev(force){
     var ids=Object.keys(REVQ);if(!ids.length||S.revBusy)return;
     if(!force&&ids.length<10)return;
-    var body={action:"review",good:[],bad:[]},sent={};ids.forEach(function(id){sent[id]=REVQ[id];(REVQ[id]===1?body.good:body.bad).push(id)});
+    var body={action:"review",good:[],bad:[],model:learnPayload()},sent={};ids.forEach(function(id){sent[id]=REVQ[id];(REVQ[id]===1?body.good:body.bad).push(id)});
     S.revBusy=true;
     post("/api/signs",body).then(function(d){
       S.revBusy=false;
@@ -739,11 +896,12 @@
     function on(sel,fn){Array.prototype.forEach.call(app.querySelectorAll(sel),fn)}
     if(el("ckGood"))el("ckGood").onclick=function(){reviewSpot(S.checkSpot,1)};
     if(el("ckBad"))el("ckBad").onclick=function(){reviewSpot(S.checkSpot,0)};
-    if(el("ckSkip"))el("ckSkip").onclick=function(){S.checkSkipped=S.checkSkipped||{};S.checkSkipped[S.checkSpot]=1;S.cmap=null;render()};
+    if(el("ckSkip"))el("ckSkip").onclick=function(){S.checkSkipped=S.checkSkipped||{};S.checkSkipped[S.checkSpot]=1;nextCheck();S.cmap=null;render()};
     if(el("ckUndo"))el("ckUndo").onclick=function(){var l=S.checkLast;if(!l)return;
+      if(l.lg&&PREF.lg&&PREF.lg.length){PREF.lg.pop();save(LS_PREF,PREF)}
       if(l.prev===undefined){delete REVQ[l.id];if(S.data.rev&&(l.id in S.data.rev)){post("/api/signs",{action:"review",undo:[l.id]});delete S.data.rev[l.id]}}else REVQ[l.id]=l.prev;
-      save(LS_REV,REVQ);S.checkLast=null;S.stVer=(S.stVer||0)+1;S.cmap=null;render()};
-    on("[data-ctown]",function(b){b.onclick=function(){S.checkTown=b.getAttribute("data-ctown");S.cmap=null;render()}});
+      save(LS_REV,REVQ);S.checkSpot=l.id;S.checkLast=null;S.stVer=(S.stVer||0)+1;S.learnDirty=true;S.cmap=null;render()};
+    on("[data-ctown]",function(b){b.onclick=function(){S.checkTown=b.getAttribute("data-ctown");nextCheck();S.cmap=null;render()}});
     var n=el("cN");
     function setCount(v){S.count=Math.max(1,Math.min(200,v|0));PREF.count=S.count;save(LS_PREF,PREF);if(n)n.value=S.count;on("[data-cn]",function(b){b.classList.toggle("on",+b.getAttribute("data-cn")===S.count)})}
     if(n)n.onchange=function(){setCount(+n.value)};
@@ -977,7 +1135,7 @@
   }
   function spotPopup(sp,sub){
     return (sub?'<div class="side">':'<b>'+esc(sp.road)+' at '+esc(sp.cross||"the corner")+'</b>')+
-      '<small>'+(sub?'<b>Facing cars heading '+esc(compass(sp.head))+' on '+esc(sp.road)+'</b> · ':esc(sp.town)+' · ')+'score '+Math.round(sp._st.eff)+(sp._st.checked?' · <b style="color:#16a34a">✓ checked by Mikey</b>':'')+'</small><small>'+esc(why(sp))+'</small><small>'+esc(howTo(sp))+'</small>'+
+      '<small>'+(sub?'<b>Facing cars heading '+esc(compass(sp.head))+' on '+esc(sp.road)+'</b> · ':esc(sp.town)+' · ')+'score '+Math.round(sp._st.eff)+(sp._st.checked?' · <b style="color:#16a34a">✓ checked by Mikey</b>':sp._st.likelyBad?' · <b style="color:#b45309">probably not a good spot (unchecked)</b>':'')+'</small><small>'+esc(why(sp))+'</small><small>'+esc(howTo(sp))+'</small>'+
       '<div class="row"><button data-add="'+esc(sp.id)+'">Add to my route</button><a href="'+svUrl(sp)+'" target="_blank" rel="noopener"><button>Street View</button></a><a href="'+navUrl(sp.lat,sp.lon)+'" target="_blank" rel="noopener"><button>Navigate</button></a></div>'+(sub?'</div>':'');
   }
   function cornerPopup(g){
@@ -1052,7 +1210,7 @@
   }
   else if(ID){if(hk)history.replaceState(null,"",location.pathname);boot()}
   else render();
-  window.__signs={S:S,Q:Q,buildRoute:buildRoute,openSpots:openSpots,suggestions:suggestions,howTo:howTo,model:model};
+  window.__signs={S:S,Q:Q,learner:learner,predGood:predGood,labels:labels,nextCheck:nextCheck,LEARN:LEARN,buildRoute:buildRoute,openSpots:openSpots,suggestions:suggestions,howTo:howTo,model:model};
 })();
 </script>
 </body>

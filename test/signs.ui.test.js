@@ -40,7 +40,7 @@ const syncs = [];
 function stateFor(owner, hid) {
   const docs = Object.values(SERVER.docs);
   return Object.assign({ ok: true, now: Date.now(), me: { id: hid, name: owner ? 'Mikey' : (SERVER.crew[hid] || {}).name }, owner,
-    cfg: SERVER.cfg, crew: SERVER.crew, nogo: SERVER.nogo, marks: SERVER.marks, rev: SERVER.rev, docs },
+    cfg: SERVER.cfg, crew: SERVER.crew, nogo: SERVER.nogo, marks: SERVER.marks, rev: SERVER.rev, model: SERVER.model || null, docs },
   owner ? { links: SERVER.links, leads: SERVER.leads, people: {}, revenue: {}, today: '2026-10-03', since: '2026-09-29' } : {});
 }
 function handleSync(b, hid) {
@@ -88,7 +88,7 @@ await context.route('**/*', async (route) => {
   if (p === '/api/signs') {
     if (b.action === 'link-new') { const l = { k: 'NEWLINKNEWLINK99', label: b.label, at: Date.now(), off: 0 }; SERVER.links.push(l); return json({ ok: true, link: l }); }
     if (b.action === 'settings') { Object.assign(SERVER.cfg, b.cfg); return json({ ok: true }); }
-    if (b.action === 'review') { SERVER.reviews.push(b); (b.good || []).forEach((id) => { SERVER.rev[id] = 1; }); (b.bad || []).forEach((id) => { SERVER.rev[id] = 0; }); return json({ ok: true }); }
+    if (b.action === 'review') { SERVER.reviews.push(b); if (b.model) SERVER.model = b.model; (b.good || []).forEach((id) => { SERVER.rev[id] = 1; }); (b.bad || []).forEach((id) => { SERVER.rev[id] = 0; }); return json({ ok: true }); }
     return json({ ok: true });
   }
   return route.fulfill({ status: 404, body: '' });
@@ -249,6 +249,73 @@ await op.click('[data-tab="map"]');
 await op.waitForTimeout(300);
 ok('leaving the tab sends whatever is left', SERVER.reviews.length >= 1);
 ok('no page errors (pin check)', !errs.length, errs);
+
+section('The learner learns');
+// A hidden rule stands in for Mikey's eye: a pin is bad if it's under trees
+// within 20 m or not green on the patch (fx 13 = tall_20m, fx 0 = ndvi_pin).
+const FXN = SJ.fx.map((f) => f[0]);
+ok('the spot list carries the ground measurements', FXN.length === 17 && SJ.fxv === 'fx1' && SJ.spots.every((r) => Array.isArray(r[ix.fx]) && r[ix.fx].length === 17));
+const truth = (fx, noisy, id) => { let good = !(fx[13] > 55 || fx[0] < 128); if (noisy) { let h = 0; for (const c of id) h = (h * 31 + c.charCodeAt(0)) | 0; if (Math.abs(h) % 10 === 0) good = !good; } return good; };
+await op.evaluate(() => { localStorage.removeItem('mkd-signs-rev'); const p = JSON.parse(localStorage.getItem('mkd-crew-pref') || '{}'); delete p.lg; localStorage.setItem('mkd-crew-pref', JSON.stringify(p)); });
+for (const k of Object.keys(SERVER.rev)) delete SERVER.rev[k];
+SERVER.reviews.length = 0; SERVER.model = null;
+await op.reload();
+await op.waitForSelector('[data-tab="check"]', { timeout: 10000 });
+await op.click('[data-tab="check"]');
+await op.waitForSelector('#ckGood', { timeout: 8000 });
+ok('before any checks it is learning, not on', /Learning\./.test(await op.textContent('#app')));
+const seen = [], whyCount = {}, townsSeen = new Set();
+for (let i = 0; i < 200; i++) {
+  const c = await op.evaluate(() => { const S = window.__signs.S, sp = S.spotById[S.checkSpot]; return { id: sp.id, fx: sp.fx, town: sp.town, why: S.checkWhy }; });
+  seen.push(c.id); townsSeen.add(c.town); whyCount[c.why] = (whyCount[c.why] || 0) + 1;
+  await op.click(truth(c.fx, true, c.id) ? '#ckGood' : '#ckBad');
+}
+await op.waitForTimeout(300);
+const L = await op.evaluate(() => { const M = window.__signs.learner(); return { on: M.on, n: M.n, good: M.good, bad: M.bad, acc: M.acc }; });
+ok('200 checks (one in ten deliberately wrong) are all counted', L.n === 200, L);
+ok('it never shows the same pin twice', new Set(seen).size === seen.length);
+ok('it shows a spread of places, not one town', townsSeen.size >= 5, [...townsSeen]);
+ok('it mixes the best spots with the ones it is unsure of', (whyCount["One of the best spots left"] || 0) >= 60 && (whyCount["I'm not sure about this one"] || 0) >= 60, whyCount);
+ok('tested on checks it had not learned from, it clears 75% and switches on', L.on && L.acc >= 0.75, L);
+const live = await op.evaluate(() => { const g = JSON.parse(localStorage.getItem('mkd-crew-pref')).lg || []; return { n: g.length, right: g.filter((x) => x).length }; });
+ok('its last 50 live guesses on the cards were mostly right', live.n === 50 && live.right / live.n >= 0.7, live);
+const hold = await op.evaluate((src) => {
+  const truth = new Function('fx', 'return !(fx[13] > 55 || fx[0] < 128)');
+  const S = window.__signs.S, M = window.__signs.learner(); let a = 0, n = 0, sunk = 0, sunkBad = 0;
+  S.spots.forEach((sp) => { if (window.__signs.S.data.rev && sp.id in window.__signs.S.data.rev) return; const p = window.__signs.predGood(sp, M); if (p == null) return; n++; if ((p >= 0.5) === truth(sp.fx)) a++; if (p < 0.3) { sunk++; if (!truth(sp.fx)) sunkBad++; } });
+  return { acc: a / n, n, sunk, sunkBad };
+});
+ok('on the ~1,900 spots nobody checked it is right 85%+ of the time', hold.acc >= 0.85, hold);
+ok('and of the spots it sinks, nearly all really are bad', hold.sunk > 50 && hold.sunkBad / hold.sunk >= 0.9, hold);
+ok('a spot it doubts sinks but is never removed', await op.evaluate(() => { const S = window.__signs.S; const sp = S.spots.find((x) => x._st && x._st.likelyBad); return !!sp && !sp._st.out && sp._st.eff < sp.score; }));
+await op.click('[data-tab="map"]');
+await op.waitForTimeout(400);
+ok('the model went up with the marks, in the same uploads', SERVER.model && SERVER.model.on === true && SERVER.model.trees.length >= 10 && SERVER.reviews.slice(1).every((r) => r.model), SERVER.model && { n: SERVER.model.n, on: SERVER.model.on });
+ok('uploads stayed batched: 200 marks, 21 or fewer writes', SERVER.reviews.length <= 21, SERVER.reviews.length);
+await page.reload();
+await page.waitForSelector('[data-tab="go"]', { timeout: 10000 }).catch(() => {});
+await page.waitForTimeout(800);
+const crew = await page.evaluate(() => { const M = window.__signs.learner(); const S = window.__signs.S; let sunk = 0; (S.spots || []).forEach((sp) => { const st = window.__signs.S.spotById[sp.id]; }); return { has: !!M, on: M && M.on, sunk: (S.spots || []).filter((sp) => { const st = sp._st; return st && st.likelyBad; }).length }; });
+ok('a crew phone gets the same model and uses it', crew.has && crew.on, crew);
+const speed = await op.evaluate(() => {
+  const S = window.__signs.S, ids = S.spots.slice(0, 1900).map((s) => s.id), save = JSON.stringify(S.data.rev);
+  S.data.rev = {}; ids.forEach((id, i) => { S.data.rev[id] = i % 3 ? 1 : 0; });
+  S.learnDirty = true; S.learnForce = true; const t = performance.now(); const M = window.__signs.learner(); const ms = performance.now() - t;
+  S.data.rev = JSON.parse(save); S.learnDirty = true; S.learnForce = true; window.__signs.learner();
+  return { ms: Math.round(ms), n: M.n };
+});
+ok('it learns from 1,900 checks (with its five-fold test) in under 8 seconds on this machine', speed.n === 1900 && speed.ms < 8000, speed);
+const noise = await op.evaluate(() => {
+  const S = window.__signs.S, save = JSON.stringify(S.data.rev), q = localStorage.getItem('mkd-signs-rev');
+  localStorage.removeItem('mkd-signs-rev');
+  S.data.rev = {}; S.spots.slice(0, 300).forEach((sp) => { let h = 7; for (const c of sp.id) h = (h * 131 + c.charCodeAt(0)) | 0; S.data.rev[sp.id] = Math.abs(h) % 2; });
+  S.stVer++; S.learnDirty = true; S.learnForce = true; const M = window.__signs.learner(); const out = { on: M.on, acc: M.acc };
+  S.data.rev = JSON.parse(save); if (q) localStorage.setItem('mkd-signs-rev', q); S.stVer++; S.learnDirty = true; S.learnForce = true; window.__signs.learner();
+  return out;
+});
+ok('given 300 coin-flip answers it finds nothing and stays off', noise.on === false && noise.acc < 0.65, noise);
+const stale = await page.evaluate(() => { const S = window.__signs.S, keep = S.data.model; S.data.model = Object.assign({}, keep, { v: 'fx0' }); const M = window.__signs.learner(); S.data.model = keep; return M; });
+ok('a model learned on an older spot list is ignored', stale === null);
 
 section('When the server breaks, the page says so');
 const bp = await context.newPage();

@@ -157,7 +157,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-01·booking-email';
+const BUILD = '2026-10-01·signs-learner';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -2012,6 +2012,7 @@ async function loadSigns() {
     cfg: Object.assign({ pay: 0, photo: 'ask', recheck: 7, cap: SIGN_CAP_DEFAULT, cost: 0, stock: 0 }, d.cfg || {}),
     links: d.links || [], crew: d.crew || {}, nogo: d.nogo || [], marks: d.marks || {},
     leads: d.leads || {}, joins: d.joins || { d: '', n: 0 }, okey: d.okey || '', rev: d.rev || {},
+    model: d.model || null,
   };
 }
 async function saveSigns(doc) { await kv().put(SIGN_KEY, JSON.stringify(doc)); }
@@ -2053,6 +2054,22 @@ async function signOwner(request, doc, key) {
   return (await authRole(request)) === 'owner';
 }
 
+// The learner Mikey's phone fitted (see signs.html): up to 100 small decision
+// trees, each [feature, threshold, left, right] two levels deep, leaves plain
+// numbers. Checked for shape and size here because every crew phone runs it.
+function signModelOk(m) {
+  if (!m || typeof m !== 'object' || !Array.isArray(m.trees) || !m.trees.length || m.trees.length > 100) return false;
+  if (JSON.stringify(m.trees).length > 30000) return false;
+  const leaf = (v) => typeof v === 'number' && isFinite(v) && Math.abs(v) < 100;
+  const node = (t, depth) => {
+    if (leaf(t)) return true;
+    if (depth > 3 || !Array.isArray(t) || t.length !== 4) return false;
+    if (!Number.isInteger(t[0]) || t[0] < 0 || t[0] > 128 || typeof t[1] !== 'number' || !isFinite(t[1])) return false;
+    return node(t[2], depth + 1) && node(t[3], depth + 1);
+  };
+  return m.trees.every((t) => Array.isArray(t) && node(t, 1));
+}
+
 // Who is asking. Mikey, signed in to the dashboard, is always allowed and
 // places signs as the helper "mikey" — but only when the page says it is the
 // owner's view, so an open dashboard (no password set) can't turn every helper
@@ -2090,7 +2107,7 @@ async function signState(doc, who, extra) {
   const head = Object.assign({
     ok: true, now: Date.now(), me: { id: who.hid, name: who.name || (crew[who.hid] && crew[who.hid].name) || '' },
     owner: !!who.owner, cfg: who.owner ? c : { pay: c.pay, photo: c.photo, recheck: c.recheck },
-    crew, nogo: doc.nogo, marks: doc.marks, rev: doc.rev,
+    crew, nogo: doc.nogo, marks: doc.marks, rev: doc.rev, model: doc.model,
   }, extra || {});
   // The head's closing brace is swapped for the docs array and put back after
   // it. (Spelled as a char code: the test suite lifts functions out of this
@@ -2360,6 +2377,13 @@ async function apiSignsPost(request) {
     take(b.good).forEach((id) => { doc.rev[id] = 1; });
     take(b.bad).forEach((id) => { doc.rev[id] = 0; });
     take(b.undo).forEach((id) => { delete doc.rev[id]; });
+    // The learner Mikey's phone fitted to these marks rides along in the same
+    // write, so every crew phone ranks with it. Only numbers, only so many.
+    const m = b.model;
+    if (signModelOk(m)) {
+      doc.model = { v: signTxt(m.v, 12), trees: m.trees, n: Math.max(0, Math.min(100000, Number(m.n) | 0)),
+        acc: typeof m.acc === 'number' && m.acc >= 0 && m.acc <= 1 ? m.acc : null, on: m.on === true, at: now };
+    }
     const keys = Object.keys(doc.rev);
     if (keys.length > 8000) return json({ ok: false, error: 'too_many' }, 422);
     await saveSigns(doc);
