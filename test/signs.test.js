@@ -62,7 +62,7 @@ const CODE = [
   'SIGN_PHOTO_TTL', 'SIGN_PHOTO_MAX', 'SIGN_STATUS', 'SIGN_SKIP',
 ].map(constant).concat([
   'loadSigns', 'saveSigns', 'sha256hex', 'signHid', 'signNum', 'signTxt', 'signNextUtcMidnight', 'signCredit',
-  'signKeyEq', 'signOwner', 'signWho', 'signState', 'apiCrewHello', 'apiCrewJoin', 'apiCrewState', 'signCleanPlaced', 'signCleanEvent',
+  'signKeyEq', 'signOwner', 'signModelOk', 'signWho', 'signState', 'apiCrewHello', 'apiCrewJoin', 'apiCrewState', 'signCleanPlaced', 'signCleanEvent',
   'apiCrewSync', 'apiCrewPhoto', 'apiSignsPost', 'apiSignsManifest',
 ].map(lift)).join('\n\n');
 const X = new Function(...Object.keys(ctx), CODE + `
@@ -229,6 +229,16 @@ await X.apiSignsPost(req({ action: 'review', undo: ['abc12NE'] }));
 ok('a mark can be undone', !('abc12NE' in (await X.loadSigns()).rev));
 const crewSees = await (await X.apiCrewState(req({ k: K, h: A.h, s: A.s }))).text();
 ok('the crew gets the marks, so a bad pin is off their map too', /"rev":\{[^}]*"u6tyrW":0/.test(crewSees), crewSees.slice(0, 200));
+const tree = [3, 0.5, [7, 0.2, 0.1, -0.3], -0.2];
+await X.apiSignsPost(req({ action: 'review', good: ['u6b59N'], model: { v: 'fx1', trees: [tree, tree], n: 40, acc: 0.81, on: true } }));
+let mdl = (await X.loadSigns()).model;
+ok('the learned trees ride along in the same write', mdl && mdl.trees.length === 2 && mdl.on === true && mdl.acc === 0.81, mdl);
+for (const bad of [{ v: 'fx1', trees: [] }, { v: 'fx1', trees: [[0, 1, 'x', 2]] }, { v: 'fx1', trees: [[0, 1, [0, 1, [0, 1, [0, 1, 1, 1], 1], 1], 1]] },
+  { v: 'fx1', trees: Array(101).fill(tree) }, { v: 'fx1', trees: [[0, 1, 1e9, 0]] }, { v: 'fx1', trees: [[-1, 1, 0, 0]] }]) {
+  await X.apiSignsPost(req({ action: 'review', good: ['u6b59N'], model: Object.assign({ n: 1, on: true }, bad) }));
+}
+mdl = (await X.loadSigns()).model;
+ok('malformed, deep, huge or empty models are refused and the last good one kept', mdl.trees.length === 2 && JSON.stringify(mdl.trees[0]) === JSON.stringify(tree));
 ROLE = '';
 r = await X.apiSignsPost(req({ action: 'review', good: ['zzz99N'] }));
 ok('a helper cannot mark pins', r.status === 401 && !('zzz99N' in (await X.loadSigns()).rev));
