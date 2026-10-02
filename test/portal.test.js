@@ -9,7 +9,7 @@ import fs from 'fs';
 let src = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
 src = src.replace(/^export default \{[\s\S]*?^\};$/m, '');
 
-const EXPORTS = ['custTokenFor', 'custResolve', 'custState', 'apiCustState', 'apiCustAction',
+const EXPORTS = ['bkAvailability', 'custTokenFor', 'custResolve', 'custState', 'apiCustState', 'apiCustAction',
   'apiCustLink', 'custPage', 'apiBook', 'buildPricing', 'apiPricing',
   'loadThread', 'saveThread', 'updateIndexEntry', 'loadBookings', 'saveBookings',
   'loadQuotes', 'saveQuotes', 'loadMonth', 'saveMonth', 'loadConfig', 'localDateStr',
@@ -133,23 +133,39 @@ ok('an unknown action is refused', (await M.apiCustAction(req({ action: 'delete'
 ok('no token, no action', (await M.apiCustAction(req({ action: 'cancel', id: other.id }), q(''))).status === 404);
 
 section('Booking from the link: the token is the identity');
+// A time the calendar really offers. This used to be 09:00, which stopped
+// existing when his real week (1:00 PM weekdays, 7:00 and 1:00 Saturdays)
+// became the calendar on 2026-09-29, so the booking failed as slot_taken and
+// the identity checks never ran.
+async function openSlot(fromDay) {
+  for (let d = fromDay; d < fromDay + 14; d++) {
+    const date = dateOf(NOW + d * DAY);
+    const slots = await M.bkAvailability(date, 'interior', 'suv');
+    if (slots.length) return { date, slot: slots[0] };
+  }
+  return { date: dateOf(NOW + fromDay * DAY), slot: '13:00' };
+}
+const open5 = await openSlot(5), open9 = await openSlot(9);
 const b2 = await (await M.apiBook(req({
-  service: 'full', size: 'suv', date: dateOf(NOW + 5 * DAY), slot: '09:00',
+  service: 'interior', size: 'suv', date: open5.date, slot: open5.slot,
   name: 'Jenna Smith', address: '1425 Cedar Ave', city: 'Everett', fromLink: tok,
 }))).json();
 if (b2.ok) {
   const made = (await M.loadBookings()).find((x) => x.id === b2.id) || (await M.loadBookings())[0];
   ok('the booking is attributed to the token\'s customer, not to posted data', made.phone === '+14255551234', made.phone);
-  ok('and it lands as pending, exactly like the website does', made.status === 'pending', made.status);
+  // Exactly like the website does: since 2026-09-29 a booking from one of the
+  // twelve towns (Everett) is confirmed on the spot; anywhere else waits.
+  ok('and it lands exactly like a website booking from Everett: confirmed on the spot', made.status === 'confirmed', made.status);
 } else {
   ok('booking through the link is accepted', false, b2);
   ok('(skipped)', false);
 }
 const b3 = await (await M.apiBook(req({
-  service: 'full', size: 'suv', date: dateOf(NOW + 6 * DAY), slot: '09:00',
+  service: 'interior', size: 'suv', date: open9.date, slot: open9.slot,
   name: 'Nobody', address: 'x', city: 'y', fromLink: 'forged-token-value',
 }))).json();
 ok('a forged link cannot book as anybody', b3.ok === false, b3);
+ok('...refused for the link, not for the time', b3.error !== 'slot_taken', b3);
 
 section('The page itself');
 const page = await M.custPage(tok);

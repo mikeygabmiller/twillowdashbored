@@ -157,7 +157,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-02·channels';
+const BUILD = '2026-10-02·booking-facts';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -593,6 +593,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/booking')    return apiBookingAction(request);
   if (request.method === 'GET'  && pathname === '/api/booking-settings') return apiBookingSettings();
   if (request.method === 'POST' && pathname === '/api/booking-settings') return apiSaveBookingSettings(request);
+  if (request.method === 'POST' && pathname === '/api/booking-settings/facts') return apiBookingFacts();
   if (request.method === 'POST' && pathname === '/api/booking-cal-test') return apiCalTest(request);
   if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/gcal-setup') return apiGcalSetup(request);
   if (request.method === 'POST' && pathname === '/api/gcal-sync-all') return apiGcalSyncAll();
@@ -16595,38 +16596,27 @@ function bookingDefaults() {
     workDays: [1, 2, 3, 4, 5, 6],      // Mon–Sat (0 = Sun, off)
     dayStart: '07:00', lastStart: '16:00',
     stepMin: 30, bufferMin: 60, maxJobsPerDay: 2, minLeadMin: 120, windowDays: 30,
-    sizes: [
-      { id: 'sedan', label: 'Car / Sedan' },
-      { id: 'suv',   label: 'SUV / Crossover' },
-      { id: 'truck', label: 'Truck / Van / XL' },
-    ],
+    // The website's price book (BOOK_FACTS below, PRICING.md in the website
+    // repo). These only fill what a saved config lacks; the facts check in
+    // Settings is what brings a saved one up to date.
+    sizes: BOOK_SIZE_IDS.map((id) => ({ id, label: BOOK_FACTS.sizes[id] })),
     services: [
-      { id: 'full', name: 'Full Detail — In & Out', enabled: true, popular: true,
-        blurb: 'The works: deep interior + full exterior. First-timers ~3–4 hrs.',
-        price: { sedan: 299, suv: 339, truck: 379 }, duration: { sedan: 180, suv: 210, truck: 240 } },
-      { id: 'interior', name: 'Interior Detail', enabled: true, popular: false,
-        blurb: 'Full vacuum, carpets & seats, all surfaces, windows, pet hair.',
-        price: { sedan: 200, suv: 240, truck: 280 }, duration: { sedan: 90, suv: 110, truck: 120 } },
-      { id: 'exterior', name: 'Exterior Detail', enabled: true, popular: false,
-        blurb: 'Hand wash, wheels & tires, bug & tar, polish, spray wax.',
-        price: { sedan: 160, suv: 200, truck: 240 }, duration: { sedan: 45, suv: 60, truck: 75 } },
+      { id: 'full', name: BOOK_FACTS.services.full.name, enabled: true, popular: true, blurb: BOOK_FACTS.services.full.blurb,
+        price: Object.assign({}, BOOK_FACTS.services.full.price), duration: { sedan: 180, suv: 210, truck: 240 } },
+      { id: 'interior', name: BOOK_FACTS.services.interior.name, enabled: true, popular: false, blurb: BOOK_FACTS.services.interior.blurb,
+        price: Object.assign({}, BOOK_FACTS.services.interior.price), duration: { sedan: 90, suv: 110, truck: 120 } },
+      { id: 'exterior', name: BOOK_FACTS.services.exterior.name, enabled: true, popular: false, blurb: BOOK_FACTS.services.exterior.blurb,
+        price: Object.assign({}, BOOK_FACTS.services.exterior.price), duration: { sedan: 45, suv: 60, truck: 75 } },
     ],
-    addons: [
-      { id: 'carpet',   name: 'Carpet & upholstery shampoo', price: 60, enabled: true, popular: true,  blurb: 'Hot-water extraction — lifts deep stains' },
-      { id: 'pethair',  name: 'Pet hair removal',            price: 40, enabled: true, popular: false, blurb: 'Special process for stubborn fur' },
-      { id: 'wax',      name: 'Wax / paint sealant',         price: 40, enabled: true, popular: false, blurb: 'Extra shine & protection' },
-      { id: 'steam',    name: 'Steam clean & sanitize',      price: 40, enabled: true, popular: false, blurb: 'Deep sanitize + odor knockdown' },
-      { id: 'leather',  name: 'Leather conditioning',        price: 30, enabled: true, popular: false, blurb: 'Clean + condition leather seats' },
-      { id: 'headlight',name: 'Headlight restoration',       price: 50, enabled: true, popular: false, blurb: 'Clear up foggy headlights' },
-    ],
-    cities: ['Everett', 'Bothell', 'Lake Stevens', 'Mill Creek', 'Monroe', 'Marysville', 'Duvall', 'Snohomish'],
+    addons: BOOK_FACTS.addons.map((a, i) => ({ id: a.id, name: a.name, price: a.price, enabled: true, popular: i === 0, blurb: a.blurb })),
+    cities: BOOK_FACTS.cities.slice(),
     content: {
       businessName: "Mikey's Mobile Detailing", phoneDisplay: '(425) 600-7897', phone: '+14256007897',
-      hook: 'First full detail? Your exterior wash & wax (a $160 value) is free.',
+      hook: '',
       guarantee: "You don't pay until you love it.",
-      urgency: true, freeWax: true,
+      urgency: false, freeWax: false,
     },
-    proof: { rating: '5.0', reviews: 39, cars: '300+' },
+    proof: { rating: '5.0', reviews: BOOK_FACTS.reviews, cars: '300+' },
     calendar: { icalUrl: '', enabled: false },   // Google Calendar "secret iCal" URL
     blockedDates: [],                             // ['2026-08-01', …] days Mikey is off
     // Mikey's real week, from him on 2026-09-29: school until noon, so a weekday
@@ -17602,12 +17592,132 @@ function bkEventBusyOnDate(ev, date) {
 // ===========================================================================
 // Booking settings API (authed) — powers the Settings tab
 // ===========================================================================
-async function apiBookingSettings() { return json({ ok: true, config: await loadBookingConfig() }); }
+// ===========================================================================
+// Booking page facts check  (Bookings → Settings, top of the screen)
+// ---------------------------------------------------------------------------
+// The booking page (/book.html) is where a friend's referral link lands, and
+// it draws every price, size, add-on and town from the settings saved here.
+// On 2026-10-02 those settings still said Full Detail $299, Interior $200,
+// Exterior $160, "First-timers ~3–4 hrs", an exterior that includes polish,
+// 39 reviews and 8 towns, a week after the website moved to the price book
+// below. A referred friend could be quoted $70 under what the website says.
+//
+// So this compares the saved settings with the website's facts and lists what
+// disagrees, and "Match the website" rewrites only those fields: prices, size
+// names, the three service names and descriptions, the add-ons, the review
+// count, the towns and the old headline offer. Service and size ids, times,
+// switches and everything else are left exactly as they are, because the
+// website's calculator books through these same ids. It runs when Mikey taps
+// it, never on its own: it rewrites his saved settings.
+//
+// THIS IS A COPY of the price book in the website repo (PRICING.md, and the
+// facts table in its CLAUDE.md). A price change lands here too.
+// ===========================================================================
+const BOOK_FACTS = {
+  sizes: { sedan: 'Car / Sedan', suv: 'SUV / Pickup', truck: 'Van / 3-row' },
+  services: {
+    full: { name: 'Full Detail', price: { sedan: 369, suv: 409, truck: 449 },
+      blurb: 'Interior and exterior in one visit, $79 less than booking them apart. 3–5 hours.' },
+    interior: { name: 'Interior Detail', price: { sedan: 249, suv: 289, truck: 329 },
+      blurb: 'Deep vacuum, steam clean, upholstery shampoo, leather cleaned and conditioned, interior glass. About 90 minutes, 2–4 hours with extraction or heavy pet hair.' },
+    exterior: { name: 'Exterior Detail', price: { sedan: 199, suv: 239, truck: 279 },
+      blurb: 'Hand wash, decontamination, clay bar, wheels and tires, exterior glass, wax or sealant.' },
+  },
+  addons: [
+    { id: 'carpet', name: 'Carpet Shampoo', price: 20, blurb: 'Hot water extraction for the carpets and cloth seats' },
+    { id: 'polish', name: 'Exterior Polish', price: 30, blurb: 'Takes the dull film and light swirls off the paint' },
+    { id: 'ceramicwax', name: 'Ceramic Wax', price: 20, blurb: 'Rain beads and rolls off for months' },
+    { id: 'rainx', name: 'RainX Windows', price: 10, blurb: 'Water sheets off the windshield at speed' },
+  ],
+  reviews: 41,
+  cities: ['Snohomish', 'Lake Stevens', 'Everett', 'Monroe', 'Mill Creek', 'Marysville',
+    'Bothell', 'Duvall', 'Mukilteo', 'Woodinville', 'Granite Falls', 'Arlington'],
+};
+const BOOK_SIZE_IDS = ['sedan', 'suv', 'truck'];
+
+// What disagrees, in his words. Pure: reads a config, writes nothing.
+function bookFactsIssues(cfg) {
+  const out = [];
+  const $ = (n) => '$' + n;
+  const priceRow = (p) => BOOK_SIZE_IDS.map((z) => (p && p[z] != null ? $(p[z]) : '?')).join(' / ');
+  for (const id of Object.keys(BOOK_FACTS.services)) {
+    const want = BOOK_FACTS.services[id];
+    const s = (cfg.services || []).find((x) => x.id === id);
+    if (!s) continue;   // a service he removed stays removed
+    if (BOOK_SIZE_IDS.some((z) => Number(s.price && s.price[z]) !== want.price[z])) {
+      out.push({ key: 'price:' + id, what: `${want.name} prices`, now: priceRow(s.price), want: priceRow(want.price) });
+    }
+    const words = String(s.name || '') + ' ' + String(s.blurb || '');
+    if (/3\s*[–-]\s*4\s*h/i.test(words)) out.push({ key: 'time:' + id, what: `${want.name} says 3–4 hours`, now: s.blurb, want: 'A full detail takes 3–5 hours' });
+    if (id === 'exterior' && /polish/i.test(words)) out.push({ key: 'polish', what: 'Exterior says polish is included', now: s.blurb, want: 'Polish is a $30 add-on' });
+    if (/—/.test(words)) out.push({ key: 'dash:' + id, what: `${want.name} has an em dash`, now: s.name, want: want.name });
+  }
+  const sizeNow = BOOK_SIZE_IDS.map((z) => ((cfg.sizes || []).find((x) => x.id === z) || {}).label || '?');
+  if (sizeNow.join('|') !== BOOK_SIZE_IDS.map((z) => BOOK_FACTS.sizes[z]).join('|')) {
+    out.push({ key: 'sizes', what: 'Vehicle sizes', now: sizeNow.join(' / '), want: BOOK_SIZE_IDS.map((z) => BOOK_FACTS.sizes[z]).join(' / ') + ' (pickups are +$40, vans and 3-rows +$80)' });
+  }
+  const addNow = (cfg.addons || []).filter((a) => a.enabled !== false).map((a) => `${a.name} ${$(a.price)}`).sort();
+  const addWant = BOOK_FACTS.addons.map((a) => `${a.name} ${$(a.price)}`).sort();
+  if (addNow.join('|').toLowerCase() !== addWant.join('|').toLowerCase()) {
+    out.push({ key: 'addons', what: 'Add-ons', now: addNow.join(', ') || 'none', want: BOOK_FACTS.addons.map((a) => `${a.name} ${$(a.price)}`).join(', ') });
+  }
+  const rev = Number(cfg.proof && cfg.proof.reviews);
+  if (rev !== BOOK_FACTS.reviews) out.push({ key: 'reviews', what: 'Review count', now: String(rev || '?'), want: String(BOOK_FACTS.reviews) });
+  const cities = (cfg.cities || []).map((c) => String(c).trim());
+  const missing = BOOK_FACTS.cities.filter((c) => !cities.includes(c));
+  const extra = cities.filter((c) => !BOOK_FACTS.cities.includes(c));
+  if (missing.length || extra.length) {
+    out.push({ key: 'cities', what: 'Towns', now: cities.join(', '),
+      want: (missing.length ? 'add ' + missing.join(', ') : '') + (missing.length && extra.length ? '; ' : '') + (extra.length ? 'take off ' + extra.join(', ') : '') });
+  }
+  const hook = String((cfg.content && cfg.content.hook) || '');
+  if (hook && /free|\$\d/i.test(hook)) {
+    out.push({ key: 'hook', what: 'An old offer is still saved as the headline', now: hook,
+      want: 'No headline offer (the Rain-Ready offer lives on the website, hangers and postcards)' });
+  }
+  return out;
+}
+
+// Only the fields a facts issue is about; ids, durations, times and switches
+// are carried over untouched. Returns a new config for bkSanitizeConfig.
+function bookFactsApply(cfg) {
+  const c = JSON.parse(JSON.stringify(cfg));
+  c.sizes = BOOK_SIZE_IDS.map((z) => Object.assign({}, (cfg.sizes || []).find((x) => x.id === z) || { id: z }, { id: z, label: BOOK_FACTS.sizes[z] }))
+    .concat((cfg.sizes || []).filter((x) => !BOOK_SIZE_IDS.includes(x.id)));
+  c.services = (cfg.services || []).map((s) => {
+    const want = BOOK_FACTS.services[s.id];
+    if (!want) return s;
+    const price = Object.assign({}, s.price || {});
+    for (const z of BOOK_SIZE_IDS) price[z] = want.price[z];
+    return Object.assign({}, s, { name: want.name, blurb: want.blurb, price });
+  });
+  c.addons = BOOK_FACTS.addons.map((a, i) => ({ id: a.id, name: a.name, price: a.price, enabled: true, popular: i === 0, blurb: a.blurb }));
+  c.proof = Object.assign({}, cfg.proof || {}, { reviews: BOOK_FACTS.reviews });
+  c.cities = BOOK_FACTS.cities.slice();
+  c.content = Object.assign({}, cfg.content || {}, { hook: '', freeWax: false });
+  return c;
+}
+
+// POST /api/booking-settings/facts — his tap on "Match the website".
+async function apiBookingFacts() {
+  const cur = await loadBookingConfig();
+  const before = bookFactsIssues(cur);
+  if (!before.length) return json({ ok: true, changed: 0, config: cur, facts: [] });
+  const next = bkSanitizeConfig(bookFactsApply(cur));
+  await saveBookingConfig(next);
+  const saved = await loadBookingConfig();
+  return json({ ok: true, changed: before.length, fixed: before.map((x) => x.what), config: saved, facts: bookFactsIssues(saved) });
+}
+
+async function apiBookingSettings() {
+  const config = await loadBookingConfig();
+  return json({ ok: true, config, facts: bookFactsIssues(config) });
+}
 async function apiSaveBookingSettings(request) {
   const d = await readJson(request);
   const clean = bkSanitizeConfig(d && d.config ? d.config : d);
   await saveBookingConfig(clean);
-  return json({ ok: true, config: clean });
+  return json({ ok: true, config: clean, facts: bookFactsIssues(clean) });
 }
 async function apiCalTest(request) {
   const d = await readJson(request);
