@@ -157,7 +157,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-01·booking-calendar-2';
+const BUILD = '2026-10-02·gift-cards';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -467,6 +467,8 @@ async function handle(request) {
   // /p/<token> — the pay page a payment-request text links to.
   if (request.method === 'GET'  && pathname.startsWith('/t/'))      return trackPage(pathname.slice(3).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40));
   if (request.method === 'GET'  && pathname.startsWith('/p/'))      return payPage(pathname.slice(3).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40));
+  // /g/<token> — a gift card he sold, printable. See giftPage.
+  if (request.method === 'GET'  && pathname.startsWith('/g/'))      return giftPage(pathname.slice(3).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40));
   if (request.method === 'GET'  && pathname === '/api/track/state') return apiTrackState(url);
   // /c/<token> — the customer's own page: what's booked, book a time, what I've done
   if (request.method === 'GET'  && pathname.startsWith('/c/'))      return custPage(pathname.slice(3).replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80));
@@ -712,6 +714,9 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/pay/config')     return apiPaySaveConfig(request);
   if (request.method === 'POST' && pathname === '/api/pay/request')    return apiPayRequest(request);
   if (request.method === 'POST' && pathname === '/api/pay/action')     return apiPayAction(request);
+  // Gift cards (Get Paid → Gift cards)
+  if (request.method === 'GET'  && pathname === '/api/gifts')          return apiGifts();
+  if (request.method === 'POST' && pathname === '/api/gifts')          return apiGiftsPost(request);
   // Customer garage
   if (request.method === 'GET'  && pathname === '/api/garage')         return apiGarage(url);
 
@@ -7244,7 +7249,7 @@ async function intelLedger(months = INTEL_MAX_MONTHS) {
   }
   return out;
 }
-function intelJobs(entries) { return entries.filter((e) => e.type === 'job'); }
+function intelJobs(entries) { return entries.filter((e) => e.type === 'job' && !e.gift); }
 const DAY_MS = 86400000;
 function intelDays(a, b) { return Math.round((a - b) / DAY_MS); }
 // Entry timestamp we trust: the logged date is what the owner actually means,
@@ -7613,7 +7618,7 @@ async function recordPulse(now = Date.now()) {
   const active = index.filter((t) => !t.archived);
   const month = day.slice(0, 7);
   const mdoc = await loadMonth(month);
-  const todayJobs = ((mdoc && mdoc.entries) || []).filter((e) => e.type === 'job' && e.date === day);
+  const todayJobs = ((mdoc && mdoc.entries) || []).filter((e) => e.type === 'job' && !e.gift && e.date === day);
 
   doc.days.push({
     d: day,
@@ -11249,6 +11254,7 @@ function sanitizeMoneyEntry(e, existingId) {
   if (e.rc) out.rc = 1; // has a receipt photo stored under money:rc:<id>
   if (e.imp) out.imp = true; // came from a CSV import (used for de-dupe on re-import)
   if (e.bk) out.bk = 1;      // read off a bank screenshot rather than typed in
+  if (e.gift && type === 'job') out.gift = 1; // a gift card sold: money in, but not a job (see GIFT CARDS)
   return out;
 }
 
@@ -11329,7 +11335,7 @@ function summarizeMonth(entries) {
   const s = { gross: 0, jp: 0, exp: 0, personal: 0, net: 0, jobs: 0, owed: 0, byCat: {}, byService: {}, byMethod: {} };
   for (const e of (entries || [])) {
     if (e.type === 'job') {
-      s.gross += e.amount; s.jobs++;
+      s.gross += e.amount; if (!e.gift) s.jobs++;
       if (e.owed) s.owed += e.owed;
       if (e.jp) s.jp += e.jp;
       if (e.service) { const v = s.byService[e.service] = s.byService[e.service] || { n: 0, total: 0 }; v.n++; v.total += e.amount; }
@@ -11367,7 +11373,7 @@ function summarizeWeek(entries, start, end) {
     else if (e.type === 'personal') s.personal += e.amount;
     else if (e.type === 'exp') { s.exp += e.amount; s.byCat[e.cat || 'misc'] = money2((s.byCat[e.cat || 'misc'] || 0) + e.amount); }
     else if (e.type === 'job') {
-      s.gross += e.amount; s.jobs++;
+      s.gross += e.amount; if (!e.gift) s.jobs++;
       if (e.jp) s.jp += e.jp; // labor cost carried on a job
       if (e.service) { const v = s.byService[e.service] = s.byService[e.service] || { n: 0, total: 0 }; v.n++; v.total = money2(v.total + e.amount); }
     }
@@ -18520,6 +18526,288 @@ body{background:radial-gradient(1200px 600px at 50% -10%,#fff,#eef0f3 60%);color
 .li{border-bottom-color:#e3e6eb}.li .n{color:#3d434e}
 .li.tot{border-top-color:#d7dbe2}.li.tot .n{color:#161820}.li.tot .p{color:#c81e30}}
 </style></head><body><div class="card"><div class="brand">${biz}${tag ? `<span class="tag">${tag}</span>` : ''}</div>${inner}</div></body></html>`;
+}
+
+// ===========================================================================
+// 5b · GIFT CARDS — sold by hand, good on any detail, never expiring
+// ---------------------------------------------------------------------------
+// November and December are when people buy a detail for someone else: a
+// parent for a kid's first car, a spouse for the truck that never gets cleaned.
+// Without this, "I'd like to buy one" got a promise and a note on paper, and the
+// balance lived in Mikey's head.
+//
+// How it works, start to finish:
+//   1. Somebody asks. He opens Get Paid (or Tools in their conversation) and
+//      makes the card: amount, who it's for, who it's from, a line of message.
+//   2. Paid now, or not yet. Not yet means he sends the ordinary payment request
+//      and marks the card paid when the money lands. Paying is what switches the
+//      card's page on; until then the link says "not active yet" and shows no
+//      card number, so nobody can spend a card that was never paid for.
+//   3. He hands over the link (/g/<token>): a printable card with the number on
+//      it. The link only ever goes out from a box he presses Send on.
+//   4. The recipient texts the number. He finds it under Use a gift card, takes
+//      the job's price off, and the balance moves.
+//
+// Washington law (RCW 19.240.020) sets the terms, so they're fixed here rather
+// than settings: no expiration date, no fees, no dormancy charge, whatever isn't
+// used stays on the card, and a balance under $5 is paid out in cash if asked.
+//
+// The money side. A sale is money in the day it's paid, so marking a card paid
+// can log it in the Money tracker as income (service "Gift card"). It is flagged
+// `gift` so it adds to gross but not to the job count or the average ticket. The
+// job it's later spent on was already paid for by the card: only what the
+// customer pays ON TOP gets logged then. The redeem sheet says so.
+//
+// Storage: one KV doc (`gift:v1`), written only when he does something. Codes
+// come from an alphabet with no I, L, O, 0 or 1 so a number read off paper and
+// typed into a text can't be misread.
+// ===========================================================================
+const GIFT_KEY = 'gift:v1';
+const GIFT_ALPHA = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const GIFT_MAX = 600;              // cards kept; a one-man shop sells dozens a season, not hundreds
+const GIFT_MIN_AMOUNT = 5;
+const GIFT_MAX_AMOUNT = 2000;
+const GIFT_METHODS = ['cash', 'venmo', 'cashapp', 'zelle', 'paypal', 'card', 'check', 'other'];
+
+async function loadGifts() {
+  const d = await kv().get(GIFT_KEY, { type: 'json' });
+  return d && Array.isArray(d.cards) ? d : { cards: [] };
+}
+async function saveGifts(doc) {
+  doc.cards = (doc.cards || []).slice(0, GIFT_MAX);
+  await kv().put(GIFT_KEY, JSON.stringify(doc));
+}
+
+// 8 characters off a 31-letter alphabet: about 850 billion numbers, printed as
+// ABCD-EFGH. Re-rolled on the (vanishingly rare) clash with one already sold.
+function giftCode(cards) {
+  const taken = new Set((cards || []).map((c) => giftNorm(c.code)));
+  for (let tries = 0; tries < 20; tries++) {
+    const b = crypto.getRandomValues(new Uint8Array(8));
+    let s = '';
+    for (let i = 0; i < 8; i++) s += GIFT_ALPHA[b[i] % GIFT_ALPHA.length];
+    if (!taken.has(s)) return s.slice(0, 4) + '-' + s.slice(4);
+  }
+  throw new Error('gift_code_exhausted');
+}
+// What people type: lower case, spaces, dashes in the wrong place, the number
+// pasted with "Card number:" in front of it. The last eight-character run is the
+// number; failing that, letters and digits are all that count. (Not "strip the
+// word CARD": C, A, R and D are all in the alphabet, so a real number can hold it.)
+function giftNorm(code) {
+  const s = String(code || '').toUpperCase();
+  const m = s.match(/[A-Z0-9]{4}[\s-]?[A-Z0-9]{4}(?![A-Z0-9])/g);
+  return (m ? m[m.length - 1] : s).replace(/[^A-Z0-9]/g, '').slice(0, 12);
+}
+function giftSpent(c) { return jdMoney((c.redemptions || []).reduce((s, r) => s + (Number(r.amount) || 0), 0)); }
+function giftBalance(c) { return Math.max(0, jdMoney((Number(c.amount) || 0) - giftSpent(c))); }
+// unpaid → active → used, or void at any point. "used" is derived, never
+// stored, so undoing a redemption brings a spent card back to life on its own.
+function giftState(c) {
+  if (c.status === 'void') return 'void';
+  if (c.status === 'unpaid') return 'unpaid';
+  return giftBalance(c) > 0 ? 'active' : 'used';
+}
+function giftView(c) {
+  return Object.assign({}, c, { balance: giftBalance(c), spent: giftSpent(c), state: giftState(c), url: `${publicBase()}/g/${c.token}` });
+}
+function giftTotals(cards, tz) {
+  const year = localDateStr(Date.now(), tz).slice(0, 4);
+  const t = { outstanding: 0, active: 0, unpaid: 0, used: 0, soldYear: 0, soldYearCount: 0, redeemedYear: 0, year };
+  for (const c of cards) {
+    const st = giftState(c);
+    if (st === 'active') { t.active++; t.outstanding += giftBalance(c); }
+    else if (st === 'unpaid') t.unpaid++;
+    else if (st === 'used') t.used++;
+    if (st !== 'void' && st !== 'unpaid' && c.paidAt && localDateStr(c.paidAt, tz).slice(0, 4) === year) { t.soldYear += Number(c.amount) || 0; t.soldYearCount++; }
+    for (const r of (c.redemptions || [])) if (localDateStr(r.at, tz).slice(0, 4) === year) t.redeemedYear += Number(r.amount) || 0;
+  }
+  t.outstanding = jdMoney(t.outstanding); t.soldYear = jdMoney(t.soldYear); t.redeemedYear = jdMoney(t.redeemedYear);
+  return t;
+}
+
+async function apiGifts() {
+  const cfg = await loadConfig();
+  const tz = cfg.tz || 'America/Los_Angeles';
+  const doc = await loadGifts();
+  return json({ ok: true, cards: doc.cards.map(giftView), totals: giftTotals(doc.cards, tz) });
+}
+
+// The sale, as one line of income in the Money tracker. Optional, and only once
+// per card: the card remembers the entry it made, so marking paid twice, or
+// paid-then-undo-then-paid, can never count the same money twice.
+async function giftLogMoney(card, tz) {
+  if (card.moneyId) return null;
+  const date = localDateStr(card.paidAt || Date.now(), tz);
+  const e = sanitizeMoneyEntry({
+    type: 'job', amount: card.amount, date, ts: card.paidAt || Date.now(), service: 'Gift card', gift: 1,
+    method: card.method && card.method !== 'other' ? card.method : '',
+    phone: card.buyer && card.buyer.phone, name: card.buyer && card.buyer.name,
+    note: `Gift card ${card.code}${card.to ? ' for ' + card.to : ''}`,
+  });
+  if (!e) return null;
+  const month = date.slice(0, 7);
+  const mdoc = await loadMonth(month);
+  mdoc.entries.push(e);
+  await saveMonth(month, mdoc);
+  card.moneyId = e.id; card.moneyDate = date;
+  return e;
+}
+
+async function apiGiftsPost(request) {
+  const d = await readJson(request);
+  const action = jdStr(d.action, 16);
+  const cfg = await loadConfig();
+  const tz = cfg.tz || 'America/Los_Angeles';
+  const doc = await loadGifts();
+  const now = Date.now();
+  const method = GIFT_METHODS.includes(String(d.method || '').toLowerCase()) ? String(d.method).toLowerCase() : 'other';
+  const reply = (card, extra) => json(Object.assign({ ok: true, card: card ? giftView(card) : null, totals: giftTotals(doc.cards, tz) }, extra || {}));
+
+  if (action === 'create') {
+    const amount = jdMoney(d.amount);
+    if (!(amount >= GIFT_MIN_AMOUNT) || amount > GIFT_MAX_AMOUNT) return json({ ok: false, error: 'bad_amount' }, 422);
+    const buyerPhone = normalizePhone(d.buyerPhone || '');
+    const card = {
+      id: genId(), code: giftCode(doc.cards), token: jdToken(), amount, createdAt: now,
+      to: jdStr(d.to, 60), from: jdStr(d.from, 60), message: jdStr(d.message, 200),
+      buyer: { name: jdStr(d.buyerName, 60), phone: buyerPhone || '' },
+      status: d.paid ? 'active' : 'unpaid', redemptions: [],
+    };
+    if (d.paid) { card.paidAt = now; card.method = method; }
+    doc.cards.unshift(card);
+    if (d.paid && d.logMoney) await giftLogMoney(card, tz);
+    await saveGifts(doc);
+    return reply(card);
+  }
+
+  const card = doc.cards.find((c) => c.id === jdStr(d.id, 24)) ||
+    (d.code ? doc.cards.find((c) => giftNorm(c.code) === giftNorm(d.code)) : null);
+  if (!card) return json({ ok: false, error: 'not_found' }, 404);
+
+  if (action === 'paid') {
+    if (card.status === 'void') return json({ ok: false, error: 'void' }, 409);
+    if (card.status !== 'unpaid') return reply(card, { already: true });
+    card.status = 'active'; card.paidAt = now; card.method = method;
+    if (d.logMoney) await giftLogMoney(card, tz);
+  } else if (action === 'redeem') {
+    const st = giftState(card);
+    if (st !== 'active') return json({ ok: false, error: st }, 409);
+    const amount = jdMoney(d.amount);
+    const bal = giftBalance(card);
+    if (!(amount > 0)) return json({ ok: false, error: 'bad_amount' }, 422);
+    // More than what's left is a typo, not a request: say so instead of quietly
+    // capping it, because he's about to tell a customer what they owe.
+    if (amount > bal + 0.001) return json({ ok: false, error: 'over_balance', balance: bal }, 422);
+    card.redemptions = card.redemptions || [];
+    card.redemptions.push({ id: genId(), at: now, amount, note: jdStr(d.note, 120), phone: normalizePhone(d.phone || '') || '' });
+  } else if (action === 'undo') {
+    const rid = jdStr(d.rid, 24);
+    const before = (card.redemptions || []).length;
+    card.redemptions = (card.redemptions || []).filter((r) => r.id !== rid);
+    if (card.redemptions.length === before) return json({ ok: false, error: 'not_found' }, 404);
+  } else if (action === 'edit') {
+    if (d.to != null) card.to = jdStr(d.to, 60);
+    if (d.from != null) card.from = jdStr(d.from, 60);
+    if (d.message != null) card.message = jdStr(d.message, 200);
+    if (d.buyerName != null) card.buyer = Object.assign({}, card.buyer, { name: jdStr(d.buyerName, 60) });
+    if (d.buyerPhone != null) card.buyer = Object.assign({}, card.buyer, { phone: normalizePhone(d.buyerPhone) || '' });
+  } else if (action === 'void') {
+    // Kept, not deleted: a card that was handed out and then refunded is still
+    // a card someone may text about, and "that one was cancelled on Dec 3" is
+    // the answer. Any money entry stays where it is; a refund is his to log.
+    card.status = 'void'; card.voidAt = now;
+  } else if (action === 'delete') {
+    // Only a card nobody paid for and nobody used can vanish: that's a mistake,
+    // not history.
+    if (card.status !== 'unpaid' || (card.redemptions || []).length) return json({ ok: false, error: 'not_deletable' }, 409);
+    doc.cards = doc.cards.filter((c) => c !== card);
+    await saveGifts(doc);
+    return reply(null, { deleted: true });
+  } else {
+    return json({ ok: false, error: 'bad_action' }, 422);
+  }
+  await saveGifts(doc);
+  return reply(card);
+}
+
+// PUBLIC — the card itself, at the link he hands over. Printable on one sheet.
+async function giftPage(token) {
+  const doc = await loadGifts();
+  const c = token ? doc.cards.find((x) => x.token === token) : null;
+  const st = c ? giftState(c) : 'missing';
+  const head = { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex' };
+  const money = (n) => '$' + Number(n || 0).toFixed(2).replace(/\.00$/, '');
+  if (st === 'missing' || st === 'void') {
+    return new Response(giftShell('<div class="msg"><h1>This gift card isn\'t active</h1><p>If that\'s a surprise, text me at <a href="sms:+14256007897">(425) 600-7897</a> and I\'ll sort it out.</p></div>', null),
+      { status: st === 'missing' ? 404 : 200, headers: head });
+  }
+  if (st === 'unpaid') {
+    return new Response(giftShell(`<div class="msg"><h1>Almost ready</h1><p>This ${jdEsc(money(c.amount))} gift card${c.to ? ' for ' + jdEsc(c.to) : ''} switches on as soon as it's paid for. Check back on this same link.</p></div>`, c),
+      { headers: head });
+  }
+  const bal = giftBalance(c), spent = giftSpent(c);
+  const balLine = st === 'used'
+    ? '<div class="bal used">All used. Thanks for being a customer.</div>'
+    : spent > 0 ? `<div class="bal">${jdEsc(money(bal))} left on this card</div>` : '';
+  const body = `
+  <div class="cert">
+    <div class="top"><img class="logo" src="/gift-logo-light.png" alt="Mikey's Mobile Detailing" width="320" height="101"><div class="kind">Gift Card</div></div>
+    <div class="amt">${jdEsc(money(c.amount))}</div>
+    <div class="good">toward any detail I do</div>
+    ${balLine}
+    ${c.to ? `<div class="who"><span>For</span>${jdEsc(c.to)}</div>` : ''}
+    ${c.from ? `<div class="who"><span>From</span>${jdEsc(c.from)}</div>` : ''}
+    ${c.message ? `<div class="note">${jdEsc(c.message)}</div>` : ''}
+    <div class="code"><span>Card number</span><b>${jdEsc(c.code)}</b></div>
+    <div class="how"><b>To use it:</b> text me at (425) 600-7897 with the card number and we'll find a day. I come to your driveway; all I need is an outdoor spigot and a power outlet. When the job's done, the card comes off the price.</div>
+    <div class="terms">Interior, exterior, full detail, ceramic coating or paint correction. Never expires, no fees. If the job costs less than the card, the rest stays on it for next time, and anything under $5 is yours in cash if you'd rather. Mikey's Mobile Detailing · Snohomish, WA · mikeysdetailing.com</div>
+  </div>
+  <div class="acts"><button onclick="window.print()">Print it</button><a href="sms:+14256007897">Text Mikey</a></div>`;
+  return new Response(giftShell(body, c), { headers: head });
+}
+
+function giftShell(inner, c) {
+  const money = c ? '$' + Number(c.amount || 0).toFixed(2).replace(/\.00$/, '') : '';
+  const title = c ? `A ${money} gift card${c.to ? ' for ' + c.to : ''}` : "Mikey's Mobile Detailing gift card";
+  const base = publicBase();
+  return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex"><meta name="theme-color" content="#0a0a0c">
+<title>${jdEsc(title)}</title>
+<meta property="og:title" content="${jdEsc(title)}">
+<meta property="og:description" content="From Mikey's Mobile Detailing. Good toward any detail, and it never expires.">
+${base ? `<meta property="og:image" content="${jdEsc(base)}/og-car.jpg">` : ''}
+<link rel="icon" href="/favicon.svg"><style>
+*{box-sizing:border-box}html,body{margin:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;min-height:100vh;
+background:radial-gradient(1100px 600px at 50% -10%,#24262f,#0a0a0c 62%);color:#f2f4f8;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:22px 16px}
+.cert{width:100%;max-width:520px;background:#fbf8f1;color:#17171b;border-radius:22px;padding:26px 24px 22px;text-align:center;position:relative;
+box-shadow:0 30px 80px -40px #000;border:2px solid #e31924;outline:6px solid #fbf8f1;outline-offset:-12px}
+.cert:before{content:"";position:absolute;inset:9px;border:1.5px dashed #e3192466;border-radius:15px;pointer-events:none}
+.top{display:flex;flex-direction:column;align-items:center;gap:6px}
+.logo{width:min(260px,70%);height:auto}
+.kind{font-size:11px;font-weight:800;letter-spacing:.28em;text-transform:uppercase;color:#e31924}
+.amt{font-size:68px;font-weight:900;letter-spacing:-.04em;line-height:1;margin:16px 0 2px;color:#17171b}
+.good{font-size:14px;color:#5b5d66;font-weight:600}
+.bal{display:inline-block;margin-top:10px;font-size:13px;font-weight:800;color:#0f7a3c;background:#e5f5eb;border-radius:99px;padding:5px 12px}
+.bal.used{color:#5b5d66;background:#ecebe6}
+.who{margin-top:14px;font-size:20px;font-weight:800}
+.who span{display:block;font-size:10.5px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:#8a8c94;margin-bottom:2px}
+.note{margin:14px auto 0;max-width:400px;font-size:15.5px;font-style:italic;color:#34363e;line-height:1.5}
+.note:before{content:"\\201C"}.note:after{content:"\\201D"}
+.code{margin:18px auto 0;display:inline-flex;flex-direction:column;gap:3px;border:1.5px solid #17171b;border-radius:12px;padding:9px 18px}
+.code span{font-size:10px;font-weight:800;letter-spacing:.2em;text-transform:uppercase;color:#8a8c94}
+.code b{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:24px;letter-spacing:.12em}
+.how{margin-top:16px;font-size:13.5px;line-height:1.55;color:#34363e;text-align:left}
+.terms{margin-top:10px;font-size:11px;line-height:1.5;color:#7a7c84;text-align:left}
+.acts{display:flex;gap:10px;margin-top:18px}
+.acts button,.acts a{font:inherit;font-weight:800;font-size:15px;border-radius:14px;padding:13px 20px;cursor:pointer;text-decoration:none;border:1px solid #2a2d36;background:#1a1b21;color:#f2f4f8}
+.acts button{background:#e31924;border-color:#e31924;color:#fff}
+.msg{max-width:440px;text-align:center;background:#121216;border:1px solid #2a2d36;border-radius:22px;padding:28px 22px}
+.msg h1{font-size:24px;margin:0 0 8px}.msg p{color:#9aa3b2;margin:0;line-height:1.55}.msg a{color:#ff8a93}
+@media print{body{background:#fff;padding:0;justify-content:flex-start}.acts{display:none}.cert{box-shadow:none;margin-top:.4in}}
+</style></head><body>${inner}</body></html>`;
 }
 
 // ===========================================================================
