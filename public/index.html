@@ -3282,6 +3282,17 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .jd-item .amt{font-size:15.5px;font-weight:800;letter-spacing:-.02em}
   .jd-item .st{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;margin-top:3px}
   .st-open{color:var(--gold)}.st-paid{color:var(--green)}.st-void{color:var(--muted2)}
+  .st-active{color:var(--green)}.st-unpaid{color:var(--gold)}.st-used{color:var(--muted2)}
+  .gc-code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.06em;font-weight:700}
+  .gc-code.big{font-size:15px;color:var(--text)}
+  .gc-sum{display:flex;gap:10px;margin-bottom:10px}
+  .gc-sum>div{flex:1;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px 12px}
+  .gc-sum b{display:block;font-size:18px;font-weight:800;letter-spacing:-.02em}
+  .gc-sum span{display:block;font-size:11px;color:var(--muted2);margin-top:1px}
+  .gc-sum .warn b{color:var(--gold)}
+  .gc-picks{flex-wrap:wrap;margin-bottom:12px}.gc-picks small{font-weight:600;opacity:.75;margin-left:3px}
+  .gc-hist{display:flex;align-items:center;gap:10px;justify-content:space-between;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:8px;font-size:14px}
+  .gc-hist span{display:block;font-size:12px;color:var(--muted2);margin-top:2px}
   .st-sent{color:var(--blue)}.st-accepted{color:var(--green)}.st-declined{color:var(--muted2)}.st-draft{color:var(--muted2)}
 
   /* ---- before / after ---- */
@@ -4623,7 +4634,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-10-01·booking-calendar-2";
+  var APP_BUILD="2026-10-02·gift-cards";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -4814,6 +4825,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     "settings":'<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
     "lightbulb":'<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>',
     "credit-card":'<rect width="20" height="14" x="2" y="5" rx="2"/><line x1="2" x2="22" y1="10" y2="10"/>',
+    "gift":'<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13"/><path d="M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5A4.8 8 0 0 1 12 8a4.8 8 0 0 1 4.5-5 2.5 2.5 0 0 1 0 5"/>',
     "layout-grid":'<rect width="7" height="7" x="3" y="3" rx="1"/><rect width="7" height="7" x="14" y="3" rx="1"/><rect width="7" height="7" x="14" y="14" rx="1"/><rect width="7" height="7" x="3" y="14" rx="1"/>',
     "sliders":'<line x1="4" x2="4" y1="21" y2="14"/><line x1="4" x2="4" y1="10" y2="3"/><line x1="12" x2="12" y1="21" y2="12"/><line x1="12" x2="12" y1="8" y2="3"/><line x1="20" x2="20" y1="21" y2="16"/><line x1="20" x2="20" y1="12" y2="3"/><line x1="1" x2="7" y1="14" y2="14"/><line x1="9" x2="15" y1="8" y2="8"/><line x1="17" x2="23" y1="16" y2="16"/>',
     "trending-down":'<polyline points="22 17 13.5 8.5 8.5 13.5 2 7"/><polyline points="16 17 22 17 22 11"/>',
@@ -6085,6 +6097,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // — money
     {id:"money",t:"Money tracker",g:"Money",ic:"dollar",k:"income earnings revenue cash log takings",run:function(){openMoney()}},
     {id:"pay",t:"Get paid",g:"Work",ic:"credit-card",k:"invoice charge bill payment request stripe venmo deposit",run:function(){openJobs("pay")}},
+    {id:"gifts",t:"Gift cards",g:"Work",ic:"gift",k:"gift card certificate voucher present christmas holiday sell redeem balance code",run:function(){openJobs("pay");setTimeout(function(){var g=el("gcSec");if(g)g.scrollIntoView({block:"start"})},350)}},
+    {id:"giftuse",t:"Use a gift card",g:"Work",ic:"gift",k:"redeem gift card certificate code number balance apply",run:function(){openJobs("pay");setTimeout(function(){jdGiftFind("")},250)}},
     {id:"paysetup",t:"Payment setup",g:"Money",ic:"wallet",k:"venmo cashapp paypal zelle card terms configure",run:function(){openPaySetup()}},
     {id:"mreport",t:"Money report",g:"Money",ic:"file-text",k:"profit tax accounting summary month costs expenses",run:function(){openMoney("report")}},
     {id:"mgoals",t:"Budgets & goals",g:"Money",ic:"target",k:"target savings budget goal split",run:function(){openMoney("goals")}},
@@ -11672,6 +11686,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       {act:"open",   ic:"calendar-days",  t:"What's open?", s:"Your next real openings \u2014 tap the times and they go in the box", accent:true},
       {act:"reqdate",ic:"calendar-days",  t:"Request a date from Mikey", s:"Emails Mikey for his next open date", accent:true},
       {act:"pay",    ic:"receipt",         t:"Send a payment request", s:"Texts a link with the breakdown and every way to pay", accent:true},
+      {act:"gift",   ic:"gift",            t:"Sell a gift card", s:"A printable card with its own number. Nothing is texted until you send it", accent:true},
       {act:"plan",   ic:"refresh-cw",      t:"Put them on a plan", s:"Every few weeks, on a rhythm — you get reminded, they get asked", accent:true},
       {act:"link",   ic:"link",            t:"Send them a link", s:"Before the job, after the job, send a friend, or their booking page", accent:true},
       {act:"photo",  ic:"image",           t:"Send a photo", s:"Camera roll, or one you've sent before — the price sheet, a before/after", accent:true},
@@ -11729,6 +11744,11 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         if(act==="reqdate"){requestDate();return}
         if(act==="plan"){planSheet();return}
         if(act==="link"){custLinkSheet();return}
+        if(act==="gift"){
+          var gt=state.thread||{};
+          jdGiftSell({buyerName:displayName(gt)||gt.name||"",buyerPhone:gt.phone?prettyPhone(gt.phone):"",from:displayName(gt)||gt.name||""});
+          return;
+        }
         if(act==="pay"){
           var t=state.thread||{};
           openPayRequest({name:displayName(t)||t.name||"",phone:t.phone||""});
@@ -18499,14 +18519,14 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // sends — nothing here messages anyone without a deliberate tap.
   // ============================================================
   var JD={view:"run",date:"",day:null,detections:[],loading:false,wired:false,err:"",
-    quotes:null,qcfg:null,qdraft:null,pay:null,garage:null,garageOne:null,
+    quotes:null,qcfg:null,qdraft:null,pay:null,gifts:null,garage:null,garageOne:null,
     track:{token:"",jobId:"",watch:null,timer:null,eta:0,startedAt:0},
     photos:{},sheetOpen:false};
   var JD_VIEWS={
     leads:["Leads","Everyone who asked — and where they got to"],
     run:["Today's Run","Your day, stop by stop"],
     quotes:["Quotes","Price it, text it, track it"],
-    pay:["Get Paid","Payment requests & who still owes"],
+    pay:["Get Paid","Payment requests, gift cards & who still owes"],
     garage:["Garage","Every customer, every vehicle"]
   };
 
@@ -19429,6 +19449,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // 5 · GET PAID
   // ============================================================
   function jdLoadPay(force,then){
+    jdLoadGifts(force);
     if(JD.pay&&!force){if(then)then();return}
     api("/api/pay").then(function(d){
       if(d&&d.ok)JD.pay=d;
@@ -19464,7 +19485,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
           '<div class="rt"><div class="amt">$'+i.amount+'</div><div class="st st-'+esc(i.status)+'">'+esc(i.status)+'</div></div></div>';
       });
     }
+    h+=jdGiftSection();
     box.innerHTML=h;hydrateIcons(box);
+    jdGiftWire(box);
     var setup=box.querySelector("#jdPaySetup")||box.querySelector("#jdPaySetup2");
     if(setup)setup.onclick=jdPaySettings;
     box.querySelector("#jdNewPay").onclick=function(){jdPayRequestSheet(null)};
@@ -19565,6 +19588,356 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     });
   }
 
+
+
+  // ============================================================
+  // 5b · GIFT CARDS — inside Get Paid, under the requests
+  // ------------------------------------------------------------
+  // Sell one, mark it paid, hand over the link, take it off a job later. The
+  // link never goes out on its own: "Put it in a text" writes it into the
+  // buyer's message box and he presses Send. The quick amounts are the price
+  // book's sedan prices (PRICING.md in the website repo); a bigger vehicle pays
+  // the difference on the day, and the sheet says so.
+  // ============================================================
+  var GC_PICKS=[[50,""],[100,""],[199,"Exterior"],[249,"Interior"],[369,"Full detail"]];
+  var GC_METHODS=[["cash","Cash"],["venmo","Venmo"],["cashapp","Cash App"],["zelle","Zelle"],["card","Card"],["other","Other"]];
+  function gcMoney(n){n=Math.round((+n||0)*100)/100;return "$"+n.toFixed(2).replace(/\.00$/,"")}
+  function gcMethodName(m){for(var i=0;i<GC_METHODS.length;i++)if(GC_METHODS[i][0]===m)return GC_METHODS[i][1];return m}
+  function gcStateLabel(s){return s==="active"?"active":s==="unpaid"?"not paid yet":s==="used"?"used up":"void"}
+  function gcColor(s){return s==="active"?"var(--green)":s==="unpaid"?"var(--gold)":"var(--gray)"}
+  function gcWho(c){return c.to?("For "+c.to):(c.buyer&&c.buyer.name)?("From "+c.buyer.name):"Gift card"}
+  function gcById(id){return ((JD.gifts&&JD.gifts.cards)||[]).filter(function(c){return c.id===id})[0]||null}
+  function gcNorm(s){s=String(s||"").toUpperCase();var m=s.match(/[A-Z0-9]{4}[\s-]?[A-Z0-9]{4}(?![A-Z0-9])/g);return (m?m[m.length-1]:s).replace(/[^A-Z0-9]/g,"")}
+  function jdLoadGifts(force,then){
+    if(JD.gifts&&!force){if(then)then();return}
+    api("/api/gifts").then(function(d){
+      if(d&&d.ok)JD.gifts=d;
+      if(JD.view==="pay")jdRender();
+      if(then)then();
+    }).catch(function(){});
+  }
+  function gcSave(d){
+    if(!JD.gifts)JD.gifts={cards:[],totals:{}};
+    if(d.totals)JD.gifts.totals=d.totals;
+    if(d.deleted)return;
+    if(d.card){
+      var list=JD.gifts.cards,i=-1;
+      for(var k=0;k<list.length;k++)if(list[k].id===d.card.id)i=k;
+      if(i>=0)list[i]=d.card;else list.unshift(d.card);
+    }
+  }
+  function jdGiftSection(){
+    var g=JD.gifts;
+    var h='<div class="jd-sec" id="gcSec">'+ic("gift",14)+' Gift cards</div>';
+    if(!g)return h+'<div class="jd-empty"><span class="spin"></span> Loading gift cards…</div>';
+    var t=g.totals||{},cards=g.cards||[];
+    h+='<div class="gc-sum"><div><b>'+gcMoney(t.outstanding||0)+'</b><span>still on '+(t.active||0)+' card'+(t.active===1?"":"s")+'</span></div>'+
+      '<div><b>'+gcMoney(t.soldYear||0)+'</b><span>sold in '+esc(t.year||"")+'</span></div>'+
+      (t.unpaid?'<div class="warn"><b>'+t.unpaid+'</b><span>waiting on payment</span></div>':'')+'</div>';
+    h+='<div class="jd-row" style="gap:8px"><button class="jd-btn pri" id="gcSell" style="flex:1">'+ic("gift",17)+' Sell a gift card</button>'+
+      '<button class="jd-btn" id="gcUse" style="flex:1">'+ic("check",17)+' Use a gift card</button></div>';
+    if(!cards.length){
+      h+='<div class="jd-empty" style="margin-top:12px"><b>No gift cards yet</b>Someone wants to buy a detail for someone else? Make the card here: they get a printable card with a number on it, and the balance lives here instead of in your head.</div>';
+      return h;
+    }
+    cards.slice(0,40).forEach(function(c){
+      h+='<div class="jd-item" data-gc="'+esc(c.id)+'">'+
+        '<div class="av" style="background:'+gcColor(c.state)+'">'+ic(c.state==="unpaid"?"clock":"gift",17)+'</div>'+
+        '<div class="mid"><div class="nm">'+esc(gcWho(c))+'</div>'+
+        '<div class="sb"><span class="gc-code">'+esc(c.code)+'</span> · '+gcMoney(c.amount)+' card · '+new Date(c.createdAt).toLocaleDateString([],{month:"short",day:"numeric"})+'</div></div>'+
+        '<div class="rt"><div class="amt">'+gcMoney(c.balance)+'</div><div class="st st-'+esc(c.state)+'">'+esc(gcStateLabel(c.state))+'</div></div></div>';
+    });
+    return h;
+  }
+  function jdGiftWire(box){
+    var s=box.querySelector("#gcSell");if(s)s.onclick=function(){jdGiftSell(null)};
+    var u=box.querySelector("#gcUse");if(u)u.onclick=function(){jdGiftFind("")};
+    Array.prototype.forEach.call(box.querySelectorAll("[data-gc]"),function(n){
+      n.onclick=function(){jdGiftDetail(n.getAttribute("data-gc"))};
+    });
+  }
+
+  // ---- sell ----
+  function jdGiftSell(seed){
+    seed=seed||{};
+    if(!JD.gifts)jdLoadGifts();
+    var picks=GC_PICKS.map(function(p){
+      return '<button class="jd-pill" data-gcamt="'+p[0]+'">$'+p[0]+(p[1]?' <small>'+esc(p[1])+'</small>':'')+'</button>';
+    }).join("");
+    var h='<div class="jd-sh-title">Sell a gift card</div>'+
+      '<div class="jd-sh-sub">They get a printable card with its own number. Nothing is texted until you send it.</div>'+
+      '<div class="jd-pills gc-picks">'+picks+'</div>'+
+      '<div class="jd-field"><label>Amount</label><input id="gcAmt" type="number" inputmode="decimal" step="1" min="5" value="'+(seed.amount||"")+'" placeholder="0"></div>'+
+      '<div class="jd-note" style="margin:-4px 0 12px">Service amounts are sedan prices. An SUV, pickup or van pays the difference on the day.</div>'+
+      '<div class="jd-row"><div class="jd-field" style="flex:1"><label>Who it\'s for</label><input id="gcTo" value="'+esc(seed.to||"")+'" placeholder="Sarah"></div>'+
+      '<div class="jd-field" style="flex:1"><label>From</label><input id="gcFrom" value="'+esc(seed.from||"")+'" placeholder="Mom and Dad"></div></div>'+
+      '<div class="jd-field"><label>A line for the card (optional)</label><input id="gcMsg" maxlength="200" value="'+esc(seed.message||"")+'" placeholder="Merry Christmas! Time to clean out the Civic."></div>'+
+      '<div class="jd-row"><div class="jd-field" style="flex:1"><label>Buyer</label><input id="gcBuyer" value="'+esc(seed.buyerName||"")+'" placeholder="Name"></div>'+
+      '<div class="jd-field" style="flex:1"><label>Buyer\'s phone</label><input id="gcPhone" type="tel" inputmode="tel" value="'+esc(seed.buyerPhone||"")+'" placeholder="(425) 555-0123"></div></div>'+
+      '<div class="jd-field"><label>Paid?</label><div class="jd-pills" id="gcPaidP"><button class="jd-pill" data-gcpaid="1">Paid already</button><button class="jd-pill on" data-gcpaid="0">Not yet</button></div></div>'+
+      '<div id="gcPaidMore" style="display:none">'+
+        '<div class="jd-field"><label>How they paid</label><div class="jd-pills" id="gcMeth">'+GC_METHODS.map(function(m,i){return '<button class="jd-pill'+(i===0?" on":"")+'" data-gcm="'+m[0]+'">'+m[1]+'</button>'}).join("")+'</div></div>'+
+        '<div class="jd-field"><label>Add it to Money as income?</label><div class="jd-pills" id="gcLog"><button class="jd-pill on" data-gclog="1">Yes, log it</button><button class="jd-pill" data-gclog="0">No</button></div></div>'+
+      '</div>'+
+      '<button class="jd-btn pri" id="gcGo" style="margin-top:6px">'+ic("gift",17)+' Make the gift card</button>'+
+      '<button class="jd-btn ghost" id="gcCancel" style="margin-top:8px">Cancel</button>';
+    var s=jdSheetOpen(h);
+    var paid=false,method="cash",logIt=true;
+    function pick(sel,attr,cb){
+      Array.prototype.forEach.call(s.querySelectorAll(sel),function(b){
+        b.onclick=function(){
+          Array.prototype.forEach.call(s.querySelectorAll(sel),function(x){x.classList.toggle("on",x===b)});
+          cb(b.getAttribute(attr));
+        };
+      });
+    }
+    Array.prototype.forEach.call(s.querySelectorAll("[data-gcamt]"),function(b){
+      b.onclick=function(){
+        s.querySelector("#gcAmt").value=b.getAttribute("data-gcamt");
+        Array.prototype.forEach.call(s.querySelectorAll("[data-gcamt]"),function(x){x.classList.toggle("on",x===b)});
+      };
+    });
+    s.querySelector("#gcAmt").oninput=function(){
+      var v=s.querySelector("#gcAmt").value;
+      Array.prototype.forEach.call(s.querySelectorAll("[data-gcamt]"),function(x){x.classList.toggle("on",x.getAttribute("data-gcamt")===v)});
+    };
+    pick("[data-gcpaid]","data-gcpaid",function(v){paid=v==="1";s.querySelector("#gcPaidMore").style.display=paid?"":"none"});
+    pick("[data-gcm]","data-gcm",function(v){method=v});
+    pick("[data-gclog]","data-gclog",function(v){logIt=v==="1"});
+    s.querySelector("#gcCancel").onclick=jdSheetClose;
+    s.querySelector("#gcGo").onclick=function(){
+      var amt=+s.querySelector("#gcAmt").value||0;
+      if(amt<5)return toast("Pick an amount, $5 or more",{bad:true});
+      if(amt>2000)return toast("That's over the $2,000 limit",{bad:true});
+      var body={action:"create",amount:amt,to:s.querySelector("#gcTo").value,from:s.querySelector("#gcFrom").value,
+        message:s.querySelector("#gcMsg").value,buyerName:s.querySelector("#gcBuyer").value,buyerPhone:s.querySelector("#gcPhone").value,
+        paid:paid,method:method,logMoney:paid&&logIt};
+      var btn=s.querySelector("#gcGo");btn.disabled=true;btn.innerHTML='<span class="spin"></span> Making it…';
+      post("/api/gifts",body).then(function(d){
+        if(!d||!d.ok){btn.disabled=false;btn.innerHTML=ic("gift",17)+" Make the gift card";return toast("Couldn't make that card",{bad:true})}
+        gcSave(d);vibrate(12);
+        if(body.logMoney&&typeof MO!=="undefined")MO.report=null;
+        if(JD.view==="pay"&&el("jdApp").classList.contains("show"))jdRender();
+        toast(paid?("Gift card "+d.card.code+" is live ✓"):("Gift card "+d.card.code+" made. It switches on when it's paid"));
+        jdGiftDetail(d.card.id);
+      }).catch(function(){btn.disabled=false;btn.innerHTML=ic("gift",17)+" Make the gift card";toast("Network error",{bad:true})});
+    };
+    return s;
+  }
+
+  // ---- one card ----
+  function jdGiftDetail(id){
+    var c=gcById(id);if(!c)return;
+    var h='<div class="jd-sh-title">'+gcMoney(c.amount)+' gift card'+(c.to?' for '+esc(c.to):'')+'</div>'+
+      '<div class="jd-sh-sub"><span class="gc-code big">'+esc(c.code)+'</span> · '+esc(gcStateLabel(c.state))+
+      (c.state==="active"&&c.spent>0?' · <b>'+gcMoney(c.balance)+' left</b>':'')+
+      (c.buyer&&(c.buyer.name||c.buyer.phone)?'<br>Bought by '+esc(c.buyer.name||prettyPhone(c.buyer.phone)):'<br>')+
+      (c.paidAt?' · paid '+new Date(c.paidAt).toLocaleDateString([],{month:"short",day:"numeric"})+(c.method&&c.method!=="other"?' by '+esc(gcMethodName(c.method)):''):'')+
+      (c.moneyId?'<br>Logged in Money as income'+(c.moneyDate?' on '+new Date(c.moneyDate+"T12:00:00").toLocaleDateString([],{month:"short",day:"numeric"}):''):'')+'</div>';
+    if(c.state==="unpaid"){
+      h+='<button class="jd-btn pri" data-gca="paid">'+ic("check",17)+' Mark paid</button>';
+      if(c.buyer&&c.buyer.phone)h+='<button class="jd-btn" data-gca="payreq" style="margin-top:8px">'+ic("receipt",16)+' Send them a payment request</button>';
+    }
+    if(c.state==="active")h+='<button class="jd-btn pri" data-gca="use">'+ic("check",17)+' Take it off a job</button>';
+    if(c.state!=="void"){
+      h+='<button class="jd-btn" data-gca="open" style="margin-top:8px">'+ic("gift",16)+' Open the card</button>'+
+        (c.buyer&&c.buyer.phone?'<button class="jd-btn" data-gca="text" style="margin-top:8px">'+ic("message-square",16)+' Put the link in a text to '+esc(jdFirstName(c.buyer.name)||"the buyer")+'</button>':'')+
+        '<button class="jd-btn ghost" data-gca="copy" style="margin-top:8px">'+ic("copy",16)+' Copy the link</button>';
+    }
+    var reds=c.redemptions||[];
+    if(reds.length){
+      h+='<div class="jd-sec">'+ic("receipt",14)+' Used</div>';
+      reds.slice().reverse().forEach(function(r){
+        h+='<div class="gc-hist"><div><b>'+gcMoney(r.amount)+'</b> · '+new Date(r.at).toLocaleDateString([],{month:"short",day:"numeric",year:"numeric"})+
+          (r.note?'<span>'+esc(r.note)+'</span>':'')+'</div><button class="jd-pill" data-gcundo="'+esc(r.id)+'">Undo</button></div>';
+      });
+    }
+    h+='<button class="jd-btn ghost" data-gca="edit" style="margin-top:12px">'+ic("pencil",16)+' Change the names or message</button>';
+    if(c.state==="unpaid"&&!reds.length)h+='<button class="jd-btn ghost" data-gca="delete" style="margin-top:8px;color:var(--accent-text)">'+ic("trash",16)+' Delete (never paid)</button>';
+    else if(c.state!=="void")h+='<button class="jd-btn ghost" data-gca="void" style="margin-top:8px;color:var(--accent-text)">'+ic("ban",16)+' Cancel this card</button>';
+    var s=jdSheetOpen(h);
+    function act(body,msg){
+      return post("/api/gifts",body).then(function(d){
+        if(!d||!d.ok){toast(d&&d.error==="over_balance"?("Only "+gcMoney(d.balance)+" left on it"):"That didn't work",{bad:true});return null}
+        gcSave(d);if(JD.view==="pay"&&el("jdApp").classList.contains("show"))jdRender();
+        if(msg)toast(msg);
+        return d;
+      });
+    }
+    Array.prototype.forEach.call(s.querySelectorAll("[data-gcundo]"),function(b){
+      b.onclick=function(){
+        if(!confirm("Put that amount back on the card?"))return;
+        act({action:"undo",id:c.id,rid:b.getAttribute("data-gcundo")},"Put back on the card").then(function(d){if(d)jdGiftDetail(c.id)});
+      };
+    });
+    Array.prototype.forEach.call(s.querySelectorAll("[data-gca]"),function(b){
+      b.onclick=function(){
+        var a=b.getAttribute("data-gca");vibrate(6);
+        if(a==="paid")return jdGiftPaid(c);
+        if(a==="use")return jdGiftRedeem(c);
+        if(a==="open")return window.open(c.url,"_blank","noopener");
+        if(a==="copy")return jdCopy(c.url,"Gift card link copied");
+        if(a==="edit")return jdGiftEdit(c);
+        if(a==="text")return jdGiftToText(c);
+        if(a==="payreq"){
+          jdSheetClose();
+          return jdPayRequestSheet({name:c.buyer.name||"",phone:c.buyer.phone,amount:c.amount,memo:"Gift card"+(c.to?" for "+c.to:"")});
+        }
+        if(a==="delete"){
+          if(!confirm("Delete this gift card? It was never paid for."))return;
+          return act({action:"delete",id:c.id},"Deleted").then(function(d){if(d){JD.gifts.cards=JD.gifts.cards.filter(function(x){return x.id!==c.id});jdSheetClose();jdRender()}});
+        }
+        if(a==="void"){
+          if(!confirm("Cancel "+c.code+"? Its link will say it isn't active. If you refunded it, log the refund in Money yourself."))return;
+          return act({action:"void",id:c.id},"Card cancelled").then(function(d){if(d)jdGiftDetail(c.id)});
+        }
+      };
+    });
+  }
+  function jdFirstName(n){return String(n||"").trim().split(/\s+/)[0]||""}
+  function jdGiftPaid(c){
+    var h='<div class="jd-sh-title">Mark '+esc(c.code)+' paid</div>'+
+      '<div class="jd-sh-sub">'+gcMoney(c.amount)+(c.buyer&&c.buyer.name?' from '+esc(c.buyer.name):'')+'. This switches the card on.</div>'+
+      '<div class="jd-field"><label>How they paid</label><div class="jd-pills" id="gcMeth">'+GC_METHODS.map(function(m,i){return '<button class="jd-pill'+(i===0?" on":"")+'" data-gcm="'+m[0]+'">'+m[1]+'</button>'}).join("")+'</div></div>'+
+      '<div class="jd-field"><label>Add it to Money as income?</label><div class="jd-pills"><button class="jd-pill on" data-gclog="1">Yes, log it</button><button class="jd-pill" data-gclog="0">No, I already did</button></div></div>'+
+      '<button class="jd-btn pri" id="gcPaidGo">'+ic("check",17)+' It\'s paid</button>'+
+      '<button class="jd-btn ghost" id="gcBack" style="margin-top:8px">Back</button>';
+    var s=jdSheetOpen(h),method="cash",logIt=true;
+    Array.prototype.forEach.call(s.querySelectorAll("[data-gcm]"),function(b){b.onclick=function(){method=b.getAttribute("data-gcm");Array.prototype.forEach.call(s.querySelectorAll("[data-gcm]"),function(x){x.classList.toggle("on",x===b)})}});
+    Array.prototype.forEach.call(s.querySelectorAll("[data-gclog]"),function(b){b.onclick=function(){logIt=b.getAttribute("data-gclog")==="1";Array.prototype.forEach.call(s.querySelectorAll("[data-gclog]"),function(x){x.classList.toggle("on",x===b)})}});
+    s.querySelector("#gcBack").onclick=function(){jdGiftDetail(c.id)};
+    s.querySelector("#gcPaidGo").onclick=function(){
+      post("/api/gifts",{action:"paid",id:c.id,method:method,logMoney:logIt}).then(function(d){
+        if(!d||!d.ok)return toast("That didn't work",{bad:true});
+        gcSave(d);if(logIt&&typeof MO!=="undefined")MO.report=null;
+        if(JD.view==="pay"&&el("jdApp").classList.contains("show"))jdRender();
+        toast(c.code+" is paid and live ✓");jdGiftDetail(c.id);
+      }).catch(function(){toast("Network error",{bad:true})});
+    };
+  }
+  function jdGiftEdit(c){
+    var h='<div class="jd-sh-title">Change '+esc(c.code)+'</div>'+
+      '<div class="jd-row"><div class="jd-field" style="flex:1"><label>Who it\'s for</label><input id="geTo" value="'+esc(c.to||"")+'"></div>'+
+      '<div class="jd-field" style="flex:1"><label>From</label><input id="geFrom" value="'+esc(c.from||"")+'"></div></div>'+
+      '<div class="jd-field"><label>Message</label><input id="geMsg" maxlength="200" value="'+esc(c.message||"")+'"></div>'+
+      '<div class="jd-row"><div class="jd-field" style="flex:1"><label>Buyer</label><input id="geBuyer" value="'+esc((c.buyer&&c.buyer.name)||"")+'"></div>'+
+      '<div class="jd-field" style="flex:1"><label>Buyer\'s phone</label><input id="gePhone" type="tel" value="'+esc((c.buyer&&c.buyer.phone)?prettyPhone(c.buyer.phone):"")+'"></div></div>'+
+      '<button class="jd-btn pri" id="geGo">'+ic("check",17)+' Save</button><button class="jd-btn ghost" id="geBack" style="margin-top:8px">Back</button>';
+    var s=jdSheetOpen(h);
+    s.querySelector("#geBack").onclick=function(){jdGiftDetail(c.id)};
+    s.querySelector("#geGo").onclick=function(){
+      post("/api/gifts",{action:"edit",id:c.id,to:s.querySelector("#geTo").value,from:s.querySelector("#geFrom").value,
+        message:s.querySelector("#geMsg").value,buyerName:s.querySelector("#geBuyer").value,buyerPhone:s.querySelector("#gePhone").value}).then(function(d){
+        if(!d||!d.ok)return toast("Couldn't save",{bad:true});
+        gcSave(d);if(JD.view==="pay"&&el("jdApp").classList.contains("show"))jdRender();toast("Saved ✓");jdGiftDetail(c.id);
+      });
+    };
+  }
+  // The link goes in the box, never out the door. Opens the buyer's own
+  // conversation first if that isn't the one on screen.
+  function jdGiftToText(c){
+    var phone=c.buyer&&c.buyer.phone;if(!phone)return;
+    var first=jdFirstName(c.buyer.name);
+    var line=(first?"Here you go, "+first+"! ":"Here you go! ")+"The "+gcMoney(c.amount)+" gift card"+(c.to?" for "+c.to:"")+
+      " is on this link, ready to print or forward: "+c.url;
+    jdSheetClose();
+    var fill=function(){
+      var inp=el("msgInput");if(!inp)return;
+      inp.value=(inp.value.trim()?inp.value.replace(/\s*$/,"")+" ":"")+line;
+      inp.focus();autoGrow();updateCount();stashDraft(state.phone);
+      toast("Written out. Send it when you're happy with it");
+    };
+    if(state.thread&&state.thread.phone===phone&&el("jdApp")&&!el("jdApp").classList.contains("show")){fill();return}
+    if(el("jdApp")&&el("jdApp").classList.contains("show"))closeJobs();
+    setTab("messages");openThread(phone);
+    setTimeout(fill,450);
+  }
+
+  // ---- use ----
+  function jdGiftFind(prefill){
+    var h='<div class="jd-sh-title">Use a gift card</div>'+
+      '<div class="jd-sh-sub">Type the number off their card (spaces and dashes don\'t matter), or a name if the card got lost.</div>'+
+      '<div class="jd-field"><label>Card number or name</label><input id="gfCode" autocomplete="off" spellcheck="false" value="'+esc(prefill||"")+'" placeholder="ABCD-EFGH" style="font-family:ui-monospace,Menlo,monospace;letter-spacing:.06em"></div>'+
+      '<div id="gfHit" class="jd-note"></div>'+
+      '<button class="jd-btn pri" id="gfGo">'+ic("search",17)+' Find it</button>'+
+      '<button class="jd-btn ghost" id="gfCancel" style="margin-top:8px">Cancel</button>';
+    var s=jdSheetOpen(h);
+    var inp=s.querySelector("#gfCode");
+    // A lost card is found by name: who it was for, who it was from, or who
+    // bought it. Only when the box doesn't read as a card number, so a name
+    // can never shadow a real number.
+    function byName(raw){
+      var q=String(raw||"").trim().toLowerCase();
+      if(q.length<3||/\d/.test(q))return [];
+      return ((JD.gifts&&JD.gifts.cards)||[]).filter(function(c){
+        return [c.to,c.from,c.buyer&&c.buyer.name].some(function(n){return n&&String(n).toLowerCase().indexOf(q)>=0});
+      }).slice(0,5);
+    }
+    function find(){
+      var q=gcNorm(inp.value),box=s.querySelector("#gfHit");
+      var named=byName(inp.value);
+      if(named.length&&!((JD.gifts&&JD.gifts.cards)||[]).some(function(c){return gcNorm(c.code).indexOf(q)===0})){
+        box.innerHTML=named.map(function(c){
+          return '<button class="jd-item gf-pick" data-gfpick="'+esc(c.id)+'" style="width:100%;text-align:left;margin:6px 0 0">'+
+            '<span class="mid"><span class="nm" style="display:block">'+esc(gcWho(c))+(c.buyer&&c.buyer.name?' · bought by '+esc(c.buyer.name):'')+'</span>'+
+            '<span class="sb" style="display:block"><span class="gc-code">'+esc(c.code)+'</span> · '+gcMoney(c.balance)+' left · '+esc(gcStateLabel(c.state))+'</span></span></button>';
+        }).join("");
+        Array.prototype.forEach.call(box.querySelectorAll("[data-gfpick]"),function(b){b.onclick=function(){jdGiftDetail(b.getAttribute("data-gfpick"))}});
+        return named.length===1?named[0]:null;
+      }
+      if(q.length<4){box.textContent="";return null}
+      var hit=((JD.gifts&&JD.gifts.cards)||[]).filter(function(c){return gcNorm(c.code)===q})[0]||null;
+      var near=hit?null:((JD.gifts&&JD.gifts.cards)||[]).filter(function(c){return gcNorm(c.code).indexOf(q)===0});
+      box.innerHTML=hit?('<b>'+esc(gcWho(hit))+'</b> · '+gcMoney(hit.balance)+' left · '+esc(gcStateLabel(hit.state))):
+        (near&&near.length===1?('Did you mean <b>'+esc(near[0].code)+'</b>? '+esc(gcWho(near[0]))):(q.length>=8?"No card with that number.":""));
+      return hit||(near&&near.length===1&&q.length>=6?near[0]:null);
+    }
+    inp.oninput=find;
+    inp.onkeydown=function(e){if(e.key==="Enter"){e.preventDefault();s.querySelector("#gfGo").click()}};
+    setTimeout(function(){inp.focus()},60);find();
+    s.querySelector("#gfCancel").onclick=jdSheetClose;
+    s.querySelector("#gfGo").onclick=function(){
+      var c=find();
+      if(!c)return toast("No card with that number",{bad:true});
+      if(c.state==="unpaid")return toast("That card hasn't been paid for yet",{bad:true});
+      if(c.state==="void")return toast("That card was cancelled",{bad:true});
+      if(c.state==="used")return toast("That card's all used up",{bad:true});
+      jdGiftRedeem(c);
+    };
+    if(!JD.gifts)jdLoadGifts(false,find);
+  }
+  function jdGiftRedeem(c){
+    var h='<div class="jd-sh-title">Take '+esc(c.code)+' off a job</div>'+
+      '<div class="jd-sh-sub">'+esc(gcWho(c))+' · <b>'+gcMoney(c.balance)+' left</b></div>'+
+      '<div class="jd-field"><label>How much to use</label><input id="grAmt" type="number" inputmode="decimal" step="0.01" value="'+c.balance+'"></div>'+
+      '<div class="jd-field"><label>What job (optional)</label><input id="grNote" maxlength="120" placeholder="Full detail, Sat Dec 12"></div>'+
+      '<div id="grOwe" class="jd-note"></div>'+
+      '<div class="jd-note">The card was already counted in Money when it was sold. When you log this job, log only what they paid on top of the card.</div>'+
+      '<button class="jd-btn pri" id="grGo" style="margin-top:12px">'+ic("check",17)+' Use it</button>'+
+      '<button class="jd-btn ghost" id="grBack" style="margin-top:8px">Back</button>';
+    var s=jdSheetOpen(h);
+    var amt=s.querySelector("#grAmt");
+    function owe(){
+      var v=+amt.value||0,left=Math.round((c.balance-v)*100)/100;
+      s.querySelector("#grOwe").innerHTML=v>c.balance+0.001?'<b style="color:var(--accent-text)">That\'s more than the '+gcMoney(c.balance)+' left on it.</b>':
+        (left>0?gcMoney(left)+' stays on the card for next time.':'That uses the whole card.')+(left>0&&left<5?' Under $5 left: theirs in cash if they ask (Washington law).':'');
+    }
+    amt.oninput=owe;owe();
+    s.querySelector("#grBack").onclick=function(){jdGiftDetail(c.id)};
+    s.querySelector("#grGo").onclick=function(){
+      var v=+amt.value||0;
+      if(!(v>0))return toast("How much of it?",{bad:true});
+      if(v>c.balance+0.001)return toast("Only "+gcMoney(c.balance)+" left on it",{bad:true});
+      var phone=(state.thread&&state.thread.phone)||"";
+      post("/api/gifts",{action:"redeem",id:c.id,amount:v,note:s.querySelector("#grNote").value,phone:phone}).then(function(d){
+        if(!d||!d.ok)return toast(d&&d.error==="over_balance"?("Only "+gcMoney(d.balance)+" left on it"):"That didn't work",{bad:true});
+        gcSave(d);vibrate(12);
+        if(JD.view==="pay"&&el("jdApp").classList.contains("show"))jdRender();
+        toast(gcMoney(v)+" used · "+gcMoney(d.card.balance)+" left on "+c.code);
+        jdGiftDetail(c.id);
+      }).catch(function(){toast("Network error",{bad:true})});
+    };
+  }
 
   // ============================================================
   // 6 · CUSTOMER GARAGE
