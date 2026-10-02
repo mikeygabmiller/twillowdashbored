@@ -157,7 +157,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-02·booking-facts';
+const BUILD = '2026-10-02·rr-capacity';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -594,6 +594,7 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/booking-settings') return apiBookingSettings();
   if (request.method === 'POST' && pathname === '/api/booking-settings') return apiSaveBookingSettings(request);
   if (request.method === 'POST' && pathname === '/api/booking-settings/facts') return apiBookingFacts();
+  if (request.method === 'GET'  && pathname === '/api/booking-capacity') return apiBookingCapacity(url);
   if (request.method === 'POST' && pathname === '/api/booking-cal-test') return apiCalTest(request);
   if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/gcal-setup') return apiGcalSetup(request);
   if (request.method === 'POST' && pathname === '/api/gcal-sync-all') return apiGcalSyncAll();
@@ -16793,7 +16794,11 @@ async function bkAvailability(date, service, size) {
 // candidates are his real start times, and each one has to pass three things
 // the grid never asked: it isn't today, the job ends before dark, and nothing
 // he's already got overlaps it.
-async function bkSlotAvailability(cfg, date, service) {
+// `pre` is for counting a season (bkCapacity): bookings and holds read once,
+// no booking window (it slides, a season doesn't), and the lights switch
+// tried both ways. A booking never passes it, so a booking sees exactly what
+// the website offers.
+async function bkSlotAvailability(cfg, date, service, pre) {
   const R = cfg.slotRules;
   const dow = new Date(date + 'T12:00:00Z').getUTCDay();
   const starts = (R.days[dow] || []).slice().sort();
@@ -16802,16 +16807,18 @@ async function bkSlotAvailability(cfg, date, service) {
   if (date <= here.date) return [];                            // never same day
   const tomorrow = new Date(Date.parse(here.date + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10);
   if (date === tomorrow && here.min >= bkHm2min(R.cutoff || '21:00')) return [];
-  if (bkLaEpoch(date, '00:00') - now > cfg.windowDays * 86400000) return [];
+  if (!(pre && pre.anyWindow) && bkLaEpoch(date, '00:00') - now > cfg.windowDays * 86400000) return [];
+  const lights = (pre && pre.lights != null) ? pre.lights : R.lights;
   const dur = Number(R.jobMin[service]) || 240;
   const outside = Math.min(dur, Number(R.outsideMin[service]) || 0);
   const dusk = bkDuskMin(date);
-  const day = (await loadBookings()).filter((b) => b.date === date && (b.status === 'pending' || b.status === 'confirmed'));
-  const held = await detHeldSlots(date);
+  const day = ((pre && pre.bookings) || await loadBookings()).filter((b) => b.date === date && (b.status === 'pending' || b.status === 'confirmed'));
+  const held = pre ? (pre.holds ? detHeldFrom(pre.holds, date) : null) : await detHeldSlots(date);
   if (held === 'all') return [];
   const occ = day.map((b) => ({ s: bkHm2min(b.slot), e: bkHm2min(b.slot) + (Number(R.jobMin[b.service]) || b.durationMin || dur) }))
     .concat(Array.isArray(held) ? held : []);
-  for (const iv of await bkCalBusy(cfg, date)) {
+  const busy = (pre && pre.cal) ? pre.cal.map((ev) => bkEventBusyOnDate(ev, date)).filter(Boolean) : await bkCalBusy(cfg, date);
+  for (const iv of busy) {
     if (iv.s <= 0 && iv.e >= 1440) return [];                  // all-day event → whole day off
     occ.push(iv);
   }
@@ -16819,11 +16826,77 @@ async function bkSlotAvailability(cfg, date, service) {
   for (const hm of starts) {
     const start = bkHm2min(hm), end = start + dur;
     // Before dark: the whole job, or with his lights only the outside part.
-    if ((R.lights ? start + outside : end) > dusk) continue;
+    if ((lights ? start + outside : end) > dusk) continue;
     if (occ.some((o) => start < o.e + B && o.s < end + B)) continue;
     out.push(hm);
   }
   return out;
+}
+
+// ===========================================================================
+// The Rain-Ready season, counted  (Bookings, top of the list)
+// ---------------------------------------------------------------------------
+// The offer promises a Full Detail with free extras to anyone who books by
+// December 31, done by January 31. A Full Detail is his longest job, and after
+// the clocks go back on November 1 the before-dark rule leaves about one a
+// week: Saturday mornings. Counted on 2026-10-02 with no bookings at all:
+// 19 Full Detail starts from November 1 to January 31 without work lights, 91
+// with them. So the offer can sell more Full Details than the winter holds,
+// and he'd only find out when a December customer gets offered late January.
+//
+// This counts what's actually left, with the same engine the website books
+// through (his start times, before dark, his bookings, held texts, Google
+// Calendar), so it can't disagree with what a customer is offered. One read of
+// bookings and one of detections for the whole season.
+// ===========================================================================
+const RR_BOOK_BY = '2026-12-31';
+const RR_DONE_BY = '2027-01-31';
+const RR_SINCE = '2026-09-28';            // the day the offer went on the homepage
+
+async function bkCapacity(service, through) {
+  const cfg = await loadBookingConfig();
+  const R = cfg.slotRules || {};
+  if (!R.on) return { on: false };
+  const [bookings, holds, appCfg] = await Promise.all([loadBookings(), loadDetections().catch(() => []), loadConfig()]);
+  // His Google Calendar, read once for the season. bkFetchCal only caches a
+  // good read, so a feed that errors would otherwise be fetched once per day.
+  let cal = [];
+  if (cfg.calendar && cfg.calendar.enabled && cfg.calendar.icalUrl) { try { cal = await bkFetchCal(cfg.calendar.icalUrl); } catch (e) { cal = []; } }
+  const pre = { bookings, holds: detCfg(appCfg).holdSlots ? holds : null, anyWindow: true, cal };
+  const tz = cfg.tz || 'America/Los_Angeles';
+  const months = {};
+  let open = 0, openLit = 0;
+  for (let i = 1; i < 400; i++) {
+    const date = localDateStr(Date.now() + i * 86400000, tz);
+    if (date > through) break;
+    if ((cfg.blockedDates || []).includes(date)) continue;
+    const m = date.slice(0, 7);
+    const row = months[m] = months[m] || { m, open: 0, openLit: 0 };
+    const n = (await bkSlotAvailability(cfg, date, service, pre)).length;
+    row.open += n; open += n;
+    if (!R.lights) {
+      const lit = (await bkSlotAvailability(cfg, date, service, Object.assign({}, pre, { lights: true }))).length;
+      row.openLit += lit; openLit += lit;
+    }
+  }
+  // Rain-Ready Full Details on the books: booked since the offer went up, by
+  // the deadline, not declined or cancelled.
+  const rr = bookings.filter((b) => b.service === 'full' && !['declined', 'cancelled'].includes(b.status) &&
+    b.createdAt && localDateStr(b.createdAt, tz) >= RR_SINCE && localDateStr(b.createdAt, tz) <= RR_BOOK_BY);
+  return {
+    on: true, service, through, lights: !!R.lights,
+    open, openLit: R.lights ? open : openLit,
+    months: Object.values(months),
+    rrBooked: rr.length,
+    rrUpcoming: rr.filter((b) => b.status !== 'done').length,
+  };
+}
+
+// GET /api/booking-capacity?service=full&through=2027-01-31
+async function apiBookingCapacity(url) {
+  const service = /^[a-z-]{2,20}$/.test(url.searchParams.get('service') || '') ? url.searchParams.get('service') : 'full';
+  const through = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get('through') || '') ? url.searchParams.get('through') : RR_DONE_BY;
+  return json(Object.assign({ ok: true, bookBy: RR_BOOK_BY }, await bkCapacity(service, through)));
 }
 
 // Public config for the customer page. Never leak the secret iCal URL.
@@ -22912,11 +22985,16 @@ async function detHeldSlots(date) {
   try {
     const cfg = await loadConfig();
     if (!detCfg(cfg).holdSlots) return null;
-    const list = (await loadDetections()).filter((x) => x.kind === 'set' && x.date === date);
-    if (!list.length) return [];
-    if (list.some((x) => x.tentative)) return 'all';
-    return list.map((x) => ({ s: bkHm2min(x.slot), e: bkHm2min(x.slot) + (x.durationMin || 180) }));
+    return detHeldFrom(await loadDetections(), date);
   } catch { return null; }
+}
+// The same answer off a list already in hand (the season count in Bookings
+// reads the detections once, not once per day).
+function detHeldFrom(all, date) {
+  const list = (all || []).filter((x) => x.kind === 'set' && x.date === date);
+  if (!list.length) return [];
+  if (list.some((x) => x.tentative)) return 'all';
+  return list.map((x) => ({ s: bkHm2min(x.slot), e: bkHm2min(x.slot) + (x.durationMin || 180) }));
 }
 
 // ---------------------------------------------------------------------------
