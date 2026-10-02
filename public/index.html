@@ -3283,6 +3283,19 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .jd-item .st{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;margin-top:3px}
   .st-open{color:var(--gold)}.st-paid{color:var(--green)}.st-void{color:var(--muted2)}
   .st-active{color:var(--green)}.st-unpaid{color:var(--gold)}.st-used{color:var(--muted2)}
+  .ch-list{display:flex;flex-direction:column;gap:9px}
+  .ch-row{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:11px 13px}
+  .ch-row.dim{opacity:.72}
+  .ch-top{display:flex;justify-content:space-between;gap:10px;align-items:baseline}
+  .ch-name{font-weight:800;font-size:14.5px}
+  .ch-out{font-size:12.5px;font-weight:700;color:var(--text);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .ch-bar{height:8px;border-radius:4px;background:var(--panel2);margin:8px 0 7px;overflow:hidden}
+  .ch-bar i{display:block;height:100%;border-radius:4px;background:var(--accent)}
+  .ch-money{font-size:12px;color:var(--muted2);line-height:1.45}.ch-money b{color:var(--text)}
+  .ch-note{font-size:12px;color:var(--muted2);line-height:1.5;margin-top:-6px}
+  .ch-fix{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:9px 11px}
+  .ch-who{flex:1;min-width:0}.ch-who b{display:block;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.ch-who span{font-size:11.5px;color:var(--muted2)}
+  .ch-sel{flex:none;max-width:52%;font:inherit;font-size:13px;font-weight:700;color:var(--text);background:var(--panel2);border:1px solid var(--line2);border-radius:10px;padding:8px 9px}
   .gc-code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.06em;font-weight:700}
   .gc-code.big{font-size:15px;color:var(--text)}
   .gc-sum{display:flex;gap:10px;margin-bottom:10px}
@@ -4534,6 +4547,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     <button data-gv="pulse"><span class="e" data-ic="activity" data-ic-size="20"></span>Pulse</button>
     <button data-gv="analytics"><span class="e" data-ic="bar-chart" data-ic-size="20"></span>Website</button>
     <button data-gv="journey"><span class="e" data-ic="route" data-ic-size="20"></span>Journey</button>
+    <button data-gv="channels"><span class="e" data-ic="dollar" data-ic-size="20"></span>Channels</button>
     <button data-gv="hangers"><span class="e" data-ic="map-pin" data-ic-size="20"></span>Hangers</button>
     <button data-gv="usage"><span class="e" data-ic="target" data-ic-size="20"></span>Usage</button>
     <button data-gv="map"><span class="e" data-ic="pin" data-ic-size="20"></span>Map</button>
@@ -4634,7 +4648,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-10-02·gift-cards";
+  var APP_BUILD="2026-10-02·channels";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -6110,6 +6124,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     {id:"insights",t:"Insights — all reports",g:"Insights",ic:"bar-chart",k:"stats numbers reports index everything analytics",run:function(){openAnalytics("index")}},
     {id:"analytics",t:"Business overview",g:"Insights",ic:"activity",k:"stats numbers overview business kpis",run:function(){openAnalytics("overview")}},
     {id:"journey",t:"Customer journey",g:"Insights",ic:"route",k:"path pages visited what they did before texting replay story",run:function(){openAnalytics("journey")}},
+    {id:"channels",t:"Channels: cost per customer",g:"Insights",ic:"dollar",k:"marketing spend ads google ads roi return cost per lead acquisition where customers come from source channel hangers signs postcards worth it",run:function(){openAnalytics("channels")}},
     {id:"hangers",t:"Door hangers",g:"Insights",ic:"map-pin",k:"door hanger hangers flyers route zones neighborhoods map canvass",run:function(){openAnalytics("hangers")}},
     {id:"signs",t:"Yard signs",g:"Insights",ic:"map-pin",k:"yard signs bandit sign crew helpers placement corners map route",run:function(){location.assign("/signs?owner=1")}},
     {id:"website",t:"Website analytics",g:"Insights",ic:"activity",k:"traffic visitors ga4 clarity seo google site stats",run:function(){openAnalytics("analytics")}},
@@ -14494,7 +14509,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Each view names itself. Six of these used to be titled "Analytics", so the
   // header said the same thing everywhere and the only way to tell which screen
   // you were on was to read the chart.
-  var GROW_VIEWS={index:["Insights","Ten reports · open one"],
+  var GROW_VIEWS={index:["Insights","Twelve reports · open one"],
     overview:["Overview","Business overview · Mikey's Mobile Detailing"],
     quotes:["Quote results","Every QQC quote, over time"],
     customers:["Customers","Who your customers are — and who's slipping away"],
@@ -14504,7 +14519,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     journey:["Journey","What one customer actually did"],
     usage:["Usage","How you actually use this dashboard"],
     map:["Map","Where the work and the rankings are"],
-    hangers:["Door hangers","Where to hang, what you hung, what it brought in"]};
+    hangers:["Door hangers","Where to hang, what you hung, what it brought in"],
+    channels:["Channels","What a paying customer costs, per channel"]};
   // view is optional. With no view named this lands on the index — the screen
   // that says what the nine reports are — because the tracker showed four of
   // them had never been opened at all. Naming a view (a search hit, a deep
@@ -14559,7 +14575,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(nv){var mark=function(){nv.classList.toggle("ovf",nv.scrollWidth>nv.clientWidth+1)};
       mark();setTimeout(mark,60);window.addEventListener("resize",mark);}
     Array.prototype.forEach.call(el("grNav").querySelectorAll("[data-gv]"),function(b){b.onclick=function(){vibrate(6);growSet(b.getAttribute("data-gv"))}});
-    el("grRefresh").onclick=function(){vibrate(6);if(GROW.view==="analytics"){growLoadWeb(true)}else if(GROW.view==="journey"){GROW.journey.steps={};jnLoadList(true)}else if(GROW.view==="quotes"){GROW.quotes.data=null;growLoadQuotes()}else if(GROW.view==="hangers"){hgLoad(true)}else if(GROW.view==="map"){if(GROW.map.mode==="rank")ggLoadRank(true);else growRender();}else if(IV[GROW.view]){ivLoad(GROW.view,true)}else{refreshThreads();fetchInsights();api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.entries=d.entries||[];MO.today=d.today;MO.week=d.week;MO.allTime=d.allTime}growRender()});}toast("Refreshed")};
+    el("grRefresh").onclick=function(){vibrate(6);if(GROW.view==="analytics"){growLoadWeb(true)}else if(GROW.view==="journey"){GROW.journey.steps={};jnLoadList(true)}else if(GROW.view==="quotes"){GROW.quotes.data=null;growLoadQuotes()}else if(GROW.view==="hangers"){hgLoad(true)}else if(GROW.view==="channels"){chLoad(true)}else if(GROW.view==="map"){if(GROW.map.mode==="rank")ggLoadRank(true);else growRender();}else if(IV[GROW.view]){ivLoad(GROW.view,true)}else{refreshThreads();fetchInsights();api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.entries=d.entries||[];MO.today=d.today;MO.week=d.week;MO.allTime=d.allTime}growRender()});}toast("Refreshed")};
   }
   function growRender(){
     var meta=GROW_VIEWS[GROW.view]||GROW_VIEWS.overview;
@@ -14574,10 +14590,115 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(GROW.view==="quotes")return growQuotes(b);
     if(GROW.view==="map")return growMap(b);
     if(GROW.view==="hangers")return growHangers(b);
+    if(GROW.view==="channels")return growChannels(b);
     if(GROW.view==="customers")return ivRender(b,"customers");
     if(GROW.view==="profit")return ivRender(b,"profit");
     if(GROW.view==="pulse")return ivRender(b,"pulse");
     return growOverview(b);
+  }
+
+
+  // ============================================================
+  // Insights → Channels. Per way of getting customers: leads, paying
+  // customers, the job money they brought, what the channel cost, and what
+  // one paying customer cost. One measure gets a bar (leads, so every row,
+  // paid or free, sits on the same scale); the money is printed beside it,
+  // never a second axis. Below: the leads nobody knows the source of and the
+  // marketing spend not split by channel, each one tap from fixed.
+  // ============================================================
+  var CH_RANGES=[[30,"30 days"],[90,"90 days"],[365,"12 months"]];
+  GROW.ch={data:null,days:90,loading:false,err:""};
+  function chLoad(force){
+    var C=GROW.ch;if(C.loading)return;
+    if(C.data&&!force&&C.data.days===C.days)return;
+    C.loading=true;C.err="";
+    api("/api/channels?days="+C.days).then(function(d){
+      C.loading=false;
+      if(d&&d.ok)C.data=d;else C.err=(d&&d.error)||"Couldn't load";
+      if(GROW.view==="channels"&&el("growApp").classList.contains("show"))growRender();
+    }).catch(function(){C.loading=false;C.err="Network error";if(GROW.view==="channels")growRender()});
+  }
+  function chMoney(n){return fmtMoney(Math.round(+n||0))}
+  function growChannels(box){
+    var C=GROW.ch,d=C.data;
+    var h='<div class="ins ch">';
+    h+='<div class="qv-ranges">'+CH_RANGES.map(function(r){return '<button class="qv-range'+(C.days===r[0]?" on":"")+'" data-chr="'+r[0]+'">'+r[1]+'</button>'}).join("")+'</div>';
+    if(!d||d.days!==C.days){
+      if(!C.loading&&!C.err)chLoad();
+      box.innerHTML=h+'<div class="qv-empty">'+(C.err?esc(C.err):"Adding up where your customers came from…")+'</div></div>';
+      chWire(box);return;
+    }
+    var t=d.totals||{},rows=d.channels||[];
+    h+='<div class="stat-grid">'+
+      '<div class="stat"><div class="v">'+chMoney(t.spend)+'</div><div class="k">Spent on marketing</div></div>'+
+      '<div class="stat"><div class="v">'+(t.leads||0)+'</div><div class="k">Leads</div></div>'+
+      '<div class="stat"><div class="v">'+(t.customers||0)+'</div><div class="k">Paid you · '+chMoney(t.revenue)+'</div></div>'+
+      '<div class="stat"><div class="v">'+(t.perCustomer?chMoney(t.perCustomer):"–")+'</div><div class="k">Cost per paying customer</div></div>'+
+      '</div>';
+    if(!rows.length){
+      h+='<div class="qv-empty">No leads in this window yet. They show up here as they come in.</div>';
+    }else{
+      var max=0;rows.forEach(function(r){if(r.leads>max)max=r.leads});
+      h+='<div class="an-lbl">'+ic("bar-chart",15)+'By channel · leads</div><div class="ch-list">';
+      rows.forEach(function(r){
+        var w=max?Math.max(r.leads?3:0,Math.round(r.leads/max*100)):0;
+        var cost=r.id==="unknown"?'Say where these came from, below'
+          : r.spend
+          ? chMoney(r.spend)+' spent'+(r.customers?' · <b>'+chMoney(r.perCustomer)+'</b> per paying customer':' · no paying customer yet')+(r.back?' · '+chMoney(r.back*100)+' back per $100':'')
+          : (r.paid?'No spend logged for this yet':'Free');
+        h+='<div class="ch-row'+(r.id==="unknown"?" dim":"")+'" title="'+esc(r.label+": "+r.leads+" leads, "+r.customers+" paid, "+chMoney(r.revenue)+(r.spend?", "+chMoney(r.spend)+" spent":""))+'">'+
+          '<div class="ch-top"><span class="ch-name">'+esc(r.label)+'</span><span class="ch-out">'+r.leads+' lead'+(r.leads===1?"":"s")+'</span></div>'+
+          '<div class="ch-bar"><i style="width:'+w+'%"></i></div>'+
+          '<div class="ch-money"><b>'+r.customers+' paid · '+chMoney(r.revenue)+'</b> · '+cost+'</div></div>';
+      });
+      h+='</div>';
+    }
+    if(d.unknownCount){
+      h+='<div class="an-lbl">'+ic("help",15)+'Not sure where these came from · '+d.unknownCount+'</div>'+
+        '<div class="ch-note">Ask "where did you hear about me?" next time you text, and set it here. One tap each.</div>';
+      (d.unknown||[]).forEach(function(u){
+        h+='<div class="ch-fix"><div class="ch-who"><b>'+esc(u.name||prettyPhone(u.phone))+'</b><span>'+new Date(u.at).toLocaleDateString([],{month:"short",day:"numeric"})+(u.rev?' · paid '+chMoney(u.rev):(u.status?' · '+esc(u.status):''))+'</span></div>'+
+          '<select class="ch-sel" data-chorigin="'+esc(u.phone)+'"><option value="">Where from?</option>'+
+          (d.choices||[]).map(function(c){return '<option value="'+esc(c[0])+'">'+esc(c[1])+'</option>'}).join("")+'</select></div>';
+      });
+    }
+    if((d.unsplit||[]).length){
+      h+='<div class="an-lbl">'+ic("dollar",15)+'Marketing spend not split by channel · '+chMoney(d.unsplitTotal)+'</div>'+
+        '<div class="ch-note">Logged before Money asked which kind. Pick one and it moves into its channel above.</div>';
+      d.unsplit.forEach(function(e){
+        h+='<div class="ch-fix"><div class="ch-who"><b>'+chMoney(e.amount)+'</b><span>'+esc(e.date)+(e.note?' · '+esc(e.note):'')+(e.sub?' · '+esc(e.sub):'')+'</span></div>'+
+          '<select class="ch-sel" data-chspend="'+esc(e.id)+'" data-chdate="'+esc(e.date)+'"><option value="">Which kind?</option>'+
+          (d.subs||[]).map(function(sb){return '<option value="'+esc(sb)+'"'+(e.sub===sb?" selected":"")+'>'+esc(sb)+'</option>'}).join("")+'</select></div>';
+      });
+    }
+    h+='<div class="ch-note" style="margin-bottom:18px">Leads are conversations that started in this window and became leads (a quote, a booking, or a status on the board). "Paid" is job money logged in Money, gift card sales left out. Spend is marketing expenses: when you log one, pick which kind. Door hangers here are QR scans and the ones you credited; the Hangers report also counts bookings inside zones you hung.</div>';
+    h+='</div>';
+    box.innerHTML=h;hydrateIcons(box);chWire(box);
+  }
+  function chWire(box){
+    Array.prototype.forEach.call(box.querySelectorAll("[data-chr]"),function(b){
+      b.onclick=function(){vibrate(6);GROW.ch.days=+b.getAttribute("data-chr");growRender()};
+    });
+    Array.prototype.forEach.call(box.querySelectorAll("[data-chorigin]"),function(s){
+      s.onchange=function(){
+        if(!s.value)return;
+        s.disabled=true;
+        post("/api/channels",{action:"origin",phone:s.getAttribute("data-chorigin"),ch:s.value}).then(function(r){
+          if(!r||!r.ok){s.disabled=false;return toast("Couldn't save that",{bad:true})}
+          toast("Got it. Counted under "+s.options[s.selectedIndex].text);chLoad(true);
+        }).catch(function(){s.disabled=false;toast("Network error",{bad:true})});
+      };
+    });
+    Array.prototype.forEach.call(box.querySelectorAll("[data-chspend]"),function(s){
+      s.onchange=function(){
+        if(!s.value)return;
+        s.disabled=true;
+        post("/api/channels",{action:"spend",id:s.getAttribute("data-chspend"),date:s.getAttribute("data-chdate"),sub:s.value}).then(function(r){
+          if(!r||!r.ok){s.disabled=false;return toast("Couldn't save that",{bad:true})}
+          toast("Moved to "+s.value);MO.report=null;chLoad(true);
+        }).catch(function(){s.disabled=false;toast("Network error",{bad:true})});
+      };
+    });
   }
 
   // ============================================================
@@ -14938,6 +15059,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     ["pulse","Pulse","activity","Where does this month land if nothing changes?"],
     ["journey","Journey","route","What did one customer do before they texted?"],
     ["map","Map & rankings","pin","Where's the work, and where do you rank?"],
+    ["channels","Channels","dollar","What does a paying customer cost me, per channel?"],
     ["hangers","Door hangers","map-pin","Where do I hang next, and did it pay?"],
     ["signs","Yard signs","map-pin","Where do signs go, who put them out, and did they pay?"],
     ["usage","Usage","target","Which parts of this dashboard do you actually use?"]
@@ -16872,7 +16994,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Icon (Lucide) for an entry — job/labor/personal each have their own; expenses
   // use their category icon. Kept separate so the buttons, rows, sheets all match.
   function moTypeIcon(type,cat){if(type==="job")return"car";if(type==="jp")return"users";if(type==="personal")return"user";return moCatInfo(cat)[2]}
-  var MO_SUBS={supplies:["Chemicals","Pads","Towels","Coatings","Other"]};
+  // Marketing's kinds are the Channels report's spend buckets (MARKETING_SUBS
+  // in src/index.js): change one, change both, or spend lands in "not split".
+  var MO_SUBS={supplies:["Chemicals","Pads","Towels","Coatings","Other"],
+    marketing:["Google Ads","Facebook ads","Door hangers","Yard signs","Postcards","Business cards","Other"]};
   var MO_METHODS=["Cash","Venmo","Zelle","Check"];
   var MO_VEH=["Sedan","SUV","Truck","Van","Boat/RV","Other"];
   // ---- adaptive smarts: remember what gets used, quietly reorder to match ----

@@ -157,7 +157,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-02·gift-cards';
+const BUILD = '2026-10-02·channels';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -634,6 +634,9 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/use/export')    return apiUseExport(url);
   if (request.method === 'GET'  && pathname === '/api/quotes')        return apiQuotes(url);
   if (request.method === 'GET'  && pathname === '/api/hangers')       return apiHangers();
+  // Insights → Channels: what each way of getting customers costs.
+  if (request.method === 'GET'  && pathname === '/api/channels')      return apiChannels(url);
+  if (request.method === 'POST' && pathname === '/api/channels')      return apiChannelsPost(request);
   if (request.method === 'POST' && pathname === '/api/hangers')       return apiHangersPost(request);
   if (request.method === 'GET'  && pathname === '/api/quotes/export') return apiQuotesExport(url);
   if (request.method === 'POST' && pathname === '/api/quotes/import') return apiQuotesImport(request);
@@ -1311,7 +1314,10 @@ async function handleSubmit(request) {
   if (!thread.status) { thread.status = 'new'; thread.statusAt = thread.statusAt || Date.now(); }
   // Scanned the QR on a door hanger or a yard sign: tag it so the Hangers or
   // Yard signs screen counts it. One journey read answers both.
-  const landedFrom = await journeyUtm(body.vid);
+  const touch = await journeyFirstTouch(body.vid);
+  const landedFrom = (touch && touch.utm) || '';
+  // The same read stamps where this lead came from (Insights → Channels).
+  markOrigin(thread, touch);
   const fromHanger = landedFrom === 'doorhanger';
   const fromSign = landedFrom === 'yardsign';
   if (fromHanger) thread.tags = Array.from(new Set((thread.tags || []).concat('hanger')));
@@ -2547,6 +2553,254 @@ async function handleInboundSms(request) {
   await maybeDetectJob(fromNorm);
   // No auto-reply to the customer — Mikey replies personally from the dashboard.
   return twiml('');
+}
+
+// ===========================================================================
+// Channels (Insights → Channels): what each way of getting customers costs
+// ---------------------------------------------------------------------------
+// He's paying for Google Ads, 2,000 door hangers, yard signs, postcards and
+// business cards, all at once. Each of those has its own screen or none, and
+// the only cost number anywhere was "marketing", blended, because spend was
+// logged as one category. This screen answers the question all of that money
+// is for: per channel, how many leads came in, how many paid, what they paid,
+// what the channel cost, and so what one paying customer cost.
+//
+// Two halves, both cheap:
+//
+//   WHERE A LEAD CAME FROM. At the moment a quote or booking arrives, the
+//   worker already reads that visitor's journey doc for the QR tag. The same
+//   read now also takes the ad platform and the first referrer, and the thread
+//   is stamped with `origin` (first touch, never overwritten). Leads from
+//   before this, and calls and texts that never touched the site, fall back in
+//   order to: a door hanger or yard sign credit, the journey board's metadata,
+//   the hanger/sign tag, a referral, and finally "Not sure yet", where one tap
+//   says where they came from (asking "where did you hear about me?" is free).
+//
+//   WHAT IT COST. Marketing expenses in Money now ask "What kind?" (Google Ads,
+//   Facebook ads, Door hangers, Yard signs, Postcards, Business cards, Other),
+//   the same chip row supplies already had. Older ones without it show here
+//   as "not split yet" with the same chips. Nothing is estimated: a channel
+//   with no logged spend shows its leads and says it has no cost on file.
+//
+// Revenue is real job money (gift card sales excluded) from those leads, from
+// the start of the window to today. A lead is a conversation that started in
+// the window and became a lead (it has a pipeline status, or came in through
+// the quote or the booking page), so a text from his mom is not a lead.
+// ===========================================================================
+const CHANNELS = [
+  // id, what he calls it, the Money "What kind?" chip its spend is logged under
+  ['google_ads', 'Google Ads', 'Google Ads'],
+  ['meta_ads', 'Facebook & Instagram ads', 'Facebook ads'],
+  ['other_ads', 'Other ads', ''],
+  ['hanger', 'Door hangers', 'Door hangers'],
+  ['sign', 'Yard signs', 'Yard signs'],
+  ['postcard', 'Postcards', 'Postcards'],
+  ['card', 'Business cards', 'Business cards'],
+  ['giftcard', 'Gift cards', ''],
+  ['search', 'Google search & Maps', ''],
+  ['social', 'Social & community sites', ''],
+  ['referral', 'Word of mouth', ''],
+  ['web', 'Other websites', ''],
+  ['direct', 'Came straight to the site', ''],
+  ['unknown', 'Not sure yet', ''],
+];
+const CHANNEL_IDS = CHANNELS.map((c) => c[0]);
+const CHANNEL_SPEND = {};
+for (const c of CHANNELS) if (c[2]) CHANNEL_SPEND[c[2]] = c[0];
+const MARKETING_SUBS = CHANNELS.filter((c) => c[2]).map((c) => c[2]).concat(['Other']);
+// Every utm_source a printed or posted piece carries (grep the website repo:
+// print/tools/*.cjs, social/PLAYBOOK.md). A new piece with a new tag lands in
+// "Other websites" until it's added here.
+const UTM_CHANNEL = {
+  doorhanger: 'hanger', yardsign: 'sign', postcard: 'postcard', sharedcard: 'postcard', eddm: 'postcard',
+  card: 'card', giftcard: 'giftcard', instagram: 'social', facebook: 'social', nextdoor: 'social',
+  gbp: 'search', google: 'search',
+};
+
+// First touch → channel. Pure, so the stamp at lead time and the fallback at
+// report time can never disagree. A paid click beats a free-looking utm,
+// because a Facebook ad can carry utm_source=facebook too.
+function originChannel(o) {
+  if (!o) return 'unknown';
+  const utm = String(o.utm || '').toLowerCase();
+  const ad = String(o.ad || '').toLowerCase();
+  if (utm && UTM_CHANNEL[utm] && !['social', 'search'].includes(UTM_CHANNEL[utm])) return UTM_CHANNEL[utm];
+  if (ad === 'google') return 'google_ads';
+  if (ad === 'facebook' || ad === 'instagram') return 'meta_ads';
+  if (ad) return 'other_ads';
+  if (utm && UTM_CHANNEL[utm]) return UTM_CHANNEL[utm];
+  const h = refHostOf(o.ref).toLowerCase();
+  if (!h || /(^|\.)mikeysdetailing\.com$/.test(h)) return utm ? 'web' : 'direct';
+  if (/(^|\.)google\.|bing\.|duckduckgo\.|yahoo\.|ecosia\.|search\./.test(h)) return 'search';
+  if (/facebook\.|instagram\.|(^|\.)fb\.|nextdoor\.|reddit\.|tiktok\.|yelp\.|threads\./.test(h)) return 'social';
+  return 'web';
+}
+
+// One journey read: the QR tag, the ad platform and the first page's referrer.
+// null when there's no journey (a call, a text, a form with no visitor id), so
+// nothing gets stamped "came straight to the site" for want of a website visit.
+async function journeyFirstTouch(vid) {
+  vid = cleanVid(vid);
+  if (!vid) return null;
+  try {
+    const doc = await kv().get(journeyKey(vid), { type: 'json' });
+    if (!doc) return null;
+    const first = (doc.steps || []).find((s) => !s.k) || (doc.steps || [])[0] || {};
+    return { utm: doc.utm || '', ad: doc.ad || '', ref: refHostOf(first.r || '') };
+  } catch (e) { return null; }
+}
+
+// First touch wins and is never overwritten by a later visit; only a hand
+// answer ("where did you hear about me?") can change it.
+function markOrigin(thread, touch) {
+  if (!thread || !touch || (thread.origin && thread.origin.ch)) return false;
+  thread.origin = { ch: originChannel(touch), at: Date.now(), utm: String(touch.utm || '').slice(0, 24),
+    ad: String(touch.ad || '').slice(0, 12), ref: String(touch.ref || '').slice(0, 60) };
+  return true;
+}
+
+function channelLabel(id) { const c = CHANNELS.find((x) => x[0] === id); return c ? c[1] : id; }
+
+// Where one index row came from, best evidence first.
+function channelOfRow(row, ctx) {
+  if (row.origin && CHANNEL_IDS.includes(row.origin) && row.origin !== 'unknown') return row.origin;
+  if (ctx.hangers[row.phone]) return 'hanger';
+  if (ctx.signs[row.phone]) return 'sign';
+  const j = ctx.journeys.get(row.phone);
+  if (j) return originChannel(j);
+  const tags = row.tags || [];
+  if (tags.includes('hanger')) return 'hanger';
+  if (tags.includes('sign')) return 'sign';
+  if (row.refBy || row.refGuess) return 'referral';
+  return 'unknown';
+}
+
+function channelIsLead(row) {
+  return ['new', 'active', 'won', 'lost'].includes(row.status) || ['quote', 'booking'].includes(row.source);
+}
+
+// Every month key from a to b inclusive (YYYY-MM), capped.
+function monthSpan(a, b, cap) {
+  const out = [];
+  let m = a;
+  for (let i = 0; i < (cap || 26) && m <= b; i++) {
+    out.push(m);
+    const y = +m.slice(0, 4), mo = +m.slice(5, 7);
+    m = mo === 12 ? (y + 1) + '-01' : y + '-' + String(mo + 1).padStart(2, '0');
+  }
+  return out;
+}
+
+// GET /api/channels?days=90
+async function apiChannels(url) {
+  const days = Math.max(7, Math.min(730, parseInt(url.searchParams.get('days') || '90', 10) || 90));
+  const cfg = await loadConfig();
+  const tz = cfg.tz || 'America/Los_Angeles';
+  const now = Date.now(), start = now - days * DAY_MS;
+  const startDate = localDateStr(start, tz), today = localDateStr(now, tz);
+
+  const [index, hdoc, sdoc] = await Promise.all([loadIndex(), loadHangers(), loadSigns()]);
+  // The journey board's own trick: list metadata, open no docs.
+  const journeys = new Map();
+  try {
+    let cursor, guard = 0;
+    do {
+      const page = await kv().list({ prefix: 'journey:', cursor, limit: 1000 });
+      for (const k of page.keys || []) {
+        const m = k.metadata || {};
+        if (m.phone && !journeys.has(m.phone)) journeys.set(m.phone, { utm: m.utm || '', ad: m.ad || '', ref: m.ref || '' });
+      }
+      cursor = page.list_complete ? null : page.cursor;
+    } while (cursor && ++guard < 5);
+  } catch (e) { /* the board is a fallback; the report still runs without it */ }
+
+  const months = monthSpan(startDate.slice(0, 7), today.slice(0, 7), 26);
+  const docs = await Promise.all(months.map((m) => loadMonth(m)));
+  const entries = docs.flatMap((d) => (d && d.entries) || []).filter((e) => e.date >= startDate && e.date <= today);
+
+  const revenue = new Map();
+  for (const e of entries) {
+    if (e.type === 'job' && !e.gift && e.phone && e.amount > 0) revenue.set(e.phone, money2((revenue.get(e.phone) || 0) + e.amount));
+  }
+  const spend = {}, unsplit = [];
+  let spendTotal = 0;
+  for (const e of entries) {
+    if (e.type !== 'exp' || e.cat !== 'marketing') continue;
+    spendTotal += e.amount;
+    const ch = CHANNEL_SPEND[e.sub];
+    if (ch) spend[ch] = money2((spend[ch] || 0) + e.amount);
+    else unsplit.push({ id: e.id, date: e.date, amount: e.amount, note: e.note || '', sub: e.sub || '' });
+  }
+
+  const ctx = { hangers: hdoc.leads || {}, signs: sdoc.leads || {}, journeys };
+  const rows = {};
+  const bucket = (id) => (rows[id] = rows[id] || { id, label: channelLabel(id), leads: 0, customers: 0, revenue: 0, spend: 0 });
+  const unknown = [];
+  let leadTotal = 0, custTotal = 0, revTotal = 0;
+  for (const row of index) {
+    const first = row.firstTs || row.sourceAt || 0;
+    if (!first || first < start || !channelIsLead(row)) continue;
+    const ch = channelOfRow(row, ctx);
+    const b = bucket(ch);
+    const rev = revenue.get(row.phone) || 0;
+    b.leads++; leadTotal++;
+    if (rev > 0 || row.status === 'won') { b.customers++; custTotal++; }
+    b.revenue = money2(b.revenue + rev); revTotal += rev;
+    if (ch === 'unknown') unknown.push({ phone: row.phone, name: row.name || '', at: first, status: row.status || '', rev });
+  }
+  for (const id of Object.keys(spend)) bucket(id).spend = spend[id];
+
+  const out = Object.values(rows).map((r) => Object.assign(r, {
+    paid: !!(CHANNELS.find((c) => c[0] === r.id) || [])[2],
+    perLead: r.spend && r.leads ? money2(r.spend / r.leads) : 0,
+    perCustomer: r.spend && r.customers ? money2(r.spend / r.customers) : 0,
+    // What a dollar of spend brought back, in job money. Only with spend on file.
+    back: r.spend ? money2(r.revenue / r.spend) : 0,
+  })).sort((a, b) => (a.id === 'unknown') - (b.id === 'unknown') || b.customers - a.customers || b.leads - a.leads || b.spend - a.spend);
+
+  unknown.sort((a, b) => b.at - a.at);
+  unsplit.sort((a, b) => (a.date < b.date ? 1 : -1));
+  spendTotal = money2(spendTotal);
+  return json({
+    ok: true, days, startDate, today,
+    channels: out,
+    totals: { leads: leadTotal, customers: custTotal, revenue: money2(revTotal), spend: spendTotal,
+      perCustomer: spendTotal && custTotal ? money2(spendTotal / custTotal) : 0 },
+    unknown: unknown.slice(0, 25), unknownCount: unknown.length,
+    unsplit: unsplit.slice(0, 25), unsplitTotal: money2(unsplit.reduce((s, e) => s + e.amount, 0)),
+    choices: CHANNELS.filter((c) => c[0] !== 'unknown').map((c) => [c[0], c[1]]),
+    subs: MARKETING_SUBS,
+  });
+}
+
+// POST /api/channels  { action: 'origin', phone, ch }  — "they said a yard sign"
+//                     { action: 'spend', id, date, sub } — split an old expense
+async function apiChannelsPost(request) {
+  const d = await readJson(request);
+  if (d.action === 'origin') {
+    const phone = normalizePhone(d.phone);
+    const ch = String(d.ch || '');
+    if (!phone || !CHANNEL_IDS.includes(ch)) return json({ ok: false, error: 'bad_request' }, 422);
+    // loadThread, not openThreadForRead: tagging a lead must not mark it read.
+    const thread = await loadThread(phone);
+    if (!thread.messages.length && !thread.name && !thread.status) return json({ ok: false, error: 'not_found' }, 404);
+    thread.origin = ch === 'unknown' ? null : { ch, at: Date.now(), by: 'hand' };
+    await saveThread(thread);
+    await updateIndexEntry(thread);
+    return json({ ok: true, phone, ch });
+  }
+  if (d.action === 'spend') {
+    const month = String(d.date || '').slice(0, 7);
+    const sub = String(d.sub || '');
+    if (!/^\d{4}-\d{2}$/.test(month) || !MARKETING_SUBS.includes(sub)) return json({ ok: false, error: 'bad_request' }, 422);
+    const doc = await loadMonth(month);
+    const e = doc.entries.find((x) => x.id === String(d.id || ''));
+    if (!e || e.type !== 'exp' || e.cat !== 'marketing') return json({ ok: false, error: 'not_found' }, 404);
+    e.sub = sub;
+    await saveMonth(month, doc);
+    return json({ ok: true, id: e.id, sub });
+  }
+  return json({ ok: false, error: 'bad_action' }, 422);
 }
 
 // ===========================================================================
@@ -5111,6 +5365,8 @@ function journeyMeta(doc) {
     ad: String(doc.ad || '').slice(0, 12),
     camp: String(doc.camp || '').slice(0, 40),
     city: String(doc.city || '').slice(0, 40),
+    // The QR or link tag, for the Channels report's fallback (no doc opened).
+    utm: String(doc.utm || '').slice(0, 24),
     // The click id, and the moment they became a lead, mirrored here for the
     // same reason as everything else in this object: the Google Ads export
     // scans every visitor on file and must not open a single doc to do it.
@@ -13046,6 +13302,8 @@ function buildIndexSummary(thread, cfg) {
     // messages/notes, which the index row deliberately doesn't carry.
     source: thread.source || deriveSource(thread),
     sourceAt: thread.sourceAt || thread.createdAt || 0,
+    // Where the lead came from (first touch or his answer), for Insights → Channels.
+    origin: (thread.origin && thread.origin.ch) || '',
     firstTs: thread.createdAt || ((thread.messages || [])[0] || {}).ts || 0,
     pinned: !!thread.pinned,
     archived: !!thread.archived,
@@ -16695,7 +16953,9 @@ async function apiBook(request) {
   // The calculator books here instead of /submit now, so a sign or hanger QR
   // that ends in a booked time has to be caught here too, or the warmest
   // print leads never get credited. The site sends the visitor id with it.
-  const landedFrom = b.vid ? await journeyUtm(b.vid) : '';
+  const touch = b.vid ? await journeyFirstTouch(b.vid) : null;
+  const landedFrom = (touch && touch.utm) || '';
+  markOrigin(thread, touch);
   if (landedFrom === 'yardsign' && !thread.tags.includes('sign')) thread.tags.push('sign');
   if (landedFrom === 'doorhanger' && !thread.tags.includes('hanger')) thread.tags.push('hanger');
   if (refBy && !thread.referredBy) {
