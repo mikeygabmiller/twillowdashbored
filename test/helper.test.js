@@ -105,7 +105,7 @@ console.log('\nWhat the texting page needs is open');
   ok(th.status === 200 && th.data.thread && th.data.thread.name === 'Dale Hobart', 'a conversation');
   const g = await call('GET', '/api/helper/guide', { cookie: helper.cookie });
   ok(g.status === 200 && g.data.guide.length >= 5 && g.data.quick.length >= 5, 'the guide and quick replies');
-  ok(Array.isArray(g.data.prices) && g.data.prices.length >= 3 && g.data.prices.some((p) => p.price && p.price.sedan === 299), 'live price list from booking settings ($299 full detail, sedan)');
+  ok(Array.isArray(g.data.prices) && g.data.prices.length >= 3 && g.data.prices.some((p) => p.price && p.price.sedan === 369), 'live price list from booking settings ($369 full detail, sedan: the price book)');
   const txt = JSON.stringify(g.data.guide) + JSON.stringify(g.data.quick);
   ok(!/licensed|insured/i.test(txt.replace(/Never say he's licensed or insured/, '')), 'the guide never asserts licensed/insured');
   ok(/Lynnwood and Edmonds are a no/.test(txt), 'the guide keeps Lynnwood and Edmonds out');

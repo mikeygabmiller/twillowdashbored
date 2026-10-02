@@ -76,6 +76,11 @@
 
   /* settings */
   .sec{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;margin:12px 0;}
+  .sec.facts{border-color:var(--amber);background:rgba(245,165,36,.08);}
+  .sec.facts.ok{border-color:rgba(47,208,122,.5);background:rgba(47,208,122,.07);}
+  .fact{border-top:1px solid var(--line);padding:9px 0;font-size:13.5px;}
+  .fact .fx-now{color:#ff6b78;font-size:12.5px;margin-top:3px;line-height:1.45}
+  .fact .fx-want{color:var(--green);font-size:12.5px;margin-top:2px;line-height:1.45}
   .sec h3{margin:0 0 3px;font-size:15px;font-weight:800;display:flex;align-items:center;gap:8px;}
   .sec .desc{color:var(--faint);font-size:12.5px;margin:0 0 14px;line-height:1.5;}
   .fld{margin-bottom:13px;} .fld:last-child{margin-bottom:0;}
@@ -233,13 +238,27 @@ try{ $("#bookUrl").textContent=location.origin+"/book.html"; }catch(e){}
 /* ================= SETTINGS ================= */
 function loadSettings(){
   $("#settingsView").innerHTML='<div class="spin"></div>';
-  api("/api/booking-settings").then(function(d){ state.cfg=d&&d.config; renderSettings(state.cfg);
+  api("/api/booking-settings").then(function(d){ state.cfg=d&&d.config; state.facts=(d&&d.facts)||[]; renderSettings(state.cfg);
   }).catch(function(e){ if(e&&e.auth) authMsg($("#settingsView")); else $("#settingsView").innerHTML='<div class="msg">Couldn\'t load settings. <a href="#" onclick="loadSettings();return false">Try again</a>.</div>'; });
 }
 function inNum(v){ return 'value="'+esc(v)+'"'; }
 function renderSettings(c){
   if(!c){ return; }
   var sizes=c.sizes||[], H=[];
+
+  // The facts check: what the booking page says that the website doesn't. A
+  // referral link lands on that page, so a stale price here is quoted to a
+  // friend. One button rewrites only the listed fields (see apiBookingFacts).
+  var F=state.facts||[];
+  if(F.length){
+    H.push('<div class="sec facts" id="factsCard"><h3>⚠️ Your booking page doesn\'t match your website</h3>'+
+      '<p class="desc">Referral links and your booking link open this page, so these are what a customer sees there. Your website\'s price book is the right one.</p>'+
+      F.map(function(f){ return '<div class="fact"><b>'+esc(f.what)+'</b><div class="fx-now">Now: '+esc(f.now||"")+'</div><div class="fx-want">Website: '+esc(f.want||"")+'</div></div>'; }).join("")+
+      '<button class="b primary" id="factsGo" style="margin-top:12px;width:100%">Match the website</button>'+
+      '<div class="hint">Changes only what\'s listed above. Your start times, job lengths, switches and the rest of these settings stay as they are.</div></div>');
+  } else {
+    H.push('<div class="sec facts ok" id="factsCard"><h3>✓ Your booking page matches your website</h3><p class="desc" style="margin:0">Prices, sizes, add-ons, towns and the review count all agree with the website\'s price book.</p></div>');
+  }
 
   // Business
   H.push(sec("🏷️ Business info","Shown at the top of your booking page.",
@@ -334,7 +353,6 @@ function renderSettings(c){
   var content=fld("First-time hook", input("content.hook", c.content.hook))+
     '<label class="chk"><input type="checkbox" data-f="content.freeWax" '+(c.content.freeWax!==false?"checked":"")+'> Show the free-wax hook on the page</label>'+
     fld("Guarantee line", input("content.guarantee", c.content.guarantee))+
-    '<label class="chk"><input type="checkbox" data-f="content.urgency" '+(c.content.urgency!==false?"checked":"")+'> Show “booking fast” urgency</label>'+
     '<div style="height:8px"></div>'+
     grid3(fld("Star rating", input("proof.rating", c.proof.rating)), fld("# reviews", inputNum("proof.reviews", c.proof.reviews)), fld("Cars detailed", input("proof.cars", c.proof.cars)));
   H.push(sec("💬 Page content & proof","The trust-builders on your booking page.",content));
@@ -356,6 +374,14 @@ function addonRow(a){ a=a||{name:"",price:0,enabled:true,popular:false};
     '<button class="xbtn" data-rm>✕</button></div>'; }
 
 function wireSettings(){
+  var fg=$("#factsGo"); if(fg) fg.onclick=function(){
+    fg.disabled=true; fg.textContent="Updating…";
+    api("/api/booking-settings/facts",{method:"POST",body:"{}"}).then(function(d){
+      if(!d||!d.ok){ fg.disabled=false; fg.textContent="Match the website"; return toast("Couldn't update it",true); }
+      state.cfg=d.config; state.facts=d.facts||[]; renderSettings(d.config);
+      toast("Booking page updated ✓"); var top=$("#factsCard"); if(top&&top.scrollIntoView) top.scrollIntoView({block:"start"});
+    }).catch(function(e){ fg.disabled=false; fg.textContent="Match the website"; if(e&&e.auth) authMsg($("#settingsView")); else toast("Network error",true); });
+  };
   $$(".day-c").forEach(function(d){ d.onclick=function(){ d.classList.toggle("on"); }; });
   $$("[data-rm]").forEach(function(x){ x.onclick=function(){ x.closest(".addon-row").remove(); }; });
   var add=$("#addAddon"); if(add) add.onclick=function(){ var w=document.createElement("div"); w.innerHTML=addonRow(null); var row=w.firstChild; $("#addonRows").appendChild(row); row.querySelector("[data-rm]").onclick=function(){row.remove();}; };
@@ -443,7 +469,7 @@ function collect(){
 $("#saveBtn").onclick=function(){
   var btn=$("#saveBtn"); btn.disabled=true; $("#saveStatus").textContent="Saving…";
   api("/api/booking-settings",{method:"POST",body:JSON.stringify({config:collect()})}).then(function(d){
-    if(d&&d.ok){ state.cfg=d.config; renderSettings(d.config); toast("Settings saved ✓"); $("#saveStatus").textContent="Saved. Your booking page is updated."; }
+    if(d&&d.ok){ state.cfg=d.config; if(d.facts) state.facts=d.facts; renderSettings(d.config); toast("Settings saved ✓"); $("#saveStatus").textContent="Saved. Your booking page is updated."; }
     else { toast((d&&d.error)||"Save failed",true); $("#saveStatus").textContent="Save failed."; }
     btn.disabled=false;
   }).catch(function(e){ toast(e&&e.auth?"Please log in":"Network error",true); $("#saveStatus").textContent="Error."; btn.disabled=false; });

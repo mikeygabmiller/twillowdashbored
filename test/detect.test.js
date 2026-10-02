@@ -162,9 +162,17 @@ section('Soft holds — the website cannot sell a slot promised over text');
 // slides into the past — and then every check below passes vacuously, because
 // "no slots held" and "no slots at all" look identical. That is exactly how this
 // section rotted, silently, months after it was written.
-const HOLD_DAY = new Intl.DateTimeFormat('en-CA', {
-  timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit',
-}).format(new Date(Date.now() + 10 * 86400000));
+//
+// It rotted a second way on 2026-10-01: ten days out was a Sunday, and since
+// 2026-09-29 his real week (fixed start times, never Sunday) is the default,
+// so the day had no slots and the hold checks failed for a reason that had
+// nothing to do with holds. So: never a Sunday, and this section tests the
+// grid it was written for (fixed start times off), with the real start times
+// checked on their own just below.
+let holdTs = Date.now() + 10 * 86400000;
+const pacific = (ts, o) => new Intl.DateTimeFormat('en-CA', Object.assign({ timeZone: 'America/Los_Angeles' }, o)).format(new Date(ts));
+while (pacific(holdTs, { weekday: 'short' }) === 'Sun') holdTs += 86400000;
+const HOLD_DAY = pacific(holdTs, { year: 'numeric', month: '2-digit', day: '2-digit' });
 store.clear(); M.__resetCfg();
 await kv.put('bk:config', JSON.stringify({
   tz: 'America/Los_Angeles', workDays: [0, 1, 2, 3, 4, 5, 6], dayStart: '07:00', lastStart: '16:00',
@@ -172,6 +180,7 @@ await kv.put('bk:config', JSON.stringify({
   sizes: [{ id: 'suv', label: 'SUV' }],
   services: [{ id: 'full', name: 'Full', enabled: true, price: { suv: 339 }, duration: { suv: 180 } }],
   addons: [], cities: [], content: {}, proof: {}, calendar: { enabled: false }, blockedDates: [],
+  slotRules: { on: false },
 }));
 const free = await M.bkAvailability(HOLD_DAY, 'full', 'suv');
 ok('slots open before any detection', free.length > 0, free.length);
@@ -187,6 +196,21 @@ M.__resetCfg();
 await kv.put('config', JSON.stringify({ detect: Object.assign(M.detDefaults(), { holdSlots: false }) }));
 await M.saveDetections([{ id: 'd1', phone: '+1', kind: 'set', date: HOLD_DAY, slot: '10:00', durationMin: 180, tentative: true }]);
 ok('holds can be turned off', (await M.bkAvailability(HOLD_DAY, 'full', 'suv')).length === free.length);
+
+// The same promise on his real week: fixed start times (weekdays 1:00 PM). A
+// card for 1:00 on a weekday takes that weekday's only time off the website.
+let wkTs = Date.now() + 10 * 86400000;
+while (['Sat', 'Sun'].includes(pacific(wkTs, { weekday: 'short' }))) wkTs += 86400000;
+const WK_DAY = pacific(wkTs, { year: 'numeric', month: '2-digit', day: '2-digit' });
+M.__resetCfg();
+await kv.put('config', JSON.stringify({}));
+await kv.put('bk:config', JSON.stringify({ windowDays: 3650, calendar: { enabled: false } }));
+await M.saveDetections([]);
+const wkFree = await M.bkAvailability(WK_DAY, 'interior', 'suv');
+ok('his real weekday offers 1:00 PM', wkFree.includes('13:00'), wkFree);
+await M.saveDetections([{ id: 'd2', phone: '+1', kind: 'set', date: WK_DAY, slot: '13:00', durationMin: 180, tentative: false }]);
+ok('an unconfirmed 1:00 card takes 1:00 off the website', !(await M.bkAvailability(WK_DAY, 'interior', 'suv')).includes('13:00'));
+await M.saveDetections([]);
 
 // ---------------------------------------------------------------- drafting
 section('The confirmation draft');
