@@ -377,7 +377,7 @@ function renderSettings(c){
   // The sync above only READS his calendar. This puts bookings ON it, through
   // a script he deploys from his own Google account (see apiGcalSetup).
   var gc='<div id="gcalBox"><div class="hint">Loading…</div></div>';
-  H.push(sec("📲 Put bookings on my Google Calendar","Every booking lands on your calendar the moment it comes in, with phone alerts a week, 3 days, a day, 2 hours and 30 minutes before. Confirm and cancel update it too.",gc));
+  H.push(sec("📲 Put bookings on my Google Calendar","Every booking lands on your calendar the moment it comes in, and so does every job you agree over text, with phone alerts a week, 3 days, a day, 2 hours and 30 minutes before. Confirm, move and cancel update it too.",gc));
 
   // Blocked dates
   H.push(sec("🚫 Days off / blocked dates","One date per line (YYYY-MM-DD). Great for vacations — the calendar shows nothing those days.",
@@ -440,7 +440,7 @@ function loadGcal(){
       '</ol>'+
       '<button class="testbtn" id="gcalCopy">Copy script</button> <span id="gcalCopied" class="hint" style="display:inline"></span>'+
       '<div class="fld" style="margin-top:12px"><label>Web app URL</label><input class="in" id="gcalUrl" placeholder="https://script.google.com/macros/s/…/exec" '+inNum(d.url||"")+'></div>'+
-      '<button class="testbtn" id="gcalConnect">Connect</button> <button class="testbtn" id="gcalSync"'+(d.connected?'':' style="display:none"')+'>Add my upcoming bookings now</button> <span id="gcalResult" class="hint" style="display:inline"></span>';
+      '<button class="testbtn" id="gcalConnect">Connect</button> <button class="testbtn" id="gcalSync"'+(d.connected?'':' style="display:none"')+'>Add my upcoming jobs now</button> <span id="gcalResult" class="hint" style="display:inline"></span>';
     var script=d.script;
     $("#gcalCopy").onclick=function(){
       var done=function(){ $("#gcalCopied").textContent="✓ Copied"; };
@@ -457,7 +457,7 @@ function loadGcal(){
       }).catch(function(){ say(false,"✕ error"); }); };
     $("#gcalSync").onclick=function(){ say(true,"Adding…"); res.style.color="var(--faint)";
       api("/api/gcal-sync-all",{method:"POST",body:"{}"}).then(function(r){
-        if(r&&r.ok) say(true,"✓ "+r.added+" booking"+(r.added===1?"":"s")+" on your calendar");
+        if(r&&r.ok) say(true,"✓ "+r.added+" job"+(r.added===1?"":"s")+" on your calendar");
         else say(false,"✕ "+((r&&r.added)||0)+" added, "+((r&&r.failed)||0)+" failed"+(r&&r.error?": "+r.error:""));
       }).catch(function(){ say(false,"✕ error"); }); };
   }).catch(function(){ box.innerHTML='<div class="hint">Could not load this. Refresh and try again.</div>'; });
