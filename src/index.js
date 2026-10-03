@@ -157,7 +157,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-03·clean-club';
+const BUILD = '2026-10-03·clean-club-price';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -19701,13 +19701,22 @@ function clubTerms(o) {
   ];
 }
 
-// The price, worked out here and never taken from the page: his own Full
-// Detail price for that size, plus the condition step, minus the club's $150.
+// The price, worked out here and never taken from the page: the website's
+// Full Detail price for that size (BOOK_FACTS, the same book as PRICING.md and
+// the call page), plus the condition step, minus the club's $150.
+//
+// Not the saved booking config's price, on purpose. The saved one only moves
+// when he taps "Match the website" in Bookings → Settings, and on the day this
+// shipped it still held the launch prices: the live offer read "$149, regular
+// $299" for a sedan the website prices at $369. A contract people sign has to
+// quote the book the page they're reading quotes. The config still decides
+// whether a Full Detail can be booked at all.
 function clubPrice(bcfg, size, condition) {
   const full = bkSvc(bcfg, 'full');
-  if (!full || !BOOK_SIZE_IDS.includes(size) || !(full.price && full.price[size])) return null;
+  const book = BOOK_FACTS.services.full.price;
+  if (!full || !BOOK_SIZE_IDS.includes(size) || !book[size]) return null;
   const cond = Object.prototype.hasOwnProperty.call(CLUB_COND, condition) ? condition : 'Pretty Clean';
-  const regular = Number(full.price[size]) + CLUB_COND[cond];
+  const regular = Number(book[size]) + CLUB_COND[cond];
   return { regular, price: Math.max(0, regular - CLUB.off), condition: cond };
 }
 
