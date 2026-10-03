@@ -99,6 +99,29 @@ ok('a clean sedan every 8 weeks: $369 regular, $219 joined', o.regular === 369 &
 o = await get(M.apiClubOffer, '/api/club/offer?every=99&size=boat&condition=Spotless');
 ok('junk in falls back to the defaults, never to a made-up price', o.every === 28 && o.size === 'sedan' && o.condition === 'Pretty Clean' && o.price === 219, o);
 
+section('The book wins over a stale saved booking config');
+{
+  // How production looked on 2026-10-03: Bookings → Settings saved before the
+  // price raise, "Match the website" never tapped, Full Detail still $299.
+  const stale = { services: [{ id: 'full', name: 'Full Detail', enabled: true, price: { sedan: 299, suv: 339, truck: 379 }, duration: { sedan: 180, suv: 210, truck: 240 } },
+    { id: 'interior', name: 'Interior Detail', enabled: true, price: { sedan: 200, suv: 240, truck: 280 }, duration: { sedan: 90, suv: 110, truck: 120 } },
+    { id: 'exterior', name: 'Exterior Detail', enabled: true, price: { sedan: 160, suv: 200, truck: 240 }, duration: { sedan: 45, suv: 60, truck: 75 } }] };
+  await kv.put('bk:config', JSON.stringify(stale));
+  M.__reset();
+  const so = await get(M.apiClubOffer, '/api/club/offer?every=28&size=sedan');
+  ok('a stale $299 in Settings still quotes the book: $369 regular, $219 joined', so.ok && so.regular === 369 && so.price === 219, so);
+  ok('...and the words they would sign say the same', /Full Detail for \$219\. That's \$150 off my regular \$369/.test(so.lines[0]), so.lines[0]);
+  const sv = await get(M.apiClubOffer, '/api/club/offer?every=28&size=truck&condition=War%20Zone');
+  ok('a war-zone van: $449 + $60 = $509 regular, $359 joined', sv.regular === 509 && sv.price === 359, sv);
+  const off = JSON.parse(JSON.stringify(stale)); off.services[0].enabled = false;
+  await kv.put('bk:config', JSON.stringify(off));
+  M.__reset();
+  const so2 = await get(M.apiClubOffer, '/api/club/offer?every=28&size=sedan');
+  ok('if he switches Full Details off, there is no club offer to sign', !so2.ok && so2.error === 'no_full_detail', so2);
+  store.delete('bk:config');
+  M.__reset();
+}
+
 section('Where Stripe may send them back to');
 ok('the live site is allowed', M.clubSite({ headers: H({ Origin: 'https://mikeysdetailing.com' }) }) === 'https://mikeysdetailing.com');
 ok('localhost is allowed for testing', M.clubSite({ headers: H({ Origin: 'http://localhost:8080' }) }) === 'http://localhost:8080');
