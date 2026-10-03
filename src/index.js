@@ -157,7 +157,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-02·rr-capacity';
+const BUILD = '2026-10-03·clean-club';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -461,6 +461,11 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/availability') return apiAvailability(url);
   if (request.method === 'POST' && pathname === '/api/book')         return apiBook(request);
   if (request.method === 'GET'  && pathname === '/api/next-openings') return apiNextOpenings(url);
+  // ---- The Clean Club call page (mikeysdetailing.com/onbored), public like the booking API ----
+  if (request.method === 'GET'  && pathname === '/api/club/offer')  return apiClubOffer(url);
+  if (request.method === 'POST' && pathname === '/api/club/join')   return apiClubJoin(request);
+  if (request.method === 'GET'  && pathname === '/api/club/state')  return apiClubState(url);
+  if (request.method === 'POST' && pathname === '/api/club/card')   return apiClubCard(request);
 
   // ---- Public customer pages (MUST stay above the /api auth gate) ----
   // /t/<token> — the live "Mikey's on his way" ETA tracker the customer opens.
@@ -743,6 +748,8 @@ async function handle(request) {
 
   // Maintenance plans — the every-N-weeks rhythm behind a rebook
   if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/plan') return apiPlan(request, url);
+  if (request.method === 'GET'  && pathname === '/api/club')        return apiClubList(url);
+  if (request.method === 'POST' && pathname === '/api/club/action') return apiClubAction(request);
   // Neighborhood blast
   if (request.method === 'GET'  && pathname === '/api/blast/candidates') return apiBlastCandidates(url);
   if (request.method === 'POST' && pathname === '/api/blast/send')     return apiBlastSend(request);
@@ -16919,13 +16926,37 @@ async function apiAvailability(url) {
 async function apiBook(request) {
   let b; try { b = await request.json(); } catch { return cors(json({ ok: false, error: 'bad_json' }, 400)); }
   if (b && (b.website || b._gotcha || b.hp)) return cors(json({ ok: true, id: 'skipped' }, 200)); // honeypot
+  if (await bkRateLimited(request, 'book')) return cors(json({ ok: false, error: 'rate_limited' }, 429));
+  const r = await bkCreate(b);
+  if (!r.ok) return cors(json({ ok: false, error: r.error }, r.status));
+  return cors(json({ ok: true, id: r.rec.id, status: r.rec.status }, 200));
+}
+
+// Six tries an hour per address, per kind of form. Shared by the booking page
+// and the Clean Club sign-up so neither can be used to fill his calendar.
+async function bkRateLimited(request, what) {
   const ip = request.headers.get('CF-Connecting-IP') || '';
-  if (ip) {
-    const rk = 'rl:book:' + ip;
-    const n = parseInt((await kv().get(rk)) || '0', 10);
-    if (n >= 6) return cors(json({ ok: false, error: 'rate_limited' }, 429));
-    await kv().put(rk, String(n + 1), { expirationTtl: 3600 });
-  }
+  if (!ip) return false;
+  const rk = 'rl:' + what + ':' + ip;
+  const n = parseInt((await kv().get(rk)) || '0', 10);
+  if (n >= 6) return true;
+  await kv().put(rk, String(n + 1), { expirationTtl: 3600 });
+  return false;
+}
+
+// The booking itself, minus the HTTP: everything /api/book does once the
+// request is read. The Clean Club sign-up books its first visit through here
+// too, so a club member gets exactly the slot re-check, the confirm text, the
+// reminders and the calendar entry a website booking gets. Two copies of this
+// would be two ways to double-book him.
+//   opts.lines   extra lines for the request card and the thread notes
+//   opts.rec     extra fields stored on the booking record
+//   opts.thread  called with (thread, rec) before the thread is saved, so the
+//                caller's changes ride the same write
+//   opts.alert   false: the caller sends its own alert (one email, not two)
+// Returns { ok: true, rec, detail, instant } or { ok: false, status, error }.
+async function bkCreate(b, opts) {
+  opts = opts || {};
   const cfg = await loadBookingConfig();
   const service = String(b.service || ''), size = String(b.size || '');
   const date = String(b.date || ''), slot = String(b.slot || '');
@@ -16936,13 +16967,14 @@ async function apiBook(request) {
   const phone = viaLink ? viaLink.phone : normalizePhone(b.phone);
   const address = String(b.address || '').trim(), city = String(b.city || '').trim();
   const svc = bkSvc(cfg, service);
-  if (!svc) return cors(json({ ok: false, error: 'bad_service' }, 422));
-  if (!(svc.price && svc.price[size])) return cors(json({ ok: false, error: 'bad_size' }, 422));
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(slot)) return cors(json({ ok: false, error: 'bad_time' }, 422));
-  if (!name || !phone) return cors(json({ ok: false, error: 'missing_contact' }, 422));
-  if (!address || !city) return cors(json({ ok: false, error: 'missing_address' }, 422));
+  const no = (status, error) => ({ ok: false, status, error });
+  if (!svc) return no(422, 'bad_service');
+  if (!(svc.price && svc.price[size])) return no(422, 'bad_size');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(slot)) return no(422, 'bad_time');
+  if (!name || !phone) return no(422, 'missing_contact');
+  if (!address || !city) return no(422, 'missing_address');
   // Re-check the slot so two customers can't grab the same time between load and submit.
-  if (!(await bkAvailability(date, service, size)).includes(slot)) return cors(json({ ok: false, error: 'slot_taken' }, 409));
+  if (!(await bkAvailability(date, service, size)).includes(slot)) return no(409, 'slot_taken');
 
   const first = name.split(/\s+/)[0];
   const R = cfg.slotRules || {};
@@ -16970,6 +17002,7 @@ async function apiBook(request) {
     estimate, base, name, phone, address, city, email: String(b.email || '').trim(),
     notes: String(b.notes || '').trim(), ackWaterPower: b.ackWaterPower !== false, smsConsent: b.smsConsent !== false,
   };
+  if (opts.rec) Object.assign(rec, opts.rec);
   const all = await loadBookings(); all.unshift(rec); await saveBookings(all);
 
   // Booked off a friend's share link (see refCodeFor). Only ever fills in an
@@ -17006,7 +17039,7 @@ async function apiBook(request) {
     rec.notes ? `Notes: ${rec.notes}` : null,
     refBy ? `Sent by: ${refName} (their share link). You both get a free Exterior Detail once this one's paid.` : null,
     owed ? `🎁 Has ${owed} free Exterior Detail${owed === 1 ? '' : 's'} owed from referrals` : null,
-  ].filter(Boolean).join('\n');
+  ].concat(opts.lines || []).filter(Boolean).join('\n');
 
   const thread = await loadThread(phone);
   if (!thread.name) thread.name = name;
@@ -17037,6 +17070,7 @@ async function apiBook(request) {
     ]);
     try { await sendSms(phone, msg); thread.messages.push({ id: genId(), dir: 'out', body: msg, ts: Date.now(), kind: 'booking', status: 'sent' }); } catch (e) {}
   }
+  if (opts.thread) opts.thread(thread, rec);
   await saveThread(thread);
   await updateIndexEntry(thread);
   // The quote calculator books here now instead of posting to /submit, so the
@@ -17049,12 +17083,13 @@ async function apiBook(request) {
   // Onto his Google Calendar (if he's connected it), then the alert with a
   // headline on the push and a calendar button in the email.
   background(bkGcalSync(rec));
-  try { await kv().put('push:note', JSON.stringify({ title: `🗓 New booking: ${name}`, body: `${rec.serviceName}, ${dateLabel} at ${bkFmt12(slot)}${city ? `, ${city}` : ''}`, at: Date.now() }), { expirationTtl: 900 }); } catch (e) {}
-  notifyMikey(`🗓 New booking — ${name}`, bkAlertBody(rec, `${detail}\n\n` + (instant
-    ? `It's on your schedule. Dashboard → Bookings if you need to move or cancel it.`
-    : `Open your dashboard → Bookings to confirm.`))).catch(() => {});
-
-  return cors(json({ ok: true, id: rec.id, status: rec.status }, 200));
+  if (opts.alert !== false) {
+    try { await kv().put('push:note', JSON.stringify({ title: `🗓 New booking: ${name}`, body: `${rec.serviceName}, ${dateLabel} at ${bkFmt12(slot)}${city ? `, ${city}` : ''}`, at: Date.now() }), { expirationTtl: 900 }); } catch (e) {}
+    notifyMikey(`🗓 New booking — ${name}`, bkAlertBody(rec, `${detail}\n\n` + (instant
+      ? `It's on your schedule. Dashboard → Bookings if you need to move or cancel it.`
+      : `Open your dashboard → Bookings to confirm.`))).catch(() => {});
+  }
+  return { ok: true, rec, detail, instant };
 }
 
 // "Can you do Saturday?" is the question a texting conversation asks more than
@@ -19598,6 +19633,428 @@ function planDraft(row, cfg) {
     `Hey ${first}, it's Mikey. You're due for${veh}, you're on the every-${wk}-week plan. ` +
       `Want me to get you back on the schedule this week?`,
   ], cfg, 'plan');
+}
+
+// ===========================================================================
+// 6c+ · THE CLEAN CLUB, SOLD ON A CALL  (mikeysdetailing.com/onbored)
+// ---------------------------------------------------------------------------
+// Mikey's pitch (2026-10-03): on the phone with someone who asked about a
+// detail, he texts them the call page and walks them through it. They see
+// their one-time price first, then tap over to the Clean Club: join today and
+// the first visit is a Full Detail at $150 off, then $125 a visit every 4 or 8
+// weeks. The $150 comes off up front, so it has to be protected: they keep
+// their next 2 club visits or pay back $75 for each one they skip, on a card
+// they save with Stripe while he's still on the line. That's the pest-control
+// model (a cheap first visit that only works because the plan follows it),
+// and the payback is spread per visit so it reads as fair on a phone call.
+//
+// Why the first visit is always a Full Detail, whatever they called about: the
+// club keeps a car up, and you can't keep up a car that was never reset. It is
+// also the pitch. Someone who called for an interior sees the whole car done
+// for less than the interior alone.
+//
+// What this never does is charge a card. Saving it is Stripe's own page, so a
+// card number never touches this Worker, and charging it is Mikey by hand in
+// Stripe, after the text the terms promise. The first visit books through
+// bkCreate, so it gets the slot re-check, the confirm text and the reminders
+// any website booking gets, and the plan it starts only ever reminds him.
+// ===========================================================================
+const CLUB = {
+  visit: 125,          // every club visit, any size (the website's facts table)
+  off: 150,            // off the first Full Detail for joining (Mikey, 2026-10-03)
+  keep: 2,             // club visits they keep after that, or pay back
+  per: 75,             // paid back for each one skipped: off / keep, never more than off
+  every: [28, 56],     // what the call page offers: every 4 or every 8 weeks
+  // Bump with any change to clubTerms() wording. A page holding an older
+  // version gets a 409 and re-reads the terms, so nobody signs words that
+  // aren't the ones stored against their name.
+  terms: '2026-10-03',
+};
+const CLUB_KEY = 'club:index';
+const CLUB_COND = { 'Pretty Clean': 0, 'Needs Work': 30, 'War Zone': 60 };
+// Where Stripe may send them back to. A fixed list, so a sign-up can't be
+// turned into a redirect to somewhere else. Localhost is for testing the page.
+const CLUB_SITES = ['https://mikeysdetailing.com', 'https://www.mikeysdetailing.com'];
+const CLUB_PAGE = '/onbored/';
+
+function clubSite(request) {
+  const o = String((request && request.headers && request.headers.get('Origin')) || '').replace(/\/+$/, '');
+  if (CLUB_SITES.includes(o) || /^http:\/\/(localhost|127\.0\.0\.1)(:\d{2,5})?$/.test(o)) return o;
+  return CLUB_SITES[0];
+}
+function clubLink(c) { return (c.site || CLUB_SITES[0]) + CLUB_PAGE + '?club=' + encodeURIComponent(c.token); }
+
+// The agreement, in his words, exactly as the page shows it and exactly as it
+// is stored against the signature. It covers what Stripe says terms for an
+// off-session charge must: what can be charged, when, how much, and how to
+// cancel. Change a word here and bump CLUB.terms.
+function clubTerms(o) {
+  const wk = Math.round(o.every / 7);
+  return [
+    `Your first visit is a Full Detail for $${o.price}. That's $${CLUB.off} off my regular $${o.regular}, for joining the Clean Club.`,
+    `After that I come back every ${wk} weeks for an upkeep detail, inside and out: $${CLUB.visit} a visit, any size vehicle. It stays $${CLUB.visit} for as long as you're a member.`,
+    `You pay after each visit, like always. Nothing is charged ahead of time.`,
+    `For the $${CLUB.off} off, you keep your next ${CLUB.keep} club visits. Cancel before those are done and I charge the card you save today $${CLUB.per} for each one you skip, never more than $${CLUB.off}. I text you before I charge anything.`,
+    `Moving a visit to another day isn't cancelling. If I can't make a visit, you owe nothing for it. Cancel before your first visit and you owe nothing at all.`,
+    `After your ${CLUB.keep} club visits, cancel anytime with a text. No fee.`,
+    `Your card is saved with Stripe and I never see the number. It's only charged for what's written here, or for a visit if you ask me to.`,
+  ];
+}
+
+// The price, worked out here and never taken from the page: his own Full
+// Detail price for that size, plus the condition step, minus the club's $150.
+function clubPrice(bcfg, size, condition) {
+  const full = bkSvc(bcfg, 'full');
+  if (!full || !BOOK_SIZE_IDS.includes(size) || !(full.price && full.price[size])) return null;
+  const cond = Object.prototype.hasOwnProperty.call(CLUB_COND, condition) ? condition : 'Pretty Clean';
+  const regular = Number(full.price[size]) + CLUB_COND[cond];
+  return { regular, price: Math.max(0, regular - CLUB.off), condition: cond };
+}
+
+async function loadClub() { return (await kv().get(CLUB_KEY, { type: 'json' })) || []; }
+// ⚠ KV WRITE — one per sign-up, per card saved, per tap on the club sheet. Cheap.
+async function saveClub(list) { await kv().put(CLUB_KEY, JSON.stringify(list)); }
+
+// ---- Stripe: the calls the club needs, and nothing else ----------------------
+// Off until STRIPE_SECRET_KEY is set. A restricted key is enough and is what
+// he should use: Customers and Checkout Sessions on Write, SetupIntents and
+// PaymentMethods on Read. Stripe's v1 API is form posts with the key as a
+// bearer token, so there's no library to bundle.
+function stripeOn() { return !!(ENV && ENV.STRIPE_SECRET_KEY); }
+function stripeTest() { return /^(sk|rk)_test_/.test(String((ENV && ENV.STRIPE_SECRET_KEY) || '')); }
+// {a: {b: 1}, c: ['x']} → a[b]=1&c[0]=x, the shape Stripe reads.
+function stripeForm(obj, prefix, out) {
+  out = out || new URLSearchParams();
+  for (const k of Object.keys(obj || {})) {
+    const v = obj[k], key = prefix ? `${prefix}[${k}]` : k;
+    if (v === undefined || v === null || v === '') continue;
+    if (Array.isArray(v)) v.forEach((x, i) => (x && typeof x === 'object') ? stripeForm(x, `${key}[${i}]`, out) : out.append(`${key}[${i}]`, String(x)));
+    else if (typeof v === 'object') stripeForm(v, key, out);
+    else out.append(key, String(v));
+  }
+  return out;
+}
+async function stripeCall(method, path, params, idem) {
+  const q = stripeForm(params).toString();
+  const headers = { Authorization: 'Bearer ' + ENV.STRIPE_SECRET_KEY };
+  if (method !== 'GET') headers['Content-Type'] = 'application/x-www-form-urlencoded';
+  if (idem) headers['Idempotency-Key'] = idem;
+  const res = await fetch('https://api.stripe.com/v1/' + path + (method === 'GET' && q ? '?' + q : ''),
+    { method, headers, body: method === 'GET' ? undefined : q });
+  let j = {};
+  try { j = await res.json(); } catch (e) {}
+  if (!res.ok) throw new Error((j && j.error && j.error.message) || `Stripe ${res.status}`);
+  return j;
+}
+function clubStripeLink(c) {
+  return c.card && c.card.customer ? `https://dashboard.stripe.com/${c.card.test ? 'test/' : ''}customers/${c.card.customer}` : '';
+}
+function clubBrand(b) {
+  const m = { visa: 'Visa', mastercard: 'Mastercard', amex: 'Amex', discover: 'Discover' };
+  return m[String(b || '').toLowerCase()] || (b ? String(b).charAt(0).toUpperCase() + String(b).slice(1) : 'Card');
+}
+
+// A Stripe page to save their card, for this sign-up only. Makes the Stripe
+// customer the first time (idempotent on the sign-up, so a retry can't make
+// two), then a fresh setup session each time it's asked: a session dies after
+// a day, and a link he texts a week later has to still work.
+async function clubCardSession(c) {
+  // Stripe replays an idempotency key's first answer for a day, errors
+  // included, so a key that was missing a permission would keep failing after
+  // he fixed it. Each failed try gets the next key; a success is stored and
+  // never asked again.
+  if (!c.card.customer) {
+    const cus = await stripeCall('POST', 'customers', {
+      name: c.name, phone: c.phone, email: c.email || undefined,
+      description: `Clean Club, every ${Math.round(c.every / 7)} weeks`,
+      metadata: { club: c.token, source: 'onbored' },
+    }, 'club-cus-' + c.token + '-' + (c.card.tries || 0));
+    c.card.customer = cus.id;
+  }
+  const back = clubLink(c);
+  // Cards only (Apple Pay and Google Pay count as cards on Stripe's page), so
+  // what gets saved is something he can charge the same way every time. With
+  // the type set, Stripe doesn't want a currency for a setup session.
+  const s = await stripeCall('POST', 'checkout/sessions', {
+    mode: 'setup', payment_method_types: ['card'],
+    customer: c.card.customer, client_reference_id: c.token,
+    success_url: back + '&sid={CHECKOUT_SESSION_ID}', cancel_url: back + '&card=later',
+    metadata: { club: c.token },
+    setup_intent_data: { metadata: { club: c.token }, description: `Clean Club card on file: ${c.name}` },
+    custom_text: { submit: { message: `Saved for the Clean Club. It's only charged if you cancel before your ${c.keep} club visits are done ($${c.per} for each one skipped), and I text you first. - Mikey` } },
+  });
+  c.card.session = s.id;
+  c.card.status = 'pending';
+  c.card.error = undefined;
+  return s.url;
+}
+function clubCardPublic(c) {
+  const k = c.card || {};
+  return { status: k.status || 'off', brand: k.brand ? clubBrand(k.brand) : '', last4: k.last4 || '' };
+}
+// What the customer's own link may show: their deal, their visit, their
+// signature. The token is the identity, same as the /c/ page.
+function clubPublic(c) {
+  return {
+    first: jdFirst(c.name), every: c.every, weeks: Math.round(c.every / 7), sizeLabel: c.sizeLabel, vehicle: c.vehicle,
+    condition: c.condition, regular: c.regular, price: c.price, off: c.off, visit: c.visit, keep: c.keep, per: c.per,
+    date: c.date, slot: c.slot, dateLabel: c.dateLabel, time: bkFmt12(c.slot), rainReady: !!c.rainReady,
+    instant: !!c.instant, status: c.status, card: clubCardPublic(c),
+    terms: (c.terms && c.terms.lines) || [], signed: (c.terms && c.terms.signed) || '', signedAt: (c.terms && c.terms.at) || 0,
+  };
+}
+
+// GET /api/club/offer?every=28&size=suv&condition=Needs%20Work
+// The numbers and the exact terms for that car, so the page shows the words
+// the server will store when they sign. Public: it's the same deal for anyone.
+async function apiClubOffer(url) {
+  const every = CLUB.every.includes(Number(url.searchParams.get('every'))) ? Number(url.searchParams.get('every')) : CLUB.every[0];
+  const size = BOOK_SIZE_IDS.includes(url.searchParams.get('size')) ? url.searchParams.get('size') : 'sedan';
+  const p = clubPrice(await loadBookingConfig(), size, String(url.searchParams.get('condition') || ''));
+  if (!p) return cors(json({ ok: false, error: 'no_full_detail' }, 409));
+  return cors(json({
+    ok: true, visit: CLUB.visit, off: CLUB.off, keep: CLUB.keep, per: CLUB.per, everyOptions: CLUB.every,
+    terms: CLUB.terms, card: stripeOn(), test: stripeTest() || undefined,
+    every, size, condition: p.condition, regular: p.regular, price: p.price,
+    lines: clubTerms({ every, regular: p.regular, price: p.price }),
+  }));
+}
+
+// POST /api/club/join: they signed. Book the first visit, store the signed
+// agreement, start the plan, and hand back Stripe's page for the card.
+async function apiClubJoin(request) {
+  let b; try { b = await request.json(); } catch { return cors(json({ ok: false, error: 'bad_json' }, 400)); }
+  if (b && (b.website || b._gotcha || b.hp)) return cors(json({ ok: true, token: '' }, 200)); // honeypot
+  if (await bkRateLimited(request, 'club')) return cors(json({ ok: false, error: 'rate_limited' }, 429));
+  const every = Number(b.every);
+  if (!CLUB.every.includes(every)) return cors(json({ ok: false, error: 'bad_every' }, 422));
+  if (String(b.terms || '') !== CLUB.terms) return cors(json({ ok: false, error: 'terms_changed' }, 409));
+  const signed = jdStr(b.signed, 80);
+  if (b.agree !== true || signed.replace(/[^A-Za-z]/g, '').length < 2) return cors(json({ ok: false, error: 'not_signed' }, 422));
+  const bcfg = await loadBookingConfig();
+  const size = String(b.size || '');
+  const p = clubPrice(bcfg, size, String(b.condition || ''));
+  if (!p) return cors(json({ ok: false, error: 'bad_size' }, 422));
+  const now = Date.now(), wk = Math.round(every / 7);
+  const token = jdToken() + jdToken().slice(0, 10);
+  const site = clubSite(request);
+  const lines = [
+    `🔁 CLEAN CLUB: joined on the call page, every ${wk} weeks at $${CLUB.visit} a visit`,
+    `This Full Detail is their first visit at $${p.price} (regular $${p.regular}, $${CLUB.off} off for joining)`,
+    `Deal: keeps the next ${CLUB.keep} club visits or pays back $${CLUB.per} each, $${CLUB.off} at most`,
+    `Signed "${signed}" on the call page`,
+  ];
+  const r = await bkCreate({
+    service: 'full', size, sizeLabel: (BOOK_FACTS.sizes[size] || size), vehicle: jdStr(b.vehicle, 80), condition: p.condition,
+    date: b.date, slot: b.slot, dateLabel: b.dateLabel, name: jdStr(b.name, 60), phone: b.phone,
+    address: jdStr(b.address, 120), city: jdStr(b.city, 60), email: jdStr(b.email, 120),
+    estimate: p.price, addons: [], notes: jdStr(b.notes, 500), smsConsent: b.smsConsent !== false,
+    ackWaterPower: b.ackWaterPower, vid: b.vid,
+  }, {
+    lines, alert: false, rec: { club: token },
+    thread: (t) => {
+      // The plan is what reminds him when each club visit comes round, with
+      // the rebook text written. It never texts or books on its own.
+      t.plan = sanitizePlan(Object.assign({}, t.plan || {}, {
+        every, service: 'Clean Club', price: CLUB.visit, paused: false,
+        startedAt: (t.plan && t.plan.startedAt) || now,
+        note: `Clean Club since ${bkNiceDate(localDateStr(now, bcfg.tz))}: keeps ${CLUB.keep} club visits or pays back $${CLUB.per} each`,
+      }));
+      t.club = { token, at: now };
+      if (!t.tags.includes('club')) t.tags.push('club');
+    },
+  });
+  if (!r.ok) return cors(json({ ok: false, error: r.error }, r.status));
+  const rec = r.rec;
+  const club = {
+    id: genId(), token, site, createdAt: now, status: 'active',
+    name: rec.name, phone: rec.phone, email: rec.email, city: rec.city,
+    every, size, sizeLabel: rec.sizeLabel, vehicle: rec.vehicle, condition: p.condition,
+    regular: p.regular, price: p.price, off: CLUB.off, visit: CLUB.visit, keep: CLUB.keep, per: CLUB.per,
+    bookingId: rec.id, date: rec.date, slot: rec.slot, dateLabel: rec.dateLabel, apptAt: rec.apptAt,
+    rainReady: !!rec.rainReady, instant: !!r.instant,
+    // The signed record: the words, the name typed under them, when, and from
+    // where. This is what he points to if a payback is ever disputed.
+    terms: {
+      v: CLUB.terms, lines: clubTerms({ every, regular: p.regular, price: p.price }), signed, at: now,
+      ip: request.headers.get('CF-Connecting-IP') || '', ua: jdStr(request.headers.get('User-Agent'), 200),
+      page: jdStr(b.page, 300),
+    },
+    card: { status: stripeOn() ? 'pending' : 'off', test: stripeTest() || undefined },
+    kept: null,
+  };
+  let cardUrl = '';
+  if (stripeOn()) {
+    try { cardUrl = await clubCardSession(club); }
+    catch (e) { club.card.status = 'error'; club.card.error = jdStr(e.message, 200); club.card.tries = (club.card.tries || 0) + 1; }
+  }
+  const list = await loadClub(); list.unshift(club); await saveClub(list);
+
+  const cardLine = club.card.status === 'pending'
+    ? `Card: they're on Stripe's page saving it now. You get a second email when it's saved.`
+    : club.card.status === 'error'
+      ? `Card: Stripe didn't open (${club.card.error}). Check STRIPE_SECRET_KEY in Cloudflare, then text them their link to save it: ${clubLink(club)}`
+      : `Card: none yet. Stripe isn't connected (STRIPE_SECRET_KEY isn't set). Once it is, text them their link to save one: ${clubLink(club)}`;
+  try { await kv().put('push:note', JSON.stringify({ title: `🔁 Clean Club: ${rec.name}`, body: `Full Detail $${p.price}, ${rec.dateLabel} at ${bkFmt12(rec.slot)}`, at: Date.now() }), { expirationTtl: 900 }); } catch (e) {}
+  notifyMikey(`🔁 Clean Club sign-up: ${rec.name}`, bkAlertBody(rec, `${r.detail}\n${cardLine}\n\n` + (r.instant
+    ? `It's on your schedule. Dashboard → Bookings if you need to move or cancel it.`
+    : `Open your dashboard → Bookings to confirm.`)));
+  return cors(json({ ok: true, token, status: rec.status, card: club.card.status, cardUrl }, 200));
+}
+
+// GET /api/club/state?token=: the customer's own view of what they signed.
+async function apiClubState(url) {
+  const token = String(url.searchParams.get('token') || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 80);
+  const c = token ? (await loadClub()).find((x) => x.token === token) : null;
+  if (!c) return cors(json({ ok: false, error: 'not_found' }, 404));
+  return cors(json({ ok: true, club: clubPublic(c), stripe: stripeOn() }));
+}
+
+// POST /api/club/card {token}       → a fresh Stripe page to save the card
+// POST /api/club/card {token, sid}  → they're back from Stripe: was it saved?
+// The URL they come back on proves nothing, so the answer is always Stripe's,
+// and only for a session made for this sign-up.
+async function apiClubCard(request) {
+  const d = await readJson(request);
+  const token = jdStr(d.token, 80).replace(/[^A-Za-z0-9_-]/g, '');
+  const list = token ? await loadClub() : [];
+  const c = list.find((x) => x.token === token);
+  if (!c) return cors(json({ ok: false, error: 'not_found' }, 404));
+  if (!stripeOn()) return cors(json({ ok: false, error: 'card_off', card: clubCardPublic(c) }, 409));
+  if (c.status === 'cancelled') return cors(json({ ok: false, error: 'cancelled' }, 409));
+  const sid = jdStr(d.sid, 200).replace(/[^A-Za-z0-9_]/g, '');
+  if (!sid) {
+    if (c.card.status === 'saved') return cors(json({ ok: true, card: clubCardPublic(c) }));
+    if (await bkRateLimited(request, 'clubcard')) return cors(json({ ok: false, error: 'rate_limited' }, 429));
+    try {
+      const url = await clubCardSession(c);
+      await saveClub(list);
+      return cors(json({ ok: true, url }));
+    } catch (e) {
+      c.card.status = 'error'; c.card.error = jdStr(e.message, 200); c.card.tries = (c.card.tries || 0) + 1;
+      await saveClub(list);
+      return cors(json({ ok: false, error: 'stripe' }, 502));
+    }
+  }
+  if (c.card.status === 'saved' && c.card.session === sid) return cors(json({ ok: true, card: clubCardPublic(c) }));
+  if (await bkRateLimited(request, 'clubcard')) return cors(json({ ok: false, error: 'rate_limited' }, 429));
+  let s;
+  try { s = await stripeCall('GET', 'checkout/sessions/' + sid, { expand: ['setup_intent.payment_method'] }); }
+  catch (e) { return cors(json({ ok: false, error: 'stripe' }, 502)); }
+  if (s.client_reference_id !== c.token || (c.card.customer && s.customer && s.customer !== c.card.customer)) {
+    return cors(json({ ok: false, error: 'mismatch' }, 409));
+  }
+  const si = (s.setup_intent && typeof s.setup_intent === 'object') ? s.setup_intent : null;
+  if (s.status !== 'complete' || !si || si.status !== 'succeeded') return cors(json({ ok: true, pending: true, card: clubCardPublic(c) }));
+  const pm = (si.payment_method && typeof si.payment_method === 'object') ? si.payment_method : { id: String(si.payment_method || '') };
+  const cd = pm.card || {};
+  c.card = Object.assign({}, c.card, {
+    status: 'saved', session: sid, pm: pm.id, brand: cd.brand || '', last4: cd.last4 || '',
+    exp: cd.exp_month ? `${cd.exp_month}/${String(cd.exp_year || '').slice(-2)}` : '', at: Date.now(), error: undefined,
+  });
+  // The customer's default card, so "charge them" in Stripe's own app has one
+  // obvious card to pick. Nice to have: a failure here changes nothing.
+  try { await stripeCall('POST', 'customers/' + c.card.customer, { invoice_settings: { default_payment_method: pm.id } }); } catch (e) {}
+  await saveClub(list);
+  notifyMikey(`💳 Card saved: ${c.name}`, `${c.name} saved a card for the Clean Club` +
+    (c.card.last4 ? ` (${clubBrand(c.card.brand)} ending ${c.card.last4})` : '') + `.` +
+    `\n\nYou'd only charge it if they cancel before their ${c.keep} club visits are done: $${c.per} for each one skipped. The terms promise a text before you do.` +
+    (clubStripeLink(c) ? `\n\nTheir page in Stripe: ${clubStripeLink(c)}` : ''));
+  return cors(json({ ok: true, card: clubCardPublic(c) }));
+}
+
+// Where a member stands: has the first visit happened, how many club visits
+// since, and what they'd owe if they left today. Counted from both records a
+// finished job leaves (a booking marked done, a job in the money log), one per
+// day so a job logged twice counts once. A count, not a verdict: he can set
+// the number himself on the club sheet, and his number wins.
+async function clubStanding(c, cfg) {
+  cfg = cfg || await loadConfig();
+  const days = new Set();
+  let firstDone = false, firstGone = false;
+  for (const b of await loadBookings()) {
+    if (b.phone !== c.phone) continue;
+    if (b.id === c.bookingId) {
+      if (b.status === 'done') firstDone = true;
+      if (b.status === 'cancelled' || b.status === 'declined') firstGone = true;
+      continue;
+    }
+    if (b.status === 'done' && b.date > c.date) days.add(b.date);
+  }
+  let m = localDateStr(Date.now(), cfg.tz).slice(0, 7);
+  const stop = String(c.date || '').slice(0, 7) || m;
+  for (let i = 0; i < 24; i++) {
+    for (const e of ((await loadMonth(m)).entries || [])) {
+      if (e.type !== 'job' || e.phone !== c.phone || !e.date) continue;
+      if (e.date === c.date) firstDone = true;
+      else if (e.date > c.date) { firstDone = true; days.add(e.date); }
+    }
+    if (m <= stop) break;
+    m = prevMonthKey(m);
+  }
+  const auto = Math.min(c.keep, days.size);
+  const kept = c.kept == null ? auto : Math.max(0, Math.min(c.keep, Number(c.kept) || 0));
+  const owed = (firstDone && !firstGone) ? (c.keep - kept) * c.per : 0;
+  return { firstDone, firstGone, auto, kept, owed, done: kept >= c.keep };
+}
+
+function clubAdmin(c, st) {
+  return Object.assign({}, c, {
+    standing: st, link: clubLink(c), stripeUrl: clubStripeLink(c), stripe: stripeOn(),
+    weeks: Math.round(c.every / 7), card: Object.assign({}, c.card, { label: clubCardPublic(c) }),
+  });
+}
+
+// GET /api/club?phone=…  one member, with where they stand
+// GET /api/club          everyone who has joined, newest first
+async function apiClubList(url) {
+  const cfg = await loadConfig();
+  const list = await loadClub();
+  const phone = normalizePhone(url.searchParams.get('phone'));
+  if (phone) {
+    const c = list.find((x) => x.phone === phone);
+    return json({ ok: true, club: c ? clubAdmin(c, await clubStanding(c, cfg)) : null, stripe: stripeOn() });
+  }
+  const out = [];
+  for (const c of list.slice(0, 100)) out.push(clubAdmin(c, await clubStanding(c, cfg)));
+  return json({ ok: true, members: out, stripe: stripeOn() });
+}
+
+// POST /api/club/action {token, action}
+//   kept    {kept: n}  how many club visits they've had (his count beats ours)
+//   cancel             they left: write down what they owe and stop the plan
+//   reopen             undo a cancel, and put the plan back
+//   paid               he charged the payback in Stripe
+// Nothing here charges a card or texts anyone.
+async function apiClubAction(request) {
+  const d = await readJson(request);
+  const token = jdStr(d.token, 80);
+  const list = await loadClub();
+  const c = list.find((x) => x.token === token);
+  if (!c) return json({ ok: false, error: 'not_found' }, 404);
+  const cfg = await loadConfig();
+  const action = jdStr(d.action, 12);
+  if (action === 'kept') {
+    c.kept = d.kept === null ? null : Math.max(0, Math.min(c.keep, parseInt(d.kept, 10) || 0));
+  } else if (action === 'cancel' || action === 'reopen') {
+    const t = await loadThread(c.phone);
+    if (action === 'cancel') {
+      const st = await clubStanding(c, cfg);
+      c.status = 'cancelled'; c.cancelledAt = Date.now(); c.owedAtCancel = st.owed;
+      t.plan = null;
+    } else {
+      c.status = 'active'; c.cancelledAt = undefined; c.owedAtCancel = undefined; c.paidAt = undefined;
+      t.plan = sanitizePlan({ every: c.every, service: 'Clean Club', price: c.visit, startedAt: c.createdAt });
+    }
+    await saveThread(t);
+    await updateIndexEntry(t);
+  } else if (action === 'paid') {
+    c.paidAt = Date.now();
+  } else {
+    return json({ ok: false, error: 'bad_action' }, 422);
+  }
+  await saveClub(list);
+  return json({ ok: true, club: clubAdmin(c, await clubStanding(c, cfg)) });
 }
 
 // ===========================================================================

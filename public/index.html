@@ -1283,6 +1283,23 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .plan-acts2 button{flex:1;background:var(--panel2);border:1px solid var(--line);color:var(--muted);
     border-radius:10px;padding:10px;font-size:12.5px;font-weight:700;
     display:flex;align-items:center;justify-content:center;gap:6px}
+  /* ---- Clean Club sheet: members who joined on the call page ---- */
+  .club-row{display:flex;gap:10px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--line);
+    font-size:13.5px;color:var(--muted);line-height:1.45}
+  .club-row b{color:var(--text)}
+  .club-row .ic-w{flex:none;color:var(--muted2);margin-top:2px}
+  .club-row b.club-warn,.club-warn{color:#f59e0b}
+  .club-kept{display:flex;align-items:center;gap:8px;margin-top:6px}
+  .club-kept button{width:38px;height:38px;border-radius:10px;background:var(--panel2);border:1px solid var(--line);
+    color:var(--text);font-size:18px;font-weight:800}
+  .club-kept .n{min-width:70px;text-align:center;font-weight:800;color:var(--text)}
+  .club-owe{margin-top:12px;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:12px;
+    font-size:13px;color:var(--muted);line-height:1.45}
+  .club-owe .v{font-size:24px;font-weight:800;color:var(--text);letter-spacing:-.02em;margin:2px 0 4px}
+  .club-terms{margin-top:14px;font-size:12.5px;color:var(--muted);line-height:1.5}
+  .club-terms summary{cursor:pointer;font-weight:700;color:var(--text);padding:4px 0}
+  .club-terms ol{margin:8px 0 8px 18px;padding:0}
+  .club-terms li{margin:0 0 6px}
   /* A plan on the conversation, next to the address strip. */
   /* ---- Are you charging enough? (Money) ---- */
   .pri-empty{color:var(--muted2);font-size:12.5px;line-height:1.55;padding:2px 2px 12px}
@@ -4648,7 +4665,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-10-02·rr-capacity";
+  var APP_BUILD="2026-10-03·clean-club";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -11703,6 +11720,11 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       {act:"pay",    ic:"receipt",         t:"Send a payment request", s:"Texts a link with the breakdown and every way to pay", accent:true},
       {act:"gift",   ic:"gift",            t:"Sell a gift card", s:"A printable card with its own number. Nothing is texted until you send it", accent:true},
       {act:"plan",   ic:"refresh-cw",      t:"Put them on a plan", s:"Every few weeks, on a rhythm — you get reminded, they get asked", accent:true},
+      // Someone who joined on the call page gets their club sheet; anyone else
+      // gets the call page itself, with their name on it, for the phone pitch.
+      (state.thread&&state.thread.club)
+        ?{act:"club",  ic:"credit-card",     t:"Clean Club", s:"Their sign-up, the saved card, and what they'd owe if they left", accent:true}
+        :{act:"clubpage",ic:"link",          t:"Send the Clean Club page", s:"The call page with their name on it, to walk them through on the phone", accent:true},
       {act:"link",   ic:"link",            t:"Send them a link", s:"Before the job, after the job, send a friend, or their booking page", accent:true},
       {act:"photo",  ic:"image",           t:"Send a photo", s:"Camera roll, or one you've sent before — the price sheet, a before/after", accent:true},
       {act:"draft",  ic:"sparkles",       t:"AI draft a reply", s:"Let the AI suggest a full reply to send"},
@@ -11758,6 +11780,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         if(act==="open"){openingsOpen();return}
         if(act==="reqdate"){requestDate();return}
         if(act==="plan"){planSheet();return}
+        if(act==="club"){clubSheet();return}
+        if(act==="clubpage"){clubPagePut();return}
         if(act==="link"){custLinkSheet();return}
         if(act==="gift"){
           var gt=state.thread||{};
@@ -11840,6 +11864,108 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         });
       };
     }).catch(function(){toast("Couldn't load the plan",{bad:true})});
+  }
+
+  // ---- The Clean Club: the deal they signed on the call page ----------------
+  // The sign-up happens on the website (mikeysdetailing.com/onbored) while he
+  // is on the phone with them. This is his side of it: did the card save, how
+  // many club visits they've kept, and what they'd owe if they left today. It
+  // never charges a card. That's him, in Stripe, after the text the terms
+  // promise, so the sheet hands him that text and the Stripe link instead of a
+  // button that charges.
+  var CLUB_PAGE="https://mikeysdetailing.com/onbored/";
+  function clubPutText(text){
+    var inp=el("msgInput");if(!inp)return;
+    var cur=inp.value.trim();inp.value=cur?cur+"\n\n"+text:text;autoGrow();updateCount();inp.focus();
+    toast("In the box: check it and send");
+  }
+  // The call page with their first name, car and town already on it, so the
+  // first thing they see while he talks is their own name, not a form.
+  function clubPagePut(){
+    var t=state.thread;if(!t)return;
+    var q=[],first=(t.name||"").trim().split(/\s+/)[0];
+    if(first)q.push("n="+encodeURIComponent(first));
+    var car=garageVehicleLine(t.garage||{})||((threadByPhone(t.phone)||{}).vehicleLabel)||"";
+    if(car)q.push("car="+encodeURIComponent(car));
+    var town=(t.garage&&t.garage.city)||"";
+    if(town)q.push("t="+encodeURIComponent(town));
+    clubPutText("Here's the page I'm walking you through: "+CLUB_PAGE+(q.length?"?"+q.join("&"):""));
+  }
+  function clubWhen(ts){return ts?new Date(ts).toLocaleDateString([],{month:"short",day:"numeric"}):""}
+  function clubSheet(){
+    var t=state.thread;if(!t)return;
+    api("/api/club?phone="+encodeURIComponent(t.phone)).then(function(d){
+      if(!(d&&d.ok))return toast("Couldn't load the Clean Club",{bad:true});
+      if(!d.club)return toast("No Clean Club sign-up for them",{bad:true});
+      clubSheetRender(t,d.club,d.stripe);
+    }).catch(function(){toast("Network error",{bad:true})});
+  }
+  function clubSheetRender(t,c,stripe){
+    var first=firstNameOf(t)||"them",s=c.standing||{},card=c.card||{},gone=c.status==="cancelled";
+    var row=function(icn,html){return '<div class="club-row"><span class="ic-w">'+ic(icn,16)+'</span><div>'+html+'</div></div>'};
+    var h='<div class="jd-sh-title">Clean Club: '+esc(first)+'</div>'+
+      '<div class="jd-sh-sub">Joined '+esc(clubWhen(c.createdAt))+' on the call page. Every '+esc(String(c.weeks))+' weeks, $'+esc(String(c.visit))+' a visit.'+
+      (gone?' <b class="club-warn">Cancelled '+esc(clubWhen(c.cancelledAt))+'.</b>':'')+'</div>';
+    var cd;
+    if(card.status==="saved")cd='<b>'+esc((card.label&&card.label.brand)||"Card")+' ending '+esc(card.last4||"")+'</b>, saved '+esc(clubWhen(card.at))+(card.test?' (Stripe test mode)':'');
+    else if(!stripe)cd='<b class="club-warn">No card yet.</b> Stripe isn\'t connected, so the page couldn\'t ask for one. Once it is, send them their link.';
+    else if(card.status==="error")cd='<b class="club-warn">No card yet.</b> Stripe didn\'t open'+(card.error?' ('+esc(card.error)+')':'')+'. Send them their link once that\'s fixed.';
+    else cd='<b class="club-warn">No card yet.</b> They opened Stripe\'s page and didn\'t finish. Send them their link.';
+    h+=row("credit-card",cd);
+    var fv=s.firstGone?'<b class="club-warn">First visit was cancelled.</b> They owe nothing.':
+      (s.firstDone?'First visit <b>done</b>: ':'First visit: ')+'Full Detail <b>$'+esc(String(c.price))+'</b> (regular $'+esc(String(c.regular))+') on '+esc(c.dateLabel||"")+'.';
+    h+=row("calendar-days",fv);
+    // Locked once they've cancelled: what they owed was written down at that
+    // moment, and a counter that still moved would look like it changed it.
+    h+=row("refresh-cw",'Club visits since their first one: '+(gone
+      ?'<b>'+esc(String(s.kept||0))+' of '+esc(String(c.keep))+'</b>'
+      :'<div class="club-kept"><button data-club-kept="-1" aria-label="One fewer">−</button>'+
+        '<span class="n" id="clubKeptN">'+esc(String(s.kept||0))+' of '+esc(String(c.keep))+'</span>'+
+        '<button data-club-kept="1" aria-label="One more">+</button></div>'+
+        '<div style="font-size:12px;color:var(--muted2);margin-top:4px">'+(c.kept==null?'Counted from your bookings and money log. Tap to set it yourself.':'Your count. <a href="#" id="clubKeptAuto">Use the records instead</a> ('+esc(String(s.auto||0))+').')+'</div>'));
+    var owe=gone?(c.owedAtCancel||0):(s.owed||0);
+    var oweWhy=!owe?(s.done?'They kept their '+esc(String(c.keep))+' club visits. They can cancel anytime, no fee.':(!s.firstDone?'Nothing is owed before the first visit.':'')):
+      gone?(c.paidAt?'':'$'+esc(String(c.per))+' for each club visit they skipped. Text them first, then charge it in Stripe.'):
+      '$'+esc(String(c.per))+' for each of the '+esc(String(c.keep))+' club visits they\'d skip. Text them first, then charge it in Stripe.';
+    h+='<div class="club-owe">'+(gone?'They owed when they left':'If they left today')+'<div class="v">'+(owe?'$'+esc(String(owe)):'Nothing')+'</div>'+oweWhy+
+      (gone&&c.paidAt?'<div style="margin-top:6px;color:#4ade80;font-weight:700">Charged '+esc(clubWhen(c.paidAt))+'</div>':'')+'</div>';
+    h+='<div class="plan-acts2">'+(c.stripeUrl?'<button id="clubStripe">'+ic("credit-card",15)+' Open in Stripe</button>':'')+
+      (card.status!=="saved"&&!gone?'<button id="clubCardPut">'+ic("send",15)+' Card link in the box</button>':'')+'</div>';
+    if(!gone)h+='<div class="plan-acts2"><button id="clubCancel">'+ic("x",15)+' They cancelled</button></div>';
+    else h+='<div class="plan-acts2">'+(owe&&!c.paidAt?'<button id="clubOweText">'+ic("send",15)+' Heads-up text in the box</button><button id="clubPaid">'+ic("check",15)+' I charged it</button>':'')+
+      '<button id="clubReopen">'+ic("undo",15)+' Undo cancel</button></div>';
+    var tm=(c.terms||{});
+    h+='<details class="club-terms"><summary>What they signed</summary><ol>'+(tm.lines||[]).map(function(l){return'<li>'+esc(l)+'</li>'}).join("")+'</ol>'+
+      '<div>Signed “'+esc(tm.signed||"")+'” '+esc(tm.at?new Date(tm.at).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}):"")+(tm.ip?' from '+esc(tm.ip):'')+'</div></details>';
+    var sh=jdSheetOpen(h);
+    var act=function(body,msg){
+      post("/api/club/action",Object.assign({token:c.token},body)).then(function(r){
+        if(!(r&&r.ok))return toast("Couldn't save that",{bad:true});
+        if(msg)toast(msg);
+        clubSheetRender(t,r.club,stripe);
+      }).catch(function(){toast("Network error",{bad:true})});
+    };
+    Array.prototype.forEach.call(sh.querySelectorAll("[data-club-kept]"),function(b){b.onclick=function(){
+      var n=Math.max(0,Math.min(c.keep,(s.kept||0)+(+b.getAttribute("data-club-kept"))));
+      act({action:"kept",kept:n});
+    }});
+    var ka=sh.querySelector("#clubKeptAuto");if(ka)ka.onclick=function(e){e.preventDefault();act({action:"kept",kept:null})};
+    var so=sh.querySelector("#clubStripe");if(so)so.onclick=function(){window.open(c.stripeUrl,"_blank","noopener")};
+    var cp=sh.querySelector("#clubCardPut");if(cp)cp.onclick=function(){
+      jdSheetClose();clubPutText("Here's the secure link to save your card for the Clean Club, like we talked about: "+c.link);
+    };
+    var cc=sh.querySelector("#clubCancel");if(cc)cc.onclick=function(){
+      if(!confirm("Mark "+first+" as cancelled? This stops their plan reminders and writes down what they owe. Nothing is charged or texted."))return;
+      act({action:"cancel"},"Marked cancelled");
+      if(state.phone===t.phone){t.plan=null}
+    };
+    var ot=sh.querySelector("#clubOweText");if(ot)ot.onclick=function(){
+      var kept=s.kept||0;
+      jdSheetClose();
+      clubPutText("Hey "+(firstNameOf(t)||"there")+", sorry to see you go. We did "+kept+" of the "+c.keep+" club visits, so like we agreed when you joined I'll put $"+owe+" on the card you saved. Thanks for giving it a shot. - Mikey");
+    };
+    var pd=sh.querySelector("#clubPaid");if(pd)pd.onclick=function(){act({action:"paid"},"Marked charged")};
+    var ro=sh.querySelector("#clubReopen");if(ro)ro.onclick=function(){act({action:"reopen"},"Back on the club")};
   }
 
   // ---- The customer's own link ---------------------------------------------
@@ -11943,12 +12069,12 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   var GUIDE_STEPS=[
     {t:"Get the details",d:"Find out what they've got and what they want.",ex:[
       {tag:"Opener",x:"Hey! Happy to help :) What's the year, make and model of your car, and are you thinking interior, exterior, or a full detail?"}]},
-    {t:"Give the quote",d:"Share the starting price, and say the exact price gets confirmed. Interior starts at $160 · exterior $130 · full $260 — trucks & really dirty cars a bit more.",ex:[
-      {tag:"Full detail",x:"For a [year make model], a full detail starts at $260 — I'll confirm the exact price once I know the condition. Want me to find you a time?"},
-      {tag:"Interior only",x:"An interior detail starts at $160 and takes about an hour and a half. I'll lock in the exact price once I know a little more about the condition!"}]},
+    {t:"Give the quote",d:"Share the starting price, and say the exact price gets confirmed. Interior starts at $249 · exterior $199 · full $369. SUVs, pickups, vans and really dirty cars are a bit more.",ex:[
+      {tag:"Full detail",x:"For a [year make model], a full detail starts at $369. I'll confirm the exact price once I know the condition. Want me to find you a time?"},
+      {tag:"Interior only",x:"An interior detail starts at $249 and takes about an hour and a half. I'll lock in the exact price once I know a little more about the condition!"}]},
     {t:"Answer their questions",d:"The usual ones. Or tap Tools → “Write a reply for me” to answer anything in Mikey's voice.",ex:[
       {tag:"Do you come to me?",x:"Yes, I come to you! All I need is power and water within 20 ft of the car."},
-      {tag:"How long?",x:"A full detail usually takes about 3–4 hours."},
+      {tag:"How long?",x:"A full detail usually takes 3 to 5 hours."},
       {tag:"Pet hair / stains",x:"Yep! I've got a special pet-hair process. No promises on the toughest stains, but I'll sure as heck try!"}]},
     {t:"Move to booking",d:"Get their address and offer a time. Not sure what Mikey has open? Tap Tools → “Request a date from Mikey.”",ex:[
       {tag:"Ask address",x:"Awesome! What's your address or zip? I'll get you a couple of times that work."},

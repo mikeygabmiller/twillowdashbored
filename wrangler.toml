@@ -92,6 +92,9 @@ crons = ["* * * * *"]
 #    ☰ → Settings → Who pays for the AI to spend Anthropic credits instead,
 #    with no dashboard at all. A key left set here is the last route tried.)
 #   npx wrangler secret put RESEND_API_KEY   # optional — sends owner alerts as email (with ALERT_EMAIL above) instead of texting yourself
+#   npx wrangler secret put STRIPE_SECRET_KEY  # optional: card on file for the Clean Club call page (mikeysdetailing.com/onbored).
+#     Use a Stripe RESTRICTED key: Customers + Checkout Sessions on Write, SetupIntents + PaymentMethods on Read.
+#     It only saves cards (Checkout in setup mode); nothing in this Worker ever charges one.
 
 # Dashboard click-to-call rings CALL_BRIDGE_PHONE (defaults to +14252321355 in
 # src/index.js) and then bridges to the customer. It is separate from MIKEY_PHONE
