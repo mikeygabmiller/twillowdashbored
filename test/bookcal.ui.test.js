@@ -67,7 +67,7 @@ ok('it sent the link he pasted', posts.length === 2 && posts[1].url === 'https:/
 ok('now the add button shows', await page.isVisible('#gcalSync'));
 await page.click('#gcalSync');
 await page.waitForFunction(() => /on your calendar/.test(document.querySelector('#gcalResult').textContent));
-ok('it says how many went on', /2 bookings on your calendar/.test(await page.textContent('#gcalResult')));
+ok('it says how many went on', /2 jobs on your calendar/.test(await page.textContent('#gcalResult')));
 ok('no page errors', errs.length === 0, errs);
 
 await browser.close();

@@ -157,7 +157,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-03·clean-club-price';
+const BUILD = '2026-10-03·texts-to-gcal';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -17529,7 +17529,74 @@ async function apiGcalSyncAll() {
     const r = await bkGcalSync(bk);
     if (r && r.ok) added++; else { failed++; lastError = (r && r.error) || lastError; }
   }
+  // ...and the jobs agreed over text, which live on the day board rather than
+  // in the booking list. Same 40-call ceiling across both, so one tap can't
+  // run the Worker into its subrequest limit.
+  for (const { job, date } of (await dayJobsAhead(60)).slice(0, Math.max(0, 40 - list.length))) {
+    const r = await dayJobGcalSync(job, date);
+    if (r && r.ok) added++; else { failed++; lastError = (r && r.error) || lastError; }
+  }
   return json({ ok: failed === 0, added, failed, error: lastError });
+}
+
+// ---------------------------------------------------------------------------
+// Jobs agreed over text, onto the same calendar
+// ---------------------------------------------------------------------------
+// Only bookings from the site ever reached his calendar. A job settled in a
+// conversation ("Saturday at 10 works") lands on the day board, by itself when
+// detection is sure (detApply) or with a tap on the card, and stopped there, so
+// the calendar he actually lives in never heard about most of his week. These
+// go through the same script, keyed by the board job's id, so moving it,
+// editing it or taking it off the board updates the one event instead of
+// leaving a stale one behind. Best-effort like the rest: never throws.
+function dayJobGcalEvent(job, date) {
+  const slot = /^\d{2}:\d{2}$/.test(String(job.slot || '')) ? job.slot : '09:00';
+  const start = bkLaEpoch(date, slot);
+  const who = job.name || job.phone || 'Customer';
+  const base = publicBase();
+  return {
+    id: job.id,
+    // A time nobody agreed must not look like one on his phone's week view.
+    title: `${job.tentative ? '⏰ TIME NOT SET: ' : '🚗 '}${job.service || 'Detail'} · ${who}${job.city ? ` (${job.city})` : ''}`,
+    start,
+    end: start + (Math.max(15, Number(job.durationMin) || 180)) * 60000,
+    location: [job.address, job.city].filter(Boolean).join(', '),
+    description: [
+      [job.service, job.vehicle].filter(Boolean).join(' · '),
+      job.price ? `Quoted: $${job.price}` : '',
+      job.phone ? `Phone: ${job.phone}` : '',
+      job.notes ? `Notes: ${job.notes}` : '',
+      job.tentative ? `They never gave a time, so ${bkFmt12(slot)} is a placeholder. Text them to pin it down.` : '',
+      job.fromEvidence ? `From the texts: "${job.fromEvidence}"` : '',
+      base && job.phone ? `${base}/?c=${job.phone}` : '',
+    ].filter(Boolean).join('\n'),
+    popups: GCAL_POPUPS,
+  };
+}
+async function dayJobGcalSync(job, date) {
+  try {
+    if (!job || !job.id || !jdIsDate(date)) return { ok: false };
+    return await gcalPost(Object.assign({ op: 'upsert' }, dayJobGcalEvent(job, date)));
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+}
+async function dayJobGcalDrop(id) {
+  try { return id ? await gcalPost({ op: 'delete', id }) : { ok: false }; }
+  catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+}
+// Hand-entered and text-detected jobs on the boards from today out, for the
+// "add my upcoming jobs now" catch-up. One KV read per day, on a tap only.
+async function dayJobsAhead(days) {
+  const out = [];
+  const today = jdToday(await loadConfig());
+  for (let i = 0; i < days; i++) {
+    const date = new Date(Date.parse(today + 'T12:00:00Z') + i * 86400000).toISOString().slice(0, 10);
+    const doc = await loadDay(date);
+    doc.manual.forEach((job) => {
+      const st = doc.state[job.id] && doc.state[job.id].state;
+      if (st !== 'done' && st !== 'skipped') out.push({ job, date });
+    });
+  }
+  return out;
 }
 
 // ===========================================================================
@@ -18300,9 +18367,19 @@ async function apiDayJob(request) {
   };
   if (!job.name && !job.phone && !job.address) return json({ ok: false, error: 'need_name' }, 422);
   const i = doc.manual.findIndex((m) => m.id === id);
+  // An edit keeps what detection knew that this form doesn't send: whether the
+  // time was ever agreed, and the quote it came from. Saving it with a time he
+  // picked is what pins it.
+  if (i >= 0) {
+    const was = doc.manual[i];
+    if (was.fromEvidence) job.fromEvidence = was.fromEvidence;
+    if (was.autoAdded) job.autoAdded = true;
+    if (was.tentative && was.slot === job.slot) job.tentative = true;
+  }
   if (i >= 0) doc.manual[i] = job; else doc.manual.push(job);
   if (doc.manual.length > 40) return json({ ok: false, error: 'day_full' }, 422);
   await saveDay(doc);
+  background(dayJobGcalSync(job, date));
   return json({ ok: true, day: await buildDay(date) });
 }
 
@@ -18316,6 +18393,7 @@ async function apiDayRemove(request) {
   delete doc.state[id];
   doc.order = doc.order.filter((x) => x !== id);
   await saveDay(doc);
+  if (id.startsWith('m:')) background(dayJobGcalDrop(id));
   return json({ ok: true, day: await buildDay(date) });
 }
 
@@ -23368,6 +23446,7 @@ async function detApply(thread, f, dc, cfg) {
 
   const who = rec.name || phone;
   const onBoard = !!(placed && placed.ok);
+  const onCal = onBoard && !!(await gcalLoad()).url;
   await notifyMikey(
     `${onBoard ? '📅 Added to your day' : '📅 Looks like you booked'} ${who} — ${bkNiceDate(rec.date)} at ${bkFmt12(rec.slot)}`,
     [
@@ -23378,7 +23457,7 @@ async function detApply(thread, f, dc, cfg) {
       rec.price ? `Quoted: $${rec.price}` : null,
       '', `From: "${rec.evidence}"`, '',
       onBoard
-        ? `It's on your day board. Nothing was sent to them — open Jobs to change the time or take it off.${rec.tentative ? '\nThe time is a guess: they never gave you one.' : ''}`
+        ? `It's on your day board${onCal ? ' and your Google Calendar' : ''}. Nothing was sent to them — open Jobs to change the time or take it off.${rec.tentative ? '\nThe time is a guess: they never gave you one.' : ''}`
         : `It is NOT on your day yet — open Jobs and tap Yes to add it.`,
     ].filter((x) => x !== null).join('\n')).catch(() => {});
   await pushNotify().catch(() => {});
@@ -23396,7 +23475,7 @@ async function detPlaceOnDay(rec, opts) {
   if (!jdIsDate(date) || !/^\d{2}:\d{2}$/.test(String(rec.slot || ''))) return { ok: false, error: 'bad_when' };
   const doc = await loadDay(date);
   if (doc.manual.length >= 40) return { ok: false, error: 'day_full' };
-  doc.manual.push({
+  const entry = {
     id: 'm:' + genId(),
     name: rec.name, phone: rec.phone,
     address: rec.address, city: rec.city,
@@ -23409,8 +23488,12 @@ async function detPlaceOnDay(rec, opts) {
     tentative: !!rec.tentative,
     autoAdded: !!(opts && opts.auto),
     fromEvidence: (opts && opts.auto) ? jdStr(rec.evidence, 200) : '',
-  });
+  };
+  doc.manual.push(entry);
   await saveDay(doc);
+  // And onto his Google Calendar, without him doing anything. Backgrounded:
+  // this runs inside the text webhook, and a slow Google must not hold it up.
+  background(dayJobGcalSync(entry, date));
 
   const thread = await loadThread(rec.phone);
   thread.appointmentAt = rec.at;
@@ -23419,6 +23502,40 @@ async function detPlaceOnDay(rec, opts) {
   await saveThread(thread);
   await updateIndexEntry(thread);
   return { ok: true, date };
+}
+
+// An accepted move or cancel, applied to the job already on the board for that
+// customer. Only a job this app placed or he typed in can be moved here; a site
+// booking has its own record and its own reschedule flow, so it's left alone.
+async function detMoveBoardJob(rec, fromAt, cfg) {
+  if (!fromAt || !rec.phone) return;
+  const from = localDateStr(fromAt, cfg && cfg.tz);
+  const doc = await loadDay(from);
+  const mine = doc.manual.filter((m) => m.phone === rec.phone);
+  if (!mine.length) return;
+  // Closest to the appointment on file, if he somehow has two that day.
+  const job = mine.sort((a, b) => Math.abs(bkLaEpoch(from, a.slot) - fromAt) - Math.abs(bkLaEpoch(from, b.slot) - fromAt))[0];
+  doc.manual = doc.manual.filter((m) => m.id !== job.id);
+  if (rec.kind === 'cancel' || !(rec.at && jdIsDate(rec.date))) {
+    delete doc.state[job.id];
+    doc.order = doc.order.filter((x) => x !== job.id);
+    await saveDay(doc);
+    background(dayJobGcalDrop(job.id));
+    return;
+  }
+  const moved = Object.assign({}, job, { slot: rec.slot || job.slot, tentative: !!rec.tentative });
+  if (rec.date === from) {
+    doc.manual.push(moved);
+    await saveDay(doc);
+  } else {
+    delete doc.state[job.id];
+    doc.order = doc.order.filter((x) => x !== job.id);
+    await saveDay(doc);
+    const to = await loadDay(rec.date);
+    to.manual.push(moved);
+    await saveDay(to);
+  }
+  background(dayJobGcalSync(moved, rec.date));
 }
 
 // Is this one safe to put on the board without asking? Deliberately narrow.
@@ -23512,6 +23629,9 @@ async function apiDetectionAction(request) {
   if (action === 'accept') {
     // Accept a proposed move or cancel against the existing appointment.
     const thread = await loadThread(rec.phone);
+    // The board job (and its calendar event) follows, or the run sheet and his
+    // calendar keep the old day while the conversation says the new one.
+    await detMoveBoardJob(rec, thread.appointmentAt || rec.currentAt, cfg);
     if (rec.kind === 'cancel') {
       thread.appointmentAt = null;
     } else if (rec.kind === 'reschedule' && rec.at) {

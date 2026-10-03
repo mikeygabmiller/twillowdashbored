@@ -119,6 +119,76 @@ console.log('\nConfirm and cancel keep the calendar in step');
   ok(!cal.has(pendingId), 'cancel takes it off the calendar');
 }
 
+console.log('\nA job agreed over text goes on the calendar by itself');
+{
+  // Detection has found "Saturday at 10 works" and he taps Yes on the card:
+  // the same detPlaceOnDay the automatic path runs.
+  const at = Date.now() + 5 * 86400000;
+  const date = new Date(at - 7 * 3600000).toISOString().slice(0, 10);
+  // Pacific wall clock to epoch, the way detection fills rec.at.
+  const la = (d, hm) => { const n = Date.parse(d + 'T' + hm + ':00Z'); const off = new Date(n).toLocaleString('en-US', { timeZone: 'America/Los_Angeles', timeZoneName: 'shortOffset' }).match(/GMT([+-]\d+)/); return n - (off ? +off[1] : -8) * 3600000; };
+  const det = { id: 'd1', phone: '+14255559876', kind: 'set', name: 'Tex Ted', date, slot: '10:00', at: la(date, '10:00'),
+    tentative: false, customerConfirmed: true, currentAt: null, service: 'Full Detail', vehicle: '2019 Tahoe',
+    address: '9 Elm St', city: 'Everett', price: 369, notes: 'gate 4412', durationMin: 270,
+    confidence: 0.9, evidence: 'saturday at 10 works', at_: Date.now() };
+  await KV.put('det:index', JSON.stringify([det]));
+  const before = cal.size;
+  const r = await call('POST', '/api/detection', { id: 'd1', action: 'confirm' });
+  ok(r && r.ok, 'confirm puts it on the board → ' + JSON.stringify(r && r.error));
+  ok(cal.size === before + 1, 'and one event lands on his calendar with no other tap');
+  const id = [...cal.keys()].find((k) => /^m:/.test(k));
+  const ev = cal.get(id);
+  ok(ev && /^🚗 Full Detail · Tex Ted \(Everett\)$/.test(ev.title), 'titled with the service, name and town → ' + (ev && ev.title));
+  ok(ev && ev.location === '9 Elm St, Everett', 'the address is the location');
+  ok(ev && ev.end - ev.start === 270 * 60000, 'it lasts as long as the job');
+  ok(ev && /Quoted: \$369/.test(ev.description) && /Phone: \+14255559876/.test(ev.description) && /gate 4412/.test(ev.description), 'his notes have the price, phone and gate code');
+  ok(ev && JSON.stringify(ev.popups) === JSON.stringify([10080, 4320, 1440, 120, 30]), 'same phone alerts as a booking');
+
+  // He edits the time on the board: the same event moves.
+  const n = cal.size;
+  await call('POST', '/api/day/job', { date, id, name: 'Tex Ted', phone: '+14255559876', service: 'Full Detail', slot: '13:00', durationMin: 270, address: '9 Elm St', city: 'Everett' });
+  ok(cal.size === n && cal.get(id).start === ev.start + 3 * 3600000, 'an edit on the board moves the same event, never a second one');
+
+  // The customer asks to move to the next day and he accepts the card.
+  const next = new Date(Date.parse(date + 'T12:00:00Z') + 86400000).toISOString().slice(0, 10);
+  await KV.put('det:index', JSON.stringify([{ ...det, id: 'd2', kind: 'reschedule', date: next, slot: '11:00', at: la(next, '11:00'), currentAt: det.at }]));
+  await call('POST', '/api/detection', { id: 'd2', action: 'accept' });
+  ok(cal.size === n && cal.has(id), 'an accepted move keeps one event');
+  ok(cal.get(id).start - ev.start === 86400000 + 3600000, 'and it is on the new day at the new time');
+  const oldDay = JSON.parse(store.get('day:' + date) || '{"manual":[]}');
+  const newDay = JSON.parse(store.get('day:' + next) || '{"manual":[]}');
+  ok(!oldDay.manual.some((m) => m.id === id) && newDay.manual.some((m) => m.id === id && m.slot === '11:00'), 'the board moved with it');
+
+  // A day off the board is a day off the calendar.
+  await call('POST', '/api/day/remove', { date: next, jobId: id });
+  ok(!cal.has(id), 'taking it off the board takes it off the calendar');
+
+  // A hand-typed job (a cash job, a friend's truck) goes on too.
+  await call('POST', '/api/day/job', { date, name: 'Cash Carl', slot: '07:00', service: 'Exterior' });
+  ok([...cal.values()].some((e) => /Exterior · Cash Carl/.test(e.title)), 'a job he types on the board goes on the calendar');
+}
+
+console.log('\nA time nobody agreed says so on the calendar');
+{
+  const date = new Date(Date.now() + 8 * 86400000 - 7 * 3600000).toISOString().slice(0, 10);
+  await KV.put('det:index', JSON.stringify([{ id: 'd3', phone: '+14255550111', kind: 'set', name: 'Sat Sue', date, slot: '09:00', at: 0,
+    tentative: true, customerConfirmed: true, service: '', vehicle: '', address: '', city: '', price: 0, notes: '', durationMin: 180,
+    confidence: 0.8, evidence: 'saturday works', at_: Date.now() }]));
+  await call('POST', '/api/detection', { id: 'd3', action: 'confirm' });
+  const ev = [...cal.values()].find((e) => /Sat Sue/.test(e.title));
+  ok(ev && /^⏰ TIME NOT SET: /.test(ev.title), 'the title says the time is not set → ' + (ev && ev.title));
+  ok(ev && /placeholder/.test(ev.description), 'and the notes say 9 AM is a placeholder');
+}
+
+console.log('\nCatch-up: one tap adds the board jobs that were there before');
+{
+  const before = [...cal.keys()];
+  cal.clear();
+  const r = await call('POST', '/api/gcal-sync-all', {});
+  ok(r.ok && [...cal.keys()].some((k) => /^m:/.test(k)), 'sync-all includes jobs from the day board → ' + JSON.stringify(r));
+  ok(cal.size >= before.filter((k) => /^m:/.test(k)).length, 'every board job is back');
+}
+
 console.log('\nA week, 3 days and a day before: an email and a push, once each');
 {
   // A job 10 days out, booked now.
