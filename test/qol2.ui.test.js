@@ -372,8 +372,18 @@ await page.locator('#detailsBtn').click();
 await page.waitForTimeout(500);
 ok('the section shows up when there are photos', await page.locator('#dtPhotoSec').isVisible());
 ok('all three are there', (await page.locator('.dtp').count()) === 3, await page.locator('.dtp').count());
-ok('newest first', /and the back seat|Sep/.test(await page.locator('.dtp').first().getAttribute('title')),
-  await page.locator('.dtp').first().getAttribute('title'));
+// Newest first, by the photos' own times: the first tile is d3 (3.5 days ago)
+// and the last is d1 (5 days ago). This used to look for "Sep" in the first
+// tile's date, which only held while "3.5 days ago" was still in September;
+// from October 4 it read "Oct 1" and failed on every branch. The expected
+// labels are made in the page, with the same formatter fmtFull() uses, so the
+// browser's locale and time zone can't disagree with the check.
+{
+  const label = (ts) => page.evaluate((t) => new Date(t).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }), ts);
+  const titles = await page.locator('.dtp').evaluateAll((els) => els.map((e) => e.getAttribute('title')));
+  ok('newest first', titles[0] === 'They sent \u00b7 ' + await label(daleMsgs[2].ts) &&
+    titles[titles.length - 1] === 'They sent \u00b7 ' + await label(daleMsgs[0].ts), titles);
+}
 ok('yours are marked as yours', (await page.locator('.dtp .dtp-you').count()) === 1);
 ok('and theirs are not', (await page.locator('.dtp').count()) - (await page.locator('.dtp .dtp-you').count()) === 2);
 await page.locator('.dtp').first().click();
