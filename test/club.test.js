@@ -1,13 +1,14 @@
 // The Clean Club, sold on a call (2026-10-03).
 //
 // Mikey texts the call page (mikeysdetailing.com/onbored) while he's on the
-// phone. Joining makes the first visit a Full Detail at $150 off, then $125 a
-// visit every 4 or 8 weeks, and they keep their next 2 club visits or pay back
-// $75 for each one skipped, on a card saved with Stripe. These checks hold the
+// phone. Joining makes the first visit a Full Detail at $270 off ($99 for a
+// clean sedan, Mikey 2026-10-04), then $125 a visit every 4 or 8 weeks, and they
+// keep their next 3 club visits or pay back $90 for each one skipped, on a card
+// saved with Stripe. These checks hold the
 // promises that deal makes: the server sets the price, the words they sign are
 // the words stored, the first visit books like any website booking, he gets
 // one alert and not two, a card is only "saved" when Stripe says so, and what
-// they'd owe on leaving is never more than the $150 they got.
+// they'd owe on leaving is never more than the $270 they got.
 //
 //   node test/club.test.js
 import fs from 'fs';
@@ -85,19 +86,19 @@ NOW = at('2026-10-10', '10:00');                      // a Saturday morning in O
 section('The offer: priced on the server, from his own Full Detail price');
 let o = await get(M.apiClubOffer, '/api/club/offer?every=28&size=suv&condition=Needs%20Work');
 ok('an SUV that needs work: regular $439 ($409 + $30)', o.ok && o.regular === 439, o);
-ok('joined, the first visit is $289 ($150 off)', o.price === 289, o);
-ok('$125 a visit, keep 2, $75 each', o.visit === 125 && o.keep === 2 && o.per === 75 && o.off === 150, o);
+ok('joined, the first visit is $169 ($270 off)', o.price === 169, o);
+ok('$125 a visit, keep 3, $90 each', o.visit === 125 && o.keep === 3 && o.per === 90 && o.off === 270, o);
 ok('every 4 or every 8 weeks, nothing else', JSON.stringify(o.everyOptions) === '[28,56]', o.everyOptions);
 ok('card saving is off until the Stripe key is set', o.card === false, o.card);
 const words = o.lines.join(' ');
-ok('the terms carry the real numbers', /\$289/.test(words) && /\$150 off my regular \$439/.test(words) && /every 4 weeks/.test(words) && /\$125 a visit/.test(words) && /\$75 for each one you skip/.test(words), o.lines);
+ok('the terms carry the real numbers', /\$169/.test(words) && /\$270 off my regular \$439/.test(words) && /every 4 weeks/.test(words) && /\$125 a visit/.test(words) && /next 3 club visits/.test(words) && /\$90 for each one you skip, never more than \$270/.test(words), o.lines);
 ok('the terms promise a text before any charge', /text you before I charge/.test(words));
 ok('the terms say cancelling before the first visit costs nothing', /before your first visit and you owe nothing/.test(words));
 ok('no em dash anywhere in the terms', !EM.test(words));
 o = await get(M.apiClubOffer, '/api/club/offer?every=56&size=sedan');
-ok('a clean sedan every 8 weeks: $369 regular, $219 joined', o.regular === 369 && o.price === 219 && /every 8 weeks/.test(o.lines.join(' ')), o);
+ok('a clean sedan every 8 weeks: $369 regular, $99 joined', o.regular === 369 && o.price === 99 && /every 8 weeks/.test(o.lines.join(' ')), o);
 o = await get(M.apiClubOffer, '/api/club/offer?every=99&size=boat&condition=Spotless');
-ok('junk in falls back to the defaults, never to a made-up price', o.every === 28 && o.size === 'sedan' && o.condition === 'Pretty Clean' && o.price === 219, o);
+ok('junk in falls back to the defaults, never to a made-up price', o.every === 28 && o.size === 'sedan' && o.condition === 'Pretty Clean' && o.price === 99, o);
 
 section('The book wins over a stale saved booking config');
 {
@@ -109,10 +110,10 @@ section('The book wins over a stale saved booking config');
   await kv.put('bk:config', JSON.stringify(stale));
   M.__reset();
   const so = await get(M.apiClubOffer, '/api/club/offer?every=28&size=sedan');
-  ok('a stale $299 in Settings still quotes the book: $369 regular, $219 joined', so.ok && so.regular === 369 && so.price === 219, so);
-  ok('...and the words they would sign say the same', /Full Detail for \$219\. That's \$150 off my regular \$369/.test(so.lines[0]), so.lines[0]);
+  ok('a stale $299 in Settings still quotes the book: $369 regular, $99 joined', so.ok && so.regular === 369 && so.price === 99, so);
+  ok('...and the words they would sign say the same', /Full Detail for \$99\. That's \$270 off my regular \$369/.test(so.lines[0]), so.lines[0]);
   const sv = await get(M.apiClubOffer, '/api/club/offer?every=28&size=truck&condition=War%20Zone');
-  ok('a war-zone van: $449 + $60 = $509 regular, $359 joined', sv.regular === 509 && sv.price === 359, sv);
+  ok('a war-zone van: $449 + $60 = $509 regular, $239 joined', sv.regular === 509 && sv.price === 239, sv);
   const off = JSON.parse(JSON.stringify(stale)); off.services[0].enabled = false;
   await kv.put('bk:config', JSON.stringify(off));
   M.__reset();
@@ -129,7 +130,7 @@ ok('anywhere else falls back to the live site', M.clubSite({ headers: H({ Origin
 
 section('Joining checks the signature and the deal before it books anything');
 const base = {
-  every: 28, terms: '2026-10-03', agree: true, signed: 'Sarah Lane', size: 'suv', condition: 'Needs Work',
+  every: 28, terms: '2026-10-04', agree: true, signed: 'Sarah Lane', size: 'suv', condition: 'Needs Work',
   vehicle: '2019 Honda Pilot', date: '2026-10-13', slot: '13:00', dateLabel: 'Tue, Oct 13',
   name: 'Sarah Lane', phone: '4255550142', address: '1425 Cedar Ave', city: 'Everett', email: 'sarah@example.com',
   smsConsent: true, page: 'https://mikeysdetailing.com/onbored/',
@@ -154,28 +155,28 @@ ok('Everett is one of his towns, so the first visit is confirmed', r.status === 
 ok('no Stripe page to go to', r.card === 'off' && !r.cardUrl, r);
 let bk = (await M.loadBookings())[0];
 ok('the first visit is a Full Detail on Tue Oct 13 at 1:00', bk.service === 'full' && bk.date === '2026-10-13' && bk.slot === '13:00', bk);
-ok('at the server\'s price ($289), not the $1 the page sent', bk.estimate === 289, bk.estimate);
+ok('at the server\'s price ($169), not the $1 the page sent', bk.estimate === 169, bk.estimate);
 ok('the booking knows it is a club sign-up', bk.club === r.token);
 ok('a Full Detail booked in October is Rain-Ready', bk.rainReady === true);
 let th = await M.loadThread('+14255550142');
 ok('they are on a plan: every 4 weeks, Clean Club, $125', th.plan && th.plan.every === 28 && th.plan.service === 'Clean Club' && th.plan.price === 125, th.plan);
 ok('the thread points at the sign-up and is tagged club', th.club && th.club.token === r.token && th.tags.includes('club'), th.club);
-ok('his notes on the thread spell out the deal', /CLEAN CLUB/.test(th.notes) && /\$289 \(regular \$439, \$150 off/.test(th.notes) && /pays back \$75 each/.test(th.notes), th.notes);
+ok('his notes on the thread spell out the deal', /CLEAN CLUB/.test(th.notes) && /\$169 \(regular \$439, \$270 off/.test(th.notes) && /keeps the next 3 club visits or pays back \$90 each/.test(th.notes), th.notes);
 ok('the customer got the normal confirm text', sms.length === 1 && /Full Detail/.test(sms[0].body), sms);
 ok('the reminders are queued like any booking', th.scheduled.filter((x) => x.kind === 'booking').length === 2);
 ok('Mikey gets ONE alert, the club one, not a booking alert as well', alerts.length === 1 && /Clean Club sign-up: Sarah Lane/.test(alerts[0].subject), alerts.map((a) => a.subject));
 ok('the alert says the card is missing and why', /STRIPE_SECRET_KEY isn't set/.test(alerts[0].text) && /onbored\/\?club=/.test(alerts[0].text), alerts[0] && alerts[0].text);
 ok('no em dash in his alert', !EM.test(alerts[0].subject + alerts[0].text));
 let club = (await M.loadClub())[0];
-ok('the signed agreement is stored: words, name, time, address, phone', club.terms.v === '2026-10-03' && club.terms.signed === 'Sarah Lane' &&
+ok('the signed agreement is stored: words, name, time, address, phone', club.terms.v === '2026-10-04' && club.terms.signed === 'Sarah Lane' &&
   club.terms.lines.length === 7 && club.terms.ip === '9.9.9.9' && club.terms.ua === 'TestPhone' && club.terms.at === NOW, club.terms);
 ok('the stored words are exactly what the offer showed for that car', JSON.stringify(club.terms.lines) ===
   JSON.stringify((await get(M.apiClubOffer, '/api/club/offer?every=28&size=suv&condition=Needs%20Work')).lines));
-ok('the deal is stored with it', club.price === 289 && club.regular === 439 && club.keep === 2 && club.per === 75 && club.card.status === 'off', club);
+ok('the deal is stored with it', club.price === 169 && club.regular === 439 && club.off === 270 && club.keep === 3 && club.per === 90 && club.card.status === 'off', club);
 
 section('The customer\'s own link shows what they signed');
 let st = await get(M.apiClubState, '/api/club/state?token=' + encodeURIComponent(r.token));
-ok('it answers with their first name, the visit and the deal', st.ok && st.club.first === 'Sarah' && st.club.dateLabel === 'Tue, Oct 13' && st.club.time === '1:00 PM' && st.club.price === 289, st);
+ok('it answers with their first name, the visit and the deal', st.ok && st.club.first === 'Sarah' && st.club.dateLabel === 'Tue, Oct 13' && st.club.time === '1:00 PM' && st.club.price === 169, st);
 ok('and the words they signed, with their name', st.club.terms.length === 7 && st.club.signed === 'Sarah Lane');
 ok('it does not hand out the phone, the address or the signing details', !('phone' in st.club) && !JSON.stringify(st).includes('Cedar') && !JSON.stringify(st).includes('9.9.9.9'));
 st = await get(M.apiClubState, '/api/club/state?token=nope');
@@ -205,7 +206,7 @@ ok('a setup session: save the card, charge nothing, cards only', sp.mode === 'se
 ok('tied to this sign-up', sp.client_reference_id === r.token && sp['metadata[club]'] === r.token, sp);
 ok('Stripe sends them back to the call page with the session', sp.success_url === 'https://mikeysdetailing.com/onbored/?club=' + r.token + '&sid={CHECKOUT_SESSION_ID}', sp.success_url);
 ok('or back to it if they back out', sp.cancel_url === 'https://mikeysdetailing.com/onbored/?club=' + r.token + '&card=later', sp.cancel_url);
-ok('Stripe\'s page says when the card gets charged', /only charged if you cancel before your 2 club visits/.test(sp['custom_text[submit][message]'] || '') && !EM.test(sp['custom_text[submit][message]'] || ''), sp['custom_text[submit][message]']);
+ok('Stripe\'s page says when the card gets charged', /only charged if you cancel before your 3 club visits are done \(\$90 for each one skipped\)/.test(sp['custom_text[submit][message]'] || '') && !EM.test(sp['custom_text[submit][message]'] || ''), sp['custom_text[submit][message]']);
 ok('his alert says they are saving it now', alerts.length === 1 && /saving it now/.test(alerts[0].text), alerts.map((a) => a.text));
 const dee = r.token;
 
@@ -259,7 +260,7 @@ ok('once Stripe works, their link makes a fresh card page', r.ok && /checkout\.s
   await M.saveClub((await M.loadClub()).filter((x) => x.token !== ray));
 }
 
-section('What a member owes if they leave: never before the first visit, never more than $150');
+section('What a member owes if they leave: never before the first visit, never more than $270');
 const view = async (phone) => (await (await M.apiClubList(new URL('https://x.test/api/club?phone=' + phone))).json()).club;
 let c = await view('4255550142');
 ok('before the first visit: owes nothing', c && c.standing.firstDone === false && c.standing.owed === 0, c && c.standing);
@@ -268,24 +269,26 @@ let all = await M.loadBookings();
 all.find((b) => b.phone === '+14255550142').status = 'done';
 await M.saveBookings(all);
 c = await view('4255550142');
-ok('first visit done, no club visits yet: $150', c.standing.firstDone && c.standing.kept === 0 && c.standing.owed === 150, c.standing);
+ok('first visit done, no club visits yet: all $270', c.standing.firstDone && c.standing.kept === 0 && c.standing.owed === 270, c.standing);
 await M.saveMonth('2026-11', { entries: [{ type: 'job', phone: '+14255550142', date: '2026-11-10', amount: 125 }], rec: {} });
-await M.saveMonth('2026-10', { entries: [{ type: 'job', phone: '+14255550142', date: '2026-10-13', amount: 289 }], rec: {} });
+await M.saveMonth('2026-10', { entries: [{ type: 'job', phone: '+14255550142', date: '2026-10-13', amount: 169 }], rec: {} });
 NOW = at('2026-11-20', '10:00');
 c = await view('4255550142');
-ok('one club visit in the money log: $75', c.standing.auto === 1 && c.standing.owed === 75, c.standing);
+ok('one club visit in the money log: $180 (two skipped at $90)', c.standing.auto === 1 && c.standing.owed === 180, c.standing);
 await M.saveMonth('2026-11', { entries: [{ type: 'job', phone: '+14255550142', date: '2026-11-10', amount: 125 },
   { type: 'job', phone: '+14255550142', date: '2026-11-10', amount: 0 }], rec: {} });
 c = await view('4255550142');
 ok('the same day logged twice is still one visit', c.standing.auto === 1, c.standing);
 r = await (await M.apiClubAction(req({ token: c.token, action: 'kept', kept: 2 }))).json();
-ok('his own count wins: 2 visits kept, owes nothing', r.ok && r.club.standing.kept === 2 && r.club.standing.owed === 0 && r.club.standing.done, r.club && r.club.standing);
+ok('his own count wins: 2 visits kept, owes $90', r.ok && r.club.standing.kept === 2 && r.club.standing.owed === 90 && !r.club.standing.done, r.club && r.club.standing);
+r = await (await M.apiClubAction(req({ token: c.token, action: 'kept', kept: 3 }))).json();
+ok('all 3 kept: owes nothing, free to leave', r.ok && r.club.standing.kept === 3 && r.club.standing.owed === 0 && r.club.standing.done, r.club && r.club.standing);
 r = await (await M.apiClubAction(req({ token: c.token, action: 'kept', kept: 9 }))).json();
-ok('a count past 2 is held at 2', r.club.standing.kept === 2);
+ok('a count past 3 is held at 3', r.club.standing.kept === 3);
 r = await (await M.apiClubAction(req({ token: c.token, action: 'kept', kept: null }))).json();
-ok('clearing his count goes back to the records', r.club.standing.kept === 1 && r.club.standing.owed === 75, r.club.standing);
+ok('clearing his count goes back to the records', r.club.standing.kept === 1 && r.club.standing.owed === 180, r.club.standing);
 r = await (await M.apiClubAction(req({ token: c.token, action: 'cancel' }))).json();
-ok('cancelling writes down the $75 and stops the plan', r.ok && r.club.status === 'cancelled' && r.club.owedAtCancel === 75 && !(await M.loadThread('+14255550142')).plan, r.club);
+ok('cancelling writes down the $180 and stops the plan', r.ok && r.club.status === 'cancelled' && r.club.owedAtCancel === 180 && !(await M.loadThread('+14255550142')).plan, r.club);
 r = await (await M.apiClubAction(req({ token: c.token, action: 'paid' }))).json();
 ok('he can mark the payback charged', r.ok && r.club.paidAt === NOW);
 r = await (await M.apiClubAction(req({ token: c.token, action: 'reopen' }))).json();
@@ -302,9 +305,23 @@ ok('reopening puts them back on the 4-week plan', r.ok && r.club.status === 'act
 all = await M.loadBookings();
 all.find((b) => b.phone === '+14255550160').status = 'cancelled';
 await M.saveBookings(all);
-await M.saveMonth('2026-10', { entries: [{ type: 'job', phone: '+14255550160', date: '2026-10-15', amount: 289 }], rec: {} });
+await M.saveMonth('2026-10', { entries: [{ type: 'job', phone: '+14255550160', date: '2026-10-15', amount: 169 }], rec: {} });
 c = await view('4255550160');
 ok('a first visit that was cancelled owes nothing, whatever the log says', c.standing.firstGone && c.standing.owed === 0, c.standing);
+{
+  // Someone who signed the launch deal ($150 off, keep 2, $75 each) keeps it:
+  // their record carries the numbers they agreed to, not today's.
+  const old = { id: 'old1', token: 'OLDtokenOLDtokenOLDtokenOLDtoken1', site: 'https://mikeysdetailing.com', createdAt: at('2026-10-03', '12:00'),
+    status: 'active', name: 'Early Bird', phone: '+14255550190', every: 28, size: 'sedan', price: 219, regular: 369,
+    off: 150, visit: 125, keep: 2, per: 75, bookingId: 'b-old', date: '2026-10-12', slot: '13:00', terms: { v: '2026-10-03', lines: [] }, card: { status: 'off' }, kept: null };
+  await M.saveClub([old].concat(await M.loadClub()));
+  const bks = await M.loadBookings();
+  bks.unshift({ id: 'b-old', phone: '+14255550190', status: 'done', date: '2026-10-12', slot: '13:00', service: 'full' });
+  await M.saveBookings(bks);
+  const ov = await view('4255550190');
+  ok('a launch-deal member still owes at most their $150, at $75 a visit', ov && ov.standing.owed === 150 && ov.keep === 2 && ov.per === 75, ov && ov.standing);
+  await M.saveClub((await M.loadClub()).filter((x) => x.id !== 'old1'));
+}
 r = await (await M.apiClubAction(req({ token: c.token, action: 'fly' }))).json();
 ok('an unknown action is refused', !r.ok && r.error === 'bad_action', r);
 const list = await (await M.apiClubList(new URL('https://x.test/api/club'))).json();

@@ -157,7 +157,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-03·texts-to-gcal';
+const BUILD = '2026-10-04·club-99';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -19719,12 +19719,14 @@ function planDraft(row, cfg) {
 // Mikey's pitch (2026-10-03): on the phone with someone who asked about a
 // detail, he texts them the call page and walks them through it. They see
 // their one-time price first, then tap over to the Clean Club: join today and
-// the first visit is a Full Detail at $150 off, then $125 a visit every 4 or 8
-// weeks. The $150 comes off up front, so it has to be protected: they keep
-// their next 2 club visits or pay back $75 for each one they skip, on a card
-// they save with Stripe while he's still on the line. That's the pest-control
-// model (a cheap first visit that only works because the plan follows it),
-// and the payback is spread per visit so it reads as fair on a phone call.
+// the first visit is a Full Detail at $270 off ($99 for a clean sedan), then
+// $125 a visit every 4 or 8 weeks. The discount comes off up front, so it has
+// to be protected: they keep their next 3 club visits or pay back $90 for
+// each one they skip, on a card they save with Stripe while he's still on the
+// line. (It launched at $150 off, keep 2, $75 each; see CLUB.) That's the
+// pest-control model (a cheap first visit that only works because the plan
+// follows it), and the payback is spread per visit so it reads as fair on a
+// phone call.
 //
 // Why the first visit is always a Full Detail, whatever they called about: the
 // club keeps a car up, and you can't keep up a car that was never reset. It is
@@ -19739,14 +19741,21 @@ function planDraft(row, cfg) {
 // ===========================================================================
 const CLUB = {
   visit: 125,          // every club visit, any size (the website's facts table)
-  off: 150,            // off the first Full Detail for joining (Mikey, 2026-10-03)
-  keep: 2,             // club visits they keep after that, or pay back
-  per: 75,             // paid back for each one skipped: off / keep, never more than off
+  // Off the first Full Detail for joining. $150 on 2026-10-03; Mikey made it
+  // $270 on 2026-10-04 so saying no feels stupid: a clean sedan is $99, an SUV
+  // $139, a van $179, condition on top as always. A bigger discount buys a
+  // longer commitment, so keep went from 2 visits to 3 and the payback per
+  // skipped visit stays under the price of a visit ($90, not $135), which is
+  // what keeps it reading as fair rather than as a trap. Anyone who joined
+  // before keeps the deal they signed: each sign-up stores its own numbers.
+  off: 270,
+  keep: 3,             // club visits they keep after that, or pay back
+  per: 90,             // paid back for each one skipped: off / keep, never more than off
   every: [28, 56],     // what the call page offers: every 4 or every 8 weeks
   // Bump with any change to clubTerms() wording. A page holding an older
   // version gets a 409 and re-reads the terms, so nobody signs words that
   // aren't the ones stored against their name.
-  terms: '2026-10-03',
+  terms: '2026-10-04',
 };
 const CLUB_KEY = 'club:index';
 const CLUB_COND = { 'Pretty Clean': 0, 'Needs Work': 30, 'War Zone': 60 };
@@ -19781,7 +19790,7 @@ function clubTerms(o) {
 
 // The price, worked out here and never taken from the page: the website's
 // Full Detail price for that size (BOOK_FACTS, the same book as PRICING.md and
-// the call page), plus the condition step, minus the club's $150.
+// the call page), plus the condition step, minus the club's discount.
 //
 // Not the saved booking config's price, on purpose. The saved one only moves
 // when he taps "Match the website" in Bookings → Settings, and on the day this
