@@ -197,7 +197,9 @@ console.log('\n=== recording: the notice is ON the recording, before it rings ==
   // too. So the order is the law: start recording, then say it, then ring.
   check('recording starts before the notice', start >= 0 && start < say, true);
   check('the notice plays before the phone rings', say >= 0 && say < dial, true);
-  check('the caller hears that it is recorded', xml.includes("this call is recorded"), true);
+  check('the caller hears that it is recorded', xml.includes("This call is recorded"), true);
+  // Mikey, 2026-10-06: "doesn't miss any details" made him sound forgetful.
+  check('and the reason is the customer, not his memory', /miss any details/.test(xml), false);
   check('Twilio tells us when the file is ready', xml.includes('recordingStatusCallback="/call-recording"'), true);
   check('it is on by default', M.callRecordingOn({}), true);
   check('no config at all is still on', M.callRecordingOn(null), true);

@@ -4674,7 +4674,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-10-06·callrec";
+  var APP_BUILD="2026-10-06·recnotice";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -9056,7 +9056,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       '<div class="fu-row"><span class="lbl2">Call screening <span style="color:var(--muted2);font-weight:400">· stop spam calls</span></span><span class="sw'+(c.callScreening!==false?" on":"")+'" id="cfgScreen"></span></div>'+
       '<div class="hint">Callers hear "press 1 to reach Mikey." Robo-dialers don\'t press a key, so they never ring your phone or leave voicemail. Real customers press 1 and get through.</div>'+
       '<div class="fu-row"><span class="lbl2">Record calls <span style="color:var(--muted2);font-weight:400">· with a transcript</span></span><span class="sw'+(c.callRecording!==false?" on":"")+'" id="cfgRecord"></span></div>'+
-      '<div class="hint">Every call that reaches you, in or out, is recorded and turned into text on your <b>Calls</b> screen and in that customer\'s conversation. Before it rings, the caller hears <b>"Heads up, this call is recorded so Mikey doesn\'t miss any details."</b> Washington needs everyone on a call to know it\'s recorded, so leave that in. Calls you make from your own phone\'s dialer aren\'t recorded, only ones through this number. About a quarter of a cent a minute on Twilio; the transcript is free for a normal week of calls.</div>'+
+      '<div class="hint">Every call that reaches you, in or out, is recorded and turned into text on your <b>Calls</b> screen and in that customer\'s conversation. Before it rings, the caller hears <b>"This call is recorded so your quote and appointment details are exactly right."</b> Washington needs everyone on a call to know it\'s recorded, so leave that in. Calls you make from your own phone\'s dialer aren\'t recorded, only ones through this number. About a quarter of a cent a minute on Twilio; the transcript is free for a normal week of calls.</div>'+
       '<div class="fu-row"><span class="lbl2">Missed-call text-back <span style="color:var(--muted2);font-weight:400">· first-time callers only</span></span><span class="sw'+(c.missedCallTextback!==false?" on":"")+'" id="cfgMct"></span></div>'+
       '<div class="fu-col"><input type="text" id="cfgMctText" placeholder="Sorry I missed your call! Text me here and I\'ll get right back to you." value="'+esc(c.missedCallText||"")+'"></div>'+
       '<div class="hint">When a call goes unanswered, a caller you\'ve never texted instantly gets a friendly text, so a cold missed call turns into a conversation. Anyone you\'re already texting — including someone whose quote-form reply is still queued up — is skipped, so nobody gets two "personal" texts from you inside five minutes. Leave the message blank to use the default.</div>'+
