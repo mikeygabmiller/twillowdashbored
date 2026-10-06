@@ -8,6 +8,33 @@ auto-deploy to Cloudflare. Live at **https://texting.mikeysdetailingsnohomish.wo
 > full deploy walkthrough (browser-only, no terminal needed).
 
 ## Features
+- **Nobody waiting on you goes unanswered** (2026-10-06, Mikey: "too many ppl in
+  my dashboard are going unresponded"). The two-hour email was the only reminder,
+  once per text, and past a day nothing reminded him at all. Now:
+  - **Check-ins** at the times he picks (8am, 12pm, 6pm by default; More →
+    Settings → Auto follow-ups & calls): one phone push naming everyone still
+    waiting and for how long ("3 people are waiting on you: Ruth 5h · Dave 1d"),
+    every time, until each is answered, marked **No reply needed**, parked or
+    filed. Nobody waiting, no push. Email only when no phone has push turned on;
+    never a text. Tapping it opens Chats on exactly those people (`?waiting=1`).
+    `dispatchWaitCheckins`, one KV write per check-in that actually goes out.
+  - **Every push says who's waiting** before it says "Follow-ups ready"
+    (`pushHeadline`), and the **app icon** carries the number waiting on him.
+  - **No reply needed** on the swipe-left card and on the "you owe a reply" nudge
+    (`POST /api/reply/none`): out of Waiting without opening the chat. Their next
+    text puts them back.
+  - **A customer texting an archived chat brings it back** (`wakeFromArchive`),
+    same for a voicemail, a quote or a booking. Before, it stayed archived, with
+    no reminder and no place in any count.
+- **The list files itself** (`rowFiledAway`, `filedView`). A chat with nothing
+  going on for 14 days (7 / 14 / 30 / Never in settings) moves to Archived, marked
+  why (*filed: quiet since Sep 16*, *filed: never answered*). Lost leads and STOPs
+  go after 2 days. Never while something is coming up: a booked job, a queued
+  text, a reminder, a hold, a Clean Club plan, a friend link to send, or a pin.
+  Nothing is written to do it: filed is worked out from the list row each time
+  the list is read, so it costs no KV writes, a text either way or a follow-up
+  coming due brings a chat straight back, and the follow-up engine still runs on
+  filed chats (it skips his own archive, not these).
 - **Mobile-first UI** (red & black): conversation list, search, unread badges,
   message bubbles, mark-read-on-open, Enter to send. Installs to the home screen
   as a PWA (app icon, full-screen, offline shell via `public/sw.js`).

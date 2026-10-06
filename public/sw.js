@@ -3,7 +3,7 @@
  * app shell. API calls are always live (never cached). Also receives Web Push
  * so new texts, missed calls and the morning brief ring the phone instantly
  * instead of waiting for the next poll. */
-const CACHE = 'mkd-shell-v18';
+const CACHE = 'mkd-shell-v19';
 const SHELL = ['/', '/manifest.webmanifest', '/favicon.svg', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', (e) => {
@@ -62,13 +62,23 @@ self.addEventListener('push', (e) => {
         if (j && j.title) d = { title: j.title, body: j.body || d.body, url: j.url || '/' };
       }
     } catch (_) { /* payloadless push is the normal path */ }
+    let badge = null;
     try {
       const r = await fetch('/api/push/peek', { credentials: 'include', cache: 'no-store' });
       if (r.ok) {
         const j = await r.json();
         if (j && j.ok && j.title) d = { title: j.title, body: j.body || d.body, url: j.url || '/' };
+        if (j && j.ok && typeof j.badge === 'number') badge = j.badge;
       }
     } catch (_) { /* keep the fallback headline */ }
+    // The number on the app icon: how many people are waiting on him (the
+    // dashboard sets the same count while it's open). Best-effort: a phone
+    // without the Badging API just skips it.
+    try {
+      if (badge != null && self.navigator && 'setAppBadge' in self.navigator) {
+        await (badge > 0 ? self.navigator.setAppBadge(badge) : self.navigator.clearAppBadge());
+      }
+    } catch (_) { /* never let the badge cost the notification */ }
     await self.registration.showNotification(d.title, {
       body: d.body,
       icon: '/icon-192.png',
