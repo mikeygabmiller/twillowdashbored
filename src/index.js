@@ -9,6 +9,7 @@
  *   - Static dashboard (public/index.html) served via Workers static assets.
  *
  * Public webhooks:  /submit /sms /call /call-screen /voicemail /voicemail-done
+ *                   /call-recording /call-notice
  * Dashboard API:    /api/health /api/threads /api/thread /api/send /api/meta
  *                   /api/schedule /api/unschedule /api/call /api/read
  *                   /api/calls /api/calls/seen /api/calls/backfill
@@ -157,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-06·waiting';
+const BUILD = '2026-10-06·callrec';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -530,6 +531,8 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/voicemail')      return handleVoicemail(request);
   if (request.method === 'POST' && pathname === '/voicemail-done') return handleVoicemailDone(request);
   if (request.method === 'POST' && pathname === '/voicemail-tx')   return handleVoicemailTranscription(request);
+  if (request.method === 'POST' && pathname === '/call-recording') return handleCallRecording(request);
+  if (request.method === 'POST' && pathname === '/call-notice')    return handleCallNotice(request);
   if (request.method === 'POST' && pathname === '/status')         return handleStatusCallback(request);
   if (request.method === 'POST' && pathname === '/email-in')       return handleEmailIn(request);
   // First-party website analytics pixel (public, no auth — it's called from the
@@ -4387,9 +4390,194 @@ function callForwardPhone(cfg) {
 function dialMikeyTwiml(cfg) {
   const handset = callForwardPhone(cfg);
   return `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
+<Response>${callRecordingOn(cfg) ? '\n  ' + callRecordStartTwiml() : ''}
   <Dial timeout="20" answerOnBridge="true" action="/voicemail" method="POST"><Number>${escapeXml(handset)}</Number></Dial>
 </Response>`;
+}
+
+// ───────────────────────── CALL RECORDING ─────────────────────────
+// Every call that actually reaches Mikey is recorded and transcribed, so "what
+// did he say his car was" is something to read, not something to remember.
+// (Mikey, 2026-10-06: "record all calls".)
+//
+// Washington is an all-party consent state. RCW 9.73.030(3) makes an announcement
+// count as consent only if the announcement is ITSELF on the recording, so the
+// order below is the law, not taste: start recording, THEN say it, THEN ring.
+// A screened-out robo-dialer never gets this far, so it is never recorded.
+//
+// Cost: Twilio bills the recording (about $0.0025 a minute); the transcript runs
+// on Workers AI Whisper (about $0.0005 a minute, inside the daily free allowance
+// for a normal week of calls). Off switch: ☰ → Settings → Calls → Record calls.
+const CALL_REC_NOTICE = "Heads up, this call is recorded so Mikey doesn't miss any details.";
+const CALL_REC_NOTICE_OUT = "Hi, this is Mikey's Mobile Detailing. Heads up, this call is recorded so Mikey doesn't miss any details.";
+const CALL_REC_NAME = 'call';
+
+function callRecordingOn(cfg) {
+  return !(cfg && cfg.callRecording === false);
+}
+
+// Inbound: <Start><Recording> begins recording the caller's leg immediately, both
+// directions, so the notice, the ring and the whole conversation after the bridge
+// are on one dual-channel file (caller on one side, Mikey on the other).
+function callRecordStartTwiml() {
+  return `<Start><Recording name="${CALL_REC_NAME}" recordingStatusCallback="/call-recording" recordingStatusCallbackEvent="completed" trim="trim-silence"/></Start>` +
+    `<Say voice="alice">${escapeXml(CALL_REC_NOTICE)}</Say>`;
+}
+
+// A missed call goes on to our voicemail, which makes its own recording. Stop the
+// call recording first, or every voicemail would be stored twice and the "call"
+// copy would be 20 seconds of ringing.
+function callRecordStopTwiml(cfg) {
+  return callRecordingOn(cfg) ? `<Stop><Recording name="${CALL_REC_NAME}"/></Stop>` : '';
+}
+
+// Outbound (dashboard Call → his phone rings → bridged to the customer). The
+// customer is the one who has to hear the notice, and <Number url> TwiML can only
+// <Say>, not <Start> a recording. So /call-notice starts the recording on the
+// customer's leg through the REST API (the leg is answered, so it's in progress)
+// and then says the notice, which lands on that recording. If the REST call fails
+// the call still connects, just unrecorded, and nobody was told otherwise.
+async function handleCallNotice(request) {
+  const params = await formParams(request);
+  if (!(await verifyTwilio(request, params))) return forbidden();
+  const sid = params.CallSid || '';
+  const to = params.To || '';
+  const toNorm = normalizePhone(to) || to;
+  let started = false;
+  if (sid && publicBase()) {
+    try {
+      const acct = ENV.TWILIO_ACCOUNT_SID;
+      const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${acct}/Calls/${sid}/Recordings.json`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${btoa(`${acct}:${ENV.TWILIO_AUTH_TOKEN}`)}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          RecordingStatusCallback: publicBase() + '/call-recording',
+          RecordingStatusCallbackEvent: 'completed',
+          RecordingChannels: 'dual',
+          Trim: 'trim-silence',
+        }),
+      });
+      started = r.ok;
+    } catch { started = false; }
+  }
+  await recordCall({
+    sid, from: to, fromNorm: toNorm, name: await callerName(toNorm),
+    ts: Date.now(), dir: 'out', outcome: 'outgoing',
+  });
+  // Only promise a recording that is actually running.
+  const say = started ? `<Say voice="alice">${escapeXml(CALL_REC_NOTICE_OUT)}</Say>` : '';
+  return xmlResponse(`<?xml version="1.0" encoding="UTF-8"?><Response>${say}</Response>`);
+}
+
+// Twilio's recordingStatusCallback: the file is ready. Store it on the call row
+// right away (one write, so it's playable even if the transcript never comes),
+// then transcribe after the response so Twilio isn't kept waiting.
+async function handleCallRecording(request) {
+  const params = await formParams(request);
+  if (!(await verifyTwilio(request, params))) return forbidden();
+  if (params.RecordingStatus && params.RecordingStatus !== 'completed') return new Response('', { status: 204 });
+  const sid = params.CallSid || '';
+  const recordingSid = params.RecordingSid || '';
+  const url = params.RecordingUrl || '';
+  if (!sid || !url) return new Response('', { status: 204 });
+  const doc = await loadCalls();
+  const row = doc.calls.find((c) => c.sid === sid);
+  // A call that rang out has its voicemail recording already; this one is just
+  // the notice and the ring. Nothing to keep.
+  if (!row || !callRecordingKeep(row)) return new Response('', { status: 204 });
+  const recording = url + '.mp3';
+  const sec = Number(params.RecordingDuration || 0) || 0;
+  const patch = { sid, recording, recordingSid: recordingSid || undefined, recSec: sec, recAt: Date.now() };
+  if (row.outcome === 'outgoing' && sec && !row.talkSec) patch.talkSec = sec;
+  await recordCall(patch);
+  background(transcribeCallRecording(Object.assign({}, row, patch)));
+  return new Response('', { status: 204 });
+}
+
+// Which finished calls get their recording kept: the ones that were a
+// conversation. The Dial's end (/voicemail) always lands before the recording
+// is finished, so a row still 'ringing' here is a caller who hung up during the
+// notice: a file holding nothing but the notice. Missed and voicemail aren't
+// kept either.
+function callRecordingKeep(row) {
+  const o = row && row.outcome;
+  return o === 'answered' || o === 'outgoing';
+}
+
+async function transcribeCallRecording(row) {
+  let text = '';
+  try { text = await transcribeCallAudio(row.recording); } catch { text = ''; }
+  await recordCall({ sid: row.sid, transcript: text || undefined, transcriptFailed: !text });
+  const phone = normalizePhone(row.fromNorm || row.from || '');
+  if (!phone || phone === normalizePhone(ENV.MIKEY_PHONE)) return;
+  const thread = await loadThread(phone);
+  if ((thread.messages || []).some((m) => m.kind === 'call' && m.recordingSid && m.recordingSid === row.recordingSid)) return;
+  thread.messages.push(callTranscriptMessage(row, text));
+  // Deliberately NOT unread: he was on the call. It's a record, not news.
+  if (row.dir !== 'out') markSource(thread, 'call');
+  if (!thread.status) { thread.status = 'new'; thread.statusAt = Date.now(); }
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+}
+
+// The conversation copy of a call. dir 'in' because it carries the customer's
+// own words (the AI drafts read it like a voicemail), but ensureReplyCheck reads
+// kind 'call' as "you already talked", so it never turns into "Waiting on you".
+function callTranscriptMessage(row, text) {
+  const sec = row.talkSec || row.recSec || 0;
+  const len = sec ? `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}` : '';
+  const head = (row.dir === 'out' ? '📞 You called them' : '📞 Phone call') + (len ? `, ${len}` : '');
+  return {
+    id: genId(), dir: 'in', ts: Date.now(), kind: 'call', callDir: row.dir === 'out' ? 'out' : 'in',
+    body: text ? `${head}\n"${text}"` : head,
+    transcript: text || undefined, transcriptFailed: !text || undefined,
+    recording: row.recording, recordingSid: row.recordingSid || undefined,
+  };
+}
+
+// Whisper on Workers AI, in ~1 MB pieces (Cloudflare's own guidance for this
+// model). MP3 frames resync after a cut, so splitting on bytes loses at most a
+// word at each seam. Pieces run three at a time: they're waiting on the network,
+// not the CPU, and the whole thing has to finish inside waitUntil.
+const CALL_TX_MODEL = '@cf/openai/whisper-large-v3-turbo';
+const CALL_TX_CHUNK = 1024 * 1024;
+// ~45 min at Twilio's bitrate, and far under the free plan's 50 subrequests.
+const CALL_TX_MAX_CHUNKS = 24;
+const CALL_TX_PROMPT = "Phone call with Mikey's Mobile Detailing, a mobile car detailing business in Snohomish, Washington. Interior, exterior, full detail, ceramic coating, paint correction, Clean Club.";
+
+async function transcribeCallAudio(url) {
+  if (!url || !ENV.AI || typeof ENV.AI.run !== 'function') return '';
+  const r = await fetch(url, { headers: { Authorization: `Basic ${btoa(`${ENV.TWILIO_ACCOUNT_SID}:${ENV.TWILIO_AUTH_TOKEN}`)}` } });
+  if (!r.ok) throw new Error(`recording ${r.status}`);
+  const buf = new Uint8Array(await r.arrayBuffer());
+  const n = Math.min(Math.ceil(buf.length / CALL_TX_CHUNK), CALL_TX_MAX_CHUNKS);
+  const parts = new Array(n).fill('');
+  let next = 0, ok = 0;
+  const lane = async () => {
+    while (next < n) {
+      const i = next++;
+      try {
+        const out = await ENV.AI.run(CALL_TX_MODEL, {
+          audio: bytesToB64(buf.subarray(i * CALL_TX_CHUNK, (i + 1) * CALL_TX_CHUNK)),
+          language: 'en', vad_filter: true, initial_prompt: CALL_TX_PROMPT,
+        });
+        parts[i] = String((out && out.text) || '').trim();
+        ok++;
+      } catch { parts[i] = ''; }
+    }
+  };
+  await Promise.all([lane(), lane(), lane()]);
+  if (!ok) throw new Error('transcribe_failed');
+  return parts.filter(Boolean).join(' ').replace(/\s+/g, ' ').trim();
+}
+
+function bytesToB64(bytes) {
+  let bin = '';
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
 }
 
 // Inbound call. Two guards run before the call is ever forwarded to Mikey's
@@ -4522,7 +4710,7 @@ async function handleVoicemail(request) {
   }
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
-<Response>
+<Response>${callRecordStopTwiml(cfg)}
   <Say voice="alice">Hey, you've reached Mikey's Mobile Detailing. Leave a message and Mikey will text or call you right back.</Say>
   <Record maxLength="120" action="/voicemail-done" method="POST" playBeep="true" transcribe="true" transcribeCallback="/voicemail-tx" />
 </Response>`;
@@ -4980,6 +5168,7 @@ async function apiCalls() {
   return json({
     ok: true, calls, seenTs: doc.seenTs || 0, unseen,
     forwardTo: callForwardPhone(cfg), screening: cfg.callScreening !== false,
+    recording: callRecordingOn(cfg),
   });
 }
 
@@ -9763,6 +9952,7 @@ async function buildAgentContext({ index, cfg, now, money }) {
         const who = msg.dir === 'in' ? 'CUST' : msg.dir === 'out' ? 'YOU' : 'SYS';
         let b = msg.body || '';
         if (msg.kind === 'voicemail') b = '[VOICEMAIL] ' + b;
+        if (msg.kind === 'call') b = '[PHONE CALL] ' + b;
         if (Array.isArray(msg.media) && msg.media.length) b = '[PHOTO] ' + b;
         L.push(`      ${who}: ${String(b).replace(/\s+/g, ' ').slice(0, 140)}`);
       });
@@ -10471,6 +10661,9 @@ async function ensureReplyCheck(thread, cfg) {
   let verdict;
   if (last.kind === 'opt-out' || last.kind === 'opt-in') {
     verdict = { needed: false, reason: 'STOP/START keyword — no reply', via: 'rule' };
+  } else if (last.kind === 'call') {
+    // A recorded call's transcript. They already talked; nothing is owed by text.
+    verdict = { needed: false, reason: 'You talked on the phone', via: 'rule' };
   } else if (last.kind === 'voicemail' || (Array.isArray(last.media) && last.media.length)) {
     verdict = { needed: true, reason: 'Voicemail or photo to respond to', via: 'rule' };
   } else if (last.kind === 'reaction' && QUIET_TAPBACKS.has(last.reactLabel || '')) {
@@ -11326,6 +11519,7 @@ async function apiSaveConfig(request) {
   if (data.quietEnd != null && !isNaN(+data.quietEnd)) next.quietEnd = Math.max(0, Math.min(23, Math.round(+data.quietEnd)));
   if (typeof data.tz === 'string' && data.tz) next.tz = data.tz.slice(0, 64);
   if (typeof data.callScreening === 'boolean') next.callScreening = data.callScreening;
+  if (typeof data.callRecording === 'boolean') next.callRecording = data.callRecording;
   if (typeof data.callForwardTo === 'string') next.callForwardTo = normalizePhone(data.callForwardTo) || '';
   if (typeof data.missedCallTextback === 'boolean') next.missedCallTextback = data.missedCallTextback;
   if (typeof data.missedCallText === 'string') next.missedCallText = data.missedCallText.slice(0, 320);
@@ -13044,6 +13238,8 @@ function defaultConfig() {
                              // what used to swallow every voicemail — see dialMikeyTwiml.
     callScreening: true,     // press-1 gate on inbound calls — stops robocall/spam
                              // auto-dialers before they ring your phone or hit voicemail
+    callRecording: true,     // record + transcribe every call that reaches him, with the
+                             // spoken notice Washington law requires — see CALL RECORDING
     blockedNumbers: [],      // normalized numbers that get rejected instantly (no ring)
     optedOut: [],            // normalized numbers that texted STOP — never messaged again
     emailToken: '',          // shared secret for the /email-in ingest (generated in-app)
@@ -16169,9 +16365,18 @@ async function placeBridgeCall(customer) {
   const sid = ENV.TWILIO_ACCOUNT_SID;
   const token = ENV.TWILIO_AUTH_TOKEN;
   const from = ENV.TWILIO_FROM;
+  // Recording on: the customer's leg runs /call-notice when they pick up, which
+  // starts the recording and tells them (see handleCallNotice). It needs an
+  // absolute URL because this TwiML is sent inline, with no request to be
+  // relative to.
+  const cfg = await loadConfig();
+  const notice = callRecordingOn(cfg) && publicBase() ? publicBase() + '/call-notice' : '';
+  const dialTo = notice
+    ? `<Number url="${escapeXml(notice)}">${escapeXml(customer)}</Number>`
+    : escapeXml(customer);
   const twimlXml =
     `<Response><Say voice="alice">Connecting your call.</Say>` +
-    `<Dial callerId="${escapeXml(from)}">${escapeXml(customer)}</Dial></Response>`;
+    `<Dial callerId="${escapeXml(from)}">${dialTo}</Dial></Response>`;
   const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${sid}/Calls.json`, {
     method: 'POST',
     headers: {

@@ -82,7 +82,11 @@ const BODY =
   lift('normalizePhone') + '\n' + lift('escapeXml') + '\n' + lift('callBridgePhone') + '\n' +
   lift('loadCalls') + '\n' + lift('saveCalls') + '\n' + lift('recordCall') + '\n' +
   lift('recentlyScreened') + '\n' + lift('callForwardPhone') + '\n' + lift('dialMikeyTwiml') + '\n' +
-  'return { loadCalls, saveCalls, recordCall, recentlyScreened, callForwardPhone, dialMikeyTwiml, CALLS_MAX };';
+  liftDecl('CALL_REC_NOTICE') + '\n' + liftDecl('CALL_REC_NAME') + '\n' +
+  lift('callRecordingOn') + '\n' + lift('callRecordStartTwiml') + '\n' + lift('callRecordStopTwiml') + '\n' +
+  lift('callRecordingKeep') + '\n' + lift('callTranscriptMessage') + '\n' +
+  'return { loadCalls, saveCalls, recordCall, recentlyScreened, callForwardPhone, dialMikeyTwiml, CALLS_MAX,' +
+  ' callRecordingOn, callRecordStopTwiml, callRecordingKeep, callTranscriptMessage, CALL_REC_NOTICE };';
 // eslint-disable-next-line no-new-func
 const build = (w) => new Function(...NAMES, BODY)(...NAMES.map((k) => w.deps[k]));
 
@@ -182,6 +186,85 @@ console.log('\n=== reading the log never writes ===');
   const M = build(w);
   await M.loadCalls(); await M.loadCalls();
   check('no writes for two reads', w.written.length, 0);
+}
+
+console.log('\n=== recording: the notice is ON the recording, before it rings ===');
+{
+  const M = build(world());
+  const xml = M.dialMikeyTwiml({});
+  const start = xml.indexOf('<Start><Recording'), say = xml.indexOf('<Say'), dial = xml.indexOf('<Dial');
+  // RCW 9.73.030(3): an announcement only counts as consent if it is recorded
+  // too. So the order is the law: start recording, then say it, then ring.
+  check('recording starts before the notice', start >= 0 && start < say, true);
+  check('the notice plays before the phone rings', say >= 0 && say < dial, true);
+  check('the caller hears that it is recorded', xml.includes("this call is recorded"), true);
+  check('Twilio tells us when the file is ready', xml.includes('recordingStatusCallback="/call-recording"'), true);
+  check('it is on by default', M.callRecordingOn({}), true);
+  check('no config at all is still on', M.callRecordingOn(null), true);
+
+  const off = M.dialMikeyTwiml({ callRecording: false });
+  check('switched off: no recording', off.includes('<Recording'), false);
+  check('switched off: and no claim that it is recorded', off.includes('recorded'), false);
+  check('switched off: the call still rings', /<Number>\+14252321355<\/Number>/.test(off), true);
+}
+
+console.log('\n=== recording: a missed call stops before voicemail ===');
+{
+  const M = build(world());
+  check('the call recording stops so the voicemail is not stored twice',
+    M.callRecordStopTwiml({}), '<Stop><Recording name="call"/></Stop>');
+  check('nothing to stop when recording is off', M.callRecordStopTwiml({ callRecording: false }), '');
+  // Only conversations are kept. A missed call's file is the notice and a ring.
+  check('answered is kept', M.callRecordingKeep({ outcome: 'answered' }), true);
+  check('a call he made is kept', M.callRecordingKeep({ outcome: 'outgoing' }), true);
+  check('missed is not', M.callRecordingKeep({ outcome: 'missed' }), false);
+  check('voicemail is not (it has its own)', M.callRecordingKeep({ outcome: 'voicemail' }), false);
+  check('screened out is not', M.callRecordingKeep({ outcome: 'screened' }), false);
+  check('hung up during the notice is not', M.callRecordingKeep({ outcome: 'ringing' }), false);
+}
+
+console.log('\n=== recording: what lands in the conversation ===');
+{
+  const M = build(world());
+  const m = M.callTranscriptMessage({ dir: 'in', talkSec: 252, recording: 'https://api.twilio.com/r.mp3', recordingSid: 'RE5' },
+    'yeah it is a 2019 tacoma, pretty muddy');
+  check('reads as a phone call with its length', m.body, '📞 Phone call, 4:12\n"yeah it is a 2019 tacoma, pretty muddy"');
+  check('kind call, so it never reads as Waiting on you', m.kind, 'call');
+  check('playable', m.recording, 'https://api.twilio.com/r.mp3');
+  check('findable by recording, so a retried callback is not a second bubble', m.recordingSid, 'RE5');
+  const out = M.callTranscriptMessage({ dir: 'out', recSec: 65, recording: 'u' }, '');
+  check('a call he made says so, and no transcript says nothing made up', out.body, '📞 You called them, 1:05');
+  check('and is marked as having no transcript', out.transcriptFailed, true);
+}
+
+console.log('\n=== recording: the transcript, piece by piece ===');
+{
+  const SRC_TX = ['CALL_TX_MODEL', 'CALL_TX_CHUNK', 'CALL_TX_MAX_CHUNKS', 'CALL_TX_PROMPT'].map(liftDecl).join('\n') + '\n' +
+    lift('bytesToB64') + '\n' + lift('transcribeCallAudio') + '\nreturn { transcribeCallAudio, CALL_TX_CHUNK };';
+  const calls = [];
+  const mk = (bytes, aiRun) => new Function('ENV', 'fetch', SRC_TX)(
+    { TWILIO_ACCOUNT_SID: 'AC', TWILIO_AUTH_TOKEN: 't', AI: aiRun ? { run: aiRun } : undefined },
+    async (u, o) => { calls.push({ u, auth: o && o.headers && o.headers.Authorization }); return { ok: true, arrayBuffer: async () => new Uint8Array(bytes).buffer }; });
+  const T = mk(1, null);
+  const size = Math.floor(T.CALL_TX_CHUNK * 2.5);
+  const seen = [];
+  const X = mk(size, async (model, input) => {
+    const n = seen.push({ model, len: atob(input.audio).length, lang: input.language });
+    await new Promise((r) => setTimeout(r, 5 * (4 - n)));   // finish out of order
+    return { text: ' part' + n + ' ' };
+  });
+  const text = await X.transcribeCallAudio('https://api.twilio.com/rec.mp3');
+  check('2.5 MB goes up as three pieces', seen.length, 3);
+  check('pieces are 1 MB except the last', seen.map((x) => x.len), [T.CALL_TX_CHUNK, T.CALL_TX_CHUNK, size - 2 * T.CALL_TX_CHUNK]);
+  check('Whisper turbo, in English', [seen[0].model, seen[0].lang], ['@cf/openai/whisper-large-v3-turbo', 'en']);
+  check('the text comes back in call order, not finish order', text, 'part1 part2 part3');
+  check('the recording is fetched with the Twilio login', !!calls[calls.length - 1].auth, true);
+
+  const none = await mk(10, null).transcribeCallAudio('u');
+  check('no AI binding: no transcript, no crash', none, '');
+  let threw = false;
+  try { await mk(10, async () => { throw new Error('down'); }).transcribeCallAudio('u'); } catch { threw = true; }
+  check('every piece failing is a failure, not an empty "transcript"', threw, true);
 }
 
 console.log(`\n================  ${PASS} passed, ${FAIL} failed  ================`);
