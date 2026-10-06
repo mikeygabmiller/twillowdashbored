@@ -22,7 +22,9 @@ const CALLS = [
   { id: 'c2', sid: 'CA2', from: '+14255559999', fromNorm: '+14255559999', name: '',
     ts: now - 30 * 60000, outcome: 'missed', dialStatus: 'no-answer' },
   { id: 'c3', sid: 'CA3', from: '+14255558888', fromNorm: '+14255558888', name: 'Dave Reyes',
-    ts: now - 3 * 3600000, outcome: 'answered', talkSec: 134 },
+    ts: now - 3 * 3600000, outcome: 'answered', talkSec: 134,
+    recording: 'https://api.twilio.com/rec3.mp3', recordingSid: 'RE3', recAt: now - 3 * 3600000,
+    transcript: 'Its a 2019 Tacoma, pretty muddy, Saturday morning works.' },
   { id: 'c4', sid: 'CA4', from: '+18005551212', fromNorm: '+18005551212', name: '',
     ts: now - 5 * 3600000, outcome: 'screened' },
   { id: 'c5', sid: 'CA5', from: '+14255557777', fromNorm: '+14255557777', name: '',
@@ -49,7 +51,7 @@ await page.route('**/*', async (route) => {
   const json = (o) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(o) });
   if (req.method() === 'POST') { let b = {}; try { b = JSON.parse(req.postData() || '{}'); } catch { /* form post */ } posted.push({ path, body: b }); }
   if (path === '/') return route.fulfill({ status: 200, contentType: 'text/html', body: HTML });
-  if (path === '/api/calls') return json({ ok: true, calls: CALLS, seenTs: now - 60 * 60000, unseen: 2, forwardTo: '+14252321355', screening: true });
+  if (path === '/api/calls') return json({ ok: true, calls: CALLS, seenTs: now - 60 * 60000, unseen: 2, forwardTo: '+14252321355', screening: true, recording: true });
   if (path === '/api/threads') {
     const row = { phone: thread.phone, name: thread.name, status: 'active', unread: 0, lastBody: 'sounds good', lastTs: now, tags: [] };
     const out = { ok: true, threads: [row], config: {} };
@@ -103,6 +105,11 @@ ok('the player goes through the authed media proxy',
 ok('a missed call says missed', /MISSED/i.test(await rowText(1)), await rowText(1));
 ok('an unknown caller still shows a readable number', /\(425\) 555-9999/.test(await rowText(1)));
 ok('an answered call reports how long you talked', /2:14/.test(await rowText(2)), await rowText(2));
+// "What did he say his car was" is the reason calls are recorded at all.
+ok('a recorded call shows what was said', /2019 Tacoma/.test(await rowText(2)), await rowText(2));
+ok('and plays through the same authed proxy',
+  /\/api\/media\?u=.*rec3/.test(await rows().nth(2).locator('audio').getAttribute('src') || ''));
+ok('the header says calls are recorded', /recorded and transcribed/.test(head), head);
 // A transcript that never came must not sit there implying it still might.
 ok('a failed transcript says so instead of spinning forever',
   /No transcript/i.test(await rowText(4)), await rowText(4));

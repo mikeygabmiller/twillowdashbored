@@ -4674,7 +4674,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-10-06·waiting";
+  var APP_BUILD="2026-10-06·callrec";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -8091,7 +8091,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // bridges, exactly like calling from a conversation), text back, open the
   // conversation, block. The point of the screen is that a lead from a Google
   // ad who rings and doesn't get through is still recoverable in ten seconds.
-  var CALLS={list:null,loading:false,err:"",filter:"all",seenTs:0,unseen:0,forwardTo:"",screening:true,busy:""};
+  var CALLS={list:null,loading:false,err:"",filter:"all",seenTs:0,unseen:0,forwardTo:"",screening:true,recording:true,busy:""};
   var CALL_FILTERS=[["all","All"],["needs","Needs you"],["voicemail","Voicemail"],["missed","Missed"],["blocked","Screened"]];
 
   // What a row's outcome MEANS, in the customer's language rather than Twilio's.
@@ -8107,6 +8107,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     voicemail:["Voicemail","voicemail","voicemail"],
     missed:["Missed","phone-missed","missed"],
     answered:["Answered","phone","answered"],
+    outgoing:["You called","phone","answered"],
     ringing:["Ringing now","phone-incoming","ringing"],
     dropped:["Hung up","phone-missed","missed"],
     screened:["Screened out","ban","screened"],
@@ -8148,7 +8149,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       CALLS.loading=false;
       if(!d||!d.ok){CALLS.err=(d&&d.error)||"load_failed";if(state.tab==="calls")renderMain();return}
       CALLS.list=d.calls||[];CALLS.seenTs=d.seenTs||0;CALLS.unseen=d.unseen||0;
-      CALLS.forwardTo=d.forwardTo||"";CALLS.screening=!!d.screening;
+      CALLS.forwardTo=d.forwardTo||"";CALLS.screening=!!d.screening;CALLS.recording=!!d.recording;
       refreshBadges();
       if(state.tab==="calls"&&!callsAudioBusy())renderMain();
       if(then)then();
@@ -8189,7 +8190,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var h='<div class="callhead"><div class="ch-line">'+ic("phone-incoming",13)+
       '<span>Calls to your business number ring <b>'+esc(where)+'</b>'+
       (CALLS.screening?' after the caller presses 1':'')+
-      '. No answer in 20 seconds and they leave a voicemail — it lands here with a transcript.</span>'+
+      '. No answer in 20 seconds and they leave a voicemail — it lands here with a transcript.'+
+      (CALLS.recording?' Calls you answer are recorded and transcribed too (callers hear that first).':'')+'</span>'+
       '<span class="lnk" id="clSettings">Change</span></div></div>';
 
     h+='<div class="callfilters">';
@@ -8213,7 +8215,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       var o=callOutcome(c),m=CALL_META[o]||CALL_META.past;
       var fresh=(c.ts||0)>CALLS.seenTs&&callNeedsYou(c);
       var sub=[];
-      if(o==="answered"&&c.talkSec)sub.push("talked "+callSecs(c.talkSec));
+      if((o==="answered"||o==="outgoing")&&c.talkSec)sub.push("talked "+callSecs(c.talkSec));
       if(o==="voicemail"&&c.vmSec)sub.push(callSecs(c.vmSec)+" message");
       if(o==="past"&&c.talkSec)sub.push(callSecs(c.talkSec));
       if(c.name)sub.push(prettyPhone(c.fromNorm||c.from||""));
@@ -8239,6 +8241,19 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
               ?'No transcript for this one — too quiet, too noisy, or not English. Play it below.'
               :'Transcribing… the text lands here on its own in a minute.')+'</div>';
         if(c.recording)h+='<audio controls preload="none" src="/api/media?u='+esc(encodeURIComponent(c.recording))+'"></audio>';
+      }
+      // A recorded conversation: same transcript-and-play block as a voicemail.
+      // Transcribing takes about a minute; a row still empty after ten never got
+      // one (waitUntil ran out, or Whisper heard nothing), so it says so.
+      if((o==="answered"||o==="outgoing")&&c.recording){
+        var txWait=!c.transcript&&!c.transcriptFailed&&Date.now()-(c.recAt||c.ts||0)<600000;
+        h+=c.transcript
+          ? '<div class="ctx">'+ic("phone",12)+' '+esc(c.transcript)+
+            '<button class="ctx-copy" data-vmcopy="'+esc(c.id||"")+'" aria-label="Copy this transcript" title="Copy this transcript">'+ic("copy",13)+'</button></div>'
+          : '<div class="ctx pending">'+(txWait
+              ?'Transcribing the call… the text lands here on its own in a minute or two.'
+              :'No transcript for this call. Play the recording below.')+'</div>';
+        h+='<audio controls preload="none" src="/api/media?u='+esc(encodeURIComponent(c.recording))+'"></audio>';
       }
 
       // A blocked or screened-out number gets the opposite pair of buttons from a
@@ -9040,6 +9055,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       '<div class="hint">Somebody calls your business number, this phone rings, and you\'re connected — the same way calling from a conversation rings you first. Don\'t point it at Google Voice: Google Voice <b>answers</b> the call with its own voicemail, so the message, the transcript and the missed call all end up over there instead of on your <b>Calls</b> screen. Leave it blank to use your usual handset.</div>'+
       '<div class="fu-row"><span class="lbl2">Call screening <span style="color:var(--muted2);font-weight:400">· stop spam calls</span></span><span class="sw'+(c.callScreening!==false?" on":"")+'" id="cfgScreen"></span></div>'+
       '<div class="hint">Callers hear "press 1 to reach Mikey." Robo-dialers don\'t press a key, so they never ring your phone or leave voicemail. Real customers press 1 and get through.</div>'+
+      '<div class="fu-row"><span class="lbl2">Record calls <span style="color:var(--muted2);font-weight:400">· with a transcript</span></span><span class="sw'+(c.callRecording!==false?" on":"")+'" id="cfgRecord"></span></div>'+
+      '<div class="hint">Every call that reaches you, in or out, is recorded and turned into text on your <b>Calls</b> screen and in that customer\'s conversation. Before it rings, the caller hears <b>"Heads up, this call is recorded so Mikey doesn\'t miss any details."</b> Washington needs everyone on a call to know it\'s recorded, so leave that in. Calls you make from your own phone\'s dialer aren\'t recorded, only ones through this number. About a quarter of a cent a minute on Twilio; the transcript is free for a normal week of calls.</div>'+
       '<div class="fu-row"><span class="lbl2">Missed-call text-back <span style="color:var(--muted2);font-weight:400">· first-time callers only</span></span><span class="sw'+(c.missedCallTextback!==false?" on":"")+'" id="cfgMct"></span></div>'+
       '<div class="fu-col"><input type="text" id="cfgMctText" placeholder="Sorry I missed your call! Text me here and I\'ll get right back to you." value="'+esc(c.missedCallText||"")+'"></div>'+
       '<div class="hint">When a call goes unanswered, a caller you\'ve never texted instantly gets a friendly text, so a cold missed call turns into a conversation. Anyone you\'re already texting — including someone whose quote-form reply is still queued up — is skipped, so nobody gets two "personal" texts from you inside five minutes. Leave the message blank to use the default.</div>'+
@@ -9186,6 +9203,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     el("cfgQs").onchange=function(){saveConfig({quietStart:+el("cfgQs").value})};
     el("cfgQe").onchange=function(){saveConfig({quietEnd:+el("cfgQe").value})};
     el("cfgScreen").onclick=function(){saveConfig({callScreening:!(c.callScreening!==false)})};
+    el("cfgRecord").onclick=function(){saveConfig({callRecording:!(c.callRecording!==false)})};
     // Saved on blur rather than per keystroke: this one writes to KV, and the
     // write budget doesn't survive a config save per character typed.
     el("cfgFwd").onchange=function(){saveConfig({callForwardTo:el("cfgFwd").value});pollCalls(true)};
