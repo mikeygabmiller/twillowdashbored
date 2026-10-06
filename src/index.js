@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-06·callrec';
+const BUILD = '2026-10-06·recnotice';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -4408,8 +4408,11 @@ function dialMikeyTwiml(cfg) {
 // Cost: Twilio bills the recording (about $0.0025 a minute); the transcript runs
 // on Workers AI Whisper (about $0.0005 a minute, inside the daily free allowance
 // for a normal week of calls). Off switch: ☰ → Settings → Calls → Record calls.
-const CALL_REC_NOTICE = "Heads up, this call is recorded so Mikey doesn't miss any details.";
-const CALL_REC_NOTICE_OUT = "Hi, this is Mikey's Mobile Detailing. Heads up, this call is recorded so Mikey doesn't miss any details.";
+// The reason is the customer's, not his memory (Mikey, 2026-10-06: "doesn't miss
+// any details" made him sound forgetful). The law only needs "this call is
+// recorded"; the reason is there so it doesn't land like a call center.
+const CALL_REC_NOTICE = "This call is recorded so your quote and appointment details are exactly right.";
+const CALL_REC_NOTICE_OUT = "Hi, this is Mikey's Mobile Detailing. This call is recorded so your quote and appointment details are exactly right.";
 const CALL_REC_NAME = 'call';
 
 function callRecordingOn(cfg) {
