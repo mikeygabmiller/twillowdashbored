@@ -157,7 +157,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-04·club-99';
+const BUILD = '2026-10-06·waiting';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -202,6 +202,8 @@ async function runCron() {
   await dispatchHelperFollowups().catch(() => {});
   // "Ruth has been waiting two hours." One email per unanswered text.
   await dispatchWaitNudges().catch(() => {});
+  // "3 people are waiting on you", at the times he picked, until they're answered.
+  await dispatchWaitCheckins().catch(() => {});
   // "I'll get back to you Monday" — nudge him when the time he promised arrives.
   await dispatchDuePromises().catch(() => {});
   await evaluateFollowups();
@@ -427,6 +429,89 @@ function waitDigestMail(rows, cfg, now) {
   return { subject, text, html: mailShell(rows.map((e) => e.name || e.phone).join(', '), B.join('')) };
 }
 
+// ---------------------------------------------------------------------------
+// Check-ins: everyone still waiting, at the times he picked
+// ---------------------------------------------------------------------------
+// The two-hour email was the only reminder, once per text, and past a day
+// nothing reminded him at all: the morning brief carried the rest, and he
+// paused that in August because he wasn't reading it. Mikey (2026-10-06):
+// "too many ppl in my dashboard are going unresponded... I need better or
+// different reminders so I don't miss anything". So at set times of day his
+// phone rings with everyone still waiting, by name and how long, and it keeps
+// doing that at each of those times until each one is answered, marked "no
+// reply needed", parked, or filed away. Times of day rather than a timer: a
+// reminder that lands mid-class or mid-job is one more thing to swipe away.
+// The defaults (8am, noon, 6pm) are before class, between class and the 1pm
+// job, and after it.
+//
+// A push, not an email, because email is what he stopped reading. The push
+// carries no words (see pushNotify); the phone asks pushHeadline, which puts
+// whoever is waiting first. Email only when no phone has push turned on, so it
+// lands somewhere either way. Never the SMS fallback notifyMikey has.
+//
+// Free on almost every tick: outside a check-in window it reads nothing, and
+// inside one the index is already loaded for the cron. The one KV write, the
+// slot stamp, happens only on a check-in that actually goes out.
+const WAIT_CHECKIN_KEY = 'waitcheckin';
+const WAIT_CHECKIN_HOURS = [8, 12, 18];
+const WAIT_CHECKIN_MIN_MS = 30 * 60000;   // texted in the last half hour: their own alert just went out
+const WAIT_CHECKIN_LATE_MIN = 45;         // a check-in can still go out 45 minutes late (missed ticks)
+
+function checkinHours(cfg) {
+  const h = Array.isArray(cfg.waitCheckinHours) ? cfg.waitCheckinHours : WAIT_CHECKIN_HOURS;
+  return h.map((x) => Math.round(+x)).filter((x) => x >= 0 && x <= 23);
+}
+
+// 'YYYY-MM-DD@H' while now is inside one of his check-in windows, else ''.
+function checkinSlot(cfg, now) {
+  if (cfg.waitCheckins === false) return '';
+  const h = localHour(now, cfg.tz);
+  if (!checkinHours(cfg).includes(h) || localMinute(now, cfg.tz) >= WAIT_CHECKIN_LATE_MIN) return '';
+  return `${localDateStr(now, cfg.tz)}@${h}`;
+}
+
+// Who a check-in is about: everyone waiting on him, past their first half hour.
+function checkinDue(index, cfg, now) {
+  return waitingOnHim(index, cfg, now).filter((e) => now - (e.waitSince || e.lastTs || now) >= WAIT_CHECKIN_MIN_MS);
+}
+
+async function dispatchWaitCheckins(now = Date.now()) {
+  const cfg = await loadConfig();
+  const slot = checkinSlot(cfg, now);
+  if (!slot) return 0;
+  const due = checkinDue(await loadIndex(), cfg, now);
+  if (!due.length) return 0;
+  if ((await kv().get(WAIT_CHECKIN_KEY)) === slot) return 0;
+  // Marked before sending, like the nudges: a send that fails must not go
+  // again every minute for the rest of the window.
+  await kv().put(WAIT_CHECKIN_KEY, slot, { expirationTtl: 3 * 86400 });
+  const rang = await pushNotify().catch(() => 0);
+  if (!rang && ENV.RESEND_API_KEY && ENV.ALERT_EMAIL) {
+    const m = checkinMail(due, cfg, now);
+    await sendEmail(m.subject, m.text, m.html).catch(() => {});
+  }
+  return due.length;
+}
+
+// The check-in as an email, for when no phone has push on. Longest wait first.
+function checkinMail(rows, cfg, now) {
+  const base = publicBase();
+  const ago = (e) => humanAgo(now - (e.waitSince || e.lastTs || now));
+  const subject = rows.length === 1
+    ? `⏳ ${pushWho(rows[0])} is still waiting on you (${ago(rows[0])})`
+    : `⏳ ${rows.length} people are still waiting on you`;
+  const hours = checkinHours(cfg).map((h) => `${h % 12 || 12}${h < 12 ? 'am' : 'pm'}`).join(', ');
+  const why = `You get this at ${hours} while anyone is waiting. Turn on phone notifications in the dashboard and it rings your phone instead.`;
+  const text = `Nobody's heard back yet:\n\n${rows.map((e, i) => `${i + 1}. ${pushWho(e)} · ${ago(e)}: "${String(e.lastBody || '').slice(0, 70)}"`).join('\n')}` +
+    `\n\nLongest wait first.${base ? ` Answer them: ${base}/?waiting=1` : ''}\n\n${why}`;
+  const inner = mailLabel(rows.length === 1 ? 'Still waiting' : `${rows.length} still waiting`, MAILC.amberInk) +
+    rows.map((e) => `<div style="font:400 15px/1.5 ${MAILF};color:${MAILC.ink};margin:0 0 10px;"><b>${htmlEsc(pushWho(e))}</b> <span style="color:${MAILC.mute};">· ${htmlEsc(ago(e))}</span><br>&ldquo;${htmlEsc(String(e.lastBody || '').slice(0, 90))}&rdquo;</div>`).join('');
+  const B = [mailCard(inner, { bg: MAILC.amberBg, border: '#fde68a', edge: MAILC.amber })];
+  if (base) B.push(mailCard(mailBtn(`${base}/?waiting=1`, 'Answer them', MAILC.ink)));
+  B.push(`<div style="font:400 12px/1.6 ${MAILF};color:${MAILC.mute};padding:0 4px 8px;">${htmlEsc(why)}</div>`);
+  return { subject, text, html: mailShell(rows.map((e) => pushWho(e)).join(', '), B.join('')) };
+}
+
 // ===========================================================================
 // Router
 // ===========================================================================
@@ -582,6 +667,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/alert-test') return apiAlertTest();
   if (request.method === 'GET'  && pathname === '/api/followups')  return apiFollowups();
   if (request.method === 'POST' && pathname === '/api/followup')   return apiFollowupAction(request);
+  if (request.method === 'POST' && pathname === '/api/reply/none') return apiNoReplyNeeded(request);
   if (request.method === 'GET'  && pathname === '/api/ai/rules')   return apiRulesGet();
   if (request.method === 'POST' && pathname === '/api/ai/rules')   return apiRulesPost(request);
   if (request.method === 'GET'  && pathname === '/api/config')     return apiGetConfig();
@@ -1314,6 +1400,9 @@ async function handleSubmit(request) {
   // Start the conversation, tag as a new lead, store form details as a note.
   const thread = await loadThread(clientPhone);
   markSource(thread, 'quote');
+  // A past customer asking for a new quote is them reaching out again: their
+  // chat comes back out of the archive, same as a text would bring it.
+  wakeFromArchive(thread, { dir: 'in', ts: Date.now() }, await loadConfig());
   // Never overwrite a name he already has with the blank a nameless lead brings.
   // The typed name is the real one; the email guess only gets a look in when that
   // box was left empty, and even then only fills a blank — see nameRank.
@@ -1423,6 +1512,7 @@ async function handleQqcText(request) {
   // Record the lead and queue the delayed reach-out via the existing scheduler.
   const thread = await loadThread(clientPhone);
   if (!applyLearnedName(thread, name, 'form')) applyLearnedName(thread, guessed, 'email');  // see /submit
+  wakeFromArchive(thread, { dir: 'in', ts: Date.now() }, await loadConfig());              // see /submit
   if (!thread.status) { thread.status = 'new'; thread.statusAt = Date.now(); }
   const email = body.email ? String(body.email).trim() : '';
   const location = body.location ? String(body.location).trim() : '';
@@ -2519,6 +2609,11 @@ async function handleInboundSms(request) {
     await updateIndexEntry(inThread);
     nameNote = `📇 Saved their name as ${inThread.name} — they said it in this text. Rename in the dashboard if that's not it.`;
   }
+  // Said once, in the alert, so a chat he archived and forgot about turning up
+  // in his list again isn't a mystery.
+  if (inThread.unarchivedAt && inThread.unarchivedAt === inMsg.ts) {
+    nameNote = [nameNote, `📥 You'd archived this chat. Their text brought it back to your list.`].filter(Boolean).join('\n');
+  }
   // The alert doubles as the assist prompt: it tells Mikey he can answer straight
   // from his phone by texting the business number the bare facts (handleOwnerSms).
   const alertCfg = await loadConfig();
@@ -3176,7 +3271,10 @@ async function runAssist({ text, cfg, reply, channel, forcedPhone }) {
   const index = await loadIndex();
 
   if (lower === 'who' || lower === 'waiting' || lower === 'pending') {
-    const waiting = index.filter((e) => !e.archived && e.lastDir === 'in')
+    // The same people the dashboard, the check-ins and the app icon count (see
+    // waitingOnHim), newest first because this answer is for right now. It
+    // used to be anyone who spoke last, which counted every "thanks!".
+    const waiting = waitingOnHim(index, await loadConfig(), Date.now())
       .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0)).slice(0, 5);
     await reply(waiting.length
       ? 'Waiting on you:\n' + waiting.map((e, i) => `${i + 1}. ${assistWho(e)} — ${humanAgo(Date.now() - (e.lastTs || Date.now()))}: "${(e.lastBody || '').slice(0, 60)}"`).join('\n')
@@ -4453,7 +4551,7 @@ async function handleVoicemailDone(request) {
     markSource(thread, 'call');
     const dup = (thread.messages || []).some((m) => m.kind === 'voicemail' && recordingSid && m.recordingSid === recordingSid);
     if (!dup) {
-      thread.messages.push({
+      const vm = {
         id: genId(),
         dir: 'in',
         body: `🎙️ Voicemail (${duration}s)`,
@@ -4461,8 +4559,11 @@ async function handleVoicemailDone(request) {
         kind: 'voicemail',
         recording: recordingUrl + '.mp3',
         recordingSid: recordingSid || undefined,
-      });
+      };
+      thread.messages.push(vm);
       thread.unread = (thread.unread || 0) + 1;
+      // A voicemail is them reaching out, same as a text (see wakeFromArchive).
+      wakeFromArchive(thread, vm, await loadConfig());
       if (!thread.status) { thread.status = 'new'; thread.statusAt = Date.now(); }
       await saveThread(thread);
       await updateIndexEntry(thread);
@@ -4537,6 +4638,7 @@ async function handleVoicemailTranscription(request) {
       recordingSid: recordingSid || undefined,
     });
     thread.unread = (thread.unread || 0) + 1;
+    wakeFromArchive(thread, thread.messages[thread.messages.length - 1], await loadConfig());
     if (!thread.status) { thread.status = 'new'; thread.statusAt = Date.now(); }
     await saveThread(thread);
     await updateIndexEntry(thread);
@@ -4637,23 +4739,37 @@ async function apiAlertTest() {
 
 async function apiThreads(url) {
   const want = url && url.searchParams.get('phone');
+  const cfg = await loadConfig();
   if (!want) {
     const index = await loadIndex();
     index.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (b.lastTs || 0) - (a.lastTs || 0));
-    return json({ ok: true, threads: index });
+    // Filed chats go out marked archived (see filedView), so the dashboard
+    // files them without a single screen having to learn a new rule.
+    return json({ ok: true, threads: filedView(index, cfg, Date.now()) });
   }
   const phone = normalizePhone(want) || want;
   const thread = await openThreadForRead(phone);
   const index = await loadIndex();
   index.sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (b.lastTs || 0) - (a.lastTs || 0));
-  return json({ ok: true, threads: index, thread });
+  const now = Date.now();
+  return json({ ok: true, threads: filedView(index, cfg, now), thread: filedThread(thread, index, cfg, now) });
 }
 
 async function apiThread(url) {
   const phone = normalizePhone(url.searchParams.get('phone')) || url.searchParams.get('phone');
   if (!phone) return json({ ok: false, error: 'missing_phone' }, 422);
   const thread = await openThreadForRead(phone);
-  return json({ ok: true, thread });
+  return json({ ok: true, thread: filedThread(thread, await loadIndex(), await loadConfig(), Date.now()) });
+}
+
+// An open conversation says the same as its row in the list: filed means the
+// conversation screen offers "Restore", not "Archive". A copy, for the same
+// reason as filedView.
+function filedThread(thread, index, cfg, now) {
+  if (!thread || thread.archived) return thread;
+  const row = (index || []).find((e) => e.phone === thread.phone);
+  const why = row ? rowFiledAway(row, cfg, now) : '';
+  return why ? Object.assign({}, thread, { archived: true, filed: why, quietSince: rowLastActivity(row, now) }) : thread;
 }
 
 // Load a thread for display: clear its unread badge and make sure any due
@@ -4773,6 +4889,10 @@ async function apiMeta(request) {
   if (typeof data.notes === 'string') thread.notes = data.notes;
   if (typeof data.pinned === 'boolean') thread.pinned = data.pinned;
   if (typeof data.archived === 'boolean') thread.archived = data.archived;
+  // Restoring a chat is also how one the app filed comes back: it was never
+  // archived on the thread, so the flag alone changes nothing. keptAt restarts
+  // its quiet clock (see rowFiledAway).
+  if (data.archived === false) thread.keptAt = Date.now();
   if (typeof data.assignedTo === 'string') thread.assignedTo = data.assignedTo.slice(0, 24);
   // Customer garage (vehicles + access notes). Sent whole; sanitized on the way in.
   if ('garage' in data) thread.garage = data.garage ? sanitizeGarage(data.garage) : null;
@@ -4968,6 +5088,10 @@ async function apiRead(request) {
 // ===========================================================================
 async function apiInsights() {
   const index = await loadIndex();
+  const cfg = await loadConfig();
+  // "Needs reply" is the same list as everywhere else (see waitingOnHim). It
+  // was anyone who spoke last, so every "thanks!" counted here and nowhere else.
+  const waiting = new Set(waitingOnHim(index, cfg, Date.now()).map((e) => e.phone));
   let totalMs = 0, replyCount = 0;
   const needsReply = [];
   const byName = {};
@@ -4988,7 +5112,7 @@ async function apiInsights() {
     if (st.avgMs != null) { totalMs += st.avgMs * st.count; replyCount += st.count; }
 
     const last = thread.messages[thread.messages.length - 1];
-    if (last && last.dir === 'in') {
+    if (last && last.dir === 'in' && waiting.has(e.phone)) {
       needsReply.push({ phone: e.phone, name: e.name || '', lastBody: e.lastBody || '', since: last.ts, status: e.status || '' });
     }
     const nm = (e.name || '').trim().toLowerCase();
@@ -4998,7 +5122,7 @@ async function apiInsights() {
 
   const possibleLinks = Object.values(byName).filter((g) => g.length > 1);
 
-  const open = index.filter((e) => !e.archived).length;
+  const open = index.filter((e) => rowInList(e, cfg, Date.now())).length;
   const won = index.filter((e) => e.status === 'won').length;
   const RATE = 0.0079, NUMBER_FEE = 1.15;
   const costUsd = +(segOut * RATE + msgsIn * RATE + NUMBER_FEE).toFixed(2);
@@ -9107,10 +9231,11 @@ async function apiAiDraft(request) {
 
 async function apiAiTriage() {
   const index = await loadIndex();
-  const open = index.filter((e) => !e.archived);
-  if (!open.length) return json({ ok: true, briefing: 'No open conversations. All clear! 🚗' });
   const cfg = await loadConfig();
   const now = Date.now();
+  // What his list shows: not his archive, and not the chats filed on their own.
+  const open = index.filter((e) => rowInList(e, cfg, now));
+  if (!open.length) return json({ ok: true, briefing: 'No open conversations. All clear! 🚗' });
   const lines = open.map((e) => {
     const ago = humanAgo(now - (e.lastTs || now));
     const who = e.lastDir !== 'in' ? `you replied ${ago} ago`
@@ -9281,7 +9406,9 @@ async function previewCommandPlan(plan) {
     const un = list.filter((e) => e.unread);
     return { count: un.length, unit: 'email', samples: un.slice(0, 6).map((e) => e.subject || e.from || '(email)') };
   }
-  const index = await loadIndex();
+  // Through filedView, so "archived" means what his Archived tab shows: his
+  // own archive plus the chats filed on their own.
+  const index = filedView(await loadIndex(), await loadConfig(), Date.now());
   const list = selectThreads(index, plan.filter);
   const preview = { count: list.length, unit: 'conversation', samples: list.slice(0, 6).map((t) => t.name || t.phone) };
   if (plan.action === 'hold' && plan.holdUntil) {
@@ -9305,7 +9432,9 @@ async function executeCommandPlan(plan) {
   }
   const cfg = await loadConfig();
   const index = await loadIndex();
-  const targets = selectThreads(index, plan.filter).slice(0, cap);
+  // Chosen from the same view the preview counted (filedView), applied to the
+  // real rows below.
+  const targets = selectThreads(filedView(index, cfg, Date.now()), plan.filter).slice(0, cap);
   if (action === 'block' || action === 'unblock') {
     const next = Object.assign({}, cfg);
     const set = new Set(Array.isArray(next.blockedNumbers) ? next.blockedNumbers : []);
@@ -9327,7 +9456,9 @@ async function executeCommandPlan(plan) {
       case 'mark_read':   if (thread.unread) { thread.unread = 0; ch = true; } break;
       case 'mark_unread': if (!thread.unread) { thread.unread = 1; ch = true; } break;
       case 'archive':     if (!thread.archived) { thread.archived = true; ch = true; } break;
-      case 'unarchive':   if (thread.archived) { thread.archived = false; ch = true; } break;
+      // A chat filed on its own isn't archived on the thread, so restoring
+      // one is "keep this in my list" (keptAt, see rowFiledAway).
+      case 'unarchive':   if (thread.archived || entry.filed) { thread.archived = false; thread.keptAt = Date.now(); ch = true; } break;
       case 'pin':         if (!thread.pinned) { thread.pinned = true; ch = true; } break;
       case 'unpin':       if (thread.pinned) { thread.pinned = false; ch = true; } break;
       case 'set_status': {
@@ -9438,9 +9569,11 @@ function boardSnapshot(index, cfg, now) {
   // recommending them because it knows why they're quiet — not because they were
   // hidden from it. That distinction is the whole point: it can still mention one
   // if something genuinely changed.
-  const held = index.filter((e) => !e.archived && e.heldUntil && e.heldUntil > now);
+  // "Open" is what his list shows, so chats filed on their own (rowFiledAway)
+  // count with the archived ones, and it never tells him to archive them.
+  const held = index.filter((e) => rowInList(e, cfg, now) && e.heldUntil && e.heldUntil > now);
   const heldPhones = new Set(held.map((e) => e.phone));
-  const open = index.filter((e) => !e.archived && !heldPhones.has(e.phone));
+  const open = index.filter((e) => rowInList(e, cfg, now) && !heldPhones.has(e.phone));
   const line = (e) => {
     const ago = humanAgo(now - (e.lastTs || now));
     const who = e.lastDir === 'in' ? `waiting ${ago}` : `you replied ${ago} ago`;
@@ -9599,7 +9732,7 @@ async function buildAgentContext({ index, cfg, now, money }) {
   }
   L.push(`  To LOG money: entry types = job (income), exp (expense — needs a category), jp (labor pay), personal. Expense categories: ${MONEY_CATS.join(', ')}. Today is ${m.today}.`);
   L.push('');
-  const open = index.filter((e) => !e.archived).sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+  const open = index.filter((e) => rowInList(e, cfg, now)).sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
   const cap = 60;
   const top = open.slice(0, cap);
   const threads = await batchLoadThreads(top.map((r) => r.phone));
@@ -9746,7 +9879,8 @@ async function executeAgentActions(actions, cfg) {
     for (const a of convActs.filter((x) => (normalizePhone(x.phone) || x.phone) === phone)) {
       switch (a.op) {
         case 'archive':     if (!thread.archived) { thread.archived = true; ch = true; } break;
-        case 'unarchive':   if (thread.archived) { thread.archived = false; ch = true; } break;
+        // Also how a chat filed on its own comes back (keptAt, see rowFiledAway).
+        case 'unarchive':   thread.archived = false; thread.keptAt = now; ch = true; break;
         case 'mark_read':   if (thread.unread) { thread.unread = 0; ch = true; } break;
         case 'mark_unread': if (!thread.unread) { thread.unread = 1; ch = true; } break;
         case 'pin':         if (!thread.pinned) { thread.pinned = true; ch = true; } break;
@@ -11198,6 +11332,15 @@ async function apiSaveConfig(request) {
   if (typeof data.autoReplyAlert === 'boolean') next.autoReplyAlert = data.autoReplyAlert;
   if (typeof data.waitNudge === 'boolean') next.waitNudge = data.waitNudge;
   if (data.waitNudgeHours != null && !isNaN(+data.waitNudgeHours)) next.waitNudgeHours = Math.max(0.5, Math.min(12, Math.round(+data.waitNudgeHours * 2) / 2));
+  if (typeof data.waitCheckins === 'boolean') next.waitCheckins = data.waitCheckins;
+  if (Array.isArray(data.waitCheckinHours)) {
+    next.waitCheckinHours = [...new Set(data.waitCheckinHours.map((h) => Math.round(+h)).filter((h) => h >= 0 && h <= 23))]
+      .sort((a, b) => a - b).slice(0, 8);
+  }
+  if (data.autoFileDays != null && !isNaN(+data.autoFileDays)) {
+    const d = Math.round(+data.autoFileDays);
+    next.autoFileDays = d <= 0 ? 0 : Math.max(FILE_DAYS_MIN, Math.min(90, d));
+  }
   if (typeof data.smartQuoteOpener === 'boolean') next.smartQuoteOpener = data.smartQuoteOpener;
   if (typeof data.quoteOpenerAsk === 'boolean') next.quoteOpenerAsk = data.quoteOpenerAsk;
   if (typeof data.quoteAbandon === 'boolean') next.quoteAbandon = data.quoteAbandon;
@@ -12917,6 +13060,16 @@ function defaultConfig() {
                              // usual reason he didn't answer is that the answer needed
                              // thinking and he was mid-job. So it leads with the one-tap
                              // answers and a "buy me time" reply, not with more to read.
+    waitCheckins: true,      // and past that one email, ring his phone at set times of day
+    waitCheckinHours: [8, 12, 18], // with everyone still waiting, until each is answered.
+                             // Mikey (2026-10-06): "too many ppl in my dashboard are going
+                             // unresponded". The one email was the only reminder, and after a
+                             // day nothing reminded him at all. These hours fit his week: before
+                             // class, between class and the 1pm job, and after it. A push, not an
+                             // email (he paused the daily emails because he wasn't reading them);
+                             // email only when no phone has push turned on. See dispatchWaitCheckins.
+    autoFileDays: 14,        // file a chat away after this many days with nothing going on; it
+                             // comes back the second anything happens. 0 = never. See rowFiledAway.
     quoteOpenerAsk: false,   // reword the generic opener (the one for a lead who never
                              // said what the car was) so it ends on a question instead of
                              // "Talk soon!". Off by default for the same reason as the
@@ -13417,7 +13570,14 @@ function buildIndexSummary(thread, cfg) {
     closedReason: (!awaiting && rc && rc.needed === false) ? (rc.reason || 'Conversation wrapped up') : '',
     followupNextAt: plan ? plan.dueAt : null,
     followupDue: !!sug,
-    fu: sug ? { reason: sug.reason, urgency: sug.urgency, stage: sug.stage, dueAt: sug.dueAt, draft: (sug.draft || '').slice(0, 320) } : null,
+    // `at` is when the engine surfaced it, which is what the filing clock reads
+    // (see rowLastActivity). dueAt can be months old on a chat that was parked.
+    fu: sug ? { reason: sug.reason, urgency: sug.urgency, stage: sug.stage, dueAt: sug.dueAt, at: sug.createdAt || 0, draft: (sug.draft || '').slice(0, 320) } : null,
+    // The filing clock's two inputs that only the thread knows: the newest
+    // message that's a real conversation (not a blast), and the last time he
+    // pulled this chat back out of Filed himself. See rowFiledAway.
+    talkTs: lastTalkTs(thread.messages),
+    keptAt: thread.keptAt || 0,
     // Who sent them, mirrored so the Word of mouth screen and the peek can both
     // answer it from the list row alone. Empty strings for almost everyone.
     ...referralIndexFields(thread),
@@ -13431,6 +13591,143 @@ function waitingSinceTs(msgs) {
     since = msgs[i].ts || since;
   }
   return since;
+}
+
+// The newest message that was a real exchange with this person. A blast is
+// the one send that isn't: 25 old customers getting the same promo is not 25
+// conversations starting again, and the ones who answer come back by answering.
+function lastTalkTs(msgs) {
+  for (let i = (msgs || []).length - 1; i >= 0; i--) {
+    if (msgs[i].dir === 'out' && msgs[i].kind === 'blast') continue;
+    return msgs[i].ts || 0;
+  }
+  return 0;
+}
+
+// ===========================================================================
+// Filed away on its own: the list holds what's in play
+// ---------------------------------------------------------------------------
+// The list kept every conversation forever. Finished jobs, "thanks!", leads
+// that went nowhere and wrong numbers all sat in among the people who needed
+// him, and "Waiting on you" lists the longest wait first, so a stale "how
+// much?" from August took the top slot ahead of someone who texted an hour
+// ago. Mikey (2026-10-06): "auto hide convos that are not relevant anymore".
+// So a chat with nothing going on for a while files itself away, and comes
+// back the moment there's something new.
+//
+// Nothing is written to do it. Filed is worked out from the list row every
+// time the list is read (filedView), which means:
+//   - no KV writes, however many chats it files (see the write budget up top),
+//   - it can't go stale: a text either way, a booking, a follow-up coming due
+//     or a change to the setting brings a chat straight back, with nothing to
+//     undo and nothing left behind,
+//   - automation is untouched. Follow-ups, nudges and plan reminders still run
+//     on filed chats exactly as before (they skip HIS archive, which is a
+//     different, stored choice), and one coming due puts its chat back.
+//
+// Whatever its age, a chat stays in the list while something is still coming
+// up: a booked job, a queued text, a reminder he set, a parked-until date, a
+// Clean Club plan, a helper follow-up, or a friend link still to send after a
+// job. A pin keeps it too.
+//
+// A text he never opened does NOT keep it. It gets the same stretch as
+// anything else, named at every check-in the whole time, and is filed as
+// "never opened" so it stands out on the Archived pile. Kept forever, the
+// verification codes and wrong numbers he'll never open would be named in
+// every check-in for good, and a reminder that's always wrong gets ignored.
+// ===========================================================================
+const FILE_DAYS_DEFAULT = 14;
+const FILE_DAYS_MIN = 3;
+// Lost leads and numbers that texted STOP are done when he says so, or they
+// do. Two days rather than none so a chat doesn't vanish the instant he taps
+// Lost, while he's still looking at it.
+const FILE_DONE_DAYS = 2;
+
+function autoFileDays(cfg) {
+  const n = cfg ? cfg.autoFileDays : undefined;
+  if (n === 0) return 0;   // "Never": the list keeps everything, as it always did
+  return +n > 0 ? Math.max(FILE_DAYS_MIN, +n) : FILE_DAYS_DEFAULT;
+}
+
+// The last time anything happened on this chat. Not just texts: him marking
+// it Won or Lost, the day of a job, a hold running out, a follow-up the app
+// surfaced, and him pulling it back out of Filed all count.
+function rowLastActivity(e, now) {
+  let t = e.talkTs != null ? e.talkTs : (e.lastTs || 0);
+  const bump = (x) => { if (x && x <= now && x > t) t = x; };
+  bump(e.firstTs);      // a brand-new chat gets its days, even one a blast started
+  bump(e.statusAt);
+  bump(e.keptAt);
+  bump(e.appointmentAt);
+  bump(e.lastJobAt);
+  bump(e.heldUntil);
+  if (e.followupDue && e.fu) bump(e.fu.at || e.fu.dueAt);
+  return t;
+}
+
+// Their friend link is still to come: 5 to 30 days after a job, unless it was
+// sent or skipped, or the job had a problem. The same rule as linkDue in the
+// dashboard, which lists it on Home; a filed chat would drop off that list.
+function rowFriendLinkDue(e, now) {
+  const last = e.lastJobAt || 0;
+  if (!last || now < last || now - last > 30 * DAY_MS) return false;
+  const sent = e.linkAt || {}, skip = e.linkSkip || {};
+  if ((sent.friend || 0) >= last || (skip.friend || 0) >= last) return false;
+  return (e.issueAt || 0) < last;
+}
+
+// '' while the chat belongs in the list, otherwise why it was filed:
+//   'quiet'       nothing has happened for autoFileDays
+//   'unanswered'  the same, and the last word was theirs, never answered
+//   'unopened'    the same, and he never even opened their text
+//   'lost'        he marked it Lost
+//   'stopped'     they texted STOP
+function rowFiledAway(e, cfg, now) {
+  const days = autoFileDays(cfg);
+  if (!days || !e || e.archived || e.pinned) return '';
+  if (e.appointmentAt && e.appointmentAt > now) return '';    // a job is booked
+  if (e.scheduledCount > 0) return '';                        // a text is queued to go
+  if (e.reminderAt) return '';                                // his own "remind me", due or not
+  if (e.heldUntil && e.heldUntil > now) return '';            // parked until a date he gave
+  if (e.plan && !e.plan.paused) return '';                    // on a Clean Club plan
+  if (e.helperFollowAt && !e.helperFollowSent) return '';     // the helper means to come back
+  if (rowFriendLinkDue(e, now)) return '';
+  const quiet = now - rowLastActivity(e, now);
+  if (e.optedOut) return quiet >= FILE_DONE_DAYS * DAY_MS ? 'stopped' : '';
+  const waiting = rowAwaitingReply(e);
+  // A Lost lead who writes again gets the full stretch, not two days: them
+  // coming back is the one thing Lost didn't account for.
+  if (e.status === 'lost' && !waiting) return quiet >= FILE_DONE_DAYS * DAY_MS ? 'lost' : '';
+  if (quiet < days * DAY_MS) return '';
+  if (e.unread > 0 && e.lastDir === 'in') return 'unopened';
+  return waiting ? 'unanswered' : 'quiet';
+}
+
+// Still in the list he works from: not archived by him, not filed on its own.
+function rowInList(e, cfg, now) { return !!e && !e.archived && !rowFiledAway(e, cfg, now); }
+
+// The list as the dashboard should see it: a filed chat reads as archived, so
+// every screen that already leaves the archive out (the chat list, Home, the
+// counts, the badges) leaves it out too, with `filed` saying why. Copies, never
+// the rows themselves: the index is cached for the whole invocation and saved
+// from, and a filed flag must never be written back into it.
+function filedView(index, cfg, now) {
+  if (!autoFileDays(cfg)) return index;
+  return index.map((e) => {
+    const why = rowFiledAway(e, cfg, now);
+    return why ? Object.assign({}, e, { archived: true, filed: why, quietSince: rowLastActivity(e, now) }) : e;
+  });
+}
+
+// Everyone genuinely waiting on him right now: they spoke last, the reply
+// check agrees something is open, he hasn't parked them, and the chat is in
+// his list. The same people the dashboard's "Waiting on you" shows
+// (waitingOnMe there), so a check-in, the number on the app icon and the
+// board can't disagree about who's waiting. Longest wait first.
+function waitingOnHim(index, cfg, now) {
+  return (index || []).filter((e) => rowAwaitingReply(e) && rowInList(e, cfg, now) &&
+    !(e.heldUntil && e.heldUntil > now) && !e.optedOut && !isPracticePhone(e.phone))
+    .sort((a, b) => (a.waitSince || a.lastTs || 0) - (b.waitSince || b.lastTs || 0));
 }
 
 // Merge `summary` into the in-memory `index`. Returns true only if something
@@ -13455,6 +13752,28 @@ async function updateIndexEntry(thread) {
   const cfg = await loadConfig();
   const index = await loadIndex();
   if (applyIndexSummary(index, buildIndexSummary(thread, cfg))) await saveIndex(index);
+}
+
+// A customer reaching out brings their conversation back out of the archive.
+// Archiving used to be a one-way door: someone filed away in the summer who
+// texted again in October landed in the Archived pile with no two-hour
+// reminder, no place in "Waiting on you" and no count anywhere. The first
+// alert email was the only trace of them, and one email is easy to miss.
+// Every messaging app does it this way for the same reason: a new message from
+// them is the conversation starting again. Not for a quiet tapback (a heart on
+// "thanks!" ends a conversation, it doesn't start one), a STOP, or a number he
+// blocked. Only ever their move: his own sends, a blast or a scheduled text
+// never pull a chat back, because the follow-up engine skips archived chats
+// and un-archiving one would start nudges he never asked for.
+// Returns true when it changed the thread.
+function wakeFromArchive(thread, message, cfg) {
+  if (!thread || !thread.archived || !message || message.dir !== 'in') return false;
+  if (message.kind === 'opt-out') return false;
+  if (message.kind === 'reaction' && QUIET_TAPBACKS.has(message.reactLabel || '')) return false;
+  if (cfg && Array.isArray(cfg.blockedNumbers) && cfg.blockedNumbers.includes(thread.phone)) return false;
+  thread.archived = false;
+  thread.unarchivedAt = message.ts || Date.now();
+  return true;
 }
 
 async function appendMessage(phone, message, opts = {}) {
@@ -13486,6 +13805,8 @@ async function appendMessage(phone, message, opts = {}) {
       thread.messages.filter((m) => m.dir === 'in').length < REF_READ_FIRST) noteReferral(thread, message.body);
   thread.messages.push(message);
   if (message.dir === 'in') thread.unread = (thread.unread || 0) + 1;
+  // After the tapback is read above, so a heart on "thanks!" can stay filed.
+  if (message.dir === 'in' && thread.archived) wakeFromArchive(thread, message, await loadConfig());
   // A customer reaching out beats any note Mikey left himself: an inbound text
   // ends a hold immediately, so "leave Sabine alone till August" never swallows
   // her when she actually writes in.
@@ -16322,6 +16643,34 @@ async function apiHelperDone(request) {
   return json({ ok: true, thread });
 }
 
+// POST /api/reply/none {phone}: Mikey's own "nothing to answer here". His helper
+// has had this button since September and he never did, so "I'll let you
+// know", a thumbs-up the rules didn't catch, or a question he answered on the
+// phone sat in "Waiting on you" for good, and once check-ins started naming
+// everyone waiting they'd have named those too, every time. It's the same
+// verdict the reply check gives a "thanks!": keyed to their last text, so the
+// next thing they send puts them straight back in the list. Loaded with
+// loadThread, not openThreadForRead: dismissing from the peek must not mark
+// the conversation read.
+async function apiNoReplyNeeded(request) {
+  const data = await readJson(request);
+  const phone = normalizePhone(data.phone);
+  if (!phone) return json({ ok: false, error: 'bad_phone' }, 422);
+  const thread = await loadThread(phone);
+  const last = (thread.messages || [])[thread.messages.length - 1];
+  if (!last || last.dir !== 'in') return json({ ok: false, error: 'nothing_to_answer' }, 409);
+  thread.replyCheck = { forTs: last.ts, at: Date.now(), needed: false, reason: 'You said no reply needed', via: 'owner' };
+  // Nothing is owed, so nothing should still be offering to answer them: the
+  // drafted reply, the question it was holding for him, and the "you owe a
+  // reply" nudge. Left alone, the nudge would sit on the conversation, because
+  // the engine only reopens a chat whose follow-up is due (evaluateFollowups).
+  thread.suggested = null; thread.needsYou = null; thread.needsYouAnswers = null;
+  if (thread.followup && thread.followup.suggestion && thread.followup.suggestion.stage === 'owed') thread.followup.suggestion = null;
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+  return json({ ok: true, thread });
+}
+
 // ---- the helper's organizing: stages, labels, notes, follow-ups, checklist ----
 // Every one of these lives in its OWN field on purpose. Mikey's `status` drives
 // automatic texts (won → review ask and rebook, lost → a win-back), so a helper
@@ -17045,6 +17394,9 @@ async function bkCreate(b, opts) {
   if (!thread.name) thread.name = name;
   if (!thread.status) { thread.status = 'new'; thread.statusAt = Date.now(); }
   markSource(thread, 'booking');
+  // Booking a time is them reaching out (see wakeFromArchive): a returning
+  // customer's chat comes back to the list with the booking on it.
+  wakeFromArchive(thread, { dir: 'in', ts: Date.now() }, await loadConfig());
   if (!thread.tags.includes('booking')) thread.tags.push('booking');
   // The calculator books here instead of /submit now, so a sign or hanger QR
   // that ends in a booked time has to be caught here too, or the warmest
@@ -18699,24 +19051,76 @@ async function apiPushTest() {
 async function apiPushPeek() {
   // A push sent with its own headline (pushOnly) says that, once, if it's fresh.
   const note = await kv().get('push:note', { type: 'json' });
-  if (note && note.title && Date.now() - (note.at || 0) < 5 * 60000) {
-    await kv().delete('push:note');
-    return json({ ok: true, title: note.title, body: note.body || '', url: '/' });
-  }
+  const cfg = await loadConfig();
   const index = await loadIndex();
-  const active = index.filter((t) => !t.archived);
-  const unread = active.filter((t) => t.unread > 0).sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
-  const owed = active.filter(rowAwaitingReply);
+  const now = Date.now();
+  const head = pushHeadline(index, cfg, now);
+  if (note && note.title && now - (note.at || 0) < 5 * 60000) {
+    await kv().delete('push:note');
+    return json({ ok: true, title: note.title, body: note.body || '', url: '/', badge: head.badge });
+  }
+  return json(Object.assign({ ok: true }, head));
+}
+
+// A text that landed this recently is what a push is about. Ten minutes is the
+// push's own TTL (see pushNotify): one delivered later than that was dropped.
+const PEEK_FRESH_MS = 10 * 60000;
+
+// A name, or a number he can read: "(425) 555-0101", never "+14255550101".
+function pushWho(t, first) {
+  const n = String((t && t.name) || '').trim();
+  if (n) return first ? (jdFirst(n) || n) : n;
+  const d = String((t && t.phone) || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+  return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : String((t && t.phone) || 'Someone');
+}
+
+// What the phone says when a push lands, worked out from the list. Pushes
+// carry no words of their own (see pushNotify), so this decides, in order:
+//   1. a text that just landed: that's what the push is about
+//   2. whoever is waiting on him, by name and for how long. The two-hour
+//      nudge and the check-ins ring the phone with nothing to say, and this
+//      used to answer them with "Follow-ups ready" (the app's own ideas,
+//      which he'd learned to ignore) whenever one was due, or with the newest
+//      unread text dressed up as new. So the reminder that mattered most read
+//      exactly like the noise.
+//   3. older unread texts, 4. follow-ups, 5. anything else.
+// `badge` is the number on the app icon: how many people are waiting on him.
+// Pure, so the suite can hold it to that order.
+function pushHeadline(index, cfg, now) {
+  const listed = (index || []).filter((t) => rowInList(t, cfg, now));
+  const waiting = waitingOnHim(index, cfg, now);
+  const badge = waiting.length;
+  const fresh = listed.filter((t) => t.unread > 0 && t.lastDir === 'in' && now - (t.lastTs || 0) < PEEK_FRESH_MS)
+    .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+  // The first minutes of a check-in hour, the push is the check-in. Without
+  // this, a text that landed just before noon turns the noon check-in into a
+  // second "New text from" and the roll-up never shows. (The new text is in
+  // the roll-up anyway: they're waiting too.)
+  const checkingIn = waiting.length > 1 && localMinute(now, cfg.tz) < 3 && !!checkinSlot(cfg, now);
+  if (fresh.length && !checkingIn) {
+    const t = fresh[0];
+    const more = badge > 1 ? ` (${badge} waiting on you)` : '';
+    return { title: `New text from ${pushWho(t)}`, body: (t.lastBody || 'Tap to read.') + more, url: '/?c=' + encodeURIComponent(t.phone), badge };
+  }
+  if (waiting.length) {
+    const since = (t) => humanAgo(now - (t.waitSince || t.lastTs || now));
+    if (waiting.length === 1) {
+      const t = waiting[0];
+      return { title: `⏳ ${pushWho(t)} is waiting on you (${since(t)})`, body: t.lastBody || 'Sent you a message.', url: '/?c=' + encodeURIComponent(t.phone), badge };
+    }
+    const names = waiting.slice(0, 4).map((t) => `${pushWho(t, true)} ${since(t)}`).join(' · ') +
+      (waiting.length > 4 ? ` · +${waiting.length - 4} more` : '');
+    return { title: `⏳ ${waiting.length} people are waiting on you`, body: names, url: '/?waiting=1', badge };
+  }
+  const unread = listed.filter((t) => t.unread > 0).sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
   if (unread.length) {
     const t = unread[0];
-    const who = t.name || t.phone;
-    const more = unread.length > 1 ? ` (+${unread.length - 1} more waiting)` : '';
-    return json({ ok: true, title: `New text from ${who}`, body: (t.lastBody || 'Tap to read.') + more, url: '/' });
+    const more = unread.length > 1 ? ` (+${unread.length - 1} more unread)` : '';
+    return { title: `Unread text from ${pushWho(t)}`, body: (t.lastBody || 'Tap to read.') + more, url: '/?c=' + encodeURIComponent(t.phone), badge };
   }
-  const due = active.filter((t) => t.followupDue).length;
-  if (due) return json({ ok: true, title: 'Follow-ups ready', body: `${due} customer${due > 1 ? 's are' : ' is'} due for a nudge.`, url: '/' });
-  if (owed.length) return json({ ok: true, title: 'Someone is waiting', body: `${owed.length} conversation${owed.length > 1 ? 's need' : ' needs'} your reply.`, url: '/' });
-  return json({ ok: true, title: "Mikey's Dashboard", body: 'New activity — tap to open.', url: '/' });
+  const due = listed.filter((t) => t.followupDue).length;
+  if (due) return { title: 'Follow-ups ready', body: `${due} customer${due > 1 ? 's are' : ' is'} due for a nudge.`, url: '/', badge };
+  return { title: "Mikey's Dashboard", body: 'New activity. Tap to open.', url: '/', badge };
 }
 
 // ===========================================================================
@@ -23066,8 +23470,9 @@ async function buildBrief() {
   const today = jdToday(cfg);
   const day = await buildDay(today);
   const index = await loadIndex();
-  const active = index.filter((t) => !t.archived);
-  const waiting = active.filter(rowAwaitingReply);
+  const now = Date.now();
+  const active = index.filter((t) => rowInList(t, cfg, now));
+  const waiting = waitingOnHim(index, cfg, now);
   const followups = active.filter((t) => t.followupDue);
   const reminders = active.filter((t) => t.reminderDue);
   const unread = active.reduce((s, t) => s + (t.unread || 0), 0);

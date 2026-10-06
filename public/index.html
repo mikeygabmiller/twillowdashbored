@@ -590,6 +590,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .mo-again b{display:block;font-size:13px}
   .mo-again small{display:block;color:var(--muted2);font-size:11.5px;margin-top:1px}
   .draft-flag{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:700;color:#c4b5fd;background:rgba(167,139,250,.15);padding:2px 6px;border-radius:8px}
+  .filed-flag{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:600;color:var(--muted2);background:var(--panel2);border:1px solid var(--line);padding:1px 6px;border-radius:8px}
+  .filed-flag.warn{color:#f5c563;border-color:rgba(245,184,66,.4)}
+  .filed-note{display:flex;gap:8px;align-items:flex-start;font-size:12px;line-height:1.45;color:var(--muted2);background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:8px 10px 6px}
+  .filed-note svg{flex:none;margin-top:2px}
 
   /* per-contact follow-up controls in details */
   #dtFollowup .fu-row{display:flex;align-items:center;gap:9px;padding:7px 0;font-size:13px}
@@ -603,6 +607,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .fu-settings input[type=number]{width:64px;text-align:center}
   .fu-settings .hint{font-size:11.5px;color:var(--muted2);line-height:1.45;padding:2px 0 6px}
   .fu-settings .fu-col{display:flex;flex-direction:column;gap:5px;padding:6px 0}
+  .ci-hours{display:flex;flex-wrap:wrap;gap:6px}
+  .ci-h{font:inherit;font-size:12px;padding:6px 10px;border-radius:16px;background:var(--panel2);border:1px solid var(--line);color:var(--muted);cursor:pointer}
+  .ci-h.on{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text);font-weight:700}
 
   /* toggle switch */
   .sw{position:relative;width:42px;height:24px;flex:none;border-radius:13px;background:var(--line2);border:1px solid var(--line);cursor:pointer;transition:background .15s}
@@ -3235,6 +3242,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .pk-head.bad{border-left-color:#f87171}
   .pk-head b{display:block;font-size:15.5px;font-weight:800;line-height:1.35}
   .pk-head span{display:block;font-size:12.5px;color:var(--muted2);margin-top:3px}
+  .pk-noreply{display:inline-flex;align-items:center;gap:6px;margin-top:10px;font:inherit;font-size:12.5px;font-weight:700;padding:7px 12px;border-radius:10px;background:var(--panel);border:1px solid var(--line);color:var(--text);cursor:pointer}
+  .pk-noreply svg{color:var(--green)}
   .pk-recap{background:var(--panel2);border-radius:15px;padding:12px 13px;margin-bottom:14px}
   .pk-recap .rh{display:flex;align-items:center;gap:5px;font-size:10.5px;font-weight:800;letter-spacing:.06em;
     text-transform:uppercase;color:var(--muted2);margin-bottom:6px}
@@ -4665,7 +4674,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-10-04·club-99";
+  var APP_BUILD="2026-10-06·waiting";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -5892,8 +5901,29 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // text thread has no row there to derive it from.
     var cu=(typeof CALLS!=="undefined"&&CALLS)?(CALLS.unseen||0):0;
     var nc=el("navCalls");if(nc){nc.textContent=cu;nc.className="ndot"+(cu?" show":"")}
+    setIconBadge(c.needs);
     // These counts used to live on menu rows. Those rows are Chats filter chips
     // now and carry their own counts, drawn in renderFilters().
+  }
+
+  // The number on the app's home-screen icon, like the red count on Messages:
+  // how many people are waiting on him, the same count as the Home badge. Not
+  // unread, which is the obvious number and the wrong one: opening a text
+  // clears unread, and opening it is not answering it. This one only drops
+  // when he answers, or says no reply is needed. The service worker sets the
+  // same number when a push lands (badge, from /api/push/peek), so it's right
+  // even when the app hasn't been opened. Phones without the Badging API, or
+  // without notification permission, just say no; nothing else depends on it.
+  var ICON_BADGE=-1;
+  function setIconBadge(n){
+    n=Math.max(0,n|0);
+    if(n===ICON_BADGE)return;
+    ICON_BADGE=n;
+    try{
+      if(!("setAppBadge" in navigator))return;
+      var p=n?navigator.setAppBadge(n):navigator.clearAppBadge();
+      if(p&&p.catch)p.catch(function(){});
+    }catch(e){}
   }
 
   // ---- reply-time analytics (client mirror of server logic) ----
@@ -7783,6 +7813,15 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     });
   }
 
+  // Why the app filed a chat away on its own (rowFiledAway in the Worker).
+  // Only ever on the Archived pile, next to the ones he archived himself.
+  function filedLabel(t){
+    if(t.filed==="unopened")return "filed: never opened";
+    if(t.filed==="unanswered")return "filed: never answered";
+    if(t.filed==="lost")return "filed: lost lead";
+    if(t.filed==="stopped")return "filed: texted STOP";
+    return t.quietSince?"filed: quiet since "+new Date(t.quietSince).toLocaleDateString([],{month:"short",day:"numeric"}):"filed: gone quiet";
+  }
   function convNode(t){
     var wrap=document.createElement("div");wrap.className="conv-wrap";
     wrap.innerHTML='<div class="swipe-bg">'+(t.archived?ic("undo",16)+' Unarchive':ic("check",16)+' Archive')+'</div>';
@@ -7797,6 +7836,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         '<div class="meta">'+
           (showStatus?'<span class="badge" style="background:color-mix(in srgb,'+sm.color+' 18%,transparent);color:'+sm.color+'">'+esc(sm.label)+'</span>':'')+
           (t.optedOut?'<span class="dnt">'+ic("ban",10)+'Do not text</span>':'')+
+          (t.filed?'<span class="filed-flag'+((t.filed==="unanswered"||t.filed==="unopened")?" warn":"")+'">'+ic("archive",10)+esc(filedLabel(t))+'</span>':'')+
           ((teamOn()&&t.assignedTo)?assignBadge(t.assignedTo):'')+
           (t.sendFailed?'<span class="dnt">'+ic("alert",10)+'not sent</span>':'')+
           (hasDraft(t.phone)?'<span class="draft-flag">'+ic("pencil",11)+'draft</span>':'')+
@@ -7954,6 +7994,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // anywhere else, drop it rather than leave him in a mode with no way out.
     if(SEL.on&&(mode!=="messages"||!items.length)){SEL.on=false;SEL.set={}}
     var head=SEL.on?selBar():((mode==="messages"&&!state.search)?summaryBar():"");
+    // The Archived pile has two kinds in it now, so it says so once, up top.
+    if(mode==="archived"&&!SEL.on&&autoFileDays(state.config))head=filedNote()+head;
     if(!items.length){
       var msg={messages:["No conversations","message-square","New texts from customers show up here."],
         scheduled:["Nothing scheduled","calendar-clock","Schedule a send from any conversation and it lands here."],
@@ -7972,6 +8014,11 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // Select mode's "All" means all of THESE, for the same reason.
     state.listOrder=items.map(function(t){return t.phone});
     if(SEL.on)wireSelBar(); else wireSummary();
+  }
+
+  function filedNote(){
+    var n=autoFileDays(state.config);
+    return '<div class="filed-note">'+ic("archive",14)+'<span>Yours, plus chats the app filed after '+n+' days with nothing going on (marked <b>filed</b>). Any of them comes straight back the moment they text, book or a follow-up comes due. Swipe one to keep it in your list.</span></div>';
   }
 
   // ---- compact "Today" summary (top of messages list, mobile-friendly) ----
@@ -8535,7 +8582,11 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       '<div class="fu-mini">'+
         FU_SNOOZE.map(function(x){return '<button data-sn="'+x[1]+'">Snooze '+esc(x[0])+'</button>'}).join('<span class="sp">·</span>')+
         '<span class="sp">·</span><button data-skip="1">Skip</button>'+
+        // Skip only drops this nudge; they'd still be waiting, and still in
+        // every check-in. This is the one that says nothing is owed.
+        (sug.stage==="owed"?'<span class="sp">·</span><button data-noreply="1">No reply needed</button>':'')+
       '</div>';
+    var nrb=fb.querySelector("[data-noreply]");if(nrb)nrb.onclick=function(){noReplyNeeded(t.phone)};
     el("fuSend").onclick=function(){fuBannerSend(t,sug)};
     el("fuUse").onclick=function(){el("msgInput").value=sug.draft||"";autoGrow();updateCount();el("msgInput").focus();toast("Loaded into your message — edit & send")};
     el("fuRegen").onclick=function(){var b=el("fuRegen");b.disabled=true;b.innerHTML='<span class="spin"></span>';fuAction(t.phone,{action:"regen"}).then(function(d){if(!d||!d.ok)toast("Couldn't rewrite",{bad:true})})};
@@ -8957,6 +9008,24 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     el("cpeAccent").onchange=function(){cpeSave({accent:el("cpeAccent").value},"Colour saved").then(cpeSections)};
     if(el("cpeAccOff"))el("cpeAccOff").onclick=function(){cpeSave({accent:""},"Back to the site's red").then(cpeSections)};
   }
+  // Check-in times as chips, 6am to 9pm. Mirrors checkinHours() in the Worker,
+  // default included: a config saved before check-ins existed has no key.
+  function checkinHoursOf(c){var h=(c&&Array.isArray(c.waitCheckinHours))?c.waitCheckinHours:[8,12,18];return h.map(function(x){return Math.round(+x)})}
+  function checkinChips(c){
+    var on=checkinHoursOf(c),h='';
+    for(var x=6;x<=21;x++)h+='<button class="ci-h'+(on.indexOf(x)>=0?" on":"")+'" data-ch="'+x+'">'+((x%12)||12)+(x<12?"am":"pm")+'</button>';
+    return h;
+  }
+  // Whether the check-ins can ring this phone, said where the setting is.
+  function checkinPushLine(){
+    if(typeof PUSH==="undefined")return "";
+    if(PUSH.state==="on")return ic("check-circle",12)+' Phone notifications are on for this phone, so check-ins ring it. If no phone has them on, check-ins email you instead.';
+    if(PUSH.state==="blocked")return ic("alert",12)+' Notifications are blocked for this app in your phone\'s settings, so check-ins can only email you. Turn them on there.';
+    if(PUSH.state==="unsupported")return 'This browser can\'t do phone notifications. On iPhone, add the dashboard to your home screen first. Until then check-ins email you.';
+    return ic("alert",12)+' Phone notifications are off for this phone, so check-ins can only email you. <button class="btn" id="cfgCheckinPushOn" style="margin-top:6px">'+ic("bell",14)+' Turn on notifications</button>';
+  }
+  // Mirrors autoFileDays() in the Worker.
+  function autoFileDays(c){var n=c?c.autoFileDays:undefined;if(n===0)return 0;return +n>0?Math.max(3,+n):14}
   function renderFuSettings(){
     var wrap=el("fuSettings");if(!wrap)return;var c=state.config||{};
     wrap.innerHTML=
@@ -8976,7 +9045,16 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       '<div class="hint">When a call goes unanswered, a caller you\'ve never texted instantly gets a friendly text, so a cold missed call turns into a conversation. Anyone you\'re already texting — including someone whose quote-form reply is still queued up — is skipped, so nobody gets two "personal" texts from you inside five minutes. Leave the message blank to use the default.</div>'+
       '<div class="fu-row"><span class="lbl2">Remind me if I haven\'t answered <span style="color:var(--muted2);font-weight:400">\u00b7 email</span></span><span class="sw'+(c.waitNudge!==false?" on":"")+'" id="cfgWaitNudge"></span></div>'+
       '<div class="fu-row"><span class="lbl2">After this long</span><span style="display:flex;align-items:center;gap:6px"><input type="number" id="cfgWaitNudgeH" min="0.5" max="12" step="0.5" value="'+(c.waitNudgeHours==null?2:c.waitNudgeHours)+'"><span style="color:var(--muted2)">hrs</span></span></div>'+
-      '<div class="hint">A customer texts, you get the usual alert, and nobody answers. After this long you get <b>one</b> more email about them, built for when the answer needs thinking and you\'re mid-job: the drafted reply with a <b>Send it</b> button, one-tap choices when the draft was waiting on you, and a <b>"got your message, I\'ll get back to you later today"</b> you can send in one tap so they know they were seen. Nothing goes to the customer unless you tap. Once per text: each new text they send gets its own reminder if it\'s still unanswered after this long, but the same text never twice; held through your quiet hours; three or more at once come as one list.</div>'+
+      '<div class="hint">A customer texts, you get the usual alert, and nobody answers. After this long you get <b>one</b> more email about them, built for when the answer needs thinking and you\'re mid-job: the drafted reply with a <b>Send it</b> button, one-tap choices when the draft was waiting on you, and a <b>"got your message, I\'ll get back to you later today"</b> you can send in one tap so they know they were seen. Nothing goes to the customer unless you tap. Once per text: each new text they send gets its own reminder if it\'s still unanswered after this long, but the same text never twice; held through your quiet hours; three or more at once come as one list. After that one email, the check-ins below keep reminding you.</div>'+
+      // The reminders that don't stop at one. See dispatchWaitCheckins in the Worker.
+      '<div class="fu-row"><span class="lbl2">Check in with me while anyone\'s waiting <span style="color:var(--muted2);font-weight:400">\u00b7 phone</span></span><span class="sw'+(c.waitCheckins!==false?" on":"")+'" id="cfgCheckins"></span></div>'+
+      '<div class="fu-col"><span class="lbl2">At these times</span><div class="ci-hours" id="cfgCheckinHours">'+checkinChips(c)+'</div></div>'+
+      '<div class="hint">At each time you pick, if anyone is still waiting on a reply, your phone rings once with all of them by name and how long, like <b>"3 people are waiting on you: Ruth 5h \u00b7 Dave 1d \u00b7 Sam 2d"</b>. Tap it and you\'re looking at exactly those people. It does that at every time you pick until each one is answered, marked <b>No reply needed</b> (swipe left on them), or parked. Nobody waiting, no ring. With notifications on, the app\'s icon also shows how many are waiting, like the red number on Messages.</div>'+
+      '<div class="hint" id="cfgCheckinPush">'+checkinPushLine()+'</div>'+
+      '<div class="fu-row"><span class="lbl2">File away chats with nothing going on</span><select id="cfgAutoFile">'+
+        [["7","After 7 days"],["14","After 14 days"],["30","After 30 days"],["0","Never"]].map(function(o){return '<option value="'+o[0]+'"'+(String(autoFileDays(c))===o[0]?" selected":"")+'>'+o[1]+'</option>'}).join("")+
+      '</select></div>'+
+      '<div class="hint">Keeps your list to what\'s in play. A chat with no texts either way for that long moves to <b>Archived</b> on its own, and comes back <b>the second</b> they text, book or get a quote, or a follow-up comes due. Nothing is deleted and nothing changes for the customer. Never filed while something is still coming up: a booked job, a scheduled text, a reminder, a hold, a Clean Club plan, a friend link to send, or a pin. Someone you never answered gets named at every check-in the whole time, then files as <b>never answered</b>. Lost leads and anyone who texted STOP go after 2 days. Restore any of them from Archived and it stays in your list.</div>'+
       '<div class="fu-row"><span class="lbl2">Tell me when the auto-reply sends <span style="color:var(--muted2);font-weight:400">· quote form</span></span><span class="sw'+(c.autoReplyAlert!==false?" on":"")+'" id="cfgArAlert"></span></div>'+
       '<div class="hint">A quote from your site alerts you right away, but the customer\'s reply is held about 3½ minutes so it reads like you texting back, not a bot — and a quote that comes in between 11pm and 5am waits until 5am. This texts you the moment it actually reaches them — with their name and number — so you know they\'ve heard from you and can take the conversation from there. If it fails to send, you get told that instead.</div>'+
       '<div class="fu-row"><span class="lbl2">End the first text on a question <span style="color:var(--muted2);font-weight:400">\u00b7 no car given</span></span><span class="sw'+(c.quoteOpenerAsk===true?" on":"")+'" id="cfgOpenerAsk"></span></div>'+
@@ -9118,6 +9196,15 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     el("cfgSmartOpener").onclick=function(){saveConfig({smartQuoteOpener:!(c.smartQuoteOpener===true)})};
     el("cfgWaitNudge").onclick=function(){saveConfig({waitNudge:!(c.waitNudge!==false)})};
     el("cfgWaitNudgeH").onchange=function(){saveConfig({waitNudgeHours:+el("cfgWaitNudgeH").value})};
+    el("cfgCheckins").onclick=function(){saveConfig({waitCheckins:!(c.waitCheckins!==false)})};
+    Array.prototype.forEach.call(el("cfgCheckinHours").querySelectorAll("[data-ch]"),function(b){b.onclick=function(){
+      var h=+b.getAttribute("data-ch"),cur=checkinHoursOf(c),on=cur.indexOf(h)>=0;
+      var next=on?cur.filter(function(x){return x!==h}):cur.concat([h]);
+      saveConfig({waitCheckinHours:next})}});
+    var cpOn=el("cfgCheckinPushOn");if(cpOn)cpOn.onclick=function(){pushEnable()};
+    // The list comes from the Worker already filed (see filedView), so a new
+    // setting only shows once the list is fetched again.
+    el("cfgAutoFile").onchange=function(){saveConfig({autoFileDays:+el("cfgAutoFile").value}).then(function(){refreshThreads()})};
     el("cfgQab").onclick=function(){saveConfig({quoteAbandon:!(c.quoteAbandon!==false)})};
     el("cfgQabMin").onchange=function(){saveConfig({quoteAbandonMin:+el("cfgQabMin").value})};
     el("cfgClickAlert").onchange=function(){saveConfig({clickAlert:el("cfgClickAlert").value})};
@@ -9385,7 +9472,12 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(t.needsYou)pills.push('<span class="pk-pill hot">'+esc(t.needsYouAsk||"Needs you")+'</span>');
     if(pills.length)h+='<div class="pk-pills">'+pills.join("")+'</div>';
 
-    h+='<div class="pk-head '+hd.tone+'"><b>'+esc(hd.t)+'</b>'+(hd.s?'<span>'+esc(hd.s)+'</span>':'')+'</div>';
+    // "Waiting on your reply" when there's nothing to answer ("I'll let you
+    // know", a thumbs-up, something settled on the phone) is the one verdict
+    // that keeps a name out of every check-in. Right where it says waiting.
+    var canClear=waitingOnMe(t)&&!t.optedOut;
+    h+='<div class="pk-head '+hd.tone+'"><b>'+esc(hd.t)+'</b>'+(hd.s?'<span>'+esc(hd.s)+'</span>':'')+
+       (canClear?'<button class="pk-noreply" data-pk="noreply">'+ic("check-circle",14)+'No reply needed</button>':'')+'</div>';
 
     // The story, under the status. Nothing is rendered once we've asked and come
     // back empty — the "they said last" block below already covers that case.
@@ -9531,6 +9623,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         if(a==="nav"){vibrate(8);jdNavigate(navTo);return}
         if(a==="remind"){jdSheetClose();openReminderModal(t);return}
         if(a==="archive"){doArchiveToggle(t);after();return}
+        if(a==="noreply"){noReplyNeeded(t.phone);after();return}
       };
     });
     var step=function(id,to){
@@ -9538,6 +9631,23 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       b.onclick=function(){PEEK.phone=order[to];vibrate(5);peekRender()};
     };
     step("#pkPrev",at-1);step("#pkNext",at+1);
+  }
+
+  // Out of "Waiting on you" without opening the conversation, which would mark
+  // it read. The verdict belongs to their last text, so the next one they send
+  // puts them straight back (see apiNoReplyNeeded in the Worker).
+  function noReplyNeeded(phone){
+    var row=threadByPhone(phone);
+    // Off the list right away, the way a swipe-to-archive is; the refresh
+    // after the save makes it true or puts it back.
+    if(row){row.awaitingReply=false;row.closedReason="You said no reply needed";refreshBadges();renderMain()}
+    post("/api/reply/none",{phone:phone}).then(function(d){
+      if(d&&d.ok){
+        toast("No reply needed. Their next text puts them back in Waiting.");
+        if(state.phone===phone&&d.thread){state.thread=d.thread;renderThread()}
+      }else toast(d&&d.error==="nothing_to_answer"?"You spoke last, so there's nothing to clear":"Couldn't save that",{bad:true});
+      refreshThreads();
+    }).catch(function(){toast("Network error",{bad:true});refreshThreads()});
   }
 
   function doArchiveToggle(t){
@@ -9602,6 +9712,13 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         var jvid=decodeURIComponent(jm[1]);
         if(window.history&&history.replaceState)history.replaceState(null,"",location.pathname+location.hash);
         GROW.journey.open=jvid;jnLoadOne(jvid);openAnalytics("journey");return;
+      }
+      // ?waiting=1 (from a check-in push or email: "3 people are waiting on
+      // you") → Chats, narrowed to exactly those people.
+      if(/[?&]waiting=1/.test(location.search)){
+        if(window.history&&history.replaceState)history.replaceState(null,"",location.pathname+location.hash);
+        state.filter="waiting";state.search="";var sw=el("search");if(sw)sw.value="";
+        setTab("messages");return;
       }
       var m=location.search.match(/[?&]c=([^&#]+)/);
       if(m){state.pendingC=decodeURIComponent(m[1]);
