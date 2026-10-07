@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-06·recnotice';
+const BUILD = '2026-10-07·jpcal';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -692,6 +692,8 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/booking-cal-test') return apiCalTest(request);
   if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/gcal-setup') return apiGcalSetup(request);
   if (request.method === 'POST' && pathname === '/api/gcal-sync-all') return apiGcalSyncAll();
+  if ((request.method === 'GET' || request.method === 'POST') && pathname === '/api/gcal-crew') return apiGcalCrew(request);
+  if (request.method === 'POST' && pathname === '/api/gcal-crew-sync-all') return apiGcalCrewSyncAll(request);
   if (request.method === 'POST' && pathname === '/api/block')      return apiBlock(request);
   // ---- Calls (the phone log Google Voice used to be the only place to see) ----
   if (request.method === 'GET'  && pathname === '/api/calls')      return apiCalls();
@@ -17555,6 +17557,9 @@ async function bkCreate(b, opts) {
     rainReady: rainReady || undefined, areaOnly: areaOnly || undefined,
     service, serviceName: svc.name, size, sizeLabel: String(b.sizeLabel || size),
     vehicle: String(b.vehicle || '').trim(), addons, wantQuote: !!b.wantQuote,
+    // Kept on the record (it used to live only in the alert's words) because
+    // JP's calendar needs it: a "War Zone" interior is a different afternoon.
+    condition: String(b.condition || '').trim().slice(0, 30) || undefined,
     date, slot, dateLabel, apptAt: bkLaEpoch(date, slot), durationMin,
     estimate, base, name, phone, address, city, email: String(b.email || '').trim(),
     notes: String(b.notes || '').trim(), ackWaterPower: b.ackWaterPower !== false, smsConsent: b.smsConsent !== false,
@@ -17921,19 +17926,23 @@ const GCAL_SCRIPT = `// Mikey's Detailing: puts every booking on your Google Cal
 // This runs inside YOUR Google account, as you, so the events are yours and
 // Google's own phone notifications fire for them. The dashboard sends it each
 // new booking, each confirm and each cancel. Setup steps are in the dashboard:
-// Bookings, Settings, "Put bookings on my Google Calendar".
+// Bookings, Settings.
 //
 // Don't share the link you get when you deploy this. The key below is what
 // stops anyone else adding events to your calendar, and the dashboard fills it in.
 var KEY = '__KEY__';
+// Blank: your main calendar. Filled in: that one calendar only (the one you
+// share with your helper), and nothing else in your account is touched.
+var CAL = '__CAL__';
 var TAG = 'mikeyBookingId';
 
 function doPost(e) {
   try {
     var d = JSON.parse(e.postData.contents);
     if (d.key !== KEY) return reply({ ok: false, error: 'wrong key' });
-    var cal = CalendarApp.getDefaultCalendar();
-    if (d.op === 'ping') return reply({ ok: true, calendar: cal.getName() });
+    var cal = CAL ? CalendarApp.getCalendarById(CAL) : CalendarApp.getDefaultCalendar();
+    if (!cal) return reply({ ok: false, error: 'This Google account can not see that calendar. Deploy the script from the account that made it.' });
+    if (d.op === 'ping') return reply({ ok: true, calendar: cal.getName(), owned: cal.isOwnedByMe() });
     var found = findEvent(cal, d.id);
     if (d.op === 'delete') {
       if (found) found.deleteEvent();
@@ -17941,8 +17950,10 @@ function doPost(e) {
     }
     if (d.op === 'upsert') {
       var start = new Date(d.start), end = new Date(d.end);
-      var ev = found;
+      var ev = found, moved = false;
       if (ev) {
+        moved = ev.getStartTime().getTime() !== start.getTime() || ev.getEndTime().getTime() !== end.getTime() ||
+          ev.getLocation() !== (d.location || '');
         ev.setTime(start, end);
         ev.setTitle(d.title);
         ev.setLocation(d.location || '');
@@ -17953,7 +17964,7 @@ function doPost(e) {
       }
       ev.removeAllReminders();
       (d.popups || []).slice(0, 5).forEach(function (m) { ev.addPopupReminder(m); });
-      return reply({ ok: true, created: !found });
+      return reply({ ok: true, created: !found, moved: moved });
     }
     return reply({ ok: false, error: 'unknown op' });
   } catch (err) {
@@ -17977,6 +17988,9 @@ function reply(o) {
 `;
 
 async function gcalLoad() { return (await kv().get(GCAL_KV, { type: 'json' })) || {}; }
+// The script as he copies it. One script, two jobs: blank CAL is his own
+// calendar, a calendar id is JP's (see "JP's calendar" below).
+function gcalScript(key, calId) { return GCAL_SCRIPT.replace('__KEY__', key).replace('__CAL__', calId || ''); }
 
 async function gcalPost(payload, g) {
   g = g || await gcalLoad();
@@ -18018,10 +18032,12 @@ function bkGcalEvent(bk) {
 }
 
 // One booking, whatever its state: on the calendar while it's a job, off it
-// once it's declined or cancelled. Never throws.
-async function bkGcalSync(bk) {
+// once it's declined or cancelled. Never throws. JP's calendar follows along
+// in the background unless `mineOnly` (the catch-up tap, which is his alone).
+async function bkGcalSync(bk, mineOnly) {
   try {
     if (!bk || !bk.id) return { ok: false };
+    if (!mineOnly) background(crewBkSync(bk));
     if (bk.status === 'declined' || bk.status === 'cancelled') return await gcalPost({ op: 'delete', id: bk.id });
     return await gcalPost(Object.assign({ op: 'upsert' }, bkGcalEvent(bk)));
   } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
@@ -18057,7 +18073,7 @@ async function apiGcalSetup(request) {
       g = { url: g.url || '', key: genId() + genId() + genId() };
       await kv().put(GCAL_KV, JSON.stringify(g));
     }
-    return json({ ok: true, connected: !!g.url, url: g.url || '', script: GCAL_SCRIPT.replace('__KEY__', g.key) });
+    return json({ ok: true, connected: !!g.url, url: g.url || '', script: gcalScript(g.key, '') });
   }
   const d = await readJson(request);
   const url = jdStr(d.url, 300);
@@ -18086,14 +18102,14 @@ async function apiGcalSyncAll() {
   const list = (await loadBookings()).filter((b) => (b.status === 'pending' || b.status === 'confirmed') && b.apptAt > now - 86400000);
   let added = 0, failed = 0, lastError = '';
   for (const bk of list.slice(0, 40)) {
-    const r = await bkGcalSync(bk);
+    const r = await bkGcalSync(bk, true);
     if (r && r.ok) added++; else { failed++; lastError = (r && r.error) || lastError; }
   }
   // ...and the jobs agreed over text, which live on the day board rather than
   // in the booking list. Same 40-call ceiling across both, so one tap can't
   // run the Worker into its subrequest limit.
   for (const { job, date } of (await dayJobsAhead(60)).slice(0, Math.max(0, 40 - list.length))) {
-    const r = await dayJobGcalSync(job, date);
+    const r = await dayJobGcalSync(job, date, true);
     if (r && r.ok) added++; else { failed++; lastError = (r && r.error) || lastError; }
   }
   return json({ ok: failed === 0, added, failed, error: lastError });
@@ -18133,15 +18149,22 @@ function dayJobGcalEvent(job, date) {
     popups: GCAL_POPUPS,
   };
 }
-async function dayJobGcalSync(job, date) {
+async function dayJobGcalSync(job, date, mineOnly) {
   try {
     if (!job || !job.id || !jdIsDate(date)) return { ok: false };
+    if (!mineOnly) background(crewDaySync(job, date));
     return await gcalPost(Object.assign({ op: 'upsert' }, dayJobGcalEvent(job, date)));
   } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
 }
-async function dayJobGcalDrop(id) {
-  try { return id ? await gcalPost({ op: 'delete', id }) : { ok: false }; }
-  catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+// `job` and `date`, when the caller still has them, are only for the words in
+// the "off JP's calendar" alert.
+async function dayJobGcalDrop(id, job, date) {
+  try {
+    if (!id) return { ok: false };
+    // A job that never had a time was never on JP's: nothing to warn about.
+    background(crewDrop(id, job && jdIsDate(date) ? crewDayEvent(job, date) : null, 'taken off your board', !!(job && job.tentative)));
+    return await gcalPost({ op: 'delete', id });
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
 }
 // Hand-entered and text-detected jobs on the boards from today out, for the
 // "add my upcoming jobs now" catch-up. One KV read per day, on a tap only.
@@ -18157,6 +18180,255 @@ async function dayJobsAhead(days) {
     });
   }
   return out;
+}
+
+// ===========================================================================
+// JP's calendar: confirmed jobs on the calendar he shares with his helper
+// ===========================================================================
+// Mikey used to text JP the when and where of every job. Now the jobs go on a
+// Google Calendar he shares with JP, through a second copy of the same Apps
+// Script with that calendar's id in it, so the script can never touch his own
+// calendar. Different rules from his own calendar, because JP drives to what's
+// on this one:
+//   - Only real jobs: a booking he (or the instant-confirm) confirmed, and a
+//     board job with an agreed time. A request he hasn't confirmed, or a
+//     "TIME NOT SET" placeholder, stays off, so JP never shows up for a maybe.
+//   - What JP needs in the driveway: the address, the car, the condition, the
+//     add-ons, the customer's phone and their notes. Not the price: that's
+//     between Mikey and the customer.
+//   - No popups set from here. Reminders on a shared calendar are each
+//     person's own, and these would only double up Mikey's.
+//   - Never on a public calendar. It carries names, addresses and phone
+//     numbers, so every add checks Google's public feed first and refuses.
+//   - Mikey hears about every add, move and removal, and loudest about one
+//     that failed, because a failure means JP doesn't know.
+// Best-effort and backgrounded like his own calendar: never throws, never
+// holds up a booking.
+const GCAL_CREW_KV = 'gcal:crew';            // { url, key, calId, name, owned }
+async function crewLoad() { return (await kv().get(GCAL_CREW_KV, { type: 'json' })) || {}; }
+async function crewWho() {
+  try { return String((await loadMoneyConfig()).jpName || '').trim() || 'JP'; } catch (e) { return 'JP'; }
+}
+// A Google Calendar id: an address-shaped string. Checked this tightly because
+// it is pasted into the script between quotes.
+function crewCalId(v) {
+  const id = String(v || '').trim().replace(/^.*[?&]src=([^&]+).*$/, (m, x) => decodeURIComponent(x));
+  return /^[A-Za-z0-9._%+-]{1,120}@[A-Za-z0-9.-]{1,80}\.[A-Za-z]{2,}$/.test(id) ? id : '';
+}
+// Anyone on the internet can read a public calendar. Google answers its public
+// feed with the calendar itself for one of those and a 404 page for a private
+// one (checked against his real calendars on 2026-10-07). Returns the reason
+// to hold the job back, or '' when it's private. A check that couldn't reach
+// Google holds it back too, rather than guessing, and says that's why.
+async function crewPublicWhy(calId) {
+  try {
+    const res = await fetch(`https://calendar.google.com/calendar/ical/${encodeURIComponent(calId)}/public/basic.ics`, { redirect: 'follow' });
+    if (res.status === 404) return '';
+    if (res.ok) return /BEGIN:VCALENDAR/.test((await res.text()).slice(0, 400)) ? CREW_PUBLIC : '';
+    return `Google didn't answer whether the calendar is private (${res.status}), so it was held back.`;
+  } catch (e) { return 'Google didn\'t answer whether the calendar is private, so it was held back.'; }
+}
+const CREW_PUBLIC = 'The calendar is public, so anyone online could read the customer\'s name, address and phone. ' +
+  'Google Calendar on a computer → ⋮ next to it → Settings and sharing → Access permissions → untick "Make available to public".';
+
+function crewPhone(p) {
+  const d = String(p || '').replace(/\D/g, '').replace(/^1(?=\d{10}$)/, '');
+  return d.length === 10 ? `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}` : String(p || '');
+}
+function crewWhen(ms) {
+  return new Date(ms).toLocaleString('en-US', { timeZone: 'America/Los_Angeles', weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+}
+
+function crewBkEvent(bk) {
+  const where = [bk.address, bk.city].filter(Boolean).join(', ');
+  const addons = bk.addons || [];
+  return {
+    id: bk.id,
+    title: `🚗 ${bk.serviceName} · ${bk.name}${bk.city ? ` (${bk.city})` : ''}`,
+    start: bk.apptAt,
+    end: bk.apptAt + (Number(bk.durationMin) || 180) * 60000,
+    location: where,
+    description: [
+      [bk.serviceName, bk.sizeLabel || bk.size, bk.vehicle, bk.condition].filter(Boolean).join(' · '),
+      addons.length ? `Add-ons: ${addons.join(', ')}` : '',
+      // The site lists the free extras as add-ons; a club first visit doesn't.
+      bk.rainReady && !addons.some((a) => /rain-ready/i.test(a)) ? 'Rain-Ready: exterior polish, ceramic wax and RainX on this one too (free for them)' : '',
+      bk.club ? 'Clean Club first visit' : '',
+      bk.wantQuote ? 'They also want a ceramic or paint correction quote. Mikey prices that.' : '',
+      `Customer: ${bk.name} · ${crewPhone(bk.phone)}`,
+      bk.areaOnly ? 'Only the street so far. Mikey is getting the house number.' : '',
+      bk.ackWaterPower === false ? 'Water and power: NOT sorted yet. Check with Mikey before heading out.' : 'Water and power: their outdoor spigot and outlet',
+      bk.notes ? `Their notes: ${bk.notes}` : '',
+    ].filter(Boolean).join('\n'),
+    popups: [],
+  };
+}
+function crewDayEvent(job, date) {
+  const slot = /^\d{2}:\d{2}$/.test(String(job.slot || '')) ? job.slot : '09:00';
+  const start = bkLaEpoch(date, slot);
+  const who = job.name || 'Customer';
+  return {
+    id: job.id,
+    title: `🚗 ${job.service || 'Detail'} · ${who}${job.city ? ` (${job.city})` : ''}`,
+    start,
+    end: start + (Math.max(15, Number(job.durationMin) || 180)) * 60000,
+    location: [job.address, job.city].filter(Boolean).join(', '),
+    description: [
+      [job.service, job.size, job.vehicle].filter(Boolean).join(' · '),
+      `Customer: ${who}${job.phone ? ` · ${crewPhone(job.phone)}` : ''}`,
+      job.address ? '' : 'No address on it yet. Mikey will send it.',
+      job.notes ? `Notes: ${job.notes}` : '',
+    ].filter(Boolean).join('\n'),
+    popups: [],
+  };
+}
+
+// What the alert says. `ev` can be null on a removal the caller had no
+// details for; the alert still goes, just with less in it.
+async function crewAlert(kind, ev, g, why) {
+  const jp = await crewWho();
+  const cal = g && g.name ? `the "${g.name}"` : 'the';
+  const what = ev ? `${ev.title.replace(/^🚗 /, '')}, ${crewWhen(ev.start)}` : 'a job';
+  const head = {
+    add: `👷 On ${jp}'s calendar: ${what}`,
+    move: `🔁 Changed on ${jp}'s calendar: ${what}`,
+    drop: `❌ Off ${jp}'s calendar: ${what}`,
+    fail: `⚠️ NOT on ${jp}'s calendar: ${what}`,
+    stuck: `⚠️ Still on ${jp}'s calendar: ${what}`,
+  }[kind];
+  const after = {
+    add: `It's on ${cal} calendar you share with ${jp}. Nothing was sent to the customer.`,
+    move: `${jp}'s copy has the new time and place. Google only tells ${jp} about a change if he turned that on, so if it's soon, give him a heads-up.`,
+    drop: `Taken off ${cal} calendar (${why || 'cancelled'}). If ${jp} was counting on it, let him know.`,
+    fail: `It did not go on: ${why || 'the script did not answer'}\n\nText ${jp} this one yourself. Bookings → Settings → ${jp}'s calendar to fix it, then "Put my upcoming jobs on it".`,
+    stuck: `It should have come off ${cal} calendar (${why || 'cancelled'}), but Google didn't take it off. Tell ${jp}, and delete it there yourself.`,
+  }[kind];
+  const body = [head, ev ? `${crewWhen(ev.start)} to ${new Date(ev.end).toLocaleString('en-US', { timeZone: 'America/Los_Angeles', hour: 'numeric', minute: '2-digit' })}` : '',
+    ev && ev.location ? `Where: ${ev.location}` : '', '', after,
+    kind === 'add' || kind === 'move' ? `\nWhat ${jp} sees:\n${ev.description}` : ''].filter((x, i) => x || i === 3).join('\n');
+  try { await kv().put('push:note', JSON.stringify({ title: head, body: ev ? crewWhen(ev.start) : '', at: Date.now() }), { expirationTtl: 900 }); } catch (e) {}
+  return notifyMikey(head, body);
+}
+
+// On, or updated in place. `quiet` is the catch-up tap: it reports on screen,
+// not as a pile of emails.
+async function crewPut(ev, quiet) {
+  try {
+    if (!ev || !(ev.end > Date.now())) return { ok: true, skipped: true };   // a job typed in after it happened
+    const g = await crewLoad();
+    if (!g.url || !g.key || !g.calId) return { ok: false, error: 'not_set_up' };
+    const held = await crewPublicWhy(g.calId);
+    if (held) {
+      if (!quiet) await crewAlert('fail', ev, g, held);
+      return { ok: false, error: held };
+    }
+    const r = await gcalPost(Object.assign({ op: 'upsert' }, ev), g);
+    if (!quiet) {
+      if (!r.ok) await crewAlert('fail', ev, g, r.error);
+      else if (r.created) await crewAlert('add', ev, g);
+      else if (r.moved) await crewAlert('move', ev, g);
+    }
+    return r;
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+}
+// `maybe`: it may never have been on (a job that never had a time), so a
+// failed delete is no news worth an alert.
+async function crewDrop(id, ev, why, maybe) {
+  try {
+    const g = await crewLoad();
+    if (!id || !g.url || !g.key) return { ok: false, error: 'not_set_up' };
+    const r = await gcalPost({ op: 'delete', id }, g);
+    if (r.ok && r.deleted) await crewAlert('drop', ev, g, why);
+    else if (!r.ok && !maybe) await crewAlert('stuck', ev, g, why);
+    return r;
+  } catch (e) { return { ok: false, error: String((e && e.message) || e) }; }
+}
+
+// A booking: on while confirmed, off once cancelled or declined. Only one that
+// was ever confirmed can be on there, so a declined request costs no call.
+async function crewBkSync(bk) {
+  if (!bk || !bk.id) return { ok: false };
+  if (bk.status === 'confirmed') return crewPut(crewBkEvent(bk));
+  if ((bk.status === 'cancelled' || bk.status === 'declined') && bk.confirmedAt) return crewDrop(bk.id, crewBkEvent(bk), bk.status);
+  return { ok: true, skipped: true };
+}
+// A board job: on once it has an agreed time. One that goes back to a guess
+// (a move with no time) comes off until he pins it down.
+async function crewDaySync(job, date) {
+  if (!job || !job.id || !jdIsDate(date)) return { ok: false };
+  if (job.tentative) return crewDrop(job.id, crewDayEvent(job, date), 'the time is not pinned down', true);
+  return crewPut(crewDayEvent(job, date));
+}
+
+// Bookings → Settings → "JP's calendar". GET: where setup stands, and the
+// script with his key and the calendar id in it once he's given the id.
+// POST { calId }: saves the calendar (a new one needs the script redeployed,
+// so it disconnects). POST { url }: checks the calendar isn't public, pings
+// the script, connects. POST { url: '' }: disconnects.
+async function apiGcalCrew(request) {
+  let g = await crewLoad();
+  const who = await crewWho();
+  if (!g.key) {
+    g = Object.assign({}, g, { key: genId() + genId() + genId() });
+    await kv().put(GCAL_CREW_KV, JSON.stringify(g));
+  }
+  const view = (x) => ({ ok: true, who, connected: !!(x.url && x.calId), url: x.url || '', calId: x.calId || '',
+    calendar: x.name || '', owned: x.owned !== false, script: x.calId ? gcalScript(x.key, x.calId) : '' });
+  if (request.method === 'GET') return json(view(g));
+  const d = await readJson(request);
+  if (d.calId !== undefined) {
+    const calId = crewCalId(d.calId);
+    if (!calId) return json({ ok: false, error: 'That isn\'t a calendar ID. Google Calendar → the calendar\'s Settings and sharing → Integrate calendar → Calendar ID. It ends in @group.calendar.google.com.' });
+    const next = calId === g.calId ? g : { key: g.key, calId, url: '', name: '' };
+    await kv().put(GCAL_CREW_KV, JSON.stringify(next));
+    return json(view(next));
+  }
+  const url = jdStr(d.url, 300);
+  if (!url) {
+    const next = { key: g.key, calId: g.calId || '', url: '', name: '' };
+    await kv().put(GCAL_CREW_KV, JSON.stringify(next));
+    return json(view(next));
+  }
+  if (!/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]+\/exec$/.test(url)) {
+    return json({ ok: false, error: 'That isn\'t a web app link. It starts https://script.google.com/macros/s/ and ends /exec.' });
+  }
+  if (!g.calId) return json({ ok: false, error: 'Save the calendar ID first.' });
+  const held = await crewPublicWhy(g.calId);
+  if (held) return json({ ok: false, error: held });
+  const probe = Object.assign({}, g, { url });
+  const r = await gcalPost({ op: 'ping' }, probe);
+  if (!r.ok) return json({ ok: false, error: r.error || 'The script did not answer.' });
+  const next = Object.assign(probe, { name: String(r.calendar || '').slice(0, 80), owned: r.owned !== false });
+  await kv().put(GCAL_CREW_KV, JSON.stringify(next));
+  return json(view(next));
+}
+
+// "Put my upcoming jobs on it": every confirmed booking and every pinned board
+// job from today on, soonest first, quietly (the answer is on screen). Safe to
+// tap twice: the script finds a job's event before it makes one. The privacy
+// check runs once for the batch, so 40 jobs are 40 calls to Google, the same
+// ceiling as his own calendar's catch-up and for the same subrequest limit.
+// More than 40 comes back as `next`, and the button carries on from there.
+async function apiGcalCrewSyncAll(request) {
+  const d = await readJson(request);
+  const g = await crewLoad();
+  if (!g.url || !g.calId) return json({ ok: false, error: 'Connect it first.' });
+  const held = await crewPublicWhy(g.calId);
+  if (held) return json({ ok: false, added: 0, failed: 0, error: held });
+  const now = Date.now();
+  const evs = (await loadBookings())
+    .filter((b) => b.status === 'confirmed' && b.apptAt + (Number(b.durationMin) || 180) * 60000 > now)
+    .map(crewBkEvent);
+  for (const { job, date } of await dayJobsAhead(60)) if (!job.tentative) evs.push(crewDayEvent(job, date));
+  const todo = evs.filter((ev) => ev.end > now).sort((a, b) => a.start - b.start);
+  const from = Math.max(0, Math.min(todo.length, parseInt(d && d.from, 10) || 0));
+  let added = 0, updated = 0, failed = 0, lastError = '';
+  for (const ev of todo.slice(from, from + 40)) {
+    const r = await gcalPost(Object.assign({ op: 'upsert' }, ev), g);
+    if (r && r.ok) { if (r.created) added++; else updated++; } else { failed++; lastError = (r && r.error) || lastError; }
+  }
+  const next = from + 40 < todo.length ? from + 40 : 0;
+  return json({ ok: failed === 0, added, updated, failed, error: lastError, more: next ? todo.length - next : 0, next });
 }
 
 // ===========================================================================
@@ -18949,11 +19221,12 @@ async function apiDayRemove(request) {
   const date = jdIsDate(d.date) ? d.date : jdToday(cfg);
   const id = jdStr(d.jobId, 64);
   const doc = await loadDay(date);
+  const gone = doc.manual.find((m) => m.id === id);
   doc.manual = doc.manual.filter((m) => m.id !== id);
   delete doc.state[id];
   doc.order = doc.order.filter((x) => x !== id);
   await saveDay(doc);
-  if (id.startsWith('m:')) background(dayJobGcalDrop(id));
+  if (id.startsWith('m:')) background(dayJobGcalDrop(id, gone, date));
   return json({ ok: true, day: await buildDay(date) });
 }
 
@@ -21320,6 +21593,9 @@ async function apiCustAction(request, url) {
     await saveThread(t); await updateIndexEntry(t);
   }
   await saveBookings(all);
+  // Off his calendar and JP's. Before this, a job cancelled from the customer's
+  // own link stayed on both, and JP would have driven to it.
+  background(bkGcalSync(bk));
   await notifyMikey(
     `❌ ${t.name || rec.phone} cancelled their own booking`,
     [`${bk.serviceName || 'Job'} · ${bk.dateLabel || bk.date} at ${bkFmt12(bk.slot)}`,
@@ -24142,7 +24418,7 @@ async function detMoveBoardJob(rec, fromAt, cfg) {
     delete doc.state[job.id];
     doc.order = doc.order.filter((x) => x !== job.id);
     await saveDay(doc);
-    background(dayJobGcalDrop(job.id));
+    background(dayJobGcalDrop(job.id, job, from));
     return;
   }
   const moved = Object.assign({}, job, { slot: rec.slot || job.slot, tentative: !!rec.tentative });
