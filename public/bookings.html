@@ -379,6 +379,9 @@ function renderSettings(c){
   var gc='<div id="gcalBox"><div class="hint">Loading…</div></div>';
   H.push(sec("📲 Put bookings on my Google Calendar","Every booking lands on your calendar the moment it comes in, and so does every job you agree over text, with phone alerts a week, 3 days, a day, 2 hours and 30 minutes before. Confirm, move and cancel update it too.",gc));
 
+  // JP's calendar: a second calendar he shares with his helper, confirmed jobs only
+  H.push('<div id="crewSec">'+sec('👷 <span class="crewWho">JP</span>\'s calendar',"Confirmed jobs go on a calendar you share with <span class=\"crewWho\">JP</span>: when, the address, the car and its condition, add-ons, the customer's phone and their notes. Not the price. Requests you haven't confirmed and times nobody pinned down stay off it. You get an alert every time a job goes on, moves or comes off.",'<div id="crewBox"><div class="hint">Loading…</div></div>')+'</div>');
+
   // Blocked dates
   H.push(sec("🚫 Days off / blocked dates","One date per line (YYYY-MM-DD). Great for vacations — the calendar shows nothing those days.",
     '<div class="fld"><textarea class="in" id="blockedTA" rows="3" placeholder="2026-08-14">'+esc((c.blockedDates||[]).join("\n"))+'</textarea></div>'));
@@ -420,6 +423,7 @@ function wireSettings(){
   $$("[data-rm]").forEach(function(x){ x.onclick=function(){ x.closest(".addon-row").remove(); }; });
   var add=$("#addAddon"); if(add) add.onclick=function(){ var w=document.createElement("div"); w.innerHTML=addonRow(null); var row=w.firstChild; $("#addonRows").appendChild(row); row.querySelector("[data-rm]").onclick=function(){row.remove();}; };
   loadGcal();
+  loadCrew();
   var t=$("#calTest"); if(t) t.onclick=function(){ var url=$("#icalUrl").value.trim(); var res=$("#calResult"); res.textContent="Testing…"; res.style.color="var(--faint)";
     api("/api/booking-cal-test",{method:"POST",body:JSON.stringify({url:url})}).then(function(d){ if(d&&d.ok){ res.textContent="✓ Connected — "+d.count+" events found"; res.style.color="var(--green)"; } else { res.textContent="✕ "+((d&&d.error)||"failed"); res.style.color="#ff6b78"; } }).catch(function(){ res.textContent="✕ error"; res.style.color="#ff6b78"; }); };
 }
@@ -459,6 +463,67 @@ function loadGcal(){
       api("/api/gcal-sync-all",{method:"POST",body:"{}"}).then(function(r){
         if(r&&r.ok) say(true,"✓ "+r.added+" job"+(r.added===1?"":"s")+" on your calendar");
         else say(false,"✕ "+((r&&r.added)||0)+" added, "+((r&&r.failed)||0)+" failed"+(r&&r.error?": "+r.error:""));
+      }).catch(function(){ say(false,"✕ error"); }); };
+  }).catch(function(){ box.innerHTML='<div class="hint">Could not load this. Refresh and try again.</div>'; });
+}
+// Same five Google steps as his own calendar, plus the two that only this one
+// needs: the calendar's id, and the sharing settings, because a public
+// calendar would show every customer's address to anyone.
+function loadCrew(){
+  var box=$("#crewBox"); if(!box) return;
+  api("/api/gcal-crew").then(function(d){
+    if(!d||!d.ok){ box.innerHTML='<div class="hint">Could not load this. Refresh and try again.</div>'; return; }
+    var who=d.who||"JP";
+    $$(".crewWho").forEach(function(x){ x.textContent=who; });
+    var st=d.connected?'✓ Connected to '+esc(d.calendar||"the calendar")+'. Confirmed jobs go on it.':(d.calId?'Calendar saved. Now the script (steps 2 to 5).':'Not connected yet. About 10 minutes, once, on a computer.');
+    box.innerHTML=
+      '<div class="hint" id="crewState" style="margin-bottom:10px;font-weight:600;color:'+(d.connected?'var(--green)':'var(--faint)')+'">'+st+'</div>'+
+      (d.connected&&!d.owned?'<div class="hint" id="crewOwned" style="margin-bottom:10px;color:#ffb020">The Google account running the script doesn\'t own this calendar. If it can only see events, nothing will go on, and you\'ll get an alert saying so.</div>':'')+
+      '<ol class="hint" style="padding-left:18px;line-height:1.6">'+
+        '<li>In Google Calendar on a computer: ⋮ next to the calendar → <b>Settings and sharing</b>.'+
+          '<br>• <b>Access permissions</b>: untick <b>Make available to public</b>. Jobs won\'t go on a public calendar.'+
+          '<br>• <b>Share with specific people</b> → <b>Add people</b> → '+esc(who)+'\'s Gmail → <b>See all event details</b> → <b>Send</b>.'+
+          '<br>• <b>Time zone</b>: Pacific Time.'+
+          '<br>• <b>Integrate calendar</b>: copy the <b>Calendar ID</b>, paste it here and press <b>Save calendar</b>.</li>'+
+        '<li>Open <a href="https://script.google.com/home/projects/create" target="_blank" rel="noopener">script.google.com</a>, signed in as the Google account that <b>made</b> this calendar. Delete everything in the editor, tap <b>Copy script</b>, paste it in, press the 💾 save icon.</li>'+
+        '<li><b>Deploy</b> → <b>New deployment</b> → ⚙️ next to "Select type" → <b>Web app</b>. <b>Execute as: Me</b>, <b>Who has access: Anyone</b>. Press <b>Deploy</b>.</li>'+
+        '<li>Authorize: pick the account → <b>Advanced</b> → <b>Go to (project name) (unsafe)</b> → <b>Allow</b>.</li>'+
+        '<li>Copy the <b>Web app URL</b> (ends in <b>/exec</b>), paste it below, press <b>Connect</b>. Then <b>Put my upcoming jobs on it</b>.</li>'+
+      '</ol>'+
+      '<div class="fld"><label>Calendar ID</label><input class="in" id="crewCal" placeholder="…@group.calendar.google.com" '+inNum(d.calId||"")+'></div>'+
+      '<button class="testbtn" id="crewSave">Save calendar</button> <button class="testbtn" id="crewCopy"'+(d.script?'':' style="display:none"')+'>Copy script</button> <span id="crewCopied" class="hint" style="display:inline"></span>'+
+      '<div class="fld" style="margin-top:12px"><label>Web app URL</label><input class="in" id="crewUrl" placeholder="https://script.google.com/macros/s/…/exec" '+inNum(d.url||"")+'></div>'+
+      '<button class="testbtn" id="crewConnect">Connect</button> <button class="testbtn" id="crewSync"'+(d.connected?'':' style="display:none"')+'>Put my upcoming jobs on it</button> <span id="crewResult" class="hint" style="display:inline"></span>'+
+      '<div class="hint" style="margin-top:10px">'+esc(who)+': accept the share email, then in Google Calendar → Settings → this calendar → <b>Event notifications</b>, add the reminders you want. Each person sets their own, so nothing from here rings '+esc(who)+'\'s phone.</div>';
+    var script=d.script||"";
+    var res=$("#crewResult");
+    function say(ok,msg){ res.textContent=msg; res.style.color=ok?"var(--green)":"#ff6b78"; }
+    function busy(msg){ res.textContent=msg; res.style.color="var(--faint)"; }
+    $("#crewSave").onclick=function(){ busy("Saving…");
+      api("/api/gcal-crew",{method:"POST",body:JSON.stringify({calId:$("#crewCal").value.trim()})}).then(function(r){
+        if(!r||!r.ok) return say(false,"✕ "+((r&&r.error)||"failed"));
+        script=r.script||""; $("#crewCal").value=r.calId||""; $("#crewCopy").style.display=script?"":"none";
+        if(!r.connected){ $("#crewState").textContent="Calendar saved. Now the script (steps 2 to 5)."; $("#crewState").style.color="var(--faint)"; $("#crewSync").style.display="none"; }
+        say(true,"✓ Saved");
+      }).catch(function(){ say(false,"✕ error"); }); };
+    $("#crewCopy").onclick=function(){
+      var done=function(){ $("#crewCopied").textContent="✓ Copied"; };
+      if(navigator.clipboard&&navigator.clipboard.writeText) navigator.clipboard.writeText(script).then(done,function(){ fallbackCopy(script); done(); });
+      else { fallbackCopy(script); done(); }
+    };
+    $("#crewConnect").onclick=function(){ busy("Checking…");
+      api("/api/gcal-crew",{method:"POST",body:JSON.stringify({url:$("#crewUrl").value.trim()})}).then(function(r){
+        if(r&&r.ok&&r.connected){ say(true,"✓ Connected to "+(r.calendar||"the calendar")); $("#crewState").textContent="✓ Connected to "+(r.calendar||"the calendar")+". Confirmed jobs go on it."; $("#crewState").style.color="var(--green)"; $("#crewSync").style.display=""; }
+        else if(r&&r.ok){ say(true,"Disconnected."); $("#crewSync").style.display="none"; }
+        else say(false,"✕ "+((r&&r.error)||"failed"));
+      }).catch(function(){ say(false,"✕ error"); }); };
+    var from=0;
+    $("#crewSync").onclick=function(){ busy("Adding…");
+      api("/api/gcal-crew-sync-all",{method:"POST",body:JSON.stringify({from:from})}).then(function(r){
+        var n=(r&&r.added)||0, u=(r&&r.updated)||0;
+        from=(r&&r.next)||0;
+        if(r&&r.ok) say(true,"✓ "+n+" job"+(n===1?"":"s")+" added"+(u?", "+u+" already there":"")+(r.more?". "+r.more+" more further out: tap again":""));
+        else say(false,"✕ "+n+" added, "+((r&&r.failed)||0)+" failed"+(r&&r.error?": "+r.error:""));
       }).catch(function(){ say(false,"✕ error"); }); };
   }).catch(function(){ box.innerHTML='<div class="hint">Could not load this. Refresh and try again.</div>'; });
 }
