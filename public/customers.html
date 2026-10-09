@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#d41f2b">
+<title>Customers · Mikey's Detailing</title>
+<link rel="icon" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700&display=swap">
+<link rel="stylesheet" href="/app/app.css">
+<style>
+.tools{display:grid;gap:10px;margin-bottom:6px}
+.sortrow{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:12px 2px 8px;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<script src="/app/app.js"></script>
+<script>
+(function(){
+"use strict";
+var A = window.App, esc = A.esc, icon = A.icon, el = A.el;
+A.frame("customers", "Customers", '<button class="iconbtn" id="vcfBtn" title="Send to my phone contacts" aria-label="Export contacts">'+icon("download")+'</button>');
+el("view").innerHTML =
+  '<div class="tools"><label class="search">'+icon("search")+'<input class="input" id="q" type="search" placeholder="Search name, number, car, town" aria-label="Search"></label>'+
+  '<div class="chips" id="filters"></div></div>'+
+  '<div class="sortrow"><span id="count"></span><button class="btn sm ghost" id="sortBtn"></button></div>'+
+  '<div id="list"><div class="list"><div class="skel"></div><div class="skel"></div><div class="skel"></div></div></div>';
+
+var S = { rows:[], f:"all", q:"", sort:"recent" };
+// The buckets are read off the list row the server already keeps, so nothing
+// here has to be marked by hand (his leads board showed 70 of 120 still "New"
+// because stages were manual).
+var F = [
+  ["all","Everyone",function(){ return true; }],
+  ["booked","Booked",function(r){ return r.appointmentAt && r.appointmentAt > Date.now() - A.DAY; }],
+  ["quoted","Quoted, not booked",function(r){ return r.quoteTotal && !(r.appointmentAt && r.appointmentAt > Date.now() - A.DAY) && r.status !== "won" && r.status !== "lost"; }],
+  ["customers","Done jobs",function(r){ return r.status === "won" || r.lastJobAt; }],
+  ["club","Clean Club",function(r){ return !!r.plan; }],
+  ["lost","Lost",function(r){ return r.status === "lost"; }]
+];
+function fn(id){ for (var i=0;i<F.length;i++) if (F[i][0] === id) return F[i][2]; return F[0][2]; }
+function matches(r){
+  if (!S.q) return true;
+  return [r.name, r.phone, A.fmtPhone(r.phone), r.vehicleLabel, r.city, r.address].join(" ").toLowerCase().indexOf(S.q) >= 0;
+}
+function render(){
+  el("filters").innerHTML = F.map(function(f){
+    var n = S.rows.filter(f[2]).length;
+    return '<button class="chip'+(S.f===f[0]?' on':'')+'" data-f="'+f[0]+'">'+f[1]+' <span class="n">'+n+'</span></button>';
+  }).join('');
+  var list = S.rows.filter(fn(S.f)).filter(matches);
+  if (S.sort === "az") list.sort(function(a,b){ return A.displayName(a).localeCompare(A.displayName(b)); });
+  else list.sort(function(a,b){ return (b.lastTs||0) - (a.lastTs||0); });
+  el("count").textContent = list.length + (list.length === 1 ? " person" : " people");
+  el("sortBtn").textContent = S.sort === "az" ? "Sort: A to Z" : "Sort: recent";
+  if (!list.length) { el("list").innerHTML = '<div class="empty"><b>No one here yet</b></div>'; return; }
+  el("list").innerHTML = '<div class="list">'+list.map(function(r){
+    var pills = [];
+    if (r.appointmentAt && r.appointmentAt > Date.now() - A.DAY) pills.push('<span class="pill green">Booked '+esc(A.dayLabel(r.appointmentAt).replace(/,.*$/,""))+'</span>');
+    else if (r.quoteTotal) pills.push('<span class="pill">'+esc(A.money(r.quoteTotal))+' quoted</span>');
+    if (r.plan) pills.push('<span class="pill blue">Clean Club</span>');
+    if (r.status === "won") pills.push('<span class="pill green">Customer</span>');
+    if (r.status === "lost") pills.push('<span class="pill">Lost'+(r.closedReason ? ': '+esc(r.closedReason) : '')+'</span>');
+    if (r.optedOut) pills.push('<span class="pill red">Do not text</span>');
+    var sub = [r.vehicleLabel, r.city].filter(Boolean).join(" · ") || (r.name ? A.fmtPhone(r.phone) : "No name yet");
+    return '<button class="row" data-phone="'+esc(r.phone)+'">'+A.avatar(r)+'<span class="main">'+
+      '<span class="top"><span class="name">'+esc(A.displayName(r))+'</span><span class="when">'+esc(r.lastTs ? A.when(r.lastTs) : "")+'</span></span>'+
+      '<span class="sub">'+esc(sub)+'</span>'+(pills.length ? '<span class="tags">'+pills.join('')+'</span>' : '')+'</span></button>';
+  }).join('')+'</div>';
+}
+el("filters").addEventListener("click", function(e){ var b = e.target.closest("[data-f]"); if (b) { S.f = b.dataset.f; render(); } });
+el("q").addEventListener("input", function(){ S.q = this.value.trim().toLowerCase(); render(); });
+el("sortBtn").addEventListener("click", function(){ S.sort = S.sort === "az" ? "recent" : "az"; render(); });
+el("list").addEventListener("click", function(e){
+  var b = e.target.closest("[data-phone]"); if (!b) return;
+  A.customerSheet(b.dataset.phone, { fromCustomers:true, onSaved:load });
+});
+
+// Contacts for his phone (his answer: names on caller ID). A .vcf file is
+// what Android's Contacts app imports in one tap; only people with a name go
+// in, since a contact called "(425) 555-0101" adds nothing caller ID lacks.
+function vcard(r){
+  var n = String(r.name).replace(/[\r\n;,]/g, " ").trim();
+  return ["BEGIN:VCARD","VERSION:3.0","FN:" + n,"N:;" + n + ";;;","TEL;TYPE=CELL:" + r.phone,"ORG:Detailing customer",
+    "NOTE:" + ([r.vehicleLabel, r.city].filter(Boolean).join(" · ").replace(/[\r\n]/g, " ") || "Mikey's Mobile Detailing"),"END:VCARD"].join("\r\n");
+}
+el("vcfBtn").addEventListener("click", function(){
+  var named = S.rows.filter(function(r){ return r.name && String(r.name).trim() && !r.optedOut; });
+  if (!named.length) { A.toast("No named customers yet."); return; }
+  var blob = new Blob([named.map(vcard).join("\r\n") + "\r\n"], { type:"text/vcard" });
+  var a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "mikeys-customers.vcf";
+  document.body.appendChild(a); a.click(); a.remove();
+  A.toast(named.length + " contacts saved. Open the file to add them.");
+});
+
+function load(){ return A.api("/api/threads").then(function(d){ if (d && d.ok) { S.rows = d.threads || []; render(); } }); }
+load();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#d41f2b">
+<title>Schedule · Mikey's Detailing</title>
+<link rel="icon" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700&display=swap">
+<link rel="stylesheet" href="/app/app.css">
+<style>
+/* Schedule: what's booked, day by day, and what to do on the job. Google
+   Calendar stays the real calendar (Mikey's answer); this is the job list
+   that knows the price, the car and the address. */
+.next{display:flex;align-items:center;gap:10px;padding:12px 14px;margin-bottom:6px}
+.next b{font-size:15px}
+.next .lbl{color:var(--muted);font-size:13px}
+.next .btn{margin-left:auto}
+.job{padding:14px;border-bottom:1px solid var(--line);display:grid;gap:8px}
+.job:last-child{border-bottom:0}
+.job .l1{display:flex;align-items:baseline;gap:10px}
+.job .tm{font-weight:800;font-size:16px;font-variant-numeric:tabular-nums;min-width:74px}
+.job .nm{font-weight:650;font-size:15.5px;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.job .px{font-weight:700;font-variant-numeric:tabular-nums}
+.job .l2{color:var(--muted);font-size:14px;padding-left:84px;display:grid;gap:2px}
+.job .l2 a{color:inherit;text-decoration:underline;text-decoration-color:var(--line);text-underline-offset:3px}
+.job .acts{display:flex;gap:8px;flex-wrap:wrap;padding-left:84px}
+@media (max-width:480px){.job .l2,.job .acts{padding-left:0}}
+.job.pending{background:color-mix(in srgb,var(--warn-soft) 60%,transparent)}
+.job.done .tm,.job.done .nm{color:var(--muted)}
+</style>
+</head>
+<body>
+<script src="/app/app.js"></script>
+<script>
+(function(){
+"use strict";
+var A = window.App, esc = A.esc, icon = A.icon, el = A.el;
+A.frame("schedule", "Schedule", '<a class="iconbtn" href="https://calendar.google.com/" target="_blank" rel="noopener" title="Google Calendar" aria-label="Open Google Calendar">'+icon("calendar")+'</a>');
+el("view").innerHTML = '<div id="next"></div><div id="sched"><div class="list"><div class="skel"></div><div class="skel"></div></div></div>';
+
+var S = { bookings:[], rows:[] };
+var SIZE = { sedan:"Sedan", suv:"SUV / pickup", truck:"Van / 3-row" };
+
+function load(){
+  return Promise.all([A.api("/api/bookings"), A.api("/api/threads")]).then(function(r){
+    if (r[0] && r[0].ok) S.bookings = r[0].bookings || [];
+    if (r[1] && r[1].ok) S.rows = r[1].threads || [];
+    render();
+  });
+}
+fetch("/api/next-openings?n=1&service=full&size=suv").then(function(r){ return r.json(); }).then(function(d){
+  var o = d && d.openings && d.openings[0];
+  el("next").innerHTML = '<div class="card next">'+icon("clock")+'<div><div class="lbl">Next opening</div><b>'+(o ? esc(o.label + " at " + o.time) : "Nothing open in the next few weeks")+'</b></div></div>';
+}).catch(function(){});
+
+function jobsFromText(){
+  // Jobs agreed over text have an appointment on the conversation but no
+  // website booking. They belong on the same list, or the list is lying.
+  var booked = {};
+  S.bookings.forEach(function(b){ if (b.status !== "declined" && b.status !== "cancelled") booked[b.phone + "|" + A.startOfDay(b.apptAt)] = 1; });
+  return S.rows.filter(function(r){
+    return r.appointmentAt && !booked[r.phone + "|" + A.startOfDay(r.appointmentAt)];
+  }).map(function(r){
+    return { text:true, id:"t-" + r.phone, phone:r.phone, name:r.name, apptAt:r.appointmentAt, status:"confirmed", vehicle:r.vehicleLabel, city:r.city, address:r.address, estimate:r.quoteTotal };
+  });
+}
+function dur(ms){ var m = Math.round(ms/60000), h = Math.floor(m/60); return (h ? h + "h " : "") + (m % 60) + "m"; }
+function card(b){
+  var addr = [b.address, b.city].filter(Boolean).join(", ");
+  var what = b.text ? "Agreed by text" : [b.serviceName, SIZE[b.size] || b.sizeLabel].filter(Boolean).join(" · ");
+  var acts = [];
+  if (b.status === "pending") {
+    acts.push('<button class="btn sm primary" data-act="confirm" data-id="'+esc(b.id)+'">'+icon("check")+'Confirm</button>');
+    acts.push('<button class="btn sm" data-act="decline" data-id="'+esc(b.id)+'">Decline</button>');
+  } else if (b.status === "confirmed" && !b.text) {
+    if (!b.startedAt) acts.push('<button class="btn sm" data-act="start" data-id="'+esc(b.id)+'">'+icon("clock")+'Start job</button>');
+    acts.push('<button class="btn sm primary" data-act="complete" data-id="'+esc(b.id)+'">'+icon("check")+'Finished</button>');
+  }
+  acts.push('<a class="btn sm" href="/inbox?c='+encodeURIComponent(b.phone)+'">'+icon("msg")+'Text</a>');
+  if (addr) acts.push('<a class="btn sm" href="'+esc(A.mapsUrl(addr))+'" target="_blank" rel="noopener">'+icon("map")+'Directions</a>');
+  var extra = [];
+  if (b.vehicle) extra.push(esc(b.vehicle) + (b.condition ? " · " + esc(b.condition) : ""));
+  if (addr) extra.push('<a href="'+esc(A.mapsUrl(addr))+'" target="_blank" rel="noopener">'+esc(addr)+'</a>');
+  if (b.notes) extra.push(esc(b.notes));
+  if (b.startedAt && !b.doneAt) extra.push('<span class="pill amber">'+icon("clock")+'Started '+esc(A.clock(b.startedAt))+'</span>');
+  if (b.startedAt && b.doneAt) extra.push('<span class="pill">Took '+esc(dur(b.doneAt - b.startedAt))+(b.durationMin ? ' (planned '+esc(dur(b.durationMin*60000))+')' : '')+'</span>');
+  return '<div class="job '+esc(b.status)+'">'+
+    '<div class="l1"><span class="tm">'+esc(A.clock(b.apptAt))+'</span><span class="nm">'+esc(A.displayName(b))+'</span>'+(b.estimate ? '<span class="px">'+esc(A.money(b.estimate))+'</span>' : '')+'</div>'+
+    '<div class="l2"><span>'+esc(what)+(b.rainReady ? ' · <span class="pill green">Rain-Ready extras free</span>' : '')+'</span>'+extra.map(function(x){ return '<span>'+x+'</span>'; }).join('')+'</div>'+
+    '<div class="acts">'+acts.join('')+'</div></div>';
+}
+function render(){
+  var now = Date.now(), d0 = A.startOfDay(now);
+  var all = S.bookings.filter(function(b){ return b.status !== "declined" && b.status !== "cancelled"; }).concat(jobsFromText());
+  var pending = all.filter(function(b){ return b.status === "pending"; }).sort(function(a,b){ return a.apptAt - b.apptAt; });
+  var upcoming = all.filter(function(b){ return b.status === "confirmed" && b.apptAt >= d0; }).sort(function(a,b){ return a.apptAt - b.apptAt; });
+  var recent = all.filter(function(b){ return b.status === "done" && b.apptAt >= d0 - 14*A.DAY; }).sort(function(a,b){ return b.apptAt - a.apptAt; });
+  var h = '';
+  if (pending.length) h += '<div class="section-label">Waiting for you to confirm <span class="count">'+pending.length+'</span></div><div class="list">'+pending.map(card).join('')+'</div>';
+  if (!upcoming.length) h += '<div class="section-label calm">Coming up</div><div class="card empty"><b>Nothing booked yet</b><span>Website bookings and jobs agreed by text show up here.</span></div>';
+  var lastDay = -1, open = false;
+  upcoming.forEach(function(b){
+    var day = A.startOfDay(b.apptAt);
+    if (day !== lastDay) { if (open) h += '</div>'; h += '<div class="section-label calm">'+esc(A.dayLabel(b.apptAt))+'</div><div class="list">'; open = true; lastDay = day; }
+    h += card(b);
+  });
+  if (open) h += '</div>';
+  if (recent.length) h += '<div class="section-label calm">Done in the last two weeks</div><div class="list">'+recent.map(card).join('')+'</div>';
+  el("sched").innerHTML = h;
+}
+el("sched").addEventListener("click", function(e){
+  var b = e.target.closest("[data-act]"); if (!b) return;
+  var act = b.dataset.act, id = b.dataset.id;
+  if (act === "decline" && !b.dataset.sure) { b.dataset.sure = "1"; b.textContent = "Tap again to decline"; return; }
+  b.disabled = true;
+  A.post("/api/booking", { id:id, action:act }).then(function(d){
+    if (!d || !d.ok) { b.disabled = false; A.toast("That didn't go through. Try again."); return; }
+    A.toast(act === "confirm" ? (d.texted ? "Confirmed. They got your confirm text." : "Confirmed") : act === "start" ? "Clock started" : act === "complete" ? "Marked finished" : "Declined");
+    load();
+  });
+});
+load();
+setInterval(function(){ if (!document.hidden) load(); }, 60000);
+})();
+</script>
+</body>
+</html>

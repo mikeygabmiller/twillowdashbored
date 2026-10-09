@@ -9,6 +9,25 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
 <meta name="robots" content="noindex, nofollow" />
 <meta name="theme-color" content="#0a0a0c" />
+<script>/* THE SWITCH to the new app (2026-10-08). With NEW_APP_HOME on, opening the
+   dashboard lands on /inbox. This page stays as the "classic" app for what
+   hasn't moved yet: ?classic=1 opens it and keeps it for the rest of the tab,
+   so its own screens and back button behave. Links that name a chat or the
+   waiting list go to the same thing in the new Inbox; every other deep link
+   (money, a journey, ?open=) is a classic screen and stays here. Runs before
+   anything else on the page so the old app never paints first. */
+(function(){
+  var NEW_APP_HOME = false;
+  try{
+    var q = location.search;
+    if (/[?&]classic=1/.test(q)) { sessionStorage.setItem("mkdClassic","1"); return; }
+    if (!NEW_APP_HOME || sessionStorage.getItem("mkdClassic") === "1") return;
+    if (/[?&](money|journey|open)=/.test(q)) return;
+    var c = q.match(/[?&]c=([^&#]+)/);
+    location.replace(c ? "/inbox?c=" + c[1] : (/[?&]waiting=1/.test(q) ? "/inbox?waiting=1" : "/inbox"));
+  }catch(e){}
+})();
+</script>
 <script>/* set the saved LAYOUT before first paint — otherwise a reload flashes Classic's
    bottom bar for a frame before the rail/top bar/dock takes over. Classic sets
    no attribute at all, which is what keeps it byte-for-byte the original. */
@@ -4674,7 +4693,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-10-07·jpcal";
+  var APP_BUILD="2026-10-08·newapp";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -9717,6 +9736,15 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deep link from the "Request a date" email (…/?c=<phone>) — jump straight to the chat.
   function maybeDeepLink(){
     try{
+      // ?open=<feature id> (from the new app's Grow and Settings links,
+      // 2026-10-08) → that screen, already open. Any id in FEATURES works, so
+      // a screen that hasn't moved to the new app yet is still one tap away.
+      var om=location.search.match(/[?&]open=([a-z0-9]+)/);
+      if(om){
+        if(window.history&&history.replaceState)history.replaceState(null,"",location.pathname+(/[?&]classic=1/.test(location.search)?"?classic=1":"")+location.hash);
+        if(om[1]==="settings"){openMore("settings");return;}
+        for(var fi=0;fi<FEATURES.length;fi++)if(FEATURES[fi].id===om[1]){FEATURES[fi].run();return;}
+      }
       // ?money=1 (from the evening-reminder / weekly-recap links) → straight to the tracker
       if(/[?&]money=1/.test(location.search)){
         if(window.history&&history.replaceState)history.replaceState(null,"",location.pathname+location.hash);
