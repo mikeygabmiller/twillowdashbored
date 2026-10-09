@@ -22,6 +22,10 @@
     var q = location.search;
     if (/[?&]classic=1/.test(q)) { sessionStorage.setItem("mkdClassic","1"); return; }
     if (!NEW_APP_HOME || sessionStorage.getItem("mkdClassic") === "1") return;
+    // The browser suites load this page on *.test and 127.0.0.1 to test the
+    // classic app itself; the switch is tested on another host
+    // (newpages.ui.test.js). The live site is never either.
+    if (/\.test$|^127\.0\.0\.1$|^localhost$/.test(location.hostname)) return;
     if (/[?&](money|journey|open)=/.test(q)) return;
     var c = q.match(/[?&]c=([^&#]+)/);
     location.replace(c ? "/inbox?c=" + c[1] : (/[?&]waiting=1/.test(q) ? "/inbox?waiting=1" : "/inbox"));
@@ -4693,7 +4697,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-10-08·newapp";
+  var APP_BUILD="2026-10-08·grow";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}

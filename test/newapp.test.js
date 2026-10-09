@@ -102,5 +102,40 @@ const check = (name, got, want) => {
   check('a finished job cannot be started again', r2.status, 409);
 }
 
+// ---- 4. reply speed and price-leavers (the Grow page's numbers) --------------
+{
+  const f = new Function(`${lift('replyDelays')}\n${lift('medianMs')}\n${lift('priceLeftSummary')}\nreturn { replyDelays, medianMs, priceLeftSummary };`)();
+  const t0 = 1e12, M = 60000;
+  const msgs = [
+    { dir: 'in', ts: t0 }, { dir: 'out', kind: 'auto', ts: t0 + 1 * M }, { dir: 'out', kind: 'manual', ts: t0 + 30 * M },
+    { dir: 'in', ts: t0 + 100 * M }, { dir: 'in', ts: t0 + 110 * M }, { dir: 'out', kind: 'manual', ts: t0 + 160 * M },
+    { dir: 'out', kind: 'manual', ts: t0 + 200 * M },
+    { dir: 'in', kind: 'voicemail', ts: t0 + 300 * M }, { dir: 'out', kind: 'scheduled', ts: t0 + 301 * M },
+  ];
+  const d = f.replyDelays(msgs).map((x) => x.ms / M);
+  check('an auto-reply is not his reply; his own is', d[0], 30);
+  check('the wait counts from their first unanswered text', d[1], 60);
+  check('a second text from him answers nothing new', d.length, 2);
+  check('a voicemail still waiting has no reply yet', f.replyDelays(msgs).length, 2);
+  check('median of an odd list', f.medianMs([5, 1, 9]), 5);
+  check('median of an even list', f.medianMs([1, 3, 5, 7]), 4);
+  check('median of nothing', f.medianMs([]), null);
+  const now = 2e12, D = 86400000;
+  const rows = [
+    { at: now - D, hot: 'Quote form \u2014 step 4 · price shown', phone: '' },
+    { at: now - 2 * D, hot: 'Quote form - step 4', phone: '' },
+    { at: now - 3 * D, hot: 'Quote form step 2', phone: '' },
+    { at: now - D, hot: 'Quote form step 5', phone: '+1425' },
+    { at: now - D, hot: 'BOOKED Full Detail', phone: '' },
+    { at: now - D, hot: '', phone: '' },
+    { at: now - 9 * D, hot: 'Quote form step 3', phone: '' },
+    { at: now - 20 * D, hot: 'Quote form step 3', phone: '' },
+  ];
+  const pl = f.priceLeftSummary(rows, now);
+  check('counts this week\'s quote-form leavers, not the ones who left a number', pl.n7, 3);
+  check('and last week\'s', pl.nPrev, 1);
+  check('stops are grouped by step, most first, whatever dash the site sends', pl.stops, [{ k: 'Step 4', n: 2 }, { k: 'Step 2', n: 1 }]);
+}
+
 console.log(`\n${PASS} passed, ${FAIL} failed`);
 process.exit(FAIL ? 1 : 0);
