@@ -106,20 +106,20 @@ const featureIds = [...indexHtml.matchAll(/\{id:"([a-z0-9]+)",t:"/g)].map((m) =>
 ok('every open= id is a screen the classic app knows', ids.every((i) => featureIds.includes(i)), ids.filter((i) => !featureIds.includes(i)));
 
 section('The switch (index.html)');
-ok('it ships switched off', /var NEW_APP_HOME = false;/.test(indexHtml));
-indexHtml = indexHtml.replace('var NEW_APP_HOME = false;', 'var NEW_APP_HOME = true;');
-await page.goto('https://texting.test/');
+// Switched on 2026-10-08: the new Inbox is the front door.
+ok('the switch is on', /var NEW_APP_HOME = true;/.test(indexHtml));
+await page.goto('https://switch.example/');
 await page.waitForTimeout(400);
 ok('switched on, the front door is the new Inbox', new URL(page.url()).pathname === '/inbox', page.url());
-await page.goto('https://texting.test/?c=%2B14255550202');
+await page.goto('https://switch.example/?c=%2B14255550202');
 await page.waitForTimeout(400);
 ok('a link to a chat opens that chat in the new Inbox', page.url().endsWith('/inbox?c=%2B14255550202'), page.url());
-await page.goto('https://texting.test/?money=1');
+await page.goto('https://switch.example/?money=1');
 await page.waitForTimeout(300);
 ok('a money link stays in the classic app', new URL(page.url()).pathname === '/', page.url());
-await page.goto('https://texting.test/?classic=1');
+await page.goto('https://switch.example/?classic=1');
 await page.waitForTimeout(300);
-await page.goto('https://texting.test/');
+await page.goto('https://switch.example/');
 await page.waitForTimeout(300);
 ok('?classic=1 keeps the classic app for the rest of the tab', new URL(page.url()).pathname === '/', page.url());
 
