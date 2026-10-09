@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#d41f2b">
+<title>Grow · Mikey's Detailing</title>
+<link rel="icon" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700&display=swap">
+<link rel="stylesheet" href="/app/app.css">
+<style>
+/* Grow: everything that brings work in, one tap from the bar. The reports
+   themselves still live in the old app for now; these are the doors. Ordered by
+   how often Mikey said he opens them: daily first. */
+.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+.tile{display:flex;gap:12px;align-items:flex-start;padding:14px;text-decoration:none;color:inherit;background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+.tile:hover{border-color:var(--ink2)}
+.tile .ti{width:40px;height:40px;border-radius:10px;background:var(--brand-soft);color:var(--brand-text);display:grid;place-items:center;flex:none}
+.tile b{display:block;font-size:15.5px;color:var(--ink)}
+.tile .d{display:block;color:var(--muted);font-size:13.5px;line-height:1.35}
+</style>
+</head>
+<body>
+<script src="/app/app.js"></script>
+<script>
+(function(){
+"use strict";
+var A = window.App, esc = A.esc, icon = A.icon, el = A.el;
+A.frame("grow", "Grow");
+function link(id){ return A.CLASSIC + "&open=" + id; }
+var GROUPS = [
+  ["Every day", [
+    ["website","trend","Website analytics","Visits, calls and quote starts from your site"],
+    ["map","map","Map and rankings","Where you show up on Google around Snohomish"],
+    ["analytics","bolt","Business overview","This week's leads, bookings and money at a glance"]
+  ]],
+  ["Every week", [
+    ["hangers","door","Door hangers","Zones to hang, and the leads they brought"],
+    ["/signs?owner=1","sign","Yard signs","Spots, the crew and the leads they brought"],
+    ["rate","star","Star page","Where your review link sends people"],
+    ["pages","file","Customer pages","The before, after and friend pages customers get"],
+    ["trainai","sparkles","Train AI","Teach the drafts how you talk"],
+    ["playbook","file","AI playbook","Prices and facts the AI writes from"]
+  ]],
+  ["When you need them", [
+    ["quoteresults","file","Quote results","Website quotes over time"],
+    ["profit","dollar","Profit per job","What each kind of job makes you"],
+    ["channels","trend","Cost per customer","What a paying customer costs, per channel"],
+    ["customers","users","Who your customers are","Towns, cars and services"],
+    ["wom","users","Word of mouth","Who sent who"],
+    ["money","dollar","Money","Your tracker, as it was"]
+  ]]
+];
+el("view").innerHTML = GROUPS.map(function(g){
+  return '<div class="section-label calm">'+esc(g[0])+'</div><div class="tiles">'+g[1].map(function(t){
+    var href = t[0].charAt(0) === "/" ? t[0] : link(t[0]);
+    return '<a class="tile" href="'+esc(href)+'"><span class="ti">'+icon(t[1])+'</span><span><b>'+esc(t[2])+'</b><span class="d">'+esc(t[3])+'</span></span></a>';
+  }).join('')+'</div>';
+}).join('');
+})();
+</script>
+</body>
+</html>

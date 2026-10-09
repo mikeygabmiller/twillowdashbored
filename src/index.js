@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-07·jpcal';
+const BUILD = '2026-10-08·newapp';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -4951,7 +4951,12 @@ async function apiThreads(url) {
 async function apiThread(url) {
   const phone = normalizePhone(url.searchParams.get('phone')) || url.searchParams.get('phone');
   if (!phone) return json({ ok: false, error: 'missing_phone' }, 422);
-  const thread = await openThreadForRead(phone);
+  // ?peek=1 is the new inbox opening a chat. Mikey's rule (2026-10-08): a chat
+  // stays unread until he answers it or files it, because "opened it, got pulled
+  // away, forgot" is how replies were being lost. So looking costs nothing here;
+  // the page clears unread itself, with /api/read, when he sends or archives.
+  const peek = url.searchParams.get('peek') === '1';
+  const thread = peek ? await loadThread(phone) : await openThreadForRead(phone);
   return json({ ok: true, thread: filedThread(thread, await loadIndex(), await loadConfig(), Date.now()) });
 }
 
@@ -9325,6 +9330,31 @@ function polishNumbers(s) {
   return (String(s || '').match(/\d+/g) || []).sort().join(',');
 }
 
+function spellPrompt(text) {
+  return `Fix ONLY the spelling, capitalization and punctuation of this text message. ` +
+    `Do not change, add, remove or reorder any words beyond fixing a misspelled one. Keep his tone, his slang and his length. ` +
+    `Never add a dash as punctuation. Never change a number, price, date, time or name.\n` +
+    `Return JSON, exactly: {"text": "the corrected message"}\n\nMessage:\n${text}`;
+}
+
+async function spellFix(text) {
+  const raw = await aiGenerate(spellPrompt(text), { surface: 'spelling', tier: 'fast', json: true, temperature: 0, maxTokens: 600 });
+  return spellOut(raw, text);
+}
+
+// The model's answer, or his own words back if it did anything but spelling.
+// A spelling fix that moves a number, adds a dash or grows the text is not a
+// spelling fix, and the button promised him nothing else would change.
+function spellOut(raw, original) {
+  let t = '';
+  try { t = String((JSON.parse(raw) || {}).text || '').trim(); } catch { t = ''; }
+  if (!t) return original;
+  if (polishNumbers(t) !== polishNumbers(original)) return original;
+  if (/[—–]/.test(t) && !/[—–]/.test(original)) return original;
+  if (t.length > original.length * 1.3 + 10 || t.length < original.length * 0.7 - 10) return original;
+  return t;
+}
+
 async function apiAiDraft(request) {
   const data = await readJson(request);
   const phone = normalizePhone(data.phone);
@@ -9334,6 +9364,13 @@ async function apiAiDraft(request) {
   const hint = (data.hint || '').trim();
   const draftText = (data.text || '').trim();
   try {
+    // "Fix spelling only" (Mikey, 2026-10-08: the one AI button he wants in the
+    // inbox). Polish is allowed to reshape a sentence; this is not. Spelling,
+    // capitals and punctuation, nothing else, so it runs on the cheap tier and
+    // gets none of the voice blocks: there is nothing to rewrite toward.
+    if (draftText && data.spell === true) {
+      return json({ ok: true, draft: await spellFix(draftText) });
+    }
     if (draftText) {
       // Polish mode = fix the named defects in POLISH_PLAYBOOK while keeping his
       // meaning, his facts and his casual voice. We include just the voice/tone
@@ -17862,6 +17899,14 @@ async function apiBookingAction(request) {
     texted = await bkConfirmTexts(thread, bk, bcfg, cfg);
     await saveThread(thread);
     await updateIndexEntry(thread);
+
+  } else if (action === 'start') {
+    // Tapped on the Schedule page when he pulls up and starts. With doneAt
+    // (set by complete) it gives how long the job really took against the
+    // calendar's plan, which Mikey asked for (2026-10-08) to check his quoting.
+    // Nothing is texted: this is his own clock, not a message to the customer.
+    if (bk.status !== 'confirmed' && bk.status !== 'pending') return json({ ok: false, error: 'not_open' }, 409);
+    bk.startedAt = now;
 
   } else if (action === 'complete') {
     bk.status = 'done'; bk.doneAt = now;
