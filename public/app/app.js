@@ -166,12 +166,13 @@
       '<div class="app">'+
         '<header class="topbar"><span class="brandmark" aria-hidden="true">M</span><h1 id="pageTitle">'+esc(title)+'</h1>'+
           '<span id="topActions">'+(actionsHtml||'')+'</span>'+
-          '<a class="iconbtn" href="'+CLASSIC+'&open=settings" title="Settings" aria-label="Settings">'+icon("gear")+'</a></header>'+
+          '<button class="iconbtn" id="gearBtn" title="Settings and more" aria-label="Settings and more">'+icon("gear")+'</button></header>'+
         '<main class="content" id="view"></main>'+
       '</div>'+
       '<nav class="tabbar" aria-label="Main">'+TABS.map(function(t){
         return '<a class="tab'+(t[0]===active?' on':'')+'" href="'+t[2]+'"'+(t[0]===active?' aria-current="page"':'')+' data-tab="'+t[0]+'">'+icon(t[3])+'<span>'+t[1]+'</span><span class="dot" id="dot-'+t[0]+'" hidden></span></a>';
       }).join('')+'</nav>');
+    el("gearBtn").addEventListener("click", gearMenu);
     // The Inbox badge on every page: people waiting on him. Read off the list
     // row, which is the cheap surface; nothing here opens a conversation.
     api("/api/threads").then(function(d){
@@ -179,6 +180,24 @@
       var n = needsYou(d.threads || []).length;
       var b = el("dot-inbox"); if (b && n) { b.textContent = n > 99 ? "99+" : n; b.hidden = false; }
     });
+  }
+
+  // The gear: everything that isn't one of the four tabs. Money gets its own
+  // row here rather than a spot under Grow, and Train AI and the playbook live
+  // here too, because they're settings, not marketing (Mikey's Grow answers,
+  // 2026-10-08). Each still opens its screen in the classic app for now.
+  function gearMenu(){
+    var rows = [
+      ["settings","gear","Settings","Alerts, team, booking settings, everything else"],
+      ["money","dollar","Money","Money in and out, owed to you, reports"],
+      ["trainai","sparkles","Train AI","Teach the drafts how you talk"],
+      ["playbook","file","AI playbook","The prices and facts the AI writes from"]
+    ];
+    sheet('<h2>Settings and more</h2><div class="list">'+rows.map(function(r){
+      return '<a class="row" href="'+CLASSIC+'&open='+r[0]+'"><span class="av sm" style="background:var(--soft);color:var(--ink2)">'+icon(r[1])+'</span>'+
+        '<span class="main"><span class="name">'+esc(r[2])+'</span><span class="sub">'+esc(r[3])+'</span></span></a>';
+    }).join('')+'</div>'+
+    '<a class="btn ghost" style="margin-top:12px" href="'+CLASSIC+'">Open the classic app</a>');
   }
 
   // Who is waiting on Mikey, oldest wait first (his answer: "filtered by people

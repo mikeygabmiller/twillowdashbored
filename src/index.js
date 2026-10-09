@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-08·switch';
+const BUILD = '2026-10-08·grow';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -5298,6 +5298,7 @@ async function apiInsights() {
   const now = new Date();
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
   let segOut = 0, msgsIn = 0;
+  const weekAgo = Date.now() - 7 * 86400000, last7 = [], prev7 = [];
 
   for (const e of index) {
     const thread = await loadThread(e.phone);
@@ -5309,6 +5310,10 @@ async function apiInsights() {
     if (e.archived) continue;
     const st = computeReplyStats(thread.messages);
     if (st.avgMs != null) { totalMs += st.avgMs * st.count; replyCount += st.count; }
+    for (const r of replyDelays(thread.messages)) {
+      if (r.ts >= weekAgo) last7.push(r.ms);
+      else if (r.ts >= weekAgo - 7 * 86400000) prev7.push(r.ms);
+    }
 
     const last = thread.messages[thread.messages.length - 1];
     if (last && last.dir === 'in' && waiting.has(e.phone)) {
@@ -5331,6 +5336,7 @@ async function apiInsights() {
     replyCount, open, won,
     needsReply, possibleLinks,
     costMonth: { segOut, msgsIn, usd: costUsd },
+    reply: { last7: medianMs(last7), prev7: medianMs(prev7), n7: last7.length, nPrev: prev7.length },
   });
 }
 
@@ -6115,6 +6121,28 @@ function journeyRefLabel(r, ad, camp) {
 
 // GET /api/journeys?limit=30 — the recent-journeys board. Built entirely from
 // KV list metadata, so it costs one list call and zero document reads.
+// People who got into the quote calculator and left without sending it or
+// leaving a number, this week and last, and the step they stopped on. Read off
+// the list metadata alone (no journey docs loaded), so the Grow card is free.
+// Mikey (2026-10-08) put this at the front of Grow: "where they stopped" and
+// "people who saw a price and left" were the two numbers he picked.
+function priceLeftSummary(rows, now) {
+  const wk = 7 * 86400000, stops = {};
+  let n7 = 0, nPrev = 0;
+  for (const r of rows) {
+    const hot = String(r.hot || '');
+    if (r.phone || !/^Quote form\b/i.test(hot)) continue;
+    const at = r.at || 0;
+    if (at >= now - wk) {
+      n7++;
+      const step = (/\bstep\s*(\d+)/i.exec(hot) || [])[1];
+      const k = step ? 'Step ' + step : 'Quote form';
+      stops[k] = (stops[k] || 0) + 1;
+    } else if (at >= now - 2 * wk) nPrev++;
+  }
+  return { n7, nPrev, stops: Object.keys(stops).map((k) => ({ k, n: stops[k] })).sort((a, b) => b.n - a.n) };
+}
+
 async function apiJourneys(url) {
   const limit = Math.min(60, Math.max(5, parseInt(url.searchParams.get('limit') || '30', 10)));
   const rows = [];
@@ -6138,7 +6166,7 @@ async function apiJourneys(url) {
   } while (cursor && ++guard < 5);
   rows.sort((a, b) => (b.at || 0) - (a.at || 0));
   const named = rows.filter((r) => r.phone).length;
-  return json({ ok: true, journeys: rows.slice(0, limit), total: rows.length, named });
+  return json({ ok: true, journeys: rows.slice(0, limit), total: rows.length, named, priceLeft: priceLeftSummary(rows, Date.now()) });
 }
 
 // GET /api/journey?phone=+1425…  (or ?vid=…) — one person's whole story, with
@@ -14073,6 +14101,27 @@ function computeReplyStats(messages) {
     else if (m.dir === 'out' && pending != null) { total += (m.ts - pending); count++; pending = null; }
   }
   return { avgMs: count ? Math.round(total / count) : null, count, awaiting: pending != null, awaitingSince: pending };
+}
+
+// How long HE took to answer, one entry per answer, stamped with when he sent
+// it. Only his own typed replies count: an auto-reply or a scheduled text is
+// the app answering, and counting it is how "reply speed" read 2 minutes on a
+// day he was on a job and answered nobody. The Grow page compares the median of
+// the last 7 days with the 7 before (Mikey, 2026-10-08: reply speed is one of
+// the two numbers he wants on top).
+function replyDelays(messages) {
+  const out = [];
+  let pending = null;
+  for (const m of (messages || [])) {
+    if (m.dir === 'in' && (!m.kind || m.kind === 'voicemail')) { if (pending == null) pending = m.ts; }
+    else if (m.dir === 'out' && m.kind === 'manual' && pending != null) { out.push({ ts: m.ts, ms: m.ts - pending }); pending = null; }
+  }
+  return out;
+}
+function medianMs(list) {
+  if (!list.length) return null;
+  const a = list.slice().sort((x, y) => x - y), mid = Math.floor(a.length / 2);
+  return a.length % 2 ? a[mid] : Math.round((a[mid - 1] + a[mid]) / 2);
 }
 
 // How much conversation a CLASSIFY-style prompt gets. Input tokens dominate those

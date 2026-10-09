@@ -86,7 +86,7 @@ const CODE = [
   lift('blankJourney'), lift('appendStep'), lift('journeyStep'), lift('journeyLink'),
   lift('handlePixelEvents'), lift('pxOk'),
   lift('journeyPageTitle'), lift('journeyRefLabel'), lift('journeyReadStep'),
-  lift('apiJourneys'), lift('apiJourney'), lift('journeyThreadSteps'),
+  lift('apiJourneys'), lift('priceLeftSummary'), lift('apiJourney'), lift('journeyThreadSteps'),
 ].join('\n\n');
 
 const factory = new Function(...Object.keys(ctx), CODE + `

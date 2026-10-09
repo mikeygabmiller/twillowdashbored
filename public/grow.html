@@ -10,15 +10,54 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@700&display=swap">
 <link rel="stylesheet" href="/app/app.css">
 <style>
-/* Grow: everything that brings work in, one tap from the bar. The reports
-   themselves still live in the old app for now; these are the doors. Ordered by
-   how often Mikey said he opens them: daily first. */
-.tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
-.tile{display:flex;gap:12px;align-items:flex-start;padding:14px;text-decoration:none;color:inherit;background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
-.tile:hover{border-color:var(--ink2)}
-.tile .ti{width:40px;height:40px;border-radius:10px;background:var(--brand-soft);color:var(--brand-text);display:grid;place-items:center;flex:none}
-.tile b{display:block;font-size:15.5px;color:var(--ink)}
-.tile .d{display:block;color:var(--muted);font-size:13.5px;line-height:1.35}
+/* Grow, laid out from Mikey's answers (2026-10-08):
+     1. anything that needs him, at the top
+     2. two numbers: website visits and reply speed, last 7 days against the week before
+     3. the three cards he wants in front: customer journey, star page, customer pages
+     4. one tap down: website, hangers, signs
+     5. everything he buried, folded away under More reports
+   Money, Train AI and the playbook moved to the gear menu: not marketing. */
+.flags{display:grid;gap:8px;margin-bottom:6px}
+.flag{display:flex;gap:12px;align-items:center;padding:12px 14px;border-radius:var(--r);background:var(--brand-soft);color:var(--ink);text-decoration:none;border:1px solid color-mix(in srgb,var(--brand) 25%,transparent)}
+.flag.amber{background:var(--warn-soft);border-color:color-mix(in srgb,var(--warn) 25%,transparent)}
+.flag .ic{color:var(--brand-text)}
+.flag.amber .ic{color:var(--warn)}
+.flag b{display:block;font-size:15px;color:var(--ink)}
+.flag span{font-size:13.5px;color:var(--muted)}
+.flag .go{margin-left:auto;color:var(--muted)}
+
+.kpis{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:grid;gap:4px;text-decoration:none;color:inherit;min-width:0}
+.kpi .k{font-size:12.5px;font-weight:650;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.kpi .v{font:700 34px/1 var(--display);font-variant-numeric:tabular-nums;letter-spacing:.01em}
+.kpi .d{font-size:13px;color:var(--muted)}
+.kpi .d .up{color:var(--good);font-weight:650}.kpi .d .down{color:var(--brand-text);font-weight:650}
+.kpi .s{font-size:13px;color:var(--ink2)}
+.minis{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.mini{background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:6px 12px;font-size:13px;color:var(--ink2)}
+.mini b{font-variant-numeric:tabular-nums;color:var(--ink)}
+
+.front{display:grid;gap:10px}
+@media (min-width:760px){.front{grid-template-columns:repeat(3,minmax(0,1fr))}}
+.fc{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px;display:grid;gap:8px;align-content:start;text-decoration:none;color:inherit}
+.fc:hover{border-color:var(--ink2)}
+.fc .t{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px}
+.fc .ti{width:34px;height:34px;border-radius:9px;background:var(--brand-soft);color:var(--brand-text);display:grid;place-items:center;flex:none}
+.fc .big{font:700 30px/1 var(--display);font-variant-numeric:tabular-nums}
+.fc .lbl{font-size:13.5px;color:var(--muted)}
+.fc .bars{display:grid;gap:5px;margin-top:2px}
+.fc .bar{display:grid;grid-template-columns:62px minmax(0,1fr) 22px;gap:8px;align-items:center;font-size:12.5px;color:var(--muted)}
+.fc .bar i{display:block;height:8px;border-radius:4px;background:var(--brand);opacity:.75}
+.fc .bar b{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink2)}
+.fc .open{font-size:13px;font-weight:650;color:var(--brand-text);margin-top:2px}
+
+details.more{margin-top:4px}
+details.more summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:12px 14px;background:var(--surface);border:1px solid var(--line);border-radius:var(--r);font-weight:650}
+details.more summary::-webkit-details-marker{display:none}
+details.more summary .n{margin-left:auto;color:var(--muted);font-weight:500;font-size:13px}
+details.more[open] summary{border-radius:var(--r) var(--r) 0 0;border-bottom:0}
+details.more .list{border-radius:0 0 var(--r) var(--r)}
+.row .chev{color:var(--faint);align-self:center}
 </style>
 </head>
 <body>
@@ -28,36 +67,127 @@
 "use strict";
 var A = window.App, esc = A.esc, icon = A.icon, el = A.el;
 A.frame("grow", "Grow");
-function link(id){ return A.CLASSIC + "&open=" + id; }
-var GROUPS = [
-  ["Every day", [
-    ["website","trend","Website analytics","Visits, calls and quote starts from your site"],
-    ["map","map","Map and rankings","Where you show up on Google around Snohomish"],
-    ["analytics","bolt","Business overview","This week's leads, bookings and money at a glance"]
-  ]],
-  ["Every week", [
-    ["hangers","door","Door hangers","Zones to hang, and the leads they brought"],
-    ["/signs?owner=1","sign","Yard signs","Spots, the crew and the leads they brought"],
-    ["rate","star","Star page","Where your review link sends people"],
-    ["pages","file","Customer pages","The before, after and friend pages customers get"],
-    ["trainai","sparkles","Train AI","Teach the drafts how you talk"],
-    ["playbook","file","AI playbook","Prices and facts the AI writes from"]
-  ]],
-  ["When you need them", [
-    ["quoteresults","file","Quote results","Website quotes over time"],
-    ["profit","dollar","Profit per job","What each kind of job makes you"],
-    ["channels","trend","Cost per customer","What a paying customer costs, per channel"],
-    ["customers","users","Who your customers are","Towns, cars and services"],
-    ["wom","users","Word of mouth","Who sent who"],
-    ["money","dollar","Money","Your tracker, as it was"]
-  ]]
+function classic(id){ return A.CLASSIC + "&open=" + id; }
+
+el("view").innerHTML =
+  '<div class="flags" id="flags"></div>'+
+  '<div class="kpis" id="kpis">'+
+    '<a class="kpi" href="'+classic("website")+'"><span class="k">Website visits</span><span class="v" id="kVisits">…</span><span class="d" id="kVisitsD">Last 7 days</span><span class="s" id="kVisitsS"></span></a>'+
+    '<a class="kpi" href="/inbox?waiting=1"><span class="k">Reply speed</span><span class="v" id="kReply">…</span><span class="d" id="kReplyD">Last 7 days</span><span class="s" id="kReplyS"></span></a>'+
+  '</div>'+
+  '<div class="minis" id="minis"></div>'+
+  '<div class="section-label calm">Up front</div>'+
+  '<div class="front">'+
+    '<a class="fc" href="'+classic("journey")+'"><span class="t"><span class="ti">'+icon("route")+'</span>Customer journey</span>'+
+      '<span class="big" id="jN">…</span><span class="lbl" id="jL">got a price and left, last 7 days</span><div class="bars" id="jBars"></div><span class="open">See where they stopped</span></a>'+
+    '<a class="fc" href="'+classic("rate")+'"><span class="t"><span class="ti">'+icon("star")+'</span>Star page</span>'+
+      '<span class="big" id="rN">…</span><span class="lbl" id="rL">taps through to Google</span><span class="lbl" id="rS"></span><span class="open">Open the star page</span></a>'+
+    '<a class="fc" href="'+classic("pages")+'"><span class="t"><span class="ti">'+icon("file")+'</span>Customer pages</span>'+
+      '<span class="lbl">The before, after and friend pages each customer gets on their own link.</span><span class="open">Edit the pages</span></a>'+
+  '</div>'+
+  '<div class="section-label calm">One tap down</div>'+
+  '<div class="list" id="oneTap"></div>'+
+  '<div class="section-label calm">More reports</div>'+
+  '<details class="more" id="more"><summary>'+icon("file")+'Reports you rarely need<span class="n" id="moreN"></span></summary><div class="list" id="moreList"></div></details>';
+
+// One tap down, in the order he said he uses them.
+var ONE = [
+  ["website","trend","Website analytics","Visits, quote starts, where people came from, which pages"],
+  ["hangers","door","Door hangers","Plan where to go, hanging mode, leads per zone"],
+  ["/signs?owner=1","sign","Yard signs","Signs out, calls from signs, best spots, the crew"]
 ];
-el("view").innerHTML = GROUPS.map(function(g){
-  return '<div class="section-label calm">'+esc(g[0])+'</div><div class="tiles">'+g[1].map(function(t){
-    var href = t[0].charAt(0) === "/" ? t[0] : link(t[0]);
-    return '<a class="tile" href="'+esc(href)+'"><span class="ti">'+icon(t[1])+'</span><span><b>'+esc(t[2])+'</b><span class="d">'+esc(t[3])+'</span></span></a>';
-  }).join('')+'</div>';
-}).join('');
+// What he buried. Still one tap away, never deleted.
+var MORE = [
+  ["map","map","Map and rankings","Where you show up on Google Maps"],
+  ["analytics","bolt","Business overview","Leads, bookings and money for the week"],
+  ["quoteresults","file","Quote results","Every website quote, month by month"],
+  ["channels","trend","Cost per customer","What a paying customer costs per channel"],
+  ["customers","users","Who your customers are","Towns, cars and services"],
+  ["profit","dollar","Profit per job","What each kind of job makes you"],
+  ["wom","users","Word of mouth","Who sent who"]
+];
+function rows(list){
+  return list.map(function(t){
+    var href = t[0].charAt(0) === "/" ? t[0] : classic(t[0]);
+    return '<a class="row" href="'+esc(href)+'"><span class="av sm" style="background:var(--brand-soft);color:var(--brand-text)">'+icon(t[1])+'</span>'+
+      '<span class="main"><span class="name">'+esc(t[2])+'</span><span class="sub">'+esc(t[3])+'</span></span><span class="chev">'+icon("back").replace('class="ic"','class="ic" style="transform:rotate(180deg)"')+'</span></a>';
+  }).join('');
+}
+el("oneTap").innerHTML = rows(ONE);
+el("moreList").innerHTML = rows(MORE);
+el("moreN").textContent = MORE.length + " reports";
+
+// ---- numbers -------------------------------------------------------------
+function dur(ms){
+  if (ms == null) return "–";
+  var m = Math.round(ms / 60000);
+  if (m < 60) return m + "m";
+  var h = Math.floor(m / 60), r = m % 60;
+  if (h < 24) return h + "h" + (r && h < 10 ? " " + r + "m" : "");
+  return Math.round(h / 24) + "d";
+}
+// "up" is good for visits and bad for reply time, so the caller says which.
+function change(now, before, higherIsBetter, fmt){
+  if (before == null || now == null) return "";
+  if (before === 0 && now === 0) return "Same as last week";
+  var better = higherIsBetter ? now >= before : now <= before;
+  var txt = fmt ? fmt(before) : String(before);
+  return '<span class="'+(better ? "up" : "down")+'">'+(now === before ? "Same" : (better ? "Better" : "Worse"))+'</span> than last week ('+esc(txt)+')';
+}
+var FLAGS = [];
+function flag(f){ FLAGS.push(f); paintFlags(); }
+function paintFlags(){
+  el("flags").innerHTML = FLAGS.map(function(f){
+    return '<a class="flag'+(f.amber ? " amber" : "")+'" href="'+esc(f.href)+'">'+icon(f.icon)+'<span style="min-width:0"><b>'+esc(f.title)+'</b><span>'+esc(f.sub)+'</span></span><span class="go">'+icon("back").replace('class="ic"','class="ic" style="transform:rotate(180deg)"')+'</span></a>';
+  }).join('');
+}
+function mini(label, value){ el("minis").insertAdjacentHTML("beforeend", '<span class="mini">'+esc(label)+' <b>'+esc(value)+'</b></span>'); }
+
+A.api("/api/webstats?range=7d").then(function(d){
+  var ga = d && d.ga;
+  if (!ga || !ga.totals) { el("kVisits").textContent = "–"; el("kVisitsD").textContent = d && d.connected && !d.connected.ga ? "Google Analytics isn't connected" : "Couldn't load"; return; }
+  var t = ga.totals, p = ga.prev || {}, series = ga.series || [], today = series.length ? series[series.length - 1] : null;
+  el("kVisits").textContent = (t.sessions || 0).toLocaleString();
+  el("kVisitsD").innerHTML = change(t.sessions || 0, p.sessions, true);
+  el("kVisitsS").textContent = [today ? today.sessions + " today" : "", d.realtime && d.realtime.active ? d.realtime.active + " on the site now" : ""].filter(Boolean).join(" · ");
+  mini("Quote starts, 7 days:", String(t.qqc || 0) + (p.qqc != null ? " (" + p.qqc + " the week before)" : ""));
+  if (p.sessions >= 20 && t.sessions < p.sessions * 0.6) flag({ icon:"trend", title:"Website visits are down " + Math.round((1 - t.sessions / p.sessions) * 100) + "%", sub:(t.sessions||0) + " this week against " + p.sessions + " the week before", href:classic("website") });
+  if (!t.qqc && (t.sessions || 0) >= 20) flag({ amber:true, icon:"file", title:"Nobody started a quote this week", sub:(t.sessions||0) + " visits and no quote calculator starts", href:classic("website") });
+});
+A.api("/api/insights").then(function(d){
+  var r = d && d.reply;
+  if (!r) { el("kReply").textContent = "–"; el("kReplyD").textContent = "Couldn't load"; return; }
+  el("kReply").textContent = dur(r.last7);
+  el("kReplyD").innerHTML = r.n7 ? change(r.last7, r.prev7, false, dur) : "No replies this week";
+  el("kReplyS").textContent = r.n7 ? "Middle of " + r.n7 + " replies" : "";
+  if (r.last7 != null && r.prev7 != null && r.n7 >= 3 && r.last7 > r.prev7 * 1.5 && r.last7 > 30 * 60000)
+    flag({ amber:true, icon:"clock", title:"Replies are slower than last week", sub:dur(r.last7) + " now against " + dur(r.prev7), href:"/inbox?waiting=1" });
+});
+A.api("/api/journeys?limit=5").then(function(d){
+  var pl = d && d.priceLeft;
+  if (!pl) { el("jN").textContent = "–"; return; }
+  el("jN").textContent = pl.n7;
+  el("jL").textContent = (pl.n7 === 1 ? "person" : "people") + " got a price and left, last 7 days" + (pl.nPrev != null ? " (" + pl.nPrev + " the week before)" : "");
+  var max = Math.max.apply(null, (pl.stops || []).map(function(s){ return s.n; }).concat([1]));
+  el("jBars").innerHTML = (pl.stops || []).slice(0, 4).map(function(s){
+    return '<div class="bar"><span>'+esc(s.k)+'</span><i style="width:'+Math.max(6, Math.round(s.n / max * 100))+'%"></i><b>'+s.n+'</b></div>';
+  }).join('');
+  if (pl.n7 >= 3 && pl.n7 > (pl.nPrev || 0)) flag({ icon:"route", title:pl.n7 + " people got a price and left this week", sub:"More than last week (" + (pl.nPrev || 0) + "). See where they stopped.", href:classic("journey") });
+});
+A.api("/api/quotes?months=1").then(function(d){
+  if (!d || !d.ok) return;
+  var wk = Date.now() - 7 * A.DAY, e = (d.entries || []).filter(function(x){ return x.ts >= wk && x.type !== "booking"; });
+  var priced = e.filter(function(x){ return x.total > 0; });
+  var avg = priced.length ? Math.round(priced.reduce(function(s, x){ return s + x.total; }, 0) / priced.length) : 0;
+  mini("Quotes, 7 days:", e.length + (avg ? " · avg " + A.money(avg) : ""));
+});
+A.api("/api/rate").then(function(d){
+  if (!d || d.ok === false) { el("rN").textContent = "–"; return; }
+  var tally = d.tally || {}, notes = (d.fb || []).length;
+  el("rN").textContent = (d.google || 0).toLocaleString();
+  var lows = [1,2,3,4].reduce(function(s, k){ return s + (tally[k] || 0); }, 0);
+  el("rS").textContent = (tally[5] || 0) + " five-star taps · " + notes + " private note" + (notes === 1 ? "" : "s") + (lows ? " · " + lows + " under five" : "");
+});
 })();
 </script>
 </body>

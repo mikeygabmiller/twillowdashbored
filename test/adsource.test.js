@@ -90,7 +90,7 @@ const CODE = [
   lift('clickAlertMode'), lift('alertNewClick'), lift('newClickSubject'), lift('newClickEmail'),
   lift('cleanVid'), lift('journeyMeta'), lift('journeyHotLabel'), lift('blankJourney'),
   lift('appendStep'), lift('stampJourneyInfo'), lift('journeyStep'),
-  lift('journeyPageTitle'), lift('journeyRefLabel'), lift('apiJourneys'),
+  lift('journeyPageTitle'), lift('journeyRefLabel'), lift('apiJourneys'), lift('priceLeftSummary'),
   lift('trimCountMap'), lift('pixelRollup'), lift('utcDayStr'),
 ].join('\n\n');
 
