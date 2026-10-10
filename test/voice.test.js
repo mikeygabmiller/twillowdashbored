@@ -131,6 +131,10 @@ section('the confirm text says the service the way he would (Mikey, 2026-10-10)'
 for (const ph of ['+14255550101', '+14255550102', '+14255550103', '+14255550104', '+14255550105', '+14255550106']) {
   const bk = { phone: ph, name: 'Dana Reed', slot: '13:00', dateLabel: 'Tue, Oct 13', serviceName: 'Full Detail \u2014 In & Out', vehicle: 'Subaru' };
   const c = M.bkMessage('confirm', bk, {});
+  // Not closed-ended (Mikey, 2026-10-10): he usually texts them before the
+  // job, so the confirm says so and asks them to reply.
+  ok(`confirm ${ph.slice(-1)} leaves the door open`, /before then/.test(c) && /text me back|send it my way|reply here/.test(c) && /^Hey Dana,/.test(c), c);
+  ok(`confirm ${ph.slice(-1)} passes the tell-blocker and fits in two texts`, !M.findTell(c) && c.length <= 306, [c.length, M.findTell(c)]);
   ok(`confirm ${ph.slice(-1)} names the Full Detail with no dash and no menu talk`, /Full Detail\./.test(c) && !/[\u2014\u2013]|In & Out|on your end|I come to you/.test(c), c);
 }
 
