@@ -187,7 +187,10 @@ ok('and does not text unless asked', link.texted === false && sms.length === 0);
 link = await (await M.apiCustLink(req({ phone: '+14255551234', text: true }))).json();
 ok('texting it works', link.texted === true && sms.length === 1);
 ok('the text contains the link', sms[0].body.includes(link.url));
-ok('…and says it does not expire', /expire/i.test(sms[0].body));
+// Mikey, 2026-10-10: the old wording ("see what's coming up... Save it, it
+// doesn't expire") read like a machine. Plain words, the link last, no dashes.
+ok('…in his words, with the link at the end', /^Hey \S+, this is your link for booking with me\./.test(sms[0].body) && sms[0].body.trim().endsWith(link.url), sms[0].body);
+ok('…and no em dash or app talk in it', !/[\u2014\u2013]|expire|coming up/i.test(sms[0].body), sms[0].body);
 ok('a bad phone is refused', (await M.apiCustLink(req({ phone: 'x' }))).status === 422);
 
 // ----------------------------------------------------------------- pricing

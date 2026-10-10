@@ -68,10 +68,11 @@ ok('Oct 1 is about 7:18 PM', near(M.bkDuskMin('2026-10-01'), 19 * 60 + 18, 5), M
 ok('Nov 2, after the clocks go back, is about 5:21 PM', near(M.bkDuskMin('2026-11-02'), 17 * 60 + 21, 5), M.bkDuskMin('2026-11-02'));
 ok('Dec 15 is about 4:52 PM', near(M.bkDuskMin('2026-12-15'), 16 * 60 + 52, 5), M.bkDuskMin('2026-12-15'));
 
-section('His week: weekdays at 1:00, Saturday at 7:00 and 1:00, never Sunday');
+section('His week: Tue to Fri at 1:00, Saturday at 7:00 and 1:00, never Sunday, Mondays off for now');
 NOW = at('2026-10-10', '10:00');                     // a Saturday morning in October
 const pub = await (await M.apiBookConfig()).json();
-ok('the booking page is told the work days are Mon to Sat', JSON.stringify(pub.config.workDays) === '[1,2,3,4,5,6]', pub.config.workDays);
+ok('the booking page is told the work days are Tue to Sat', JSON.stringify(pub.config.workDays) === '[2,3,4,5,6]', pub.config.workDays);
+ok('Monday offers nothing, any job', (await avail('2026-10-12', 'exterior')).length === 0 && (await avail('2026-10-12', 'interior')).length === 0 && (await avail('2026-10-19', 'full')).length === 0);
 ok('Tuesday offers 1:00 only', JSON.stringify(await avail('2026-10-13', 'exterior')) === '["13:00"]', await avail('2026-10-13', 'exterior'));
 ok('Saturday offers 7:00 and 1:00', JSON.stringify(await avail('2026-10-17', 'exterior')) === '["07:00","13:00"]', await avail('2026-10-17', 'exterior'));
 ok('Sunday offers nothing', (await avail('2026-10-18', 'exterior')).length === 0);
@@ -114,10 +115,10 @@ await M.saveBookings([]);
 section('Next openings: in order, and exactly what bkAvailability would allow');
 const no = await (await M.apiNextOpenings(new URL('https://x.test/api/next-openings?service=full&n=3'))).json();
 ok('three openings', no.ok && no.openings.length === 3, no);
-ok('first is Mon Oct 12 at 1:00 (today and Sunday skipped)', no.openings[0].date === '2026-10-12' && no.openings[0].slot === '13:00', no.openings[0]);
+ok('first is Tue Oct 13 at 1:00 (today, Sunday and Monday skipped)', no.openings[0].date === '2026-10-13' && no.openings[0].slot === '13:00', no.openings[0]);
 ok('in date order', no.openings.every((o, i) => i === 0 || (o.date + o.slot) > (no.openings[i - 1].date + no.openings[i - 1].slot)));
 for (const o of no.openings) ok(`${o.date} ${o.slot} is a real bkAvailability slot`, (await avail(o.date, 'full')).includes(o.slot));
-ok('labels are human', /^Mon, Oct 12$/.test(no.openings[0].label) && no.openings[0].time === '1:00 PM', no.openings[0]);
+ok('labels are human', /^Tue, Oct 13$/.test(no.openings[0].label) && no.openings[0].time === '1:00 PM', no.openings[0]);
 
 section('Booking from a town he serves confirms on the spot');
 ok('town matching forgives case and ", WA"', M.bkServedTown('mill creek, WA') && M.bkServedTown(' Everett ') && !M.bkServedTown('Lynnwood'));

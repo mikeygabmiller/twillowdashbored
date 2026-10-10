@@ -170,6 +170,14 @@ check('a nameless customer still gets a greeting', /^Hey there, it's Mikey\./.te
 const noPhone = outlookFrom(wk, CFG, [job({ id: 'b:8', date: D(2), slot: '10:00', phone: '' })], TODAY);
 check('nobody to text means no draft to send', noPhone.atRisk[0].draft, '');
 
+// Only a day he works. D(3) is the clear day above; take its weekday off his
+// list (Mondays, from 2026-10-10) and the draft must not name it.
+const offDow = new Date(D(3) + 'T12:00:00Z').getUTCDay();
+const offWeek = outlookFrom(wk, CFG, jobs, TODAY, [0, 1, 2, 3, 4, 5, 6].filter((x) => x !== offDow));
+check('a clear day he does not work is never offered', offWeek.atRisk[0].moveTo, '');
+check('so the draft asks instead of naming it', /Want to move it/.test(offWeek.atRisk[0].draft) && !/Saturday/.test(offWeek.atRisk[0].draft), true);
+check('with his days given and the day on them, it is still offered', outlookFrom(wk, CFG, jobs, TODAY, [offDow]).atRisk[0].moveTo, D(3));
+
 console.log('\n=== what never reaches the board ===');
 const skipped = outlookFrom(wk, CFG, [], TODAY);
 check('no jobs is a quiet week, not an error', skipped.atRisk, []);
