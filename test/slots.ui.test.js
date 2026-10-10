@@ -40,7 +40,8 @@ await page.click('.mbtn[data-m="settings"]');
 await page.waitForSelector('[data-slotday="1"]');
 
 console.log('\nIt shows his week as it ships');
-ok('Monday reads 13:00', await page.inputValue('[data-slotday="1"]') === '13:00');
+ok('Monday is empty (off for now, 2026-10-10)', await page.inputValue('[data-slotday="1"]') === '');
+ok('Tuesday reads 13:00', await page.inputValue('[data-slotday="2"]') === '13:00');
 ok('Saturday reads 07:00, 13:00', await page.inputValue('[data-slotday="6"]') === '07:00, 13:00');
 ok('Sunday is empty (off)', await page.inputValue('[data-slotday="0"]') === '');
 ok('Full Detail is 270 min', await page.inputValue('[data-f="slotRules.jobMin.full"]') === '270');
@@ -58,6 +59,7 @@ await page.waitForFunction(() => /Saved/.test(document.querySelector('#saveStatu
 const s = saved[0] && saved[0].slotRules;
 ok('Wednesday taken off', s && Array.isArray(s.days[3]) && s.days[3].length === 0, s && s.days);
 ok('Sunday gets 9:00', s && JSON.stringify(s.days[0]) === '["9:00"]', s && s.days[0]);
+ok('Monday stays off', s && Array.isArray(s.days[1]) && s.days[1].length === 0, s && s.days[1]);
 ok('Saturday untouched', s && JSON.stringify(s.days[6]) === '["07:00","13:00"]', s && s.days[6]);
 ok('Full Detail is now 240', s && s.jobMin.full === 240, s && s.jobMin);
 ok('lights on', s && s.lights === true);

@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-08·grow';
+const BUILD = '2026-10-10·no-mondays';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -17246,7 +17246,7 @@ const BK_CONFIG_KEY = 'bk:config';
 function bookingDefaults() {
   return {
     tz: 'America/Los_Angeles',
-    workDays: [1, 2, 3, 4, 5, 6],      // Mon–Sat (0 = Sun, off)
+    workDays: [2, 3, 4, 5, 6],         // Tue–Sat: Sundays never, Mondays off for now (2026-10-10)
     dayStart: '07:00', lastStart: '16:00',
     stepMin: 30, bufferMin: 60, maxJobsPerDay: 2, minLeadMin: 120, windowDays: 30,
     // The website's price book (BOOK_FACTS below, PRICING.md in the website
@@ -17279,7 +17279,10 @@ function bookingDefaults() {
     // offered 8:00, 8:30, 9:00... to people when he was sitting in class.
     slotRules: {
       on: true,
-      days: { 0: [], 1: ['13:00'], 2: ['13:00'], 3: ['13:00'], 4: ['13:00'], 5: ['13:00'], 6: ['07:00', '13:00'] },
+      // Mondays off for now (Mikey, 2026-10-10: "never any availability at any
+      // time on Monday for now"). Bring it back by typing 13:00 into Monday in
+      // Bookings -> Settings -> My start times; a saved value beats this default.
+      days: { 0: [], 1: [], 2: ['13:00'], 3: ['13:00'], 4: ['13:00'], 5: ['13:00'], 6: ['07:00', '13:00'] },
       // His LONGEST honest time per job, any size or condition. The calendar
       // plans on the worst case, because the failure it prevents is a War Zone
       // van finishing its exterior by flashlight in a stranger's driveway.
@@ -21747,7 +21750,10 @@ function custLinkDrafts(t, token, next, photos, copy) {
   };
   const afterTpl = photos ? (photos.before ? copy.draft_after_pics : copy.draft_after_pic) : copy.draft_after;
   return {
-    book: `Hey ${first}, here's your own link: ${custUrl(token)} You can see what's coming up, book a time or move one, and look back at what I've done before. Save it, it doesn't expire.`,
+    // Mikey, 2026-10-10: the old one read like an app announcing a feature
+    // ("see what's coming up... Save it, it doesn't expire"). This is what he'd
+    // type himself. The link goes last so nothing trails it in the preview.
+    book: `Hey ${first}, this is your link for booking with me. You can grab a time or move one there, or just text me like normal. ${custUrl(token)}`,
     before: put(copy.draft_before, custPageUrl('before', token), { detail: day ? day + "'s detail" : 'your detail' }),
     after: put(afterTpl, custPageUrl('after', token)),
     friend: `Hey ${first}, if anyone asks who did your car, here's your own link to send them. Once their first detail is done you both get a free exterior on me: ${custPageUrl('friend', token)}`,
@@ -21949,7 +21955,7 @@ async function custPage(token) {
       <div class="sub">${jdEsc(bkFmt12(s.next.slot))}</div><div class="pill ok">Confirmed</div></div>`;
   } else if (!s.after) {
     up = `<div class="card"><div class="lbl">Nothing on the books</div>
-      <div class="sub">Pick a time below whenever you're ready — it comes straight to me.</div></div>`;
+      <div class="sub">Pick a time below whenever you're ready. It comes straight to me.</div></div>`;
   }
 
   const go = [];
@@ -21963,19 +21969,19 @@ async function custPage(token) {
   const mine = yours.length
     ? `<div class="card"><div class="lbl">What I've got on file</div>
        ${yours.map((v) => `<div class="line">${jdEsc(v)}</div>`).join('')}
-       ${s.plan ? `<div class="pill ok">On a plan — every ${Math.round(s.plan.every / 7)} weeks</div>` : ''}
+       ${s.plan ? `<div class="pill ok">On a plan: every ${Math.round(s.plan.every / 7)} weeks</div>` : ''}
        <div class="sub tiny">Wrong? Text me and I'll fix it.</div></div>` : '';
 
   const hist = s.history.length
     ? `<div class="card"><div class="lbl">What I've done for you</div>
        ${s.history.map((h) => `<div class="hrow"><span>${jdEsc(bkNiceDate(h.date))}</span>
          <span class="hs">${jdEsc(h.service || 'Detail')}</span>${h.price ? `<b>$${h.price}</b>` : ''}</div>`).join('')}
-       ${s.jobs > 1 ? `<div class="sub tiny">${s.jobs} details with me so far. Thank you — really.</div>` : ''}</div>`
+       ${s.jobs > 1 ? `<div class="sub tiny">${s.jobs} details with me so far. Thank you, really.</div>` : ''}</div>`
     : '';
 
   const inner = `<div class="pad">
     <h1>${hi}</h1>
-    <p class="sub">Everything about your detailing in one place. Save this link — it doesn't expire.</p>
+    <p class="sub">Book a time, move one, or look back at what I've done. Save this link, it keeps working.</p>
     ${up}${pages}${mine}
     <div class="card" id="bookCard"><div class="lbl">Book a time</div>
       <div id="bookBody"><button class="btn" id="startBook">Pick a day</button></div></div>
@@ -23962,7 +23968,7 @@ function wxHeadsUpDraft(job, date, risk, moveTo, today) {
 // week goes out. Pure on purpose: the brief already has the forecast in hand and
 // shouldn't pay for a second one, and a function with no network in it is one
 // the tests can hold still.
-function outlookFrom(wx, cfg, jobs, today) {
+function outlookFrom(wx, cfg, jobs, today, workDays) {
   const daily = wx.daily || {};
   const times = daily.time || [];
 
@@ -23989,7 +23995,10 @@ function outlookFrom(wx, cfg, jobs, today) {
   // an earlier dry day is not offered even when there is one. A day he's
   // already full on still counts — how full he is, is his call to make, and
   // withholding the only dry day of the week helps nobody.
-  const clear = out.filter((d) => d.score === 3).map((d) => d.date);
+  // Only a day he works, too: this used to offer a clear Sunday, and a Monday
+  // once he took Mondays off, in a text that names the day for him.
+  const works = (d) => !Array.isArray(workDays) || workDays.includes(new Date(d.date + 'T12:00:00Z').getUTCDay());
+  const clear = out.filter((d) => d.score === 3 && works(d)).map((d) => d.date);
   const atRisk = [];
   for (const d of out) {
     for (const j of d.jobs) {
@@ -24029,7 +24038,7 @@ async function buildOutlook(days = 7) {
   const today = jdToday(cfg);
   const wx = await fetchWeather(Math.max(2, Math.min(14, days)));
   const r = outlookRange(wx, today);
-  return outlookFrom(wx, cfg, await outlookJobs(cfg, r.from, r.to), today);
+  return outlookFrom(wx, cfg, await outlookJobs(cfg, r.from, r.to), today, (await loadBookingConfig()).workDays);
 }
 
 async function apiWeatherOutlook(url) {
@@ -24071,7 +24080,7 @@ async function buildBrief() {
       j.rainRisk = risk;
     }
     const r = outlookRange(wx, today);
-    weekRisk = outlookFrom(wx, cfg, await outlookJobs(cfg, r.from, r.to), today).atRisk;
+    weekRisk = outlookFrom(wx, cfg, await outlookJobs(cfg, r.from, r.to), today, (await loadBookingConfig()).workDays).atRisk;
   } catch { /* the brief is still useful without weather */ }
 
   // Yesterday's money + this month so far.
