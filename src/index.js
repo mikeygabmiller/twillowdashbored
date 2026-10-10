@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-10·no-mondays';
+const BUILD = '2026-10-10·confirm-text';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -17719,8 +17719,8 @@ async function bkCreate(b, opts) {
     await bkConfirmTexts(thread, rec, cfg, await loadConfig());
   } else if (rec.smsConsent) {
     const msg = sayOneOf(`${phone}:bkack`, [
-      `Hey ${first}, it's Mikey! Got your request for ${dateLabel} at ${bkFmt12(slot)} (${rec.serviceName}). I'll text you shortly to confirm and lock it in. Talk soon! - Mikey`,
-      `Hey ${first}, it's Mikey. Got your request for ${dateLabel} at ${bkFmt12(slot)} for the ${rec.serviceName}. Let me check it against my week and I'll text you right back to lock it in. - Mikey`,
+      `Hey ${first}, it's Mikey! Got your request for ${dateLabel} at ${bkFmt12(slot)} (${bkTextService(rec.serviceName)}). I'll text you shortly to confirm and lock it in. Talk soon! - Mikey`,
+      `Hey ${first}, it's Mikey. Got your request for ${dateLabel} at ${bkFmt12(slot)} for the ${bkTextService(rec.serviceName)}. Let me check it against my week and I'll text you right back to lock it in. - Mikey`,
     ]);
     try { await sendSms(phone, msg); thread.messages.push({ id: genId(), dir: 'out', body: msg, ts: Date.now(), kind: 'booking', status: 'sent' }); } catch (e) {}
   }
@@ -17829,10 +17829,21 @@ async function apiBookings(url) {
 // also drives live ETA tracking. See dayJobText().
 function bkAutoOn(bcfg, kind) { return ((bcfg && bcfg.autoTexts) || {})[kind] !== false; }
 
+// The service as he'd say it in a text. His saved name is "Full Detail", a
+// dash, then "In & Out": fine on a menu, but it reads like one in a text
+// (Mikey, 2026-10-10), and the dash is the tell he never wants a customer to see. So
+// a text gets the part before any dash or bracket: "Full Detail". The booking
+// keeps the full name; only what goes to their phone is trimmed.
+function bkTextService(name) {
+  const n = String(name || '').split(/\s+[\u2014\u2013-]\s+|\s*[(:]/)[0].trim();
+  return n || 'detail';
+}
+
 function bkMessageBody(kind, bk, cfg) {
   const first = (bk.name || '').split(/\s+/)[0] || 'there';
   const at = bkFmt12(bk.slot);
   const car = bk.vehicle || 'car';
+  const svc = bkTextService(bk.serviceName);
   // Seeded per booking, so one customer's four messages vary against each other
   // the way a person's would, and two customers never get the same set.
   const pick = (...v) => sayOneOf(`${bk.phone || bk.id || ''}:${kind}`, v, cfg, `booking:${kind}`);
@@ -17844,10 +17855,13 @@ function bkMessageBody(kind, bk, cfg) {
     // they get from this number. By the reminder he is a name in their phone,
     // and a man who signs every text is a man sending form letters.
     case 'confirm':
+      // Rewritten 2026-10-10 at Mikey's ask: the old one (his menu name with
+      // its dash, then "I come to you, so all I need on your end is...") read
+      // like a form.
       return pick(
-        `You're all set for ${bk.dateLabel} at ${at}, ${bk.serviceName}.${wp ? ' I come to you, so all I need on your end is an outside water spigot and an outlet I can reach.' : ' I come to you.'} I'll text when I'm on my way. - Mikey`,
-        `Got you down for ${bk.dateLabel} at ${at}, ${bk.serviceName}.${wp ? ' I bring everything else, I just need to get to an outdoor spigot and a plug.' : ''} I'll give you a heads up before I head over. - Mikey`,
-        `Locked in for ${bk.dateLabel} at ${at}, ${bk.serviceName}. I come to you.${wp ? ' The only things I need there are an outside faucet and an outlet within about 20 feet of the car.' : ''} I'll text when I'm on my way. - Mikey`);
+        `You're booked for ${bk.dateLabel} at ${at} for the ${svc}.${wp ? ' All I need from you is an outside spigot and an outlet I can plug into.' : ''} I'll text you when I'm heading over. - Mikey`,
+        `Got you down for ${bk.dateLabel} at ${at}, ${svc}.${wp ? ' Just make sure I can get to an outside spigot and an outlet.' : ''} I'll text you when I'm on my way. - Mikey`,
+        `See you ${bk.dateLabel} at ${at} for the ${svc}.${wp ? ' I\'ll need an outside spigot and a plug near the car.' : ''} I'll text before I head over. - Mikey`);
     case 'remind24':
       return pick(
         `Reminder, I've got your ${car} tomorrow at ${at}.${wp ? ' If you can leave it somewhere I can walk around it and reach a spigot and an outlet, that\'s all I need.' : ''} See you then.`,
