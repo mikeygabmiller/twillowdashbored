@@ -127,7 +127,7 @@ let r = await (await M.apiBook(req({ service: 'exterior', size: 'suv', date: '20
   phone: '4255550101', address: '1425 Cedar Ave', city: 'Everett', smsConsent: true, estimate: 239 }))).json();
 ok('it books', r.ok, r);
 ok('as confirmed, not pending', r.status === 'confirmed', r);
-ok('the customer gets the confirm text, with spigot and outlet', sms.length === 1 && /all set|Got you down|Locked in/.test(sms[0].body) && /spigot|faucet/.test(sms[0].body), sms);
+ok('the customer gets the confirm text, with spigot and outlet', sms.length === 1 && /You're booked|Got you down|See you/.test(sms[0].body) && /spigot|faucet/.test(sms[0].body), sms);
 let th = await M.loadThread('+14255550101');
 ok('the day-before and morning reminders are queued', th.scheduled.filter((x) => x.kind === 'booking').length === 2, th.scheduled);
 ok('Mikey hears it is already on his schedule', alerts.length === 1 && /confirmed automatically/.test(alerts[0].text), alerts[0] && alerts[0].text);

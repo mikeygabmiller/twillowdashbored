@@ -125,5 +125,14 @@ for (const phrase of ['circling back on that quote', 'it would mean the world', 
   ok(`"${phrase}" is now caught`, !!M.findTell(phrase), phrase);
 }
 
+section('the confirm text says the service the way he would (Mikey, 2026-10-10)');
+// His saved menu name carries a dash and "In & Out". On a phone that dash is
+// the tell he never wants a customer to see, so a text says "Full Detail".
+for (const ph of ['+14255550101', '+14255550102', '+14255550103', '+14255550104', '+14255550105', '+14255550106']) {
+  const bk = { phone: ph, name: 'Dana Reed', slot: '13:00', dateLabel: 'Tue, Oct 13', serviceName: 'Full Detail \u2014 In & Out', vehicle: 'Subaru' };
+  const c = M.bkMessage('confirm', bk, {});
+  ok(`confirm ${ph.slice(-1)} names the Full Detail with no dash and no menu talk`, /Full Detail\./.test(c) && !/[\u2014\u2013]|In & Out|on your end|I come to you/.test(c), c);
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 if (fail) process.exit(1);
