@@ -81,3 +81,17 @@ For those, do the work, then stop and lay out what it would do before it runs.
   what every board, badge and peek reads. Prefer mirroring a field there over loading
   a thread — and note that reading a thread through `openThreadForRead()` **clears
   unread**, which is a real side effect, not a detail.
+
+## Texts that go to customers
+
+Mikey's rules for any automatic text (2026-10-10):
+
+- **No em dashes**, in the template or in anything dropped into it. His saved
+  service name has one ("Full Detail", a dash, "In & Out"), so texts use
+  `bkTextService()`, never `bk.serviceName` raw.
+- **Plain words he'd type himself.** Not app talk ("see what's coming up",
+  "it doesn't expire", "all I need on your end").
+- **Leave the door open.** He usually texts customers himself before a job to
+  sort out details, so an automatic text shouldn't read like the last word.
+  Say he'll probably be in touch, and ask them to reply with anything he
+  should know.

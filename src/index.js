@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-10·confirm-text';
+const BUILD = '2026-10-10·confirm-open';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -17857,11 +17857,14 @@ function bkMessageBody(kind, bk, cfg) {
     case 'confirm':
       // Rewritten 2026-10-10 at Mikey's ask: the old one (his menu name with
       // its dash, then "I come to you, so all I need on your end is...") read
-      // like a form.
+      // like a form. Then, the same day: not closed-ended. He usually texts
+      // them himself before the job to sort out details, so the confirm says
+      // he probably will ("probably", because sometimes he won't) and asks
+      // them to reply with anything he should know.
       return pick(
-        `You're booked for ${bk.dateLabel} at ${at} for the ${svc}.${wp ? ' All I need from you is an outside spigot and an outlet I can plug into.' : ''} I'll text you when I'm heading over. - Mikey`,
-        `Got you down for ${bk.dateLabel} at ${at}, ${svc}.${wp ? ' Just make sure I can get to an outside spigot and an outlet.' : ''} I'll text you when I'm on my way. - Mikey`,
-        `See you ${bk.dateLabel} at ${at} for the ${svc}.${wp ? ' I\'ll need an outside spigot and a plug near the car.' : ''} I'll text before I head over. - Mikey`);
+        `Hey ${first}, you're booked for ${bk.dateLabel} at ${at} for the ${svc}. I'll probably text you before then with a question or two about the car.${wp ? ' The main thing I need on the day is an outside spigot and an outlet I can plug into.' : ''} Anything you want me to know, just text me back. - Mikey`,
+        `Hey ${first}, got you down for ${bk.dateLabel} at ${at}, ${svc}. I'll likely text you before then to go over a few details.${wp ? ' On the day I just need to get to an outside spigot and an outlet.' : ''} If there's anything about the car I should know, send it my way. - Mikey`,
+        `Hey ${first}, see you ${bk.dateLabel} at ${at} for the ${svc}. I'll text you before then if I have any questions.${wp ? ' I\'ll need an outside spigot and a plug near the car.' : ''} And if you've got questions for me, just reply here. - Mikey`);
     case 'remind24':
       return pick(
         `Reminder, I've got your ${car} tomorrow at ${at}.${wp ? ' If you can leave it somewhere I can walk around it and reach a spigot and an outlet, that\'s all I need.' : ''} See you then.`,
