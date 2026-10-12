@@ -5160,8 +5160,27 @@ async function apiCall(request) {
 // The Calls screen. Names are re-read from the index on the way out rather than
 // trusted from the row: a caller who was a bare +1 when they rang is usually a
 // named customer by the time you look at the log.
+// One call Mikey asked to have on the log (2026-10-12): an outgoing call to his
+// dad, 9:36 AM Pacific that morning, 15 seconds. It goes in once, in time order,
+// the first time the Calls screen loads; the flag key keeps it from coming back
+// after he deletes it or it ages off the end of the list.
+const CALL_ADD_KEY = 'calls-add-dad-20261012';
+async function addAskedCall(doc) {
+  if (await kv().get(CALL_ADD_KEY)) return;
+  const fromNorm = normalizePhone('2064186270') || '+12064186270';
+  const ts = Date.UTC(2026, 9, 12, 16, 36); // 9:36 AM PDT
+  if (!doc.calls.some((c) => c.fromNorm === fromNorm && Math.abs((c.ts || 0) - ts) < 120000)) {
+    const row = { id: genId(), ts, from: fromNorm, fromNorm, name: 'dad', dir: 'out', outcome: 'outgoing', talkSec: 15 };
+    const at = doc.calls.findIndex((c) => (c.ts || 0) < ts);
+    doc.calls.splice(at === -1 ? doc.calls.length : at, 0, row);
+    await saveCalls(doc);
+  }
+  await kv().put(CALL_ADD_KEY, '1');
+}
+
 async function apiCalls() {
   const doc = await loadCalls();
+  try { await addAskedCall(doc); } catch { /* the log still loads without it */ }
   const cfg = await loadConfig();
   let index = [];
   try { index = (await loadIndex()) || []; } catch { /* names are a nicety */ }
