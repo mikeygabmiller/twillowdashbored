@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-15·maybes-2';
+const BUILD = '2026-10-15·checkin';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -701,6 +701,8 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/calls/backfill') return apiCallsBackfill();
   if (request.method === 'POST' && pathname === '/api/calls/recover-recordings') return apiCallsRecoverRecordings();
   if (request.method === 'POST' && pathname === '/api/detect/sweep') return apiDetectSweep(request);
+  if (request.method === 'GET'  && pathname === '/api/calendar/days') return apiCalendarDays(url);
+  if (request.method === 'POST' && pathname === '/api/digest/email') return apiDigestEmail(request);
   if (request.method === 'GET'  && pathname === '/api/migrate')    return apiMigrate(url);
   if (request.method === 'GET'  && pathname === '/api/templates')  return apiGetTemplates();
   if (request.method === 'POST' && pathname === '/api/templates')  return apiSaveTemplates(request);
@@ -18804,6 +18806,7 @@ function bkParseIcs(text) {
     else if (name === 'TRANSP') cur.transp = val;
     else if (name === 'STATUS') cur.status = val;
     else if (name === 'DURATION') cur.durationRaw = val;
+    else if (name === 'SUMMARY') cur.summary = val.replace(/\\n/gi, ' ').replace(/\\([,;\\])/g, '$1');
   }
   return events;
 }
@@ -18817,7 +18820,7 @@ function bkBuildEvent(c) {
     const end = c.endRaw ? bkIcsDate(c.endRaw) : null;
     const endDate = (end && end.allDay) ? end.date : bkAddDays(start.date, 1);
     const p = { date: start.date, dow: new Date(start.date + 'T12:00:00Z').getUTCDay() };
-    return { allDay: true, startDate: start.date, endDate, rrule, baseDayMs: bkLaEpoch(start.date, '00:00'), baseDow: p.dow };
+    return { allDay: true, startDate: start.date, endDate, rrule, baseDayMs: bkLaEpoch(start.date, '00:00'), baseDow: p.dow, title: c.summary || '' };
   }
   let endMs;
   if (c.endRaw) { const e = bkIcsDate(c.endRaw); endMs = e && !e.allDay ? e.ms : start.ms + 3600000; }
@@ -18825,8 +18828,48 @@ function bkBuildEvent(c) {
   const sp = bkLocalParts(start.ms);
   return { allDay: false, startMs: start.ms, endMs, rrule,
     baseDayMs: bkLaEpoch(sp.date, '00:00'), baseDow: sp.dow, baseStartMin: sp.min,
-    durMin: Math.max(15, Math.round((endMs - start.ms) / 60000)) };
+    durMin: Math.max(15, Math.round((endMs - start.ms) / 60000)), title: c.summary || '' };
 }
+// His main calendar's busy events, day by day, with their titles. The check-in
+// email three times a day (Mikey, 2026-10-14) has to know that Saturday is
+// "Help James with truck" and not an open day, and a scheduled session can't
+// carry a Google Calendar connection, so it reads the same feed the booking
+// page already reads. Events he marked "free" are left out, same as there.
+async function apiCalendarDays(url) {
+  const cfg = await loadBookingConfig();
+  if (!(cfg.calendar && cfg.calendar.enabled && cfg.calendar.icalUrl)) return json({ ok: false, error: 'calendar_not_connected' }, 409);
+  const n = Math.max(1, Math.min(31, Number(url.searchParams.get('days')) || 14));
+  let events;
+  try { events = await bkFetchCal(cfg.calendar.icalUrl); } catch (e) { return json({ ok: false, error: 'calendar_unreachable' }, 502); }
+  const from = bkLocalParts(Date.now()).date;
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const date = bkAddDays(from, i);
+    for (const ev of events) {
+      const iv = bkEventBusyOnDate(ev, date);
+      if (!iv) continue;
+      out.push({ date, start: bkMin2hm(iv.s), end: iv.e >= 1440 ? '24:00' : bkMin2hm(iv.e),
+        allDay: iv.s <= 0 && iv.e >= 1440, title: jdStr(ev.title, 120) });
+    }
+  }
+  out.sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start));
+  return json({ ok: true, from, days: n, events: out });
+}
+
+// Sends Mikey an email he asked for: the check-in summary three times a day,
+// written by a scheduled session that has no Gmail of its own. Same sender as
+// every alert, and only ever to ALERT_EMAIL, so this can't reach a customer.
+async function apiDigestEmail(request) {
+  const d = await readJson(request).catch(() => ({}));
+  const subject = jdStr(d && d.subject, 200);
+  const text = String((d && d.text) || '').slice(0, 40000);
+  if (!subject || !text.trim()) return json({ ok: false, error: 'need_subject_and_text' }, 422);
+  if (!ENV.RESEND_API_KEY || !ENV.ALERT_EMAIL) return json({ ok: false, error: 'email_not_configured' }, 500);
+  try { await sendEmail(subject, text, d && d.html ? String(d.html).slice(0, 150000) : ''); }
+  catch (e) { return json({ ok: false, error: String((e && e.message) || e).slice(0, 200) }, 502); }
+  return json({ ok: true });
+}
+
 // Busy interval {s,e} (LA minutes) this event occupies on `date`, or null.
 function bkEventBusyOnDate(ev, date) {
   const dayStartMs = bkLaEpoch(date, '00:00'), dayEndMs = dayStartMs + 86400000;
