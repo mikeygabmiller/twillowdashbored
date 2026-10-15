@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-15·checkin-2';
+const BUILD = '2026-10-15·no-doubles';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -19241,6 +19241,10 @@ async function buildDay(date) {
     if (!t.appointmentAt || t.archived) continue;
     if (localDateStr(t.appointmentAt, cfg.tz) !== date) continue;
     if (jobs.some((j) => j.phone === t.phone)) continue;
+    // A job placed from a text sets the appointment AND puts a job on this
+    // board, so it was showing twice (the check-in email caught Don, Kelsey
+    // and the Murano job doubled, 2026-10-14). The board job is the real one.
+    if (doc.manual.some((m) => m.phone === t.phone)) continue;
     const d = new Date(t.appointmentAt);
     jobs.push({
       id: 't:' + t.phone, source: 'thread', phone: t.phone, name: t.name || '',

@@ -255,6 +255,9 @@ ok('their yes turns the maybe into a job, not a second entry', did === 'added' &
 ok('…no longer a maybe', board[0].maybe === false);
 ok('…and now it IS the appointment', pete.appointmentAt === M.bkLaEpoch(D1, '13:00') && !pete.maybeAt);
 ok('a booked job says so out loud', alerts.length === 1 && /Added to your day/.test(alerts[0].subject || ''), alerts.map((a) => a.subject));
+const peteDay = await M.buildDay(D1);
+ok('a job placed from a text shows ONCE on the board, not once as the job and again as the appointment',
+  peteDay.jobs.filter((j) => j.phone === '+14255550101').length === 1, peteDay.jobs.map((j) => j.id));
 
 store.clear(); alerts.length = 0; M.__resetCfg();
 await kv.put('bk:config', JSON.stringify({ windowDays: 3650, calendar: { enabled: false } }));
