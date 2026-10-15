@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-15·maybes';
+const BUILD = '2026-10-15·maybes-2';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -24614,6 +24614,11 @@ async function detApply(thread, f, dc, cfg, opts) {
   const phone = thread.phone;
   const open = list.find((x) => x.phone === phone);
 
+  // A move with nothing on file to move is just the day they've now settled
+  // on: the first date only ever lived in the texts (the Murano and Civic on
+  // 2026-10-14, moved twice by text and never once on the board).
+  if (f.intent === 'reschedule' && !thread.appointmentAt && f.date) f = Object.assign({}, f, { intent: 'set' });
+
   if (f.intent === 'reschedule' && thread.appointmentAt && dc.autoMove && f.at > Date.now()) {
     const have = await detFindBoardJob(phone, thread.appointmentAt, tz);
     if (have && f.customerConfirmed) {
@@ -24653,6 +24658,7 @@ async function detApply(thread, f, dc, cfg, opts) {
     rec.at_ = Date.now();
     if (!open) list.push(rec);
     await saveDetections(list);
+    if (quiet) return 'card';
     await notifyMikey(
       f.intent === 'cancel' ? `🚫 ${thread.name || phone} may be cancelling` : `🔄 ${thread.name || phone} wants to move`,
       `"${f.evidence}"\n\nNothing has changed. Open Jobs to accept or ignore it.`).catch(() => {});
