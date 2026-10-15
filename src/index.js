@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-12·dad-call';
+const BUILD = '2026-10-14·call-recordings';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -699,6 +699,7 @@ async function handle(request) {
   if (request.method === 'GET'  && pathname === '/api/calls')      return apiCalls();
   if (request.method === 'POST' && pathname === '/api/calls/seen') return apiCallsSeen();
   if (request.method === 'POST' && pathname === '/api/calls/backfill') return apiCallsBackfill();
+  if (request.method === 'POST' && pathname === '/api/calls/recover-recordings') return apiCallsRecoverRecordings();
   if (request.method === 'GET'  && pathname === '/api/migrate')    return apiMigrate(url);
   if (request.method === 'GET'  && pathname === '/api/templates')  return apiGetTemplates();
   if (request.method === 'POST' && pathname === '/api/templates')  return apiSaveTemplates(request);
@@ -4490,13 +4491,19 @@ async function handleCallRecording(request) {
   if (!sid || !url) return new Response('', { status: 204 });
   const doc = await loadCalls();
   const row = doc.calls.find((c) => c.sid === sid);
+  if (!row) return new Response('', { status: 204 });
   // A call that rang out has its voicemail recording already; this one is just
-  // the notice and the ring. Nothing to keep.
-  if (!row || !callRecordingKeep(row)) return new Response('', { status: 204 });
+  // the notice and the ring. Nothing to keep. But a row that still reads as
+  // mid-call may only be a stale read (see callAnsweredLeg), so Twilio gets
+  // asked before the file is thrown away. Missed and voicemail are final words.
+  let answered = null;
+  if (!callRecordingKeep(row)) {
+    if (callRecordingMaybeStale(row)) answered = await callAnsweredLeg(sid);
+    if (!answered) return new Response('', { status: 204 });
+  }
   const recording = url + '.mp3';
   const sec = Number(params.RecordingDuration || 0) || 0;
-  const patch = { sid, recording, recordingSid: recordingSid || undefined, recSec: sec, recAt: Date.now() };
-  if (row.outcome === 'outgoing' && sec && !row.talkSec) patch.talkSec = sec;
+  const patch = callRecordingPatch(row, { sid, recording, recordingSid: recordingSid || undefined, recSec: sec, recAt: Date.now() }, answered);
   await recordCall(patch);
   background(transcribeCallRecording(Object.assign({}, row, patch)));
   return new Response('', { status: 204 });
@@ -4510,6 +4517,106 @@ async function handleCallRecording(request) {
 function callRecordingKeep(row) {
   const o = row && row.outcome;
   return o === 'answered' || o === 'outgoing';
+}
+
+// The two states our log can still be showing when he did pick up. 'ringing'
+// is written when the caller presses 1; 'screened' just before that, and only a
+// caller who pressed 1 ever has a recording, so on a short call a stale read
+// can land on either.
+function callRecordingMaybeStale(row) {
+  const o = row && row.outcome;
+  return o === 'ringing' || o === 'screened';
+}
+
+// Twilio's own word on whether he picked up, for when our log can't be trusted
+// yet. The Dial's end (/voicemail) writes "answered" only moments before Twilio
+// says the recording is ready, and a KV read at another edge can trail a write
+// by up to a minute. So the recording callback kept reading 'ringing' for calls
+// he'd answered, took them for a caller who hung up during the notice, and threw
+// the file away: no answered inbound call got a transcript from 10-06 to 10-14,
+// while every call he made did (those are 'outgoing' from the first second).
+// The dialed leg, the child of the caller's call, is the truth: Twilio marks it
+// completed only when his phone picked up, and its duration is the talk time.
+// One lookup, and only on this path.
+async function callAnsweredLeg(callSid) {
+  const acct = ENV.TWILIO_ACCOUNT_SID, token = ENV.TWILIO_AUTH_TOKEN;
+  if (!callSid || !acct || !token) return null;
+  try {
+    const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${acct}/Calls.json?ParentCallSid=${encodeURIComponent(callSid)}&PageSize=5`,
+      { headers: { Authorization: `Basic ${btoa(`${acct}:${token}`)}` } });
+    if (!r.ok) return null;
+    const leg = ((await r.json()).calls || []).find((c) => c.status === 'completed' && Number(c.duration) > 0);
+    return leg ? { talkSec: Number(leg.duration) || 0 } : null;
+  } catch { return null; }
+}
+
+// What a kept recording writes onto its call row. recordCall saves the whole log,
+// so when the read was stale the save would put the stale 'ringing' back over
+// the real 'answered'. Saying 'answered' here, with Twilio's talk time, is what
+// keeps the row right either way.
+function callRecordingPatch(row, patch, answered) {
+  const out = Object.assign({}, patch);
+  const sec = out.recSec || 0;
+  if (row.outcome === 'outgoing' && sec && !row.talkSec) out.talkSec = sec;
+  if (answered) {
+    out.outcome = 'answered';
+    if (!row.talkSec && answered.talkSec) out.talkSec = answered.talkSec;
+  }
+  return out;
+}
+
+// Pulls back the recordings the stale read above threw away. Each answered call
+// with no recording is looked up in Twilio by its own call id; a file found
+// there is stored and transcribed exactly as if the callback had kept it, so it
+// lands on the Calls screen and in the conversation like any other. Mikey asked
+// for it on 2026-10-14 for Kelsey's two calls and (425) 760-3857.
+//
+// Safe to run again: a call that has its recording is skipped, one Twilio had
+// nothing for is marked so it isn't asked about twice, and the conversation copy
+// is deduped by recording id. A few calls a run keeps it inside the Worker's
+// subrequest limit (a lookup, a download and a Whisper piece per MB each);
+// `remaining` says whether to run it again. Last 30 days only: that covers
+// everything since recording started on 10-06, and Twilio has nothing older.
+const CALL_RECOVER_MAX = 3;
+const CALL_RECOVER_DAYS = 30;
+function callRecoverCandidates(calls, now) {
+  const since = now - CALL_RECOVER_DAYS * 86400000;
+  return (calls || []).filter((c) => c.sid && !c.recording && !c.recoverNone &&
+    (c.ts || 0) >= since && callRecordingKeep(c));
+}
+async function apiCallsRecoverRecordings() {
+  const acct = ENV.TWILIO_ACCOUNT_SID, token = ENV.TWILIO_AUTH_TOKEN;
+  if (!acct || !token) return json({ ok: false, error: 'twilio_not_configured' }, 500);
+  const auth = `Basic ${btoa(`${acct}:${token}`)}`;
+  const doc = await loadCalls();
+  const todo = callRecoverCandidates(doc.calls, Date.now());
+  const batch = todo.slice(0, CALL_RECOVER_MAX);
+  const found = [], none = [];
+  for (const row of batch) {
+    let rec = null;
+    try {
+      const r = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${acct}/Recordings.json?CallSid=${encodeURIComponent(row.sid)}&PageSize=5`,
+        { headers: { Authorization: auth } });
+      if (!r.ok) continue;   // Twilio hiccup: leave it for the next run, don't mark it
+      rec = ((await r.json()).recordings || []).find((x) => (!x.status || x.status === 'completed') && Number(x.duration) > 0) || null;
+    } catch { continue; }
+    if (rec) found.push({ row, rec }); else none.push(row.sid);
+  }
+  if (none.length) {
+    const fresh = await loadCalls();
+    for (const c of fresh.calls) if (none.includes(c.sid)) c.recoverNone = true;
+    await saveCalls(fresh);
+  }
+  const recovered = [];
+  for (const { row, rec } of found) {
+    const recording = `https://api.twilio.com${String(rec.uri).replace(/\.json$/, '')}.mp3`;
+    const patch = callRecordingPatch(row, { sid: row.sid, recording, recordingSid: rec.sid, recSec: Number(rec.duration) || 0, recAt: Date.now() }, null);
+    await recordCall(patch);
+    await transcribeCallRecording(Object.assign({}, row, patch));
+    const after = (await loadCalls()).calls.find((c) => c.sid === row.sid) || {};
+    recovered.push({ sid: row.sid, from: row.fromNorm || row.from || '', ts: row.ts || 0, transcript: !!after.transcript });
+  }
+  return json({ ok: true, recovered, nothingInTwilio: none.length, remaining: Math.max(0, todo.length - batch.length) });
 }
 
 async function transcribeCallRecording(row) {
