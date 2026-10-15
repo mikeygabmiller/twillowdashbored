@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-15·checkin';
+const BUILD = '2026-10-15·checkin-2';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -18792,11 +18792,15 @@ function bkParseRrule(s) {
 function bkParseIcs(text) {
   const unfolded = String(text || '').replace(/\r?\n[ \t]/g, '');
   const lines = unfolded.split(/\r?\n/);
-  const events = []; let cur = null;
+  const events = []; let cur = null, inAlarm = false;
   for (const line of lines) {
-    if (line === 'BEGIN:VEVENT') { cur = {}; continue; }
+    if (line === 'BEGIN:VEVENT') { cur = {}; inAlarm = false; continue; }
     if (line === 'END:VEVENT') { if (cur) { const ev = bkBuildEvent(cur); if (ev) events.push(ev); } cur = null; continue; }
-    if (!cur) continue;
+    // A reminder sits inside its event with a SUMMARY of its own ("Alarm
+    // notification"), which would otherwise replace the event's real title.
+    if (line === 'BEGIN:VALARM') { inAlarm = true; continue; }
+    if (line === 'END:VALARM') { inAlarm = false; continue; }
+    if (!cur || inAlarm) continue;
     const c = line.indexOf(':'); if (c < 0) continue;
     let key = line.slice(0, c); const val = line.slice(c + 1);
     const name = key.split(';')[0].toUpperCase();

@@ -41,6 +41,8 @@ console.log('\nThe calendar feed keeps each event\'s title');
   ok('a title comes through, unescaped', ev.length === 1 && ev[0].title === 'Treat Street, Evergreen', ev);
   const free = M.bkParseIcs('BEGIN:VEVENT\r\nDTSTART:20261024T160000Z\r\nDTEND:20261024T170000Z\r\nSUMMARY:Mass\r\nTRANSP:TRANSPARENT\r\nEND:VEVENT\r\n');
   ok('an event marked free is still left out', free.length === 0, free);
+  const alarm = M.bkParseIcs('BEGIN:VEVENT\r\nDTSTART:20261016T190000Z\r\nDTEND:20261017T010000Z\r\nSUMMARY:Interior x2: Murano + Civic\r\nBEGIN:VALARM\r\nACTION:DISPLAY\r\nSUMMARY:Alarm notification\r\nTRIGGER:-PT30M\r\nEND:VALARM\r\nEND:VEVENT\r\n');
+  ok('a reminder inside the event does not replace its title', alarm.length === 1 && alarm[0].title === 'Interior x2: Murano + Civic', alarm);
 }
 
 console.log('\nGET /api/calendar/days lists busy events with titles, day by day');
