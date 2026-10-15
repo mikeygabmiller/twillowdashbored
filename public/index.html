@@ -4697,7 +4697,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-10-14·call-recordings";
+  var APP_BUILD="2026-10-15·maybes";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -19258,6 +19258,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var sub=[j.service,j.size,j.vehicle].filter(Boolean).join(" · ");
     var chips="";
     if(j.pending)chips+='<span class="jc-chip chip-pending">Needs confirm</span>';
+    if(j.maybe)chips+='<span class="jc-chip chip-pending">Maybe</span>';
     chips+='<span class="jc-chip chip-'+j.state+'">'+({queued:"Up next",enroute:"On my way",onsite:"Working",done:"Done",skipped:"Skipped"}[j.state])+'</span>';
     var h='<div class="'+cls+'" data-jdjob="'+esc(j.id)+'">'+
       '<div class="jc-top">'+

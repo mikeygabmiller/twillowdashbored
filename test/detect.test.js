@@ -9,6 +9,7 @@ let src = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
 src = src.replace(/^export default \{[\s\S]*?^\};$/m, '');
 
 const EXPORTS = ['detLooksSchedulish', 'detDefaults', 'sanitizeDetect', 'detApply', 'detHeldSlots',
+  'detGuessSlot', 'detGuessDuration', 'dayBoardHolds', 'dayJobGcalEvent', 'detAskAi', 'apiDetectSweep', 'updateIndexEntry', 'saveDay',
   'loadDetections', 'saveDetections', 'apiDetections', 'apiDetectionAction', 'detConfirmDraft',
   'bkLaEpoch', 'bkAvailability', 'loadThread', 'saveThread', 'loadDay', 'buildDay', 'localDateStr'];
 
@@ -200,7 +201,9 @@ ok('holds can be turned off', (await M.bkAvailability(HOLD_DAY, 'full', 'suv')).
 // The same promise on his real week: fixed start times (weekdays 1:00 PM). A
 // card for 1:00 on a weekday takes that weekday's only time off the website.
 let wkTs = Date.now() + 10 * 86400000;
-while (['Sat', 'Sun'].includes(pacific(wkTs, { weekday: 'short' }))) wkTs += 86400000;
+// Mondays too: off "for now" since 2026-10-10, and a Monday here read as a
+// broken calendar rather than a day off.
+while (['Sat', 'Sun', 'Mon'].includes(pacific(wkTs, { weekday: 'short' }))) wkTs += 86400000;
 const WK_DAY = pacific(wkTs, { year: 'numeric', month: '2-digit', day: '2-digit' });
 M.__resetCfg();
 await kv.put('config', JSON.stringify({}));
@@ -211,6 +214,139 @@ ok('his real weekday offers 1:00 PM', wkFree.includes('13:00'), wkFree);
 await M.saveDetections([{ id: 'd2', phone: '+1', kind: 'set', date: WK_DAY, slot: '13:00', durationMin: 180, tentative: false }]);
 ok('an unconfirmed 1:00 card takes 1:00 off the website', !(await M.bkAvailability(WK_DAY, 'interior', 'suv')).includes('13:00'));
 await M.saveDetections([]);
+
+// ------------------------------------------------------------------ maybes
+section('Maybes: a day that was only talked about goes on the board, not a pile');
+// Mikey, 2026-10-14: "if it seems even a little like a booking... put it on my
+// calendar as a maybe. I would rather have it on there... rather than double
+// book." Real weekdays ahead of today (never Sat/Sun/Mon), so this can't rot.
+const nextWk = (fromTs) => { let x = fromTs; while (['Sat', 'Sun', 'Mon'].includes(pacific(x, { weekday: 'short' }))) x += 86400000; return x; };
+const dstr = (ts) => pacific(ts, { year: 'numeric', month: '2-digit', day: '2-digit' });
+const D1 = dstr(nextWk(Date.now() + 5 * 86400000));
+const D2 = dstr(nextWk(Date.parse(D1 + 'T20:00:00Z') + 86400000));
+store.clear(); alerts.length = 0; sms.length = 0; M.__resetCfg();
+await kv.put('config', JSON.stringify({}));
+await kv.put('bk:config', JSON.stringify({ windowDays: 3650, calendar: { enabled: false } }));
+const blank = (phone, name, extra) => Object.assign({ phone, name, notes: '', messages: [], scheduled: [], tags: [], linked: [], appointmentAt: null }, extra || {});
+const find = (o) => Object.assign({ intent: 'set', maybe: false, tentative: false, customerConfirmed: false,
+  service: '', vehicle: '', address: '', city: '', price: 0, name: '', notes: '', durationMin: 270, confidence: 0.5, evidence: 'x' }, o);
+
+ok('the website offers 1:00 PM on that day to start with', (await M.bkAvailability(D1, 'interior', 'suv')).includes('13:00'));
+await M.saveThread(blank('+14255550101', 'Pete'));
+let did = await M.detApply(await M.loadThread('+14255550101'), find({ maybe: true, date: D1, slot: '13:00', at: M.bkLaEpoch(D1, '13:00'),
+  tentative: true, confidence: 0.4, service: 'Full Detail', evidence: 'I can likely come Wednesday' }), DC, {});
+let board = (await M.loadDay(D1)).manual;
+ok('a maybe goes straight on the board', did === 'maybe' && board.length === 1, { did, board });
+ok('…marked as a maybe', board[0] && board[0].maybe === true);
+ok('…with no card left to tap', (await M.loadDetections()).length === 0);
+let pete = await M.loadThread('+14255550101');
+ok('it is NOT a booking: the conversation has no appointment', !pete.appointmentAt, pete.appointmentAt);
+ok('…it remembers the maybe on its own field', pete.maybeAt === M.bkLaEpoch(D1, '13:00'));
+ok('no alert for a maybe (the email lists them)', alerts.length === 0, alerts.length);
+ok('and the customer was not texted', sms.length === 0);
+ok('a maybe with no time agreed holds the whole day on the website', (await M.bkAvailability(D1, 'interior', 'suv')).length === 0);
+ok('on his calendar it says MAYBE before anything else', /^❓ MAYBE: /.test(M.dayJobGcalEvent(board[0], D1).title), M.dayJobGcalEvent(board[0], D1).title);
+
+did = await M.detApply(await M.loadThread('+14255550101'), find({ date: D1, slot: '13:00', at: M.bkLaEpoch(D1, '13:00'),
+  customerConfirmed: true, confidence: 0.9, evidence: 'yes wednesday at 1 works' }), DC, {});
+board = (await M.loadDay(D1)).manual;
+pete = await M.loadThread('+14255550101');
+ok('their yes turns the maybe into a job, not a second entry', did === 'added' && board.length === 1, { did, n: board.length });
+ok('…no longer a maybe', board[0].maybe === false);
+ok('…and now it IS the appointment', pete.appointmentAt === M.bkLaEpoch(D1, '13:00') && !pete.maybeAt);
+ok('a booked job says so out loud', alerts.length === 1 && /Added to your day/.test(alerts[0].subject || ''), alerts.map((a) => a.subject));
+
+store.clear(); alerts.length = 0; M.__resetCfg();
+await kv.put('bk:config', JSON.stringify({ windowDays: 3650, calendar: { enabled: false } }));
+await M.saveThread(blank('+14255550102', 'Dee'));
+await M.detApply(await M.loadThread('+14255550102'), find({ maybe: true, date: D1, slot: '13:00', at: M.bkLaEpoch(D1, '13:00') }), DC, {});
+await M.detApply(await M.loadThread('+14255550102'), find({ maybe: true, date: D2, slot: '13:00', at: M.bkLaEpoch(D2, '13:00') }), DC, {});
+ok('a different day floated moves the maybe, it does not add a second',
+  (await M.loadDay(D1)).manual.length === 0 && (await M.loadDay(D2)).manual.length === 1);
+ok('…and the day it left is open on the website again', (await M.bkAvailability(D1, 'interior', 'suv')).includes('13:00'));
+
+section('Moves: a move they agreed to moves the job by itself');
+store.clear(); alerts.length = 0; M.__resetCfg();
+await kv.put('bk:config', JSON.stringify({ windowDays: 3650, calendar: { enabled: false } }));
+await M.saveThread(blank('+14255550103', 'Chris'));
+await M.detApply(await M.loadThread('+14255550103'), find({ date: D1, slot: '13:00', at: M.bkLaEpoch(D1, '13:00'), customerConfirmed: true, confidence: 0.9 }), DC, {});
+ok('a firm job is on the board', (await M.loadDay(D1)).manual.length === 1 && (await M.loadDay(D1)).manual[0].maybe === false);
+ok('…and a firm job with a time holds that time', !(await M.bkAvailability(D1, 'interior', 'suv')).includes('13:00'));
+alerts.length = 0;
+did = await M.detApply(await M.loadThread('+14255550103'), find({ intent: 'reschedule', date: D2, slot: '13:00', at: M.bkLaEpoch(D2, '13:00'),
+  customerConfirmed: true, confidence: 0.9, evidence: 'Yes I can do Thursday at 1' }), DC, {});
+ok('an agreed move moves it', did === 'moved', did);
+ok('…off the old day', (await M.loadDay(D1)).manual.length === 0);
+ok('…onto the new one', (await M.loadDay(D2)).manual.length === 1);
+ok('…the appointment follows', (await M.loadThread('+14255550103')).appointmentAt === M.bkLaEpoch(D2, '13:00'));
+ok('…no card to tap', (await M.loadDetections()).length === 0);
+ok('…Mikey is told what moved', alerts.length === 1 && /Moved/.test(alerts[0].subject || ''), alerts.map((a) => a.subject));
+ok('…and the customer was not texted', sms.length === 0);
+
+store.clear(); alerts.length = 0; M.__resetCfg();
+await kv.put('bk:config', JSON.stringify({ windowDays: 3650, calendar: { enabled: false } }));
+await M.saveThread(blank('+14255550104', 'Sam'));
+await M.detApply(await M.loadThread('+14255550104'), find({ date: D1, slot: '13:00', at: M.bkLaEpoch(D1, '13:00'), customerConfirmed: true, confidence: 0.9 }), DC, {});
+did = await M.detApply(await M.loadThread('+14255550104'), find({ intent: 'reschedule', date: D2, slot: '13:00', at: M.bkLaEpoch(D2, '13:00'),
+  customerConfirmed: false, confidence: 0.8, evidence: 'any chance we can pivot to Thursday?' }), DC, {});
+ok('a move they have NOT agreed to keeps the old job', (await M.loadDay(D1)).manual.length === 1, (await M.loadDay(D1)).manual);
+ok('…and holds the new day as a maybe', (await M.loadDay(D2)).manual.length === 1 && (await M.loadDay(D2)).manual[0].maybe === true);
+ok('…the appointment stays where it was', (await M.loadThread('+14255550104')).appointmentAt === M.bkLaEpoch(D1, '13:00'));
+
+const doneDoc = await M.loadDay(D1);
+doneDoc.state[doneDoc.manual[0].id] = { state: 'done' };
+await M.saveDay(doneDoc);
+ok('a finished job stops holding the website', (await M.bkAvailability(D1, 'interior', 'suv')).includes('13:00'));
+
+section('No time agreed: his own start time, and his longest time for the job');
+const RR = { on: true, days: { 0: [], 1: [], 2: ['13:00'], 6: ['07:00', '13:00'] }, jobMin: { exterior: 120, interior: 180, full: 270 } };
+ok('a weekday is 1:00 PM, never 9:00 when he is in class', M.detGuessSlot(RR, '2026-10-20', '') === '13:00');
+ok('a Saturday is his first start', M.detGuessSlot(RR, '2026-10-24', '') === '07:00');
+ok('"Saturday afternoon" is his afternoon start', M.detGuessSlot(RR, '2026-10-24', 'afternoon') === '13:00');
+ok('a day off falls back to 1:00 PM', M.detGuessSlot(RR, '2026-10-25', '') === '13:00');
+ok('Full Detail holds 4.5 hrs', M.detGuessDuration(RR, 'Full Detail') === 270);
+ok('inside and a wash is a full job', M.detGuessDuration(RR, 'interior and an outside wash') === 270);
+ok('interior holds 3 hrs', M.detGuessDuration(RR, 'Interior detail') === 180);
+ok('a wash holds 2 hrs', M.detGuessDuration(RR, 'hand wash') === 120);
+ok('nothing said: hold the longest', M.detGuessDuration(RR, '') === 270);
+
+section('Phone calls are read like texts, all the way through');
+store.clear(); alerts.length = 0; M.__resetCfg();
+await kv.put('bk:config', JSON.stringify({ windowDays: 3650, calendar: { enabled: false } }));
+let satTs = Date.now() + 6 * 86400000;
+while (pacific(satTs, { weekday: 'short' }) !== 'Sat') satTs += 86400000;
+const SAT = dstr(satTs);
+const longCall = 'Hey Pete, this is Mikey. ' + 'We talked about the car and the seats. '.repeat(20) + 'I would likely be able to come by on Saturday at the soonest.';
+let sentPrompt = '';
+const realFetch = globalThis.fetch;
+globalThis.fetch = async (u, o) => { if (String(u).includes('generativelanguage')) sentPrompt = String(o && o.body); return realFetch(u, o); };
+GEMINI = JSON.stringify({ intent: 'maybe', date: SAT, time: '', partOfDay: '', tentative: true, customerConfirmed: false,
+  service: 'interior and exterior', confidence: 0.6, evidence: 'Saturday at the soonest' });
+const callFound = await M.detAskAi({ phone: '+1', name: '', messages: [] },
+  [{ dir: 'in', kind: 'call', ts: Date.now(), body: longCall }], {});
+globalThis.fetch = realFetch;
+ok('the whole transcript goes to the model, not the first 400 characters', sentPrompt.includes('Saturday at the soonest'));
+ok('…labelled as a phone call', sentPrompt.includes('PHONE CALL'));
+ok('a floated day comes back as a maybe', callFound && callFound.maybe === true, callFound);
+ok('…on his Saturday start, not 9:00', callFound && callFound.slot === '07:00', callFound && callFound.slot);
+ok('…holding a full job', callFound && callFound.durationMin === 270, callFound && callFound.durationMin);
+
+section('The sweep reads back over recent conversations and reports, quietly');
+store.clear(); alerts.length = 0; M.__resetCfg();
+await kv.put('config', JSON.stringify({}));
+await kv.put('bk:config', JSON.stringify({ windowDays: 3650, calendar: { enabled: false } }));
+const sw = blank('+14255550105', 'Monroe 3 cars', { messages: [{ id: 'a', dir: 'out', ts: Date.now() - 3600000, body: 'I can most likely come out Wednesday next week' }] });
+await M.saveThread(sw);
+await M.updateIndexEntry(sw);
+GEMINI = JSON.stringify({ intent: 'maybe', date: D2, time: '', partOfDay: '', tentative: true, customerConfirmed: false,
+  service: 'interior', confidence: 0.6, evidence: 'most likely come out Wednesday next week' });
+const swept = await (await M.apiDetectSweep(req({ days: 30 }))).json();
+ok('the sweep ran', swept.ok === true && swept.total >= 1, swept);
+ok('…found the promised day and put a maybe on', swept.results.some((x) => x.phone === '+14255550105' && x.did === 'maybe'), swept.results);
+ok('…which is on the board', (await M.loadDay(D2)).manual.some((m) => m.phone === '+14255550105' && m.maybe));
+ok('…without an alert per find', alerts.length === 0, alerts.length);
+ok('…and without texting anyone', sms.length === 0);
+GEMINI = '{}';
 
 // ---------------------------------------------------------------- drafting
 section('The confirmation draft');
