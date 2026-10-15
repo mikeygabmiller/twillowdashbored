@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-15·no-doubles';
+const BUILD = '2026-10-15·antifog';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -17769,8 +17769,8 @@ async function bkCreate(b, opts) {
   // Instant only where he actually goes. Anything else is a request he answers
   // himself, which is also how a far-off address gets a human "that's a stretch".
   const instant = !!(R.on && R.autoConfirm && bkServedTown(city));
-  // Rain-Ready: book a Full Detail by December 31, 2026 and polish, ceramic wax
-  // and RainX are free. Decided on the day it's BOOKED, so a January job booked
+  // Rain-Ready: book a Full Detail by December 31, 2026 and ceramic wax, RainX
+  // and RainX Anti-Fog are free (anti-fog took the polish's place, Mikey 2026-10-15). Decided on the day it's BOOKED, so a January job booked
   // in December keeps it (Mikey, 2026-09-29: the appointment can run to Jan 31).
   const rainReady = service === 'full' && Date.now() < bkLaEpoch('2027-01-01', '00:00') && date <= '2027-01-31';
   // He said people can give just their street or a cross street if they'd
@@ -17819,7 +17819,7 @@ async function bkCreate(b, opts) {
     instant ? `🗓 BOOKED (confirmed automatically, they got your confirm text)` : `🗓 BOOKING REQUEST (pending)`,
     `${rec.serviceName} · ${rec.sizeLabel}${rec.vehicle ? ` · ${rec.vehicle}` : ''}${b.condition ? ` · ${String(b.condition).slice(0, 30)}` : ''}`,
     rec.addons.length ? `Add-ons: ${rec.addons.join(', ')}` : null,
-    rainReady ? `Rain-Ready: polish, ceramic wax & RainX free` : null,
+    rainReady ? `Rain-Ready: ceramic wax, RainX & anti-fog free` : null,
     rec.wantQuote ? `Also wants: ceramic / paint quote` : null,
     `When: ${dateLabel} at ${bkFmt12(slot)}`,
     `Where: ${address}, ${city}${areaOnly ? ' (general area only, get the house number)' : ''}`,
@@ -18507,7 +18507,7 @@ function crewBkEvent(bk) {
       [bk.serviceName, bk.sizeLabel || bk.size, bk.vehicle, bk.condition].filter(Boolean).join(' · '),
       addons.length ? `Add-ons: ${addons.join(', ')}` : '',
       // The site lists the free extras as add-ons; a club first visit doesn't.
-      bk.rainReady && !addons.some((a) => /rain-ready/i.test(a)) ? 'Rain-Ready: exterior polish, ceramic wax and RainX on this one too (free for them)' : '',
+      bk.rainReady && !addons.some((a) => /rain-ready/i.test(a)) ? 'Rain-Ready: ceramic wax, RainX and RainX Anti-Fog on this one too (free for them)' : '',
       bk.club ? 'Clean Club first visit' : '',
       bk.wantQuote ? 'They also want a ceramic or paint correction quote. Mikey prices that.' : '',
       `Customer: ${bk.name} · ${crewPhone(bk.phone)}`,
@@ -18936,6 +18936,7 @@ const BOOK_FACTS = {
     { id: 'polish', name: 'Exterior Polish', price: 30, blurb: 'Takes the dull film and light swirls off the paint' },
     { id: 'ceramicwax', name: 'Ceramic Wax', price: 20, blurb: 'Rain beads and rolls off for months' },
     { id: 'rainx', name: 'RainX Windows', price: 10, blurb: 'Water sheets off the windshield at speed' },
+    { id: 'antifog', name: 'RainX Anti-Fog', price: 30, blurb: 'Inside of the glass, so the windshield stays clear on a cold wet morning' },
   ],
   reviews: 41,
   cities: ['Snohomish', 'Lake Stevens', 'Everett', 'Monroe', 'Mill Creek', 'Marysville',
