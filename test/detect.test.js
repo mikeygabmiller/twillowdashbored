@@ -298,6 +298,19 @@ doneDoc.state[doneDoc.manual[0].id] = { state: 'done' };
 await M.saveDay(doneDoc);
 ok('a finished job stops holding the website', (await M.bkAvailability(D1, 'interior', 'suv')).includes('13:00'));
 
+store.clear(); alerts.length = 0; M.__resetCfg();
+await kv.put('bk:config', JSON.stringify({ windowDays: 3650, calendar: { enabled: false } }));
+await M.saveThread(blank('+15129470096', ''));
+did = await M.detApply(await M.loadThread('+15129470096'), find({ intent: 'reschedule', date: D1, slot: '12:00', at: M.bkLaEpoch(D1, '12:00'),
+  customerConfirmed: true, confidence: 0.9, evidence: 'Ok Friday is fine.' }), DC, {});
+ok('a move with nothing on file books the day they settled on', did === 'added' && (await M.loadDay(D1)).manual.length === 1, did);
+ok('…and it is their appointment now', (await M.loadThread('+15129470096')).appointmentAt === M.bkLaEpoch(D1, '12:00'));
+
+store.clear(); alerts.length = 0; M.__resetCfg();
+await M.saveThread(blank('+14255550106', 'Rob', { appointmentAt: M.bkLaEpoch(D1, '13:00') }));
+did = await M.detApply(await M.loadThread('+14255550106'), { intent: 'cancel', evidence: 'cant make it', confidence: 0.9 }, DC, {}, { quiet: true });
+ok('the sweep raises a cancel card without an alert', did === 'card' && alerts.length === 0 && (await M.loadDetections()).length === 1, { did, n: alerts.length });
+
 section('No time agreed: his own start time, and his longest time for the job');
 const RR = { on: true, days: { 0: [], 1: [], 2: ['13:00'], 6: ['07:00', '13:00'] }, jobMin: { exterior: 120, interior: 180, full: 270 } };
 ok('a weekday is 1:00 PM, never 9:00 when he is in class', M.detGuessSlot(RR, '2026-10-20', '') === '13:00');
