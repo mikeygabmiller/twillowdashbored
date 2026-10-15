@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-14·call-recordings';
+const BUILD = '2026-10-15·maybes';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -700,6 +700,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/calls/seen') return apiCallsSeen();
   if (request.method === 'POST' && pathname === '/api/calls/backfill') return apiCallsBackfill();
   if (request.method === 'POST' && pathname === '/api/calls/recover-recordings') return apiCallsRecoverRecordings();
+  if (request.method === 'POST' && pathname === '/api/detect/sweep') return apiDetectSweep(request);
   if (request.method === 'GET'  && pathname === '/api/migrate')    return apiMigrate(url);
   if (request.method === 'GET'  && pathname === '/api/templates')  return apiGetTemplates();
   if (request.method === 'POST' && pathname === '/api/templates')  return apiSaveTemplates(request);
@@ -4633,6 +4634,10 @@ async function transcribeCallRecording(row) {
   if (!thread.status) { thread.status = 'new'; thread.statusAt = Date.now(); }
   await saveThread(thread);
   await updateIndexEntry(thread);
+  // Days get settled on the phone more than anywhere ("Saturday at the
+  // soonest", "as soon as Wednesday next week"), and until 2026-10-14 none of
+  // it reached his calendar. The call reads like any text now.
+  if (text) await maybeDetectJob(phone, { force: true });
 }
 
 // The conversation copy of a call. dir 'in' because it carries the customer's
@@ -17552,7 +17557,9 @@ async function bkAvailability(date, service, size) {
   // conversation. Dismissing the card releases the hold on the next request.
   const held = await detHeldSlots(date);
   if (held === 'all') return [];
-  const holds = Array.isArray(held) ? held : [];
+  const board = await dayBoardHolds(date);
+  if (board === 'all') return [];
+  const holds = (Array.isArray(held) ? held : []).concat(board);
   if (day.length + holds.length >= cfg.maxJobsPerDay) return [];
   const occ = day.map((b) => ({ s: bkHm2min(b.slot), e: bkHm2min(b.slot) + (b.durationMin || dur) })).concat(holds);
   // Google Calendar busy times so Mikey is never offered a slot he's already booked.
@@ -17596,8 +17603,12 @@ async function bkSlotAvailability(cfg, date, service, pre) {
   const day = ((pre && pre.bookings) || await loadBookings()).filter((b) => b.date === date && (b.status === 'pending' || b.status === 'confirmed'));
   const held = pre ? (pre.holds ? detHeldFrom(pre.holds, date) : null) : await detHeldSlots(date);
   if (held === 'all') return [];
+  // The season count reads a few hundred days at once and skips this; what a
+  // customer is offered never does.
+  const board = pre ? [] : await dayBoardHolds(date);
+  if (board === 'all') return [];
   const occ = day.map((b) => ({ s: bkHm2min(b.slot), e: bkHm2min(b.slot) + (Number(R.jobMin[b.service]) || b.durationMin || dur) }))
-    .concat(Array.isArray(held) ? held : []);
+    .concat(Array.isArray(held) ? held : []).concat(board);
   const busy = (pre && pre.cal) ? pre.cal.map((ev) => bkEventBusyOnDate(ev, date)).filter(Boolean) : await bkCalBusy(cfg, date);
   for (const iv of busy) {
     if (iv.s <= 0 && iv.e >= 1440) return [];                  // all-day event → whole day off
@@ -18373,7 +18384,8 @@ function dayJobGcalEvent(job, date) {
   return {
     id: job.id,
     // A time nobody agreed must not look like one on his phone's week view.
-    title: `${job.tentative ? '⏰ TIME NOT SET: ' : '🚗 '}${job.service || 'Detail'} · ${who}${job.city ? ` (${job.city})` : ''}`,
+    // A maybe says so first: on a week view it must never pass for a booking.
+    title: `${job.maybe ? '❓ MAYBE: ' : job.tentative ? '⏰ TIME NOT SET: ' : '🚗 '}${job.service || 'Detail'} · ${who}${job.city ? ` (${job.city})` : ''}`,
     start,
     end: start + (Math.max(15, Number(job.durationMin) || 180)) * 60000,
     location: [job.address, job.city].filter(Boolean).join(', '),
@@ -18382,6 +18394,7 @@ function dayJobGcalEvent(job, date) {
       job.price ? `Quoted: $${job.price}` : '',
       job.phone ? `Phone: ${job.phone}` : '',
       job.notes ? `Notes: ${job.notes}` : '',
+      job.maybe ? `Not confirmed. A day was talked about and this holds it so the website can't sell it. Once they say yes it turns into a normal job.` : '',
       job.tentative ? `They never gave a time, so ${bkFmt12(slot)} is a placeholder. Text them to pin it down.` : '',
       job.fromEvidence ? `From the texts: "${job.fromEvidence}"` : '',
       base && job.phone ? `${base}/?c=${job.phone}` : '',
@@ -18597,6 +18610,7 @@ async function crewBkSync(bk) {
 async function crewDaySync(job, date) {
   if (!job || !job.id || !jdIsDate(date)) return { ok: false };
   if (job.tentative) return crewDrop(job.id, crewDayEvent(job, date), 'the time is not pinned down', true);
+  if (job.maybe) return crewDrop(job.id, crewDayEvent(job, date), 'it is not confirmed yet', true);
   return crewPut(crewDayEvent(job, date));
 }
 
@@ -18659,7 +18673,7 @@ async function apiGcalCrewSyncAll(request) {
   const evs = (await loadBookings())
     .filter((b) => b.status === 'confirmed' && b.apptAt + (Number(b.durationMin) || 180) * 60000 > now)
     .map(crewBkEvent);
-  for (const { job, date } of await dayJobsAhead(60)) if (!job.tentative) evs.push(crewDayEvent(job, date));
+  for (const { job, date } of await dayJobsAhead(60)) if (!job.tentative && !job.maybe) evs.push(crewDayEvent(job, date));
   const todo = evs.filter((ev) => ev.end > now).sort((a, b) => a.start - b.start);
   const from = Math.max(0, Math.min(todo.length, parseInt(d && d.from, 10) || 0));
   let added = 0, updated = 0, failed = 0, lastError = '';
@@ -19446,6 +19460,8 @@ async function apiDayJob(request) {
     const was = doc.manual[i];
     if (was.fromEvidence) job.fromEvidence = was.fromEvidence;
     if (was.autoAdded) job.autoAdded = true;
+    // Editing the address or price doesn't make it a booking; them saying yes does.
+    if (was.maybe) job.maybe = true;
     if (was.tentative && was.slot === job.slot) job.tentative = true;
   }
   if (i >= 0) doc.manual[i] = job; else doc.manual.push(job);
@@ -23962,7 +23978,7 @@ function jobBlockers(jobs, ctx) {
     }
 
     // 7 · Still a maybe. A pending booking inside a day is a job that may not exist.
-    if (j.pending && soon) add('unconfirmed', JR_CHECK, "They haven't confirmed yet", 'Confirm it');
+    if ((j.pending || j.maybe) && soon) add('unconfirmed', JR_CHECK, "They haven't confirmed yet", 'Confirm it');
 
     // 8 · A time nobody actually agreed. Jobs land on the board by themselves
     //     now (see detAutoAddable), and a detected "Saturday works" becomes a
@@ -24408,13 +24424,27 @@ function detDefaults() {
     // anything between the two still becomes a card to tap.
     autoAddMinConfidence: 0.7,
     defaultDurationMin: 180,
+    // Everything below that bar goes on too, as a MAYBE (Mikey, 2026-10-14: "if
+    // it seems even a little like a booking... put it on my calendar as a
+    // maybe. I would rather have it on there that I mentioned to them that a
+    // day might work rather than double book"). A maybe holds the time on the
+    // website and shows on his board and calendar, and never counts as a
+    // booking anywhere a customer can see it. The card pile stays only for what
+    // can't go on a day: no date, a past date, an archived conversation.
+    maybeAdd: true,
+    maybeMinConfidence: 0.3,
+    // A move the customer clearly agreed to moves the job on his board and
+    // calendar by itself (Mikey, 2026-10-14, after three jobs sat on the wrong
+    // day for a week because the move was a card nobody tapped). A move they
+    // haven't agreed to holds the new day as a maybe and leaves the old one.
+    autoMove: true,
   };
 }
 function detCfg(cfg) { return Object.assign(detDefaults(), (cfg && cfg.detect) || {}); }
 function sanitizeDetect(input, current) {
   const d = Object.assign(detDefaults(), current || {});
   const i = input || {};
-  ['enabled', 'eager', 'holdSlots', 'autoAdd'].forEach((k) => { if (typeof i[k] === 'boolean') d[k] = i[k]; });
+  ['enabled', 'eager', 'holdSlots', 'autoAdd', 'maybeAdd', 'autoMove'].forEach((k) => { if (typeof i[k] === 'boolean') d[k] = i[k]; });
   if (i.autoAddMinConfidence != null && !isNaN(+i.autoAddMinConfidence))
     d.autoAddMinConfidence = Math.max(0.45, Math.min(1, Number(i.autoAddMinConfidence)));
   if (i.defaultDurationMin != null && !isNaN(+i.defaultDurationMin))
@@ -24445,7 +24475,9 @@ function detLooksSchedulish(text, eager) {
 
 // Runs once per message, straight after it lands. Best-effort throughout:
 // detection must never break sending or receiving a text.
-async function maybeDetectJob(phone) {
+// `force` skips the regex: a call transcript is minutes of talk, and the day
+// is usually somewhere in the middle of it, not in a last line.
+async function maybeDetectJob(phone, opts) {
   try {
     if (envFlag('DETECT_DISABLED')) return;          // no-KV-write kill switch
     if (!ENV.GEMINI_API_KEY) return;
@@ -24456,9 +24488,10 @@ async function maybeDetectJob(phone) {
     const thread = await loadThread(phone);
     const msgs = (thread.messages || []).filter((m) => m.body);
     const last = msgs[msgs.length - 1];
-    if (!last || !detLooksSchedulish(last.body, dc.eager)) return;
+    if (!last) return;
+    if (!(opts && opts.force) && !detLooksSchedulish(last.body, dc.eager)) return;
     const found = await detAskAi(thread, msgs.slice(-14), cfg);
-    if (found) await detApply(thread, found, dc, cfg);
+    if (found) await detApply(thread, found, dc, cfg, opts);
   } catch { /* never let detection break a message */ }
 }
 
@@ -24468,8 +24501,12 @@ async function detAskAi(thread, msgs, cfg) {
   const todayStr = localDateStr(now, tz);
   const dow = new Date(now).toLocaleDateString('en-US', { timeZone: tz, weekday: 'long' });
   const nowHm = localTimeHm(now, tz);
+  // A phone call is both of them talking, and the day they settled on is often
+  // three minutes in, so a call gets its whole transcript, not 400 characters.
   const convo = msgs.map((m) =>
-    `[${localDateStr(m.ts, tz)} ${localTimeHm(m.ts, tz)}] ${m.dir === 'in' ? 'CUSTOMER' : 'MIKEY'}: ${jdStr(m.body, 400)}`).join('\n');
+    `[${localDateStr(m.ts, tz)} ${localTimeHm(m.ts, tz)}] ` +
+    (m.kind === 'call' ? `PHONE CALL (Mikey and the customer talking): ${jdStr(m.body, 4000)}`
+      : `${m.dir === 'in' ? 'CUSTOMER' : 'MIKEY'}: ${jdStr(m.body, 400)}`)).join('\n');
 
   const prompt =
     `You read text conversations for a mobile car-detailing business and pull out scheduled jobs.\n` +
@@ -24479,8 +24516,9 @@ async function detAskAi(thread, msgs, cfg) {
     (thread.notes ? `Notes on file: ${jdStr(thread.notes, 400)}\n` : '') +
     `\nCONVERSATION (most recent last):\n${convo}\n\n` +
     `Reply with ONLY this JSON:\n` +
-    `{"intent":"set|reschedule|cancel|none",\n` +
+    `{"intent":"set|maybe|reschedule|cancel|none",\n` +
     ` "date":"YYYY-MM-DD or empty","time":"HH:MM 24-hour, or empty if no specific time was given",\n` +
+    ` "partOfDay":"morning|afternoon or empty",\n` +
     ` "tentative":true if the day is agreed but the exact hour is NOT pinned down,\n` +
     ` "customerConfirmed":true only if the CUSTOMER clearly agreed to this day/time,\n` +
     ` "service":"","vehicle":"","address":"","city":"","price":0,"name":"",\n` +
@@ -24489,29 +24527,39 @@ async function detAskAi(thread, msgs, cfg) {
     `RULES:\n` +
     `- "set" ONLY when a real appointment day is agreed. A question ("what days are you open?"), ` +
     `a quote with no date, or small talk is "none".\n` +
+    `- "maybe" when a SPECIFIC day was offered, floated or said to likely work, by either of them, ` +
+    `and it isn't agreed yet ("I can likely come Wednesday", "Saturday could work", "how about the 23rd?"). ` +
+    `A day with no job behind it ("I'm off Monday") is "none".\n` +
     `- "reschedule" when an EXISTING job is moving; put the NEW date/time in date/time.\n` +
     `- "cancel" when it's called off with no replacement date.\n` +
     `- Never invent a date nobody said. A date in the past means you resolved it wrong.\n` +
-    `- Below 0.45 confidence, answer "none".`;
+    `- Below 0.3 confidence, answer "none".`;
 
   let o;
   try { o = JSON.parse(await geminiGenerate(prompt, { surface: 'appointment detect', json: true, temperature: 0.1, maxTokens: 700 })); }
   catch { return null; }
   if (!o || !o.intent || o.intent === 'none') return null;
-  if (Number(o.confidence || 0) < 0.45) return null;
+  // A maybe is allowed to be unsure; that's what makes it a maybe.
+  if (Number(o.confidence || 0) < (o.intent === 'maybe' ? 0.3 : 0.45)) return null;
   if (o.intent === 'cancel') return { intent: 'cancel', evidence: jdStr(o.evidence, 200), confidence: Number(o.confidence) };
 
   const date = jdStr(o.date, 12);
   if (!jdIsDate(date)) return null;
   const tentative = !!o.tentative || !/^\d{1,2}:\d{2}$/.test(jdStr(o.time, 6));
-  const slot = tentative ? '09:00' : jdStr(o.time, 5).padStart(5, '0');
+  // No hour given: his own start time that day, not 9:00. He's in class every
+  // weekday morning, so a 9:00 placeholder was a time he could never keep.
+  let R = null;
+  try { R = (await loadBookingConfig()).slotRules; } catch { R = null; }
+  const slot = tentative ? detGuessSlot(R, date, jdStr(o.partOfDay, 12)) : jdStr(o.time, 5).padStart(5, '0');
   const at = bkLaEpoch(date, slot);
   if (!at || isNaN(at)) return null;
   if (at < now - 12 * 3600000 || at > now + 400 * 86400000) return null;   // model got the year/day wrong
 
   return {
     intent: o.intent === 'reschedule' ? 'reschedule' : 'set',
+    maybe: o.intent === 'maybe',
     date, slot, at, tentative,
+    durationMin: detGuessDuration(R, jdStr(o.service, 60)),
     customerConfirmed: !!o.customerConfirmed,
     service: jdStr(o.service, 60), vehicle: jdStr(o.vehicle, 60),
     address: jdStr(o.address, 140), city: jdStr(o.city, 60),
@@ -24520,17 +24568,80 @@ async function detAskAi(thread, msgs, cfg) {
   };
 }
 
+// His first start time that day from Bookings -> Settings -> My start times
+// (1:00 PM on a weekday, 7:00 AM on a Saturday), or the afternoon one when
+// they said afternoon. Off days and the old step grid fall back to 1:00 PM.
+function detGuessSlot(R, date, part) {
+  const dow = new Date(date + 'T12:00:00Z').getUTCDay();
+  const starts = (R && R.on && R.days && R.days[dow] ? R.days[dow] : []).slice().sort();
+  if (!starts.length) return part === 'morning' ? '09:00' : '13:00';
+  if (part === 'afternoon') return starts.find((h) => h >= '12:00') || starts[starts.length - 1];
+  if (part === 'morning') return starts.find((h) => h < '12:00') || starts[0];
+  return starts[0];
+}
+// How long to hold: his longest honest time for the job they talked about, and
+// a Full Detail's when it isn't clear, because holding too long costs him one
+// open slot and holding too short costs him a double booking.
+function detGuessDuration(R, service) {
+  const m = (R && R.jobMin) || { exterior: 120, interior: 180, full: 270 };
+  const t = String(service || '').toLowerCase();
+  const inside = /interior|inside/.test(t), outside = /exterior|outside|wash|wax/.test(t);
+  if (/full|in ?& ?out|inside and out/.test(t) || (inside && outside)) return Number(m.full) || 270;
+  if (inside) return Number(m.interior) || 180;
+  if (outside) return Number(m.exterior) || 120;
+  return Number(m.full) || 270;
+}
+
+// The board job this customer already has at `at`, if he typed it or detection
+// placed it. A site booking isn't one: it has its own record and its own moves.
+async function detFindBoardJob(phone, at, tz) {
+  if (!phone || !at) return null;
+  const date = localDateStr(at, tz);
+  const doc = await loadDay(date);
+  const mine = doc.manual.filter((m) => m.phone === phone);
+  if (!mine.length) return null;
+  const job = mine.sort((a, b) => Math.abs(bkLaEpoch(date, a.slot) - at) - Math.abs(bkLaEpoch(date, b.slot) - at))[0];
+  return { doc, job, date };
+}
+
 // One open card per customer at a time — a later message about the same job
 // updates it in place instead of stacking up a pile of near-duplicates.
-async function detApply(thread, f, dc, cfg) {
+// Returns what it did, in a word, for the sweep's report.
+async function detApply(thread, f, dc, cfg, opts) {
+  const quiet = !!(opts && opts.quiet);
+  const tz = (cfg && cfg.tz) || 'America/Los_Angeles';
   const list = await loadDetections();
   const phone = thread.phone;
   const open = list.find((x) => x.phone === phone);
 
+  if (f.intent === 'reschedule' && thread.appointmentAt && dc.autoMove && f.at > Date.now()) {
+    const have = await detFindBoardJob(phone, thread.appointmentAt, tz);
+    if (have && f.customerConfirmed) {
+      const fromAt = thread.appointmentAt;
+      await detMoveBoardJob({ kind: 'reschedule', phone, at: f.at, date: f.date, slot: f.slot, tentative: f.tentative }, fromAt, cfg);
+      thread.appointmentAt = f.at;
+      await saveThread(thread);
+      await updateIndexEntry(thread);
+      if (open) { list.splice(list.indexOf(open), 1); await saveDetections(list); }
+      if (!quiet) {
+        await notifyMikey(`🔄 Moved ${thread.name || phone} to ${bkNiceDate(f.date)} at ${bkFmt12(f.slot)}`,
+          `${thread.name || phone} was on ${bkNiceDate(localDateStr(fromAt, tz))} at ${bkFmt12(localTimeHm(fromAt, tz))}. ` +
+          `Your board and calendar now say ${bkNiceDate(f.date)} at ${bkFmt12(f.slot)}.\n\nFrom: "${f.evidence}"\n\nNothing was sent to them.`).catch(() => {});
+        await pushNotify().catch(() => {});
+      }
+      return 'moved';
+    }
+    // Not agreed yet: hold the new day as a maybe and keep the old job where it
+    // is. Holding both costs a slot for a day or two; dropping either is how a
+    // promise gets double booked.
+    if (have) f = Object.assign({}, f, { intent: 'set', maybe: true });
+  }
+
   if (f.intent === 'cancel' || f.intent === 'reschedule') {
-    // Only meaningful against a job that already exists. Raise it as a card;
-    // cancelling and moving are both on the never-without-a-tap list.
-    if (!thread.appointmentAt) return;
+    // Only meaningful against a job that already exists. A cancel is always a
+    // card (freeing a slot by mistake is the worse error); a move of a site
+    // booking is a card too, because that booking has its own record.
+    if (!thread.appointmentAt) return '';
     const rec = open || detBlank(phone);
     rec.kind = f.intent;
     rec.currentAt = thread.appointmentAt;
@@ -24546,11 +24657,38 @@ async function detApply(thread, f, dc, cfg) {
       f.intent === 'cancel' ? `🚫 ${thread.name || phone} may be cancelling` : `🔄 ${thread.name || phone} wants to move`,
       `"${f.evidence}"\n\nNothing has changed. Open Jobs to accept or ignore it.`).catch(() => {});
     await pushNotify().catch(() => {});
-    return;
+    return 'card';
   }
 
   // Already on the books at that time? Nothing to propose.
-  if (thread.appointmentAt && Math.abs(thread.appointmentAt - f.at) < 30 * 60000) return;
+  if (thread.appointmentAt && Math.abs(thread.appointmentAt - f.at) < 30 * 60000) return 'already';
+
+  // A maybe already on the board for them: a firmer word or a new day updates
+  // that one maybe rather than adding a second.
+  const isMaybe = !!f.maybe || !f.customerConfirmed || (f.confidence || 0) < dc.autoAddMinConfidence;
+  if (thread.maybeAt) {
+    const had = await detFindBoardJob(phone, thread.maybeAt, tz);
+    if (had && had.job.maybe) {
+      const sameDay = had.date === f.date;
+      if (sameDay && isMaybe && (f.tentative || had.job.slot === f.slot)) return 'already';
+      // Off the old spot; detPlaceOnDay below puts it where it now belongs.
+      had.doc.manual = had.doc.manual.filter((m) => m.id !== had.job.id);
+      delete had.doc.state[had.job.id];
+      had.doc.order = had.doc.order.filter((x) => x !== had.job.id);
+      await saveDay(had.doc);
+      background(dayJobGcalDrop(had.job.id, had.job, had.date));
+      thread.maybeAt = null;
+      await saveThread(thread);
+      f = Object.assign({}, f, {
+        service: f.service || had.job.service, vehicle: f.vehicle || had.job.vehicle,
+        address: f.address || had.job.address, city: f.city || had.job.city,
+        price: f.price || had.job.price, notes: f.notes || had.job.notes,
+        slot: sameDay && f.tentative ? had.job.slot : f.slot,
+        at: sameDay && f.tentative ? bkLaEpoch(f.date, had.job.slot) : f.at,
+        tentative: sameDay && f.tentative ? had.job.tentative : f.tentative,
+      });
+    }
+  }
 
   const rec = open || detBlank(phone);
   rec.kind = 'set';
@@ -24567,7 +24705,8 @@ async function detApply(thread, f, dc, cfg) {
   if (f.city && !rec.city) rec.city = f.city;
   if (f.price && !rec.price) rec.price = f.price;
   if (f.notes) rec.notes = f.notes;
-  if (!rec.durationMin) rec.durationMin = dc.defaultDurationMin;
+  if (!rec.durationMin) rec.durationMin = f.durationMin || dc.defaultDurationMin;
+  rec.maybe = isMaybe;
 
   // Straight onto the board when it's safe to, rather than onto a pile. If the
   // placement fails for any reason it falls through to the card below — the
@@ -24575,7 +24714,7 @@ async function detApply(thread, f, dc, cfg) {
   const why = detAutoAddable(rec, thread, dc, Date.now());
   let placed = null;
   if (!why) {
-    placed = await detPlaceOnDay(rec, { auto: true });
+    placed = await detPlaceOnDay(rec, { auto: true, maybe: rec.maybe });
     if (placed.ok && open) {
       // It's on the board now, so the old card for the same customer goes.
       const k = list.findIndex((x) => x.id === rec.id);
@@ -24590,6 +24729,9 @@ async function detApply(thread, f, dc, cfg) {
 
   const who = rec.name || phone;
   const onBoard = !!(placed && placed.ok);
+  // Every maybe pinging his phone would be noise by Wednesday: the email
+  // three times a day lists them. A firm job still says so straight away.
+  if (quiet || (onBoard && rec.maybe)) return onBoard ? (rec.maybe ? 'maybe' : 'added') : 'card';
   const onCal = onBoard && !!(await gcalLoad()).url;
   await notifyMikey(
     `${onBoard ? '📅 Added to your day' : '📅 Looks like you booked'} ${who} — ${bkNiceDate(rec.date)} at ${bkFmt12(rec.slot)}`,
@@ -24605,6 +24747,7 @@ async function detApply(thread, f, dc, cfg) {
         : `It is NOT on your day yet — open Jobs and tap Yes to add it.`,
     ].filter((x) => x !== null).join('\n')).catch(() => {});
   await pushNotify().catch(() => {});
+  return onBoard ? 'added' : 'card';
 }
 
 // Putting a detected job on the board. Extracted so the tap and the automatic
@@ -24630,6 +24773,7 @@ async function detPlaceOnDay(rec, opts) {
     // on its own, at a time nobody actually agreed, must not look like one he
     // sat down and booked.
     tentative: !!rec.tentative,
+    maybe: !!(opts && opts.maybe),
     autoAdded: !!(opts && opts.auto),
     fromEvidence: (opts && opts.auto) ? jdStr(rec.evidence, 200) : '',
   };
@@ -24640,8 +24784,16 @@ async function detPlaceOnDay(rec, opts) {
   background(dayJobGcalSync(entry, date));
 
   const thread = await loadThread(rec.phone);
-  thread.appointmentAt = rec.at;
-  thread.dateRequest = null;
+  // A maybe is not a booking. appointmentAt is what the customer's own page
+  // shows as confirmed and what stops follow-ups, so a maybe keeps its own
+  // field and the conversation stays exactly as booked (or not) as it was.
+  if (entry.maybe) {
+    thread.maybeAt = rec.at;
+  } else {
+    thread.appointmentAt = rec.at;
+    thread.maybeAt = null;
+    thread.dateRequest = null;
+  }
   if (!thread.name && rec.name) thread.name = rec.name;
   await saveThread(thread);
   await updateIndexEntry(thread);
@@ -24690,7 +24842,7 @@ function detAutoAddable(rec, thread, dc, now) {
   if (rec.kind !== 'set') return 'not-a-new-job';       // moving or cancelling changes something that exists
   if (!jdIsDate(rec.date) || !rec.slot || !rec.at) return 'no-when';
   if (rec.at <= now) return 'in-the-past';              // never backfill; this is what the 21-card backlog is
-  if ((rec.confidence || 0) < dc.autoAddMinConfidence) return 'not-sure-enough';
+  if ((rec.confidence || 0) < (rec.maybe && dc.maybeAdd ? dc.maybeMinConfidence : dc.autoAddMinConfidence)) return 'not-sure-enough';
   if (thread && thread.archived) return 'archived';
   return '';
 }
@@ -24702,6 +24854,27 @@ function detBlank(phone) {
     service: '', vehicle: '', address: '', city: '', price: 0, notes: '',
     durationMin: 0, confidence: 0, evidence: '', at_: Date.now(),
   };
+}
+
+// The jobs on his board that day hold their time on the website too: the ones
+// he typed in, the ones detection placed, and every maybe. Before 2026-10-14
+// only site bookings, cards and his main Google Calendar did, and a job placed
+// from a text goes onto the WORK calendar, which the website never reads, so a
+// job agreed over text could be sold again to a stranger. A job with no time
+// agreed holds the whole day, same as a loose card. Done or skipped ones don't.
+async function dayBoardHolds(date) {
+  try {
+    const doc = await loadDay(date);
+    const out = [];
+    for (const m of doc.manual) {
+      const st = doc.state[m.id] && doc.state[m.id].state;
+      if (st === 'done' || st === 'skipped') continue;
+      if (m.tentative) return 'all';
+      const s0 = bkHm2min(m.slot);
+      out.push({ s: s0, e: s0 + (Number(m.durationMin) || 180) });
+    }
+    return out;
+  } catch { return []; }
 }
 
 // Dates that a still-unconfirmed detection is holding, so the public booking
@@ -24722,6 +24895,45 @@ function detHeldFrom(all, date) {
   if (!list.length) return [];
   if (list.some((x) => x.tentative)) return 'all';
   return list.map((x) => ({ s: bkHm2min(x.slot), e: bkHm2min(x.slot) + (x.durationMin || 180) }));
+}
+
+// Reads back over recent conversations for days already promised that never
+// made it onto the board (Mikey, 2026-10-14: the call-backs and "I'll text you
+// a time" that only ever lived in his head). Same reading, same rules as a new
+// text, minus the alert per find: the sweep's own reply is the report. A few
+// conversations a run keeps it inside the Worker's limits; `next` says where to
+// pick up. Sends nothing to anyone.
+const DET_SWEEP_MAX = 6;
+async function apiDetectSweep(request) {
+  const d = await readJson(request).catch(() => ({}));
+  if (!ENV.GEMINI_API_KEY) return json({ ok: false, error: 'ai_not_configured' }, 500);
+  const cfg = await loadConfig();
+  const dc = detCfg(cfg);
+  if (!dc.enabled) return json({ ok: false, error: 'detect_off' }, 409);
+  const days = Math.max(1, Math.min(60, Number(d.days) || 30));
+  const start = Math.max(0, Number(d.start) || 0);
+  const since = Date.now() - days * 86400000;
+  const rows = ((await loadIndex()) || [])
+    .filter((t) => t.phone && !t.archived && !t.optedOut && (t.lastTs || 0) >= since)
+    .sort((a, b) => (b.lastTs || 0) - (a.lastTs || 0));
+  const results = [];
+  for (const row of rows.slice(start, start + DET_SWEEP_MAX)) {
+    try {
+      const thread = await loadThread(row.phone);
+      const msgs = (thread.messages || []).filter((m) => m.body);
+      if (!msgs.length) continue;
+      const found = await detAskAi(thread, msgs.slice(-14), cfg);
+      if (!found) { results.push({ phone: row.phone, name: row.name || '', did: 'nothing' }); continue; }
+      const did = await detApply(thread, found, dc, cfg, { quiet: true });
+      results.push({ phone: row.phone, name: thread.name || row.name || '', did: did || 'card',
+        intent: found.intent, maybe: !!found.maybe, date: found.date || '', slot: found.slot || '',
+        tentative: !!found.tentative, evidence: found.evidence || '' });
+    } catch (e) {
+      results.push({ phone: row.phone, did: 'error', error: String((e && e.message) || e).slice(0, 120) });
+    }
+  }
+  const next = start + DET_SWEEP_MAX < rows.length ? start + DET_SWEEP_MAX : null;
+  return json({ ok: true, total: rows.length, start, next, results });
 }
 
 // ---------------------------------------------------------------------------
