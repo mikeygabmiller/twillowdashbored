@@ -92,7 +92,7 @@ ok('size ids are untouched', c.sizes.map((z) => z.id).join() === 'sedan,suv,truc
 ok('size names follow the price book', c.sizes.map((z) => z.label).join(' / ') === 'Car / Sedan / SUV / Pickup / Van / 3-row');
 ok('job lengths untouched', svc('full').duration.suv === 210 && svc('interior').duration.sedan === 90);
 ok('a service he switched off stays off', svc('exterior').enabled === false);
-ok('add-ons are the website\'s four', c.addons.map((a) => a.name + ' $' + a.price).join(', ') === 'Carpet Shampoo $20, Exterior Polish $30, Ceramic Wax $20, RainX Windows $10');
+ok('add-ons are the website\'s five', c.addons.map((a) => a.name + ' $' + a.price).join(', ') === 'Carpet Shampoo $20, Exterior Polish $30, Ceramic Wax $20, RainX Windows $10, RainX Anti-Fog $30');
 ok('41 reviews', c.proof.reviews === 41 && c.proof.rating === '5.0' && c.proof.cars === '300+');
 ok('the twelve towns', c.cities.length === 12 && c.cities.includes('Arlington') && !c.cities.includes('Lynnwood'));
 ok('no headline offer', c.content.hook === '');
@@ -117,7 +117,7 @@ ok('typing 40 reviews shows up as a mismatch right away', saved.facts.some((f) =
 
 section('Fresh installs start right');
 const d = M.bookingDefaults();
-ok('defaults are the price book', d.services[0].price.sedan === 369 && d.addons.length === 4 && d.cities.length === 12 && d.proof.reviews === 41 && d.content.hook === '');
+ok('defaults are the price book', d.services[0].price.sedan === 369 && d.addons.length === 5 && d.cities.length === 12 && d.proof.reviews === 41 && d.content.hook === '');
 ok('and pass their own check', M.bookFactsIssues(d).length === 0, M.bookFactsIssues(d));
 
 console.log(`\n${pass} passed, ${fail} failed`);
