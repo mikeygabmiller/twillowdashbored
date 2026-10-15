@@ -269,5 +269,58 @@ console.log('\n=== recording: the transcript, piece by piece ===');
   check('every piece failing is a failure, not an empty "transcript"', threw, true);
 }
 
+console.log('\n=== recording: a stale "ringing" is checked with Twilio, not thrown away ===');
+{
+  // 2026-10-14: every answered inbound call since 10-06 lost its recording. The
+  // dial's end wrote "answered", but the recording callback read the log a moment
+  // later from another edge, still saw "ringing", and dropped the file. Calls he
+  // made were fine because they are "outgoing" from the first second.
+  const SRC_LEG = lift('callRecordingKeep') + '\n' + lift('callRecordingMaybeStale') + '\n' +
+    lift('callAnsweredLeg') + '\n' + lift('callRecordingPatch') + '\n' +
+    liftDecl('CALL_RECOVER_MAX') + '\n' + liftDecl('CALL_RECOVER_DAYS') + '\n' + lift('callRecoverCandidates') + '\n' +
+    'return { callRecordingMaybeStale, callAnsweredLeg, callRecordingPatch, callRecoverCandidates };';
+  const asked = [];
+  const mk = (legs, ok = true, env = { TWILIO_ACCOUNT_SID: 'AC', TWILIO_AUTH_TOKEN: 't' }) => new Function('ENV', 'fetch', SRC_LEG)(env,
+    async (u, o) => { asked.push({ u, auth: o && o.headers && o.headers.Authorization }); return { ok, json: async () => ({ calls: legs }) }; });
+
+  const M = mk([]);
+  check('ringing might be stale', M.callRecordingMaybeStale({ outcome: 'ringing' }), true);
+  check('so might screened, on a short call', M.callRecordingMaybeStale({ outcome: 'screened' }), true);
+  check('missed is a final word', M.callRecordingMaybeStale({ outcome: 'missed' }), false);
+  check('voicemail is a final word', M.callRecordingMaybeStale({ outcome: 'voicemail' }), false);
+
+  const picked = await mk([{ sid: 'CB1', status: 'completed', duration: '170' }]).callAnsweredLeg('CA7');
+  check('his phone picked up: answered, with the talk time', picked, { talkSec: 170 });
+  check('asks for the dialed leg of this call', /Calls\.json\?ParentCallSid=CA7/.test(asked[asked.length - 1].u), true);
+  check('with the Twilio login', !!asked[asked.length - 1].auth, true);
+  check('rang out: not answered', await mk([{ status: 'no-answer', duration: '0' }]).callAnsweredLeg('CA7'), null);
+  check('hung up during the notice: not answered', await mk([{ status: 'canceled', duration: '0' }]).callAnsweredLeg('CA7'), null);
+  check('Twilio down: not answered, no crash', await mk([], false).callAnsweredLeg('CA7'), null);
+  check('no Twilio keys: no lookup', await mk([], true, {}).callAnsweredLeg('CA7'), null);
+
+  // recordCall saves the whole log, so the patch has to carry "answered" or the
+  // stale read gets written back over the real one.
+  const stale = { sid: 'CA7', outcome: 'ringing' };
+  const patch = M.callRecordingPatch(stale, { sid: 'CA7', recording: 'u.mp3', recSec: 180 }, { talkSec: 170 });
+  check('a kept stale call is saved as answered', patch.outcome, 'answered');
+  check('with Twilio\'s talk time, not the recording length', patch.talkSec, 170);
+  check('a call that already reads answered is left as it is',
+    M.callRecordingPatch({ sid: 'CA8', outcome: 'answered', talkSec: 60 }, { sid: 'CA8', recSec: 75 }, null).outcome, undefined);
+  check('a call he made still takes its length from the recording',
+    M.callRecordingPatch({ outcome: 'outgoing' }, { recSec: 76 }, null).talkSec, 76);
+
+  const now = Date.UTC(2026, 9, 15);
+  const day = 86400000;
+  const pick = M.callRecoverCandidates([
+    { sid: 'A', outcome: 'answered', ts: now - day },                               // the one to recover
+    { sid: 'B', outcome: 'answered', ts: now - day, recording: 'r.mp3' },           // already has it
+    { sid: 'C', outcome: 'missed', ts: now - day },                                 // its voicemail is the recording
+    { sid: 'D', outcome: 'answered', ts: now - 40 * day },                          // before recording existed
+    { sid: 'E', outcome: 'answered', ts: now - day, recoverNone: true },            // Twilio already said nothing
+    { sid: 'F', outcome: 'outgoing', ts: now - 2 * day },                           // a call he made, also lost
+  ], now).map((c) => c.sid);
+  check('recovery only looks at answered or made calls, recent, without a recording, not already ruled out', pick, ['A', 'F']);
+}
+
 console.log(`\n================  ${PASS} passed, ${FAIL} failed  ================`);
 process.exit(FAIL ? 1 : 0);
