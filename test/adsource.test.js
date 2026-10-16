@@ -87,7 +87,7 @@ const CODE = [
   constant('JOURNEY_TTL'), constant('JOURNEY_MAX_STEPS'), constant('journeyKey'), constant('journeyPhoneKey'),
   lift('analyticsDayKey'),
   lift('refHostOf'), lift('adFromLanding'), lift('adLabel'), lift('visitorCity'),
-  lift('clickAlertMode'), lift('alertNewClick'), lift('newClickSubject'), lift('newClickEmail'),
+  lift('clickAlertMode'), lift('alertNewClick'), lift('cityGuess'), lift('newClickSubject'), lift('newClickEmail'),
   lift('cleanVid'), lift('journeyMeta'), lift('journeyHotLabel'), lift('blankJourney'),
   lift('appendStep'), lift('stampJourneyInfo'), lift('journeyStep'),
   lift('journeyPageTitle'), lift('journeyRefLabel'), lift('apiJourneys'), lift('priceLeftSummary'),
@@ -208,6 +208,22 @@ ok('the email says how they got there', /Found you on Google/.test(SENT[0].body.
 ok('and that nothing was sent to them', /Nothing has been sent to them/.test(SENT[0].body.text));
 ok('and links to the replay', /dash\.test\/\?journey=free1/.test(SENT[0].body.text), SENT[0].body.text);
 ok('the text fallback fits a text message', SENT[0].body.sms.length < 160, SENT[0].body.sms);
+
+section('The city is a guess off the internet address, and says so');
+SENT.length = 0; CFG = { clickAlert: 'all' };
+await A.alertNewClick({ vid: 'g1' }, state({ city: 'Seattle, WA' }));
+ok('an in-state city is called a guess', /Shows as: Seattle, WA\. That's a guess/.test(SENT[0].body.text), SENT[0].body.text);
+ok('and is never stated as where they are', !/Where they are/.test(SENT[0].body.text), SENT[0].body.text);
+ok('the subject hedges too', /shows as Seattle, WA/.test(SENT[0].subject) && !/out of state/.test(SENT[0].subject), SENT[0].subject);
+ok('no "today" counter that resets at 5 PM Pacific', !/today/i.test(SENT[0].body.text), SENT[0].body.text);
+SENT.length = 0;
+await A.alertNewClick({ vid: 'g2' }, state({ city: 'Columbus, OH' }));
+ok('an out-of-state paid click is flagged in the subject', /shows as Columbus, OH, out of state/.test(SENT[0].subject), SENT[0].subject);
+ok('and explained in the email', /ads only run in Washington/.test(SENT[0].body.text), SENT[0].body.text);
+ok('the text fallback still fits', SENT[0].body.sms.length < 160, SENT[0].body.sms);
+SENT.length = 0;
+await A.alertNewClick({ vid: 'g3' }, state({ city: '' }));
+ok('no city, no city line', !/Shows as/.test(SENT[0].body.text) && !/shows as/.test(SENT[0].subject), SENT[0].subject);
 
 section('It cannot bury the alerts that matter');
 SENT.length = 0; CFG = { clickAlert: 'all' };

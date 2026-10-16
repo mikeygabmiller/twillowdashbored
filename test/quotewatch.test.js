@@ -86,7 +86,7 @@ const CODE = [
   lift('isQuoteRevealStep'), lift('quoteWatchWaitMs'), lift('quoteWatchPrice'),
   lift('loadQuoteWatch'), lift('saveQuoteWatch'), lift('armQuoteWatch'),
   lift('clearQuoteWatch'), lift('quoteAbandonCron'),
-  lift('quoteAbandonSubject'), lift('quoteAbandonEmail'),
+  lift('quoteAbandonSubject'), lift('cityGuess'), lift('quoteAbandonEmail'),
   lift('htmlEsc'), lift('mailLines'), lift('mailShell'), lift('mailCard'),
   lift('mailLabel'), lift('mailShout'), lift('mailBody'), lift('mailBtn'),
 ].join('\n\n');

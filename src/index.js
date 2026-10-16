@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-15·antifog';
+const BUILD = '2026-10-16·city-guess';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -5605,6 +5605,29 @@ function visitorCity(request) {
   if (!city) return '';
   return region && region.length <= 3 ? city + ', ' + region : city;
 }
+// What the city line can honestly claim. Cloudflare's city is read off the
+// visitor's internet address, not their phone's location, and on a phone that
+// is routinely wrong: carriers hand out addresses that map to Seattle or
+// Redmond for someone in Snohomish, and Apple's privacy relay can put an
+// iPhone in another state. His ads only run in Washington, and Google decides
+// who sees them from the phone's real location, so a paid click that "shows
+// as" Columbus, OH or New York is a network artifact or a bot, not a customer
+// in Ohio. Every alert says so rather than printing a guess as a fact (Mikey,
+// 2026-10-16: the emails read "Where they are: Columbus, OH").
+function cityGuess(city) {
+  const c = String(city || '').trim();
+  if (!c) return { short: '', line: '', far: false };
+  const st = (c.match(/, ([A-Z]{2})$/) || [])[1] || '';
+  const far = !!st && st !== 'WA';
+  return {
+    short: 'shows as ' + c,
+    line: far
+      ? `Shows as: ${c}. That's their internet address, and it's out of state. Your ads only run in Washington, so it's a phone network, a privacy relay or a bot, not where they are.`
+      : `Shows as: ${c}. That's a guess from their internet address. Phones often show a nearby bigger city.`,
+    far,
+  };
+}
+
 async function handlePixel(url, request) {
   try {
     const now = Date.now();
@@ -5720,7 +5743,8 @@ async function alertNewClick(journey, state) {
 
 function newClickSubject(state) {
   const ad = (state.ad || {}).ad || '';
-  const where = state.city ? ' — ' + state.city : '';
+  const g = cityGuess(state.city);
+  const where = g.short ? ' — ' + g.short + (g.far ? ', out of state' : '') : '';
   return ad ? `💸 New ${AD_NAMES[ad] || 'ad'} ad click${where}` : `👋 Somebody just landed on your site${where}`;
 }
 
@@ -5732,11 +5756,14 @@ function newClickEmail(journey, state, nth) {
   const ad = (state.ad || {}).ad || '';
   const camp = (state.ad || {}).camp || '';
   const how = ad ? adLabel(ad, camp) : journeyRefLabel(state.refHost, '');
+  const g = cityGuess(state.city);
+  // No "visit #N today": the count lives in the UTC day doc, so it reset at
+  // 5 PM Pacific and an evening click read "#1 today" after three that
+  // afternoon. The daily cap in alertNewClick still counts the same way.
   const facts = [
     how,
-    state.city ? `Where they are: ${state.city}` : '',
+    g.line,
     `Landed on: ${journeyPageTitle(state.path)}`,
-    `That's visit #${nth} today that I've told you about.`,
   ].filter(Boolean).join('\n');
   const link = base ? `${base}/?journey=${encodeURIComponent(journey.vid || '')}` : '';
 
@@ -5749,7 +5776,7 @@ function newClickEmail(journey, state, nth) {
   B.push(mailCard(
     mailLabel(ad ? 'A click you paid for' : 'A new visitor', ad ? MAILC.blue : MAILC.mute) +
     `<div style="font-family:${MAILF};font-size:26px;line-height:1.2;font-weight:800;color:${MAILC.ink};margin:0;">${htmlEsc(how)}</div>` +
-    (state.city ? `<div style="font:400 15px/1.55 ${MAILF};color:${MAILC.mute};margin-top:8px;">${htmlEsc(state.city)}</div>` : ''),
+    (g.line ? `<div style="font:400 15px/1.55 ${MAILF};color:${MAILC.mute};margin-top:8px;">${htmlEsc(g.line)}</div>` : ''),
     { bg: MAILC.blueBg, border: '#bfdbfe', edge: MAILC.blue, pad: '18px' }));
   B.push(mailCard(mailLabel('Where they landed', MAILC.blue) + mailBody(journeyPageTitle(state.path), MAILC.ink)));
   B.push(mailCard(
@@ -5759,7 +5786,7 @@ function newClickEmail(journey, state, nth) {
   return {
     text,
     html: mailShell(newClickSubject(state), B.join('')),
-    sms: `${how}${state.city ? ' · ' + state.city : ''} — landed on ${journeyPageTitle(state.path)}.`,
+    sms: `${how}${g.short ? ' · ' + g.short : ''} — landed on ${journeyPageTitle(state.path)}.`,
   };
 }
 async function pixelRollup(days) {
@@ -6198,7 +6225,7 @@ function quoteAbandonEmail(w, doc, now = Date.now()) {
     journeyRefLabel(String((steps[0] || {}).r || ''), (doc && doc.ad) || '', (doc && doc.camp) || ''),
     // A price walked away from is worth more when you know it was a click you
     // bought, and whether they were even in the service area.
-    (doc && doc.city) ? `Where they are: ${doc.city}` : '',
+    cityGuess(doc && doc.city).line,
   ].filter(Boolean).join('\n');
   const link = base ? `${base}/?journey=${encodeURIComponent(w.vid)}` : '';
 
