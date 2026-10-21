@@ -4697,7 +4697,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-10-16·city-guess";
+  var APP_BUILD="2026-10-21·kv-reads";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -8507,8 +8507,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var pbn=el("pbNudgeBtn");if(pbn)pbn.onclick=openPlaybook;
   }
 
+  var INSIGHTS_FRESH_MS=2*60*1000;
   function fetchInsights(){
-    return api("/api/insights").then(function(d){if(d&&d.ok){state.insights=d;
+    return api("/api/insights").then(function(d){if(d&&d.ok){state.insights=d;state.insightsAt=Date.now();
       if(el("growApp").classList.contains("show")&&GROW.view==="overview")growRender();
       else if(state.tab==="home")renderHome();}});
   }
@@ -14003,7 +14004,11 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     el("scroll").scrollTop=0;
     scrollMemKey="";scrollMemReset=true;
     renderMain();
-    if(tab==="home")fetchInsights();
+    // Insights reads EVERY conversation on the server, one KV read each, so a
+    // tab-hop back to Home was hundreds of reads a tap against a 100k/day quota.
+    // Home renders the cached copy at once; it's only re-fetched when it's over
+    // two minutes old (sign-in and reopening the app still always fetch).
+    if(tab==="home"&&Date.now()-(state.insightsAt||0)>INSIGHTS_FRESH_MS)fetchInsights();
     if(tab==="followups")refreshThreads();
     // Opening Calls is what marks it read. Always re-fetch: a voicemail's
     // transcript arrives a minute after the voicemail does, so a cached list is
