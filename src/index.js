@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-16·city-guess';
+const BUILD = '2026-10-21·kv-reads';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -11476,6 +11476,16 @@ async function ensureLiveSuggestion(thread, cfg, now) {
   return changed;
 }
 
+// Whether this minute is the one a surfaced nudge gets re-read on. Each phone
+// lands on its own minute of the cycle, so forty waiting nudges spread across
+// thirty ticks instead of all landing on one and blowing its CPU budget.
+const FOLLOWUP_RECHECK_MIN = 30;
+function followupRecheckSlot(phone, now) {
+  let h = 0;
+  for (const c of String(phone || '')) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return Math.floor(now / 60000) % FOLLOWUP_RECHECK_MIN === h % FOLLOWUP_RECHECK_MIN;
+}
+
 // Cron pass: walk the index, advance each conversation's follow-up. Uses the
 // index's cached followupNextAt to skip conversations whose next step is still
 // in the future, so a typical tick loads only the few threads actually due.
@@ -11506,7 +11516,18 @@ async function evaluateFollowups(now = Date.now()) {
     // and that has never been read for "is anything still open?" is loaded once
     // so it can be judged (legacy threads, and anything whose nudge was already
     // skipped). Once judged the flag sticks in the index and it's skipped again.
-    const dueNow = e.followupDue || !!(e.followupNextAt && e.followupNextAt <= now);
+    // ...and a nudge that is ALREADY surfaced is re-read once every
+    // FOLLOWUP_RECHECK_MIN minutes, not every minute. Its draft is written; until
+    // he acts on it the tick finds nothing to change and reads it anyway, so every
+    // nudge left sitting on the Follow-ups tab cost 1,440 reads a day. Seventy of
+    // them was the whole 100k free-tier READ quota, and when that runs out every
+    // KV get() throws until midnight UTC: the login, the inbox, inbound texts.
+    // Happened 2026-10-21. A reply, a send or opening the chat still clears a
+    // stale nudge at once (none of those wait on the cron); what waits up to half
+    // an hour is only the cron noticing an autopilot switch flipped on since.
+    const dueNow = e.followupDue
+      ? followupRecheckSlot(e.phone, now)
+      : !!(e.followupNextAt && e.followupNextAt <= now);
     const needsJudging = e.lastDir === 'in' && !e.replyChecked;
     if (!dueNow && !(needsJudging && judgeBudget > 0)) continue;
 
