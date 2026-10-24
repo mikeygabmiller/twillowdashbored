@@ -113,6 +113,17 @@ Keys:
   unread, mid }` for the Email tab.
 - `templates` — quick-reply array `[[label, body], …]`.
 - `rl:submit:<ip>` — short-TTL submit rate-limit counter.
+- `day:<YYYY-MM-DD>` — **Job Day** run sheet for one date: `{ date, startedAt, endedAt,
+  flags{briefedOn,confirmedOn,wrappedOn}, stops[] }`. A stop is `{ id, src:'booking'|
+  'thread'|'manual', bookingId, phone, name, address, city, service, serviceName, vehicle,
+  price, durationMin, plannedAt, order, status:'planned'|'enroute'|'onsite'|'done'|'skipped',
+  enrouteAt, arrivedAt, doneAt, checklist[], photos[], notes, collected, method,
+  moneyEntryId, thanked }`. **One doc per day** — a whole workday of tapping is a handful of
+  writes. Route legs and the projected timeline are computed on read, never stored.
+- `day:cfg` — Job Day settings (home base, message templates, checklists, automation hours).
+- `day:ph:<id>` — one before/after photo, raw bytes + `{ct}` metadata, 400-day TTL. The id is
+  two `genId()`s because `/day-photo?p=<id>` is a **public** URL (Twilio fetches it for MMS).
+- `geo:<hash>:<len>` — geocode cache, one write per address never seen before, kept forever.
 
 ### ⚠️ KV WRITE BUDGET (free tier ~1,000 writes/day)
 Writes are the scarce resource (~0.7/min). The **minute cron touches every conversation**,
@@ -120,7 +131,12 @@ so any unnecessary `put()` inside a loop can blow the budget and 429 the whole a
 midnight UTC. Rules (enforced in code, see the big comment block atop `src/index.js`):
 never write on a tick where nothing changed; skip idle threads BEFORE loading them; batch
 the index to ONE `saveIndex()` per tick. `FOLLOWUPS_DISABLED=1` (a var, no KV write) is the
-emergency kill switch for the follow-up engine.
+emergency kill switch for the follow-up engine; `JOBDAY_DISABLED=1` is the same for the
+Job Day automations (brief / confirmations / late nudge / recap).
+
+**Job Day's share of the budget:** the cron reads `day:<today>` every minute and writes only
+when a once-a-day flag flips — about **5 writes/day**. `GET /api/day` is read-only unless new
+bookings appeared on the sheet, so opening the tab repeatedly costs nothing.
 
 ### Cron — every minute (`crons = ["* * * * *"]`)
 `scheduled()` → `runCron()`:
