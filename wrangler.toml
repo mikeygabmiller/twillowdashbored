@@ -58,3 +58,12 @@ crons = ["* * * * *"]
 #   npx wrangler secret put MIKEY_PHONE
 #   npx wrangler secret put GEMINI_API_KEY   # optional, for the AI features
 #   npx wrangler secret put RESEND_API_KEY   # optional — sends owner alerts as email (with ALERT_EMAIL above) instead of texting yourself
+#
+# Morning digest (src/digest.js) — daily Reddit + feeds rundown emailed to
+# ALERT_EMAIL at a configured hour. Reuses RESEND_API_KEY and GEMINI_API_KEY.
+# Reddit OAuth is optional but strongly recommended: unauthenticated reddit.com
+# requests from Cloudflare's datacenter IPs get rate-limited and 403'd. Create a
+# free "script" app at https://www.reddit.com/prefs/apps then:
+#   npx wrangler secret put REDDIT_CLIENT_ID
+#   npx wrangler secret put REDDIT_CLIENT_SECRET
+# Kill switch (no deploy): add  DIGEST_DISABLED = 1  under Variables.

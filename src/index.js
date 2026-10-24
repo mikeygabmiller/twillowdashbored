@@ -47,6 +47,11 @@
  * └─────────────────────────────────────────────────────────────────────────┘
  */
 
+// Morning digest (Reddit + feeds -> AI summary -> email). Self-contained and
+// fail-soft; see src/digest.js. Costs ~4 KV writes/day, negligible against the
+// budget documented below.
+import { runDigestCron, digestApi } from './digest.js';
+
 // env is identical across every request of a deployment (bindings + secrets
 // don't change per request), so stashing it in module scope is safe even under
 // concurrency. Each invocation sets it before doing any work.
@@ -101,6 +106,9 @@ async function runCron() {
   await dispatchDueReminders();
   await evaluateFollowups();
   await moneyCron().catch(() => {}); // money reminders must never break the SMS cron
+  // Morning digest: gated internally to one run per day at the configured hour.
+  // Like moneyCron, it must never be able to take the SMS cron down with it.
+  await runDigestCron(ENV, Date.now(), { localHour, localDateStr }).catch(() => {});
 }
 
 // Private "remind me to follow up on <date>" reminders — a nudge to Mikey, not a
@@ -180,6 +188,11 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/alert-test') return apiAlertTest();
   if (request.method === 'GET'  && pathname === '/api/followups')  return apiFollowups();
   if (request.method === 'POST' && pathname === '/api/followup')   return apiFollowupAction(request);
+  // ---- Morning digest (authed) — config, dry-run preview, force-send ----
+  if (pathname.startsWith('/api/digest/')) {
+    const res = await digestApi(request, url, ENV, json);
+    if (res) return res;
+  }
   if (request.method === 'GET'  && pathname === '/api/config')     return apiGetConfig();
   if (request.method === 'POST' && pathname === '/api/config')     return apiSaveConfig(request);
   // ---- Booking management (authed — the Bookings dashboard view) ----
