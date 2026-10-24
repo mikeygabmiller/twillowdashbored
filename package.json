@@ -6,5 +6,12 @@
   "description": "Standalone SMS dashboard for Mikey's Mobile Detailing (Netlify Functions + Blobs + Twilio).",
   "dependencies": {
     "@netlify/blobs": "^10.0.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.105.0"
+  },
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "preview": "wrangler dev"
   }
 }
