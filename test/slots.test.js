@@ -15,7 +15,7 @@ let src = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
 src = src.replace(/^export default \{[\s\S]*?^\};$/m, '');
 
 const EXPORTS = ['bkAvailability', 'bkDuskMin', 'bkServedTown', 'apiBook', 'apiNextOpenings', 'apiBookConfig',
-  'loadBookingConfig', 'saveBookingConfig', 'bkSanitizeConfig', 'loadBookings', 'saveBookings', 'loadThread', 'bkLaEpoch', 'loadQuoteMonth', 'localDateStr'];
+  'loadBookingConfig', 'saveBookingConfig', 'bkSanitizeConfig', 'loadBookings', 'saveBookings', 'loadThread', 'bkLaEpoch', 'loadQuoteMonth', 'localDateStr', 'bkEventBusyOnDate'];
 
 const store = new Map();
 const kv = {
@@ -177,6 +177,25 @@ const clean = M.bkSanitizeConfig(c);
 ok('good times kept and sorted, junk dropped', JSON.stringify(clean.slotRules.days[3]) === '["09:30","13:00"]', clean.slotRules.days[3]);
 ok('lights stay off unless set on', clean.slotRules.lights === false);
 ok('instant confirm stays on unless set off', clean.slotRules.autoConfirm === true);
+
+section('Pacific wall clock to a real instant, across both clock changes');
+// 2026-11-01 the clocks go back at 2:00 AM; 2027-03-14 they go forward.
+const iso = (d, t) => new Date(M.bkLaEpoch(d, t)).toISOString();
+ok('Sat Oct 31, 7:00 AM is 14:00 UTC (summer time)', iso('2026-10-31', '07:00') === '2026-10-31T14:00:00.000Z', iso('2026-10-31', '07:00'));
+ok('Sun Nov 1, 7:00 AM is 15:00 UTC (the morning the clocks go back)', iso('2026-11-01', '07:00') === '2026-11-01T15:00:00.000Z', iso('2026-11-01', '07:00'));
+ok('Sun Nov 1, midnight is 07:00 UTC (still summer time)', iso('2026-11-01', '00:00') === '2026-11-01T07:00:00.000Z', iso('2026-11-01', '00:00'));
+ok('Sun Nov 1, 1:00 PM is 21:00 UTC', iso('2026-11-01', '13:00') === '2026-11-01T21:00:00.000Z', iso('2026-11-01', '13:00'));
+ok('Tue Nov 3, 1:00 PM is 21:00 UTC (winter time)', iso('2026-11-03', '13:00') === '2026-11-03T21:00:00.000Z', iso('2026-11-03', '13:00'));
+ok('Sun Mar 14 2027, 7:00 AM is 14:00 UTC (the morning they go forward)', iso('2027-03-14', '07:00') === '2027-03-14T14:00:00.000Z', iso('2027-03-14', '07:00'));
+ok('Sat Mar 13 2027, 7:00 AM is 15:00 UTC (still winter time)', iso('2027-03-13', '07:00') === '2027-03-13T15:00:00.000Z', iso('2027-03-13', '07:00'));
+
+// A calendar event blocks the minutes on his clock, even on the 25-hour day.
+const ev = (d, a, b) => ({ startMs: M.bkLaEpoch(d, a), endMs: M.bkLaEpoch(d, b) });
+const busy = (d, a, b) => JSON.stringify(M.bkEventBusyOnDate(ev(d, a, b), d));
+ok('Nov 1, a 1:00 to 3:00 PM event blocks 13:00 to 15:00', busy('2026-11-01', '13:00', '15:00') === '{"s":780,"e":900}', busy('2026-11-01', '13:00', '15:00'));
+ok('Nov 1, an 11:00 PM to midnight event is still on Nov 1', JSON.stringify(M.bkEventBusyOnDate({ startMs: M.bkLaEpoch('2026-11-01', '23:00'), endMs: M.bkLaEpoch('2026-11-02', '00:00') }, '2026-11-01')) === '{"s":1380,"e":1440}');
+ok('Mar 14 2027, a 1:00 to 3:00 PM event blocks 13:00 to 15:00', busy('2027-03-14', '13:00', '15:00') === '{"s":780,"e":900}', busy('2027-03-14', '13:00', '15:00'));
+ok('an ordinary Tuesday is unchanged', busy('2026-11-03', '13:00', '15:00') === '{"s":780,"e":900}', busy('2026-11-03', '13:00', '15:00'));
 
 Date.now = realNow;
 console.log(`\n${pass} passed, ${fail} failed`);

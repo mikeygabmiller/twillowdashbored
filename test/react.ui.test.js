@@ -80,7 +80,7 @@ const THREADS = [
 
 (async () => {
   await new Promise(r => server.listen(8791, '127.0.0.1', r));
-  const b = await chromium.launch({ executablePath: process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome' });
+  const b = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || process.env.CHROME_PATH || '/opt/pw-browsers/chromium' });
   const ctx = await b.newContext({ ...devices['Galaxy S9+'], viewport: { width: 360, height: 780 } });
   const page = await ctx.newPage();
   const errs = [];

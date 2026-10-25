@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-21·kv-reads';
+const BUILD = '2026-10-25·dst-sunday';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -17584,7 +17584,13 @@ function bkLaOffsetMin(ts) {
 }
 function bkLaEpoch(dateStr, hhmm) {
   const naive = Date.parse(dateStr + 'T' + hhmm + ':00Z');   // wall clock treated as UTC
-  return naive - bkLaOffsetMin(naive) * 60000;               // shift by the Pacific offset
+  // The offset is read twice. The first read is taken at the naive instant,
+  // which is 7 or 8 hours early, so on the two Sundays the clocks change it
+  // reads the old offset for any time before mid-morning (Nov 1, 2026: 7:00 AM
+  // came out as 6:00). Reading again at the first answer lands on the right
+  // side of the change. Every other day both reads agree.
+  const guess = naive - bkLaOffsetMin(naive) * 60000;
+  return naive - bkLaOffsetMin(guess) * 60000;
 }
 
 // Open start-times for a date, given service + size. Read-only.
@@ -18924,7 +18930,9 @@ async function apiDigestEmail(request) {
 
 // Busy interval {s,e} (LA minutes) this event occupies on `date`, or null.
 function bkEventBusyOnDate(ev, date) {
-  const dayStartMs = bkLaEpoch(date, '00:00'), dayEndMs = dayStartMs + 86400000;
+  // The next midnight, not start + 24 h: the day the clocks go back is 25 hours
+  // long and the day they go forward is 23.
+  const dayStartMs = bkLaEpoch(date, '00:00'), dayEndMs = bkLaEpoch(bkAddDays(date, 1), '00:00');
   const dow = new Date(date + 'T12:00:00Z').getUTCDay();
   if (ev.rrule) {
     const r = ev.rrule;
@@ -18940,8 +18948,10 @@ function bkEventBusyOnDate(ev, date) {
   }
   if (ev.allDay) return (date >= ev.startDate && date < ev.endDate) ? { s: 0, e: 1440 } : null;
   if (ev.endMs <= dayStartMs || ev.startMs >= dayEndMs) return null;
-  const s = Math.max(0, Math.round((ev.startMs - dayStartMs) / 60000));
-  const e = Math.min(1440, Math.round((ev.endMs - dayStartMs) / 60000));
+  // Wall-clock minutes, read off the Pacific clock. Minutes since midnight
+  // would put a 1:00 PM event at 2:00 on the Sunday the clocks go back.
+  const s = ev.startMs <= dayStartMs ? 0 : bkLocalParts(ev.startMs).min;
+  const e = ev.endMs >= dayEndMs ? 1440 : bkLocalParts(ev.endMs).min;
   return e > s ? { s, e } : null;
 }
 
