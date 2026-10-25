@@ -24,7 +24,7 @@ const T=[
 let PASS=0,FAIL=0;const check=(n,g,w)=>{const ok=JSON.stringify(g)===JSON.stringify(w);ok?PASS++:FAIL++;console.log(`${ok?'  PASS':'  FAIL'}  ${n}${ok?'':`\n     got ${JSON.stringify(g)} want ${JSON.stringify(w)}`}`)};
 (async()=>{
 await new Promise(r=>server.listen(8786,'127.0.0.1',r));
-const b=await chromium.launch({executablePath: process.env.CHROME_PATH || '/opt/pw-browsers/chromium-1194/chrome-linux/chrome'});
+const b=await chromium.launch({executablePath: process.env.CHROMIUM_PATH || process.env.CHROME_PATH || '/opt/pw-browsers/chromium'});
 const ctx=await b.newContext({...devices['Galaxy S9+'],viewport:{width:360,height:780}});
 const page=await ctx.newPage();const errs=[];page.on('pageerror',e=>errs.push(e.message));
 await page.route('**/api/**',route=>{const u=new URL(route.request().url());let po={};try{po=JSON.parse(route.request().postData()||'{}')}catch(_){}
