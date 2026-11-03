@@ -95,3 +95,25 @@ Mikey's rules for any automatic text (2026-10-10):
   sort out details, so an automatic text shouldn't read like the last word.
   Say he'll probably be in touch, and ask them to reply with anything he
   should know.
+
+## The Rain-Ready offer ends January 1, 2027
+
+Book a Full Detail by December 31, 2026 and ceramic wax, RainX and RainX
+Anti-Fog are free (job done by January 31, 2027). It's the website's
+`RR_END`, the hangers' and the postcards' promise: don't widen or extend it
+without Mikey.
+
+- **The AI switches itself off.** `rainReadyNote()` (added 2026-11-03) is
+  appended to every playbook prompt by `businessContext()` and flips from
+  "Offer running now" to "Rain-Ready is over" at midnight Pacific going into
+  Jan 1, 2027 (`RR_END_LA`). The playbook's worked quotes carry both totals
+  ("$459 while Rain-Ready runs, $479 from January 1, 2027").
+- **January cleanup (stored text can't switch):** the playbook's two quoted
+  example texts say "$459" (rule 3's F450 and the Ram in "How these read end
+  to end"). In January, set them to the book totals ($489 and $479), drop the
+  "while Rain-Ready runs" halves and the Rain-Ready line in `services`, take
+  out `rainReadyNote` and `RR_END_LA`, and bump `PLAYBOOK_SEED_VERSION` so the
+  stored playbook picks it up (check the live playbook is still the default
+  first, so nothing Mikey wrote is overwritten). The booking-side
+  `rainReady` flag (`bkLaEpoch('2027-01-01', ...)`) stays until every job
+  booked under it is done, after January 31.

@@ -62,7 +62,14 @@ await settle(page);
 let card = await page.innerText('#capCard');
 ok('it says how many Full Detail times are left before Jan 31', /^\d+\s*Full Detail times left before Jan 31/m.test(card), card);
 ok('none booked yet', /0 Rain-Ready booked/.test(card));
-ok('a chip for each month through January', ['Oct', 'Nov', 'Dec', 'Jan'].every((m) => card.includes(m)), card);
+// From this month through January, not a fixed list: the card counts what's
+// left, so in November "Oct" is rightly gone (2026-11-03, when the fixed list
+// started failing on the real date). The after-January state has its own check below.
+const capMonths = [];
+for (let d = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 15)); d <= Date.UTC(2027, 0, 31); d.setUTCMonth(d.getUTCMonth() + 1)) {
+  capMonths.push(d.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' }));
+}
+ok('a chip for each month left through January', capMonths.length > 0 && capMonths.every((m) => card.includes(m)), capMonths.join(' ') + ' | ' + card);
 const chips = await page.$$eval('.cap-m', (els) => els.map((e) => e.textContent));
 const nov = chips.find((t) => t.startsWith('Nov')), dec = chips.find((t) => t.startsWith('Dec'));
 ok('November and December each show a handful at most', +nov.slice(3) <= 5 && +dec.slice(3) <= 5, chips);

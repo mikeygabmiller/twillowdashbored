@@ -57,7 +57,7 @@ new Function('ctx',
   liftConst('FOLLOWUP') + '\n' +
   lift('normText') + lift('looksLikeQuestion') + lift('isClosingRemark') +
   lift('replyCheckFor') + lift('replyOwed') + lift('rowAwaitingReply') +
-  lift('trailingOutStreak') + lift('computeFollowupPlan') +
+  lift('trailingOutStreak') + lift('reviewAlreadyAsked') + lift('computeFollowupPlan') +
   'Object.assign(ctx, { looksLikeQuestion, isClosingRemark, replyOwed, rowAwaitingReply, computeFollowupPlan });',
 )(ctx);
 const { looksLikeQuestion, isClosingRemark, replyOwed, rowAwaitingReply, computeFollowupPlan } = ctx;

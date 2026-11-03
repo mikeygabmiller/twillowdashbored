@@ -53,9 +53,10 @@ new Function('ctx',
   // findTell now also checks the owner's own "never say this" list.
   lift('sayDefaults') + lift('sayRules') + lift('sayNorm') + lift('sayBanned') + 
   lift('findTell') + lift('styleViolation') + lift('defaultPlaybook') +
+  grab(/const RR_END_LA = .*;/, 'RR_END_LA') + lift('bkLaOffsetMin') + lift('bkLaEpoch') + lift('rainReadyNote') +
   'ctx.voiceBucket=voiceBucket;ctx.findInventedPrice=findInventedPrice;ctx.findTell=findTell;' +
-  'ctx.styleViolation=styleViolation;ctx.defaultPlaybook=defaultPlaybook;')(ctx);
-const { voiceBucket, findInventedPrice, findTell, styleViolation, defaultPlaybook } = ctx;
+  'ctx.styleViolation=styleViolation;ctx.defaultPlaybook=defaultPlaybook;ctx.rainReadyNote=rainReadyNote;ctx.bkLaEpoch=bkLaEpoch;')(ctx);
+const { voiceBucket, findInventedPrice, findTell, styleViolation, defaultPlaybook, rainReadyNote, bkLaEpoch } = ctx;
 
 let PASS = 0, FAIL = 0;
 const check = (name, got, want) => {
@@ -128,7 +129,9 @@ const p = defaultPlaybook();
 check('there is a quote-reply section',     !!(p.quoting && p.quoting.length > 500), true);
 check('it tells him to ask for the address', /send over your address/.test(p.quoting), true);
 check('it gates on condition before pricing', /condition/i.test(p.quoting), true);
-check('it carries the real worked quotes',   ['$450', '$400', '$380', '$300'].every((n) => p.quoting.includes(n)), true);
+// 2026-11-03: worked out from the website's price book, not the summer's hand
+// quotes, so a draft lands on the number the site already promised.
+check('it carries the worked quotes',        ['$479', '$489', '$429', '$339'].every((n) => p.quoting.includes(n)), true);
 // The old golden rule told the AI to never give a firm price — the exact opposite
 // of what he does at this moment, in the same prompt as the examples showing him
 // doing it. A contradiction the model resolved by inventing a number.
@@ -137,8 +140,31 @@ check('they forbid inventing one instead',      /isn't in this playbook/.test(p.
 check('and one voice, not a team "we"',         /never \\?"we\\?"/i.test(p.rules) || /never "we"/.test(p.rules), true);
 // $160 / $180 / $200 for the same service, across code and live config, all fed
 // to the model at once.
-check('one interior price everywhere', (p.services.match(/Interior Detail — starts at \$(\d+)/) || [])[1], '200');
-check('and the FAQ agrees with it',    (p.faqs.match(/Interior details start at \$(\d+)/) || [])[1], '200');
+check('one interior price everywhere', (p.services.match(/Interior Detail: \$(\d+) sedan/) || [])[1], '249');
+check('and the FAQ agrees with it',    (p.faqs.match(/an interior detail is \$(\d+)/) || [])[1], '249');
+// The book since 2026-09-27: $199 / $249 / $369 for a sedan. The prices it
+// replaced must never come back, in any field the model reads.
+const everything = Object.values(p).join('\n');
+check('the full detail is the book price',  /Full Detail \(inside and out\): \$369 sedan, \$409 SUV or pickup, \$449 van/.test(p.services), true);
+check('no retired price anywhere',          (everything.match(/\$(130|160|200|260|300|380|450)\b/g) || []), []);
+check('the twelve towns, not Sultan',       /Sultan/.test(p.area) || !/Granite Falls and Arlington/.test(p.area), false);
+check('the quote takes 60 seconds',         /about 60 seconds/.test(p.booking) && !/30 seconds/.test(everything), true);
+// The AI copies the playbook's punctuation into texts, and findTell blocks a
+// draft with an em dash, so one in here is a draft thrown away (22 were, to
+// 2026-11-03).
+check('no em dash anywhere in the playbook',  (everything.match(/\u2014/g) || []).length, 0);
+// Rain-Ready: the extras are $0 on a Full Detail through Dec 31, 2026, the
+// same as the website's calculator, and the note flips on its own at midnight
+// Pacific going into Jan 1 (stored playbook text can't).
+check('Ram example matches the website now',  /Ceramic Wax: \$459 while Rain-Ready runs/.test(p.quoting), true);
+check('F450 example matches the website now', /RainX Window treatment: \$459 while Rain-Ready runs/.test(p.quoting), true);
+check('full detail saving stated per size',   /\$79 less on a sedan, \$119 on an SUV or pickup, \$159 on a van or 3-row/.test(p.services), true);
+check('Lynnwood and Edmonds: ask, not no',    /Lynnwood and Edmonds he sometimes reaches/.test(p.area) && !/are a no/.test(p.area), true);
+const rrEnd = bkLaEpoch('2027-01-01', '00:00');
+check('offer ends midnight Pacific Jan 1',    new Date(rrEnd).toISOString(), '2027-01-01T08:00:00.000Z');
+check('a minute before: offer running',       /Offer running now/.test(rainReadyNote(rrEnd - 60000)), true);
+check('a minute after: offer over',           /Rain-Ready is over/.test(rainReadyNote(rrEnd + 60000)), true);
+check('neither note has an em dash',          /\u2014/.test(rainReadyNote(rrEnd - 1) + rainReadyNote(rrEnd)), false);
 check('every field fits the save cap',  Object.values(p).every((v) => String(v).length <= 6000), true);
 
 console.log(`\n================  ${PASS} passed, ${FAIL} failed  ================`);
