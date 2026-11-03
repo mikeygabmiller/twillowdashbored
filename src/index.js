@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-25·dst-sunday';
+const BUILD = '2026-11-03·qol3';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -17136,6 +17136,17 @@ async function apiNoReplyNeeded(request) {
   const thread = await loadThread(phone);
   const last = (thread.messages || [])[thread.messages.length - 1];
   if (!last || last.dir !== 'in') return json({ ok: false, error: 'nothing_to_answer' }, 409);
+  // {undo:true} is the toast's Undo, for a thumb that hit the Today list's
+  // check by mistake. It puts them back as owed rather than deleting the
+  // verdict: with no verdict the reply check would judge the same text again,
+  // spend an AI call on it and could well file it a second time. The draft and
+  // nudge cleared below aren't restored; the follow-up engine makes new ones.
+  if (data.undo) {
+    thread.replyCheck = { forTs: last.ts, at: Date.now(), needed: true, reason: 'You put them back', via: 'owner' };
+    await saveThread(thread);
+    await updateIndexEntry(thread);
+    return json({ ok: true, thread });
+  }
   thread.replyCheck = { forTs: last.ts, at: Date.now(), needed: false, reason: 'You said no reply needed', via: 'owner' };
   // Nothing is owed, so nothing should still be offering to answer them: the
   // drafted reply, the question it was holding for him, and the "you owe a

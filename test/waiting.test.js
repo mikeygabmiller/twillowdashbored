@@ -336,6 +336,15 @@ console.log('\n=== "No reply needed" ===');
   r = await ctx.apiNoReplyNeeded({ phone: '+14255550101' });
   check('he spoke last → 409, nothing saved', [r.status, w.saves.length], [409, 0]);
   check('routed for Mikey', /pathname === '\/api\/reply\/none'\)\s*return apiNoReplyNeeded/.test(SRC), true);
+  // Undo, from the Today list's toast. Back as owed, with a verdict, so the
+  // reply check doesn't re-judge the same text and file it again.
+  w = use(world({ threads: { '+14255550101': thread() } }));
+  r = await ctx.apiNoReplyNeeded({ phone: '+14255550101', undo: true });
+  const back = w.saves[0];
+  check('undo: ok', r.body.ok, true);
+  check('undo: owed again, on their last text', [back.replyCheck.forTs, back.replyCheck.needed, back.replyCheck.via], [2, true, 'owner']);
+  check('undo: the list row is rebuilt', w.indexed, ['+14255550101']);
+  check('undo: still never opened', w.reads, ['load:+14255550101']);
 }
 
 console.log('\n=== the cron runs the check-ins ===');

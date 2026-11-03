@@ -62,7 +62,11 @@ await settle(page);
 let card = await page.innerText('#capCard');
 ok('it says how many Full Detail times are left before Jan 31', /^\d+\s*Full Detail times left before Jan 31/m.test(card), card);
 ok('none booked yet', /0 Rain-Ready booked/.test(card));
-ok('a chip for each month through January', ['Oct', 'Nov', 'Dec', 'Jan'].every((m) => card.includes(m)), card);
+// Off the real clock: this was ['Oct', 'Nov', 'Dec', 'Jan'] and went red on
+// Nov 1, when October rightly stopped having times left.
+const capMonths = []; for (let d = new Date(); ; d = new Date(d.getFullYear(), d.getMonth() + 1, 1)) {
+  const m = d.toLocaleString('en-US', { month: 'short' }); capMonths.push(m); if (m === 'Jan' || capMonths.length > 6) break; }
+ok('a chip for each month through January', capMonths.every((m) => card.includes(m)), [capMonths, card]);
 const chips = await page.$$eval('.cap-m', (els) => els.map((e) => e.textContent));
 const nov = chips.find((t) => t.startsWith('Nov')), dec = chips.find((t) => t.startsWith('Dec'));
 ok('November and December each show a handful at most', +nov.slice(3) <= 5 && +dec.slice(3) <= 5, chips);
