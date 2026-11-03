@@ -160,7 +160,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
 
   .appbar{display:flex;align-items:center;gap:10px;padding:calc(10px + var(--safe-top)) 12px 10px;border-bottom:1px solid var(--line2)}
   .appbar .menubtn{flex:none}
-  .searchpill{flex:1;display:flex;align-items:center;gap:9px;background:var(--panel2);border:1px solid transparent;border-radius:24px;padding:0 14px;height:44px;transition:border-color .15s,background .15s}
+  /* min-width:0 because a flex item won't shrink below its input's built-in
+     width otherwise, and on a 390px iPhone that pushed his own avatar off the
+     right edge of the screen. */
+  .searchpill{flex:1;min-width:0;display:flex;align-items:center;gap:9px;background:var(--panel2);border:1px solid transparent;border-radius:24px;padding:0 14px;height:44px;transition:border-color .15s,background .15s}
   .searchpill.focus{border-color:var(--accent);background:var(--panel)}
   .searchpill svg{flex:none;opacity:.6}
   .searchpill input{flex:1;background:transparent;border:none;color:var(--text);outline:none;font-size:14.5px;min-width:0}
@@ -189,7 +192,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .chip.active{background:var(--accent-soft);border-color:var(--accent);color:var(--accent-text);font-weight:600}
   .chip .cnt{opacity:.7;font-weight:700;margin-left:3px}
 
-  .scroll{flex:1;overflow-y:auto;min-height:0;-webkit-overflow-scrolling:touch;padding-bottom:calc(var(--nav-h) + var(--safe-bottom) + 8px)}
+  /* The bottom padding clears the pencil button as well as the nav: the FAB's
+     top edge sits 76px above the nav, and with 8px the last thing on Today
+     ("Show everything") and the last chat's date were under it, untappable. */
+  .scroll{flex:1;overflow-y:auto;min-height:0;-webkit-overflow-scrolling:touch;padding-bottom:calc(var(--nav-h) + var(--safe-bottom) + 88px)}
 
   /* conversation row */
   .conv-wrap{position:relative;overflow:hidden}
@@ -245,6 +251,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .callhead .ch-line{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--muted);flex-wrap:wrap}
   .callhead .ch-line b{color:var(--text);font-weight:650}
   .callhead .ch-line .lnk{color:var(--accent-text);cursor:pointer;font-weight:650}
+  /* The folded line never wraps: the sentence gives way, the two links stay. */
+  .callhead .ch-line .ch-short{flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .callhead .ch-line:has(.ch-short){flex-wrap:nowrap}
   .callfilters{display:flex;gap:7px;padding:10px 16px;overflow-x:auto;border-bottom:1px solid var(--line2);background:var(--panel);
     scrollbar-width:none;-webkit-overflow-scrolling:touch}
   .callfilters::-webkit-scrollbar{display:none}
@@ -348,6 +357,21 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .chat-head{display:flex;align-items:center;gap:10px;padding:calc(9px + var(--safe-top)) 10px 9px;border-bottom:1px solid var(--line);
     background:rgba(18,18,22,.96);backdrop-filter:blur(10px);position:relative;z-index:5}
   .chat-head .who{flex:1;min-width:0;cursor:pointer}
+  /* Light mode. The thread pane and its header were hard-coded near-black, so
+     on a phone set to light the name and number printed dark grey on black and
+     could barely be read, under a white composer. Same pane, light tokens. */
+  @media (prefers-color-scheme:light){
+    :root:not([data-theme="dark"]) .chat{background:var(--bg);background-image:none}
+    :root:not([data-theme="dark"]) .chat-head{background:rgba(255,255,255,.96)}}
+  :root[data-theme="light"] .chat{background:var(--bg);background-image:none}
+  :root[data-theme="light"] .chat-head{background:rgba(255,255,255,.96)}
+  /* One line for the number. With six buttons in the header a 390px phone left
+     the name about 50px, and the number broke into "(425) / 555- / 0001". */
+  .chat-head .who .num{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  @media (max-width:430px){
+    .chat-head{gap:6px;padding-left:6px;padding-right:6px}
+    .chat-head .head-actions{gap:0}
+    .chat-head .head-actions .btn.icon{width:34px;min-width:34px;padding-left:0;padding-right:0}}
   .chat-head .who .nm{font-weight:700;font-size:16px;display:flex;align-items:center;gap:7px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .chat-head .who .num{color:var(--muted);font-size:12px;margin-top:1px}
   .chat-head .av{width:40px;height:40px;font-size:15px}
@@ -2886,6 +2910,11 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .nd-sig{flex:none;display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:800;padding:4px 9px;border-radius:999px;white-space:nowrap;font-variant-numeric:tabular-nums}
   .nd-sig svg{width:12px;height:12px}
   .nd-sig.wait{color:var(--accent-text);background:var(--accent-soft)}
+  /* "No reply needed" on a waiting row: a quiet ring, not a second red chip,
+     so the wait time stays the loudest thing on the row. 34px to hit. */
+  .nd-done{flex:none;width:34px;height:34px;margin:-4px -4px -4px 0;border-radius:50%;border:1px solid var(--line);
+    background:transparent;color:var(--muted);display:inline-flex;align-items:center;justify-content:center;padding:0}
+  .nd-done:active{background:color-mix(in srgb,var(--green) 18%,transparent);color:var(--green);border-color:var(--green)}
   .nd-sig.fu{color:#eab308;background:rgba(234,179,8,.14)}
   .nd-sig.fu.high{color:#ff8388;background:var(--accent-soft)}
   .nd-sig.rem{color:#38bdf8;background:rgba(56,189,248,.14)}
@@ -4253,7 +4282,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       <button class="btn icon menubtn" id="menuBtn" data-ic="menu" aria-label="Menu"></button>
       <label class="searchpill" id="searchPill">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        <input id="search" type="text" placeholder="Search people, or a feature — try “invoice”" autocomplete="off" />
+        <input id="search" type="text" placeholder="Search people or features" autocomplete="off" />
         <button class="clr" id="searchClr" data-ic="x" type="button" aria-label="Clear"></button>
       </label>
       <div class="myavatar" id="myAvatar" title="Mikey's Mobile Detailing"></div>
@@ -4697,7 +4726,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-10-25·dst-sunday";
+  var APP_BUILD="2026-11-03·qol3";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -5053,6 +5082,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var hue=Math.abs(h)%360, hue2=(hue+26)%360;
     return"linear-gradient(140deg,hsl("+hue+",58%,52%),hsl("+hue2+",56%,38%))";
   }
+  // Inside a thread every day already has its own divider ("Saturday, Oct 31"),
+  // so a bubble's stamp is the clock time. fmtTime's "Sat" there repeated the
+  // divider and threw away the one thing it couldn't tell you: when.
+  function fmtClock(ts){return ts?new Date(ts).toLocaleTimeString([],{hour:"numeric",minute:"2-digit"}):""}
   function fmtTime(ts){if(!ts)return"";var d=new Date(ts),n=new Date();if(d.toDateString()===n.toDateString())return d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"});var diff=(n-d)/86400000;if(diff<7)return d.toLocaleDateString([],{weekday:"short"});return d.toLocaleDateString([],{month:"short",day:"numeric"})}
   function fmtFull(ts){return new Date(ts).toLocaleString([],{month:"short",day:"numeric",hour:"numeric",minute:"2-digit"})}
 
@@ -6092,7 +6125,21 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(q.scheduled&&!(t.scheduledCount>0))return false;
     if(q.draft&&!hasDraft(t.phone))return false;
     if(!q.text)return true;
-    return searchHay(t).indexOf(q.text.toLowerCase())>=0;
+    // A number typed the way it's written ("555-0001", "(425) 555-0001") or
+    // pasted from a call log found nobody, because the row holds +14255550001
+    // and only bare digits matched. Anything that's just phone characters is
+    // matched on its digits.
+    var qt=q.text.toLowerCase();
+    if(/^[\d\s().+-]+$/.test(qt)){
+      var qd=qt.replace(/\D/g,"");
+      if(qd.length>=3&&String(t.phone||"").replace(/\D/g,"").indexOf(qd)>=0)return true;
+    }
+    var hay=searchHay(t);
+    if(hay.indexOf(qt)>=0)return true;
+    // Every word, in any order: "hobart dale" or "tahoe monroe" finds the
+    // person the same as typing it in the order the row happens to store it.
+    var words=qt.split(/\s+/).filter(Boolean);
+    return words.length>1&&words.every(function(w){return hay.indexOf(w)>=0});
   }
 
   // ---- main view dispatch ----
@@ -6418,11 +6465,18 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     // The engine's own suggestions, counted but never mixed in.
     var fuN=(fu||[]).filter(function(t){return !seen[t.phone]}).length;
 
+    // Waiting rows get a check for "No reply needed". On the live list the
+    // longest waits were "Sure" and "Oh well. Thanks, anyway": nothing to
+    // answer, but clearing one meant Chats, find them, swipe, tap. Same rule as
+    // the peek's button: only when they spoke last and haven't texted STOP.
     var rowHtml=function(it,g){var t=it.t;
+      var clr=g.key==="wait"&&waitingOnMe(t)&&!t.optedOut;
       return '<div class="nd-row" data-open="'+esc(t.phone)+'">'+
         '<div class="avatar" style="width:40px;height:40px;font-size:14px;background:'+colorFor(t.phone)+'">'+esc(initials(t))+'</div>'+
         '<div class="nd-b"><div class="nd-nm">'+esc(displayName(t))+'</div><div class="nd-sub">'+esc(it.sub)+'</div></div>'+
-        g.sig(t)+'</div>'};
+        g.sig(t)+
+        (clr?'<button class="nd-done" data-nd-noreply="'+esc(t.phone)+'" title="No reply needed" aria-label="No reply needed for '+esc(displayName(t))+'">'+ic("check",16)+'</button>':'')+
+        '</div>'};
     var linkBlock=gLink.rows.length?'<div class="nd-grp">'+esc(gLink.label)+'<span class="nd-gn">'+gLink.rows.length+'</span></div><div class="nd-list">'+
       gLink.rows.slice(0,4).map(function(it){return rowHtml(it,gLink)}).join("")+'</div>':'';
     if(!total){
@@ -6439,7 +6493,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       h+='<div class="nd-grp">'+esc(g.label)+'<span class="nd-gn">'+g.rows.length+'</span></div><div class="nd-list">';
       g.rows.slice(0,4).forEach(function(it){h+=rowHtml(it,g)});
       h+='</div>';
-      if(g.rows.length>4)h+='<div class="nd-more" data-more="messages">'+(g.rows.length-4)+' more '+esc(g.label.toLowerCase())+'</div>';
+      // Each "more" lands on that group's own list. It used to drop him on all
+      // of Chats, where the four he hadn't seen were mixed in with everyone.
+      if(g.rows.length>4)h+='<div class="nd-more" data-more="messages" data-nd-more="'+g.key+'">'+(g.rows.length-4)+' more '+esc(g.label.toLowerCase())+'</div>';
     });
     // One quiet line, at the bottom, off the critical path. He can still get to
     // them; they just can't pretend to be the thing that needs him.
@@ -6540,7 +6596,14 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(hm)hm.onclick=function(){UI.mode=simple?"pro":"simple";saveUI();vibrate(6);renderHome();
       toast(simple?"Showing everything — trim it any time in Customize → Home":"Simple — Home trimmed to the essentials");};
     Array.prototype.forEach.call(box.querySelectorAll("[data-open]"),function(c){c.onclick=function(){openThread(c.getAttribute("data-open"))}});
-    Array.prototype.forEach.call(box.querySelectorAll("[data-more]"),function(c){c.onclick=function(){setTab(c.getAttribute("data-more"))}});
+    Array.prototype.forEach.call(box.querySelectorAll("[data-more]"),function(c){c.onclick=function(){
+      var g=c.getAttribute("data-nd-more");
+      if(g==="promise"){vibrate(6);openDayTool("promises");return}
+      if(g==="wait"){vibrate(6);state.filter="waiting";state.search="";el("search").value="";setTab("messages");renderFilters();renderMain();return}
+      setTab(c.getAttribute("data-more"))}});
+    Array.prototype.forEach.call(box.querySelectorAll("[data-nd-noreply]"),function(b){b.onclick=function(e){
+      // The row under it opens the chat (and marks it read); this must not.
+      e.stopPropagation();vibrate(8);noReplyNeeded(b.getAttribute("data-nd-noreply"))}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-more-day]"),function(c){c.onclick=function(){vibrate(6);openJobs("run")}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-open-money]"),function(c){c.onclick=function(){openMoney()}});
     Array.prototype.forEach.call(box.querySelectorAll("[data-open-analytics]"),function(c){c.onclick=function(){openAnalytics()}});
@@ -8074,7 +8137,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
             '<span class="sum-prev">'+esc(t.lastBody||"")+'</span>'+
             '<span class="sum-wait">'+ago(t.lastTs)+'</span></div>';
         });
-        if(needs.length>3)h+='<div class="sum-more" id="sumMore">+'+(needs.length-3)+' more waiting · open Insights →</div>';
+        if(needs.length>3)h+='<div class="sum-more" id="sumMore">+'+(needs.length-3)+' more waiting · show them →</div>';
       }
       h+='</div>';
     }
@@ -8098,7 +8161,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       };
     });
     Array.prototype.forEach.call(document.querySelectorAll(".sum-row"),function(r){r.onclick=function(){openThread(r.getAttribute("data-phone"))}});
-    var more=el("sumMore");if(more)more.onclick=function(){openAnalytics()};
+    // "+5 more waiting" is a list of people, so it opens the people. It used
+    // to open Insights, ten reports and none of them those five.
+    var more=el("sumMore");if(more)more.onclick=function(){vibrate(6);state.filter="waiting";state.search="";el("search").value="";setTab("messages")};
   }
 
   // ============================================================
@@ -8210,11 +8275,17 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     });
 
     var where=CALLS.forwardTo?prettyPhone(CALLS.forwardTo):"your phone";
+    // One line by default. The full explanation was five lines on a phone, on
+    // top of the list every time he opened Calls, to say something that never
+    // changes. It's still a tap away, and still names the phone that rings.
     var h='<div class="callhead"><div class="ch-line">'+ic("phone-incoming",13)+
-      '<span>Calls to your business number ring <b>'+esc(where)+'</b>'+
-      (CALLS.screening?' after the caller presses 1':'')+
-      '. No answer in 20 seconds and they leave a voicemail — it lands here with a transcript.'+
-      (CALLS.recording?' Calls you answer are recorded and transcribed too (callers hear that first).':'')+'</span>'+
+      (CALLS.headOpen
+        ? '<span>Calls to your business number ring <b>'+esc(where)+'</b>'+
+          (CALLS.screening?' after the caller presses 1':'')+
+          '. No answer in 20 seconds and they leave a voicemail. It lands here with a transcript.'+
+          (CALLS.recording?' Calls you answer are recorded and transcribed too (callers hear that first).':'')+'</span>'
+        : '<span class="ch-short">Rings <b>'+esc(where)+'</b> · voicemail in 20s</span>')+
+      '<span class="lnk" id="clHow">'+(CALLS.headOpen?"Less":"How")+'</span>'+
       '<span class="lnk" id="clSettings">Change</span></div></div>';
 
     h+='<div class="callfilters">';
@@ -8298,6 +8369,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   function wireCalls(){
     var box=el("scroll");
     var setg=el("clSettings");if(setg)setg.onclick=function(){vibrate(6);openMore("settings")};
+    var how=el("clHow");if(how)how.onclick=function(){vibrate(5);CALLS.headOpen=!CALLS.headOpen;renderCalls()};
     var bf=el("clBackfill");if(bf)bf.onclick=callsBackfill;
     Array.prototype.forEach.call(box.querySelectorAll(".callfilters .cf"),function(b){
       b.onclick=function(){vibrate(6);CALLS.filter=b.getAttribute("data-cf");renderMain();el("scroll").scrollTop=0};
@@ -9685,7 +9757,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     if(row){row.awaitingReply=false;row.closedReason="You said no reply needed";refreshBadges();renderMain()}
     post("/api/reply/none",{phone:phone}).then(function(d){
       if(d&&d.ok){
-        toast("No reply needed. Their next text puts them back in Waiting.");
+        // Undo, because the Today list puts this one tap from a thumb that
+        // meant to open the chat. It goes back as owed (see the Worker).
+        toast("No reply needed. Their next text puts them back in Waiting.",{undo:function(){
+          post("/api/reply/none",{phone:phone,undo:true}).then(function(){refreshThreads()}).catch(function(){refreshThreads()})}});
         if(state.phone===phone&&d.thread){state.thread=d.thread;renderThread()}
       }else toast(d&&d.error==="nothing_to_answer"?"You spoke last, so there's nothing to clear":"Couldn't save that",{bad:true});
       refreshThreads();
@@ -11175,7 +11250,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
           +tapList.slice(-3).map(function(r){return '<i>'+esc(r.emoji)+'</i>'}).join("")
           +(tapList.length>3?'<span class="n">+'+(tapList.length-3)+'</span>':'')+'</span>';
       }
-      b.innerHTML=mediaHTML+voHTML+(shownBody?hlBody(shownBody):"")+'<span class="t">'+fmtTime(m.ts)+(m.kind&&m.kind!=="manual"&&m.dir==="out"?'<span class="kind">'+esc(m.kind)+'</span>':'')+(m.by&&m.dir==="out"?'<span class="by">'+esc(m.by)+'</span>':'')+'</span>'+(m.error?'<span class="err">'+ic("alert",11)+' '+esc(m.error)+'</span>':'')+delivHTML(m,idx===lastShown)+tapHTML;
+      b.innerHTML=mediaHTML+voHTML+(shownBody?hlBody(shownBody):"")+'<span class="t">'+fmtClock(m.ts)+(m.kind&&m.kind!=="manual"&&m.dir==="out"?'<span class="kind">'+esc(m.kind)+'</span>':'')+(m.by&&m.dir==="out"?'<span class="by">'+esc(m.by)+'</span>':'')+'</span>'+(m.error?'<span class="err">'+ic("alert",11)+' '+esc(m.error)+'</span>':'')+delivHTML(m,idx===lastShown)+tapHTML;
       box.appendChild(b);lastDir=m.dir;
     });
     Array.prototype.forEach.call(box.querySelectorAll("[data-resend]"),function(btn){

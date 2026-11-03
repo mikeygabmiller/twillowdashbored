@@ -109,7 +109,11 @@ ok('an answered call reports how long you talked', /2:14/.test(await rowText(2))
 ok('a recorded call shows what was said', /2019 Tacoma/.test(await rowText(2)), await rowText(2));
 ok('and plays through the same authed proxy',
   /\/api\/media\?u=.*rec3/.test(await rows().nth(2).locator('audio').getAttribute('src') || ''));
-ok('the header says calls are recorded', /recorded and transcribed/.test(head), head);
+// Folded to one line since 2026-11-03; "How" opens the full explanation.
+await page.locator('#scroll #clHow').click(); await page.waitForTimeout(250);
+const headOpen = (await page.locator('#scroll .callhead').innerText()).replace(/\s+/g, ' ');
+ok('the header says calls are recorded', /recorded and transcribed/.test(headOpen), headOpen);
+await page.locator('#scroll #clHow').click(); await page.waitForTimeout(250);
 // A transcript that never came must not sit there implying it still might.
 ok('a failed transcript says so instead of spinning forever',
   /No transcript/i.test(await rowText(4)), await rowText(4));
