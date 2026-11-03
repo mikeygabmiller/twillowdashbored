@@ -57,6 +57,13 @@ globalThis.fetch = async (url, init) => {
 };
 const ENV = { TWILIO_AUTH_TOKEN: 't', TWILIO_ACCOUNT_SID: 'AC', TWILIO_FROM: '+14255550000', MIKEY_PHONE: '+14255550001',
   MESSAGES: KV, RESEND_API_KEY: 're_x', ALERT_EMAIL: 'm@example.com', PUBLIC_BASE_URL: 'https://dash.test' };
+// The clock is pinned to mid-October (2026-11-03). These checks book weekday
+// Full Details, and from Nov 1 the calendar rightly offers none (the job can't
+// finish before dark without work lights), so on the real date the openings
+// list came back empty and the suite crashed. What's tested here is the crew
+// calendar, not the season. Time still moves forward from the pinned instant.
+const __realNow = Date.now, __pinFrom = __realNow(), __pinAt = Date.parse('2026-10-13T17:00:00Z');
+Date.now = () => __pinAt + (__realNow() - __pinFrom);
 const worker = (await import('../src/index.js')).default;
 
 let waits = [];
