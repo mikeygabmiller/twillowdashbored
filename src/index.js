@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-11-03·review-once';
+const BUILD = '2026-11-03·price-book';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -13614,16 +13614,20 @@ function defaultConfig() {
 function defaultPlaybook() {
   return {
     about: "Mikey's Mobile Detailing is an owner-run mobile car detailing service for the Snohomish and Monroe, WA areas — Mikey comes to your driveway. It's always Mikey himself: personal, friendly work that's tailored to you, and you don't pay until you love it. 300+ cars detailed, 5-star rated.",
-    services: "- Interior Detail — starts at $200 (deep interior clean: full vacuum, carpets & seats, all interior surfaces wiped down, interior windows, door jambs, pet-hair removal and stain treatment; about 1½ hours)\n" +
-      "- Exterior Detail — starts at $130 (hand wash, wheels & tires, bug & tar removal, polish, and a spray wax/sealant so the paint really shines)\n" +
-      "- Full Detail, In & Out — starts at $260 (everything inside and out; a first-time full detail runs about 3–4 hours)\n" +
-      "Trucks and heavily-soiled vehicles are priced a bit higher. Every price is a \"starting at\" — the exact price depends on the vehicle's year, make, model and condition, and always gets confirmed before booking.\n" +
-      "Add-ons available: ceramic coating, paint correction, and headlight restoration.\n" +
-      "Recurring members pay less per visit, and their upkeep visits are quicker (around an hour) since the car stays in great shape.",
-    area: "Main area: Snohomish and Monroe. Also serves Mill Creek, Lake Stevens, Marysville, Everett, Duvall, Sultan and nearby towns — all mobile, right at your driveway.\n" +
-      "Hours: usually Wednesday–Saturday, afternoons. Never Sundays.\n" +
-      "On-site: needs power and water within 20 ft of the vehicle — everything else is covered.",
-    booking: "Booking is by text — just text Mikey your vehicle and zip and he'll send a couple of time options and confirm the appointment. There's also an instant-quote tool on mikeysdetailing.com that gives an exact price in about 30 seconds.\n" +
+    // Rewritten 2026-11-03 to the price book the website has quoted since
+    // 2026-09-27 (mikeysite PRICING.md). The old $200 / $130 / $260 and "3-4
+    // hours" were still the live playbook, so every AI-drafted quote started
+    // from them. No dashes in here: the AI copies what it reads into texts.
+    services: "- Interior Detail: $249 sedan or compact, $289 SUV or pickup, $329 van or 3-row. Full vacuum, carpets and seats, every interior surface wiped down, interior windows, door jambs. About 90 minutes, 2 to 4 hours with shampoo or lots of pet hair.\n" +
+      "- Exterior Detail: $199 sedan, $239 SUV or pickup, $279 van or 3-row. Hand wash, decontamination and clay bar, wheels and tires, exterior glass, wax or sealant on the paint. About 1 to 2 hours.\n" +
+      "- Full Detail (inside and out): $369 sedan, $409 SUV or pickup, $449 van or 3-row. Both of the above, $79 less than booking them apart. 3 to 5 hours.\n" +
+      "Condition adds $30 if it needs work, $60 if it's really rough. Add-ons: carpet shampoo $20, exterior polish $30, ceramic wax $20, RainX on the glass $10, RainX Anti-Fog $30.\n" +
+      "Ceramic coating (from $500) and paint correction (from $400) are quoted per car from photos. Headlight restoration and odor removal have no set price: he quotes them from a photo.\n" +
+      "Clean Club: an upkeep detail every 4 or 8 weeks at $125 a visit. Mikey explains how joining works on a call.",
+    area: "Based in Snohomish. Serves Snohomish, Lake Stevens, Everett, Monroe, Mill Creek, Marysville, Bothell, Duvall, Mukilteo, Woodinville, Granite Falls and Arlington, right at your driveway, no travel fee and the same price in every town. Lynnwood, Edmonds and anywhere farther are a no for now.\n" +
+      "Hours: weekday afternoons and Saturdays. Never Sundays, never same day.\n" +
+      "On-site: needs an outdoor water spigot and a power outlet within about 20 feet of the car. He brings everything else.",
+    booking: "Booking is by text — just text Mikey your vehicle and zip and he'll send a couple of time options and confirm the appointment. There's also an instant-quote tool on mikeysdetailing.com that gives an exact price in about 60 seconds.\n" +
       "For a new customer, find out: their vehicle year/make/model, address or zip, whether they want interior / exterior / or full, the car's current condition (photos help), and the timeframe they're hoping for.\n" +
       "Guarantee: you don't pay until you love it.\n" +
       "No travel fee — the price is the price.\n" +
@@ -13637,7 +13641,7 @@ function defaultPlaybook() {
       "2. CALL THE VEHICLE what they'd call it: \"your Ram\", \"the truck\", \"your Jeep\". Never read the full " +
       "\"2024 Ram 3500 crew cab diesel\" back at them.\n" +
       "3. NAME THE SERVICES, THEN ONE FIRM TOTAL. Not a range — an actual number, with the package spelled out beside it: " +
-      "\"For a Full Detail, Exterior Polish, Carpet Shampoo, Ceramic Wax, and RainX Window treatment, it'll be $400.\" " +
+      "\"For a Full Detail, Exterior Polish, Carpet Shampoo, Ceramic Wax, and RainX Window treatment, it'll be $489.\" " +
       "The number must come from the worked quotes below or from Mikey. Never invent one.\n" +
       "4. CLOSE BY ASKING FOR THE ADDRESS — not for a time: \"If you send over your address or general street area, I can let " +
       "you know how soon I can come by.\" The address comes first because it decides whether he can take the job at all. " +
@@ -13653,40 +13657,36 @@ function defaultPlaybook() {
       "MATCH URGENCY, DON'T DEFLECT IT. Someone in a hurry gets a hedged yes, not a policy: \"I can probably squeeze in that " +
       "detail for your Ram tomorrow. If you send over your address, I'll let you know for sure if I can come by.\" " +
       "Hedge with probably / likely / might — never a hard promise, never a flat no.\n\n" +
-      "WORKED QUOTES — real jobs, real numbers. Use these as the reference points for a similar vehicle and package; " +
-      "if nothing here is close, ask rather than interpolate:\n" +
-      "- 2024 Ram 3500 crew cab diesel — Interior Detail, Exterior Detail, Carpet Shampoo, Exterior Polish, Ceramic Wax: $450\n" +
-      "- 2022 Ford F450 — Full Detail, Exterior Polish, Carpet Shampoo, Ceramic Wax, RainX Window treatment: $400\n" +
-      "- 2009 Acura RDX — Full Detail, Carpet Shampoo: $380\n" +
-      "- 2013 Jeep Wrangler — Full Interior Detail, Carpet Shampoo (cloth seats): $300\n" +
-      "- 2012 Ford Fusion — flat-rate pre-sale detail, interior + exterior + basic engine wipe-down: $300\n\n" +
+      "WORKED QUOTES, from the price book above (base for the size, plus condition, plus add-ons). Use these as the reference " +
+      "points for a similar vehicle and package; if nothing here is close, ask rather than work out a new total:\n" +
+      "- 2024 Ram 3500 (pickup), pretty clean: Full Detail, Carpet Shampoo, Exterior Polish, Ceramic Wax: $479\n" +
+      "- 2022 Ford F450 (pickup), pretty clean: Full Detail, Exterior Polish, Carpet Shampoo, Ceramic Wax, RainX Window treatment: $489\n" +
+      "- 2009 Acura RDX (SUV), pretty clean: Full Detail, Carpet Shampoo: $429\n" +
+      "- 2013 Jeep Wrangler (SUV), needs work: Interior Detail, Carpet Shampoo: $339\n" +
+      "- Any sedan, pretty clean: Full Detail $369, Interior Detail $249, Exterior Detail $199\n\n" +
       "SERVICE NAMES he actually quotes in: Interior Detail, Exterior Detail, Full Detail, Carpet Shampoo, Exterior Polish, " +
-      "Ceramic Wax, RainX Window treatment, headlight restoration, paint correction, and the flat-rate pre-sale detail " +
-      "(interior + exterior + a basic engine wipe-down, for a car being sold).\n\n" +
+      "Ceramic Wax, RainX Window treatment, RainX Anti-Fog, headlight restoration and paint correction.\n\n" +
       "HOW THESE READ END TO END — match this exactly:\n" +
-      "- \"Awesome! So for your Ram, an Interior Detail, Exterior Detail, Carpet Shampoo, Exterior Polish, and Ceramic Wax " +
-      "will be $450. Feel free to send over your address or general street location, and I'll get you a spot on my schedule.\"\n" +
+      "- \"Awesome! So for your Ram, a Full Detail, Carpet Shampoo, Exterior Polish, and Ceramic Wax " +
+      "will be $479. Feel free to send over your address or general street location, and I'll get you a spot on my schedule.\"\n" +
       "- \"Sounds good! I can do a full interior detail and carpet shampoo for you. I can't guarantee how much of the stains " +
-      "I can get out, but I'll go over all the surfaces and get out as much as I can. I can do that for $300. If you send over " +
+      "I can get out, but I'll go over all the surfaces and get out as much as I can. I can do that for $339. If you send over " +
       "your address or general street area, I can let you know how soon I can come by.\"\n" +
-      "- \"Great! My flat-rate pre-sale detail is $300. That includes a full interior and exterior detail, plus a basic engine " +
-      "wipe-down, to get your car ready to sell. I might even be able to squeeze you in this week if you like. Let me know how " +
-      "that sounds.\"\n" +
       "- \"Thanks for the info! I can definitely clean that seatbelt for you. That service is included with the carpet shampoo " +
       "add-on, so it won't add to the price at all. How soon are you looking to get it detailed?\"",
     tone: "Friendly and warm, a confident pro, easygoing with a little humor, low-pressure, local and personable. " +
       "Keep it short and casual like a real text. No emoji graphics (no 🚗✨) — but a simple \":)\" now and then is on-brand; that's how Mikey texts. " +
       "Sometimes sign off with \"- Mikey\", but not on every text.",
     faqs: "Q: How much does it cost?\n" +
-      "A: Interior details start at $200, exterior at $130, and a full in-and-out starts at $260. Trucks and really dirty vehicles are a bit more. Send me your car's year, make and model plus what you're after and I'll lock in an exact price — and you don't pay until you love it.\n\n" +
+      "A: For a sedan, an interior detail is $249, an exterior is $199, and a full detail inside and out is $369. SUVs and pickups are $40 more, vans and 3-rows $80 more, and a really dirty car a little more on top. Send me your car's year, make and model plus what you're after and I'll give you an exact price, and you don't pay until you love it.\n\n" +
       "Q: Do you come to me?\n" +
       "A: Yes, I come to you! All I need is power and water within 20 ft of the vehicle.\n\n" +
       "Q: How long does a full detail take?\n" +
-      "A: A first-time full detail usually runs about 3–4 hours.\n\n" +
+      "A: A full detail usually takes 3 to 5 hours, depending on the size and condition.\n\n" +
       "Q: Can you get out pet hair, stains, or smells?\n" +
       "A: Yes! I have a special pet-hair removal process. For carpet and seat stains there's no guaranteeing they'll fully come out, but I'll sure as heck try!\n\n" +
       "Q: Do you do interior-only or exterior-only?\n" +
-      "A: Yep! You can book interior-only (starts at $160), exterior-only (starts at $130), or the full in-and-out (starts at $260) — whatever you need.\n\n" +
+      "A: Yep! For a sedan, interior-only is $249, exterior-only is $199, or the full detail inside and out is $369. Whatever you need.\n\n" +
       "Q: Do you offer ceramic coating or paint correction?\n" +
       "A: I do — ceramic coating, paint correction, and headlight restoration are available as add-ons. Send me your car's info or a photo and I'll get you a price.\n\n" +
       "Q: Do you do regular or recurring cleanings?\n" +
@@ -13791,7 +13791,10 @@ function cacheConfig(cfg) {
 // with a newer seed version we upgrade the stored playbook to the current
 // defaults, then stamp `playbookSeed` so this never runs again (protecting any
 // later dashboard edits). Exactly ONE KV write, ever, per version bump.
-const PLAYBOOK_SEED_VERSION = 4;
+// 5 (2026-11-03): the price book, the twelve towns, his real hours and the
+// 60-second quote. Checked live first: the stored playbook was byte for byte
+// the v4 default in every field, so this overwrites nothing he wrote.
+const PLAYBOOK_SEED_VERSION = 5;
 async function seedPlaybookIfNeeded() {
   const cfg = await loadConfig();
   if ((cfg.playbookSeed || 0) >= PLAYBOOK_SEED_VERSION) return;

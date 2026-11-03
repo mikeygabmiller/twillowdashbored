@@ -128,7 +128,9 @@ const p = defaultPlaybook();
 check('there is a quote-reply section',     !!(p.quoting && p.quoting.length > 500), true);
 check('it tells him to ask for the address', /send over your address/.test(p.quoting), true);
 check('it gates on condition before pricing', /condition/i.test(p.quoting), true);
-check('it carries the real worked quotes',   ['$450', '$400', '$380', '$300'].every((n) => p.quoting.includes(n)), true);
+// 2026-11-03: worked out from the website's price book, not the summer's hand
+// quotes, so a draft lands on the number the site already promised.
+check('it carries the worked quotes',        ['$479', '$489', '$429', '$339'].every((n) => p.quoting.includes(n)), true);
 // The old golden rule told the AI to never give a firm price — the exact opposite
 // of what he does at this moment, in the same prompt as the examples showing him
 // doing it. A contradiction the model resolved by inventing a number.
@@ -137,8 +139,15 @@ check('they forbid inventing one instead',      /isn't in this playbook/.test(p.
 check('and one voice, not a team "we"',         /never \\?"we\\?"/i.test(p.rules) || /never "we"/.test(p.rules), true);
 // $160 / $180 / $200 for the same service, across code and live config, all fed
 // to the model at once.
-check('one interior price everywhere', (p.services.match(/Interior Detail — starts at \$(\d+)/) || [])[1], '200');
-check('and the FAQ agrees with it',    (p.faqs.match(/Interior details start at \$(\d+)/) || [])[1], '200');
+check('one interior price everywhere', (p.services.match(/Interior Detail: \$(\d+) sedan/) || [])[1], '249');
+check('and the FAQ agrees with it',    (p.faqs.match(/an interior detail is \$(\d+)/) || [])[1], '249');
+// The book since 2026-09-27: $199 / $249 / $369 for a sedan. The prices it
+// replaced must never come back, in any field the model reads.
+const everything = Object.values(p).join('\n');
+check('the full detail is the book price',  /Full Detail \(inside and out\): \$369 sedan, \$409 SUV or pickup, \$449 van/.test(p.services), true);
+check('no retired price anywhere',          (everything.match(/\$(130|160|200|260|300|380|450)\b/g) || []), []);
+check('the twelve towns, not Sultan',       /Sultan/.test(p.area) || !/Granite Falls and Arlington/.test(p.area), false);
+check('the quote takes 60 seconds',         /about 60 seconds/.test(p.booking) && !/30 seconds/.test(everything), true);
 check('every field fits the save cap',  Object.values(p).every((v) => String(v).length <= 6000), true);
 
 console.log(`\n================  ${PASS} passed, ${FAIL} failed  ================`);
