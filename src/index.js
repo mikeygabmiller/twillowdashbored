@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-10-25·dst-sunday';
+const BUILD = '2026-11-03·review-once';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -10975,12 +10975,17 @@ function computeFollowupPlan(thread, now, cfg) {
   }
 
   // 2) Won lifecycle: review ask, then a rebook nudge months later.
+  //    A customer who has already been texted the review link (by this step, by
+  //    the Jobs board's "all finished" text, or by Mikey typing it) is never
+  //    asked again: the next step is the rebook. Before 2026-11-03 the "all
+  //    finished" text was followed a day later by this ask, so they got it twice.
   if (status === 'won') {
     const anchor = thread.statusAt || last.ts;
-    if (fu.lastStepKey !== 'won:review' && fu.lastStepKey !== 'won:rebook') {
+    const asked = reviewAlreadyAsked(thread, cfg);
+    if (!asked && fu.lastStepKey !== 'won:review' && fu.lastStepKey !== 'won:rebook') {
       return { stage: 'won', step: 1, stepKey: 'won:review', dueAt: anchor + FOLLOWUP.WON_REVIEW_MS, urgency: 'normal', auto: true };
     }
-    if (fu.lastStepKey === 'won:review') {
+    if (fu.lastStepKey === 'won:review' || (asked && fu.lastStepKey !== 'won:rebook')) {
       return { stage: 'won', step: 2, stepKey: 'won:rebook', dueAt: anchor + (cfg.rebookDays || 90) * 86400000, urgency: 'normal', auto: true };
     }
     return null; // review + rebook both done
@@ -11003,6 +11008,17 @@ function computeFollowupPlan(thread, now, cfg) {
     });
   }
   return null; // gone cold after the final nudge
+}
+
+// Has this customer ever been texted the Google review link? Read off the
+// conversation itself, not the follow-up log, because the log keeps only its
+// last 20 entries and the Jobs board's "all finished" text carries the link
+// without touching the log. One ask per customer: a regular who books every
+// month shouldn't get a review request after every visit.
+function reviewAlreadyAsked(thread, cfg) {
+  const url = String((cfg && cfg.reviewUrl) || '').trim();
+  if (!url) return false;
+  return (thread.messages || []).some((m) => m && m.dir === 'out' && String(m.body || '').indexOf(url) !== -1);
 }
 
 // Whether a due step should send itself, given global + per-contact autopilot.
@@ -18180,6 +18196,16 @@ async function apiBookingAction(request) {
     // "all finished" text) — deliberately not duplicated here.
     const wasWon = thread.status === 'won';
     if (!wasWon) { thread.status = 'won'; thread.statusAt = now; }
+    else if (!reviewAlreadyAsked(thread, cfg)) {
+      // Won before the job happened (a quote accepted, or Won tapped when they
+      // booked). The review ask came due a day after that, before the car was
+      // touched, and skipping it then retired it for good: once the job was
+      // done nothing asked again (2026-11-03). Never asked, so start the review
+      // step over from today, the day of the actual job.
+      thread.statusAt = now;
+      const fu = thread.followup || (thread.followup = defaultFollowup());
+      if (fu.lastStepKey === 'won:review' || fu.lastStepKey === 'won:rebook') fu.lastStepKey = '';
+    }
     thread.lastJob = { at: now, service: bk.serviceName || '', jobId: bk.id };
     await saveThread(thread); await updateIndexEntry(thread);
 
