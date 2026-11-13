@@ -16855,6 +16855,18 @@ async function authRole(request) {
   // Content-Type), so it opens nothing to other websites.
   const auth = String(request.headers.get('Authorization') || '');
   if (/^Bearer\s+/i.test(auth)) return bearerRole(request, auth.replace(/^Bearer\s+/i, '').trim());
+  // The same, saved as "username and password" (Basic). Claude's settings form
+  // won't take a 4-character token, so Mikey saved his PIN this way. Only the
+  // password half counts; the username is whatever he typed and isn't checked.
+  // If he put the PIN in the username box and left the password empty, use that.
+  if (/^Basic\s+/i.test(auth)) {
+    let pair = '';
+    try { pair = atob(auth.replace(/^Basic\s+/i, '').trim()); } catch { pair = ''; }
+    const i = pair.indexOf(':');
+    const user = i < 0 ? pair : pair.slice(0, i);
+    const pass = i < 0 ? '' : pair.slice(i + 1);
+    return bearerRole(request, (pass || user).trim());
+  }
   const c = getCookie(request, 'mkd_auth');
   if (!c) return '';
   if (c === (await tokenFor('owner'))) return 'owner';
