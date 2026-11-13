@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-11-03·qol3';
+const BUILD = '2026-11-13·bearer';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -16848,6 +16848,13 @@ function helperSecret(cfg) {
 // the dashboard is open, and open means Mikey.
 async function authRole(request) {
   if (!ENV.DASHBOARD_PASSWORD) return 'owner';
+  // Claude's cloud sessions sign in with the owner password in an
+  // "Authorization: Bearer" header. The value lives in Mikey's Claude cloud
+  // settings and is added by its network proxy, so it is never in this repo or
+  // in a chat. Browsers can't send this header cross-site (CORS only allows
+  // Content-Type), so it opens nothing to other websites.
+  const auth = String(request.headers.get('Authorization') || '');
+  if (/^Bearer\s+/i.test(auth)) return bearerRole(request, auth.replace(/^Bearer\s+/i, '').trim());
   const c = getCookie(request, 'mkd_auth');
   if (!c) return '';
   if (c === (await tokenFor('owner'))) return 'owner';
@@ -16856,6 +16863,24 @@ async function authRole(request) {
   return '';
 }
 async function isAuthed(request) { return !!(await authRole(request)); }
+
+// The header path shares the login screen's wrong-guess counter, so it is no
+// easier to guess the PIN this way than by typing it. Owner only: the helper
+// PIN is never accepted here. A right answer during a lockout is still refused,
+// or the lockout would stop nothing.
+async function bearerRole(request, pw) {
+  if (!pw) return '';
+  const key = 'loginfail:' + loginIp(request);
+  const now = Date.now();
+  let rec = null;
+  try { rec = await kv().get(key, { type: 'json' }); } catch { rec = null; }
+  if (rec && rec.n >= LOGIN_MAX_FAILS && now - (rec.at || 0) < LOGIN_LOCK_MS) return '';
+  if (pw === ENV.DASHBOARD_PASSWORD) return 'owner';
+  const fresh = !rec || now - (rec.at || 0) >= LOGIN_LOCK_MS;
+  const next = { n: (fresh ? 0 : rec.n) + 1, at: now };
+  try { await kv().put(key, JSON.stringify(next), { expirationTtl: 3600 }); } catch { /* the count is a brake, not a lock */ }
+  return '';
+}
 
 // Wrong guesses are counted per address and cut off after a handful. A four-digit
 // PIN is 10,000 guesses, which is nothing to a script with no limit and a long
