@@ -335,7 +335,10 @@ NOW = at('2026-10-10', '10:00');
 alerts.length = 0;
 r = await (await M.apiBook(req({ service: 'exterior', size: 'suv', date: '2026-10-16', slot: '13:00', name: 'Plain Jane',
   phone: '4255550170', address: '3 Ash', city: 'Monroe', smsConsent: true, estimate: 239 }))).json();
-ok('a website booking books', r.ok && r.status === 'confirmed', r);
+// Since 2026-11-13 a website booking holds the time as a request and texts
+// nobody (Mikey texts them first); a club sign-up above still confirms on
+// the call, because he's on the phone with them.
+ok('a website booking books, as a request', r.ok && r.status === 'pending', r);
 ok('and still sends its own booking alert', alerts.length === 1 && /New booking/.test(alerts[0].subject), alerts.map((a) => a.subject));
 ok('and is not a club sign-up', !(await M.loadBookings()).find((b) => b.name === 'Plain Jane').club && !(await M.loadThread('+14255550170')).plan);
 

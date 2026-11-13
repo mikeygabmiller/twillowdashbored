@@ -47,6 +47,7 @@ ok('Sunday is empty (off)', await page.inputValue('[data-slotday="0"]') === '');
 ok('Full Detail is 270 min', await page.inputValue('[data-f="slotRules.jobMin.full"]') === '270');
 ok('lights start off', !(await page.isChecked('[data-f="slotRules.lights"]')));
 ok('instant confirm starts on', await page.isChecked('[data-f="slotRules.autoConfirm"]'));
+ok('automatic texts to website bookings start off (Mikey texts them first)', !(await page.isChecked('[data-f="slotRules.webAutoText"]')));
 ok('the old grid says it is not in charge', /Only used if fixed start times are off/.test(await page.textContent('#settingsView')));
 
 console.log('\nA save sends what he typed');

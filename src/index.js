@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-11-13·bearer';
+const BUILD = '2026-11-13·hold-no-text';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -17517,8 +17517,16 @@ function bookingDefaults() {
       cutoff: '21:00',
       // A booking from one of the twelve towns he serves is confirmed on the
       // spot, with the same confirm text and reminders his Confirm tap sends.
-      // Anywhere else stays a request he answers himself.
+      // Anywhere else stays a request he answers himself. Since 2026-11-13 this
+      // only applies to a website booking while webAutoText is on; a Clean
+      // Club sign-up on the call page always follows it.
       autoConfirm: true,
+      // Off (Mikey, 2026-11-13): a website booking holds the time they picked
+      // as a request and texts them nothing. Nearly everyone who gets a quote
+      // books a time, and often he can't do that exact time, so he wants to
+      // text them first himself and sort it out. On: the old way, a confirm
+      // text in his twelve towns and a "got your request" text anywhere else.
+      webAutoText: false,
     },
     // Booking-lifecycle texts. Each is a fixed template filled in from the booking
     // record — no AI writes them, so none can invent a price or a time. Individually
@@ -17831,6 +17839,9 @@ async function bkRateLimited(request, what) {
 //   opts.thread  called with (thread, rec) before the thread is saved, so the
 //                caller's changes ride the same write
 //   opts.alert   false: the caller sends its own alert (one email, not two)
+//   opts.autoText true: text them now (confirm, or "got your request") even
+//                while webAutoText is off. The call page sets it: Mikey is on
+//                the phone with them, so there's nothing to sort out first.
 // Returns { ok: true, rec, detail, instant } or { ok: false, status, error }.
 async function bkCreate(b, opts) {
   opts = opts || {};
@@ -17856,9 +17867,14 @@ async function bkCreate(b, opts) {
   const first = name.split(/\s+/)[0];
   const R = cfg.slotRules || {};
   const durationMin = (R.on && Number(R.jobMin && R.jobMin[service])) || svc.duration[size], base = svc.price[size];
+  // Whether anything texts them now. Off for a website booking unless he
+  // turns webAutoText on (Mikey, 2026-11-13: he often can't do the exact
+  // time they picked and wants to text them first himself). The time is
+  // still held, as a request, so nobody else can take it while he does.
+  const autoText = !!(opts.autoText || R.webAutoText);
   // Instant only where he actually goes. Anything else is a request he answers
   // himself, which is also how a far-off address gets a human "that's a stretch".
-  const instant = !!(R.on && R.autoConfirm && bkServedTown(city));
+  const instant = !!(autoText && R.on && R.autoConfirm && bkServedTown(city));
   // Rain-Ready: book a Full Detail by December 31, 2026 and ceramic wax, RainX
   // and RainX Anti-Fog are free (anti-fog took the polish's place, Mikey 2026-10-15). Decided on the day it's BOOKED, so a January job booked
   // in December keeps it (Mikey, 2026-09-29: the appointment can run to Jan 31).
@@ -17881,6 +17897,9 @@ async function bkCreate(b, opts) {
     date, slot, dateLabel, apptAt: bkLaEpoch(date, slot), durationMin,
     estimate, base, name, phone, address, city, email: String(b.email || '').trim(),
     notes: String(b.notes || '').trim(), ackWaterPower: b.ackWaterPower !== false, smsConsent: b.smsConsent !== false,
+    // Nothing went to them: the Bookings card says so, so he knows the first
+    // text is his to send.
+    noText: !autoText || undefined,
   };
   if (opts.rec) Object.assign(rec, opts.rec);
   const all = await loadBookings(); all.unshift(rec); await saveBookings(all);
@@ -17906,7 +17925,9 @@ async function bkCreate(b, opts) {
   }
 
   const detail = [
-    instant ? `🗓 BOOKED (confirmed automatically, they got your confirm text)` : `🗓 BOOKING REQUEST (pending)`,
+    instant ? `🗓 BOOKED (confirmed automatically, they got your confirm text)`
+      : autoText ? `🗓 BOOKING REQUEST (pending)`
+      : `🗓 BOOKING REQUEST (time held, NOT texted yet: text them first)`,
     `${rec.serviceName} · ${rec.sizeLabel}${rec.vehicle ? ` · ${rec.vehicle}` : ''}${b.condition ? ` · ${String(b.condition).slice(0, 30)}` : ''}`,
     rec.addons.length ? `Add-ons: ${rec.addons.join(', ')}` : null,
     rainReady ? `Rain-Ready: ceramic wax, RainX & anti-fog free` : null,
@@ -17946,7 +17967,7 @@ async function bkCreate(b, opts) {
   thread.notes = (thread.notes ? thread.notes + '\n\n' : '') + `${detail}\n(received ${stamp})`;
   if (instant) {
     await bkConfirmTexts(thread, rec, cfg, await loadConfig());
-  } else if (rec.smsConsent) {
+  } else if (autoText && rec.smsConsent) {
     const msg = sayOneOf(`${phone}:bkack`, [
       `Hey ${first}, it's Mikey! Got your request for ${dateLabel} at ${bkFmt12(slot)} (${bkTextService(rec.serviceName)}). I'll text you shortly to confirm and lock it in. Talk soon! - Mikey`,
       `Hey ${first}, it's Mikey. Got your request for ${dateLabel} at ${bkFmt12(slot)} for the ${bkTextService(rec.serviceName)}. Let me check it against my week and I'll text you right back to lock it in. - Mikey`,
@@ -17970,7 +17991,8 @@ async function bkCreate(b, opts) {
     try { await kv().put('push:note', JSON.stringify({ title: `🗓 New booking: ${name}`, body: `${rec.serviceName}, ${dateLabel} at ${bkFmt12(slot)}${city ? `, ${city}` : ''}`, at: Date.now() }), { expirationTtl: 900 }); } catch (e) {}
     notifyMikey(`🗓 New booking — ${name}`, bkAlertBody(rec, `${detail}\n\n` + (instant
       ? `It's on your schedule. Dashboard → Bookings if you need to move or cancel it.`
-      : `Open your dashboard → Bookings to confirm.`))).catch(() => {});
+      : autoText ? `Open your dashboard → Bookings to confirm.`
+      : `They haven't had a text from you. The site told them you'd text to confirm the time. Text them, then Confirm in Dashboard → Bookings (that sends the confirm text and reminders).`))).catch(() => {});
   }
   return { ok: true, rec, detail, instant };
 }
@@ -19149,6 +19171,9 @@ function bkSanitizeSlotRules(c, d) {
     lights: c.lights === true,
     cutoff: hm(c.cutoff) || d.cutoff,
     autoConfirm: c.autoConfirm === false ? false : true,
+    // Only an explicit yes turns it on, so a save from an older screen that
+    // never knew the box can't start texting people.
+    webAutoText: c.webAutoText === true,
   };
 }
 function bkSanitizeConfig(input) {
@@ -21234,7 +21259,7 @@ async function apiClubJoin(request) {
     estimate: p.price, addons: [], notes: jdStr(b.notes, 500), smsConsent: b.smsConsent !== false,
     ackWaterPower: b.ackWaterPower, vid: b.vid,
   }, {
-    lines, alert: false, rec: { club: token },
+    lines, alert: false, autoText: true, rec: { club: token },
     thread: (t) => {
       // The plan is what reminds him when each club visit comes round, with
       // the rebook text written. It never texts or books on its own.

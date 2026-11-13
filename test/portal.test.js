@@ -153,9 +153,9 @@ const b2 = await (await M.apiBook(req({
 if (b2.ok) {
   const made = (await M.loadBookings()).find((x) => x.id === b2.id) || (await M.loadBookings())[0];
   ok('the booking is attributed to the token\'s customer, not to posted data', made.phone === '+14255551234', made.phone);
-  // Exactly like the website does: since 2026-09-29 a booking from one of the
-  // twelve towns (Everett) is confirmed on the spot; anywhere else waits.
-  ok('and it lands exactly like a website booking from Everett: confirmed on the spot', made.status === 'confirmed', made.status);
+  // Exactly like the website does: since 2026-11-13 a booking is a held
+  // request that texts nobody until Mikey has texted them himself.
+  ok('and it lands exactly like a website booking: a held request, not texted', made.status === 'pending' && made.noText === true, made);
 } else {
   ok('booking through the link is accepted', false, b2);
   ok('(skipped)', false);
