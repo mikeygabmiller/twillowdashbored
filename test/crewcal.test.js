@@ -69,6 +69,10 @@ async function call(method, path, body) {
   await settle();
   try { return await res.json(); } catch { return null; }
 }
+// These checks are about what a CONFIRMED booking does to the calendars, so
+// they run with website bookings texting and confirming on their own, the
+// way they did before Mikey switched that off (2026-11-13, webAutoText).
+store.set('bk:config', JSON.stringify({ slotRules: { webAutoText: true } }));
 let nth = 0;
 async function book(city, name, extra) {
   const o = await call('GET', '/api/next-openings?service=full&size=suv&n=6');

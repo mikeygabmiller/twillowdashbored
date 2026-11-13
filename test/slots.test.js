@@ -120,15 +120,36 @@ ok('in date order', no.openings.every((o, i) => i === 0 || (o.date + o.slot) > (
 for (const o of no.openings) ok(`${o.date} ${o.slot} is a real bkAvailability slot`, (await avail(o.date, 'full')).includes(o.slot));
 ok('labels are human', /^Tue, Oct 13$/.test(no.openings[0].label) && no.openings[0].time === '1:00 PM', no.openings[0]);
 
-section('Booking from a town he serves confirms on the spot');
+section('Website bookings hold the time and text nobody (Mikey, 2026-11-13)');
+sms.length = 0; alerts.length = 0;
+let r = await (await M.apiBook(req({ service: 'exterior', size: 'suv', date: '2026-10-13', slot: '13:00', name: 'Quiet Quinn',
+  phone: '4255550150', address: '14 Cedar Ave', city: 'Everett', smsConsent: true, estimate: 239 }))).json();
+ok('it books, as a request even in Everett', r.ok && r.status === 'pending', r);
+ok('no text goes to the customer', sms.length === 0, sms);
+let th = await M.loadThread('+14255550150');
+ok('nothing in their thread from him, nothing queued', !th.messages.some((m) => m.dir === 'out') && !th.scheduled.length, th);
+ok('the record says nobody texted them', (await M.loadBookings()).find((b) => b.name === 'Quiet Quinn').noText === true);
+ok('his alert tells him to text them first', alerts.length === 1 && /NOT texted yet/.test(alerts[0].text) && /Text them, then Confirm/.test(alerts[0].text), alerts[0] && alerts[0].text);
+ok('the time is still held from the next person', (await avail('2026-10-13', 'exterior')).length === 0);
+sms.length = 0;
+r = await (await M.apiBook(req({ service: 'exterior', size: 'suv', date: '2026-10-14', slot: '13:00', name: 'Far Fran',
+  phone: '4255550151', address: '5 Oak St', city: 'Lynnwood', smsConsent: true }))).json();
+ok('outside his towns: a request, and no "got your request" text either', r.ok && r.status === 'pending' && sms.length === 0, sms);
+await M.saveBookings([]);
+const clean0 = M.bkSanitizeConfig(await M.loadBookingConfig());
+ok('a Settings save keeps it off unless he ticks it', clean0.slotRules.webAutoText === false);
+ok('…and only an explicit yes turns it on', M.bkSanitizeConfig(Object.assign({}, clean0, { slotRules: Object.assign({}, clean0.slotRules, { webAutoText: 'yes' }) })).slotRules.webAutoText === false);
+await setRules({ webAutoText: true });
+
+section('With automatic texts on: booking from a town he serves confirms on the spot');
 ok('town matching forgives case and ", WA"', M.bkServedTown('mill creek, WA') && M.bkServedTown(' Everett ') && !M.bkServedTown('Lynnwood'));
 sms.length = 0; alerts.length = 0;
-let r = await (await M.apiBook(req({ service: 'exterior', size: 'suv', date: '2026-10-13', slot: '13:00', name: 'Sam Park',
+r = await (await M.apiBook(req({ service: 'exterior', size: 'suv', date: '2026-10-13', slot: '13:00', name: 'Sam Park',
   phone: '4255550101', address: '1425 Cedar Ave', city: 'Everett', smsConsent: true, estimate: 239 }))).json();
 ok('it books', r.ok, r);
 ok('as confirmed, not pending', r.status === 'confirmed', r);
 ok('the customer gets the confirm text, with spigot and outlet', sms.length === 1 && /you're booked|got you down|see you/.test(sms[0].body) && /spigot|faucet/.test(sms[0].body), sms);
-let th = await M.loadThread('+14255550101');
+th = await M.loadThread('+14255550101');
 ok('the day-before and morning reminders are queued', th.scheduled.filter((x) => x.kind === 'booking').length === 2, th.scheduled);
 ok('Mikey hears it is already on his schedule', alerts.length === 1 && /confirmed automatically/.test(alerts[0].text), alerts[0] && alerts[0].text);
 ok('the slot is gone for the next person', (await avail('2026-10-13', 'exterior')).length === 0);

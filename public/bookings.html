@@ -248,6 +248,10 @@ function card(b){
   meta.push('<div class="row"><span class="k">Est.</span><span class="est">$'+(b.estimate||b.base||0)+'</span></div>');
   if(b.ackWaterPower===false) meta.push('<div class="row"><span class="k">⚠</span><span class="warn">No water/power confirmed — sort out on site</span></div>');
   if(b.notes) meta.push('<div class="row"><span class="k">Notes</span><span>'+esc(b.notes)+'</span></div>');
+  // Booked on the website with automatic texts off: nothing has gone to them,
+  // and the site told them he'd text to confirm. Different time? Decline
+  // frees this one (no text goes out unless he's switched that text on).
+  if(b.status==="pending"&&b.noText) meta.push('<div class="row nottexted"><span class="k">💬</span><span class="warn">Not texted yet. Text them first, then Confirm. Need another time? Decline frees this one.</span></div>');
   var tel=(b.phone||"").replace(/[^\d+]/g,""), actions="";
   if(b.status==="pending"){ actions='<div class="contact"><a href="tel:'+tel+'">📞 Call</a><a href="sms:'+tel+'">💬 Text</a></div>'
     +'<div class="bk-actions"><button class="b primary" data-act="confirm" data-id="'+b.id+'">✓ Confirm &amp; text</button><button class="b danger sm" data-act="decline" data-id="'+b.id+'">Decline</button></div>'; }
@@ -344,8 +348,10 @@ function renderSettings(c){
       grid3(fld("Exterior (min)", inputNum("slotRules.jobMin.exterior", RJ.exterior)), fld("Interior (min)", inputNum("slotRules.jobMin.interior", RJ.interior)), fld("Full Detail (min)", inputNum("slotRules.jobMin.full", RJ.full)))+
       '<label class="chk"><input type="checkbox" data-f="slotRules.lights" '+(R.lights?"checked":"")+'> My work lights are ready (interiors can run past dark)</label>'+
       '<div class="hint" style="margin:0 0 8px 27px">On: only the outside part of a job has to finish before dark (Full Details are done exterior first), so weekday Full Details come back in winter.</div>'+
+      '<label class="chk"><input type="checkbox" data-f="slotRules.webAutoText" '+(R.webAutoText===true?"checked":"")+'> Text website bookings automatically</label>'+
+      '<div class="hint" style="margin:0 0 8px 27px">Off: the time they pick is held for them as a request and nothing is texted. You text them first, then tap Confirm. On: they get a text the moment they book.</div>'+
       '<label class="chk"><input type="checkbox" data-f="slotRules.autoConfirm" '+(R.autoConfirm!==false?"checked":"")+'> Confirm bookings instantly in my 12 towns</label>'+
-      '<div class="hint" style="margin:0 0 8px 27px">They get your confirm text and reminders right away. Anywhere else still comes in as a request for you to confirm.</div>'+
+      '<div class="hint" style="margin:0 0 8px 27px">They get your confirm text and reminders right away. Clean Club sign-ups always, website bookings only while the box above is on. Anywhere else still comes in as a request for you to confirm.</div>'+
       fld("Tomorrow's times close at (tonight, HH:MM)", input("slotRules.cutoff", R.cutoff))+
       '<div class="hint">Never same day. Anything on your Google Calendar still blocks a time.</div>';
     H.push(sec("⏰ My start times","What the website actually offers. Customers pick one of these.",slotsH));
