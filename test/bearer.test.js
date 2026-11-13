@@ -38,8 +38,21 @@ ok(!store.has('loginfail:10.1.0.1'), 'a right PIN writes nothing to KV');
 console.log('\nAnything else is refused');
 ok((await call('GET', '/api/threads', { auth: 'Bearer 1234', ip: '10.1.0.2' })).status === 401, 'wrong PIN is refused');
 ok((await call('GET', '/api/threads', { auth: 'Bearer ', ip: '10.1.0.3' })).status === 401, 'empty Bearer is refused');
-ok((await call('GET', '/api/threads', { auth: 'Basic 7777', ip: '10.1.0.4' })).status === 401, 'a non-Bearer scheme is not a password');
+ok((await call('GET', '/api/threads', { auth: 'Digest 7777', ip: '10.1.0.4' })).status === 401, 'an unknown scheme is not a password');
 ok((await call('GET', '/api/version', { auth: 'Bearer nope', ip: '10.1.0.5' })).status === 200, 'public routes still answer with a bad header');
+
+console.log('\nSaved as "username and password" (Basic) works the same');
+{
+  const b = (u, p) => 'Basic ' + Buffer.from(u + ':' + p).toString('base64');
+  ok((await call('GET', '/api/threads', { auth: b('mikey', '7777'), ip: '10.2.0.1' })).status === 200, 'PIN in the password half signs in');
+  ok((await call('GET', '/api/whoami', { auth: b('anything', '7777'), ip: '10.2.0.2' })).data.role === 'owner', 'the username is not checked');
+  ok((await call('GET', '/api/threads', { auth: b('7777', ''), ip: '10.2.0.3' })).status === 200, 'PIN typed in the username box with no password still works');
+  ok((await call('GET', '/api/threads', { auth: b('7777', '1234'), ip: '10.2.0.4' })).status === 401, 'a wrong password is refused even if the username is the PIN');
+  ok((await call('GET', '/api/threads', { auth: 'Basic !!notbase64', ip: '10.2.0.5' })).status === 401, 'garbage is refused, not a crash');
+  const ip = '10.2.0.9';
+  for (let i = 0; i < 6; i++) await call('GET', '/api/threads', { auth: b('mikey', '000' + i), ip });
+  ok((await call('GET', '/api/threads', { auth: b('mikey', '7777'), ip })).status === 401, 'shares the same lockout');
+}
 
 console.log('\nThe helper PIN never works here');
 {
