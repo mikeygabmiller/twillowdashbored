@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-11-13·hold-no-text';
+const BUILD = '2026-11-15·drafts-box';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -5222,6 +5222,15 @@ async function apiMeta(request) {
   }
   if (typeof data.reminderNote === 'string') thread.reminderNote = data.reminderNote.slice(0, 200);
   if (data.clearSuggested) thread.suggested = null; // Mikey dismissed the pre-drafted reply
+  // A draft written for him elsewhere (e.g. by Claude planning his week) lands in
+  // the same "Reply ready" box. It is only ever a draft: nothing sends until he
+  // taps Send. manual:true keeps it on screen even when he texted last.
+  if (typeof data.draft === 'string') {
+    const text = data.draft.trim().slice(0, 1600);
+    const last = thread.messages[thread.messages.length - 1];
+    thread.suggested = text ? { text, ts: Date.now(), forTs: last ? last.ts : 0, by: String(data.draftBy || 'claude').slice(0, 12), manual: true } : null;
+    if (text) { thread.needsYou = null; thread.needsYouAnswers = null; }
+  }
   if (data.clearNeedsYou) { thread.needsYou = null; thread.needsYouAnswers = null; }   // he'd rather just write it himself
   if (Array.isArray(data.linked)) {
     thread.linked = [...new Set(data.linked.map((p) => normalizePhone(p) || p).filter(Boolean))]
@@ -15794,8 +15803,10 @@ async function maybeSuggestReply(phone) {
           if (text) { thread.suggested = { text, ts: Date.now(), forTs: last.ts, by: who.provider }; changed = true; drafted = text; }
         }
       }
-    } else if (thread.suggested || thread.needsYou) {
-      thread.suggested = null; thread.needsYou = null; thread.needsYouAnswers = null; changed = true;   // nothing owed — drop any stale draft
+    } else if ((thread.suggested && !thread.suggested.manual) || thread.needsYou) {
+      // nothing owed — drop any stale AI draft (a hand-placed draft stays until he sends or dismisses it)
+      if (!(thread.suggested && thread.suggested.manual)) thread.suggested = null;
+      thread.needsYou = null; thread.needsYouAnswers = null; changed = true;
     }
     if (changed) { await saveThread(thread); await updateIndexEntry(thread); }
   } catch { /* suggestions are a bonus — swallow errors so inbound never breaks */ }

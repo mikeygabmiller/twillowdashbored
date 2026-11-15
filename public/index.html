@@ -4726,7 +4726,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-11-13·hold-no-text";
+  var APP_BUILD="2026-11-15·drafts-box";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -11661,10 +11661,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     var s=t&&t.suggested;var msgs=(t&&t.messages)||[];var last=msgs[msgs.length-1];
     // A held question outranks a draft: it exists precisely because there was
     // nothing honest to draft yet.
-    if(t&&t.needsYou&&t.needsYou.question&&last&&last.dir==="in"){return renderNeedsYou(t)}
-    if(!(s&&s.text&&last&&last.dir==="in")){box.style.display="none";box.innerHTML="";return}
+    if(t&&t.needsYou&&t.needsYou.question&&last&&last.dir==="in"&&!(s&&s.manual)){return renderNeedsYou(t)}
+    if(!(s&&s.text&&last&&(last.dir==="in"||s.manual))){box.style.display="none";box.innerHTML="";return}
     box.style.display="block";
-    box.innerHTML='<div class="air-top"><span class="air-title">'+ic("sparkles",13)+' Reply ready — in your voice</span><button class="air-x" aria-label="Dismiss">'+ic("x",16)+'</button></div>'+
+    box.innerHTML='<div class="air-top"><span class="air-title">'+ic("sparkles",13)+(s.manual?' Draft ready — check it, then Send':' Reply ready — in your voice')+'</span><button class="air-x" aria-label="Dismiss">'+ic("x",16)+'</button></div>'+
       '<div class="air-text">'+esc(s.text)+'</div>'+
       '<div class="air-acts"><button class="btn accent air-send">'+ic("send",15)+' Send</button><button class="btn air-edit">'+ic("pencil",14)+' Edit first</button><button class="btn air-discard">Dismiss</button></div>';
     box.querySelector(".air-x").onclick=function(){dismissSuggested(t)};
