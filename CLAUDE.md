@@ -82,6 +82,12 @@ For those, do the work, then stop and lay out what it would do before it runs.
   a thread — and note that reading a thread through `openThreadForRead()` **clears
   unread**, which is a real side effect, not a detail.
 
+## Ceramic coating jobs
+
+Before recommending or ordering a coating, read `docs/CERAMIC-COATING.md`. It holds
+what Mikey uses (CarPro CQuartz UK 3.0, DLUX, FlyBy Forte), why, and what was
+turned down. A chat once switched him to another brand without knowing the reasons.
+
 ## Texts that go to customers
 
 Mikey's rules for any automatic text (2026-10-10):
