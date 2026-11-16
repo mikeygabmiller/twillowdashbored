@@ -79,4 +79,5 @@ copy without him.
 
 Kevin, 2026 Mazda CX-50, Pro, $1,000, Mill Creek, Tue-Wed Nov 24-25, 2026, no
 garage (pop-up awning). Day 1 wash, decon, polish, first coat; day 2 daylight
-check and second layer. Products ordered: not confirmed as of Nov 15.
+check and second layer. Coatings arrived Nov 16: UK 3.0 (paint), DLUX (trim),
+FlyBy Forte (glass). Towels, applicators, gloves and respirator not confirmed.
