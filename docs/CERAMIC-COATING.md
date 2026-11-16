@@ -80,4 +80,5 @@ copy without him.
 Kevin, 2026 Mazda CX-50, Pro, $1,000, Mill Creek, Tue-Wed Nov 24-25, 2026, no
 garage (pop-up awning). Day 1 wash, decon, polish, first coat; day 2 daylight
 check and second layer. Coatings arrived Nov 16: UK 3.0 (paint), DLUX (trim),
-FlyBy Forte (glass). Towels, applicators, gloves and respirator not confirmed.
+FlyBy Forte (glass). Towels: one 10-pack of Edgeless 300 so far (about 20 needed,
+and the test on his own car uses some). Applicators, gloves, respirator not confirmed.
