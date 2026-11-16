@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-11-15·drafts-box';
+const BUILD = '2026-11-16·winback-draft';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -8051,6 +8051,28 @@ function median(xs) {
 }
 function pct(a, b) { return b ? money2((a / b) * 100) : 0; }
 
+// The text a win-back row offers. It is only ever a draft: it lands in the
+// conversation's Reply ready box and nothing sends until he taps Send, so it is
+// written to be edited, not to be the last word. His rules for customer texts
+// apply (2026-10-10): plain words, no em dashes, the door left open. No price
+// and no offer in it. What a returning customer pays is his call each time.
+function winbackAgo(days) {
+  const d = Number(days) || 0;
+  if (d < 45) return 'a few weeks';
+  if (d < 75) return 'a couple months';
+  if (d < 330) return 'about ' + Math.round(d / 30) + ' months';
+  if (d < 420) return 'about a year';
+  return 'over a year';
+}
+function winbackDraft(name, daysSince) {
+  // A ledger entry can carry a phone number where the name should be.
+  const first = /\d/.test(String(name || '')) ? '' : tidyName(name).split(' ')[0];
+  const text = 'Hey' + (first ? ' ' + first : '') + ", it's Mikey with Mikey's Mobile Detailing. " +
+    "It's been " + winbackAgo(daysSince) + ' since I last detailed your car, so I wanted to check in. ' +
+    "If you want to get it done again, just text me what days work for you and I'll get you on the schedule.";
+  return text.replace(/\s*[\u2014\u2013]\s*/g, ', ');
+}
+
 // ---------------------------------------------------------------------------
 // 1 + 2. Customers — retention, lifetime value, win-back radar, attribution.
 // ---------------------------------------------------------------------------
@@ -8093,14 +8115,34 @@ async function apiIntelCustomers() {
   // "Overdue" = past their own cadence (or the fleet median) by a margin. Ranked
   // by lifetime value, because a $2k repeat customer going quiet matters more
   // than a one-off $80 wash.
+  //
+  // The ledger knows who is overdue; the list row knows why texting them might
+  // be wrong. So each row is checked against the index (one read, already
+  // needed for attribution below): someone with a job on the calendar is not
+  // lost, and "Do not text" has to be visible before he drafts anything.
+  const index = await loadIndex();
+  const rowByPhone = new Map(index.map((r) => [r.phone, r]));
   const winback = custs
     .map((c) => {
       const due = c.cadence || typicalGap;
       if (!due) return null;
       const over = c.daysSince - due;
       if (over < Math.max(14, due * 0.15)) return null;
-      return { phone: c.phone, name: c.name, rev: c.rev, n: c.n, avgTicket: c.avgTicket,
-        daysSince: c.daysSince, due, over, lapsed: c.daysSince > due * 2.5 };
+      if (isPracticePhone(c.phone)) return null;
+      const row = rowByPhone.get(c.phone) || {};
+      if (row.appointmentAt && row.appointmentAt > now) return null; // already coming back
+      const doNotText = !!row.optedOut;
+      return { phone: c.phone, name: c.name || row.name || '', rev: c.rev, n: c.n, avgTicket: c.avgTicket,
+        daysSince: c.daysSince, due, over, lapsed: c.daysSince > due * 2.5,
+        doNotText,
+        waiting: rowAwaitingReply(row),
+        // A draft (his, or the AI's) is already sitting in the conversation.
+        // Dropping a win-back draft on top would throw that one away.
+        replyReady: !!(row.replyReady || row.needsYou),
+        onPlan: !!(row.plan && !row.plan.paused),
+        // "You texted 9 days ago": he may already have reached out by hand.
+        textedDays: (row.lastDir === 'out' && row.lastTs) ? Math.max(0, intelDays(now, row.lastTs)) : null,
+        draft: doNotText ? '' : winbackDraft(c.name || row.name, c.daysSince) };
     })
     .filter(Boolean)
     .sort((a, b) => (b.rev / Math.max(1, b.daysSince)) - (a.rev / Math.max(1, a.daysSince)))
@@ -8139,7 +8181,6 @@ async function apiIntelCustomers() {
     }));
 
   // --- attribution: first-touch channel → leads → won → actual revenue ------
-  const index = await loadIndex();
   const SOURCES = ['quote', 'booking', 'call', 'text'];
   const srcOf = (row) => {
     const s = row.source || '';
