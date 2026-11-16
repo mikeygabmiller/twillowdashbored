@@ -1,6 +1,15 @@
-# Big builds: handoff (2026-11-16, stopped at Mikey's 12:00 PM hard stop)
+# Big builds: handoff (2026-11-16)
 
-No app code changed in this branch. This file is the whole deliverable.
+**Shipped in this branch: win-back drafts** (build `2026-11-16·winback-draft`).
+Insights → Customers → Win-back radar now has a "Draft a text" button under each
+overdue customer. It saves a draft into that chat's Reply ready box and opens the
+chat; nothing sends until he taps Send. Customers with a job on the calendar drop
+off the list, "Do not text" shows with no button, and a chat that already has a
+reply waiting gets "Open chat" so the draft never overwrites it. Server:
+`winbackDraft()` + the enriched `winback` rows in `apiIntelCustomers()`. Tests:
+`test/winback.test.js`, `test/winback.ui.test.js`.
+
+The notes below were written before that build, when the session first stopped.
 
 ## Where things stand
 
@@ -24,6 +33,8 @@ No app code changed in this branch. This file is the whole deliverable.
 | Customer record / due back | Not checked yet. |
 
 ## Recommended next build (one, done properly)
+
+*(Done, see the top. Next candidates: a Today card that says how many customers are overdue and opens this list; then the customer record with when they're due back.)*
 
 **Win-back list screen.** The data already exists server-side, so it's mostly UI plus a
 test, which makes it the build most likely to be finished in one sitting. Each row: name,
