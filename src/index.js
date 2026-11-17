@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-11-17·fold-nudge';
+const BUILD = '2026-11-17·unlogged-jobs';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -12332,15 +12332,25 @@ async function moneyWonNudges(entries, cfg, now) {
   const index = await loadIndex();
   const out = [];
   for (const t of index) {
-    if (t.archived || t.status !== 'won') continue;
-    const at = t.statusAt || t.lastTs || 0;
-    if (!at || now - at > 21 * 86400000) continue;
+    if (t.status === 'lost') continue;
+    // Two ways a job ends: he marks the chat Won, or the appointment time goes
+    // by. He almost never does the first (6 Won out of 160 chats, Nov 2026), so
+    // keyed on Won alone this list sat empty while ten booked jobs went
+    // unlogged and Home read "$0 made, -$185 this month". The appointment
+    // passing is the same trigger the "job is done" banner in the chat uses.
+    // An hour of grace so a job in progress isn't called finished.
+    const appt = t.appointmentAt || 0;
+    const apptDone = appt && appt < now - 3600000 && now - appt <= 30 * 86400000;
+    const won = t.status === 'won' && !t.archived;
+    if (!apptDone && !won) continue;
+    const at = apptDone ? appt : (t.statusAt || t.lastTs || 0);
+    if (!at || (!apptDone && now - at > 21 * 86400000)) continue;
     if (cfg.nudgeDismissed && cfg.nudgeDismissed[t.phone] >= at) continue;
     const logged = entries.some((e) => e.type === 'job' && e.phone === t.phone && e.ts >= at - 86400000);
-    if (!logged) out.push({ phone: t.phone, name: t.name || '', wonAt: at });
+    if (!logged) out.push({ phone: t.phone, name: t.name || '', wonAt: at, kind: apptDone ? 'appt' : 'won' });
   }
   out.sort((a, b) => b.wonAt - a.wonAt);
-  return out.slice(0, 6);
+  return out.slice(0, 8);
 }
 
 // ---- money API --------------------------------------------------------------
