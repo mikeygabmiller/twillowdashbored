@@ -195,7 +195,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   /* The bottom padding clears the pencil button as well as the nav: the FAB's
      top edge sits 76px above the nav, and with 8px the last thing on Today
      ("Show everything") and the last chat's date were under it, untappable. */
-  .scroll{flex:1;overflow-y:auto;min-height:0;-webkit-overflow-scrolling:touch;padding-bottom:calc(var(--nav-h) + var(--safe-bottom) + 88px)}
+  .scroll{flex:1;overflow-y:auto;min-height:0;-webkit-overflow-scrolling:touch;padding-bottom:calc(var(--nav-h) + var(--safe-bottom) + 150px)}
 
   /* conversation row */
   .conv-wrap{position:relative;overflow:hidden}
@@ -2878,6 +2878,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .hw-money .hm-side b{font-size:18px;font-weight:800;font-variant-numeric:tabular-nums;display:block}
   .hw-money .hm-side b.neg{color:var(--mo-bad)}
   .hw-money .hm-side span{font-size:10.5px;color:var(--muted2);font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+  .hm-unlogged{display:flex;align-items:center;gap:8px;width:100%;margin-top:8px;text-align:left;background:rgba(245,178,61,.1);border:1px solid rgba(245,178,61,.35);color:var(--text);border-radius:12px;padding:10px 12px;font-size:13px}
+  .hm-unlogged svg{color:#f5b23d;flex:none}
+  .hm-unlogged span:first-of-type{flex:1;min-width:0}
+  .hm-unlogged .go{flex:none;font-weight:750;color:#f5b23d}
   /* chats list-cards style */
   body.list-cards .conv{border:1px solid var(--line2);border-radius:16px;margin:0 0 8px;padding:12px 13px;box-shadow:var(--mo-elev)}
   body.list-cards .conv .prev{white-space:normal}
@@ -3497,6 +3501,11 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     box-shadow:0 8px 22px -10px rgba(0,0,0,.5);z-index:21;transition:transform .12s}
   .vx-fab svg{width:21px;height:21px}
   .vx-fab:active{transform:scale(.93)}
+  /* Both buttons float over the right edge of every list — exactly where the
+     "No reply needed" ticks and the wait badges sit. They slide away while you
+     scroll down through a list and come back the moment you scroll up. */
+  .fab,.vx-fab{will-change:transform}
+  body.fab-tuck .fab,body.fab-tuck .vx-fab{transform:translateX(110px);opacity:0;pointer-events:none;transition:transform .2s,opacity .2s}
   body.viewing .vx-fab{display:none}
 
   @media (min-width:900px){
@@ -4752,7 +4761,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-11-17·fold-nudge";
+  var APP_BUILD="2026-11-17·unlogged-jobs";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -6922,7 +6931,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   function homeGoal(){try{var v=+localStorage.getItem(homeGoalKey());if(v>0)return v;var last=+localStorage.getItem("mkd-goal-last");return last>0?last:0}catch(e){return 0}}
   function homeGoalWidget(){
     var goal=homeGoal();var s=MO.summary;
-    if(!s){if(!MO._homeFetch){MO._homeFetch=1;api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.today=d.today;MO.entries=d.entries||[];MO.cfg=d.config;MO.owed=d.owed||[];MO.week=d.week;MO.allTime=d.allTime;if(state.tab==="home")renderHome()}}).catch(function(){});}}
+    if(!s){if(!MO._homeFetch){MO._homeFetch=1;api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.today=d.today;MO.entries=d.entries||[];MO.cfg=d.config;MO.owed=d.owed||[];MO.nudges=d.nudges||[];MO.week=d.week;MO.allTime=d.allTime;if(typeof refreshMoBadge==="function")refreshMoBadge();if(state.tab==="home")renderHome()}}).catch(function(){});}}
     var net=(s&&s.net)||0;
     var now=new Date();var dim=new Date(now.getFullYear(),now.getMonth()+1,0).getDate();var day=now.getDate();
     var pct=goal>0?Math.max(0,Math.min(100,Math.round(net/goal*100))):0;
@@ -6959,7 +6968,11 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     });
     return '<div class="wcard">'+head+'<div class="agn">'+rows+'</div></div>';
   }
-  var QA_ACTIONS=[["new","New text","send"],["logjob","Log a job","dollar"],["logexp","Log expense","receipt"],["money","Money","wallet"],["followups","Follow-ups","list-checks"],["analytics","Analytics","bar-chart"]];
+  // "New text" and "Money" used to be two of these six. Both were already one tap
+  // away on every screen (the pencil button, the Money tab), so the grid spent a
+  // third of itself repeating the nav. Bookings and the quote builder are what a
+  // booked-out week actually reaches for and are otherwise two menus deep.
+  var QA_ACTIONS=[["logjob","Log a job","dollar"],["logexp","Log expense","receipt"],["bookings","Bookings","calendar-days"],["quote","Quote builder","file-text"],["followups","Follow-ups","list-checks"],["analytics","Analytics","bar-chart"]];
   function homeQuickActions(){
     var head='<div class="wc-h"><span class="wc-ic">'+ic("sparkles",18)+'</span><span class="wc-t">Quick actions</span></div>';
     var g=QA_ACTIONS.map(function(a){return '<button class="qa-btn" data-qa="'+a[0]+'"><span class="qa-ic">'+ic(a[2],21)+'</span><span class="qa-l">'+esc(a[1])+'</span></button>'}).join("");
@@ -7456,7 +7469,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // 30-day revenue trend — daily gross as a bar sparkline, plus this-week vs
   // last-week delta. Uses the loaded month entries (best-effort window).
   function homeTrendWidget(){
-    var s=MO.summary;if(!s&&!MO._homeFetch){MO._homeFetch=1;api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.today=d.today;MO.entries=d.entries||[];MO.cfg=d.config;MO.owed=d.owed||[];MO.week=d.week;MO.allTime=d.allTime;if(state.tab==="home")renderHome()}}).catch(function(){});}
+    var s=MO.summary;if(!s&&!MO._homeFetch){MO._homeFetch=1;api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.today=d.today;MO.entries=d.entries||[];MO.cfg=d.config;MO.owed=d.owed||[];MO.nudges=d.nudges||[];MO.week=d.week;MO.allTime=d.allTime;if(typeof refreshMoBadge==="function")refreshMoBadge();if(state.tab==="home")renderHome()}}).catch(function(){});}
     var days=14;var buckets=[];var labels=[];var now=new Date();
     for(var i=days-1;i>=0;i--){var d=new Date(now.getFullYear(),now.getMonth(),now.getDate()-i);buckets.push({key:dstrOf(d),total:0});}
     var idx={};buckets.forEach(function(b,i){idx[b.key]=i});
@@ -7476,7 +7489,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   }
   // Top customers — lifetime (loaded-month) spend leaders. Tap to open the thread.
   function homeVipWidget(){
-    var s=MO.summary;if(!s&&!MO._homeFetch){MO._homeFetch=1;api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.today=d.today;MO.entries=d.entries||[];MO.cfg=d.config;MO.owed=d.owed||[];MO.week=d.week;MO.allTime=d.allTime;if(state.tab==="home")renderHome()}}).catch(function(){});}
+    var s=MO.summary;if(!s&&!MO._homeFetch){MO._homeFetch=1;api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.today=d.today;MO.entries=d.entries||[];MO.cfg=d.config;MO.owed=d.owed||[];MO.nudges=d.nudges||[];MO.week=d.week;MO.allTime=d.allTime;if(typeof refreshMoBadge==="function")refreshMoBadge();if(state.tab==="home")renderHome()}}).catch(function(){});}
     var by={};(MO.entries||[]).forEach(function(e){if(e.type!=="job")return;var k=e.phone||("n:"+(e.name||"?"));var v=by[k]=by[k]||{total:0,n:0,name:e.name||"",phone:e.phone||""};v.total+=e.amount;v.n++;if(e.name&&!v.name)v.name=e.name;});
     var list=Object.keys(by).map(function(k){return by[k]}).filter(function(v){return v.total>0}).sort(function(a,b){return b.total-a.total});
     var head='<div class="wc-h"><span class="wc-ic">'+ic("trophy",18)+'</span><span class="wc-t">Top customers</span><span class="wc-badge">this month</span></div>';
@@ -7788,6 +7801,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       if(a==="logexp"){openMoney();setTimeout(function(){if(typeof openMoSheet==="function")openMoSheet("exp")},60);return}
       if(a==="followups")return setTab("followups");
       if(a==="analytics")return openAnalytics();
+      if(a==="bookings"){location.href="/bookings.html";return}
+      if(a==="quote")return openJobs("quotes");
     };});
     // To-do list.
     var tkAdd=box.querySelector("#tkAdd"),tkInput=box.querySelector("#tkInput");
@@ -7846,14 +7861,18 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   function homeMoneyWidget(){
     var s=MO.summary;
     if(!s){
-      if(!MO._homeFetch){MO._homeFetch=1;api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.today=d.today;MO.entries=d.entries||[];MO.cfg=d.config;MO.owed=d.owed||[];MO.week=d.week;MO.allTime=d.allTime;if(state.tab==="home")renderHome()}}).catch(function(){});}
+      if(!MO._homeFetch){MO._homeFetch=1;api("/api/money").then(function(d){if(d&&d.ok){MO.summary=d.summary;MO.today=d.today;MO.entries=d.entries||[];MO.cfg=d.config;MO.owed=d.owed||[];MO.nudges=d.nudges||[];MO.week=d.week;MO.allTime=d.allTime;if(typeof refreshMoBadge==="function")refreshMoBadge();if(state.tab==="home")renderHome()}}).catch(function(){});}
       return '<div class="home-sec-h"><span>Today’s money</span></div><div class="hw-money"><div class="hm-a" style="color:var(--muted2)">…</div><div class="hm-l">loading</div></div>';
     }
     var today=(typeof moTodayStr==="function")?moTodayStr():"";
     var todayIn=(MO.entries||[]).filter(function(e){return e.type==="job"&&e.date===today}).reduce(function(a,e){return a+e.amount},0);
+    var unlogged=(MO.cfg&&MO.cfg.wonNudge!==false)?(MO.nudges||[]).length:0;
     return '<div class="home-sec-h"><span>Today’s money</span></div>'+
       '<div class="hw-money" data-open-money="1"><div><div class="hm-a">'+fmtMoney(todayIn)+'</div><div class="hm-l">made today</div></div>'+
-      '<div class="hm-side"><b class="'+((s.net||0)<0?"neg":"")+'">'+fmtMoney(s.net||0)+'</b><span>net this month</span></div></div>';
+      '<div class="hm-side"><b class="'+((s.net||0)<0?"neg":"")+'">'+fmtMoney(s.net||0)+'</b><span>net this month</span></div></div>'+
+      // The two numbers above only count what's been logged. When finished jobs
+      // aren't, they read like a dead month — say so, right under them.
+      (unlogged?'<button class="hm-unlogged" data-open-money="1">'+ic("lightbulb",14)+'<span><b>'+unlogged+' finished job'+(unlogged===1?"":"s")+'</b> not logged, so these are low</span><span class="go">Log '+(unlogged===1?"it":"them")+'</span></button>':'');
   }
 
   // ---- email removed — texting-first dashboard (backend /api/emails left dormant) ----
@@ -14130,6 +14149,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
 
   // ---- tabs ----
   function setTab(tab){
+    // A new tab starts at the top, so the floating buttons belong back on screen.
+    document.body.classList.remove("fab-tuck");
     stashDraft(state.phone);
     // Switching tabs abandons whatever was layered over the list.
     navDrop("thread");
@@ -14663,6 +14684,14 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   try{if(("ontouchstart" in window)||navigator.maxTouchPoints>0)document.body.classList.add("touchui")}catch(e){}
 
   el("fab").onclick=newConversation;
+  // Tuck the floating buttons on the way down a list, bring them back on the way
+  // up (or at the top). A few px of slack so a resting thumb doesn't flicker them.
+  (function(){var sc=el("scroll");if(!sc)return;var last=0;
+    sc.addEventListener("scroll",function(){var y=sc.scrollTop,b=document.body.classList;
+      if(y<60||y<last-8)b.remove("fab-tuck");else if(y>last+8)b.add("fab-tuck");
+      if(Math.abs(y-last)>8||y<60)last=y;
+    },{passive:true});
+  })();
   el("emptyNew").onclick=newConversation;
   el("sendBtn").onclick=sendMessage;
   wirePhotos();
@@ -17686,8 +17715,12 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
         '<button class="btn accent" data-owepaid="'+esc(o.id)+'|'+esc(o.date)+'">Paid ✓</button></div>';
     });
     if(MO.cfg&&MO.cfg.wonNudge!==false)(MO.nudges||[]).forEach(function(nd){
-      h+='<div class="mo-nudge"><div class="t"><span class="ic-inline" style="color:var(--mo-warn)">'+ic("lightbulb",14)+'</span> <b>'+esc(nd.name||prettyPhone(nd.phone))+'</b> was marked <b>Won</b> '+esc(fmtTime(nd.wonAt))+' — no job $ logged yet.</div>'+
-        '<div class="acts"><button class="btn accent" data-nlog="'+esc(nd.phone)+'">Log the $</button><button class="btn" data-ndis="'+esc(nd.phone)+'">Dismiss</button></div></div>';
+      // "appt" = the booked time went by; "won" = he marked the chat Won. An
+      // appointment can fall through, so that one's way out says so plainly.
+      var appt=nd.kind==="appt";
+      h+='<div class="mo-nudge"><div class="t"><span class="ic-inline" style="color:var(--mo-warn)">'+ic("lightbulb",14)+'</span> <b>'+esc(nd.name||prettyPhone(nd.phone))+'</b>'+
+        (appt?'’s job '+esc(fmtTime(nd.wonAt))+' is done':' was marked <b>Won</b> '+esc(fmtTime(nd.wonAt)))+' — no job $ logged yet.</div>'+
+        '<div class="acts"><button class="btn accent" data-nlog="'+esc(nd.phone)+'">Log the $</button><button class="btn" data-ndis="'+esc(nd.phone)+'">'+(appt?"Didn’t happen":"Dismiss")+'</button></div></div>';
     });
     h+='</div>';
     // ===== PULSE — the collapsible at-a-glance (progressive disclosure) =====
