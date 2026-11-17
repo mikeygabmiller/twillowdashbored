@@ -552,6 +552,19 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .fu-mini{display:flex;gap:6px;align-items:center;margin-top:9px;font-size:11.5px;color:var(--muted2)}
   .fu-mini button{background:none;border:none;color:var(--muted2);text-decoration:underline;font-size:11.5px;cursor:pointer;padding:0}
   .fu-mini .sp{margin:0 2px;opacity:.5}
+  /* Collapsed nudge: it sat over a third of the most-used screen, above the
+     conversation it was about. Folded, it's two short lines — what's owed and how
+     long, then the draft with a Send — and a tap opens the rest. */
+  .followup-banner.fold{padding:8px 12px}
+  .followup-banner.fold .fu-banner-top{margin-bottom:5px}
+  .fu-banner-top .fu-wait{margin-left:auto;font-size:11px;font-weight:700;color:#f5c563;white-space:nowrap}
+  .fu-banner-top .fu-tog{background:none;border:none;color:#f5c563;padding:2px 2px 2px 6px;display:flex;align-items:center;cursor:pointer;flex:none}
+  .fu-banner-top .fu-tog svg{transition:transform .15s}
+  .followup-banner:not(.fold) .fu-tog svg{transform:rotate(180deg)}
+  .fu-foldrow{display:flex;align-items:center;gap:8px}
+  .fu-foldrow .fu-line{flex:1;min-width:0;font-size:13px;color:#f3ead6;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}
+  .fu-foldrow .fu-line .rs{color:#e9dcc0;opacity:.8}
+  .fu-foldrow .btn{flex:none;font-size:12.5px;padding:6px 12px;display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
 
   /* follow-ups tab cards */
   .fu-card{background:var(--panel2);border:1px solid var(--line2);border-left:3px solid #f5b842;border-radius:13px;padding:12px 13px;margin-bottom:10px}
@@ -1054,10 +1067,14 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     --jb-fg:#57376f;--jb-ti:#432a5c;--jb-gb:#f0e6f8;--jb-gd:#d8c5e9}
   /* Won the job, never logged the money. */
   .logjob-banner{margin:8px 14px 0;padding:10px 13px;background:#132218;border:1px solid #244d33;border-radius:13px;
-    display:flex;align-items:center;gap:10px;color:#c8e6d3;font-size:13px}
+    display:flex;align-items:center;gap:8px 10px;color:#c8e6d3;font-size:13px;flex-wrap:wrap}
   .logjob-banner .lj-ic{color:#4ade80;flex:none;display:flex}
-  .logjob-banner .lj-txt{flex:1;min-width:0;line-height:1.35}
+  .logjob-banner .lj-txt{flex:1 1 190px;min-width:0;line-height:1.35}
   .logjob-banner .lj-txt b{color:#e4f7ea;font-weight:650}
+  /* The line under the title. Without this it ran straight on from it
+     ("Oct 20 job is doneLog what you made…"); .hb-when is only block-level
+     inside the hold banner. */
+  .logjob-banner .lj-txt .hb-when{display:block;font-size:12px;opacity:.8;margin-top:1px}
   .logjob-banner .lj-go{background:#1c6b3a;border:1px solid #2b8f50;color:#eafff1;border-radius:8px;
     padding:6px 11px;font-size:11.5px;font-weight:700;flex:none}
   /* Three moves and a dismiss — they wrap onto a second line on a narrow phone
@@ -4735,7 +4752,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-11-16·winback-draft";
+  var APP_BUILD="2026-11-17·fold-nudge";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -8684,32 +8701,72 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   }
 
   // ---- chat nudge banner ----
+  // Which conversations Mikey has opened the nudge on, this session. Folded is
+  // the default because the banner sits above every message in the thread; it
+  // stays open for a contact once he's opened it, until the page reloads.
+  var FU_OPEN={};
+  // The server writes the reason once, when it makes the suggestion ("waiting
+  // 2h"), and never again — so a customer three days on still read "2h". The
+  // time in it is how long since the last message, which we have right here, so
+  // swap it for the live figure. Wording the server chose is kept as written.
+  function fuLiveReason(t,sug){
+    var r=sug.reason||"";var msgs=(t&&t.messages)||[];var last=msgs[msgs.length-1];
+    if(!last||!last.ts||!r)return r;
+    return r.replace(/\b(just now|\d+[mhd])\b/,fmtDur(Date.now()-last.ts));
+  }
+  function fuWaitLabel(t,sug){
+    var msgs=(t&&t.messages)||[];var last=msgs[msgs.length-1];
+    if(!last||!last.ts)return "";
+    // "Waiting" only means something when the customer spoke last; on a nudge
+    // it's how long they've been quiet.
+    return (sug.stage==="owed"?"waiting ":"quiet ")+fmtDur(Date.now()-last.ts);
+  }
   function renderFuBanner(t){
     var fb=el("fuBanner");
     var sug=(t&&t.followup&&t.followup.suggestion)?t.followup.suggestion:null;
     if(!sug){fb.style.display="none";return}
     var u=sug.urgency||"normal";var stage=FU_STAGE[sug.stage]||["Follow-up","list-checks"];
+    var open=!!FU_OPEN[t.phone];var reason=fuLiveReason(t,sug)||stage[0];
+    var wait=(sug.stage==="owed"||sug.stage==="nudge")?fuWaitLabel(t,sug):"";
     fb.style.display="block";
-    fb.innerHTML=
-      '<div class="fu-banner-top"><span class="fu-udot '+u+'"></span><span class="t">'+ic("list-checks",12)+' Suggested follow-up · '+esc(stage[0])+'</span></div>'+
-      '<div class="fu-reason">'+esc(sug.reason||stage[0])+'</div>'+
-      (sug.draft?'<div class="fu-draft">'+esc(sug.draft)+'</div>':'<div class="fu-draft empty">No draft yet — tap regenerate to write one.</div>')+
-      '<div class="fu-acts">'+
-        '<button class="btn accent" id="fuSend">'+ic("send",14)+' Send</button>'+
-        '<button class="btn" id="fuUse">'+ic("pencil",14)+' Edit</button>'+
-        '<button class="btn" id="fuRegen" title="Rewrite">'+ic("refresh-cw",14)+'</button>'+
-      '</div>'+
-      '<div class="fu-mini">'+
+    fb.classList.toggle("fold",!open);
+    var top='<div class="fu-banner-top"><span class="fu-udot '+u+'"></span><span class="t">'+ic("list-checks",12)+' '+esc(stage[0])+'</span>'+
+      (wait?'<span class="fu-wait">'+esc(wait)+'</span>':'')+
+      '<button class="fu-tog" id="fuTog" aria-label="'+(open?"Hide follow-up details":"Show follow-up details")+'" aria-expanded="'+open+'"'+(wait?'':' style="margin-left:auto"')+'>'+ic("chevron-down",15)+'</button></div>';
+    var mini='<div class="fu-mini">'+
         FU_SNOOZE.map(function(x){return '<button data-sn="'+x[1]+'">Snooze '+esc(x[0])+'</button>'}).join('<span class="sp">·</span>')+
         '<span class="sp">·</span><button data-skip="1">Skip</button>'+
         // Skip only drops this nudge; they'd still be waiting, and still in
         // every check-in. This is the one that says nothing is owed.
         (sug.stage==="owed"?'<span class="sp">·</span><button data-noreply="1">No reply needed</button>':'')+
       '</div>';
+    if(!open){
+      // Folded: the reason rides in front of the draft, so the line still says
+      // why before it says what. Snooze/Skip/No reply stay in the DOM but hidden.
+      // The stock owed/nudge sentences only restate the time in the badge, and
+      // in one line they pushed the draft (the thing Send sends) out of sight.
+      var stock=wait&&/has been waiting|^No reply for|^Still quiet after|^Going cold/.test(sug.reason||"");
+      var lead=stock&&sug.draft?"":esc(reason)+(sug.draft?' · ':'');
+      fb.innerHTML=top+
+        '<div class="fu-foldrow"><div class="fu-line" id="fuLine">'+(lead?'<span class="rs">'+lead+'</span>':'')+(sug.draft?'“'+esc(sug.draft)+'”':'')+'</div>'+
+        (sug.draft?'<button class="btn accent" id="fuSend">'+ic("send",13)+' Send</button>':'')+'</div>'+
+        '<div style="display:none">'+mini+'</div>';
+      el("fuLine").onclick=function(){FU_OPEN[t.phone]=1;renderFuBanner(t)};
+    }else{
+      fb.innerHTML=top+
+        '<div class="fu-reason">'+esc(reason)+'</div>'+
+        (sug.draft?'<div class="fu-draft">'+esc(sug.draft)+'</div>':'<div class="fu-draft empty">No draft yet — tap regenerate to write one.</div>')+
+        '<div class="fu-acts">'+
+          '<button class="btn accent" id="fuSend">'+ic("send",14)+' Send</button>'+
+          '<button class="btn" id="fuUse">'+ic("pencil",14)+' Edit</button>'+
+          '<button class="btn" id="fuRegen" title="Rewrite">'+ic("refresh-cw",14)+'</button>'+
+        '</div>'+mini;
+      el("fuUse").onclick=function(){el("msgInput").value=sug.draft||"";autoGrow();updateCount();el("msgInput").focus();toast("Loaded into your message — edit & send")};
+      el("fuRegen").onclick=function(){var b=el("fuRegen");b.disabled=true;b.innerHTML='<span class="spin"></span>';fuAction(t.phone,{action:"regen"}).then(function(d){if(!d||!d.ok)toast("Couldn't rewrite",{bad:true})})};
+    }
+    el("fuTog").onclick=function(){if(FU_OPEN[t.phone])delete FU_OPEN[t.phone];else FU_OPEN[t.phone]=1;renderFuBanner(t)};
     var nrb=fb.querySelector("[data-noreply]");if(nrb)nrb.onclick=function(){noReplyNeeded(t.phone)};
-    el("fuSend").onclick=function(){fuBannerSend(t,sug)};
-    el("fuUse").onclick=function(){el("msgInput").value=sug.draft||"";autoGrow();updateCount();el("msgInput").focus();toast("Loaded into your message — edit & send")};
-    el("fuRegen").onclick=function(){var b=el("fuRegen");b.disabled=true;b.innerHTML='<span class="spin"></span>';fuAction(t.phone,{action:"regen"}).then(function(d){if(!d||!d.ok)toast("Couldn't rewrite",{bad:true})})};
+    if(el("fuSend"))el("fuSend").onclick=function(){fuBannerSend(t,sug)};
     Array.prototype.forEach.call(fb.querySelectorAll("[data-sn]"),function(b){b.onclick=function(){fuAction(t.phone,{action:"snooze",hours:+b.getAttribute("data-sn")}).then(function(){toast("Snoozed");loadThread();refreshThreads()})}});
     fb.querySelector("[data-skip]").onclick=function(){fuAction(t.phone,{action:"skip"}).then(function(){toast("Follow-up skipped");loadThread();refreshThreads()})};
   }

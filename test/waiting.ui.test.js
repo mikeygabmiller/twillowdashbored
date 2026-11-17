@@ -189,6 +189,21 @@ const fb = await page.locator('#fuBanner').innerText().catch(() => '');
 ok('the owed nudge shows', /Ruth is waiting on a reply/.test(fb), fb);
 ok('…with "No reply needed" next to Skip', await page.locator('#fuBanner [data-noreply]').count() === 1, fb);
 
+section('The nudge folds, so the conversation is what you see');
+// It used to cover a third of the screen above the messages it was about.
+const fbBox = async () => (await page.locator('#fuBanner').boundingBox()) || { height: 0 };
+ok('it opens folded', await page.locator('#fuBanner.fold').count() === 1);
+ok('folded, it is two short lines, not a card', (await fbBox()).height < 90, await fbBox());
+ok('…that still say how long, from the last message (not a stale "2h")', /waiting 5h/.test(fb), fb);
+ok('…and Send is right there', await page.locator('#fuBanner #fuSend').isVisible());
+await page.locator('#fuTog').click();
+await page.waitForTimeout(200);
+ok('the arrow opens it', await page.locator('#fuBanner.fold').count() === 0);
+ok('open, Edit and the snoozes show', await page.locator('#fuUse').isVisible() && await page.locator('#fuBanner [data-sn]').first().isVisible());
+await page.locator('#fuTog').click();
+await page.waitForTimeout(200);
+ok('and folds again', await page.locator('#fuBanner.fold').count() === 1);
+
 section('Settings: check-ins and filing');
 await page.locator('#backBtn').click().catch(() => {});
 await page.waitForTimeout(300);
