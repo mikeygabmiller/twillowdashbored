@@ -24,7 +24,8 @@ const THREAD = {
     { dir: 'in', body: '🎙️ Voicemail (12s)', ts: now - 3 * H, kind: 'voicemail', recording: 'https://x/rec.mp3' },
     { dir: 'in', body: '📞 Phone call', ts: now - 4 * H, kind: 'call' },
   ],
-  scheduled: [{ sendAt: now + D, body: 'Reminder text' }],
+  scheduled: [{ id: 's1', sendAt: now + D, body: 'Reminder text' }],
+  addressGuess: '123 Maple St, Snohomish',
 };
 const CALLS = [
   { id: 'c1', fromNorm: '+14255550301', ts: now - 3 * H, outcome: 'voicemail', transcript: 'Hi this is Dana about my truck', recording: 'https://x/rec.mp3', vmSec: 12 },
@@ -58,6 +59,10 @@ async function open(viewport, path = '/voice') {
     if (p === '/api/thread') return json({ ok: true, thread: u.searchParams.get('phone') === THREAD.phone ? THREAD : { phone: u.searchParams.get('phone'), messages: [] } });
     if (p === '/api/calls') return json({ ok: true, calls: CALLS, seenTs: now - 4 * H });
     if (p === '/api/calls/seen') return json({ ok: true, seenTs: now });
+    if (p === '/api/ai/draft') return json({ ok: true, draft: 'Yes, Saturday at 7 AM works. See you then!' });
+    if (p === '/api/schedule') { const b = JSON.parse(req.postData()); return json({ ok: true, thread: Object.assign({}, THREAD, { scheduled: THREAD.scheduled.concat([{ id: 's2', sendAt: b.sendAt, body: b.body }]) }) }); }
+    if (p === '/api/unschedule') return json({ ok: true, thread: Object.assign({}, THREAD, { scheduled: [] }) });
+    if (p === '/api/garage') return json({ ok: true, garage: { vehicles: [{ make: 'Toyota', model: 'RAV4' }] } });
     if (p === '/api/send') return json({ ok: true, thread: Object.assign({}, THREAD, { messages: THREAD.messages.concat([{ dir: 'out', body: 'Yes, 1 PM works', ts: Date.now() }]) }) });
     if (p.startsWith('/api/')) return json({ ok: true });
     return route.fulfill({ status: 200, contentType: 'text/plain', body: '' });
@@ -91,12 +96,45 @@ section('Laptop: the Voice layout');
   ok('the header has their name and number', /Dana Fox/.test(pane) && /\(425\) 555-0301/.test(pane));
   ok('texts show, including an automatic one, with no Auto label', /Hi Dana, it is Mikey/.test(pane) && !/\bAuto\b/.test(pane));
   ok('voicemails and calls stay on their own tabs', !/Voicemail \(12s\)|Phone call/.test(pane));
-  ok('scheduled texts are not shown (Voice has none)', !/Reminder text|Scheduled/.test(pane));
+  ok('a scheduled text waits at the bottom with its time (added back)', /Reminder text/.test(pane) && /Scheduled for tomorrow/.test(pane), pane.slice(-200));
+  ok('the address found in the texts is offered (added back)', /123 Maple St, Snohomish/.test(pane) && /Found in your texts/.test(pane));
   ok('two texts close together share one time under them', (await page.locator('.gv-grp.in').count()) === 1 && (await page.locator('.gv-grp.in .gv-b').count()) === 2);
   ok('a day heading reads Today', /Today/.test(pane));
-  ok('no AI or quick-reply chips', (await page.locator('#pane .chip, #pane [data-q]').count()) === 0 && !/Draft|Polish|Next 3 times|On my way/.test(pane));
+  ok('no AI chips or quick replies beyond what was added back', (await page.locator('#pane .chip, #pane [data-q]').count()) === 0 && !/Draft|Next 3 times|On my way/.test(pane));
+  ok('Polish and Schedule stay hidden until there are words', !(await page.locator('#polBtn').isVisible()) && !(await page.locator('#schBtn').isVisible()));
   ok('the composer says Type a message', (await page.locator('#msg').getAttribute('placeholder')) === 'Type a message');
   ok('send is off until something is typed', await page.locator('#sendBtn').isDisabled());
+
+  section('Laptop: what was added back');
+  await page.locator('#addrSave').click();
+  await page.waitForTimeout(300);
+  const g = posted.find((p) => p.path === '/api/meta' && p.body.garage);
+  ok('Save puts the address on file and keeps the car', g && g.body.garage.address === '123 Maple St, Snohomish' && g.body.garage.vehicles.length === 1, g);
+  ok('a saved address turns into Directions', /Directions/.test(await page.locator('#addr').innerText()) && /google\.com\/maps\/dir/.test(await page.locator('#addr a').getAttribute('href')));
+
+  await page.locator('#msg').fill('ya sat 7 works');
+  ok('typing shows Polish and Schedule', await page.locator('#polBtn').isVisible() && await page.locator('#schBtn').isVisible());
+  await page.locator('#polBtn').click();
+  await page.waitForTimeout(300);
+  const pol = posted.find((p) => p.path === '/api/ai/draft');
+  ok('Polish sends his words for that chat', pol && pol.body.text === 'ya sat 7 works' && pol.body.phone === '+14255550301', pol);
+  ok('the polished text replaces his', (await page.locator('#msg').inputValue()) === 'Yes, Saturday at 7 AM works. See you then!');
+  await page.locator('#snackAct').click();
+  ok('Undo puts his words back', (await page.locator('#msg').inputValue()) === 'ya sat 7 works');
+
+  await page.locator('#schBtn').click();
+  const opts = await page.locator('#pop button').allInnerTexts();
+  ok('schedule offers the quick times and a picker', opts[0] === 'In 1 hour' && opts.includes('Tomorrow, 9:00 AM') && opts[opts.length - 1] === 'Pick date & time', opts);
+  await page.locator('#pop button', { hasText: 'Tomorrow, 9:00 AM' }).click();
+  await page.waitForTimeout(300);
+  const sch = posted.find((p) => p.path === '/api/schedule');
+  const t9 = new Date(now + D); t9.setHours(9, 0, 0, 0);
+  ok('it schedules that text for tomorrow at 9', sch && sch.body.body === 'ya sat 7 works' && sch.body.sendAt === t9.getTime(), sch);
+  ok('the box clears and nothing was sent', (await page.locator('#msg').inputValue()) === '' && !posted.some((p) => p.path === '/api/send'));
+  await page.locator('[data-sch="s1"]').click();
+  await page.locator('#pop button', { hasText: 'Cancel scheduled message' }).click();
+  await page.waitForTimeout(300);
+  ok('a scheduled text can be canceled', posted.some((p) => p.path === '/api/unschedule' && p.body.id === 's1'));
 
   await page.locator('#msg').fill('Yes, 1 PM works');
   await page.locator('#msg').press('Enter');
