@@ -24,7 +24,9 @@
    Added back since, and only because he uses them (Mikey, 2026-11-19: "add
    back only what I've used"): Polish, scheduled send, and the address found in
    the texts. Then voicemails in the chat, as a card with the transcript and a
-   play button (Mikey: "I like when the voicemail shows in chat"). Anything else goes back in the same way, one at a time, when he
+   play button (Mikey: "I like when the voicemail shows in chat"). Then, from
+   the list he picked: the photo viewer, his usual openers, calls in the chat,
+   tapbacks, saved drafts and the name the app picks up for him. Anything else goes back in the same way, one at a time, when he
    misses it. */
 .gv{
   --gv-bg:#fff; --gv-ink:#202124; --gv-ink2:#3c4043; --gv-muted:#5f6368; --gv-line:#dadce0;
@@ -171,6 +173,32 @@ body{margin:0}
 .gv-vm .tx.none{color:var(--gv-muted);font-style:italic}
 .gv-vm .gv-play{margin-top:10px}
 .gv-vm .gv-play .pb{width:36px;height:36px}
+.gv-b{position:relative}
+.gv-b.tapped{margin-bottom:12px}
+.gv-tap{position:absolute;bottom:-12px;display:inline-flex;align-items:center;gap:1px;padding:1px 5px;border-radius:12px;background:var(--gv-bg);border:1px solid var(--gv-line);font-size:12px;line-height:18px;white-space:nowrap}
+.gv-grp.in .gv-tap{right:-6px}
+.gv-grp.out .gv-tap{left:-6px}
+.gv-tap .n{font-size:11px;color:var(--gv-muted);margin-left:2px}
+.gv-img{cursor:zoom-in}
+.gv-call{align-self:center;display:flex;align-items:center;gap:8px;margin:12px 0 4px;font-size:12px;color:var(--gv-muted)}
+.gv-call svg.i{width:16px;height:16px}
+.gv-call .miss{color:var(--gv-red)}
+.gv-call .miss svg.i{fill:var(--gv-red)}
+.gv-ops{display:flex;gap:8px;padding:4px 16px 0 64px;overflow-x:auto;scrollbar-width:none}
+.gv-ops::-webkit-scrollbar{display:none}
+.gv-ops:empty{display:none}
+.gv-ops button{height:32px;padding:0 14px;border-radius:16px;border:1px solid var(--gv-line);color:var(--gv-ink);font-size:14px;white-space:nowrap;flex:none}
+.gv-ops button:hover{background:var(--gv-soft)}
+.gv-lb{position:fixed;inset:0;z-index:80;background:#000;display:flex;align-items:center;justify-content:center}
+.gv-lb img{max-width:100%;max-height:100%;object-fit:contain}
+.gv-lb .ib{position:absolute;top:calc(8px + env(safe-area-inset-top,0px));left:8px;color:#fff}
+.gv-lb .ib:hover{background:rgba(255,255,255,.12)}
+.gv-lb a.ib{left:auto;right:8px}
+.gv-row .dr{color:var(--gv-red);font-weight:500}
+.gv-ph .who .add{color:var(--gv-blue);font-weight:500;cursor:pointer;background:none;border:0;padding:0;font-size:12px;text-align:left}
+.gv-nm{flex:none;display:flex;align-items:center;gap:8px;padding:6px 8px 6px 16px;border-bottom:1px solid var(--gv-line);font-size:12px;color:var(--gv-muted)}
+.gv-nm[hidden]{display:none}
+.gv-nm span{flex:1}
 .gv-stop{padding:16px;text-align:center;color:var(--gv-muted);font-size:13px;border-top:1px solid var(--gv-line)}
 
 /* New message: the To field */
@@ -283,6 +311,7 @@ var P = {
   sparkle:'M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z',
   clock:'M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z',
   pin:'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 0 1 0-5 2.5 2.5 0 0 1 0 5z',
+  dl:'M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z',
   exit:'M10.09 15.59L11.5 17l5-5-5-5-1.41 1.41L12.67 11H3v2h9.67l-2.58 2.59zM19 3H5a2 2 0 0 0-2 2v4h2V5h14v14H5v-4H3v4a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z'
 };
 function ic(n){ return '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="'+P[n]+'"/></svg>'; }
@@ -363,17 +392,18 @@ function drawer(){
       var b = e.target.closest("[data-go]"); if (!b) return;
       var g = b.dataset.go; closePop();
       if (g === "settings") location.href = A.CLASSIC + "&open=settings";
-      else if (g === "dash") location.href = "/";
+      else if (g === "dash") location.href = A.CLASSIC;
       else setView(g);
     };
   }
-  // "Back to my dashboard" is the one row Voice doesn't have. A test page you
-  // can't leave isn't a test.
+  // "Dashboard" is the one row Voice doesn't have: this is his texting screen
+  // now, and Today, Work and Money still live in the main app. ?classic=1 keeps
+  // that tab in the main app, so it doesn't bounce straight back here.
   d.innerHTML = '<div class="hd">'+MARK+'Voice</div>'+
     [["calls","Calls","call"],["messages","Messages","chat"],["voicemail","Voicemail","voicemail"],["archive","Archive","archive"]].map(function(n){
       return '<button class="it'+(S.view===n[0]?' on':'')+'" data-go="'+n[0]+'">'+ic(n[2])+n[1]+'</button>';
     }).join('')+'<hr><button class="it" data-go="settings">'+ic("gear")+'Settings</button>'+
-    '<button class="it" data-go="dash">'+ic("exit")+'Back to my dashboard</button>';
+    '<button class="it" data-go="dash">'+ic("exit")+'Dashboard</button>';
   var sc = document.createElement("div"); sc.className = "gv-scrim dim"; sc.id = "popScrim"; sc.onclick = closePop;
   el("gv").insertBefore(sc, d);
   requestAnimationFrame(function(){ d.classList.add("on"); });
@@ -411,15 +441,27 @@ function setBadge(k, n){
   document.querySelectorAll('[data-bdg="'+k+'"]').forEach(function(b){ b.textContent = n > 99 ? "99+" : n; b.hidden = !n; });
 }
 
+// ---- saved drafts -------------------------------------------------------------
+// What he half-typed stays with that conversation, on this phone, until it's
+// sent. Voice does the same and marks the row "Draft" in red.
+var DRAFT_KEY = "gv-drafts";
+function drafts(){ try { return JSON.parse(localStorage.getItem(DRAFT_KEY) || "{}") || {}; } catch(e){ return {}; } }
+function draftFor(phone){ return drafts()[phone] || ""; }
+function setDraft(phone, text){
+  if (!phone) return;
+  try { var d = drafts(); if (text && text.trim()) d[phone] = text; else delete d[phone]; localStorage.setItem(DRAFT_KEY, JSON.stringify(d)); } catch(e){}
+}
+
 // ---- the list column ----------------------------------------------------------
 function match(hay){ return !S.q || String(hay).toLowerCase().indexOf(S.q) >= 0; }
 function msgRow(r){
   var unread = !!(r.unread && r.lastDir === "in");
   var snip = (r.lastDir === "out" ? "You: " : "") + (r.lastBody || "");
+  var dr = (S.pane === "thread" && r.phone === S.phone) ? "" : draftFor(r.phone);
   return '<button class="gv-row'+(unread?' unread':'')+(S.pane==="thread"&&r.phone===S.phone?' sel':'')+'" data-open="'+esc(r.phone)+'">'+
     av(r.phone, r.name)+
     '<span class="m"><span class="t1"><span class="nm">'+esc(A.displayName(r))+'</span><span class="tm">'+esc(A.when(r.lastTs))+'</span></span>'+
-    '<span class="sn">'+esc(snip)+'</span></span></button>';
+    '<span class="sn">'+(dr ? '<span class="dr">Draft:</span> '+esc(dr) : esc(snip))+'</span></span></button>';
 }
 function callIcon(c){
   if (c.outcome === "missed") return '<span class="miss">'+ic("missed")+'</span>';
@@ -492,6 +534,7 @@ el("fab").onclick = function(){ if (S.view === "calls") dialer(); else newMessag
 
 // ---- the pane -------------------------------------------------------------
 function blankPane(){
+  var pm = el("msg"); if (S.pane === "thread" && S.phone && pm) setDraft(S.phone, pm.value);
   S.pane = null; S.phone = null; S.thread = null; S.callId = null;
   el("gv").classList.remove("open");
   var t = { messages:["chat","No conversation selected"], archive:["archive","No conversation selected"], calls:["call","No call selected"], voicemail:["voicemail","No voicemail selected"] }[S.view];
@@ -502,11 +545,12 @@ function paneHead(phone, opts){
   opts = opts || {};
   var n = nameFor(phone);
   return '<div class="gv-ph"><button class="ib back" id="paneBack" aria-label="Back">'+ic("back")+'</button>'+
-    '<div class="who"><b>'+esc(n || A.fmtPhone(phone))+'</b>'+(n ? '<span>'+esc(A.fmtPhone(phone))+'</span>' : '')+'</div>'+
+    '<div class="who"><b id="whoName">'+esc(n || A.fmtPhone(phone))+'</b>'+(n ? '<span id="whoSub">'+esc(A.fmtPhone(phone))+'</span>' : (opts.more === false ? '' : '<span id="whoSub"><button class="add" id="addName">Add a name</button></span>'))+'</div>'+
     '<button class="ib" id="paneCall" aria-label="Call">'+ic("call")+'</button>'+
     (opts.more === false ? '' : '<button class="ib" id="paneMore" aria-label="More options">'+ic("more")+'</button>')+'</div>';
 }
 function bindHead(phone){
+  var an = el("addName"); if (an) an.onclick = function(){ editName(phone); };
   el("paneBack").onclick = function(){ if (history.state && history.state.gv) history.back(); else { blankPane(); renderList(); } };
   el("paneCall").onclick = function(){ callOut(phone); };
 }
@@ -522,17 +566,24 @@ window.addEventListener("popstate", function(){ route(false); });
 
 // ---- a text conversation ----------------------------------------------------
 function openThread(phone, doPush){
+  // Leaving a chat keeps what was typed in it.
+  var pm = el("msg"); if (S.phone && pm && S.pane === "thread") setDraft(S.phone, pm.value);
   closePop();
   if (S.view !== "messages" && S.view !== "archive") setView("messages", true);
   S.pane = "thread"; S.phone = phone; S.thread = null; S.att = [];
   if (doPush) push({ gv:1, c:phone }, "?c=" + encodeURIComponent(phone));
   el("pane").innerHTML = paneHead(phone)+
+    '<div class="gv-nm" id="nameNote" hidden></div>'+
     '<div class="gv-addr" id="addr" hidden></div>'+
     '<div class="gv-tl" id="tl"><div class="gv-empty">Loading…</div></div>'+
     '<div id="cmpWrap">'+composerHtml()+'</div>';
   bindHead(phone); bindComposer();
+  var dr = draftFor(phone); if (dr) { el("msg").value = dr; sizeBox(); }
   el("paneMore").onclick = function(){ threadMenu(this); };
-  el("tl").addEventListener("click", function(e){ var b = e.target.closest("[data-sch]"); if (b) schedMenu(b, b.dataset.sch); });
+  el("tl").addEventListener("click", function(e){
+    var b = e.target.closest("[data-sch]"); if (b) return schedMenu(b, b.dataset.sch);
+    var im = e.target.closest("img.gv-img"); if (im) { e.preventDefault(); viewPhoto(im.getAttribute("src")); }
+  });
   showPane(); renderList();
   // Opening a conversation reads it, like Voice: the bold goes. "Waiting on
   // you" in the main app is its own flag, so this doesn't clear that.
@@ -570,6 +621,7 @@ function threadMenu(btn){
         renderList(); loadList();
       });
     }],
+    [nameFor(phone) ? "Edit name" : "Add a name", function(){ editName(phone); }],
     ["Mark as unread", function(){
       A.post("/api/read", { phone:phone, read:false }).then(function(){
         if (r) { r.unread = 1; r.lastDir = r.lastDir || "in"; }
@@ -579,12 +631,95 @@ function threadMenu(btn){
     }]
   ]);
 }
-// What shows in a text thread: texts, photos and voicemails. Voice keeps
-// voicemail on its own tab; Mikey wants it in the chat too, so it's both.
-// Calls stay on the Calls tab.
+// What shows in a text thread: texts, photos, voicemails and calls. Voice
+// keeps the last two on their own tabs; Mikey wants them in the chat too, so
+// they're in both places.
+//
+// A call reaches the chat two ways: a call the app recorded and transcribed
+// is a message of its own (kind "call"), and every other ring is only a row in
+// the call log. The log rows come in as small centred lines, skipping any that
+// a transcribed call already covers (it lands a few minutes after the ring).
+var LOG_KINDS = { answered:1, missed:1, past:1, outgoing:1, declined:1 };
 function textsOf(t){
-  return (t.messages || []).filter(function(m){ return m.kind !== "call" && (m.kind === "voicemail" || m.body || (m.media && m.media.length)); })
-    .sort(function(a,b){ return (a.ts||0) - (b.ts||0); });
+  var out = (t.messages || []).filter(function(m){ return m.kind === "voicemail" || m.kind === "call" || m.body || (m.media && m.media.length); });
+  var talked = out.filter(function(m){ return m.kind === "call"; });
+  S.calls.forEach(function(c){
+    if (c.fromNorm !== t.phone || !LOG_KINDS[c.outcome]) return;
+    if (c.outcome !== "missed" && talked.some(function(m){ return (c.recording && m.recording === c.recording) || (m.ts >= c.ts && m.ts - c.ts < 2 * 3600000); })) return;
+    out.push({ kind:"calllog", ts:c.ts, c:c, dir:c.dir === "out" || c.outcome === "outgoing" ? "out" : "in" });
+  });
+  return out.sort(function(a,b){ return (a.ts||0) - (b.ts||0); });
+}
+function callLine(c){
+  var len = c.talkSec ? " · " + fmtSec(c.talkSec) : "";
+  return '<div class="gv-call">'+callIcon(c)+esc(callWord(c))+len+' · '+esc(A.clock(c.ts))+'</div>';
+}
+// A recorded call is a card like a voicemail: what was said, and the audio.
+function callCard(m){
+  var secs = m.talkSec || 0, x = String(m.body || "").match(/(\d+):(\d\d)/);
+  if (!secs && x) secs = (+x[1]) * 60 + (+x[2]);
+  return '<div class="gv-vm"><div class="hd">'+ic("call")+(m.callDir === "out" ? "You called" : "Phone call")+(secs ? " · " + fmtSec(secs) : "")+'</div>'+
+    (m.transcript ? '<div class="tx">'+esc(m.transcript)+'</div>' : '<div class="tx none">No transcript for this call</div>')+
+    (m.recording ? player(m.recording, secs) : '')+'</div>';
+}
+
+// ---- tapbacks ----------------------------------------------------------------
+// The main app's parser, as is. An iPhone's heart on one of his texts arrives
+// as the words: Loved "See you Saturday". Voice shows those words as a text;
+// Mikey wants them drawn on the message they were stuck to instead. New ones
+// come tagged by the Worker (kind "reaction", reactTo); older ones are matched
+// by their quote. Anything that can't be placed stays an ordinary bubble.
+var TAPBACK_RE=/^(liked|loved|laughed at|emphasi[sz]ed|disliked|questioned)\s+["\u201C\u201D']/i,
+    TAPBACK_ANY_RE=/^reacted\s+(\S{1,12}?)\s+to\s+["\u201C\u201D']/i,
+    TAPBACK_OFF_RE=/^removed\s+(?:an?\s+)?(?:like|love|heart|dislike|laugh|question|exclamation|emphasis)\s+from\s+["\u201C\u201D']/i,
+    TAPBACK_EMOJI={liked:"\uD83D\uDC4D",loved:"\u2764\uFE0F","laughed at":"\uD83D\uDE02",
+      emphasized:"\u203C\uFE0F",emphasised:"\u203C\uFE0F",disliked:"\uD83D\uDC4E",questioned:"\u2753"};
+function normTap(s){
+  return String(s||"").toLowerCase()
+    .replace(/[\p{Extended_Pictographic}\u{1F3FB}-\u{1F3FF}\uFE0F\u200D]/gu," ")
+    .replace(/[^a-z0-9?'\s]/g," ").replace(/\s+/g," ").trim();
+}
+function tapQuote(rest){ return String(rest||"").replace(/["\u201C\u201D']\s*$/,"").replace(/(\u2026|\.\.\.)$/,"").trim(); }
+function parseTapback(body){
+  var raw=String(body||"").trim(),m,at,label,emoji,off=raw.match(TAPBACK_OFF_RE);
+  if(off)return{label:"removed",emoji:"",removed:true,quote:tapQuote(raw.slice(off[0].length))};
+  if((m=raw.match(TAPBACK_RE))){label=m[1].toLowerCase();emoji=TAPBACK_EMOJI[label]||TAPBACK_EMOJI.liked;at=m[0].length}
+  else if((m=raw.match(TAPBACK_ANY_RE))){label="reacted";emoji=m[1];at=m[0].length}
+  else return null;
+  return{label:label,emoji:emoji,removed:false,quote:tapQuote(raw.slice(at))};
+}
+function tapbackTarget(before,quote){
+  var want=normTap(quote),i;
+  if(want.length<2)return null;
+  var pool=before.slice(-60).filter(function(m){return m&&m.body&&!parseTapback(m.body)&&normTap(m.body)});
+  for(i=pool.length-1;i>=0;i--)if(normTap(pool[i].body)===want)return pool[i];
+  if(want.length<16)return null;
+  for(i=pool.length-1;i>=0;i--)if(normTap(pool[i].body).indexOf(want)===0)return pool[i];
+  return null;
+}
+// Keyed by the message object itself, so a message with no id (an old one)
+// can still carry a tapback.
+function tapbackMap(list){
+  var on=new Map(),placed=new Set(),byId={};
+  list.forEach(function(m){ if(m&&m.id)byId[m.id]=m; });
+  list.forEach(function(m,idx){
+    if(!m||!m.body)return;
+    var p=parseTapback(m.body); if(!p)return;
+    if(m.kind==="reaction"&&m.emoji)p.emoji=m.emoji;
+    var tgt=(m.reactTo&&byId[m.reactTo])||tapbackTarget(list.slice(0,idx),p.quote);
+    if(!tgt)return;
+    var cur=on.get(tgt)||[];
+    if(p.removed){ if(!cur.length)return; cur.pop(); if(cur.length)on.set(tgt,cur); else on.delete(tgt); }
+    else { cur.push(p.emoji||TAPBACK_EMOJI.liked); on.set(tgt,cur); }
+    placed.add(m);
+  });
+  return{on:on,placed:placed};
+}
+function tapBadge(list){
+  if(!list||!list.length)return "";
+  var seen=[],n={};
+  list.forEach(function(e){ if(!n[e]){n[e]=0;seen.push(e);} n[e]++; });
+  return '<span class="gv-tap">'+seen.map(function(e){ return esc(e)+(n[e]>1?'<span class="n">'+n[e]+'</span>':''); }).join('')+'</span>';
 }
 // The voicemail's length lives on its call-log row; the chat copy only has it
 // in older bodies ("(12s)"). Either will do until the audio loads its own.
@@ -612,23 +747,28 @@ function dayWord(ts){
 }
 function renderThread(first){
   var t = S.thread; if (!t) return;
-  var msgs = textsOf(t), h = '', lastDay = -1, i = 0;
+  var all = textsOf(t), taps = tapbackMap(all);
+  var msgs = all.filter(function(m){ return !taps.placed.has(m); }), h = '', lastDay = -1, i = 0;
+  var lone = { voicemail:1, call:1, calllog:1 };
   // Group a run of messages the way Voice does: same side, same day, no more
   // than a few minutes apart. The time sits under the last one in the run.
   while (i < msgs.length) {
     var m = msgs[i], day = A.startOfDay(m.ts || 0);
     if (day !== lastDay) { h += '<div class="gv-day">'+esc(dayWord(m.ts))+'</div>'; lastDay = day; }
-    var dir = m.dir === "in" ? "in" : "out", run = [m], j = i + 1;
-    while (j < msgs.length && m.kind !== "voicemail" && msgs[j].kind !== "voicemail" && (msgs[j].dir === "in" ? "in" : "out") === dir && A.startOfDay(msgs[j].ts) === day && msgs[j].ts - msgs[j-1].ts < 5 * 60000 && !failed(msgs[j-1])) { run.push(msgs[j]); j++; }
+    if (m.kind === "calllog") { h += callLine(m.c); i++; continue; }
+    var dir = (m.kind === "call" ? m.callDir === "out" : m.dir !== "in") ? "out" : "in", run = [m], j = i + 1;
+    while (j < msgs.length && !lone[m.kind] && !lone[msgs[j].kind] && (msgs[j].dir === "in" ? "in" : "out") === dir && A.startOfDay(msgs[j].ts) === day && msgs[j].ts - msgs[j-1].ts < 5 * 60000 && !failed(msgs[j-1])) { run.push(msgs[j]); j++; }
     var last = run[run.length - 1];
     h += '<div class="gv-grp '+dir+'">'+(dir === "in" ? '<span class="avs">'+av(t.phone, nameFor(t.phone) || t.name, true)+'</span>' : '')+'<div class="col">';
     run.forEach(function(x){
       if (x.kind === "voicemail") { h += vmCard(x); return; }
+      if (x.kind === "call") { h += callCard(x); return; }
       (x.media || []).forEach(function(mm){
         if (/^video\//.test(mm.type || "")) h += '<video class="gv-img" src="'+esc(mediaSrc(mm))+'" controls preload="metadata"></video>';
-        else h += '<a href="'+esc(mediaSrc(mm))+'" target="_blank" rel="noopener"><img class="gv-img" src="'+esc(mediaSrc(mm))+'" loading="lazy" alt="Photo"></a>';
+        else h += '<img class="gv-img" src="'+esc(mediaSrc(mm))+'" loading="lazy" alt="Photo" role="button" tabindex="0">';
       });
-      if (x.body) h += '<div class="gv-b">'+linkify(x.body)+'</div>';
+      var tb = taps.on.get(x);
+      if (x.body) h += '<div class="gv-b'+(tb ? ' tapped' : '')+'">'+linkify(x.body)+tapBadge(tb)+'</div>';
     });
     h += '<div class="gv-meta">'+(failed(last) ? '<span class="err">Not delivered</span> · ' : '')+esc(A.clock(last.ts))+'</div></div></div>';
     i = j;
@@ -640,7 +780,7 @@ function renderThread(first){
       '<div class="gv-meta">'+ic("clock")+'Scheduled for '+esc(whenFull(x.sendAt))+'</div></div>';
   });
   if (!h) h = '<div class="gv-empty">Send a message to start the conversation</div>';
-  renderAddr(t);
+  renderAddr(t); renderNameNote(t);
   var tl = el("tl"); if (!tl) return;
   var atBottom = tl.scrollHeight - tl.scrollTop - tl.clientHeight < 80;
   // The 8-second refresh repaints only when something changed. Repainting the
@@ -658,7 +798,7 @@ function failed(m){ return m.dir === "out" && (m.status === "failed" || m.status
 
 // ---- the composer -----------------------------------------------------------
 function composerHtml(){
-  return '<div class="gv-att" id="att"></div>'+
+  return '<div class="gv-ops" id="ops"></div><div class="gv-att" id="att"></div>'+
     '<div class="gv-cmp"><button class="ib" id="attBtn" aria-label="Attach a photo">'+ic("image")+'</button>'+
     '<input type="file" id="file" accept="image/*" multiple hidden>'+
     '<div class="fld"><textarea id="msg" rows="1" placeholder="Type a message" aria-label="Type a message"></textarea>'+
@@ -668,7 +808,13 @@ function composerHtml(){
 }
 function bindComposer(){
   var box = el("msg"); if (!box) return;
-  box.addEventListener("input", sizeBox);
+  box.addEventListener("input", function(){ sizeBox(); setDraft(S.phone, box.value); });
+  el("ops").onclick = function(e){
+    var b = e.target.closest("[data-op]"); if (!b) return;
+    var v = box.value;
+    box.value = v + (v && !/\s$/.test(v) ? " " : "") + b.dataset.op + " ";
+    sizeBox(); setDraft(S.phone, box.value); box.focus();
+  };
   // Enter sends on a keyboard, Shift+Enter is a new line: Voice on the web.
   // On a phone the return key is a new line and the arrow sends, as in the app.
   box.addEventListener("keydown", function(e){ if (e.key === "Enter" && !e.shiftKey && !isTouch) { e.preventDefault(); send(); } });
@@ -687,6 +833,27 @@ function sizeBox(){
   // Polish and Schedule only make sense once there are words to work on.
   var words = !!box.value.trim();
   el("polBtn").hidden = !words; el("schBtn").hidden = !words;
+  renderOpeners();
+}
+// ---- his usual openers ------------------------------------------------------------
+// The first words he starts texts with, learned from his own texts (the same
+// typing model the main app's suggestions read, cached the same way). Offered
+// on an empty box and right after a finished sentence, never mid-word.
+var STYLE = null, STYLE_KEY = "mkd-style-v1";
+function loadStyle(){
+  try { var o = JSON.parse(localStorage.getItem(STYLE_KEY) || "null"); if (o && o.style && Date.now() - (o.at || 0) < 6 * 3600000) { STYLE = o.style; return; } } catch(e){}
+  A.api("/api/ai/style").then(function(d){
+    if (!d || !d.ok || !d.style) return;
+    STYLE = d.style; try { localStorage.setItem(STYLE_KEY, JSON.stringify({ at:Date.now(), style:d.style })); } catch(e){}
+    renderOpeners();
+  });
+}
+function renderOpeners(){
+  var row = el("ops"), box = el("msg"); if (!row || !box) return;
+  var v = box.value, list = (STYLE && STYLE.start) || [];
+  var show = list.length && (!v.trim() || /[.!?]["'\u2019)]?\s*$/.test(v)) && !S.att.length;
+  var h = show ? list.slice(0, 3).map(function(w){ return '<button data-op="'+esc(w)+'">'+esc(w)+'</button>'; }).join('') : '';
+  if (row.innerHTML !== h) row.innerHTML = h;
 }
 // Shrunk in the browser before it goes, the same as the main app's photos: a
 // 4 MB camera photo isn't something a carrier will deliver as a text.
@@ -743,7 +910,7 @@ function send(){
   A.post("/api/send", payload).then(function(d){
     S.sending = false;
     if (!d || !d.ok) { sizeBox(); snack(d && d.error === "recipient_opted_out" ? "This person has opted out of receiving messages from you" : "Message not sent. Check your connection and try again."); return; }
-    box.value = ""; S.att = []; renderAtt(); sizeBox();
+    box.value = ""; S.att = []; renderAtt(); sizeBox(); setDraft(phone, "");
     A.post("/api/read", { phone:phone });
     if (d.thread && phone === S.phone) { S.thread = d.thread; renderThread(true); }
     var r = rowFor(phone);
@@ -813,7 +980,7 @@ function schedule(sendAt){
   A.post("/api/schedule", { phone:phone, body:body, sendAt:sendAt }).then(function(d){
     if (!d || !d.ok) return snack("Couldn't schedule it. Try again.");
     if (phone !== S.phone) return;
-    el("msg").value = ""; sizeBox();
+    el("msg").value = ""; sizeBox(); setDraft(phone, "");
     if (d.thread) { if (S.thread && S.thread.addressGuess && !d.thread.addressGuess) d.thread.addressGuess = S.thread.addressGuess; S.thread = d.thread; renderThread(true); }
     snack("Scheduled for " + whenFull(sendAt));
   });
@@ -863,6 +1030,58 @@ function renderAddr(t){
       snack("Address saved");
     }).catch(function(){ b.disabled = false; snack("Couldn't save it. Try again."); });
   };
+}
+
+// ---- names ----------------------------------------------------------------------
+// The app already picks names up by itself (from a voicemail, what they said,
+// their email) and they show everywhere. A picked-up name gets one quiet line
+// under the header saying where it came from; "Looks right" saves it as his,
+// which stops a later guess from replacing it. No name at all: "Add a name".
+function renderNameNote(t){
+  var box = el("nameNote"); if (!box) return;
+  var src = t.nameAuto || "", n = (t.name || "").trim();
+  if (!src || !n) { box.hidden = true; box.innerHTML = ""; return; }
+  var h = '<span>'+(src === "email" ? 'Name guessed from their email' : 'Name picked up from their texts')+'</span>'+
+    '<button class="gv-tbtn" id="nameOk">Looks right</button><button class="gv-tbtn" id="nameFix">Edit</button>';
+  if (box.innerHTML === h && !box.hidden) return;
+  box.innerHTML = h; box.hidden = false;
+  el("nameOk").onclick = function(){ saveName(t.phone, n); };
+  el("nameFix").onclick = function(){ editName(t.phone); };
+}
+function editName(phone){
+  var cur = nameFor(phone);
+  var v = prompt(cur ? "Name" : "Who is " + A.fmtPhone(phone) + "?", cur || "");
+  if (v == null) return; v = v.trim(); if (!v) return;
+  saveName(phone, v);
+}
+function saveName(phone, v){
+  A.post("/api/meta", { phone:phone, name:v }).then(function(d){
+    if (!d || d.ok === false) return snack("Couldn't save the name. Try again.");
+    var r = rowFor(phone); if (r) r.name = v;
+    if (S.thread && S.thread.phone === phone) { S.thread.name = v; S.thread.nameAuto = ""; }
+    if (S.phone === phone && el("whoName")) {
+      el("whoName").textContent = v;
+      var sub = el("whoSub"); if (sub) sub.textContent = A.fmtPhone(phone);
+      if (S.thread) { renderNameNote(S.thread); renderThread(true); }
+    }
+    renderList(); snack("Saved as " + v);
+  });
+}
+
+// ---- photo viewer ----------------------------------------------------------------
+// A photo opens full screen over the chat, as in Voice: back to close, and a
+// download button. Escape or a tap outside the photo closes it too.
+function viewPhoto(src){
+  if (!src) return;
+  var lb = document.createElement("div"); lb.className = "gv-lb"; lb.id = "lightbox";
+  lb.setAttribute("role","dialog"); lb.setAttribute("aria-label","Photo");
+  lb.innerHTML = '<button class="ib" id="lbClose" aria-label="Close">'+ic("back")+'</button>'+
+    '<a class="ib" href="'+esc(src)+'" download aria-label="Download">'+ic("dl")+'</a><img src="'+esc(src)+'" alt="Photo">';
+  el("gv").appendChild(lb);
+  function shut(){ lb.remove(); document.removeEventListener("keydown", key); }
+  function key(e){ if (e.key === "Escape") shut(); }
+  document.addEventListener("keydown", key);
+  lb.onclick = function(e){ if (e.target === lb || e.target.closest("#lbClose")) shut(); };
 }
 
 // ---- new message: the To field ------------------------------------------------
@@ -978,10 +1197,12 @@ function route(first){
   if (!first) { blankPane(); renderList(); }
 }
 setView("messages");
+loadStyle();
 Promise.all([loadList(), loadCalls()]).then(function(){
   if (/[?&](c|vm|call)=/.test(location.search)) { try { history.replaceState({ gv:1 }, "", location.href); } catch(e){} }
   route(true);
 });
+window.addEventListener("pagehide", function(){ var m = el("msg"); if (m && S.phone && S.pane === "thread") setDraft(S.phone, m.value); });
 // Fresh without a refresh, at the same pace as the main Inbox.
 setInterval(function(){ if (!document.hidden) loadList(); }, 20000);
 setInterval(function(){ if (!document.hidden) pollThread(); }, 8000);

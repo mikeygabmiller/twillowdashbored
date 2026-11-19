@@ -114,7 +114,18 @@ conversations laid out exactly like Google Voice, and the rule for it is
   texts show outlined with Edit and Cancel), and the address found in the texts
   (a strip under the name: Save, then Directions). Voicemails show in the
   chat as a card with the transcript and a play button (they stay on the
-  Voicemail tab too).
+  Voicemail tab too). Second batch, picked off the full list of what was left
+  out: photo viewer (full screen), his usual openers (chips over an empty box,
+  from `/api/ai/style`), calls in the chat (a recorded call is a card, other
+  rings a one-line entry), tapbacks (drawn on the message, same parser as the
+  main app), saved drafts (per phone in this browser, "Draft:" on the row) and
+  names (the picked-up name gets "Looks right" / "Edit"; no name, "Add a name").
+- **It's his texting screen** (Mikey, 2026-11-19). `index.html` sends the
+  front door and every `?c=` link to `/voice`, and in the main app `setTab
+  ("messages")` and `openThread()` go there too. `?waiting=1`, money links and
+  `?classic=1` (Voice's "Dashboard" row) stay put. Switch: More > Settings >
+  Texting screen, stored per browser as `mkd-voice-home`. Never fires on
+  `*.test` / `127.0.0.1`, which is where the other suites load the classic app.
 - **Add a feature back only when he names it** as one he uses. Don't bring
   dashboard extras over because they'd be handy; that is the bloat he's
   getting away from. When one goes in, list it here and give it a check in

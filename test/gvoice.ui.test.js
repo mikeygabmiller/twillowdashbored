@@ -2,7 +2,8 @@
 // like voice.google.com, as a test of how that feels. Its rule is "nothing
 // Voice doesn't have", so these checks guard both halves: that it behaves like
 // Voice (open marks read, Enter sends, calls and voicemail on their own tabs,
-// voicemail also in the chat since he asked for it,
+// voicemail also in the chat since he asked for it, plus the second batch he
+// picked: photo viewer, openers, calls in the chat, tapbacks, drafts, names,
 // Archive in the menu) and that none of the dashboard's extras crept in.
 import { chromium } from 'playwright-core';
 import fs from 'fs';
@@ -23,8 +24,11 @@ const THREAD = {
     { dir: 'in', body: 'Hey!', ts: now - 12 * M },
     { dir: 'in', body: 'Can you do Saturday?', ts: now - 10 * M },
     { dir: 'in', body: '🎙️ Voicemail: "Hi this is Dana about my truck"', ts: now - 3 * H, kind: 'voicemail', recording: 'https://x/rec.mp3', transcript: 'Hi this is Dana about my truck' },
-    { dir: 'in', body: '📞 Phone call', ts: now - 4 * H, kind: 'call' },
+    { dir: 'in', body: '📞 Phone call, 1:35\n"Talked about the truck"', ts: now - 6 * H + 5 * M, kind: 'call', callDir: 'in', transcript: 'Talked about the truck', recording: 'https://x/call.mp3' },
+    { dir: 'in', body: 'Loved \u201cHi Dana, it is Mikey\u201d', ts: now - 90 * M },
+    { dir: 'in', body: '', media: [{ url: '/i/abc123', type: 'image/jpeg' }], ts: now - 80 * M },
   ],
+  nameAuto: 'said',
   scheduled: [{ id: 's1', sendAt: now + D, body: 'Reminder text' }],
   addressGuess: '123 Maple St, Snohomish',
 };
@@ -33,6 +37,7 @@ const CALLS = [
   { id: 'c2', fromNorm: '+14255550302', ts: now - 5 * H, outcome: 'missed' },
   { id: 'c3', fromNorm: '+14255550301', ts: now - 6 * H, outcome: 'answered', talkSec: 95 },
   { id: 'c4', fromNorm: '+14255550309', ts: now - 7 * H, outcome: 'screened' },
+  { id: 'c5', fromNorm: '+14255550301', ts: now - 8 * H, outcome: 'missed' },
 ];
 
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/opt/pw-browsers/chromium' });
@@ -53,6 +58,7 @@ async function open(viewport, path = '/voice') {
     if (/fonts\.(googleapis|gstatic)/.test(u.host)) return route.fulfill({ status: 200, contentType: 'text/css', body: '' });
     if (req.method() === 'POST') { let b = {}; try { b = JSON.parse(req.postData() || '{}'); } catch { /* */ } posted.push({ path: p, body: b }); }
     else got.push(p + u.search);
+    if (p === '/api/ai/style') return json({ ok: true, style: { start: ['Hey', 'Sounds good'] } });
     if (p === '/voice') return route.fulfill({ status: 200, contentType: 'text/html', body: read('voice.html') });
     if (p === '/app/app.js') return route.fulfill({ status: 200, contentType: 'application/javascript', body: read('app/app.js') });
     if (p === '/app/app.css') return route.fulfill({ status: 200, contentType: 'text/css', body: read('app/app.css') });
@@ -96,9 +102,12 @@ section('Laptop: the Voice layout');
   const pane = await page.locator('#pane').innerText();
   ok('the header has their name and number', /Dana Fox/.test(pane) && /\(425\) 555-0301/.test(pane));
   ok('texts show, including an automatic one, with no Auto label', /Hi Dana, it is Mikey/.test(pane) && !/\bAuto\b/.test(pane));
-  ok('a voicemail shows in the chat with its transcript and a play button (added back)', (await page.locator('#tl .gv-vm').count()) === 1 && /Hi this is Dana about my truck/.test(await page.locator('#tl .gv-vm').innerText()) && await page.locator('#tl .gv-vm .pb').isVisible());
-  ok('its length comes from the call log', /0:12/.test(await page.locator('#tl .gv-vm .tt').innerText()));
-  ok('calls stay on the Calls tab', !/Phone call/.test(pane));
+  const vmc = page.locator('#tl .gv-vm', { hasText: 'Voicemail' });
+  ok('a voicemail shows in the chat with its transcript and a play button (added back)', (await vmc.count()) === 1 && /Hi this is Dana about my truck/.test(await vmc.innerText()) && await vmc.locator('.pb').isVisible());
+  ok('its length comes from the call log', /0:12/.test(await vmc.locator('.tt').innerText()));
+  ok('a recorded call shows in the chat with its transcript (added back)', /Phone call · 1:35/.test(pane) && /Talked about the truck/.test(pane));
+  ok('a missed call shows as a line in the chat', /Missed call/.test(await page.locator('#tl .gv-call').allInnerTexts().then((a) => a.join('|'))));
+  ok('the answered call it covers is not listed twice', (await page.locator('#tl .gv-call', { hasText: 'Incoming call' }).count()) === 0);
   ok('a scheduled text waits at the bottom with its time (added back)', /Reminder text/.test(pane) && /Scheduled for tomorrow/.test(pane), pane.slice(-200));
   ok('the address found in the texts is offered (added back)', /123 Maple St, Snohomish/.test(pane) && /Found in your texts/.test(pane));
   ok('two texts close together share one time under them', (await page.locator('.gv-grp.in', { hasText: 'Can you do Saturday?' }).locator('.gv-b').count()) === 2);
@@ -149,7 +158,7 @@ section('Laptop: the Voice layout');
 
   await page.locator('#paneMore').click();
   const items = await page.locator('#pop button').allInnerTexts();
-  ok('the ⋮ menu has Archive and Mark as unread', items.join() === 'Archive,Mark as unread', items);
+  ok('the ⋮ menu has Archive, Edit name and Mark as unread', items.join() === 'Archive,Edit name,Mark as unread', items);
   await page.locator('#pop button', { hasText: 'Archive' }).click();
   await page.waitForTimeout(300);
   ok('Archive files the chat', posted.some((p) => p.path === '/api/meta' && p.body.phone === '+14255550301' && p.body.archived === true));
@@ -179,7 +188,7 @@ section('Laptop: the Voice layout');
   await page.locator('#menuBtn').click();
   await page.waitForTimeout(250);
   const dr = await page.locator('#drawer').innerText();
-  ok('the menu has Archive and a way back to the dashboard', /Archive/.test(dr) && /Back to my dashboard/.test(dr));
+  ok('the menu has Archive and a way back to the dashboard', /Archive/.test(dr) && /Dashboard/.test(dr));
   await page.locator('#drawer [data-go="archive"]').click();
   await page.waitForTimeout(250);
   ok('Archive lists the archived chat', /Old Archie/.test(await page.locator('#list').innerText()));
@@ -198,6 +207,93 @@ section('Laptop: the Voice layout');
   ok('search narrows the list', found === 1, found);
   ok('no errors on the page', errs.length === 0, errs);
   await ctx.close();
+}
+
+section('Laptop: the second batch he picked');
+{
+  const { ctx, page, errs, posted } = await open({ width: 1280, height: 800 });
+  await page.locator('[data-open="+14255550301"]').click();
+  await page.waitForTimeout(500);
+  const heart = page.locator('#tl .gv-b.tapped', { hasText: 'Hi Dana, it is Mikey' });
+  ok('a tapback is drawn on the text it was for', (await heart.count()) === 1 && /❤️/.test(await heart.locator('.gv-tap').innerText()));
+  ok('and is not a bubble of its own', (await page.locator('#tl .gv-b', { hasText: 'Loved' }).count()) === 0);
+
+  await page.locator('#tl img.gv-img').click();
+  await page.waitForTimeout(150);
+  ok('a photo opens full screen', await page.locator('#lightbox').isVisible() && (await page.locator('#lightbox img').getAttribute('src')) === '/i/abc123');
+  await page.keyboard.press('Escape');
+  ok('Escape closes it', (await page.locator('#lightbox').count()) === 0);
+
+  const ops = await page.locator('#ops button').allInnerTexts();
+  ok('his usual openers sit over an empty box', ops.join() === 'Hey,Sounds good', ops);
+  await page.locator('#ops button', { hasText: 'Hey' }).click();
+  ok('tapping one starts the text with it', (await page.locator('#msg').inputValue()) === 'Hey ');
+  await page.locator('#msg').fill('Hey there');
+  await page.waitForTimeout(50);
+  ok('they get out of the way mid-sentence', (await page.locator('#ops button').count()) === 0);
+
+  ok('a picked-up name says where it came from', /Name picked up from their texts/.test(await page.locator('#nameNote').innerText()));
+  await page.locator('#nameOk').click();
+  await page.waitForTimeout(250);
+  ok('Looks right saves it as his', posted.some((p) => p.path === '/api/meta' && p.body.phone === '+14255550301' && p.body.name === 'Dana Fox'));
+
+  await page.locator('#msg').fill('half typed');
+  await page.locator('#msg').dispatchEvent('input');
+  await page.locator('[data-open="+14255550302"]').click();
+  await page.waitForTimeout(400);
+  const drRow = await page.locator('[data-open="+14255550301"]').innerText();
+  ok('the half-typed text shows as a Draft on its row', /Draft:\s*half typed/.test(drRow), [drRow, await page.evaluate(() => localStorage.getItem('gv-drafts'))]);
+  ok('a chat with no name offers Add a name', await page.locator('#addName').isVisible());
+  page.once('dialog', (d) => d.accept('Pat Lee'));
+  await page.locator('#addName').click();
+  await page.waitForTimeout(300);
+  ok('Add a name saves it', posted.some((p) => p.path === '/api/meta' && p.body.phone === '+14255550302' && p.body.name === 'Pat Lee') && (await page.locator('#whoName').innerText()) === 'Pat Lee');
+  await page.locator('[data-open="+14255550301"]').click();
+  await page.waitForTimeout(400);
+  ok('going back to the chat brings the draft back', (await page.locator('#msg').inputValue()) === 'half typed');
+  ok('no errors on the page', errs.length === 0, errs);
+  await ctx.close();
+}
+
+section('The dashboard opens on this screen (index.html)');
+{
+  const idx = read('index.html');
+  const ctx = await browser.newContext({ viewport: { width: 412, height: 880 } });
+  const page = await ctx.newPage();
+  await page.route('**/*', (route) => {
+    const u = new URL(route.request().url());
+    if (u.pathname === '/') return route.fulfill({ status: 200, contentType: 'text/html', body: idx });
+    if (u.pathname === '/voice') return route.fulfill({ status: 200, contentType: 'text/html', body: '<!doctype html><title>voice</title><p>voice</p>' });
+    if (u.pathname.startsWith('/api/')) return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+    return route.fulfill({ status: 200, contentType: 'text/plain', body: '' });
+  });
+  const go = async (path) => { await page.goto('https://dash.example' + path); await page.waitForTimeout(400); return new URL(page.url()); };
+  ok('opening the dashboard lands on the Google Voice screen', (await go('/')).pathname === '/voice');
+  const c = await go('/?c=%2B14255550301');
+  ok('a text alert opens that chat there', c.pathname === '/voice' && c.search === '?c=%2B14255550301', c.href);
+  ok('the "people waiting" link stays on the dashboard', (await go('/?waiting=1')).pathname === '/');
+  ok('so does a money link', (await go('/?money=1')).pathname === '/');
+  ok('?classic=1 (the Dashboard row) stays on the dashboard', (await go('/?classic=1')).pathname === '/');
+  await page.evaluate(() => document.querySelector('.navitem[data-tab="messages"]').click());
+  await page.waitForTimeout(400);
+  ok('tapping Chats there goes to the Google Voice screen', new URL(page.url()).pathname === '/voice', page.url());
+  ok('a test host never moves (the other suites load index.html on *.test)', /\.test\$/.test(idx) && /mkd-voice-home/.test(idx));
+  await ctx.close();
+
+  const ctx2 = await browser.newContext({ viewport: { width: 412, height: 880 } });
+  const p2 = await ctx2.newPage();
+  await p2.route('**/*', (route) => {
+    const u = new URL(route.request().url());
+    if (u.pathname === '/') return route.fulfill({ status: 200, contentType: 'text/html', body: idx });
+    if (u.pathname.startsWith('/api/')) return route.fulfill({ status: 200, contentType: 'application/json', body: '{"ok":true}' });
+    return route.fulfill({ status: 200, contentType: 'text/plain', body: '' });
+  });
+  await p2.goto('https://dash.example/?classic=1');
+  await p2.evaluate(() => { localStorage.setItem('mkd-voice-home', '0'); sessionStorage.clear(); });
+  await p2.goto('https://dash.example/');
+  await p2.waitForTimeout(400);
+  ok('switched off in Settings, the dashboard opens as before', new URL(p2.url()).pathname === '/', p2.url());
+  await ctx2.close();
 }
 
 section('Phone: the Voice app');
