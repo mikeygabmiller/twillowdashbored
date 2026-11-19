@@ -28,7 +28,32 @@
     if (/\.test$|^127\.0\.0\.1$|^localhost$/.test(location.hostname)) return;
     if (/[?&](money|journey|open)=/.test(q)) return;
     var c = q.match(/[?&]c=([^&#]+)/);
+    window.mkdMoved = true;   // the texting-screen switch below stands aside
     location.replace(c ? "/inbox?c=" + c[1] : (/[?&]waiting=1/.test(q) ? "/inbox?waiting=1" : "/inbox"));
+  }catch(e){}
+})();
+</script>
+<script>/* THE TEXTING SCREEN (Mikey, 2026-11-19): the Google Voice page at /voice
+   is his texting screen now, with a switch in More > Settings to turn it off
+   ("mkd-voice-home" = "0" in this browser). Opening the dashboard lands there;
+   so does a link to one chat (?c=), which is what every text alert opens. Every
+   other link (?waiting=1, money, ?open=) is a dashboard screen and stays. From
+   /voice, the menu's Dashboard row comes back with ?classic=1, which keeps the
+   rest of that tab here, the same rule as the switch above. The test suites
+   load this page on *.test and 127.0.0.1, so it never fires there. */
+window.mkdVoiceHome=function(){
+  try{
+    if(/\.test$|^127\.0\.0\.1$|^localhost$/.test(location.hostname))return false;
+    return localStorage.getItem("mkd-voice-home")!=="0";
+  }catch(e){return false}
+};
+(function(){
+  try{
+    if(window.mkdMoved||!window.mkdVoiceHome()||sessionStorage.getItem("mkdClassic")==="1")return;
+    var q=location.search;
+    if(q&&!/^\?c=[^&#]+$/.test(q))return;
+    var c=q.match(/^\?c=([^&#]+)$/);
+    location.replace(c?"/voice?c="+c[1]:"/voice");
   }catch(e){}
 })();
 </script>
@@ -4761,7 +4786,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-11-19·voice-vm";
+  var APP_BUILD="2026-11-19·voice-home";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -9871,6 +9896,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   function refreshThreads(){return api("/api/threads").then(function(d){if(d&&d.ok){state.threads=d.threads||[];state.loadedOnce=true;renderMain()}})}
 
   function openThread(phone){
+    // The Google Voice page is the texting screen while it's switched on (see
+    // mkdVoiceHome at the top): every way into a chat, from Today, Work, a
+    // booking or search, opens it there.
+    if(window.mkdVoiceHome&&window.mkdVoiceHome()&&phone){clearTimeout(VOICE_GO);location.href="/voice?c="+encodeURIComponent(phone);return}
     // Hand the current draft back to the conversation it was written for before
     // switching, and bring up whatever was left half-typed for this one.
     var prev=state.phone,switching=prev!==phone;
@@ -9933,7 +9962,9 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       if(/[?&]waiting=1/.test(location.search)){
         if(window.history&&history.replaceState)history.replaceState(null,"",location.pathname+location.hash);
         state.filter="waiting";state.search="";var sw=el("search");if(sw)sw.value="";
-        setTab("messages");return;
+        // The Google Voice page has no "waiting" list, so this one link keeps
+        // the dashboard's Chats, filtered to exactly those people.
+        VOICE_KEEP=true;setTab("messages");VOICE_KEEP=false;return;
       }
       var m=location.search.match(/[?&]c=([^&#]+)/);
       if(m){state.pendingC=decodeURIComponent(m[1]);
@@ -14153,6 +14184,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
 
   // ---- tabs ----
   function setTab(tab){
+    // Chats is the Google Voice page while it's on. Most callers do
+    // setTab("messages") and then openThread() in the same breath, so the move
+    // waits a tick: openThread cancels it and goes straight to that chat.
+    if(tab==="messages"&&!VOICE_KEEP&&window.mkdVoiceHome&&window.mkdVoiceHome()){clearTimeout(VOICE_GO);VOICE_GO=setTimeout(function(){location.href="/voice"},0)}
     // A new tab starts at the top, so the floating buttons belong back on screen.
     document.body.classList.remove("fab-tuck");
     stashDraft(state.phone);
@@ -14188,6 +14223,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // now, grouped, never more than two levels deep, built from a single list so
   // there is only one place to keep honest.
   var MORE={view:"root"};
+  var VOICE_GO=0,VOICE_KEEP=false;   // a pending move to the Google Voice page, and the one link that skips it (see setTab)
   var MORE_MENU=[
     {g:"AI",rows:[
       {t:"Command AI",ic:"sparkles",note:"new",go:function(){closeMore();openAiCmd()}},
@@ -14287,9 +14323,18 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // bar, and "Customize" sat as a peer of the whole app, so a setting could be
   // in any of three places and you had to remember which. They are rows here
   // now; both screens still exist, they just have one entrance.
+  function voiceHomeOn(){try{return localStorage.getItem("mkd-voice-home")!=="0"}catch(e){return true}}
   function mrSettings(b){
     b.appendChild(mrGroup("",[
       {t:"Phone notifications",ic:"bell",noteId:"pushState",go:function(){closeMore();jdPushSheet()}},
+      // On by default. Kept in this browser, like the layout: it's how this
+      // phone opens, not a fact about the business.
+      {t:"Texting screen",ic:"message-square",note:voiceHomeOn()?"Google Voice":"Classic",go:function(){
+        var on=!voiceHomeOn();
+        try{localStorage.setItem("mkd-voice-home",on?"1":"0")}catch(e){}
+        toast(on?"Texting opens the Google Voice screen":"Texting stays on the classic screen");
+        mrRender();
+      }},
       {t:"Customize everything",ic:"sliders",go:function(){closeMore();openCustomize()}},
       {t:"Layout",ic:"layout-grid",note:layoutMeta(layoutId()).name,go:function(){closeMore();openCustomize();CZ.tab="shell";czRender()}},
       {t:"Money settings",ic:"dollar",go:function(){closeMore();openMoney("settings")}},
