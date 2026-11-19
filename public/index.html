@@ -6248,6 +6248,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     {id:"followups",t:"Follow-ups",g:"Chats",ic:"list-checks",k:"chase nudge check in reminder due",run:function(){setTab("followups")}},
     {id:"scheduled",t:"Scheduled texts",g:"Chats",ic:"calendar-days",k:"later queued send timed",run:function(){setTab("scheduled")}},
     {id:"archived",t:"Archived",g:"Chats",ic:"archive",k:"hidden old done filed",run:function(){setTab("archived")}},
+    // A test (2026-11-19): the same conversations laid out exactly like Google
+    // Voice, on its own page (/voice), so trying it changes nothing here. In
+    // search rather than More, which is held to 14 rows.
+    {id:"gvoice",t:"Google Voice layout (test)",g:"Chats",ic:"message-square",k:"google voice gv layout look test messages",run:function(){location.href="/voice"}},
     {id:"newmsg",t:"New message",g:"Chats",ic:"plus",k:"compose text someone start write",run:function(){var f=el("fab");if(f)f.click()}},
     // — the phone
     {id:"calls",t:"Calls",g:"Calls",ic:"phone",k:"phone log ring rang history who called dialed",run:function(){setTab("calls")}},
@@ -14192,10 +14196,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       {t:"Business playbook",ic:"file-text",into:"playbook"}
     ]},
     {g:"Phone",rows:[
-      {t:"Calls & voicemail",ic:"phone",noteId:"mnCallStat",go:function(){closeMore();setTab("calls")}},
-      // A test (2026-11-19): the same conversations laid out exactly like Google
-      // Voice, on its own page, so trying it changes nothing here.
-      {t:"Google Voice layout",ic:"message-square",note:"test",go:function(){location.href="/voice"}}
+      {t:"Calls & voicemail",ic:"phone",noteId:"mnCallStat",go:function(){closeMore();setTab("calls")}}
     ]},
     {g:"Insights",rows:[
       // Nine reports behind one door. It lost its nav pill on the evidence and
