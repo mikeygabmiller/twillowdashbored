@@ -112,7 +112,9 @@ conversations laid out exactly like Google Voice, and the rule for it is
 - **Added back so far:** Polish (✨ in the message box, with Undo), scheduled
   send (🕒 beside send, the dashboard's quick times plus a picker; scheduled
   texts show outlined with Edit and Cancel), and the address found in the texts
-  (a strip under the name: Save, then Directions).
+  (a strip under the name: Save, then Directions). Voicemails show in the
+  chat as a card with the transcript and a play button (they stay on the
+  Voicemail tab too).
 - **Add a feature back only when he names it** as one he uses. Don't bring
   dashboard extras over because they'd be handy; that is the bloat he's
   getting away from. When one goes in, list it here and give it a check in
