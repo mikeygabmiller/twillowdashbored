@@ -1,0 +1,799 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content">
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#202124" media="(prefers-color-scheme: dark)">
+<title>Voice · Mikey's Detailing</title>
+<link rel="icon" href="/favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
+<!-- app.css is here only for the sign-in screen app.js shows on a 401. Every
+     rule below is scoped under .gv, so nothing in it reaches this page. -->
+<link rel="stylesheet" href="/app/app.css">
+<style>
+/* A test of one idea (Mikey, 2026-11-19): his conversations, laid out exactly
+   like Google Voice, to see how it feels. The rule for this page is "nothing
+   Google Voice doesn't have": no AI chips, no quick replies, no booking pills,
+   no "Waiting" tags. If it's not on voice.google.com, it isn't here. The data
+   and every send go through the same /api routes as the rest of the dashboard,
+   so a text sent here is the same text everywhere. */
+.gv{
+  --gv-bg:#fff; --gv-ink:#202124; --gv-ink2:#3c4043; --gv-muted:#5f6368; --gv-line:#dadce0;
+  --gv-soft:#f1f3f4; --gv-hover:#f6f8fc; --gv-sel:#e8f0fe; --gv-sel-ink:#1967d2;
+  --gv-blue:#1a73e8; --gv-out:#1a73e8; --gv-out-ink:#fff; --gv-in:#f1f3f4; --gv-in-ink:#202124;
+  --gv-red:#d93025; --gv-pill:#c2e7ff; --gv-green:#188038; --gv-shadow:0 1px 2px rgba(60,64,67,.3),0 1px 3px 1px rgba(60,64,67,.15);
+}
+@media (prefers-color-scheme: dark){
+  .gv{
+    --gv-bg:#202124; --gv-ink:#e8eaed; --gv-ink2:#bdc1c6; --gv-muted:#9aa0a6; --gv-line:#3c4043;
+    --gv-soft:#303134; --gv-hover:#28292c; --gv-sel:#394457; --gv-sel-ink:#8ab4f8;
+    --gv-blue:#8ab4f8; --gv-out:#8ab4f8; --gv-out-ink:#202124; --gv-in:#3c4043; --gv-in-ink:#e8eaed;
+    --gv-red:#f28b82; --gv-pill:#004a77; --gv-green:#81c995; --gv-shadow:0 1px 3px rgba(0,0,0,.6);
+  }
+}
+html,body{height:100%}
+body{margin:0}
+.gv{position:fixed;inset:0;display:flex;flex-direction:column;background:var(--gv-bg);color:var(--gv-ink);
+  font:14px/20px Roboto,Arial,sans-serif;-webkit-font-smoothing:antialiased;letter-spacing:.2px}
+.gv *{box-sizing:border-box}
+:where(.gv) :where(button){font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer}
+.gv svg.i{width:24px;height:24px;fill:currentColor;flex:none;display:block}
+.gv .ib{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;color:var(--gv-muted);flex:none}
+.gv .ib:hover{background:var(--gv-soft)}
+.gv .ib[disabled]{opacity:.38;cursor:default}
+
+/* ---- top bar (laptop) ---------------------------------------------------- */
+.gv-top{height:64px;display:flex;align-items:center;gap:4px;padding:0 8px 0 4px;border-bottom:1px solid var(--gv-line);flex:none}
+.gv-logo{display:flex;align-items:center;gap:8px;padding-right:56px;font-size:22px;color:var(--gv-muted);white-space:nowrap}
+.gv-logo .mark{width:40px;height:40px}
+.gv-search{flex:1;max-width:720px;height:48px;border-radius:8px;background:var(--gv-soft);display:flex;align-items:center;gap:4px;padding:0 4px}
+.gv-search:focus-within{background:var(--gv-bg);box-shadow:var(--gv-shadow)}
+.gv-search input{flex:1;min-width:0;height:100%;border:0;background:transparent;color:var(--gv-ink);font:16px Roboto,Arial,sans-serif;outline:none}
+.gv-search input::placeholder{color:var(--gv-muted)}
+.gv-top .sp{flex:1}
+.gv-me{width:32px;height:32px;border-radius:50%;background:#d93025;color:#fff;display:grid;place-items:center;font-weight:500;font-size:14px;margin:0 8px}
+
+/* ---- body: rail, list, pane --------------------------------------------- */
+.gv-body{flex:1;display:flex;min-height:0}
+.gv-rail{width:80px;flex:none;display:flex;flex-direction:column;align-items:center;gap:12px;padding-top:12px}
+.gv-rail .nv{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:12px;font-weight:500;color:var(--gv-muted);width:72px}
+.gv-rail .nv .pl{width:56px;height:32px;border-radius:16px;display:grid;place-items:center;position:relative}
+.gv-rail .nv:hover .pl{background:var(--gv-soft)}
+.gv-rail .nv.on{color:var(--gv-ink)}
+.gv-rail .nv.on .pl{background:var(--gv-pill)}
+.gv .bdg{position:absolute;top:0;right:8px;min-width:16px;height:16px;border-radius:8px;background:var(--gv-red);color:#fff;font-size:11px;line-height:16px;font-weight:500;padding:0 4px;text-align:center}
+.gv .bdg[hidden]{display:none}
+
+.gv-list{width:360px;flex:none;display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--gv-line)}
+.gv-list .scroll{flex:1;overflow-y:auto}
+.gv-new{display:flex;align-items:center;gap:16px;height:56px;padding:0 16px;width:100%;text-align:left;font-weight:500;color:var(--gv-ink)}
+.gv-new:hover{background:var(--gv-hover)}
+.gv-new .c{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:var(--gv-blue)}
+.gv-lh{font-size:14px;font-weight:500;color:var(--gv-muted);padding:12px 16px 4px}
+.gv-row{display:flex;align-items:center;gap:16px;width:100%;min-height:72px;padding:8px 16px;text-align:left;border-radius:0 36px 36px 0;margin-right:8px}
+.gv-row:hover{background:var(--gv-hover)}
+.gv-row.sel{background:var(--gv-sel)}
+.gv-row .m{flex:1;min-width:0}
+.gv-row .t1{display:flex;align-items:baseline;gap:8px}
+.gv-row .nm{flex:1;min-width:0;font-size:14px;color:var(--gv-ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gv-row .tm{font-size:12px;color:var(--gv-muted);white-space:nowrap}
+.gv-row .sn{font-size:14px;color:var(--gv-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:flex;align-items:center;gap:4px}
+.gv-row .sn svg.i{width:16px;height:16px}
+.gv-row.unread .nm,.gv-row.unread .sn,.gv-row.unread .tm{font-weight:700;color:var(--gv-ink)}
+.gv-row .sn .miss{color:var(--gv-red)}
+.gv-row .cb{color:var(--gv-muted)}
+.gv-empty{padding:48px 24px;text-align:center;color:var(--gv-muted)}
+
+.gv-av{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:18px;font-weight:500;flex:none;overflow:hidden}
+.gv-av svg.i{width:28px;height:28px;margin-top:6px}
+.gv-av.sm{width:32px;height:32px;font-size:14px}
+.gv-av.sm svg.i{width:22px;height:22px;margin-top:4px}
+
+.gv-pane{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--gv-bg)}
+.gv-ph{height:64px;flex:none;display:flex;align-items:center;gap:4px;padding:0 8px 0 16px;border-bottom:1px solid var(--gv-line)}
+.gv-ph .back{display:none;margin-left:-12px}
+.gv-ph .who{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center}
+.gv-ph .who b{font-size:16px;font-weight:500;line-height:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gv-ph .who span{font-size:12px;color:var(--gv-muted);line-height:16px}
+.gv-blank{flex:1;display:grid;place-items:center;color:var(--gv-muted);text-align:center;padding:24px}
+.gv-blank svg.i{width:96px;height:96px;margin:0 auto 12px;opacity:.25}
+
+/* ---- the conversation ------------------------------------------------------ */
+.gv-tl{flex:1;overflow-y:auto;padding:16px 24px 8px;display:flex;flex-direction:column}
+.gv-day{align-self:center;font-size:12px;font-weight:500;color:var(--gv-muted);margin:16px 0 8px}
+.gv-grp{display:flex;gap:8px;align-items:flex-end;margin-top:8px}
+.gv-grp.out{flex-direction:row-reverse}
+.gv-grp .col{display:flex;flex-direction:column;gap:2px;max-width:min(70%,560px);min-width:0}
+.gv-grp.out .col{align-items:flex-end}
+.gv-grp.in .col{align-items:flex-start}
+.gv-grp .avs{width:32px;flex:none;margin-bottom:22px}
+.gv-b{padding:8px 12px;border-radius:18px;font-size:14px;line-height:20px;white-space:pre-wrap;overflow-wrap:anywhere}
+.gv-grp.in .gv-b{background:var(--gv-in);color:var(--gv-in-ink)}
+.gv-grp.out .gv-b{background:var(--gv-out);color:var(--gv-out-ink)}
+.gv-grp.in .gv-b:not(:first-child){border-top-left-radius:4px}
+.gv-grp.in .gv-b:not(:last-of-type){border-bottom-left-radius:4px}
+.gv-grp.out .gv-b:not(:first-child){border-top-right-radius:4px}
+.gv-grp.out .gv-b:not(:last-of-type){border-bottom-right-radius:4px}
+.gv-b a{color:inherit}
+.gv-img{display:block;max-width:240px;max-height:320px;border-radius:18px;border:1px solid var(--gv-line)}
+.gv-meta{font-size:12px;color:var(--gv-muted);margin:2px 4px 0}
+.gv-meta .err{color:var(--gv-red)}
+
+.gv-cmp{flex:none;padding:8px 16px calc(12px + env(safe-area-inset-bottom,0px));display:flex;align-items:flex-end;gap:4px}
+.gv-cmp .fld{flex:1;min-width:0;background:var(--gv-soft);border-radius:24px;display:flex;align-items:flex-end;padding:0 4px 0 16px;min-height:48px}
+.gv-cmp textarea{flex:1;min-width:0;border:0;background:transparent;color:var(--gv-ink);font:14px/20px Roboto,Arial,sans-serif;resize:none;outline:none;padding:14px 0;max-height:140px}
+.gv-cmp textarea::placeholder{color:var(--gv-muted)}
+.gv-cmp .send{color:var(--gv-muted)}
+.gv-cmp .send.go{color:var(--gv-blue)}
+.gv-att{display:flex;gap:8px;padding:8px 16px 0;flex-wrap:wrap}
+.gv-att:empty{display:none}
+.gv-att .th{position:relative;width:64px;height:64px;border-radius:8px;overflow:hidden;background:var(--gv-soft)}
+.gv-att .th img{width:100%;height:100%;object-fit:cover;display:block}
+.gv-att .th .x{position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;background:rgba(32,33,36,.8);color:#fff;display:grid;place-items:center}
+.gv-att .th .x svg.i{width:14px;height:14px}
+.gv-att .th.up::after{content:"";position:absolute;inset:0;background:rgba(255,255,255,.5)}
+.gv-stop{padding:16px;text-align:center;color:var(--gv-muted);font-size:13px;border-top:1px solid var(--gv-line)}
+
+/* New message: the To field */
+.gv-to{display:flex;align-items:center;gap:8px;padding:0 16px;height:56px;border-bottom:1px solid var(--gv-line);flex:none}
+.gv-to label{color:var(--gv-muted)}
+.gv-to input{flex:1;min-width:0;border:0;background:transparent;color:var(--gv-ink);font:14px Roboto,Arial,sans-serif;outline:none;height:100%}
+.gv-sugg{flex:1;overflow-y:auto}
+
+/* Calls and voicemail detail */
+.gv-det{flex:1;overflow-y:auto;padding:24px}
+.gv-det .hero{display:flex;flex-direction:column;align-items:center;gap:8px;margin-bottom:24px}
+.gv-det .hero .gv-av{width:72px;height:72px;font-size:32px}
+.gv-det .hero .gv-av svg.i{width:48px;height:48px;margin-top:10px}
+.gv-det .hero b{font-size:22px;font-weight:400}
+.gv-det .hero span{color:var(--gv-muted)}
+.gv-det .acts{display:flex;gap:24px;justify-content:center;margin:8px 0 24px}
+.gv-det .act{display:flex;flex-direction:column;align-items:center;gap:6px;color:var(--gv-blue);font-size:12px;font-weight:500}
+.gv-det .act .c{width:48px;height:48px;border-radius:50%;display:grid;place-items:center;border:1px solid var(--gv-line)}
+.gv-det .act:hover .c{background:var(--gv-soft)}
+.gv-card{border:1px solid var(--gv-line);border-radius:8px;padding:16px;margin:0 auto 12px;max-width:640px}
+.gv-card .hd{display:flex;align-items:center;gap:8px;color:var(--gv-muted);font-size:12px;margin-bottom:8px}
+.gv-card .tx{font-size:14px;line-height:22px;color:var(--gv-ink)}
+.gv-card .tx.none{color:var(--gv-muted);font-style:italic}
+.gv-cl{display:flex;align-items:center;gap:16px;padding:12px 0;border-bottom:1px solid var(--gv-line);max-width:640px;margin:0 auto}
+.gv-cl:last-child{border-bottom:0}
+.gv-cl .k{flex:1}
+.gv-cl .k div:last-child{font-size:12px;color:var(--gv-muted)}
+.gv-cl .miss{color:var(--gv-red)}
+.gv-play{display:flex;align-items:center;gap:12px;margin-top:12px}
+.gv-play .pb{width:40px;height:40px;border-radius:50%;background:var(--gv-blue);color:var(--gv-bg);display:grid;place-items:center;flex:none}
+.gv-play .bar{flex:1;height:4px;border-radius:2px;background:var(--gv-line);position:relative;cursor:pointer}
+.gv-play .bar i{position:absolute;left:0;top:0;bottom:0;border-radius:2px;background:var(--gv-blue);width:0}
+.gv-play .tt{font-size:12px;color:var(--gv-muted);font-variant-numeric:tabular-nums;min-width:72px;text-align:right}
+
+/* ---- menus, drawer, snackbar ------------------------------------------- */
+.gv-menu{position:fixed;z-index:60;min-width:200px;background:var(--gv-bg);border-radius:4px;box-shadow:0 2px 6px 2px rgba(60,64,67,.15),0 1px 2px rgba(60,64,67,.3);padding:8px 0}
+.gv-menu button{display:block;width:100%;text-align:left;padding:0 16px;height:40px;line-height:40px;font-size:14px;color:var(--gv-ink)}
+.gv-menu button:hover{background:var(--gv-soft)}
+.gv-scrim{position:fixed;inset:0;z-index:55;background:transparent}
+.gv-scrim.dim{background:rgba(32,33,36,.5)}
+.gv-drawer{position:fixed;top:0;left:0;bottom:0;z-index:58;width:280px;max-width:85vw;background:var(--gv-bg);box-shadow:var(--gv-shadow);padding:8px 12px 0 0;display:flex;flex-direction:column;transform:translateX(-105%);transition:transform .2s}
+.gv-drawer.on{transform:none}
+.gv-drawer .hd{display:flex;align-items:center;gap:8px;height:56px;padding-left:16px;font-size:22px;color:var(--gv-muted);margin-bottom:8px}
+.gv-drawer .hd .mark{width:40px;height:40px}
+.gv-drawer .it{display:flex;align-items:center;gap:20px;height:48px;padding:0 16px 0 24px;border-radius:0 24px 24px 0;font-weight:500;color:var(--gv-ink2);width:100%;text-align:left}
+.gv-drawer .it svg.i{color:var(--gv-muted)}
+.gv-drawer .it:hover{background:var(--gv-soft)}
+.gv-drawer .it.on{background:var(--gv-sel);color:var(--gv-sel-ink)}
+.gv-drawer .it.on svg.i{color:var(--gv-sel-ink)}
+.gv-drawer hr{border:0;border-top:1px solid var(--gv-line);margin:8px 0}
+.gv-snack{position:fixed;z-index:70;left:50%;bottom:24px;transform:translate(-50%,24px);opacity:0;pointer-events:none;background:#323232;color:#fff;border-radius:4px;padding:14px 16px;font-size:14px;max-width:calc(100% - 32px);box-shadow:0 3px 5px -1px rgba(0,0,0,.2),0 6px 10px rgba(0,0,0,.14);transition:opacity .15s,transform .15s}
+.gv-snack.on{opacity:1;transform:translate(-50%,0)}
+
+/* ---- the phone layout: the Google Voice app ------------------------------ */
+.gv-bnav,.gv-fab,.gv-msearch{display:none}
+@media (max-width:899px){
+  .gv-top,.gv-rail{display:none}
+  .gv-list{width:100%;border-right:0}
+  .gv-msearch{display:flex;align-items:center;gap:4px;margin:calc(8px + env(safe-area-inset-top,0px)) 16px 8px;height:48px;border-radius:24px;background:var(--gv-soft);padding:0 4px;flex:none}
+  .gv-msearch input{flex:1;min-width:0;height:100%;border:0;background:transparent;color:var(--gv-ink);font:16px Roboto,Arial,sans-serif;outline:none}
+  .gv-msearch input::placeholder{color:var(--gv-muted)}
+  .gv-new{display:none}
+  .gv-row{border-radius:0;margin-right:0}
+  .gv-bnav{display:flex;flex:none;height:calc(80px + env(safe-area-inset-bottom,0px));padding-bottom:env(safe-area-inset-bottom,0px);background:var(--gv-soft)}
+  .gv-bnav .nv{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:12px;font-weight:500;color:var(--gv-muted)}
+  .gv-bnav .nv .pl{width:64px;height:32px;border-radius:16px;display:grid;place-items:center;position:relative}
+  .gv-bnav .nv.on{color:var(--gv-ink)}
+  .gv-bnav .nv.on .pl{background:var(--gv-pill)}
+  .gv-fab{display:flex;position:fixed;right:16px;bottom:calc(96px + env(safe-area-inset-bottom,0px));z-index:20;height:56px;padding:0 20px 0 16px;border-radius:16px;align-items:center;gap:12px;background:var(--gv-pill);color:var(--gv-ink);font-weight:500;box-shadow:0 1px 3px rgba(0,0,0,.3),0 4px 8px 3px rgba(0,0,0,.15)}
+  .gv-fab[hidden]{display:none}
+  .gv-pane{position:fixed;inset:0;z-index:30;transform:translateX(100%);transition:transform .2s ease}
+  .gv.open .gv-pane{transform:none}
+  .gv-ph{padding-top:env(safe-area-inset-top,0px);height:calc(64px + env(safe-area-inset-top,0px))}
+  .gv-ph .back{display:grid}
+  .gv-tl{padding:12px 12px 8px}
+  .gv-grp .col{max-width:80%}
+  .gv-cmp{padding-left:8px;padding-right:8px}
+}
+@media (prefers-reduced-motion:reduce){.gv-pane,.gv-drawer{transition:none}}
+</style>
+</head>
+<body>
+<script src="/app/app.js"></script>
+<script>
+(function(){
+"use strict";
+var A = window.App, esc = A.esc;
+
+// Material icons, the set Google Voice draws with.
+var P = {
+  menu:'M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z',
+  search:'M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z',
+  call:'M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 0 0-1.01.24l-1.57 1.97c-2.83-1.35-5.48-3.9-6.89-6.83l1.95-1.66c.27-.28.35-.67.24-1.02-.37-1.11-.56-2.3-.56-3.53 0-.54-.45-.99-.99-.99H4.19C3.65 3 3 3.24 3 3.99 3 13.28 10.73 21 20.01 21c.71 0 .99-.63.99-1.18v-3.45c0-.54-.45-.99-.99-.99z',
+  chat:'M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z',
+  voicemail:'M18.5 6C15.46 6 13 8.46 13 11.5c0 1.33.47 2.55 1.26 3.5H9.74c.79-.95 1.26-2.17 1.26-3.5C11 8.46 8.54 6 5.5 6S0 8.46 0 11.5 2.46 17 5.5 17h13c3.04 0 5.5-2.46 5.5-5.5S21.54 6 18.5 6zm-13 9C3.57 15 2 13.43 2 11.5S3.57 8 5.5 8 9 9.57 9 11.5 7.43 15 5.5 15zm13 0c-1.93 0-3.5-1.57-3.5-3.5S16.57 8 18.5 8 22 9.57 22 11.5 20.43 15 18.5 15z',
+  more:'M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z',
+  back:'M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z',
+  send:'M2.01 21L23 12 2.01 3 2 10l15 2-15 2z',
+  image:'M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z',
+  gear:'M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z',
+  person:'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
+  archive:'M20.54 5.23l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.23C3.17 5.57 3 6.02 3 6.5V19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.48-.17-.93-.46-1.27zM12 17.5L6.5 12H10v-2h4v2h3.5L12 17.5zM5.12 5l.81-1h12l.94 1H5.12z',
+  rcv:'M20 5.41L18.59 4 7 15.59V9H5v10h10v-2H8.41z',
+  made:'M9 5v2h6.59L4 18.59 5.41 20 17 8.41V15h2V5z',
+  missed:'M19.59 7L12 14.59 6.41 9H11V7H3v8h2v-4.59l7 7 9-9z',
+  add:'M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z',
+  play:'M8 5v14l11-7z',
+  pause:'M6 19h4V5H6v14zm8-14v14h4V5h-4z',
+  close:'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
+  exit:'M10.09 15.59L11.5 17l5-5-5-5-1.41 1.41L12.67 11H3v2h9.67l-2.58 2.59zM19 3H5a2 2 0 0 0-2 2v4h2V5h14v14H5v-4H3v4a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z'
+};
+function ic(n){ return '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="'+P[n]+'"/></svg>'; }
+var MARK = '<svg class="mark" viewBox="0 0 48 48" aria-hidden="true"><path fill="#34a853" d="M24 4C12.95 4 4 12.95 4 24c0 3.9 1.12 7.54 3.05 10.62L4 44l9.6-2.94A19.9 19.9 0 0 0 24 44c11.05 0 20-8.95 20-20S35.05 4 24 4z"/><path fill="#fff" d="M30.9 27.6c-1.2 0-2.3-.2-3.4-.6-.3-.1-.7 0-1 .2l-1.5 1.9a16.4 16.4 0 0 1-6.6-6.6l1.9-1.6c.3-.3.3-.6.2-1-.3-1.1-.5-2.2-.5-3.4 0-.5-.4-1-1-1h-3.3c-.5 0-1.1.2-1.1.9 0 8.9 7.4 16.3 16.3 16.3.7 0 .9-.6.9-1.1V28.6c0-.5-.4-1-.9-1z"/></svg>';
+
+// Google's own contact colours.
+var AVC = ['#1a73e8','#d93025','#188038','#e37400','#9334e6','#e52592','#12b5cb','#5f6368','#b06000','#3367d6'];
+function avColor(seed){ var h = 0, s = String(seed||""); for (var i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) >>> 0; return AVC[h % AVC.length]; }
+// A saved name is a letter; a bare number is the grey person, the way Voice
+// draws someone who isn't in your contacts.
+function av(phone, name, sm){
+  var n = String(name || "").trim();
+  return '<span class="gv-av'+(sm?' sm':'')+'" style="background:'+avColor(phone)+'">'+(n ? esc(n[0].toUpperCase()) : ic("person"))+'</span>';
+}
+
+var S = { view:"messages", rows:[], calls:[], seenTs:0, q:"", phone:null, thread:null, pane:null,
+  sending:false, att:[], loaded:false, callsLoaded:false };
+var isTouch = window.matchMedia && matchMedia("(pointer:coarse)").matches;
+
+document.body.insertAdjacentHTML("afterbegin",
+'<div class="gv" id="gv">'+
+  '<header class="gv-top">'+
+    '<button class="ib" id="menuBtn" aria-label="Main menu">'+ic("menu")+'</button>'+
+    '<span class="gv-logo">'+MARK+'Voice</span>'+
+    '<label class="gv-search"><span class="ib" aria-hidden="true">'+ic("search")+'</span><input id="q" type="search" placeholder="Search Google Voice" aria-label="Search" autocomplete="off"></label>'+
+    '<span class="sp"></span>'+
+    '<button class="ib" id="gearBtn" aria-label="Settings">'+ic("gear")+'</button>'+
+    '<span class="gv-me" aria-hidden="true">M</span>'+
+  '</header>'+
+  '<div class="gv-body">'+
+    '<nav class="gv-rail" aria-label="Main">'+navHtml()+'</nav>'+
+    '<section class="gv-list" aria-label="List">'+
+      '<label class="gv-msearch"><button type="button" class="ib" id="mMenuBtn" aria-label="Main menu">'+ic("menu")+'</button><input id="mq" type="search" placeholder="Search" aria-label="Search" autocomplete="off"><span class="gv-me" aria-hidden="true">M</span></label>'+
+      '<div class="scroll" id="list"></div>'+
+    '</section>'+
+    '<section class="gv-pane" id="pane" aria-label="Conversation"></section>'+
+  '</div>'+
+  '<button class="gv-fab" id="fab">'+ic("add")+'<span id="fabTxt">Send message</span></button>'+
+  '<nav class="gv-bnav" aria-label="Main">'+navHtml()+'</nav>'+
+'</div>');
+function el(id){ return document.getElementById(id); }
+function navHtml(){
+  return [["calls","Calls","call"],["messages","Messages","chat"],["voicemail","Voicemail","voicemail"]].map(function(n){
+    return '<button class="nv" data-nav="'+n[0]+'"><span class="pl">'+ic(n[2])+'<span class="bdg" data-bdg="'+n[0]+'" hidden></span></span>'+n[1]+'</button>';
+  }).join('');
+}
+
+// ---- snackbar, menus, drawer ---------------------------------------------
+var snT = 0;
+function snack(msg){
+  var s = el("snack"); if (!s) { s = document.createElement("div"); s.id = "snack"; s.className = "gv-snack"; s.setAttribute("role","status"); el("gv").appendChild(s); }
+  s.textContent = msg; s.classList.add("on"); clearTimeout(snT); snT = setTimeout(function(){ s.classList.remove("on"); }, 4000);
+}
+function closePop(){ ["pop","popScrim"].forEach(function(id){ var x = el(id); if (x) x.remove(); }); var d = el("drawer"); if (d) d.classList.remove("on"); }
+function menu(anchor, items){
+  closePop();
+  var sc = document.createElement("div"); sc.className = "gv-scrim"; sc.id = "popScrim"; sc.onclick = closePop;
+  var m = document.createElement("div"); m.className = "gv-menu"; m.id = "pop"; m.setAttribute("role","menu");
+  m.innerHTML = items.map(function(it, i){ return '<button role="menuitem" data-i="'+i+'">'+esc(it[0])+'</button>'; }).join('');
+  el("gv").appendChild(sc); el("gv").appendChild(m);
+  var r = anchor.getBoundingClientRect();
+  m.style.top = Math.min(r.bottom, innerHeight - m.offsetHeight - 8) + "px";
+  m.style.left = Math.max(8, r.right - m.offsetWidth) + "px";
+  m.onclick = function(e){ var b = e.target.closest("[data-i]"); if (!b) return; closePop(); items[+b.dataset.i][1](); };
+}
+function drawer(){
+  closePop();
+  var d = el("drawer");
+  if (!d) {
+    d = document.createElement("div"); d.className = "gv-drawer"; d.id = "drawer";
+    el("gv").appendChild(d);
+    d.onclick = function(e){
+      var b = e.target.closest("[data-go]"); if (!b) return;
+      var g = b.dataset.go; closePop();
+      if (g === "settings") location.href = A.CLASSIC + "&open=settings";
+      else if (g === "dash") location.href = "/";
+      else setView(g);
+    };
+  }
+  // "Back to my dashboard" is the one row Voice doesn't have. A test page you
+  // can't leave isn't a test.
+  d.innerHTML = '<div class="hd">'+MARK+'Voice</div>'+
+    [["calls","Calls","call"],["messages","Messages","chat"],["voicemail","Voicemail","voicemail"],["archive","Archive","archive"]].map(function(n){
+      return '<button class="it'+(S.view===n[0]?' on':'')+'" data-go="'+n[0]+'">'+ic(n[2])+n[1]+'</button>';
+    }).join('')+'<hr><button class="it" data-go="settings">'+ic("gear")+'Settings</button>'+
+    '<button class="it" data-go="dash">'+ic("exit")+'Back to my dashboard</button>';
+  var sc = document.createElement("div"); sc.className = "gv-scrim dim"; sc.id = "popScrim"; sc.onclick = closePop;
+  el("gv").insertBefore(sc, d);
+  requestAnimationFrame(function(){ d.classList.add("on"); });
+}
+el("menuBtn").onclick = drawer; el("mMenuBtn").onclick = drawer;
+el("gearBtn").onclick = function(){ location.href = A.CLASSIC + "&open=settings"; };
+document.addEventListener("keydown", function(e){ if (e.key === "Escape") closePop(); });
+
+// ---- data ---------------------------------------------------------------
+function rowFor(phone){ for (var i=0;i<S.rows.length;i++) if (S.rows[i].phone === phone) return S.rows[i]; return null; }
+function nameFor(phone){ var r = rowFor(phone); if (r && r.name) return r.name; for (var i=0;i<S.calls.length;i++) if (S.calls[i].fromNorm === phone && S.calls[i].name) return S.calls[i].name; return ""; }
+function label(phone){ return nameFor(phone) || A.fmtPhone(phone); }
+function loadList(){
+  return A.api("/api/threads").then(function(d){
+    if (!d || !d.ok) return;
+    S.rows = (d.threads || []).slice().sort(function(a,b){ return (b.lastTs||0) - (a.lastTs||0); });
+    S.loaded = true; badges(); if (S.view === "messages" || S.view === "archive") renderList();
+  });
+}
+function loadCalls(){
+  return A.api("/api/calls").then(function(d){
+    if (!d || !d.ok) return;
+    S.calls = (d.calls || []).slice().sort(function(a,b){ return (b.ts||0) - (a.ts||0); });
+    S.seenTs = d.seenTs || 0; S.callsLoaded = true; badges();
+    if (S.view === "calls" || S.view === "voicemail") renderList();
+  });
+}
+function badges(){
+  var unreadMsgs = S.rows.filter(function(r){ return !r.archived && r.unread && r.lastDir === "in"; }).length;
+  var vm = S.calls.filter(function(c){ return c.outcome === "voicemail" && c.ts > S.seenTs; }).length;
+  var miss = S.calls.filter(function(c){ return c.outcome === "missed" && c.ts > S.seenTs; }).length;
+  setBadge("messages", unreadMsgs); setBadge("voicemail", vm); setBadge("calls", miss);
+}
+function setBadge(k, n){
+  document.querySelectorAll('[data-bdg="'+k+'"]').forEach(function(b){ b.textContent = n > 99 ? "99+" : n; b.hidden = !n; });
+}
+
+// ---- the list column ----------------------------------------------------------
+function match(hay){ return !S.q || String(hay).toLowerCase().indexOf(S.q) >= 0; }
+function msgRow(r){
+  var unread = !!(r.unread && r.lastDir === "in");
+  var snip = (r.lastDir === "out" ? "You: " : "") + (r.lastBody || "");
+  return '<button class="gv-row'+(unread?' unread':'')+(S.pane==="thread"&&r.phone===S.phone?' sel':'')+'" data-open="'+esc(r.phone)+'">'+
+    av(r.phone, r.name)+
+    '<span class="m"><span class="t1"><span class="nm">'+esc(A.displayName(r))+'</span><span class="tm">'+esc(A.when(r.lastTs))+'</span></span>'+
+    '<span class="sn">'+esc(snip)+'</span></span></button>';
+}
+function callIcon(c){
+  if (c.outcome === "missed") return '<span class="miss">'+ic("missed")+'</span>';
+  if (c.dir === "out" || c.outcome === "outgoing") return ic("made");
+  return ic("rcv");
+}
+function callWord(c){
+  if (c.outcome === "missed") return "Missed call";
+  if (c.outcome === "voicemail") return "Voicemail";
+  if (c.dir === "out" || c.outcome === "outgoing") return "Outgoing call";
+  return "Incoming call";
+}
+// The kinds of row Voice keeps in its call history. A robo-dialer the screen
+// turned away, or one still ringing, isn't a call anyone made to him.
+var CALL_KINDS = { answered:1, missed:1, past:1, outgoing:1, voicemail:1, declined:1 };
+function renderList(){
+  var h = '';
+  if (S.view === "messages" || S.view === "archive") {
+    if (S.view === "messages") h += '<button class="gv-new" id="newBtn"><span class="c">'+ic("add")+'</span>Send new message</button>';
+    else h += '<div class="gv-lh">Archive</div>';
+    if (!S.loaded) { el("list").innerHTML = h + '<div class="gv-empty">Loading…</div>'; return bindNew(); }
+    var rows = S.rows.filter(function(r){
+      if (S.view === "archive" ? !r.archived : r.archived) return false;
+      return match([r.name, r.phone, A.fmtPhone(r.phone), r.lastBody].join(" "));
+    });
+    h += rows.length ? rows.map(msgRow).join('') : '<div class="gv-empty">'+(S.q ? 'No results' : (S.view === "archive" ? 'No archived messages' : 'No messages'))+'</div>';
+  } else {
+    if (!S.callsLoaded) { el("list").innerHTML = '<div class="gv-empty">Loading…</div>'; return; }
+    var vm = S.view === "voicemail";
+    var cs = S.calls.filter(function(c){
+      if (vm ? c.outcome !== "voicemail" : !CALL_KINDS[c.outcome]) return false;
+      return match([c.name, nameFor(c.fromNorm), c.fromNorm, A.fmtPhone(c.fromNorm), c.transcript].join(" "));
+    });
+    h += cs.length ? cs.map(function(c){
+      var unread = vm && c.ts > S.seenTs;
+      var sub = vm ? esc(c.transcript || (c.transcriptFailed ? "Transcript not available" : "Transcribing…")) : callIcon(c) + esc(callWord(c));
+      return '<button class="gv-row'+(unread?' unread':'')+(S.pane===S.view&&c.id===S.callId?' sel':'')+'" data-call="'+esc(c.id || "")+'">'+
+        av(c.fromNorm, nameFor(c.fromNorm))+
+        '<span class="m"><span class="t1"><span class="nm">'+esc(label(c.fromNorm))+'</span><span class="tm">'+esc(A.when(c.ts))+'</span></span>'+
+        '<span class="sn">'+sub+'</span></span></button>';
+    }).join('') : '<div class="gv-empty">'+(S.q ? 'No results' : vm ? 'No voicemail' : 'No calls')+'</div>';
+  }
+  el("list").innerHTML = h;
+  bindNew();
+}
+function bindNew(){ var b = el("newBtn"); if (b) b.onclick = newMessage; }
+el("list").addEventListener("click", function(e){
+  var b = e.target.closest("[data-open]"); if (b) return openThread(b.dataset.open, true);
+  var c = e.target.closest("[data-call]"); if (c) return openCall(c.dataset.call, true);
+});
+function onSearch(v){ S.q = v.trim().toLowerCase(); renderList(); }
+el("q").addEventListener("input", function(){ el("mq").value = this.value; onSearch(this.value); });
+el("mq").addEventListener("input", function(){ el("q").value = this.value; onSearch(this.value); });
+
+function setView(v, keepPane){
+  S.view = v;
+  document.querySelectorAll("[data-nav]").forEach(function(b){ b.classList.toggle("on", b.dataset.nav === v || (v === "archive" && b.dataset.nav === "messages")); });
+  el("fab").hidden = v === "archive";
+  el("fabTxt").textContent = v === "calls" ? "Make a call" : "Send message";
+  // Opening Calls or Voicemail is "I've seen them", the same as the Calls
+  // screen in the main app, so the red counts clear in both places.
+  if ((v === "calls" || v === "voicemail") && S.callsLoaded && S.calls.some(function(c){ return c.ts > S.seenTs; })) {
+    A.post("/api/calls/seen", {}).then(function(d){ if (d && d.seenTs) { S.seenTs = d.seenTs; badges(); } });
+  }
+  if (!keepPane) blankPane();
+  renderList();
+}
+document.addEventListener("click", function(e){ var b = e.target.closest("[data-nav]"); if (b) setView(b.dataset.nav); });
+el("fab").onclick = function(){ if (S.view === "calls") dialer(); else newMessage(); };
+
+// ---- the pane -------------------------------------------------------------
+function blankPane(){
+  S.pane = null; S.phone = null; S.thread = null; S.callId = null;
+  el("gv").classList.remove("open");
+  var t = { messages:["chat","No conversation selected"], archive:["archive","No conversation selected"], calls:["call","No call selected"], voicemail:["voicemail","No voicemail selected"] }[S.view];
+  el("pane").innerHTML = '<div class="gv-blank"><div>'+ic(t[0])+t[1]+'</div></div>';
+}
+function showPane(){ el("gv").classList.add("open"); }
+function paneHead(phone, opts){
+  opts = opts || {};
+  var n = nameFor(phone);
+  return '<div class="gv-ph"><button class="ib back" id="paneBack" aria-label="Back">'+ic("back")+'</button>'+
+    '<div class="who"><b>'+esc(n || A.fmtPhone(phone))+'</b>'+(n ? '<span>'+esc(A.fmtPhone(phone))+'</span>' : '')+'</div>'+
+    '<button class="ib" id="paneCall" aria-label="Call">'+ic("call")+'</button>'+
+    (opts.more === false ? '' : '<button class="ib" id="paneMore" aria-label="More options">'+ic("more")+'</button>')+'</div>';
+}
+function bindHead(phone){
+  el("paneBack").onclick = function(){ if (history.state && history.state.gv) history.back(); else { blankPane(); renderList(); } };
+  el("paneCall").onclick = function(){ callOut(phone); };
+}
+function callOut(phone){
+  // Same as Voice calling from the web: your phone rings first, then it
+  // connects you to them.
+  A.post("/api/call", { phone:phone }).then(function(d){
+    snack(d && d.ok ? "Calling your phone. Answer to connect." : "Couldn't place the call");
+  });
+}
+function push(state, q){ try { history.pushState(state, "", "/voice" + q); } catch(e){} }
+window.addEventListener("popstate", function(){ route(false); });
+
+// ---- a text conversation ----------------------------------------------------
+function openThread(phone, doPush){
+  closePop();
+  if (S.view !== "messages" && S.view !== "archive") setView("messages", true);
+  S.pane = "thread"; S.phone = phone; S.thread = null; S.att = [];
+  if (doPush) push({ gv:1, c:phone }, "?c=" + encodeURIComponent(phone));
+  el("pane").innerHTML = paneHead(phone)+
+    '<div class="gv-tl" id="tl"><div class="gv-empty">Loading…</div></div>'+
+    '<div id="cmpWrap">'+composerHtml()+'</div>';
+  bindHead(phone); bindComposer();
+  el("paneMore").onclick = function(){ threadMenu(this); };
+  showPane(); renderList();
+  // Opening a conversation reads it, like Voice: the bold goes. "Waiting on
+  // you" in the main app is its own flag, so this doesn't clear that.
+  A.api("/api/thread?phone=" + encodeURIComponent(phone)).then(function(d){
+    if (phone !== S.phone || !d || !d.ok) return;
+    S.thread = d.thread || { phone:phone, messages:[] };
+    var r = rowFor(phone); if (r) r.unread = 0;
+    badges(); renderList(); renderThread(true);
+    if (!isTouch) { var m = el("msg"); if (m) m.focus(); }
+  });
+}
+function pollThread(){
+  var phone = S.phone; if (!phone || S.pane !== "thread") return;
+  A.api("/api/thread?peek=1&phone=" + encodeURIComponent(phone)).then(function(d){
+    if (phone !== S.phone || !d || !d.ok || !d.thread) return;
+    var before = (S.thread && S.thread.messages || []).length;
+    S.thread = d.thread; renderThread(false);
+    // A new text landing while it's on screen is read, as in Voice.
+    if (d.thread.unread && !document.hidden) A.post("/api/read", { phone:phone });
+    if ((d.thread.messages || []).length !== before) loadList();
+  });
+}
+function threadMenu(btn){
+  var phone = S.phone, r = rowFor(phone) || {}, archived = !!(r.archived || (S.thread && S.thread.archived));
+  menu(btn, [
+    [archived ? "Unarchive" : "Archive", function(){
+      A.post("/api/meta", { phone:phone, archived:!archived }).then(function(d){
+        if (!d || d.ok === false) return snack("Couldn't do that. Try again.");
+        if (r) r.archived = !archived;
+        snack(archived ? "Conversation unarchived" : "Conversation archived");
+        if (!archived) { if (history.state && history.state.gv) history.back(); else blankPane(); }
+        renderList(); loadList();
+      });
+    }],
+    ["Mark as unread", function(){
+      A.post("/api/read", { phone:phone, read:false }).then(function(){
+        if (r) { r.unread = 1; r.lastDir = r.lastDir || "in"; }
+        if (history.state && history.state.gv) history.back(); else blankPane();
+        renderList(); loadList();
+      });
+    }]
+  ]);
+}
+// What Voice shows in a text thread: texts and photos. Calls and voicemails
+// live under their own tabs, so they're left out here.
+function textsOf(t){
+  return (t.messages || []).filter(function(m){ return m.kind !== "call" && m.kind !== "voicemail" && (m.body || (m.media && m.media.length)); });
+}
+function linkify(s){
+  return esc(s).replace(/\bhttps?:\/\/[^\s<]+/g, function(u){ return '<a href="'+u+'" target="_blank" rel="noopener">'+u+'</a>'; });
+}
+function mediaSrc(mm){
+  var u = String(mm && mm.url || mm || "");
+  return /^data:|^\/i\//.test(u) ? u : "/api/media?u=" + encodeURIComponent(u);
+}
+function dayWord(ts){
+  var d0 = A.startOfDay(Date.now()), d = A.startOfDay(ts);
+  if (d === d0) return "Today";
+  if (d === d0 - A.DAY) return "Yesterday";
+  return new Date(ts).toLocaleDateString([], { weekday:"long", month:"long", day:"numeric", year: new Date(ts).getFullYear() === new Date().getFullYear() ? undefined : "numeric" });
+}
+function renderThread(first){
+  var t = S.thread; if (!t) return;
+  var msgs = textsOf(t), h = '', lastDay = -1, i = 0;
+  // Group a run of messages the way Voice does: same side, same day, no more
+  // than a few minutes apart. The time sits under the last one in the run.
+  while (i < msgs.length) {
+    var m = msgs[i], day = A.startOfDay(m.ts || 0);
+    if (day !== lastDay) { h += '<div class="gv-day">'+esc(dayWord(m.ts))+'</div>'; lastDay = day; }
+    var dir = m.dir === "in" ? "in" : "out", run = [m], j = i + 1;
+    while (j < msgs.length && (msgs[j].dir === "in" ? "in" : "out") === dir && A.startOfDay(msgs[j].ts) === day && msgs[j].ts - msgs[j-1].ts < 5 * 60000 && !failed(msgs[j-1])) { run.push(msgs[j]); j++; }
+    var last = run[run.length - 1];
+    h += '<div class="gv-grp '+dir+'">'+(dir === "in" ? '<span class="avs">'+av(t.phone, nameFor(t.phone) || t.name, true)+'</span>' : '')+'<div class="col">';
+    run.forEach(function(x){
+      (x.media || []).forEach(function(mm){
+        if (/^video\//.test(mm.type || "")) h += '<video class="gv-img" src="'+esc(mediaSrc(mm))+'" controls preload="metadata"></video>';
+        else h += '<a href="'+esc(mediaSrc(mm))+'" target="_blank" rel="noopener"><img class="gv-img" src="'+esc(mediaSrc(mm))+'" loading="lazy" alt="Photo"></a>';
+      });
+      if (x.body) h += '<div class="gv-b">'+linkify(x.body)+'</div>';
+    });
+    h += '<div class="gv-meta">'+(failed(last) ? '<span class="err">Not delivered</span> · ' : '')+esc(A.clock(last.ts))+'</div></div></div>';
+    i = j;
+  }
+  if (!h) h = '<div class="gv-empty">Send a message to start the conversation</div>';
+  var tl = el("tl"); if (!tl) return;
+  var atBottom = tl.scrollHeight - tl.scrollTop - tl.clientHeight < 80;
+  tl.innerHTML = h;
+  if (first || atBottom) tl.scrollTop = tl.scrollHeight;
+  var opted = t.optedOut || (rowFor(t.phone) || {}).optedOut;
+  var cw = el("cmpWrap");
+  if (opted && !el("stopNote")) { cw.innerHTML = '<div class="gv-stop" id="stopNote">This person has opted out of receiving messages from you</div>'; }
+  else if (!opted && el("stopNote")) { cw.innerHTML = composerHtml(); bindComposer(); }
+}
+function failed(m){ return m.dir === "out" && (m.status === "failed" || m.status === "undelivered" || !!m.error); }
+
+// ---- the composer -----------------------------------------------------------
+function composerHtml(){
+  return '<div class="gv-att" id="att"></div>'+
+    '<div class="gv-cmp"><button class="ib" id="attBtn" aria-label="Attach a photo">'+ic("image")+'</button>'+
+    '<input type="file" id="file" accept="image/*" multiple hidden>'+
+    '<div class="fld"><textarea id="msg" rows="1" placeholder="Type a message" aria-label="Type a message"></textarea>'+
+    '<button class="ib send" id="sendBtn" aria-label="Send message" disabled>'+ic("send")+'</button></div></div>';
+}
+function bindComposer(){
+  var box = el("msg"); if (!box) return;
+  box.addEventListener("input", sizeBox);
+  // Enter sends on a keyboard, Shift+Enter is a new line: Voice on the web.
+  // On a phone the return key is a new line and the arrow sends, as in the app.
+  box.addEventListener("keydown", function(e){ if (e.key === "Enter" && !e.shiftKey && !isTouch) { e.preventDefault(); send(); } });
+  el("sendBtn").onclick = send;
+  el("attBtn").onclick = function(){ el("file").click(); };
+  el("file").onchange = function(){ addPhotos(this.files); this.value = ""; };
+  renderAtt();
+}
+function sizeBox(){
+  var box = el("msg"); if (!box) return;
+  box.style.height = "auto"; box.style.height = Math.min(140, box.scrollHeight) + "px";
+  var ready = (box.value.trim() || S.att.some(function(a){ return a.url; })) && !S.sending && !S.att.some(function(a){ return !a.url; });
+  var b = el("sendBtn"); b.disabled = !ready; b.classList.toggle("go", !!ready);
+}
+// Shrunk in the browser before it goes, the same as the main app's photos: a
+// 4 MB camera photo isn't something a carrier will deliver as a text.
+function compress(file){
+  return new Promise(function(res, rej){
+    var img = new Image(), url = URL.createObjectURL(file);
+    img.onload = function(){
+      var w = img.width, h = img.height, edge = 1400, q = .74, out = "";
+      for (var pass = 0; pass < 6; pass++) {
+        var sc = Math.min(1, edge / Math.max(w, h));
+        var c = document.createElement("canvas");
+        c.width = Math.max(1, Math.round(w*sc)); c.height = Math.max(1, Math.round(h*sc));
+        c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+        out = c.toDataURL("image/jpeg", q);
+        if (out.length <= 440000) break;
+        if (q > .44) q -= .12; else edge = Math.round(edge * .75);
+      }
+      URL.revokeObjectURL(url); res(out);
+    };
+    img.onerror = function(){ URL.revokeObjectURL(url); rej(new Error("bad image")); };
+    img.src = url;
+  });
+}
+function addPhotos(files){
+  Array.prototype.slice.call(files || [], 0, Math.max(0, 10 - S.att.length)).forEach(function(f){
+    var a = { preview:"", url:"" }; S.att.push(a); renderAtt();
+    compress(f).then(function(data){
+      a.preview = data; renderAtt();
+      return A.post("/api/send-photo", { data:data, type:"image/jpeg", name:f.name });
+    }).then(function(d){
+      if (!d || !d.ok) throw new Error("upload");
+      a.url = d.url; renderAtt();
+    }).catch(function(){
+      S.att.splice(S.att.indexOf(a), 1); renderAtt(); snack("Couldn't attach that photo");
+    });
+  });
+}
+function renderAtt(){
+  var box = el("att"); if (!box) return;
+  box.innerHTML = S.att.map(function(a, i){
+    return '<div class="th'+(a.url?'':' up')+'">'+(a.preview ? '<img src="'+esc(a.preview)+'" alt="">' : '')+
+      '<button class="x" data-rm="'+i+'" aria-label="Remove photo">'+ic("close")+'</button></div>';
+  }).join('');
+  box.onclick = function(e){ var b = e.target.closest("[data-rm]"); if (b) { S.att.splice(+b.dataset.rm, 1); renderAtt(); } };
+  sizeBox();
+}
+function send(){
+  var box = el("msg"), phone = S.phone;
+  if (!box || !phone || S.sending) return;
+  var body = box.value.trim(), media = S.att.filter(function(a){ return a.url; }).map(function(a){ return a.url; });
+  if ((!body && !media.length) || S.att.some(function(a){ return !a.url; })) return;
+  S.sending = true; sizeBox();
+  var payload = { phone:phone, body:body }; if (media.length) payload.media = media;
+  A.post("/api/send", payload).then(function(d){
+    S.sending = false;
+    if (!d || !d.ok) { sizeBox(); snack(d && d.error === "recipient_opted_out" ? "This person has opted out of receiving messages from you" : "Message not sent. Check your connection and try again."); return; }
+    box.value = ""; S.att = []; renderAtt(); sizeBox();
+    A.post("/api/read", { phone:phone });
+    if (d.thread && phone === S.phone) { S.thread = d.thread; renderThread(true); }
+    var r = rowFor(phone);
+    if (r) { r.unread = 0; r.lastDir = "out"; r.lastBody = body || "Photo"; r.lastTs = Date.now(); r.archived = false; S.rows.sort(function(a,b){ return (b.lastTs||0) - (a.lastTs||0); }); }
+    renderList();
+    setTimeout(loadList, 1500);
+  });
+}
+
+// ---- new message: the To field ------------------------------------------------
+function e164(v){
+  var d = String(v || "").replace(/\D/g, "");
+  if (d.length === 10) return "+1" + d;
+  if (d.length === 11 && d[0] === "1") return "+" + d;
+  return "";
+}
+function newMessage(){
+  closePop();
+  if (S.view !== "messages") setView("messages", true);
+  S.pane = "new"; S.phone = null; S.thread = null;
+  el("pane").innerHTML = '<div class="gv-ph"><button class="ib back" id="paneBack" aria-label="Back">'+ic("back")+'</button><div class="who"><b>New message</b></div></div>'+
+    '<div class="gv-to"><label for="to">To</label><input id="to" type="text" inputmode="text" placeholder="Type a name or phone number" autocomplete="off"></div>'+
+    '<div class="gv-sugg" id="sugg"></div>';
+  el("paneBack").onclick = function(){ blankPane(); renderList(); };
+  showPane(); renderList();
+  var to = el("to"); to.focus();
+  function sugg(){
+    var v = to.value.trim().toLowerCase(), num = e164(v), h = '';
+    var rows = S.rows.filter(function(r){ return v && [r.name, r.phone, A.fmtPhone(r.phone)].join(" ").toLowerCase().indexOf(v) >= 0; }).slice(0, 8);
+    if (num && !rows.some(function(r){ return r.phone === num; })) h += '<button class="gv-row" data-to="'+esc(num)+'">'+av(num, "")+'<span class="m"><span class="nm">'+esc(A.fmtPhone(num))+'</span><span class="sn">Send to this number</span></span></button>';
+    h += rows.map(function(r){ return '<button class="gv-row" data-to="'+esc(r.phone)+'">'+av(r.phone, r.name)+'<span class="m"><span class="nm">'+esc(A.displayName(r))+'</span><span class="sn">'+esc(A.fmtPhone(r.phone))+'</span></span></button>'; }).join('');
+    el("sugg").innerHTML = h;
+  }
+  to.addEventListener("input", sugg);
+  to.addEventListener("keydown", function(e){ if (e.key === "Enter") { var n = e164(to.value); if (n) openThread(n, true); } });
+  el("sugg").onclick = function(e){ var b = e.target.closest("[data-to]"); if (b) openThread(b.dataset.to, true); };
+}
+function dialer(){
+  closePop();
+  S.pane = "dial"; S.phone = null;
+  el("pane").innerHTML = '<div class="gv-ph"><button class="ib back" id="paneBack" aria-label="Back">'+ic("back")+'</button><div class="who"><b>Make a call</b></div></div>'+
+    '<div class="gv-to"><input id="to" type="tel" inputmode="tel" placeholder="Enter a name or number" autocomplete="off"><button class="ib" id="dialGo" aria-label="Call">'+ic("call")+'</button></div>'+
+    '<div class="gv-sugg" id="sugg"></div>';
+  el("paneBack").onclick = function(){ blankPane(); renderList(); };
+  showPane();
+  var to = el("to"); to.focus();
+  function go(n){ if (n) callOut(n); else snack("Enter a valid phone number"); }
+  el("dialGo").onclick = function(){ go(e164(to.value)); };
+  to.addEventListener("keydown", function(e){ if (e.key === "Enter") go(e164(to.value)); });
+  to.addEventListener("input", function(){
+    var v = to.value.trim().toLowerCase();
+    el("sugg").innerHTML = S.rows.filter(function(r){ return v && [r.name, r.phone, A.fmtPhone(r.phone)].join(" ").toLowerCase().indexOf(v) >= 0; }).slice(0, 8).map(function(r){
+      return '<button class="gv-row" data-to="'+esc(r.phone)+'">'+av(r.phone, r.name)+'<span class="m"><span class="nm">'+esc(A.displayName(r))+'</span><span class="sn">'+esc(A.fmtPhone(r.phone))+'</span></span></button>';
+    }).join('');
+  });
+  el("sugg").onclick = function(e){ var b = e.target.closest("[data-to]"); if (b) callOut(b.dataset.to); };
+}
+
+// ---- a call or a voicemail --------------------------------------------------------
+function fmtSec(s){ s = Math.max(0, Math.round(s || 0)); return Math.floor(s/60) + ":" + String(s % 60).padStart(2, "0"); }
+function callById(id){ for (var i=0;i<S.calls.length;i++) if (String(S.calls[i].id) === String(id)) return S.calls[i]; return null; }
+function openCall(id, doPush){
+  closePop();
+  var c = callById(id); if (!c) return;
+  S.pane = S.view; S.callId = c.id; S.phone = c.fromNorm;
+  if (doPush) push({ gv:1, v:S.view, k:c.id }, "?" + (S.view === "voicemail" ? "vm" : "call") + "=" + encodeURIComponent(c.id));
+  var phone = c.fromNorm, n = nameFor(phone), h = paneHead(phone, { more:false });
+  h += '<div class="gv-det"><div class="hero">'+av(phone, n)+'<b>'+esc(n || A.fmtPhone(phone))+'</b>'+(n ? '<span>'+esc(A.fmtPhone(phone))+'</span>' : '')+'</div>'+
+    '<div class="acts"><button class="act" id="dCall"><span class="c">'+ic("call")+'</span>Call</button><button class="act" id="dMsg"><span class="c">'+ic("chat")+'</span>Message</button></div>';
+  if (S.view === "voicemail") {
+    h += S.calls.filter(function(x){ return x.fromNorm === phone && x.outcome === "voicemail"; }).map(function(v){
+      return '<div class="gv-card"><div class="hd">'+ic("voicemail")+esc(new Date(v.ts).toLocaleDateString([], { weekday:"short", month:"short", day:"numeric" }) + ", " + A.clock(v.ts))+'</div>'+
+        (v.transcript ? '<div class="tx">'+esc(v.transcript)+'</div>' : '<div class="tx none">'+(v.transcriptFailed ? 'Transcript not available' : 'Transcribing…')+'</div>')+
+        (v.recording ? player(v.recording, v.vmSec) : '')+'</div>';
+    }).join('');
+  } else {
+    // A call's page in Voice is that person's call history, newest first.
+    h += S.calls.filter(function(x){ return x.fromNorm === phone && CALL_KINDS[x.outcome]; }).map(function(x){
+      var len = x.talkSec ? fmtSec(x.talkSec) : (x.vmSec ? fmtSec(x.vmSec) : "");
+      return '<div class="gv-cl">'+callIcon(x)+'<div class="k"><div>'+esc(callWord(x))+(len ? ' · '+len : '')+'</div><div>'+esc(new Date(x.ts).toLocaleDateString([], { weekday:"short", month:"short", day:"numeric" }) + ", " + A.clock(x.ts))+'</div></div></div>'+
+        (x.recording && x.outcome !== "voicemail" ? player(x.recording, x.talkSec || x.recSec) : '');
+    }).join('');
+  }
+  h += '</div>';
+  el("pane").innerHTML = h;
+  bindHead(phone);
+  el("dCall").onclick = function(){ callOut(phone); };
+  el("dMsg").onclick = function(){ openThread(phone, true); };
+  bindPlayers();
+  showPane(); renderList();
+}
+function player(rec, secs){
+  return '<div class="gv-play" data-src="/api/media?u='+esc(encodeURIComponent(rec))+'"><button class="pb" aria-label="Play">'+ic("play")+'</button>'+
+    '<span class="bar"><i></i></span><span class="tt">0:00 / '+fmtSec(secs)+'</span></div>';
+}
+function bindPlayers(){
+  document.querySelectorAll(".gv-play").forEach(function(p){
+    var au = null, btn = p.querySelector(".pb"), bar = p.querySelector(".bar"), fill = bar.querySelector("i"), tt = p.querySelector(".tt");
+    function tick(){ if (!au) return; var d = au.duration || 0; fill.style.width = (d ? au.currentTime / d * 100 : 0) + "%"; tt.textContent = fmtSec(au.currentTime) + " / " + fmtSec(d); }
+    function make(){
+      if (au) return au;
+      au = new Audio(p.dataset.src);
+      au.addEventListener("timeupdate", tick); au.addEventListener("loadedmetadata", tick);
+      au.addEventListener("play", function(){ btn.innerHTML = ic("pause"); btn.setAttribute("aria-label","Pause"); });
+      au.addEventListener("pause", function(){ btn.innerHTML = ic("play"); btn.setAttribute("aria-label","Play"); });
+      au.addEventListener("ended", function(){ btn.innerHTML = ic("play"); });
+      au.addEventListener("error", function(){ snack("Couldn't play this recording"); });
+      return au;
+    }
+    btn.onclick = function(){ var a = make(); if (a.paused) a.play().catch(function(){}); else a.pause(); };
+    bar.onclick = function(e){ var a = make(), r = bar.getBoundingClientRect(); if (a.duration) a.currentTime = (e.clientX - r.left) / r.width * a.duration; };
+  });
+}
+
+// ---- start ------------------------------------------------------------------
+function route(first){
+  var q = location.search, m;
+  if ((m = q.match(/[?&]c=([^&#]+)/))) return openThread(decodeURIComponent(m[1]), false);
+  if ((m = q.match(/[?&](vm|call)=([^&#]+)/))) { setView(m[1] === "vm" ? "voicemail" : "calls", true); return openCall(decodeURIComponent(m[2]), false); }
+  if (!first) { blankPane(); renderList(); }
+}
+setView("messages");
+Promise.all([loadList(), loadCalls()]).then(function(){
+  if (/[?&](c|vm|call)=/.test(location.search)) { try { history.replaceState({ gv:1 }, "", location.href); } catch(e){} }
+  route(true);
+});
+// Fresh without a refresh, at the same pace as the main Inbox.
+setInterval(function(){ if (!document.hidden) loadList(); }, 20000);
+setInterval(function(){ if (!document.hidden) pollThread(); }, 8000);
+setInterval(function(){ if (!document.hidden) loadCalls(); }, 60000);
+})();
+</script>
+</body>
+</html>

@@ -4761,7 +4761,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-11-17·unlogged-jobs";
+  var APP_BUILD="2026-11-19·voice-layout";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -6248,6 +6248,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     {id:"followups",t:"Follow-ups",g:"Chats",ic:"list-checks",k:"chase nudge check in reminder due",run:function(){setTab("followups")}},
     {id:"scheduled",t:"Scheduled texts",g:"Chats",ic:"calendar-days",k:"later queued send timed",run:function(){setTab("scheduled")}},
     {id:"archived",t:"Archived",g:"Chats",ic:"archive",k:"hidden old done filed",run:function(){setTab("archived")}},
+    // A test (2026-11-19): the same conversations laid out exactly like Google
+    // Voice, on its own page (/voice), so trying it changes nothing here. In
+    // search rather than More, which is held to 14 rows.
+    {id:"gvoice",t:"Google Voice layout (test)",g:"Chats",ic:"message-square",k:"google voice gv layout look test messages",run:function(){location.href="/voice"}},
     {id:"newmsg",t:"New message",g:"Chats",ic:"plus",k:"compose text someone start write",run:function(){var f=el("fab");if(f)f.click()}},
     // — the phone
     {id:"calls",t:"Calls",g:"Calls",ic:"phone",k:"phone log ring rang history who called dialed",run:function(){setTab("calls")}},
