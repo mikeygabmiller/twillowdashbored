@@ -19,7 +19,12 @@
    Google Voice doesn't have": no AI chips, no quick replies, no booking pills,
    no "Waiting" tags. If it's not on voice.google.com, it isn't here. The data
    and every send go through the same /api routes as the rest of the dashboard,
-   so a text sent here is the same text everywhere. */
+   so a text sent here is the same text everywhere.
+
+   Added back since, and only because he uses them (Mikey, 2026-11-19: "add
+   back only what I've used"): Polish, scheduled send, and the address found in
+   the texts. Anything else goes back in the same way, one at a time, when he
+   misses it. */
 .gv{
   --gv-bg:#fff; --gv-ink:#202124; --gv-ink2:#3c4043; --gv-muted:#5f6368; --gv-line:#dadce0;
   --gv-soft:#f1f3f4; --gv-hover:#f6f8fc; --gv-sel:#e8f0fe; --gv-sel-ink:#1967d2;
@@ -135,6 +140,29 @@ body{margin:0}
 .gv-att .th .x{position:absolute;top:2px;right:2px;width:20px;height:20px;border-radius:50%;background:rgba(32,33,36,.8);color:#fff;display:grid;place-items:center}
 .gv-att .th .x svg.i{width:14px;height:14px}
 .gv-att .th.up::after{content:"";position:absolute;inset:0;background:rgba(255,255,255,.5)}
+.gv-cmp .pol{color:var(--gv-blue)}
+.gv-cmp .pol[hidden],.gv-cmp .sch[hidden]{display:none}
+.gv-cmp .pol.busy svg{animation:gvspin 1s linear infinite}
+@keyframes gvspin{to{transform:rotate(360deg)}}
+.gv-addr{flex:none;display:flex;align-items:center;gap:12px;padding:8px 8px 8px 16px;border-bottom:1px solid var(--gv-line);color:var(--gv-ink)}
+.gv-addr[hidden]{display:none}
+.gv-addr .pin{color:var(--gv-muted)}
+.gv-addr .k{flex:1;min-width:0}
+.gv-addr .k b{display:block;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gv-addr .k span{display:block;font-size:12px;color:var(--gv-muted)}
+.gv-tbtn{height:36px;padding:0 12px;border-radius:18px;color:var(--gv-blue);font-weight:500;white-space:nowrap}
+.gv-tbtn:hover{background:var(--gv-soft)}
+.gv-tbtn[disabled]{opacity:.5}
+.gv-sch{align-self:flex-end;max-width:min(70%,560px);margin-top:8px;display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.gv-sch .gv-b{background:transparent;color:var(--gv-ink);border:1px dashed var(--gv-muted);cursor:pointer;text-align:left}
+.gv-sch .gv-meta{display:flex;align-items:center;gap:4px}
+.gv-sch .gv-meta svg.i{width:14px;height:14px}
+.gv-dlg{position:fixed;z-index:60;left:50%;top:50%;transform:translate(-50%,-50%);width:min(360px,calc(100% - 32px));background:var(--gv-bg);border-radius:8px;box-shadow:0 2px 6px 2px rgba(60,64,67,.15),0 1px 2px rgba(60,64,67,.3);padding:24px 24px 8px}
+.gv-dlg h2{margin:0 0 16px;font-size:18px;font-weight:400}
+.gv-dlg input{width:100%;height:48px;border:1px solid var(--gv-line);border-radius:4px;padding:0 12px;background:var(--gv-bg);color:var(--gv-ink);font:16px Roboto,Arial,sans-serif;color-scheme:light dark}
+.gv-dlg .row{display:flex;justify-content:flex-end;gap:8px;margin-top:16px;padding-bottom:8px}
+.gv-snack{display:flex;align-items:center;gap:16px}
+.gv-snack button{color:#8ab4f8;font-weight:500;text-transform:none}
 .gv-stop{padding:16px;text-align:center;color:var(--gv-muted);font-size:13px;border-top:1px solid var(--gv-line)}
 
 /* New message: the To field */
@@ -244,6 +272,9 @@ var P = {
   play:'M8 5v14l11-7z',
   pause:'M6 19h4V5H6v14zm8-14v14h4V5h-4z',
   close:'M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z',
+  sparkle:'M19 9l1.25-2.75L23 5l-2.75-1.25L19 1l-1.25 2.75L15 5l2.75 1.25L19 9zm-7.5.5L9 4 6.5 9.5 1 12l5.5 2.5L9 20l2.5-5.5L17 12l-5.5-2.5zM19 15l-1.25 2.75L15 19l2.75 1.25L19 23l1.25-2.75L23 19l-2.75-1.25L19 15z',
+  clock:'M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z',
+  pin:'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 0 1 0-5 2.5 2.5 0 0 1 0 5z',
   exit:'M10.09 15.59L11.5 17l5-5-5-5-1.41 1.41L12.67 11H3v2h9.67l-2.58 2.59zM19 3H5a2 2 0 0 0-2 2v4h2V5h14v14H5v-4H3v4a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z'
 };
 function ic(n){ return '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="'+P[n]+'"/></svg>'; }
@@ -293,9 +324,12 @@ function navHtml(){
 
 // ---- snackbar, menus, drawer ---------------------------------------------
 var snT = 0;
-function snack(msg){
+function snack(msg, action, fn){
   var s = el("snack"); if (!s) { s = document.createElement("div"); s.id = "snack"; s.className = "gv-snack"; s.setAttribute("role","status"); el("gv").appendChild(s); }
-  s.textContent = msg; s.classList.add("on"); clearTimeout(snT); snT = setTimeout(function(){ s.classList.remove("on"); }, 4000);
+  s.innerHTML = '<span>'+esc(msg)+'</span>'+(action ? '<button id="snackAct">'+esc(action)+'</button>' : '');
+  s.style.pointerEvents = action ? "auto" : "";
+  if (action) el("snackAct").onclick = function(){ s.classList.remove("on"); fn(); };
+  s.classList.add("on"); clearTimeout(snT); snT = setTimeout(function(){ s.classList.remove("on"); s.style.pointerEvents = ""; }, action ? 7000 : 4000);
 }
 function closePop(){ ["pop","popScrim"].forEach(function(id){ var x = el(id); if (x) x.remove(); }); var d = el("drawer"); if (d) d.classList.remove("on"); }
 function menu(anchor, items){
@@ -305,7 +339,9 @@ function menu(anchor, items){
   m.innerHTML = items.map(function(it, i){ return '<button role="menuitem" data-i="'+i+'">'+esc(it[0])+'</button>'; }).join('');
   el("gv").appendChild(sc); el("gv").appendChild(m);
   var r = anchor.getBoundingClientRect();
-  m.style.top = Math.min(r.bottom, innerHeight - m.offsetHeight - 8) + "px";
+  // Below the button, or above it when there's no room (the composer sits at
+  // the bottom of the screen).
+  m.style.top = (r.bottom + m.offsetHeight + 8 <= innerHeight ? r.bottom : Math.max(8, r.top - m.offsetHeight)) + "px";
   m.style.left = Math.max(8, r.right - m.offsetWidth) + "px";
   m.onclick = function(e){ var b = e.target.closest("[data-i]"); if (!b) return; closePop(); items[+b.dataset.i][1](); };
 }
@@ -483,10 +519,12 @@ function openThread(phone, doPush){
   S.pane = "thread"; S.phone = phone; S.thread = null; S.att = [];
   if (doPush) push({ gv:1, c:phone }, "?c=" + encodeURIComponent(phone));
   el("pane").innerHTML = paneHead(phone)+
+    '<div class="gv-addr" id="addr" hidden></div>'+
     '<div class="gv-tl" id="tl"><div class="gv-empty">Loading…</div></div>'+
     '<div id="cmpWrap">'+composerHtml()+'</div>';
   bindHead(phone); bindComposer();
   el("paneMore").onclick = function(){ threadMenu(this); };
+  el("tl").addEventListener("click", function(e){ var b = e.target.closest("[data-sch]"); if (b) schedMenu(b, b.dataset.sch); });
   showPane(); renderList();
   // Opening a conversation reads it, like Voice: the bold goes. "Waiting on
   // you" in the main app is its own flag, so this doesn't clear that.
@@ -503,6 +541,9 @@ function pollThread(){
   A.api("/api/thread?peek=1&phone=" + encodeURIComponent(phone)).then(function(d){
     if (phone !== S.phone || !d || !d.ok || !d.thread) return;
     var before = (S.thread && S.thread.messages || []).length;
+    // A peek doesn't carry the address guess (only a full open works it out),
+    // so the one already on screen is kept rather than blinking off.
+    if (S.thread && S.thread.addressGuess && !d.thread.addressGuess) d.thread.addressGuess = S.thread.addressGuess;
     S.thread = d.thread; renderThread(false);
     // A new text landing while it's on screen is read, as in Voice.
     if (d.thread.unread && !document.hidden) A.post("/api/read", { phone:phone });
@@ -570,7 +611,14 @@ function renderThread(first){
     h += '<div class="gv-meta">'+(failed(last) ? '<span class="err">Not delivered</span> · ' : '')+esc(A.clock(last.ts))+'</div></div></div>';
     i = j;
   }
+  // Scheduled texts wait at the bottom, outlined, until they go. Tapping one
+  // offers Edit (back into the box) or Cancel.
+  (t.scheduled || []).slice().sort(function(a,b){ return a.sendAt - b.sendAt; }).forEach(function(x){
+    h += '<div class="gv-sch"><div class="gv-b" data-sch="'+esc(x.id)+'" role="button" tabindex="0">'+linkify(x.body || "")+'</div>'+
+      '<div class="gv-meta">'+ic("clock")+'Scheduled for '+esc(whenFull(x.sendAt))+'</div></div>';
+  });
   if (!h) h = '<div class="gv-empty">Send a message to start the conversation</div>';
+  renderAddr(t);
   var tl = el("tl"); if (!tl) return;
   var atBottom = tl.scrollHeight - tl.scrollTop - tl.clientHeight < 80;
   tl.innerHTML = h;
@@ -588,6 +636,8 @@ function composerHtml(){
     '<div class="gv-cmp"><button class="ib" id="attBtn" aria-label="Attach a photo">'+ic("image")+'</button>'+
     '<input type="file" id="file" accept="image/*" multiple hidden>'+
     '<div class="fld"><textarea id="msg" rows="1" placeholder="Type a message" aria-label="Type a message"></textarea>'+
+    '<button class="ib pol" id="polBtn" aria-label="Polish" title="Polish" hidden>'+ic("sparkle")+'</button>'+
+    '<button class="ib sch" id="schBtn" aria-label="Schedule send" title="Schedule send" hidden>'+ic("clock")+'</button>'+
     '<button class="ib send" id="sendBtn" aria-label="Send message" disabled>'+ic("send")+'</button></div></div>';
 }
 function bindComposer(){
@@ -597,6 +647,8 @@ function bindComposer(){
   // On a phone the return key is a new line and the arrow sends, as in the app.
   box.addEventListener("keydown", function(e){ if (e.key === "Enter" && !e.shiftKey && !isTouch) { e.preventDefault(); send(); } });
   el("sendBtn").onclick = send;
+  el("polBtn").onclick = polish;
+  el("schBtn").onclick = function(){ schedPick(this); };
   el("attBtn").onclick = function(){ el("file").click(); };
   el("file").onchange = function(){ addPhotos(this.files); this.value = ""; };
   renderAtt();
@@ -606,6 +658,9 @@ function sizeBox(){
   box.style.height = "auto"; box.style.height = Math.min(140, box.scrollHeight) + "px";
   var ready = (box.value.trim() || S.att.some(function(a){ return a.url; })) && !S.sending && !S.att.some(function(a){ return !a.url; });
   var b = el("sendBtn"); b.disabled = !ready; b.classList.toggle("go", !!ready);
+  // Polish and Schedule only make sense once there are words to work on.
+  var words = !!box.value.trim();
+  el("polBtn").hidden = !words; el("schBtn").hidden = !words;
 }
 // Shrunk in the browser before it goes, the same as the main app's photos: a
 // 4 MB camera photo isn't something a carrier will deliver as a text.
@@ -670,6 +725,118 @@ function send(){
     renderList();
     setTimeout(loadList, 1500);
   });
+}
+
+// ---- Polish ---------------------------------------------------------------------
+// The same call the dashboard's Polish makes. It rewrites the box in place and
+// Undo puts his words back, so trying it costs nothing.
+function polish(){
+  var box = el("msg"), phone = S.phone, btn = el("polBtn");
+  var text = box && box.value.trim(); if (!text || !phone || btn.classList.contains("busy")) return;
+  btn.classList.add("busy");
+  A.post("/api/ai/draft", { phone:phone, text:text }).then(function(d){
+    btn.classList.remove("busy");
+    if (phone !== S.phone || !el("msg")) return;
+    if (!d || !d.ok || typeof d.draft !== "string") return snack("Couldn't polish it. Try again.");
+    var out = d.draft.trim();
+    if (!out || out === text) return snack(d.note ? String(d.note) : "Already reads well");
+    // Only replace it if he hasn't kept typing while it worked.
+    if (el("msg").value.trim() !== text) return;
+    el("msg").value = out; sizeBox(); el("msg").focus();
+    snack(d.note ? String(d.note) : "Polished", "Undo", function(){
+      if (S.phone === phone && el("msg") && el("msg").value === out) { el("msg").value = text; sizeBox(); }
+    });
+  });
+}
+
+// ---- Scheduled send ------------------------------------------------------------
+// The dashboard's quick times, then a picker for anything else.
+function at(dayAdd, h){ var d = new Date(); d.setDate(d.getDate() + dayAdd); d.setHours(h, 0, 0, 0); return d.getTime(); }
+function whenFull(ts){
+  var d0 = A.startOfDay(Date.now()), d = A.startOfDay(ts);
+  var day = d === d0 ? "today" : d === d0 + A.DAY ? "tomorrow" : new Date(ts).toLocaleDateString([], { weekday:"short", month:"short", day:"numeric" });
+  return day + ", " + A.clock(ts);
+}
+function schedPick(btn){
+  var now = Date.now(), opts = [["In 1 hour", now + 3600000]];
+  if (at(0, 18) > now + 15 * 60000) opts.push(["This evening, 6:00 PM", at(0, 18)]);
+  opts.push(["Tomorrow, 9:00 AM", at(1, 9)], ["Tomorrow, 6:00 PM", at(1, 18)]);
+  menu(btn, opts.map(function(o){ return [o[0], function(){ schedule(o[1]); }]; }).concat([["Pick date & time", schedDialog]]));
+}
+function local(ts){ var d = new Date(ts), p = function(n){ return (n < 10 ? "0" : "") + n; }; return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+"T"+p(d.getHours())+":"+p(d.getMinutes()); }
+function schedDialog(){
+  closePop();
+  var sc = document.createElement("div"); sc.className = "gv-scrim dim"; sc.id = "popScrim"; sc.onclick = closePop;
+  var dl = document.createElement("div"); dl.className = "gv-dlg"; dl.id = "pop"; dl.setAttribute("role","dialog");
+  dl.innerHTML = '<h2>Schedule send</h2><input type="datetime-local" id="schAt" value="'+local(at(1, 9))+'" min="'+local(Date.now())+'" aria-label="Date and time">'+
+    '<div class="row"><button class="gv-tbtn" id="schNo">Cancel</button><button class="gv-tbtn" id="schGo">Schedule send</button></div>';
+  el("gv").appendChild(sc); el("gv").appendChild(dl);
+  el("schNo").onclick = closePop;
+  el("schGo").onclick = function(){
+    var t = new Date(el("schAt").value).getTime();
+    if (!t || t < Date.now()) return snack("Pick a time that hasn't passed");
+    closePop(); schedule(t);
+  };
+}
+function schedule(sendAt){
+  var box = el("msg"), phone = S.phone, body = box && box.value.trim();
+  if (!body || !phone) return;
+  // A scheduled text is words only, same as the dashboard's. Saying so beats
+  // the photo quietly not going.
+  if (S.att.length) return snack("Photos can't be scheduled. Remove it or send now.");
+  A.post("/api/schedule", { phone:phone, body:body, sendAt:sendAt }).then(function(d){
+    if (!d || !d.ok) return snack("Couldn't schedule it. Try again.");
+    if (phone !== S.phone) return;
+    el("msg").value = ""; sizeBox();
+    if (d.thread) { if (S.thread && S.thread.addressGuess && !d.thread.addressGuess) d.thread.addressGuess = S.thread.addressGuess; S.thread = d.thread; renderThread(true); }
+    snack("Scheduled for " + whenFull(sendAt));
+  });
+}
+function schedMenu(anchor, id){
+  var phone = S.phone, x = ((S.thread && S.thread.scheduled) || []).filter(function(s){ return s.id === id; })[0];
+  if (!x) return;
+  function drop(then){
+    A.post("/api/unschedule", { phone:phone, id:id }).then(function(d){
+      if (!d || !d.ok) return snack("Couldn't change it. Try again.");
+      if (d.thread && phone === S.phone) { if (S.thread && S.thread.addressGuess && !d.thread.addressGuess) d.thread.addressGuess = S.thread.addressGuess; S.thread = d.thread; renderThread(false); }
+      then();
+    });
+  }
+  menu(anchor, [
+    ["Edit", function(){ drop(function(){ var m = el("msg"); if (m) { m.value = x.body || ""; sizeBox(); m.focus(); } }); }],
+    ["Cancel scheduled message", function(){ drop(function(){ snack("Scheduled message canceled"); }); }]
+  ]);
+}
+
+// ---- The address in the texts ------------------------------------------------------
+// The dashboard's address strip: a saved address is a tap to directions; one
+// the server found in the texts asks to be saved. Nothing found, no strip.
+function renderAddr(t){
+  var a = el("addr"); if (!a) return;
+  var g = t.garage || {}, saved = g.address || "", guess = saved ? "" : (t.addressGuess || "");
+  if (!saved && !guess) { a.hidden = true; a.innerHTML = ""; return; }
+  var full = saved ? [saved, g.city].filter(Boolean).join(", ") : guess;
+  var key = (saved ? "s:" : "g:") + full;
+  if (a.dataset.key === key && !a.hidden) return;
+  a.dataset.key = key; a.hidden = false;
+  a.innerHTML = '<span class="pin">'+ic("pin")+'</span><span class="k"><b>'+esc(full)+'</b><span>'+(saved ? 'Saved address' : 'Found in your texts')+'</span></span>'+
+    (saved ? '<a class="gv-tbtn" style="display:grid;place-items:center;text-decoration:none" target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(saved + (g.city ? ", " + g.city + ", WA" : ""))+'">Directions</a>'
+           : '<button class="gv-tbtn" id="addrSave">Save</button>');
+  var b = el("addrSave");
+  if (b) b.onclick = function(){
+    var phone = t.phone; b.disabled = true;
+    // Read the garage first and change only the address, so the cars and gate
+    // notes on file aren't wiped by the save.
+    A.api("/api/garage?phone=" + encodeURIComponent(phone)).then(function(d){
+      var gg = (d && d.ok && d.garage) || { vehicles:[] };
+      gg.address = guess;
+      return A.post("/api/meta", { phone:phone, garage:gg }).then(function(r){ return { r:r, g:gg }; });
+    }).then(function(x){
+      if (!x.r || x.r.ok === false) { b.disabled = false; return snack("Couldn't save it. Try again."); }
+      if (S.thread && S.thread.phone === phone) { S.thread.garage = x.g; S.thread.addressGuess = ""; renderAddr(S.thread); }
+      snack("Address saved");
+    }).catch(function(){ b.disabled = false; snack("Couldn't save it. Try again."); });
+  };
 }
 
 // ---- new message: the To field ------------------------------------------------

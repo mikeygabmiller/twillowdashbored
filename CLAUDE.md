@@ -101,3 +101,21 @@ Mikey's rules for any automatic text (2026-10-10):
   sort out details, so an automatic text shouldn't read like the last word.
   Say he'll probably be in touch, and ask them to reply with anything he
   should know.
+
+## The Google Voice page (`/voice`): start simple, add back only what he uses
+
+Mikey, 2026-11-19: he uses Google Voice for his personal texts and felt the
+dashboard's features "got out of hand". `public/voice.html` is his
+conversations laid out exactly like Google Voice, and the rule for it is
+**nothing Voice doesn't have, except what he says he actually uses.**
+
+- **Added back so far:** Polish (✨ in the message box, with Undo), scheduled
+  send (🕒 beside send, the dashboard's quick times plus a picker; scheduled
+  texts show outlined with Edit and Cancel), and the address found in the texts
+  (a strip under the name: Save, then Directions).
+- **Add a feature back only when he names it** as one he uses. Don't bring
+  dashboard extras over because they'd be handy; that is the bloat he's
+  getting away from. When one goes in, list it here and give it a check in
+  `test/gvoice.ui.test.js`.
+- Opening a chat there marks it read (as Voice does), unlike the classic app's
+  peek. `awaitingReply` is separate, so "Waiting on you" still holds.
