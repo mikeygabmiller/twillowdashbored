@@ -2,6 +2,7 @@
 // like voice.google.com, as a test of how that feels. Its rule is "nothing
 // Voice doesn't have", so these checks guard both halves: that it behaves like
 // Voice (open marks read, Enter sends, calls and voicemail on their own tabs,
+// voicemail also in the chat since he asked for it,
 // Archive in the menu) and that none of the dashboard's extras crept in.
 import { chromium } from 'playwright-core';
 import fs from 'fs';
@@ -21,7 +22,7 @@ const THREAD = {
     { dir: 'out', body: 'Hi Dana, it is Mikey', ts: now - 2 * H, kind: 'auto', status: 'sent' },
     { dir: 'in', body: 'Hey!', ts: now - 12 * M },
     { dir: 'in', body: 'Can you do Saturday?', ts: now - 10 * M },
-    { dir: 'in', body: '🎙️ Voicemail (12s)', ts: now - 3 * H, kind: 'voicemail', recording: 'https://x/rec.mp3' },
+    { dir: 'in', body: '🎙️ Voicemail: "Hi this is Dana about my truck"', ts: now - 3 * H, kind: 'voicemail', recording: 'https://x/rec.mp3', transcript: 'Hi this is Dana about my truck' },
     { dir: 'in', body: '📞 Phone call', ts: now - 4 * H, kind: 'call' },
   ],
   scheduled: [{ id: 's1', sendAt: now + D, body: 'Reminder text' }],
@@ -95,10 +96,12 @@ section('Laptop: the Voice layout');
   const pane = await page.locator('#pane').innerText();
   ok('the header has their name and number', /Dana Fox/.test(pane) && /\(425\) 555-0301/.test(pane));
   ok('texts show, including an automatic one, with no Auto label', /Hi Dana, it is Mikey/.test(pane) && !/\bAuto\b/.test(pane));
-  ok('voicemails and calls stay on their own tabs', !/Voicemail \(12s\)|Phone call/.test(pane));
+  ok('a voicemail shows in the chat with its transcript and a play button (added back)', (await page.locator('#tl .gv-vm').count()) === 1 && /Hi this is Dana about my truck/.test(await page.locator('#tl .gv-vm').innerText()) && await page.locator('#tl .gv-vm .pb').isVisible());
+  ok('its length comes from the call log', /0:12/.test(await page.locator('#tl .gv-vm .tt').innerText()));
+  ok('calls stay on the Calls tab', !/Phone call/.test(pane));
   ok('a scheduled text waits at the bottom with its time (added back)', /Reminder text/.test(pane) && /Scheduled for tomorrow/.test(pane), pane.slice(-200));
   ok('the address found in the texts is offered (added back)', /123 Maple St, Snohomish/.test(pane) && /Found in your texts/.test(pane));
-  ok('two texts close together share one time under them', (await page.locator('.gv-grp.in').count()) === 1 && (await page.locator('.gv-grp.in .gv-b').count()) === 2);
+  ok('two texts close together share one time under them', (await page.locator('.gv-grp.in', { hasText: 'Can you do Saturday?' }).locator('.gv-b').count()) === 2);
   ok('a day heading reads Today', /Today/.test(pane));
   ok('no AI chips or quick replies beyond what was added back', (await page.locator('#pane .chip, #pane [data-q]').count()) === 0 && !/Draft|Next 3 times|On my way/.test(pane));
   ok('Polish and Schedule stay hidden until there are words', !(await page.locator('#polBtn').isVisible()) && !(await page.locator('#schBtn').isVisible()));

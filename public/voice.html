@@ -23,7 +23,8 @@
 
    Added back since, and only because he uses them (Mikey, 2026-11-19: "add
    back only what I've used"): Polish, scheduled send, and the address found in
-   the texts. Anything else goes back in the same way, one at a time, when he
+   the texts. Then voicemails in the chat, as a card with the transcript and a
+   play button (Mikey: "I like when the voicemail shows in chat"). Anything else goes back in the same way, one at a time, when he
    misses it. */
 .gv{
   --gv-bg:#fff; --gv-ink:#202124; --gv-ink2:#3c4043; --gv-muted:#5f6368; --gv-line:#dadce0;
@@ -163,6 +164,13 @@ body{margin:0}
 .gv-dlg .row{display:flex;justify-content:flex-end;gap:8px;margin-top:16px;padding-bottom:8px}
 .gv-snack{display:flex;align-items:center;gap:16px}
 .gv-snack button{color:#8ab4f8;font-weight:500;text-transform:none}
+.gv-vm{background:var(--gv-in);color:var(--gv-in-ink);border-radius:18px;padding:12px 14px;width:min(320px,100%)}
+.gv-vm .hd{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:500;color:var(--gv-muted)}
+.gv-vm .hd svg.i{width:18px;height:18px}
+.gv-vm .tx{margin-top:6px;font-size:14px;line-height:20px;white-space:pre-wrap;overflow-wrap:anywhere}
+.gv-vm .tx.none{color:var(--gv-muted);font-style:italic}
+.gv-vm .gv-play{margin-top:10px}
+.gv-vm .gv-play .pb{width:36px;height:36px}
 .gv-stop{padding:16px;text-align:center;color:var(--gv-muted);font-size:13px;border-top:1px solid var(--gv-line)}
 
 /* New message: the To field */
@@ -571,10 +579,23 @@ function threadMenu(btn){
     }]
   ]);
 }
-// What Voice shows in a text thread: texts and photos. Calls and voicemails
-// live under their own tabs, so they're left out here.
+// What shows in a text thread: texts, photos and voicemails. Voice keeps
+// voicemail on its own tab; Mikey wants it in the chat too, so it's both.
+// Calls stay on the Calls tab.
 function textsOf(t){
-  return (t.messages || []).filter(function(m){ return m.kind !== "call" && m.kind !== "voicemail" && (m.body || (m.media && m.media.length)); });
+  return (t.messages || []).filter(function(m){ return m.kind !== "call" && (m.kind === "voicemail" || m.body || (m.media && m.media.length)); })
+    .sort(function(a,b){ return (a.ts||0) - (b.ts||0); });
+}
+// The voicemail's length lives on its call-log row; the chat copy only has it
+// in older bodies ("(12s)"). Either will do until the audio loads its own.
+function vmSecs(m){
+  for (var i=0;i<S.calls.length;i++) { var c = S.calls[i]; if (c.outcome === "voicemail" && m.recording && c.recording === m.recording) return c.vmSec || 0; }
+  var x = String(m.body || "").match(/\((\d+)s\)/); return x ? +x[1] : 0;
+}
+function vmCard(m){
+  return '<div class="gv-vm"><div class="hd">'+ic("voicemail")+'Voicemail</div>'+
+    (m.transcript ? '<div class="tx">'+esc(m.transcript)+'</div>' : '<div class="tx none">'+(m.transcriptFailed ? 'Transcript not available' : 'Transcribing…')+'</div>')+
+    (m.recording ? player(m.recording, vmSecs(m)) : '')+'</div>';
 }
 function linkify(s){
   return esc(s).replace(/\bhttps?:\/\/[^\s<]+/g, function(u){ return '<a href="'+u+'" target="_blank" rel="noopener">'+u+'</a>'; });
@@ -598,10 +619,11 @@ function renderThread(first){
     var m = msgs[i], day = A.startOfDay(m.ts || 0);
     if (day !== lastDay) { h += '<div class="gv-day">'+esc(dayWord(m.ts))+'</div>'; lastDay = day; }
     var dir = m.dir === "in" ? "in" : "out", run = [m], j = i + 1;
-    while (j < msgs.length && (msgs[j].dir === "in" ? "in" : "out") === dir && A.startOfDay(msgs[j].ts) === day && msgs[j].ts - msgs[j-1].ts < 5 * 60000 && !failed(msgs[j-1])) { run.push(msgs[j]); j++; }
+    while (j < msgs.length && m.kind !== "voicemail" && msgs[j].kind !== "voicemail" && (msgs[j].dir === "in" ? "in" : "out") === dir && A.startOfDay(msgs[j].ts) === day && msgs[j].ts - msgs[j-1].ts < 5 * 60000 && !failed(msgs[j-1])) { run.push(msgs[j]); j++; }
     var last = run[run.length - 1];
     h += '<div class="gv-grp '+dir+'">'+(dir === "in" ? '<span class="avs">'+av(t.phone, nameFor(t.phone) || t.name, true)+'</span>' : '')+'<div class="col">';
     run.forEach(function(x){
+      if (x.kind === "voicemail") { h += vmCard(x); return; }
       (x.media || []).forEach(function(mm){
         if (/^video\//.test(mm.type || "")) h += '<video class="gv-img" src="'+esc(mediaSrc(mm))+'" controls preload="metadata"></video>';
         else h += '<a href="'+esc(mediaSrc(mm))+'" target="_blank" rel="noopener"><img class="gv-img" src="'+esc(mediaSrc(mm))+'" loading="lazy" alt="Photo"></a>';
@@ -621,8 +643,12 @@ function renderThread(first){
   renderAddr(t);
   var tl = el("tl"); if (!tl) return;
   var atBottom = tl.scrollHeight - tl.scrollTop - tl.clientHeight < 80;
-  tl.innerHTML = h;
-  if (first || atBottom) tl.scrollTop = tl.scrollHeight;
+  // The 8-second refresh repaints only when something changed. Repainting the
+  // same thread would throw away a voicemail's player halfway through playing.
+  if (first || tl._html !== h) {
+    tl.innerHTML = h; tl._html = h; bindPlayers(tl);
+    if (first || atBottom) tl.scrollTop = tl.scrollHeight;
+  }
   var opted = t.optedOut || (rowFor(t.phone) || {}).optedOut;
   var cw = el("cmpWrap");
   if (opted && !el("stopNote")) { cw.innerHTML = '<div class="gv-stop" id="stopNote">This person has opted out of receiving messages from you</div>'; }
@@ -925,8 +951,8 @@ function player(rec, secs){
   return '<div class="gv-play" data-src="/api/media?u='+esc(encodeURIComponent(rec))+'"><button class="pb" aria-label="Play">'+ic("play")+'</button>'+
     '<span class="bar"><i></i></span><span class="tt">0:00 / '+fmtSec(secs)+'</span></div>';
 }
-function bindPlayers(){
-  document.querySelectorAll(".gv-play").forEach(function(p){
+function bindPlayers(root){
+  (root || document).querySelectorAll(".gv-play").forEach(function(p){
     var au = null, btn = p.querySelector(".pb"), bar = p.querySelector(".bar"), fill = bar.querySelector("i"), tt = p.querySelector(".tt");
     function tick(){ if (!au) return; var d = au.duration || 0; fill.style.width = (d ? au.currentTime / d * 100 : 0) + "%"; tt.textContent = fmtSec(au.currentTime) + " / " + fmtSec(d); }
     function make(){
