@@ -4761,7 +4761,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-11-17·unlogged-jobs";
+  var APP_BUILD="2026-11-19·voice-layout";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -14192,7 +14192,10 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       {t:"Business playbook",ic:"file-text",into:"playbook"}
     ]},
     {g:"Phone",rows:[
-      {t:"Calls & voicemail",ic:"phone",noteId:"mnCallStat",go:function(){closeMore();setTab("calls")}}
+      {t:"Calls & voicemail",ic:"phone",noteId:"mnCallStat",go:function(){closeMore();setTab("calls")}},
+      // A test (2026-11-19): the same conversations laid out exactly like Google
+      // Voice, on its own page, so trying it changes nothing here.
+      {t:"Google Voice layout",ic:"message-square",note:"test",go:function(){location.href="/voice"}}
     ]},
     {g:"Insights",rows:[
       // Nine reports behind one door. It lost its nav pill on the evidence and
