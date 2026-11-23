@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-11-23·gemini-guard';
+const BUILD = '2026-11-23·gemini-guard2';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -9052,6 +9052,11 @@ async function generateReply(thread, cfg, hint, meta) {
     `never a number you worked out yourself, and never one rounded up or down to look tidier. ` +
     `If the playbook does not price this vehicle, ask for what you're missing instead of guessing at a total.\n` +
     `- Never invent an appointment time. Ask, or offer what the playbook says he offers.\n` +
+    // From the replay test (2026-11-23): drafts claimed things Mikey can't
+    // know from a text: "Ben's a good mate of mine", "I see it on the map",
+    // "I'm on my way", "thanks for the heads up about the hose".
+    `- Only say what the conversation shows is true. Never claim to know someone, to see something, to be on your way, ` +
+    `or to remember something that isn't written in this conversation.\n` +
     `- Write the way a busy person texts, not the way an assistant writes. Finish every sentence.\n`;
 
   const build = (extra) =>
@@ -9097,7 +9102,11 @@ async function generateReply(thread, cfg, hint, meta) {
   const priceSources = [businessContext(cfg), hint || '', transcript(thread)];
   const tell = findTell(text);
   const madeUp = tell ? '' : findInventedPrice(text, priceSources);
-  const madeTime = (tell || madeUp) ? '' : findInventedReplyTime(text, [hint || '', transcript(thread)]);
+  // Only the live part of the conversation can back a time: on the replay a
+  // "2pm" from an appointment weeks earlier in the same thread let "the 24th at
+  // 2pm" through as if it had been agreed. The last 8 texts, none older than 7
+  // days before the newest.
+  const madeTime = (tell || madeUp) ? '' : findInventedReplyTime(text, [hint || '', recentTranscript(thread)]);
   const off = tell
     ? `used the phrase "${tell}", which is a dead giveaway that a machine wrote it`
     : madeUp
@@ -15325,6 +15334,10 @@ function replyDayKeys(text) {
   const named = /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})\b/g;
   while ((m = named.exec(t))) out.add(Number(m[1]));
   return out;
+}
+function recentTranscript(thread) {
+  const ms = ((thread && thread.messages) || []).slice(-8), newest = (ms[ms.length - 1] || {}).ts || 0;
+  return transcript({ messages: ms.filter((x) => !newest || !x.ts || newest - x.ts <= 7 * 86400000) });
 }
 function findInventedReplyTime(text, sources) {
   const src = (sources || []).join('\n');
