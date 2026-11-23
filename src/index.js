@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-11-23·voice-look2';
+const BUILD = '2026-11-23·gemini-replay';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -9018,7 +9018,12 @@ async function generateReply(thread, cfg, hint, meta) {
   const rulesCtx = await rulesContext();
   const editsCtx = await editsContext(bucket);
   // His real exchanges, as turns, plus any unpaired samples as a style list.
-  const ex = voiceExchanges(voice, bucket, situation);
+  const ex = voiceExchanges(voice, bucket, situation, meta && meta.exclude);
+  // How Gemini gets asked (2026-11-23). Claude can't be paid for right now, so
+  // every draft is Gemini's, and it was getting the whole thing as one pasted
+  // blob. GEMINI_DRAFT is the setup that measured best on the replay test;
+  // the replay can try others on the same moments (meta.gemini).
+  const gem = Object.assign({}, GEMINI_DRAFT, (meta && meta.gemini) || {});
   // What this conversation still can't answer without asking.
   const missing = missingFacts(thread, bucket);
   // The quote reply is a different shape from every other text he sends, and
@@ -9079,7 +9084,7 @@ async function generateReply(thread, cfg, hint, meta) {
   // Spelled out at both call sites rather than shared through a variable: the
   // surface and the tier say who pays for this and who reads it, and both are
   // worth being able to see without following a name somewhere else.
-  const first = { surface: 'reply draft', tier: 'voice', system, turns: ex.turns, effort: 'medium', maxTokens: 800, temperature: 0.45 };
+  const first = { surface: 'reply draft', tier: 'voice', system, turns: ex.turns, effort: 'medium', maxTokens: 800, temperature: 0.45, gemini: gem };
   let text = await aiGenerate(build(''), first);
   if (meta) meta.provider = first.usedProvider || '';
   text = cleanReply(text);
@@ -9101,7 +9106,7 @@ async function generateReply(thread, cfg, hint, meta) {
       : styleViolation(text, voice && voice.style, bucket);
   if (off) {
     try {
-      const second = { surface: 'reply draft', tier: 'voice', system, turns: ex.turns, effort: 'medium', maxTokens: 800, temperature: 0.45 };
+      const second = { surface: 'reply draft', tier: 'voice', system, turns: ex.turns, effort: 'medium', maxTokens: 800, temperature: 0.45, gemini: gem };
       const retry = await aiGenerate(
         build(`CRITICAL: your previous attempt ${off}. Mikey does not write like that. Rewrite it to read exactly like the real texts above, and avoid any customer-service filler. `),
         second,
@@ -15177,9 +15182,17 @@ function voiceStyleContext(voice) {
 // shown as a style specimen, so it says so rather than pretending to be a reply
 // to something. Returns { turns, text } — turns go in `messages`, text goes in
 // the final user message.
-function voiceExchanges(voice, bucket, query) {
+function voiceExchanges(voice, bucket, query, exclude) {
   if (!voice || !voice.buckets) return { turns: [], text: '' };
-  const picked = pickVoiceExamples(voice, bucket, query || '', VOICE_SHOW);
+  // `exclude` is the replay test's answer key. Replaying a past moment, his real
+  // reply to it is sitting in the examples, and retrieval ranks it first because
+  // it answers the very same text, so the "draft" was often his own words handed
+  // back and the test scored itself on copying. Leaving it out is what makes
+  // that score mean anything. A live draft has no answer yet, so passes nothing.
+  const gone = String(exclude || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const picked = pickVoiceExamples(voice, bucket, query || '', VOICE_SHOW + (gone ? 1 : 0))
+    .filter((r) => !gone || r.t.replace(/\s+/g, ' ').trim().toLowerCase() !== gone)
+    .slice(0, VOICE_SHOW);
   const pairs = picked.filter((r) => r.q);
   const loose = picked.filter((r) => !r.q);
   const turns = [];
@@ -15385,6 +15398,14 @@ async function apiVoiceReplayNext(request) {
   const d = await readJson(request).catch(() => ({}));
   const seen = new Set((Array.isArray(d && d.seen) ? d.seen : []).map(String));
   const want = Math.max(1, Math.min(REPLAY_BATCH_MAX, Number((d && d.count) || 4)));
+  // Lets the replay try another Gemini setup on the same moments, so two setups
+  // can be compared side by side. Only these three knobs, checked.
+  const gv = (d && d.gemini && typeof d.gemini === 'object') ? d.gemini : null;
+  const gemTry = gv ? {
+    native: gv.native === true,
+    think: Math.max(0, Math.min(2048, Number(gv.think) || 0)),
+    model: /^gemini-[a-z0-9.-]{1,40}$/.test(String(gv.model || '')) ? String(gv.model) : '',
+  } : undefined;
   const cfg = await loadConfig();
   const index = await loadIndex();
   const rows = index.filter((e) => !e.archived && !isPracticePhone(e.phone))
@@ -15450,7 +15471,7 @@ async function apiVoiceReplayNext(request) {
   const cards = await Promise.all(chosen.map(async (c) => {
     const asOf = Object.assign({}, c.thread, { messages: (c.thread.messages || []).slice(0, c.i) });
     try {
-      const draft = await generateReply(asOf, cfg, '');
+      const draft = await generateReply(asOf, cfg, '', { exclude: c.mine, gemini: gemTry });
       if (!draft) return null;
       return { id: c.id, phone: c.phone, name: c.name, customer: c.customer, mine: c.mine, ai: draft, bucket: c.bucket };
     } catch { return null; }   // one failed draft shouldn't sink the whole batch
@@ -16055,6 +16076,13 @@ function flattenForGemini(prompt, opts) {
   return L.join('\n\n');
 }
 
+let CLAUDE_COOL_UNTIL = 0;
+// The draft setup Gemini gets by default. See generateReply. `native` sends
+// the standing instructions as Gemini's system instruction and his real
+// exchanges as real back-and-forth turns (customer, then him) instead of one
+// pasted block; `think` is a thinking budget in tokens (0 = off), `model`
+// overrides GEMINI_MODEL for drafts only.
+const GEMINI_DRAFT = { native: false, think: 0, model: '' };
 async function aiGenerate(prompt, opts = {}) {
   // Read config before asking who writes this. The key can live in that doc, and
   // on a cold isolate nothing has loaded it yet — skipping this would send the
@@ -16064,17 +16092,26 @@ async function aiGenerate(prompt, opts = {}) {
   if (opts.tier === 'voice' && claudeVia() !== 'none' && !envFlag('CLAUDE_DISABLED')) {
     const budget = aiDailyBudget();
     const spent = await claudeSpentToday();
-    if (budget > 0 && spent < budget) {
+    if (budget > 0 && spent < budget && Date.now() > CLAUDE_COOL_UNTIL) {
       try { const t = await claudeGenerate(prompt, opts); opts.usedProvider = 'claude'; return t; }
       catch (err) {
         // Never let a provider outage stop him replying — fall through to Gemini.
-        console.log('claude failed, falling back to gemini:', String((err && err.message) || err).slice(0, 200));
+        const why = String((err && err.message) || err);
+        console.log('claude failed, falling back to gemini:', why.slice(0, 200));
+        // A bad key or an empty credit balance won't fix itself in the next
+        // minute, and trying both routes first cost every draft 2+ seconds.
+        // Rest it for 30 minutes (this isolate only) and go straight to Gemini.
+        if (/\b40[13]\b|invalid x-api-key|credit|billing|2021/i.test(why)) CLAUDE_COOL_UNTIL = Date.now() + 30 * 60000;
       }
     } else {
       console.log(`claude over the day's budget ($${spent.toFixed(2)} of $${budget.toFixed(2)}) — drafting on gemini`);
     }
   }
-  const text = await geminiGenerate(flattenForGemini(prompt, opts), opts);
+  const g = opts.gemini || null;
+  const gopts = g ? Object.assign({}, opts, { model: g.model || '', think: g.think || 0 }) : opts;
+  const text = (g && g.native && (opts.system || (opts.turns || []).length))
+    ? await geminiGenerate(prompt, Object.assign(gopts, { native: true }))
+    : await geminiGenerate(flattenForGemini(prompt, opts), gopts);
   // Stamped on the way out so the caller can record WHO wrote a draft. The
   // routing above has three exits — over budget, provider down, no key — and all
   // three land here silently, which is exactly the case where "the drafts got
@@ -16394,20 +16431,43 @@ async function apiAiUsage(url) {
 async function geminiGenerate(prompt, opts = {}) {
   const key = ENV.GEMINI_API_KEY;
   if (!key) throw new Error('GEMINI_API_KEY not set');
-  const model = ENV.GEMINI_MODEL || 'gemini-2.5-flash';
+  const model = opts.model || ENV.GEMINI_MODEL || 'gemini-2.5-flash';
+  const think = Math.max(0, opts.think | 0);
   const gen = {
     temperature: opts.temperature == null ? 0.4 : opts.temperature,
-    maxOutputTokens: opts.maxTokens || 1024,
+    // Thinking is paid out of the same ceiling, so a budget gets added on top.
+    maxOutputTokens: (opts.maxTokens || 1024) + think,
   };
   if (opts.json) gen.responseMimeType = 'application/json';
   // Gemini 2.5 models "think" by default, and those hidden thinking tokens are
   // spent out of maxOutputTokens — which was truncating replies mid-sentence
   // (and sometimes leaving nothing at all). These are short, direct tasks, so
   // turn thinking off and give the whole budget to the actual answer.
-  if (/2\.5|thinking/i.test(model)) gen.thinkingConfig = { thinkingBudget: 0 };
+  // A draft can ask for a small budget back (opts.think): deciding what this
+  // customer still needs and not inventing a time is judgment, not rewriting.
+  // Pro models can't switch thinking off at all, so they never get 0.
+  if (/2\.5|thinking/i.test(model)) gen.thinkingConfig = { thinkingBudget: think || (/pro/i.test(model) ? 128 : 0) };
   const reqParts = [{ text: prompt }];
   if (opts.images) for (const im of (opts.images || [])) reqParts.push({ inlineData: { mimeType: im.mimeType, data: im.dataB64 } });
-  const body = { contents: [{ parts: reqParts }], generationConfig: gen };
+  let contents = [{ role: 'user', parts: reqParts }];
+  const body = { generationConfig: gen };
+  if (opts.native) {
+    // His real exchanges as real turns: the customer speaks, "he" (the model)
+    // answers. Few-shot copying works far better when the examples are the
+    // model's own previous replies than when they are quoted in a paragraph.
+    if (opts.system) body.systemInstruction = { parts: [{ text: String(opts.system) }] };
+    contents = [];
+    for (const t of (opts.turns || [])) {
+      const role = t && t.role === 'assistant' ? 'model' : 'user';
+      const text = String((t && t.content) || '');
+      const lastC = contents[contents.length - 1];
+      if (lastC && lastC.role === role) lastC.parts[0].text += '\n\n' + text;   // Gemini wants turns to alternate
+      else contents.push({ role, parts: [{ text }] });
+    }
+    if (contents.length && contents[contents.length - 1].role === 'user') contents[contents.length - 1].parts.push(...reqParts);
+    else contents.push({ role: 'user', parts: reqParts });
+  }
+  body.contents = contents;
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(key)}`,
     { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) },

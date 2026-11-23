@@ -229,7 +229,10 @@ const callSites = SRC.split('\n')
   .map((l, i) => [i + 1, l.replace(/\/\/.*$/, '')])
   .filter(([, l]) => /\b(geminiGenerate|aiGenerate)\(/.test(l)
     && !/^\s*(async )?function /.test(l)
-    && !/geminiGenerate\(flattenForGemini\(prompt, opts\), opts\)/.test(l));
+    && !/geminiGenerate\(flattenForGemini\(prompt, opts\), opts\)/.test(l)
+    // aiGenerate's own hand-off to Gemini (2026-11-23): it forwards the
+    // caller's options with a draft setup laid over them, surface included.
+    && !/geminiGenerate\((prompt, Object\.assign\(gopts|flattenForGemini\(prompt, opts\), gopts\))/.test(l));
 // A multi-line call puts its options object a few lines below the call itself,
 // so look down to the closing paren rather than at that one line — and a few
 // lines UP too, because a call site that needs to read something back off its
