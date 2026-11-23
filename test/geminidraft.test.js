@@ -7,7 +7,7 @@ import fs from 'fs';
 
 let src = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
 src = src.replace(/^export default \{[\s\S]*?^\};$/m, '');
-const EXPORTS = ['geminiGenerate', 'aiGenerate', 'voiceExchanges', 'GEMINI_DRAFT', 'resetInvocationCaches'];
+const EXPORTS = ['geminiGenerate', 'aiGenerate', 'voiceExchanges', 'GEMINI_DRAFT', 'resetInvocationCaches', 'findInventedReplyTime'];
 
 const store = new Map();
 const kv = {
@@ -29,7 +29,7 @@ let pass = 0, fail = 0;
 const ok = (n, c, x) => { if (c) { pass++; console.log('  ✓', n); } else { fail++; console.log('  ✗', n, x !== undefined ? '→ ' + JSON.stringify(x) : ''); } };
 const section = (s) => console.log('\n' + s);
 
-section('Gemini, asked the old way (still the default until the replay says otherwise)');
+section('Gemini, asked the old way (what every other AI feature still uses)');
 calls.length = 0;
 await M.geminiGenerate('PROMPT', { maxTokens: 800 });
 let b = calls[0].body;
@@ -78,6 +78,24 @@ const o = { tier: 'voice', surface: 'reply draft', system: 'S', turns, gemini: {
 await M.aiGenerate('P', o);
 ok('a draft setup reaches Gemini natively', calls[0].body.systemInstruction && calls[0].body.contents.length === 5 && calls[0].body.generationConfig.thinkingConfig.thinkingBudget === 256);
 ok('and still says Gemini wrote it', o.usedProvider === 'gemini');
+
+section('Drafts are asked natively by default (the replay test, 2026-11-23)');
+ok('GEMINI_DRAFT is native, no thinking, default model', M.GEMINI_DRAFT.native === true && M.GEMINI_DRAFT.think === 0 && !M.GEMINI_DRAFT.model);
+
+section('A draft never offers a time or date nobody agreed');
+const T = (d, conv) => M.findInventedReplyTime(d, ['', conv]);
+ok('catches a made-up date and time (from the replay)', T('I can do the 24th at 2pm if that works for you.', 'Customer: how about either 23rd, or 24th.') === '2');
+ok('catches a made-up time with minutes', T('Can we do 12:30?', 'Customer: That is fine what time?') === '12:30');
+ok('catches "noon" out of nowhere', T('Be there around noon', 'Customer: ok') === '12');
+ok('catches a made-up date on its own', T('Let\'s lock in the 23rd.', 'Customer: sometime next week?') === '23rd');
+ok('a time the customer said is fine, even without pm', T('Perfect! Tuesday at 3pm works. What is your address?', 'Customer: I can be home at 3 on Tuesday.') === '');
+ok('"after 3 pm" covers 3pm', T('I can do Wednesday after 3pm?', 'Customer: I arrive after 3 pm.') === '');
+ok('a time Mikey already gave is fine', T('See you Tuesday at 3!', 'Mikey: Tuesday at 3 works!') === '');
+ok('1:00 and 1pm are the same time', T('Sure, 1pm works', 'Customer: can you do 1:00?') === '');
+ok('a date from 11/24 or Nov 24 counts', T('See you on the 24th', 'Customer: is 11/24 ok?') === '' && T('See you on the 24th', 'Customer: Nov 24 work?') === '');
+ok('his answer to a "Needs you" question counts as given', M.findInventedReplyTime('I can do Friday at 2pm.', ['The owner has decided: Friday at 2pm', 'Customer: when?']) === '');
+ok('no time at all passes', T('Yep, I can come by this week. What is your address?', 'Customer: still coming?') === '');
+ok('"3 kids" is not a time', T('See you at 3pm', 'Customer: I have 3 kids') === '3');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
