@@ -184,6 +184,31 @@ body{margin:0}
 .gv-call svg.i{width:16px;height:16px}
 .gv-call .miss{color:var(--gv-red)}
 .gv-call .miss svg.i{fill:var(--gv-red)}
+.gv-sug{flex:none;display:flex;align-items:center;gap:8px;padding:6px 8px 0 20px;font-size:12px;color:var(--gv-muted)}
+.gv-sug[hidden]{display:none}
+.gv-sug .i{width:16px;height:16px;fill:var(--gv-blue);flex:none}
+.gv-sug .t{flex:1;min-width:0}
+.gv-sug .ib{width:32px;height:32px}
+.gv-sug.ny{flex-wrap:wrap;padding:8px 8px 0 20px}
+.gv-sug.ny .t{font-size:14px;color:var(--gv-ink)}
+.gv-sug .opts{flex-basis:100%;display:flex;gap:8px;flex-wrap:wrap;padding:6px 0 0 24px}
+.gv-sug .opts button{height:32px;padding:0 14px;border-radius:16px;border:1px solid var(--gv-line);color:var(--gv-ink);font-size:14px}
+.gv-sug .opts button:hover{background:var(--gv-soft)}
+.gv-sug .opts button[disabled]{opacity:.5}
+.gv-info{max-height:min(80vh,640px);overflow:auto}
+.gv-info h3{margin:16px 0 4px;font-size:12px;font-weight:500;color:var(--gv-muted);text-transform:uppercase;letter-spacing:.6px}
+.gv-info h3:first-of-type{margin-top:0}
+.gv-info .bk{padding:8px 0;border-bottom:1px solid var(--gv-line)}
+.gv-info .bk:last-child{border-bottom:0}
+.gv-info .bk b{display:block;font-weight:500;font-size:15px}
+.gv-info .st{font-size:12px;color:var(--gv-muted)}
+.gv-info .st.on{color:var(--gv-blue)}
+.gv-info dl{margin:6px 0 0;display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:14px}
+.gv-info dt{color:var(--gv-muted)}
+.gv-info dd{margin:0;min-width:0;overflow-wrap:anywhere}
+.gv-info .nt{white-space:pre-wrap;font-size:13px;overflow-wrap:anywhere}
+.gv-info .none{color:var(--gv-muted);font-size:14px;margin:4px 0}
+.gv-info a{color:var(--gv-blue)}
 .gv-ops{display:flex;gap:8px;padding:4px 16px 0 64px;overflow-x:auto;scrollbar-width:none}
 .gv-ops::-webkit-scrollbar{display:none}
 .gv-ops:empty{display:none}
@@ -312,6 +337,7 @@ var P = {
   clock:'M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z',
   pin:'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 0 1 0-5 2.5 2.5 0 0 1 0 5z',
   dl:'M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z',
+  info:'M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z',
   exit:'M10.09 15.59L11.5 17l5-5-5-5-1.41 1.41L12.67 11H3v2h9.67l-2.58 2.59zM19 3H5a2 2 0 0 0-2 2v4h2V5h14v14H5v-4H3v4a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z'
 };
 function ic(n){ return '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="'+P[n]+'"/></svg>'; }
@@ -546,6 +572,8 @@ function paneHead(phone, opts){
   var n = nameFor(phone);
   return '<div class="gv-ph"><button class="ib back" id="paneBack" aria-label="Back">'+ic("back")+'</button>'+
     '<div class="who"><b id="whoName">'+esc(n || A.fmtPhone(phone))+'</b>'+(n ? '<span id="whoSub">'+esc(A.fmtPhone(phone))+'</span>' : (opts.more === false ? '' : '<span id="whoSub"><button class="add" id="addName">Add a name</button></span>'))+'</div>'+
+    // ⓘ: his booking details without leaving the chat (Mikey, 2026-11-23).
+    (opts.more === false ? '' : '<button class="ib" id="paneInfo" aria-label="Conversation info" title="Conversation info">'+ic("info")+'</button>')+
     '<button class="ib" id="paneCall" aria-label="Call">'+ic("call")+'</button>'+
     (opts.more === false ? '' : '<button class="ib" id="paneMore" aria-label="More options">'+ic("more")+'</button>')+'</div>';
 }
@@ -570,16 +598,18 @@ function openThread(phone, doPush){
   var pm = el("msg"); if (S.phone && pm && S.pane === "thread") setDraft(S.phone, pm.value);
   closePop();
   if (S.view !== "messages" && S.view !== "archive") setView("messages", true);
-  S.pane = "thread"; S.phone = phone; S.thread = null; S.att = [];
+  S.pane = "thread"; S.phone = phone; S.thread = null; S.att = []; S.ai = null; S.sugGone = ""; S.sugPut = "";
   if (doPush) push({ gv:1, c:phone }, "?c=" + encodeURIComponent(phone));
   el("pane").innerHTML = paneHead(phone)+
     '<div class="gv-nm" id="nameNote" hidden></div>'+
     '<div class="gv-addr" id="addr" hidden></div>'+
     '<div class="gv-tl" id="tl"><div class="gv-empty">Loading…</div></div>'+
+    '<div class="gv-sug" id="sug" hidden></div>'+
     '<div id="cmpWrap">'+composerHtml()+'</div>';
   bindHead(phone); bindComposer();
   var dr = draftFor(phone); if (dr) { el("msg").value = dr; sizeBox(); }
   el("paneMore").onclick = function(){ threadMenu(this); };
+  el("paneInfo").onclick = function(){ showInfo(phone); };
   el("tl").addEventListener("click", function(e){
     var b = e.target.closest("[data-sch]"); if (b) return schedMenu(b, b.dataset.sch);
     var im = e.target.closest("img.gv-img"); if (im) { e.preventDefault(); viewPhoto(im.getAttribute("src")); }
@@ -793,6 +823,7 @@ function renderThread(first){
   var cw = el("cmpWrap");
   if (opted && !el("stopNote")) { cw.innerHTML = '<div class="gv-stop" id="stopNote">This person has opted out of receiving messages from you</div>'; }
   else if (!opted && el("stopNote")) { cw.innerHTML = composerHtml(); bindComposer(); }
+  renderSug(t);
 }
 function failed(m){ return m.dir === "out" && (m.status === "failed" || m.status === "undelivered" || !!m.error); }
 
@@ -907,9 +938,13 @@ function send(){
   if ((!body && !media.length) || S.att.some(function(a){ return !a.url; })) return;
   S.sending = true; sizeBox();
   var payload = { phone:phone, body:body }; if (media.length) payload.media = media;
+  // The draft he started from goes along, as in the main app, so the drafter
+  // learns from what he changed (and counts the ones he sent untouched).
+  if (S.ai && S.ai.phone === phone && body) { payload.aiOriginal = S.ai.text; payload.aiBy = S.ai.by || ""; }
   A.post("/api/send", payload).then(function(d){
     S.sending = false;
     if (!d || !d.ok) { sizeBox(); snack(d && d.error === "recipient_opted_out" ? "This person has opted out of receiving messages from you" : "Message not sent. Check your connection and try again."); return; }
+    if (S.ai && S.ai.phone === phone) S.ai = null;
     box.value = ""; S.att = []; renderAtt(); sizeBox(); setDraft(phone, "");
     A.post("/api/read", { phone:phone });
     if (d.thread && phone === S.phone) { S.thread = d.thread; renderThread(true); }
@@ -999,6 +1034,152 @@ function schedMenu(anchor, id){
     ["Edit", function(){ drop(function(){ var m = el("msg"); if (m) { m.value = x.body || ""; sizeBox(); m.focus(); } }); }],
     ["Cancel scheduled message", function(){ drop(function(){ snack("Scheduled message canceled"); }); }]
   ]);
+}
+
+// ---- A reply already written (added back 2026-11-23) ------------------------------
+// Mikey: "make it auto draft and appear in the box". The server writes one in
+// his voice the moment they text (☰ > AI that runs by itself > Have a reply
+// already written) and it goes straight into the message box, not a card, so
+// what he sees is what goes: edit it or tap send. One line above the box says
+// it's a draft, with X to throw it away. It only ever fills an EMPTY box:
+// words he typed himself are never replaced, he gets "Use it" instead.
+// When answering needs a fact only he has (a price, a day), the server asks
+// him rather than guessing; that question shows here with its answers as taps.
+function sugLine(text, use){
+  return ic("sparkle")+'<span class="t">'+esc(text)+'</span>'+
+    (use ? '<button class="gv-tbtn" id="sugUse">Use it</button>' : '')+
+    '<button class="ib" id="sugX" aria-label="Dismiss draft" title="Dismiss">'+ic("close")+'</button>';
+}
+function renderSug(t){
+  var bar = el("sug"), box = el("msg"); if (!bar) return;
+  var msgs = t.messages || [], last = msgs[msgs.length - 1], s = t.suggested, ny = t.needsYou;
+  var hide = function(){ if (!bar.hidden) { bar.hidden = true; bar.innerHTML = ""; bar._h = ""; } };
+  if (!box) return hide();                                   // opted out: no box to fill
+  if (ny && ny.question && last && last.dir === "in" && !(s && s.manual)) {
+    if (S.sugGone === "n:" + ny.ts) return hide();
+    var hq = ic("sparkle")+'<span class="t">'+esc(ny.question)+'</span>'+
+      '<button class="ib" id="sugX" aria-label="Dismiss" title="Dismiss">'+ic("close")+'</button>'+
+      '<div class="opts">'+(ny.options || []).map(function(o, i){ return '<button data-ny="'+i+'">'+esc(o)+'</button>'; }).join('')+
+      '<button data-ny="-1">Something else</button></div>';
+    if (bar._h === hq && !bar.hidden) return;
+    bar.className = "gv-sug ny"; bar.innerHTML = hq; bar._h = hq; bar.hidden = false;
+    el("sugX").onclick = function(){ dropSug(t.phone, "n:" + ny.ts, true); };
+    bar.querySelectorAll("[data-ny]").forEach(function(b){
+      b.onclick = function(){
+        var i = +b.dataset.ny;
+        if (i < 0) { dropSug(t.phone, "n:" + ny.ts, true); var m = el("msg"); if (m) m.focus(); return; }
+        answerNy(t.phone, ny.options[i]);
+      };
+    });
+    return;
+  }
+  if (!(s && s.text && last && (last.dir === "in" || s.manual))) return hide();
+  var key = "s:" + (s.ts || 0);
+  if (S.sugGone === key) return hide();
+  var cur = box.value.trim(), mine = S.ai && S.ai.phone === t.phone;
+  // Coming back to a chat, the box can already hold this draft (leaving saves
+  // the box, the way Voice keeps drafts). That's the same draft, not his words.
+  if (cur && cur === s.text.trim() && !(mine && S.ai.key === key)) { S.ai = { phone:t.phone, text:s.text, by:s.by || "", key:key }; S.sugPut = key; mine = true; }
+  // Each draft goes in once: into an empty box, or over an older draft he
+  // hasn't touched. Once placed it's his, so if he clears the box by hand the
+  // 8-second refresh doesn't put it back; he gets "Use it" instead.
+  if (S.sugPut !== key && (!cur || (mine && cur === S.ai.text))) {
+    box.value = s.text; sizeBox();
+    S.ai = { phone:t.phone, text:s.text, by:s.by || "", key:key }; S.sugPut = key;
+    mine = true;
+  }
+  if (mine && S.ai.key === key && !cur && S.sugPut === key && box.value.trim() !== s.text.trim()) mine = false;
+  var h = (mine && S.ai.key === key) ? sugLine("Drafted for you. Edit it or send.") : sugLine("A reply is drafted for you", true);
+  if (bar._h === h && !bar.hidden) return;
+  bar.className = "gv-sug"; bar.innerHTML = h; bar._h = h; bar.hidden = false;
+  el("sugX").onclick = function(){ dropSug(t.phone, key, false); };
+  var u = el("sugUse");
+  if (u) u.onclick = function(){
+    var m = el("msg"); if (!m) return;
+    m.value = s.text; sizeBox(); setDraft(t.phone, ""); m.focus();
+    S.ai = { phone:t.phone, text:s.text, by:s.by || "", key:key };
+    bar._h = ""; renderSug(t);
+  };
+}
+// X takes the draft out of the box (only if he hasn't changed it) and tells the
+// server, so it doesn't come back on the next refresh or on his other phone.
+function dropSug(phone, key, ny){
+  S.sugGone = key;
+  var m = el("msg");
+  if (!ny && m && S.ai && S.ai.key === key && m.value.trim() === S.ai.text.trim()) { m.value = ""; sizeBox(); setDraft(phone, ""); }
+  if (!ny) S.ai = null;
+  var bar = el("sug"); if (bar) { bar.hidden = true; bar.innerHTML = ""; bar._h = ""; }
+  A.post("/api/meta", ny ? { phone:phone, clearNeedsYou:true } : { phone:phone, clearSuggested:true });
+}
+function answerNy(phone, choice){
+  var bar = el("sug"); if (!bar) return;
+  bar.querySelectorAll("button").forEach(function(b){ b.disabled = true; });
+  var q = bar.querySelector(".t"); if (q) q.textContent = 'Writing it with "' + choice + '"…';
+  A.post("/api/ai/answer", { phone:phone, choice:choice }).then(function(d){
+    if (phone !== S.phone) return;
+    if (d && d.ok && d.thread) { S.thread = d.thread; bar._h = ""; renderSug(S.thread); return; }
+    if (d && d.ok && d.draft && S.thread) { S.thread.needsYou = null; S.thread.suggested = { text:d.draft, ts:Date.now(), by:d.by || "" }; bar._h = ""; renderSug(S.thread); return; }
+    // Don't strand him on a dead question: his answer goes in the box.
+    snack("Couldn't write it. Your answer is in the box.");
+    dropSug(phone, "n:" + ((S.thread && S.thread.needsYou && S.thread.needsYou.ts) || 0), true);
+    var m = el("msg"); if (m && !m.value.trim()) { m.value = choice; sizeBox(); m.focus(); }
+  });
+}
+
+// ---- Conversation info (added back 2026-11-23) -------------------------------------
+// Mikey: "add the conversation info button ... so I can click and see the
+// booking details". ⓘ in the header opens what the dashboard holds for this
+// person: their website bookings (newest first), the quote they got, and
+// what's on file (address, cars, gate, notes). Read only; changing a booking
+// is still the Bookings screen.
+var BK_WORD = { pending:"Requested, not confirmed yet", confirmed:"Confirmed", done:"Done", declined:"Declined", cancelled:"Cancelled" };
+function whenBk(b){
+  if (!b.apptAt) return b.dateLabel || "";
+  return new Date(b.apptAt).toLocaleDateString([], { weekday:"short", month:"short", day:"numeric" }) + ", " + A.clock(b.apptAt);
+}
+function infoRow(k, v){ return v ? '<dt>'+esc(k)+'</dt><dd>'+v+'</dd>' : ''; }
+function mapLink(addr){ return '<a target="_blank" rel="noopener" href="https://www.google.com/maps/dir/?api=1&destination='+encodeURIComponent(addr + ", WA")+'">'+esc(addr)+'</a>'; }
+function bkHtml(b){
+  var where = [b.address, b.city].filter(Boolean).join(", ");
+  var car = [b.vehicle, b.sizeLabel].filter(Boolean).join(" · ");
+  return '<div class="bk"><b>'+esc(String(b.serviceName || b.service || "Booking").split(/\s+[–—-]\s+/)[0])+'</b>'+
+    '<span class="st'+(b.status === "confirmed" || b.status === "pending" ? ' on' : '')+'">'+esc(BK_WORD[b.status] || b.status || "")+'</span><dl>'+
+    infoRow("When", esc(whenBk(b)))+
+    infoRow("Car", esc(car))+
+    infoRow("Condition", esc(b.condition || ""))+
+    infoRow("Add-ons", esc((b.addons || []).join(", ")))+
+    infoRow("Quoted", b.estimate ? "$" + esc(b.estimate) : "")+
+    infoRow("Where", where ? mapLink(where) : "")+
+    infoRow("Water & power", b.ackWaterPower === true ? "They said yes" : "")+
+    infoRow("Their notes", b.notes ? '<span class="nt">'+esc(b.notes)+'</span>' : "")+
+    '</dl></div>';
+}
+function showInfo(phone){
+  closePop();
+  var sc = document.createElement("div"); sc.className = "gv-scrim dim"; sc.id = "popScrim"; sc.onclick = closePop;
+  var dl = document.createElement("div"); dl.className = "gv-dlg gv-info"; dl.id = "pop"; dl.setAttribute("role","dialog"); dl.setAttribute("aria-label","Conversation info");
+  dl.innerHTML = '<h2>'+esc(nameFor(phone) || A.fmtPhone(phone))+'</h2><div id="infoBody"><div class="none">Loading…</div></div>'+
+    '<div class="row"><button class="gv-tbtn" id="infoClose">Close</button></div>';
+  el("gv").appendChild(sc); el("gv").appendChild(dl);
+  el("infoClose").onclick = closePop;
+  A.api("/api/bookings").then(function(d){
+    var body = el("infoBody"); if (!body || phone !== S.phone) return;
+    var t = (S.thread && S.thread.phone === phone) ? S.thread : {}, r = rowFor(phone) || {};
+    var bks = ((d && d.bookings) || []).filter(function(b){ return b.phone === phone; })
+      .sort(function(a, b){ return (b.apptAt || b.createdAt || 0) - (a.apptAt || a.createdAt || 0); }).slice(0, 4);
+    var h = '<h3>Booking</h3>';
+    if (bks.length) h += bks.map(bkHtml).join('');
+    else h += '<div class="none">No booking from the website'+(t.appointmentAt ? '' : ' yet')+'.</div>'+
+      (t.appointmentAt ? '<dl>'+infoRow("Appointment", esc(whenBk({ apptAt:t.appointmentAt })))+'</dl>' : '');
+    if (r.quoteTotal) h += '<h3>Quote</h3><dl>'+infoRow("Website quote", "$" + esc(r.quoteTotal))+(r.quoteAt ? infoRow("Got it", esc(whenBk({ apptAt:r.quoteAt }))) : '')+'</dl>';
+    var g = t.garage || {}, cars = (g.vehicles || []).map(function(v){ return [v.year, v.make, v.model].filter(Boolean).join(" "); }).filter(Boolean);
+    var addr = [g.address, g.city].filter(Boolean).join(", ");
+    var file = infoRow("Address", addr ? mapLink(addr) : "")+infoRow("Cars", esc(cars.join(", ")))+infoRow("Gate", esc(g.gate || ""))+infoRow("Parking", esc(g.parking || ""))+
+      infoRow("Water", g.water === true ? "Yes" : g.water === false ? "No" : "")+infoRow("Power", g.power === true ? "Yes" : g.power === false ? "No" : "");
+    h += '<h3>On file</h3>' + (file ? '<dl>'+file+'</dl>' : '<div class="none">Nothing saved yet.</div>');
+    if (t.notes) h += '<h3>Notes</h3><div class="nt">'+esc(t.notes)+'</div>';
+    body.innerHTML = h;
+  });
 }
 
 // ---- The address in the texts ------------------------------------------------------
