@@ -393,6 +393,49 @@ section('Laptop: a question only Mikey can answer');
   await ctx.close();
 }
 
+section('Phone: hold to select, and Voice\'s sizes (his screenshots, 2026-11-23)');
+{
+  const { ctx, page, errs, posted } = await open({ width: 384, height: 749 });
+  const hgt = async (sel) => Math.round((await page.locator(sel).first().boundingBox()).height);
+  ok('rows are Voice\'s 74 tall with a 40 picture', await hgt('[data-open="+14255550302"]') === 74 && await hgt('[data-open="+14255550302"] .gv-av') === 40);
+  ok('the search pill is 48 tall', await hgt('.gv-msearch') === 48);
+  ok('the square button is 56 and the tabs 80', await hgt('#fab') === 56 && await hgt('.gv-bnav') === 80);
+  ok('an unread chat has Voice\'s blue dot', (await page.locator('[data-open="+14255550301"] .ud').count()) === 1 && (await page.locator('[data-open="+14255550302"] .ud').count()) === 0);
+  const hold = async (phone) => {
+    const bx = await page.locator('[data-open="' + phone + '"] .gv-av, [data-open="' + phone + '"] .pk').first().boundingBox();
+    await page.mouse.move(bx.x + 20, bx.y + 20); await page.mouse.down(); await page.waitForTimeout(650); await page.mouse.up(); await page.waitForTimeout(200);
+  };
+  await hold('+14255550301');
+  ok('holding the picture picks the chat instead of opening it', await page.evaluate(() => document.getElementById('gv').classList.contains('selecting') && !document.getElementById('gv').classList.contains('open')));
+  ok('the bar says 1 selected and the search pill steps aside', (await page.locator('#selN').innerText()) === '1 selected' && !(await page.locator('.gv-msearch').isVisible()));
+  ok('the picked row is a card with a check for a picture', (await page.locator('[data-open="+14255550301"].picked .pk').count()) === 1);
+  await page.locator('[data-open="+14255550301"]').dispatchEvent('contextmenu');
+  await page.waitForTimeout(100);
+  ok('the phone\'s own long-press event at the end of the hold doesn\'t un-pick it', (await page.locator('#selN').innerText()) === '1 selected');
+  await page.locator('[data-open="+14255550302"]').click();
+  await page.waitForTimeout(150);
+  ok('a tap adds another', (await page.locator('#selN').innerText()) === '2 selected');
+  ok('there is no Delete (the dashboard can\'t delete a conversation)', (await page.locator('#selBar [aria-label="Delete"]').count()) === 0);
+  await page.locator('#selArch').click();
+  await page.waitForTimeout(400);
+  const arch = posted.filter((p) => p.path === '/api/meta' && p.body.archived === true).map((p) => p.body.phone).sort();
+  ok('Archive files every picked chat', arch.join() === '+14255550301,+14255550302', arch);
+  ok('and leaves select mode, with Undo', !(await page.evaluate(() => document.getElementById('gv').classList.contains('selecting'))) && /2 conversations archived/.test(await page.locator('#snack').innerText()));
+  await page.locator('#snackAct').click();
+  await page.waitForTimeout(300);
+  ok('Undo brings them back', posted.filter((p) => p.path === '/api/meta' && p.body.archived === false).length === 2);
+  await hold('+14255550301');
+  await page.locator('#selX').click();
+  await page.waitForTimeout(150);
+  ok('✕ leaves select mode', !(await page.evaluate(() => document.getElementById('gv').classList.contains('selecting'))));
+  await page.locator('[data-open="+14255550302"]').click({ button: 'right' });
+  await page.waitForTimeout(150);
+  ok('right-click picks a chat on a laptop', (await page.locator('#selN').innerText()) === '1 selected' && (await page.locator('[data-open="+14255550302"].picked').count()) === 1);
+  await page.keyboard.press('Escape');
+  ok('no errors on the page', errs.length === 0, errs);
+  await ctx.close();
+}
+
 section('Phone: the Voice app');
 {
   const { ctx, page, errs } = await open({ width: 390, height: 844 });
