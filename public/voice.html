@@ -26,20 +26,29 @@
    the texts. Then voicemails in the chat, as a card with the transcript and a
    play button (Mikey: "I like when the voicemail shows in chat"). Then, from
    the list he picked: the photo viewer, his usual openers, calls in the chat,
-   tapbacks, saved drafts and the name the app picks up for him. Anything else goes back in the same way, one at a time, when he
-   misses it. */
+   tapbacks, saved drafts and the name the app picks up for him. Anything else
+   goes back in the same way, one at a time, when he misses it.
+
+   The look follows the Google Voice Android app on his phone (his screenshots,
+   2026-11-23): square icon-only button over the list, no avatar beside their
+   texts, a time header where a conversation picks back up and one time under
+   the last text, the plus and camera inside the box, a round SMS send button,
+   a call-back button on every call. No Contacts tab (he doesn't want one). */
 .gv{
-  --gv-bg:#fff; --gv-ink:#202124; --gv-ink2:#3c4043; --gv-muted:#5f6368; --gv-line:#dadce0;
-  --gv-soft:#f1f3f4; --gv-hover:#f6f8fc; --gv-sel:#e8f0fe; --gv-sel-ink:#1967d2;
-  --gv-blue:#1a73e8; --gv-out:#1a73e8; --gv-out-ink:#fff; --gv-in:#f1f3f4; --gv-in-ink:#202124;
-  --gv-red:#d93025; --gv-pill:#c2e7ff; --gv-green:#188038; --gv-shadow:0 1px 2px rgba(60,64,67,.3),0 1px 3px 1px rgba(60,64,67,.15);
+  --gv-bg:#fdfcff; --gv-ink:#1b1b1f; --gv-ink2:#44474f; --gv-muted:#5e6068; --gv-line:#dde1ea;
+  --gv-soft:#eef1f7; --gv-hover:#f3f5fa; --gv-sel:#dfe7f8; --gv-sel-ink:#0b57d0;
+  --gv-blue:#0b57d0; --gv-out:#0b57d0; --gv-out-ink:#fff; --gv-in:#e9edf4; --gv-in-ink:#1b1b1f;
+  --gv-red:#c5221f; --gv-pill:#d3e3fd; --gv-green:#188038; --gv-shadow:0 1px 2px rgba(60,64,67,.3),0 1px 3px 1px rgba(60,64,67,.15);
+  --gv-nav:#eef0f6; --gv-search:#e5ebf6; --gv-fab:#d3e3fd; --gv-fab-ink:#041e49; --gv-send-off:#e2e4ea;
 }
+/* Dark is the one he uses: colours read off his own screenshots. */
 @media (prefers-color-scheme: dark){
   .gv{
-    --gv-bg:#202124; --gv-ink:#e8eaed; --gv-ink2:#bdc1c6; --gv-muted:#9aa0a6; --gv-line:#3c4043;
-    --gv-soft:#303134; --gv-hover:#28292c; --gv-sel:#394457; --gv-sel-ink:#8ab4f8;
-    --gv-blue:#8ab4f8; --gv-out:#8ab4f8; --gv-out-ink:#202124; --gv-in:#3c4043; --gv-in-ink:#e8eaed;
-    --gv-red:#f28b82; --gv-pill:#004a77; --gv-green:#81c995; --gv-shadow:0 1px 3px rgba(0,0,0,.6);
+    --gv-bg:#1b1b1f; --gv-ink:#e8e8ec; --gv-ink2:#c6c7cf; --gv-muted:#a8aab2; --gv-line:#34363c;
+    --gv-soft:#2a2b30; --gv-hover:#242529; --gv-sel:#2f3747; --gv-sel-ink:#a8c7fa;
+    --gv-blue:#a8c7fa; --gv-out:#3b7cf0; --gv-out-ink:#fff; --gv-in:#3a3b3f; --gv-in-ink:#ececee;
+    --gv-red:#f28b82; --gv-pill:#3b4558; --gv-green:#6dd58c; --gv-shadow:0 1px 3px rgba(0,0,0,.6);
+    --gv-nav:#2c2c31; --gv-search:#1f2638; --gv-fab:#2c4170; --gv-fab-ink:#dbe4ff; --gv-send-off:#3a3b40;
   }
 }
 html,body{height:100%}
@@ -62,7 +71,8 @@ body{margin:0}
 .gv-search input{flex:1;min-width:0;height:100%;border:0;background:transparent;color:var(--gv-ink);font:16px Roboto,Arial,sans-serif;outline:none}
 .gv-search input::placeholder{color:var(--gv-muted)}
 .gv-top .sp{flex:1}
-.gv-me{width:32px;height:32px;border-radius:50%;background:#d93025;color:#fff;display:grid;place-items:center;font-weight:500;font-size:14px;margin:0 8px}
+.gv-me{width:36px;height:36px;border-radius:50%;background:#000;display:block;margin:0 8px;flex:none;overflow:hidden;box-shadow:0 0 0 2px var(--gv-blue)}
+.gv-me img{width:100%;height:100%;object-fit:cover;display:block}
 
 /* ---- body: rail, list, pane --------------------------------------------- */
 .gv-body{flex:1;display:flex;min-height:0}
@@ -92,7 +102,13 @@ body{margin:0}
 .gv-row .sn svg.i{width:16px;height:16px}
 .gv-row.unread .nm,.gv-row.unread .sn,.gv-row.unread .tm{font-weight:700;color:var(--gv-ink)}
 .gv-row .sn .miss{color:var(--gv-red)}
-.gv-row .cb{color:var(--gv-muted)}
+.gv-row .cb{color:var(--gv-ink);width:48px;height:48px;border-radius:50%;display:grid;place-items:center;flex:none}
+.gv-row .cb:hover{background:var(--gv-soft)}
+.gv-row .t2{display:flex;align-items:baseline;gap:8px}
+.gv-row .t2 .sn{flex:1;min-width:0;display:block}
+.gv-row .sn .rcv{color:var(--gv-green)}
+.gv-row .sn .rcv svg.i,.gv-row .sn .miss svg.i,.gv-row .sn .made svg.i{width:18px;height:18px}
+.gv-row .sn .miss svg.i{fill:var(--gv-red)}
 .gv-empty{padding:48px 24px;text-align:center;color:var(--gv-muted)}
 
 .gv-av{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;color:#fff;font-size:18px;font-weight:500;flex:none;overflow:hidden}
@@ -104,38 +120,41 @@ body{margin:0}
 .gv-ph{height:64px;flex:none;display:flex;align-items:center;gap:4px;padding:0 8px 0 16px;border-bottom:1px solid var(--gv-line)}
 .gv-ph .back{display:none;margin-left:-12px}
 .gv-ph .who{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center}
-.gv-ph .who b{font-size:16px;font-weight:500;line-height:22px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gv-ph .who b{font-size:20px;font-weight:400;line-height:26px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gv-ph .hav{margin-right:12px}
+.gv-ph .ib{color:var(--gv-ink)}
 .gv-ph .who span{font-size:12px;color:var(--gv-muted);line-height:16px}
 .gv-blank{flex:1;display:grid;place-items:center;color:var(--gv-muted);text-align:center;padding:24px}
 .gv-blank svg.i{width:96px;height:96px;margin:0 auto 12px;opacity:.25}
 
 /* ---- the conversation ------------------------------------------------------ */
 .gv-tl{flex:1;overflow-y:auto;padding:16px 24px 8px;display:flex;flex-direction:column}
-.gv-day{align-self:center;font-size:12px;font-weight:500;color:var(--gv-muted);margin:16px 0 8px}
+.gv-day{align-self:center;font-size:14px;color:var(--gv-ink2);margin:20px 0 6px;text-align:center}
 .gv-grp{display:flex;gap:8px;align-items:flex-end;margin-top:8px}
 .gv-grp.out{flex-direction:row-reverse}
 .gv-grp .col{display:flex;flex-direction:column;gap:2px;max-width:min(70%,560px);min-width:0}
 .gv-grp.out .col{align-items:flex-end}
 .gv-grp.in .col{align-items:flex-start}
-.gv-grp .avs{width:32px;flex:none;margin-bottom:22px}
-.gv-b{padding:8px 12px;border-radius:18px;font-size:14px;line-height:20px;white-space:pre-wrap;overflow-wrap:anywhere}
+.gv-b{padding:12px 18px;border-radius:26px;font-size:16px;line-height:24px;white-space:pre-wrap;overflow-wrap:anywhere}
+.gv-grp .col{gap:6px}
 .gv-grp.in .gv-b{background:var(--gv-in);color:var(--gv-in-ink)}
 .gv-grp.out .gv-b{background:var(--gv-out);color:var(--gv-out-ink)}
-.gv-grp.in .gv-b:not(:first-child){border-top-left-radius:4px}
-.gv-grp.in .gv-b:not(:last-of-type){border-bottom-left-radius:4px}
-.gv-grp.out .gv-b:not(:first-child){border-top-right-radius:4px}
-.gv-grp.out .gv-b:not(:last-of-type){border-bottom-right-radius:4px}
 .gv-b a{color:inherit}
-.gv-img{display:block;max-width:240px;max-height:320px;border-radius:18px;border:1px solid var(--gv-line)}
-.gv-meta{font-size:12px;color:var(--gv-muted);margin:2px 4px 0}
+.gv-img{display:block;max-width:240px;max-height:320px;border-radius:20px}
+.gv-meta{font-size:14px;color:var(--gv-ink2);margin:6px 8px 0}
 .gv-meta .err{color:var(--gv-red)}
 
-.gv-cmp{flex:none;padding:8px 16px calc(12px + env(safe-area-inset-bottom,0px));display:flex;align-items:flex-end;gap:4px}
-.gv-cmp .fld{flex:1;min-width:0;background:var(--gv-soft);border-radius:24px;display:flex;align-items:flex-end;padding:0 4px 0 16px;min-height:48px}
-.gv-cmp textarea{flex:1;min-width:0;border:0;background:transparent;color:var(--gv-ink);font:14px/20px Roboto,Arial,sans-serif;resize:none;outline:none;padding:14px 0;max-height:140px}
+.gv-cmp{flex:none;padding:8px 12px calc(12px + env(safe-area-inset-bottom,0px));display:flex;align-items:flex-end;gap:10px}
+.gv-cmp .fld{flex:1;min-width:0;background:var(--gv-soft);border-radius:28px;display:flex;align-items:flex-end;padding:4px;min-height:56px}
+.gv-cmp .fld .ib{color:var(--gv-ink)}
+.gv-cmp textarea{flex:1;min-width:0;border:0;background:transparent;color:var(--gv-ink);font:17px/24px Roboto,Arial,sans-serif;resize:none;outline:none;padding:12px 4px;max-height:144px}
 .gv-cmp textarea::placeholder{color:var(--gv-muted)}
-.gv-cmp .send{color:var(--gv-muted)}
-.gv-cmp .send.go{color:var(--gv-blue)}
+.gv-cmp .cam[hidden]{display:none}
+.gv-send{width:56px;height:56px;border-radius:50%;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;background:var(--gv-send-off);color:var(--gv-muted)}
+.gv-send svg.i{width:22px;height:22px}
+.gv-send span{font-size:10px;font-weight:500;line-height:12px;letter-spacing:.4px}
+.gv-send.go{background:var(--gv-out);color:#fff}
+.gv-send[disabled]{cursor:default}
 .gv-att{display:flex;gap:8px;padding:8px 16px 0;flex-wrap:wrap}
 .gv-att:empty{display:none}
 .gv-att .th{position:relative;width:64px;height:64px;border-radius:8px;overflow:hidden;background:var(--gv-soft)}
@@ -184,7 +203,7 @@ body{margin:0}
 .gv-call svg.i{width:16px;height:16px}
 .gv-call .miss{color:var(--gv-red)}
 .gv-call .miss svg.i{fill:var(--gv-red)}
-.gv-ops{display:flex;gap:8px;padding:4px 16px 0 64px;overflow-x:auto;scrollbar-width:none}
+.gv-ops{display:flex;gap:8px;padding:4px 16px 0;overflow-x:auto;scrollbar-width:none}
 .gv-ops::-webkit-scrollbar{display:none}
 .gv-ops:empty{display:none}
 .gv-ops button{height:32px;padding:0 14px;border-radius:16px;border:1px solid var(--gv-line);color:var(--gv-ink);font-size:14px;white-space:nowrap;flex:none}
@@ -202,9 +221,13 @@ body{margin:0}
 .gv-stop{padding:16px;text-align:center;color:var(--gv-muted);font-size:13px;border-top:1px solid var(--gv-line)}
 
 /* New message: the To field */
-.gv-to{display:flex;align-items:center;gap:8px;padding:0 16px;height:56px;border-bottom:1px solid var(--gv-line);flex:none}
-.gv-to label{color:var(--gv-muted)}
-.gv-to input{flex:1;min-width:0;border:0;background:transparent;color:var(--gv-ink);font:14px Roboto,Arial,sans-serif;outline:none;height:100%}
+.gv-to{display:flex;align-items:center;gap:8px;margin:8px 12px;padding:0 20px;height:56px;border-radius:28px;background:var(--gv-soft);flex:none}
+.gv-to > span{color:var(--gv-ink);font-size:17px}
+.gv-to input{flex:1;min-width:0;border:0;background:transparent;color:var(--gv-ink);font:17px Roboto,Arial,sans-serif;outline:none;height:100%}
+.gv-to input::placeholder{color:var(--gv-ink2)}
+.gv-sh{font-size:16px;font-weight:500;color:var(--gv-ink);padding:16px 20px 4px}
+.gv-next{height:44px;padding:0 22px;border-radius:22px;background:var(--gv-blue);color:var(--gv-bg);font-size:16px;font-weight:500;margin-right:8px}
+.gv-next[disabled]{background:var(--gv-soft);color:var(--gv-muted);cursor:default}
 .gv-sugg{flex:1;overflow-y:auto}
 
 /* Calls and voicemail detail */
@@ -257,24 +280,34 @@ body{margin:0}
 @media (max-width:899px){
   .gv-top,.gv-rail{display:none}
   .gv-list{width:100%;border-right:0}
-  .gv-msearch{display:flex;align-items:center;gap:4px;margin:calc(8px + env(safe-area-inset-top,0px)) 16px 8px;height:48px;border-radius:24px;background:var(--gv-soft);padding:0 4px;flex:none}
-  .gv-msearch input{flex:1;min-width:0;height:100%;border:0;background:transparent;color:var(--gv-ink);font:16px Roboto,Arial,sans-serif;outline:none}
-  .gv-msearch input::placeholder{color:var(--gv-muted)}
+  .gv-msearch{display:flex;align-items:center;gap:4px;margin:calc(8px + env(safe-area-inset-top,0px)) 16px 8px;height:60px;border-radius:30px;background:var(--gv-search);padding:0 6px 0 8px;flex:none}
+  .gv-msearch .ib{color:var(--gv-ink)}
+  .gv-msearch input{flex:1;min-width:0;height:100%;border:0;background:transparent;color:var(--gv-ink);font:19px Roboto,Arial,sans-serif;outline:none}
+  .gv-msearch input::placeholder{color:var(--gv-ink)}
+  .gv-msearch .gv-me{width:44px;height:44px;margin:0}
+  .gv-row{min-height:90px;gap:18px;padding:10px 20px}
+  .gv-row .gv-av{width:48px;height:48px;font-size:22px}
+  .gv-row .gv-av svg.i{width:30px;height:30px;margin-top:0;align-self:center}
+  .gv-row .nm{font-size:18px;line-height:26px}
+  .gv-row .sn{font-size:16px;line-height:24px;color:var(--gv-ink2)}
+  .gv-row .tm{font-size:15px;color:var(--gv-ink2)}
   .gv-new{display:none}
   .gv-row{border-radius:0;margin-right:0}
-  .gv-bnav{display:flex;flex:none;height:calc(80px + env(safe-area-inset-bottom,0px));padding-bottom:env(safe-area-inset-bottom,0px);background:var(--gv-soft)}
-  .gv-bnav .nv{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:12px;font-weight:500;color:var(--gv-muted)}
+  .gv-bnav{display:flex;flex:none;height:calc(88px + env(safe-area-inset-bottom,0px));padding-bottom:env(safe-area-inset-bottom,0px);background:var(--gv-nav)}
+  .gv-bnav .nv{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;font-size:14px;font-weight:500;color:var(--gv-ink)}
   .gv-bnav .nv .pl{width:64px;height:32px;border-radius:16px;display:grid;place-items:center;position:relative}
   .gv-bnav .nv.on{color:var(--gv-ink)}
   .gv-bnav .nv.on .pl{background:var(--gv-pill)}
-  .gv-fab{display:flex;position:fixed;right:16px;bottom:calc(96px + env(safe-area-inset-bottom,0px));z-index:20;height:56px;padding:0 20px 0 16px;border-radius:16px;align-items:center;gap:12px;background:var(--gv-pill);color:var(--gv-ink);font-weight:500;box-shadow:0 1px 3px rgba(0,0,0,.3),0 4px 8px 3px rgba(0,0,0,.15)}
+  .gv-fab{display:grid;place-items:center;position:fixed;right:16px;bottom:calc(104px + env(safe-area-inset-bottom,0px));z-index:20;width:64px;height:64px;border-radius:18px;background:var(--gv-fab);color:var(--gv-fab-ink);box-shadow:0 1px 3px rgba(0,0,0,.3),0 4px 8px 3px rgba(0,0,0,.15)}
+  .gv-fab svg.i{width:28px;height:28px}
   .gv-fab[hidden]{display:none}
   .gv-pane{position:fixed;inset:0;z-index:30;transform:translateX(100%);transition:transform .2s ease}
   .gv.open .gv-pane{transform:none}
-  .gv-ph{padding-top:env(safe-area-inset-top,0px);height:calc(64px + env(safe-area-inset-top,0px))}
+  .gv-ph{padding-top:env(safe-area-inset-top,0px);height:calc(72px + env(safe-area-inset-top,0px))}
+  .gv-ph .who b{font-size:24px;line-height:30px}
   .gv-ph .back{display:grid}
   .gv-tl{padding:12px 12px 8px}
-  .gv-grp .col{max-width:80%}
+  .gv-grp .col{max-width:85%}
   .gv-cmp{padding-left:8px;padding-right:8px}
 }
 @media (prefers-reduced-motion:reduce){.gv-pane,.gv-drawer{transition:none}}
@@ -299,7 +332,7 @@ var P = {
   send:'M2.01 21L23 12 2.01 3 2 10l15 2-15 2z',
   image:'M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z',
   gear:'M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.488.488 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.484.484 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z',
-  person:'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
+  person:'M12 6c1.1 0 2 .9 2 2s-.9 2-2 2-2-.9-2-2 .9-2 2-2m0 9c2.7 0 5.8 1.29 6 2v1H6v-.99c.2-.72 3.3-2.01 6-2.01m0-11C9.79 4 8 5.79 8 8s1.79 4 4 4 4-1.79 4-4-1.79-4-4-4zm0 9c-2.67 0-8 1.34-8 4v3h16v-3c0-2.66-5.33-4-8-4z',
   archive:'M20.54 5.23l-1.39-1.68C18.88 3.21 18.47 3 18 3H6c-.47 0-.88.21-1.16.55L3.46 5.23C3.17 5.57 3 6.02 3 6.5V19c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6.5c0-.48-.17-.93-.46-1.27zM12 17.5L6.5 12H10v-2h4v2h3.5L12 17.5zM5.12 5l.81-1h12l.94 1H5.12z',
   rcv:'M20 5.41L18.59 4 7 15.59V9H5v10h10v-2H8.41z',
   made:'M9 5v2h6.59L4 18.59 5.41 20 17 8.41V15h2V5z',
@@ -312,13 +345,17 @@ var P = {
   clock:'M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z',
   pin:'M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5a2.5 2.5 0 0 1 0-5 2.5 2.5 0 0 1 0 5z',
   dl:'M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z',
+  addc:'M13 7h-2v4H7v2h4v4h2v-4h4v-2h-4V7zm-1-5C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z',
+  cam:'M14.12 4l1.83 2H20v12H4V6h4.05l1.83-2h4.24M15 2H9L7.17 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2h-3.17L15 2zm-3 7c1.65 0 3 1.35 3 3s-1.35 3-3 3-3-1.35-3-3 1.35-3 3-3m0-2c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5z',
+  sendo:'M4.01 6.03l7.51 3.22-7.52-1 .01-2.22m7.5 8.72L4 17.97v-2.22l7.51-1M2.01 3L2 10l15 2-15 2 .01 7L23 12 2.01 3z',
+  dialpad:'M12 19c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zM6 1c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12-8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm-6 8c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0-6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z',
   exit:'M10.09 15.59L11.5 17l5-5-5-5-1.41 1.41L12.67 11H3v2h9.67l-2.58 2.59zM19 3H5a2 2 0 0 0-2 2v4h2V5h14v14H5v-4H3v4a2 2 0 0 0 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2z'
 };
 function ic(n){ return '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="'+P[n]+'"/></svg>'; }
 var MARK = '<svg class="mark" viewBox="0 0 48 48" aria-hidden="true"><path fill="#34a853" d="M24 4C12.95 4 4 12.95 4 24c0 3.9 1.12 7.54 3.05 10.62L4 44l9.6-2.94A19.9 19.9 0 0 0 24 44c11.05 0 20-8.95 20-20S35.05 4 24 4z"/><path fill="#fff" d="M30.9 27.6c-1.2 0-2.3-.2-3.4-.6-.3-.1-.7 0-1 .2l-1.5 1.9a16.4 16.4 0 0 1-6.6-6.6l1.9-1.6c.3-.3.3-.6.2-1-.3-1.1-.5-2.2-.5-3.4 0-.5-.4-1-1-1h-3.3c-.5 0-1.1.2-1.1.9 0 8.9 7.4 16.3 16.3 16.3.7 0 .9-.6.9-1.1V28.6c0-.5-.4-1-.9-1z"/></svg>';
 
 // Google's own contact colours.
-var AVC = ['#1a73e8','#d93025','#188038','#e37400','#9334e6','#e52592','#12b5cb','#5f6368','#b06000','#3367d6'];
+var AVC = ['#7c3a00','#9c0f63','#0b6b2f','#5d2fb8','#a3241f','#1a5fb4','#00695c','#8a5300','#b3005f','#3949ab'];
 function avColor(seed){ var h = 0, s = String(seed||""); for (var i=0;i<s.length;i++) h = (h*31 + s.charCodeAt(i)) >>> 0; return AVC[h % AVC.length]; }
 // A saved name is a letter; a bare number is the grey person, the way Voice
 // draws someone who isn't in your contacts.
@@ -339,17 +376,17 @@ document.body.insertAdjacentHTML("afterbegin",
     '<label class="gv-search"><span class="ib" aria-hidden="true">'+ic("search")+'</span><input id="q" type="search" placeholder="Search Google Voice" aria-label="Search" autocomplete="off"></label>'+
     '<span class="sp"></span>'+
     '<button class="ib" id="gearBtn" aria-label="Settings">'+ic("gear")+'</button>'+
-    '<span class="gv-me" aria-hidden="true">M</span>'+
+    '<span class="gv-me" aria-hidden="true"><img src="/icon-192.png" alt=""></span>'+
   '</header>'+
   '<div class="gv-body">'+
     '<nav class="gv-rail" aria-label="Main">'+navHtml()+'</nav>'+
     '<section class="gv-list" aria-label="List">'+
-      '<label class="gv-msearch"><button type="button" class="ib" id="mMenuBtn" aria-label="Main menu">'+ic("menu")+'</button><input id="mq" type="search" placeholder="Search" aria-label="Search" autocomplete="off"><span class="gv-me" aria-hidden="true">M</span></label>'+
+      '<label class="gv-msearch"><button type="button" class="ib" id="mMenuBtn" aria-label="Main menu">'+ic("menu")+'</button><input id="mq" type="search" placeholder="Search Google Voice" aria-label="Search" autocomplete="off"><span class="gv-me" aria-hidden="true"><img src="/icon-192.png" alt=""></span></label>'+
       '<div class="scroll" id="list"></div>'+
     '</section>'+
     '<section class="gv-pane" id="pane" aria-label="Conversation"></section>'+
   '</div>'+
-  '<button class="gv-fab" id="fab">'+ic("add")+'<span id="fabTxt">Send message</span></button>'+
+  '<button class="gv-fab" id="fab" aria-label="Send message">'+ic("add")+'</button>'+
   '<nav class="gv-bnav" aria-label="Main">'+navHtml()+'</nav>'+
 '</div>');
 function el(id){ return document.getElementById(id); }
@@ -465,8 +502,13 @@ function msgRow(r){
 }
 function callIcon(c){
   if (c.outcome === "missed") return '<span class="miss">'+ic("missed")+'</span>';
-  if (c.dir === "out" || c.outcome === "outgoing") return ic("made");
-  return ic("rcv");
+  if (c.dir === "out" || c.outcome === "outgoing") return '<span class="made">'+ic("made")+'</span>';
+  return '<span class="rcv">'+ic("rcv")+'</span>';
+}
+// "Nov 21, 11:42 AM", the way Voice dates calls and voicemail.
+function stamp(ts){
+  var d = new Date(ts), y = d.getFullYear() !== new Date().getFullYear();
+  return d.toLocaleDateString([], { month:"short", day:"numeric", year: y ? "numeric" : undefined }) + ", " + A.clock(ts);
 }
 function callWord(c){
   if (c.outcome === "missed") return "Missed call";
@@ -495,13 +537,21 @@ function renderList(){
       if (vm ? c.outcome !== "voicemail" : !CALL_KINDS[c.outcome]) return false;
       return match([c.name, nameFor(c.fromNorm), c.fromNorm, A.fmtPhone(c.fromNorm), c.transcript].join(" "));
     });
+    // Voice's rows: a voicemail is the name and when, then the transcript
+    // and its length; a call is the name, then the arrow and when, with a
+    // call-back button on the end.
     h += cs.length ? cs.map(function(c){
       var unread = vm && c.ts > S.seenTs;
-      var sub = vm ? esc(c.transcript || (c.transcriptFailed ? "Transcript not available" : "Transcribing…")) : callIcon(c) + esc(callWord(c));
-      return '<button class="gv-row'+(unread?' unread':'')+(S.pane===S.view&&c.id===S.callId?' sel':'')+'" data-call="'+esc(c.id || "")+'">'+
+      var sel = (S.pane===S.view&&c.id===S.callId?' sel':'');
+      if (vm) return '<div class="gv-row'+(unread?' unread':'')+sel+'" role="button" tabindex="0" data-call="'+esc(c.id || "")+'">'+
         av(c.fromNorm, nameFor(c.fromNorm))+
-        '<span class="m"><span class="t1"><span class="nm">'+esc(label(c.fromNorm))+'</span><span class="tm">'+esc(A.when(c.ts))+'</span></span>'+
-        '<span class="sn">'+sub+'</span></span></button>';
+        '<span class="m"><span class="t1"><span class="nm">'+esc(label(c.fromNorm))+'</span><span class="tm">'+esc(stamp(c.ts))+'</span></span>'+
+        '<span class="t2"><span class="sn">'+esc(c.transcript || (c.transcriptFailed ? "Transcription not available" : "Transcribing…"))+'</span><span class="tm">'+(c.vmSec ? fmtSec(c.vmSec) : '')+'</span></span></span></div>';
+      return '<div class="gv-row'+sel+'" role="button" tabindex="0" data-call="'+esc(c.id || "")+'">'+
+        av(c.fromNorm, nameFor(c.fromNorm))+
+        '<span class="m"><span class="t1"><span class="nm">'+esc(label(c.fromNorm))+'</span></span>'+
+        '<span class="sn" title="'+esc(callWord(c))+'">'+callIcon(c)+esc(stamp(c.ts))+'</span></span>'+
+        '<button class="cb" data-cb="'+esc(c.fromNorm)+'" aria-label="Call back">'+ic("call")+'</button></div>';
     }).join('') : '<div class="gv-empty">'+(S.q ? 'No results' : vm ? 'No voicemail' : 'No calls')+'</div>';
   }
   el("list").innerHTML = h;
@@ -509,6 +559,7 @@ function renderList(){
 }
 function bindNew(){ var b = el("newBtn"); if (b) b.onclick = newMessage; }
 el("list").addEventListener("click", function(e){
+  var cb = e.target.closest("[data-cb]"); if (cb) return callOut(cb.dataset.cb);
   var b = e.target.closest("[data-open]"); if (b) return openThread(b.dataset.open, true);
   var c = e.target.closest("[data-call]"); if (c) return openCall(c.dataset.call, true);
 });
@@ -520,7 +571,11 @@ function setView(v, keepPane){
   S.view = v;
   document.querySelectorAll("[data-nav]").forEach(function(b){ b.classList.toggle("on", b.dataset.nav === v || (v === "archive" && b.dataset.nav === "messages")); });
   el("fab").hidden = v === "archive";
-  el("fabTxt").textContent = v === "calls" ? "Make a call" : "Send message";
+  // Voice's square button: a plus over Messages, the dial pad over Calls and
+  // Voicemail.
+  var dial = v === "calls" || v === "voicemail";
+  el("fab").innerHTML = ic(dial ? "dialpad" : "add");
+  el("fab").setAttribute("aria-label", dial ? "Make a call" : "Send message");
   // Opening Calls or Voicemail is "I've seen them", the same as the Calls
   // screen in the main app, so the red counts clear in both places.
   if ((v === "calls" || v === "voicemail") && S.callsLoaded && S.calls.some(function(c){ return c.ts > S.seenTs; })) {
@@ -530,7 +585,7 @@ function setView(v, keepPane){
   renderList();
 }
 document.addEventListener("click", function(e){ var b = e.target.closest("[data-nav]"); if (b) setView(b.dataset.nav); });
-el("fab").onclick = function(){ if (S.view === "calls") dialer(); else newMessage(); };
+el("fab").onclick = function(){ if (S.view === "calls" || S.view === "voicemail") dialer(); else newMessage(); };
 
 // ---- the pane -------------------------------------------------------------
 function blankPane(){
@@ -544,8 +599,11 @@ function showPane(){ el("gv").classList.add("open"); }
 function paneHead(phone, opts){
   opts = opts || {};
   var n = nameFor(phone);
+  // Voice's header is the avatar and the name, nothing under it. A bare
+  // number gets "Add a name" there instead (one of the things he kept).
   return '<div class="gv-ph"><button class="ib back" id="paneBack" aria-label="Back">'+ic("back")+'</button>'+
-    '<div class="who"><b id="whoName">'+esc(n || A.fmtPhone(phone))+'</b>'+(n ? '<span id="whoSub">'+esc(A.fmtPhone(phone))+'</span>' : (opts.more === false ? '' : '<span id="whoSub"><button class="add" id="addName">Add a name</button></span>'))+'</div>'+
+    (opts.more === false ? '' : '<span class="hav">'+av(phone, n)+'</span>')+
+    '<div class="who"><b id="whoName">'+esc(n || A.fmtPhone(phone))+'</b>'+(n || opts.more === false ? '' : '<span id="whoSub"><button class="add" id="addName">Add a name</button></span>')+'</div>'+
     '<button class="ib" id="paneCall" aria-label="Call">'+ic("call")+'</button>'+
     (opts.more === false ? '' : '<button class="ib" id="paneMore" aria-label="More options">'+ic("more")+'</button>')+'</div>';
 }
@@ -739,6 +797,14 @@ function mediaSrc(mm){
   var u = String(mm && mm.url || mm || "");
   return /^data:|^\/i\//.test(u) ? u : "/api/media?u=" + encodeURIComponent(u);
 }
+// The header Voice puts where a conversation picks back up after a gap:
+// "Tuesday, Jun 23 • 6:29 PM".
+function gapWord(ts){
+  var d0 = A.startOfDay(Date.now()), d = A.startOfDay(ts), dt = new Date(ts);
+  var day = d === d0 ? "Today" : d === d0 - A.DAY ? "Yesterday" :
+    dt.toLocaleDateString([], { weekday:"long", month:"short", day:"numeric", year: dt.getFullYear() === new Date().getFullYear() ? undefined : "numeric" });
+  return day + " \u2022 " + A.clock(ts);
+}
 function dayWord(ts){
   var d0 = A.startOfDay(Date.now()), d = A.startOfDay(ts);
   if (d === d0) return "Today";
@@ -748,18 +814,18 @@ function dayWord(ts){
 function renderThread(first){
   var t = S.thread; if (!t) return;
   var all = textsOf(t), taps = tapbackMap(all);
-  var msgs = all.filter(function(m){ return !taps.placed.has(m); }), h = '', lastDay = -1, i = 0;
+  var msgs = all.filter(function(m){ return !taps.placed.has(m); }), h = '', lastTs = 0, i = 0;
   var lone = { voicemail:1, call:1, calllog:1 };
   // Group a run of messages the way Voice does: same side, same day, no more
   // than a few minutes apart. The time sits under the last one in the run.
   while (i < msgs.length) {
     var m = msgs[i], day = A.startOfDay(m.ts || 0);
-    if (day !== lastDay) { h += '<div class="gv-day">'+esc(dayWord(m.ts))+'</div>'; lastDay = day; }
-    if (m.kind === "calllog") { h += callLine(m.c); i++; continue; }
+    if (!lastTs || day !== A.startOfDay(lastTs) || m.ts - lastTs > 3600000) h += '<div class="gv-day">'+esc(gapWord(m.ts))+'</div>';
+    if (m.kind === "calllog") { h += callLine(m.c); lastTs = m.ts; i++; continue; }
     var dir = (m.kind === "call" ? m.callDir === "out" : m.dir !== "in") ? "out" : "in", run = [m], j = i + 1;
     while (j < msgs.length && !lone[m.kind] && !lone[msgs[j].kind] && (msgs[j].dir === "in" ? "in" : "out") === dir && A.startOfDay(msgs[j].ts) === day && msgs[j].ts - msgs[j-1].ts < 5 * 60000 && !failed(msgs[j-1])) { run.push(msgs[j]); j++; }
     var last = run[run.length - 1];
-    h += '<div class="gv-grp '+dir+'">'+(dir === "in" ? '<span class="avs">'+av(t.phone, nameFor(t.phone) || t.name, true)+'</span>' : '')+'<div class="col">';
+    h += '<div class="gv-grp '+dir+'"><div class="col">';
     run.forEach(function(x){
       if (x.kind === "voicemail") { h += vmCard(x); return; }
       if (x.kind === "call") { h += callCard(x); return; }
@@ -770,8 +836,12 @@ function renderThread(first){
       var tb = taps.on.get(x);
       if (x.body) h += '<div class="gv-b'+(tb ? ' tapped' : '')+'">'+linkify(x.body)+tapBadge(tb)+'</div>';
     });
-    h += '<div class="gv-meta">'+(failed(last) ? '<span class="err">Not delivered</span> · ' : '')+esc(A.clock(last.ts))+'</div></div></div>';
-    i = j;
+    // One time, under the newest text, the way the app does it. A text that
+    // didn't go through says so where it is.
+    var newest = j >= msgs.length;
+    if (failed(last) || newest) h += '<div class="gv-meta">'+(failed(last) ? '<span class="err">Not delivered</span>'+(newest ? ' · ' : '') : '')+(newest ? esc(stamp(last.ts)) : '')+'</div>';
+    h += '</div></div>';
+    lastTs = last.ts; i = j;
   }
   // Scheduled texts wait at the bottom, outlined, until they go. Tapping one
   // offers Edit (back into the box) or Cancel.
@@ -798,13 +868,17 @@ function failed(m){ return m.dir === "out" && (m.status === "failed" || m.status
 
 // ---- the composer -----------------------------------------------------------
 function composerHtml(){
+  // The app's box: plus on the left and camera on the right inside it, a
+  // round SMS button beside it. Polish and Schedule (his) take the camera's
+  // place once there are words.
   return '<div class="gv-ops" id="ops"></div><div class="gv-att" id="att"></div>'+
-    '<div class="gv-cmp"><button class="ib" id="attBtn" aria-label="Attach a photo">'+ic("image")+'</button>'+
-    '<input type="file" id="file" accept="image/*" multiple hidden>'+
-    '<div class="fld"><textarea id="msg" rows="1" placeholder="Type a message" aria-label="Type a message"></textarea>'+
+    '<div class="gv-cmp"><input type="file" id="file" accept="image/*" multiple hidden><input type="file" id="camFile" accept="image/*" capture="environment" hidden>'+
+    '<div class="fld"><button class="ib" id="attBtn" aria-label="Attach a photo">'+ic("addc")+'</button>'+
+    '<textarea id="msg" rows="1" placeholder="Text message" aria-label="Text message"></textarea>'+
     '<button class="ib pol" id="polBtn" aria-label="Polish" title="Polish" hidden>'+ic("sparkle")+'</button>'+
     '<button class="ib sch" id="schBtn" aria-label="Schedule send" title="Schedule send" hidden>'+ic("clock")+'</button>'+
-    '<button class="ib send" id="sendBtn" aria-label="Send message" disabled>'+ic("send")+'</button></div></div>';
+    '<button class="ib cam" id="camBtn" aria-label="Take a photo">'+ic("cam")+'</button></div>'+
+    '<button class="gv-send" id="sendBtn" aria-label="Send message" disabled>'+ic("sendo")+'<span>SMS</span></button></div>';
 }
 function bindComposer(){
   var box = el("msg"); if (!box) return;
@@ -822,7 +896,9 @@ function bindComposer(){
   el("polBtn").onclick = polish;
   el("schBtn").onclick = function(){ schedPick(this); };
   el("attBtn").onclick = function(){ el("file").click(); };
+  el("camBtn").onclick = function(){ el("camFile").click(); };
   el("file").onchange = function(){ addPhotos(this.files); this.value = ""; };
+  el("camFile").onchange = function(){ addPhotos(this.files); this.value = ""; };
   renderAtt();
 }
 function sizeBox(){
@@ -832,7 +908,8 @@ function sizeBox(){
   var b = el("sendBtn"); b.disabled = !ready; b.classList.toggle("go", !!ready);
   // Polish and Schedule only make sense once there are words to work on.
   var words = !!box.value.trim();
-  el("polBtn").hidden = !words; el("schBtn").hidden = !words;
+  el("polBtn").hidden = !words; el("schBtn").hidden = !words; el("camBtn").hidden = words;
+  b.innerHTML = ic(ready ? "send" : "sendo") + '<span>SMS</span>';
   renderOpeners();
 }
 // ---- his usual openers ------------------------------------------------------------
@@ -1061,7 +1138,8 @@ function saveName(phone, v){
     if (S.thread && S.thread.phone === phone) { S.thread.name = v; S.thread.nameAuto = ""; }
     if (S.phone === phone && el("whoName")) {
       el("whoName").textContent = v;
-      var sub = el("whoSub"); if (sub) sub.textContent = A.fmtPhone(phone);
+      var sub = el("whoSub"); if (sub) sub.remove();
+      var hv = document.querySelector(".gv-ph .hav"); if (hv) hv.innerHTML = av(phone, v);
       if (S.thread) { renderNameNote(S.thread); renderThread(true); }
     }
     renderList(); snack("Saved as " + v);
@@ -1095,19 +1173,26 @@ function newMessage(){
   closePop();
   if (S.view !== "messages") setView("messages", true);
   S.pane = "new"; S.phone = null; S.thread = null;
-  el("pane").innerHTML = '<div class="gv-ph"><button class="ib back" id="paneBack" aria-label="Back">'+ic("back")+'</button><div class="who"><b>New message</b></div></div>'+
-    '<div class="gv-to"><label for="to">To</label><input id="to" type="text" inputmode="text" placeholder="Type a name or phone number" autocomplete="off"></div>'+
+  // Voice's New message: the To pill, Suggestions under it (his named
+  // people, most recent first), and Next once a number is in.
+  el("pane").innerHTML = '<div class="gv-ph"><button class="ib back" id="paneBack" aria-label="Back">'+ic("back")+'</button><div class="who"><b>New message</b></div>'+
+    '<button class="gv-next" id="nextBtn" disabled>Next</button></div>'+
+    '<label class="gv-to"><span>To:</span><input id="to" type="text" inputmode="text" placeholder="Type a name or number" autocomplete="off"></label>'+
     '<div class="gv-sugg" id="sugg"></div>';
   el("paneBack").onclick = function(){ blankPane(); renderList(); };
   showPane(); renderList();
   var to = el("to"); to.focus();
   function sugg(){
     var v = to.value.trim().toLowerCase(), num = e164(v), h = '';
-    var rows = S.rows.filter(function(r){ return v && [r.name, r.phone, A.fmtPhone(r.phone)].join(" ").toLowerCase().indexOf(v) >= 0; }).slice(0, 8);
+    el("nextBtn").disabled = !num;
+    var rows = v ? S.rows.filter(function(r){ return [r.name, r.phone, A.fmtPhone(r.phone)].join(" ").toLowerCase().indexOf(v) >= 0; }).slice(0, 8)
+                 : S.rows.filter(function(r){ return r.name && !r.archived; }).slice(0, 20);
     if (num && !rows.some(function(r){ return r.phone === num; })) h += '<button class="gv-row" data-to="'+esc(num)+'">'+av(num, "")+'<span class="m"><span class="nm">'+esc(A.fmtPhone(num))+'</span><span class="sn">Send to this number</span></span></button>';
-    h += rows.map(function(r){ return '<button class="gv-row" data-to="'+esc(r.phone)+'">'+av(r.phone, r.name)+'<span class="m"><span class="nm">'+esc(A.displayName(r))+'</span><span class="sn">'+esc(A.fmtPhone(r.phone))+'</span></span></button>'; }).join('');
+    if (rows.length) h += '<div class="gv-sh">Suggestions</div>' + rows.map(function(r){ return '<button class="gv-row" data-to="'+esc(r.phone)+'">'+av(r.phone, r.name)+'<span class="m"><span class="nm">'+esc(A.displayName(r))+'</span><span class="sn">'+esc(A.fmtPhone(r.phone))+'</span></span></button>'; }).join('');
     el("sugg").innerHTML = h;
   }
+  sugg();
+  el("nextBtn").onclick = function(){ var n = e164(to.value); if (n) openThread(n, true); };
   to.addEventListener("input", sugg);
   to.addEventListener("keydown", function(e){ if (e.key === "Enter") { var n = e164(to.value); if (n) openThread(n, true); } });
   el("sugg").onclick = function(e){ var b = e.target.closest("[data-to]"); if (b) openThread(b.dataset.to, true); };

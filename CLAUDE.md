@@ -120,6 +120,14 @@ conversations laid out exactly like Google Voice, and the rule for it is
   rings a one-line entry), tapbacks (drawn on the message, same parser as the
   main app), saved drafts (per phone in this browser, "Draft:" on the row) and
   names (the picked-up name gets "Looks right" / "Edit"; no name, "Add a name").
+- **The look is the Google Voice Android app**, from his own screenshots
+  (2026-11-23, dark mode): square icon-only button (plus, or the dial pad on
+  Calls and Voicemail), no avatar beside their texts, a time header where a
+  conversation picks back up ("Tuesday, Jun 23 • 6:29 PM") and one time under
+  the newest text, plus and camera inside the box with a round SMS send
+  button, a call-back button on every call row, voicemail rows with the length
+  on the right, and New message with a To pill, Suggestions and Next. **No
+  Contacts tab**, though Voice has one: he said he doesn't need it.
 - **It's his texting screen** (Mikey, 2026-11-19). `index.html` sends the
   front door and every `?c=` link to `/voice`, and in the main app `setTab
   ("messages")` and `openThread()` go there too. `?waiting=1`, money links and
