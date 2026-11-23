@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-11-23·gemini-guard3';
+const BUILD = '2026-11-23·gemini-guard4';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -15344,7 +15344,19 @@ function replyDayKeys(text) {
 const REPLY_STALL = "I'm working on opening up an exact day and time for you right now. I'll follow up soon.";
 function recentTranscript(thread) {
   const ms = ((thread && thread.messages) || []).slice(-8), newest = (ms[ms.length - 1] || {}).ts || 0;
-  return transcript({ messages: ms.filter((x) => !newest || !x.ts || newest - x.ts <= 7 * 86400000) });
+  let out = transcript({ messages: ms.filter((x) => !newest || !x.ts || newest - x.ts <= 7 * 86400000) });
+  // The appointment already on the conversation is agreed by definition, however
+  // far back it was set: on the replay "see you around 1pm tomorrow" for a job
+  // booked weeks of texts earlier got turned into the stall line.
+  const at = thread && Number(thread.appointmentAt);
+  if (at) {
+    const d = new Date(at), tz = 'America/Los_Angeles';
+    const clock = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz }).toLowerCase();
+    const day = Number(d.toLocaleDateString('en-US', { day: 'numeric', timeZone: tz }));
+    const sfx = (day % 100 >= 11 && day % 100 <= 13) ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[day % 10] || 'th');
+    out += `\nBooked appointment: the ${day}${sfx} at ${clock}`;
+  }
+  return out;
 }
 function findInventedReplyTime(text, sources) {
   const src = (sources || []).join('\n');
