@@ -82,7 +82,7 @@ const ctx = {};
 new Function('ctx', 'S',
   'const {loadIndex,loadThread,saveThread,updateIndexEntry,sendSms,ownerSay,notifyMikey,' +
   'genId,voiceUsable,maybePromise,addVoiceSamples,loadConfig} = S;' +
-  lift('threadWho') + '\n' + lift('dispatchDueScheduled') + '\n' +
+  lift('threadWho') + '\n' + lift('dispatchDueScheduled') + '\n' + lift('flushThreadDue') + '\n' +
   'ctx.run = dispatchDueScheduled; ctx.threadWho = threadWho;'
 )(ctx, new Proxy({}, { get: (_, k) => (...a) => ctx.S[k](...a) }));
 // The stubs are swapped per-scenario through ctx.S, so one lifted copy serves
