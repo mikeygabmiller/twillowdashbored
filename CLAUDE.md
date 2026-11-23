@@ -120,6 +120,25 @@ conversations laid out exactly like Google Voice, and the rule for it is
   rings a one-line entry), tapbacks (drawn on the message, same parser as the
   main app), saved drafts (per phone in this browser, "Draft:" on the row) and
   names (the picked-up name gets "Looks right" / "Edit"; no name, "Add a name").
+- **Third batch (Mikey, 2026-11-23):** the reply already written. With ☰ >
+  AI that runs by itself > "Have a reply already written" on (switched on
+  2026-11-23 at his word), the server drafts in his voice when they text and
+  the draft goes **straight into the message box**, with one line above it
+  ("Drafted for you", X to throw it away). It only fills an empty box, never
+  over words he typed (he gets "Use it"), and each draft goes in once. A send
+  carries `aiOriginal`/`aiBy` like the main app, so the drafter learns from
+  his edits. A "Needs you" question (a fact only he has) shows in the same
+  place with its answers as taps. And **ⓘ in the chat header** opens
+  conversation info: their website bookings (status, time, car, add-ons,
+  price, address, their notes), the quote, and what's on file. Read only.
+- **All texting and conversation work goes here now** (Mikey, 2026-11-23:
+  "all future changes that affect the texting and conversation screens need
+  to go to the voice style screen, that's a normal screen now"). The classic
+  conversation screen in `index.html` is the fallback, not where new things
+  go. Build a texting change in `voice.html` and test it in
+  `test/gvoice.ui.test.js`; only touch the classic screen when the change
+  is shared server behavior or he asks. The "add back only what he names"
+  rule still holds: him asking for it is the naming.
 - **The look is the Google Voice Android app**, from his own screenshots
   (2026-11-23, dark mode): square icon-only button (plus, or the dial pad on
   Calls and Voicemail), no avatar beside their texts, a time header where a

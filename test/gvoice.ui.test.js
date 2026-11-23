@@ -32,6 +32,25 @@ const THREAD = {
   scheduled: [{ id: 's1', sendAt: now + D, body: 'Reminder text' }],
   addressGuess: '123 Maple St, Snohomish',
 };
+// A chat where the server already wrote a reply, and one where it needs a fact
+// only Mikey has (2026-11-23: auto drafts land in the box, ⓘ shows bookings).
+const DRAFTED = {
+  phone: '+14255550302', name: '', messages: [
+    { dir: 'out', body: 'See you then', ts: now - 3 * D },
+    { dir: 'in', body: 'Do you have anything Friday?', ts: now - 2 * D },
+  ],
+  suggested: { text: 'I can do Friday at 1. Does that work?', ts: now - 2 * D + 1000, by: 'claude' },
+  garage: { address: '9 Elm St', city: 'Monroe', vehicles: [{ year: 2019, make: 'Ford', model: 'F-150' }], gate: '1234' },
+  notes: 'Prefers texts after 5',
+};
+const ASKING = {
+  phone: '+14255550304', name: 'Quinn', messages: [{ dir: 'in', body: 'How much for my Tahoe?', ts: now - H }],
+  needsYou: { question: 'What price for the Tahoe?', options: ['$409', '$449'], ts: now - H + 1000 },
+};
+const BOOKINGS = [
+  { id: 'b1', status: 'pending', phone: '+14255550302', serviceName: 'Full Detail \u2013 In & Out', sizeLabel: 'SUV / Truck', vehicle: '2019 Ford F-150', condition: 'Pretty Clean', addons: ['Carpet Shampoo'], apptAt: now + 3 * D, estimate: 409, address: '9 Elm St', city: 'Monroe', notes: 'Dog hair in the back', ackWaterPower: true },
+  { id: 'b2', status: 'confirmed', phone: '+14255550399', serviceName: 'Interior Detail', apptAt: now + D, estimate: 249 },
+];
 const CALLS = [
   { id: 'c1', fromNorm: '+14255550301', ts: now - 3 * H, outcome: 'voicemail', transcript: 'Hi this is Dana about my truck', recording: 'https://x/rec.mp3', vmSec: 12 },
   { id: 'c2', fromNorm: '+14255550302', ts: now - 5 * H, outcome: 'missed' },
@@ -63,7 +82,9 @@ async function open(viewport, path = '/voice') {
     if (p === '/app/app.js') return route.fulfill({ status: 200, contentType: 'application/javascript', body: read('app/app.js') });
     if (p === '/app/app.css') return route.fulfill({ status: 200, contentType: 'text/css', body: read('app/app.css') });
     if (p === '/api/threads') return json({ ok: true, threads: ROWS });
-    if (p === '/api/thread') return json({ ok: true, thread: u.searchParams.get('phone') === THREAD.phone ? THREAD : { phone: u.searchParams.get('phone'), messages: [] } });
+    if (p === '/api/thread') { const ph = u.searchParams.get('phone'); return json({ ok: true, thread: [THREAD, DRAFTED, ASKING].find((t) => t.phone === ph) || { phone: ph, messages: [] } }); }
+    if (p === '/api/bookings') return json({ ok: true, bookings: BOOKINGS });
+    if (p === '/api/ai/answer') return json({ ok: true, thread: Object.assign({}, ASKING, { needsYou: null, suggested: { text: 'For your Tahoe it would be $409.', ts: Date.now(), by: 'claude' } }) });
     if (p === '/api/calls') return json({ ok: true, calls: CALLS, seenTs: now - 4 * H });
     if (p === '/api/calls/seen') return json({ ok: true, seenTs: now });
     if (p === '/api/ai/draft') return json({ ok: true, draft: 'Yes, Saturday at 7 AM works. See you then!' });
@@ -307,6 +328,69 @@ section('The dashboard opens on this screen (index.html)');
   await p2.waitForTimeout(400);
   ok('switched off in Settings, the dashboard opens as before', new URL(p2.url()).pathname === '/', p2.url());
   await ctx2.close();
+}
+
+section('Laptop: a drafted reply waits in the box (2026-11-23)');
+{
+  const { ctx, page, errs, posted } = await open({ width: 1280, height: 800 });
+  await page.locator('[data-open="+14255550302"]').click();
+  await page.waitForTimeout(500);
+  ok('the server\'s draft is already in the message box', (await page.locator('#msg').inputValue()) === 'I can do Friday at 1. Does that work?');
+  ok('one line says it is a draft, with an X', /Drafted for you/.test(await page.locator('#sug').innerText()) && await page.locator('#sugX').isVisible());
+  ok('send is ready to go', !(await page.locator('#sendBtn').isDisabled()));
+  await page.locator('#msg').fill('I can do Friday at 1 if that works');
+  await page.locator('#sendBtn').click();
+  await page.waitForTimeout(300);
+  const sent = posted.find((x) => x.path === '/api/send');
+  ok('sending carries the original draft so it learns from the edit', sent && sent.body.aiOriginal === 'I can do Friday at 1. Does that work?' && sent.body.aiBy === 'claude' && sent.body.body === 'I can do Friday at 1 if that works', sent);
+
+  await page.locator('[data-open="+14255550301"]').click();
+  await page.waitForTimeout(300);
+  await page.locator('[data-open="+14255550302"]').click();
+  await page.waitForTimeout(400);
+  ok('coming back, the draft is still there and still marked as one', (await page.locator('#msg').inputValue()) === 'I can do Friday at 1. Does that work?' && /Drafted for you/.test(await page.locator('#sug').innerText()));
+  await page.locator('[data-open="+14255550301"]').click();
+  await page.waitForTimeout(300);
+  await page.evaluate(() => { localStorage.setItem('gv-drafts', JSON.stringify({ '+14255550302': 'half typed' })); });
+  await page.locator('[data-open="+14255550302"]').click();
+  await page.waitForTimeout(400);
+  ok('words he typed himself are never replaced', (await page.locator('#msg').inputValue()) === 'half typed');
+  ok('he is offered Use it instead', await page.locator('#sugUse').isVisible());
+  await page.locator('#sugUse').click();
+  ok('Use it puts the draft in the box', (await page.locator('#msg').inputValue()) === 'I can do Friday at 1. Does that work?');
+  await page.locator('#sugX').click();
+  await page.waitForTimeout(200);
+  ok('X empties the box and the line goes', (await page.locator('#msg').inputValue()) === '' && !(await page.locator('#sug').isVisible()));
+  ok('X tells the server so it stays gone', posted.some((x) => x.path === '/api/meta' && x.body.clearSuggested === true && x.body.phone === '+14255550302'));
+
+  section('Laptop: conversation info (2026-11-23)');
+  ok('an info button sits in the chat header', await page.locator('#paneInfo').isVisible());
+  await page.locator('#paneInfo').click();
+  await page.waitForTimeout(400);
+  const info = await page.locator('.gv-info').innerText();
+  ok('it shows their booking: service, status, time, car, price, where, notes', /Full Detail/.test(info) && /Requested, not confirmed yet/.test(info) && /2019 Ford F-150/.test(info) && /\$409/.test(info) && /9 Elm St, Monroe/.test(info) && /Dog hair in the back/.test(info), info);
+  ok('no dash from the saved service name', !/In & Out/.test(info));
+  ok('only this person\'s bookings', !/\$249/.test(info));
+  ok('what is on file: gate, car and notes', /1234/.test(info) && /Ford F-150/.test(info) && /Prefers texts after 5/.test(info));
+  await page.locator('#infoClose').click();
+  ok('Close shuts it', (await page.locator('.gv-info').count()) === 0);
+
+  ok('no errors on the page', errs.length === 0, errs);
+  await ctx.close();
+}
+
+section('Laptop: a question only Mikey can answer');
+{
+  const { ctx, page, errs, posted } = await open({ width: 1280, height: 800 }, '/voice?c=%2B14255550304');
+  await page.waitForTimeout(500);
+  ok('the question shows over the box with its answers', /What price for the Tahoe\?/.test(await page.locator('#sug').innerText()) && (await page.locator('#sug [data-ny]').count()) === 3);
+  await page.locator('#sug [data-ny="0"]').click();
+  await page.waitForTimeout(400);
+  const a = posted.find((x) => x.path === '/api/ai/answer');
+  ok('tapping an answer asks the server to write it', a && a.body.choice === '$409' && a.body.phone === '+14255550304', a);
+  ok('the written reply lands in the box', (await page.locator('#msg').inputValue()) === 'For your Tahoe it would be $409.');
+  ok('no errors on the page', errs.length === 0, errs);
+  await ctx.close();
 }
 
 section('Phone: the Voice app');
