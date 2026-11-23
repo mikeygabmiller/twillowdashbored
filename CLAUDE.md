@@ -147,6 +147,19 @@ conversations laid out exactly like Google Voice, and the rule for it is
   button, a call-back button on every call row, voicemail rows with the length
   on the right, and New message with a To pill, Suggestions and Next. **No
   Contacts tab**, though Voice has one: he said he doesn't need it.
+- **Sizes are Voice's, measured** (2026-11-23, off his screenshots: his
+  phone is 384 wide). Rows 74 with a 40 picture at 24, search pill 48, square
+  button 56, tabs 80, header 64, bubbles 16px on a 24 line with 16 padding and
+  88 kept clear on the far side, composer 48. Voice's font (Google Sans) runs
+  narrower than Roboto, so text sizes are set so a line holds the same words
+  his Voice does; a bubble wraps at the same word. Check a layout change
+  side by side against his screenshots before shipping it.
+- **Hold to select** (his screenshot, 2026-11-23): hold a row (or right-click)
+  and it becomes a card with a check; taps add more; the bar reads
+  "N selected" with Archive (Unarchive in Archive) and Undo after. Voice's
+  bar also has **Delete; it's left off**: the dashboard has no way to delete
+  a conversation, and erasing customer history is his call. Ask before adding
+  one. Unread rows carry Voice's blue dot.
 - **It's his texting screen** (Mikey, 2026-11-19). `index.html` sends the
   front door and every `?c=` link to `/voice`, and in the main app `setTab
   ("messages")` and `openThread()` go there too. `?waiting=1`, money links and
