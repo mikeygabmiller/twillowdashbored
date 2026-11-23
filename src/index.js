@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-11-23·gemini-guard2';
+const BUILD = '2026-11-23·gemini-guard3';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -9130,6 +9130,11 @@ async function generateReply(thread, cfg, hint, meta) {
       // stricter instruction, so it is the better of the two either way.
       if (cleaned) { text = cleaned; if (meta) meta.provider = second.usedProvider || ''; }
     } catch { /* keep the first attempt rather than failing the draft */ }
+    // Except a made-up time. On the replay the redo usually just picked a
+    // DIFFERENT time ("2pm" became "2:30pm"), and a customer plans their day
+    // around it. If one survives the redo, the draft is his own stall line,
+    // word for word from his texts, and he fills in the time himself.
+    if (madeTime && findInventedReplyTime(text, [hint || '', recentTranscript(thread)])) text = REPLY_STALL;
   }
   return text;
 }
@@ -15335,6 +15340,8 @@ function replyDayKeys(text) {
   while ((m = named.exec(t))) out.add(Number(m[1]));
   return out;
 }
+// His own words for "I can't give you a time yet" (Don, 2026-11-20).
+const REPLY_STALL = "I'm working on opening up an exact day and time for you right now. I'll follow up soon.";
 function recentTranscript(thread) {
   const ms = ((thread && thread.messages) || []).slice(-8), newest = (ms[ms.length - 1] || {}).ts || 0;
   return transcript({ messages: ms.filter((x) => !newest || !x.ts || newest - x.ts <= 7 * 86400000) });
