@@ -131,5 +131,15 @@ section('A made-up time that survives the redo becomes his own stall line');
   ok('a time Mikey gave through "Needs you" is used as is', /24th at 2pm/.test(d), d);
 }
 
+section('The booked appointment counts as agreed, however far back');
+{
+  const at = Date.UTC(2026, 10, 24, 21, 0);   // Tue Nov 24, 1:00 PM Pacific
+  const th = { appointmentAt: at, messages: [{ dir: 'in', body: 'No, it is in bad shape so skip the roof', ts: Date.now() }] };
+  const r = M.recentTranscript(th);
+  ok('its time and date are in what backs a draft', /the 24th at 1:00 pm/.test(r), r);
+  ok('"see you around 1pm tomorrow" passes', M.findInventedReplyTime('Got it, see you around 1pm tomorrow.', ['', r]) === '');
+  ok('another time still does not', M.findInventedReplyTime('See you around 3pm.', ['', r]) === '3');
+}
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
