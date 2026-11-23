@@ -190,6 +190,12 @@ console.log('\n=== quiet hours and the pile-up ===');
   check('no threads loaded for a digest', w.reads.length, 0);
 }
 {
+  const rows = [1, 2, 3].map((i) => row({ phone: '+1425555010' + i, name: 'C' + i, waitSince: NOW - (2 + i) * H, lastTs: NOW - (2 + i) * H }));
+  const w = world({ rows, config: { waitDigest: false } });
+  check('digest paused → no email', [await run(w), w.mails.length], [0, 0]);
+  check('…but still marked, so they do not trickle out later', w.puts > 0, true);
+}
+{
   const w = world({ rows: [row({ waitSince: NOW - H, lastTs: NOW - H })] });
   await run(w);
   check('nobody due → no KV read or write', [w.puts, w.mails.length], [0, 0]);

@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-11-23·gemini-guard';
+const BUILD = '2026-11-23·pause-digest';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -317,6 +317,9 @@ async function dispatchWaitNudges(now = Date.now()) {
   for (const e of due) keep[e.phone] = e.nudgeFor;
   await kv().put(WAIT_NUDGE_KEY, JSON.stringify(keep));
   if (due.length >= WAIT_NUDGE_DIGEST_AT) {
+    // Paused at his request (2026-11-23). Already marked above, so these
+    // nudges are skipped, not queued up to land later as single emails.
+    if (cfg.waitDigest === false) return 0;
     const m = waitDigestMail(due, cfg, now);
     await notifyMikey(m.subject, { text: m.text, html: m.html }).catch(() => {});
     return due.length;
@@ -11883,6 +11886,7 @@ async function apiSaveConfig(request) {
   if (typeof data.teamMode === 'boolean') next.teamMode = data.teamMode;
   if (typeof data.briefEnabled === 'boolean') next.briefEnabled = data.briefEnabled;
   if (typeof data.dailyEmailsPaused === 'boolean') next.dailyEmailsPaused = data.dailyEmailsPaused;
+  if (typeof data.waitDigest === 'boolean') next.waitDigest = data.waitDigest;
   if (data.briefHour != null && !isNaN(+data.briefHour)) next.briefHour = Math.max(4, Math.min(11, Math.round(+data.briefHour)));
   if (Array.isArray(data.team)) next.team = sanitizeTeam(data.team);
   if (data.playbook && typeof data.playbook === 'object') next.playbook = sanitizePlaybook(data.playbook, next.playbook);
@@ -13644,6 +13648,9 @@ function defaultConfig() {
                              // replacing them, so flipping it back restores whatever those
                              // were already set to. New key, so an existing stored config
                              // inherits the pause; weekly and monthly recaps are unaffected.
+    waitDigest: false,       // the "⏳ N people are still waiting on you" email (3+ at once).
+                             // Paused 2026-11-23 at his request. New key, so the stored
+                             // config inherits the pause. One-person nudges are unaffected.
     playbook: defaultPlaybook(), // the business "brain" that trains every AI output
     quoteAbandon: true,      // email him when somebody sees their price on the site
                              // and closes it without leaving a name or number —
