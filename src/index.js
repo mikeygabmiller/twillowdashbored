@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-11-23·gemini-replay';
+const BUILD = '2026-11-23·gemini-guard';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -9097,13 +9097,18 @@ async function generateReply(thread, cfg, hint, meta) {
   const priceSources = [businessContext(cfg), hint || '', transcript(thread)];
   const tell = findTell(text);
   const madeUp = tell ? '' : findInventedPrice(text, priceSources);
+  const madeTime = (tell || madeUp) ? '' : findInventedReplyTime(text, [hint || '', transcript(thread)]);
   const off = tell
     ? `used the phrase "${tell}", which is a dead giveaway that a machine wrote it`
     : madeUp
       ? `quoted ${madeUp}, and that number appears nowhere in the playbook, this conversation, or anything Mikey told you. ` +
         `Quoting a customer an invented price is the worst mistake you can make here. Use a price that is actually written down, ` +
         `or ask for what you need instead of naming a total`
-      : styleViolation(text, voice && voice.style, bucket);
+      : madeTime
+        ? `offered "${madeTime}", and nobody agreed that time or date and Mikey didn't give it to you. You cannot see his calendar, ` +
+          `so never name a time or a date yourself. Say he'll check his schedule and get back to them, the way he does: ` +
+          `"I'm working on opening up an exact day and time for you right now. I'll follow up soon." Times the customer already said are fine to repeat`
+        : styleViolation(text, voice && voice.style, bucket);
   if (off) {
     try {
       const second = { surface: 'reply draft', tier: 'voice', system, turns: ex.turns, effort: 'medium', maxTokens: 800, temperature: 0.45, gemini: gem };
@@ -15284,6 +15289,53 @@ function backedAmounts(sources) {
   return ok;
 }
 // Returns the first unbacked figure as a string, or '' when every number checks out.
+// The same gate for appointment times in a REPLY (2026-11-23). Looser than the
+// opener's findInventedTime above on purpose: a reply may name a weekday ("this
+// Wednesday works?" is often the honest answer), only a clock time or a dated
+// day has to be backed by the conversation. On the replay test every
+// Gemini setup offered times nobody had agreed ("I can do the 24th at 2pm",
+// "let's lock in the 23rd at 3:30"), even with the rule written in the prompt.
+// A promised time the customer then plans around is as hard to take back as a
+// price. A clock time or a date in the draft must already be in this
+// conversation or in what Mikey told it; sources here are the transcript and
+// his hint only, never the playbook, whose example texts are full of times.
+function replyTimeKeys(text, loose) {
+  const out = new Set(), t = String(text || '').toLowerCase();
+  const add = (h, m) => { h = Number(h); if (h >= 1 && h <= 24) out.add(`${h % 12 || 12}:${m || '00'}`); };
+  let m;
+  const withMark = /\b(\d{1,2})(?::([0-5]\d))?\s*(a\.?m\.?|p\.?m\.?)(?![a-z])/g;
+  while ((m = withMark.exec(t))) add(m[1], m[2]);
+  const colon = /\b(\d{1,2}):([0-5]\d)\b/g;
+  while ((m = colon.exec(t))) add(m[1], m[2]);
+  if (/\bnoon\b/.test(t)) out.add('12:00');
+  if (loose) {
+    // What a customer types: "home at 3", "after 5", "between 1 and 2".
+    const said = /\b(?:at|around|after|before|by|from|until|till|til|between|and|or|@)\s+(\d{1,2})\b(?!\s*(?:\/|st|nd|rd|th|%|\$|miles?|min|hours?|hrs?|days?|weeks?|cars?|kids?|dogs?))/g;
+    while ((m = said.exec(t))) add(m[1]);
+  }
+  return out;
+}
+function replyDayKeys(text) {
+  const out = new Set(), t = String(text || '').toLowerCase();
+  let m;
+  const ord = /\b(\d{1,2})(?:st|nd|rd|th)\b/g;
+  while ((m = ord.exec(t))) out.add(Number(m[1]));
+  const md = /\b\d{1,2}\/(\d{1,2})\b/g;
+  while ((m = md.exec(t))) out.add(Number(m[1]));
+  const named = /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})\b/g;
+  while ((m = named.exec(t))) out.add(Number(m[1]));
+  return out;
+}
+function findInventedReplyTime(text, sources) {
+  const src = (sources || []).join('\n');
+  const okT = replyTimeKeys(src, true), okD = replyDayKeys(src);
+  for (const k of replyTimeKeys(text, false)) if (!okT.has(k)) return k.replace(/:00$/, '');
+  const ord = /\b(\d{1,2})(st|nd|rd|th)\b/gi;
+  let m;
+  while ((m = ord.exec(String(text || '')))) if (!okD.has(Number(m[1]))) return m[0];
+  return '';
+}
+
 function findInventedPrice(text, sources) {
   const ok = backedAmounts(sources);
   for (const n of priceFigures(text)) if (!ok.has(n)) return `$${n}`;
@@ -16082,7 +16134,11 @@ let CLAUDE_COOL_UNTIL = 0;
 // exchanges as real back-and-forth turns (customer, then him) instead of one
 // pasted block; `think` is a thinking budget in tokens (0 = off), `model`
 // overrides GEMINI_MODEL for drafts only.
-const GEMINI_DRAFT = { native: false, think: 0, model: '' };
+// Set from the replay test on 2026-11-23 (18 past moments, four setups each):
+// native turns read the closest to his real replies and invented the fewest
+// prices; a 1024-token thinking budget and 2.5 Pro were no better on the same
+// moments, so neither is worth paying for.
+const GEMINI_DRAFT = { native: true, think: 0, model: '' };
 async function aiGenerate(prompt, opts = {}) {
   // Read config before asking who writes this. The key can live in that doc, and
   // on a cold isolate nothing has loaded it yet — skipping this would send the
