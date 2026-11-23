@@ -128,7 +128,9 @@ const p = defaultPlaybook();
 check('there is a quote-reply section',     !!(p.quoting && p.quoting.length > 500), true);
 check('it tells him to ask for the address', /send over your address/.test(p.quoting), true);
 check('it gates on condition before pricing', /condition/i.test(p.quoting), true);
-check('it carries the real worked quotes',   ['$450', '$400', '$380', '$300'].every((n) => p.quoting.includes(n)), true);
+// Worked out from the price book since 2026-11-23 (the old ones were real jobs
+// at the old prices, and taught the model $300 for a pre-sale that isn't sold).
+check('it carries the worked quotes',        ['$459', '$339', '$429', '$249'].every((n) => p.quoting.includes(n)), true);
 // The old golden rule told the AI to never give a firm price — the exact opposite
 // of what he does at this moment, in the same prompt as the examples showing him
 // doing it. A contradiction the model resolved by inventing a number.
@@ -137,8 +139,8 @@ check('they forbid inventing one instead',      /isn't in this playbook/.test(p.
 check('and one voice, not a team "we"',         /never \\?"we\\?"/i.test(p.rules) || /never "we"/.test(p.rules), true);
 // $160 / $180 / $200 for the same service, across code and live config, all fed
 // to the model at once.
-check('one interior price everywhere', (p.services.match(/Interior Detail — starts at \$(\d+)/) || [])[1], '200');
-check('and the FAQ agrees with it',    (p.faqs.match(/Interior details start at \$(\d+)/) || [])[1], '200');
+check('one interior price everywhere', (p.services.match(/Interior Detail: \$(\d+)/) || [])[1], '249');
+check('and the FAQ agrees with it',    (p.faqs.match(/Interior starts at \$(\d+)/) || [])[1], '249');
 check('every field fits the save cap',  Object.values(p).every((v) => String(v).length <= 6000), true);
 
 console.log(`\n================  ${PASS} passed, ${FAIL} failed  ================`);
