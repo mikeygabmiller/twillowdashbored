@@ -7,7 +7,7 @@ import fs from 'fs';
 
 let src = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
 src = src.replace(/^export default \{[\s\S]*?^\};$/m, '');
-const EXPORTS = ['geminiGenerate', 'aiGenerate', 'voiceExchanges', 'GEMINI_DRAFT', 'resetInvocationCaches', 'findInventedReplyTime', 'recentTranscript'];
+const EXPORTS = ['geminiGenerate', 'aiGenerate', 'voiceExchanges', 'GEMINI_DRAFT', 'resetInvocationCaches', 'findInventedReplyTime', 'recentTranscript', 'generateReply', 'REPLY_STALL'];
 
 const store = new Map();
 const kv = {
@@ -15,9 +15,10 @@ const kv = {
   async put(k, v) { store.set(k, v); }, async delete(k) { store.delete(k); },
 };
 const calls = [];
+let GEM = ['Sounds good, Friday at 1 works.'];
 globalThis.fetch = async (u, opts) => {
   const url = String(u);
-  if (url.includes('generativelanguage')) { calls.push({ to: 'gemini', url, body: JSON.parse(opts.body) }); return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: 'Sounds good, Friday at 1 works.' }] }, finishReason: 'STOP' }] }) }; }
+  if (url.includes('generativelanguage')) { calls.push({ to: 'gemini', url, body: JSON.parse(opts.body) }); const text = GEM.length > 1 ? GEM.shift() : GEM[0]; return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text }] }, finishReason: 'STOP' }] }) }; }
   if (url.includes('api.anthropic.com')) { calls.push({ to: 'claude' }); return { ok: false, status: 401, text: async () => '{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}' }; }
   return { ok: false, status: 404, text: async () => 'no' };
 };
@@ -110,6 +111,24 @@ section('Only the live part of a conversation can back a time');
   ok('so "the 24th at 2pm" is caught (the replay case)', M.findInventedReplyTime('I can do the 24th at 2pm if that works.', ['', r]) === '2');
   const many = { messages: Array.from({ length: 12 }, (_, i) => ({ dir: i % 2 ? 'out' : 'in', body: i === 0 ? 'at 5 works' : 'msg ' + i, ts: n + i })) };
   ok('only the last 8 texts count', !/at 5 works/.test(M.recentTranscript(many)));
+}
+
+section('A made-up time that survives the redo becomes his own stall line');
+{
+  const th = { phone: '+14255550111', messages: [{ dir: 'in', body: 'Sounds good, how about either 23rd, or 24th. Let me know the date and time', ts: Date.now() }] };
+  calls.length = 0; GEM = ['I can do the 24th at 2pm if that works for you.', 'I can likely do the 24th around 3:30pm.'];
+  const a = await M.generateReply(th, {}, '');
+  ok('two made-up times in a row: the draft is his stall line', a === M.REPLY_STALL, a);
+  ok('…after exactly one redo', calls.filter((c) => c.to === 'gemini').length === 2, calls.length);
+  calls.length = 0; GEM = ['I can do the 24th at 2pm if that works for you.', 'The 24th works. Let me check my schedule and I will get back to you with a time.'];
+  const b = await M.generateReply(th, {}, '');
+  ok('a redo that drops the time is kept', /check my schedule/.test(b), b);
+  calls.length = 0; GEM = ['Sounds good, can I get your address?'];
+  const c = await M.generateReply(th, {}, '');
+  ok('a draft with no time goes straight through', c === 'Sounds good, can I get your address?' && calls.filter((x) => x.to === 'gemini').length === 1, c);
+  calls.length = 0; GEM = ['Perfect, the 24th at 2pm it is!'];
+  const d = await M.generateReply(th, {}, 'The owner has decided: the 24th at 2pm');
+  ok('a time Mikey gave through "Needs you" is used as is', /24th at 2pm/.test(d), d);
 }
 
 console.log(`\n${pass} passed, ${fail} failed`);
