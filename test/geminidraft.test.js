@@ -7,7 +7,7 @@ import fs from 'fs';
 
 let src = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
 src = src.replace(/^export default \{[\s\S]*?^\};$/m, '');
-const EXPORTS = ['geminiGenerate', 'aiGenerate', 'voiceExchanges', 'GEMINI_DRAFT', 'resetInvocationCaches', 'findInventedReplyTime'];
+const EXPORTS = ['geminiGenerate', 'aiGenerate', 'voiceExchanges', 'GEMINI_DRAFT', 'resetInvocationCaches', 'findInventedReplyTime', 'recentTranscript'];
 
 const store = new Map();
 const kv = {
@@ -96,6 +96,21 @@ ok('a date from 11/24 or Nov 24 counts', T('See you on the 24th', 'Customer: is 
 ok('his answer to a "Needs you" question counts as given', M.findInventedReplyTime('I can do Friday at 2pm.', ['The owner has decided: Friday at 2pm', 'Customer: when?']) === '');
 ok('no time at all passes', T('Yep, I can come by this week. What is your address?', 'Customer: still coming?') === '');
 ok('"3 kids" is not a time', T('See you at 3pm', 'Customer: I have 3 kids') === '3');
+
+section('Only the live part of a conversation can back a time');
+{
+  const D = 86400000, n = 1795400000000;
+  const th = { messages: [
+    { dir: 'out', body: 'See you the 24th at 2pm', ts: n - 30 * D },
+    ...Array.from({ length: 3 }, (_, i) => ({ dir: 'in', body: 'ok ' + i, ts: n - 29 * D + i })),
+    { dir: 'in', body: 'how about either 23rd, or 24th', ts: n },
+  ] };
+  const r = M.recentTranscript(th);
+  ok('a time from a job a month ago is left out', !/2pm/.test(r) && /23rd, or 24th/.test(r), r);
+  ok('so "the 24th at 2pm" is caught (the replay case)', M.findInventedReplyTime('I can do the 24th at 2pm if that works.', ['', r]) === '2');
+  const many = { messages: Array.from({ length: 12 }, (_, i) => ({ dir: i % 2 ? 'out' : 'in', body: i === 0 ? 'at 5 works' : 'msg ' + i, ts: n + i })) };
+  ok('only the last 8 texts count', !/at 5 works/.test(M.recentTranscript(many)));
+}
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
