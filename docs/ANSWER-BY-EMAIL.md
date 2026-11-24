@@ -3,8 +3,13 @@
 A customer texts. You get the alert on your phone. You hit **Reply**, type what
 you want to say, and that is what they get. No app to open, no prefix to remember,
 and no Twilio segment spent on your half of it — the only billable text is the one
-the customer actually gets. A minute or two later you get a second email telling
-you it really landed.
+the customer actually gets.
+
+**One thread per customer.** Every email about a customer — each new text they
+send, your replies, the "sent" confirmation — lands in the same Gmail
+conversation, which jumps back to the top of your inbox when they text again.
+Each email shows the last 8 messages as chat bubbles (theirs grey on the left,
+yours blue on the right), so you can see both sides without opening the dashboard.
 
 The whole promise is one sentence: **the words that reach the customer are yours.**
 The AI fixes your spelling and punctuation on the way out and changes nothing else.
@@ -30,9 +35,9 @@ customer texts ──▶ Worker ──▶ alert email (Resend) ──▶ your ph
                                                           │
                             spelling fixed, words kept ───┤
                                                           ▼
-                                  queued with a hold ──▶ the customer
+                                  sent right away  ──▶ the customer
                                                           │
-                              "it landed" email ◀─────────┘
+                              thread updates  ◀──────────┘
 ```
 
 Two things in the alert are load-bearing and invisible:
@@ -88,7 +93,7 @@ Six gates, in the order a message hits them:
 | **Drift check** | The spelling pass quietly becoming a rewrite. Your reply and the polished version are compared word by word; anything that isn't a spelling or punctuation fix throws the polish away and sends **your exact words** instead. A number it changed fails the whole thing. |
 | **Fact check** | On the `write:` path only: a price or a day in the finished text that you never said and the conversation never mentioned. It holds the wording and waits — reply `yes` and it goes out as written. |
 | **Stale-draft check** | `YES` answering a message the customer has already moved past, or one you've already replied to yourself. |
-| **The hold** | 3 minutes by default. Reply `CANCEL`, or cancel it in the dashboard, which is faster. |
+| **The hold** | **Off by default for email** — your reply goes out the moment it's read. The wait you still see (about a minute) is Google's every-minute check of your Sent folder, not a hold. Set **Hold before sending** above 0 if you want a cancel window back. |
 
 Nothing here is a silent drop. Every one of these tells you what it did and why,
 by replying to the same email thread — because a reply that vanishes is
@@ -105,7 +110,7 @@ indistinguishable from a reply that worked.
 | `write: 375, thursday works` | You give the facts, it does the wording |
 | `draft: …` | Held in the dashboard instead of sent |
 | `who` | Who's waiting on a reply |
-| `cancel` | Pulls back the last queued one |
+| `cancel` | Pulls back that customer's queued one (only when the reply is just the word — "Wait, is it the white truck?" goes to the customer) |
 
 `@ruth on my way` picks who, when you want someone other than whoever the alert was
 about. Everything above also works as a **text to your own business number** —
@@ -113,9 +118,8 @@ same grammar, same gates, except that one costs a text.
 
 ## Knowing it landed
 
-The confirmation you get straight away says *"Sending in ~3 min"*, which is a
-plan. Once the hold expires and Twilio actually takes the message, a second email
-arrives with the exact words the customer got. If it **failed** — a dead key, an
+Once Twilio actually takes the message, one email lands in that customer's
+thread: "✅ Sent to Ruth" with the conversation, your text now at the bottom. If it **failed** — a dead key, an
 opt-out, a bad number — that same email tells you so, because from an inbox a text
 that never sent looks precisely like one that worked. Reply to either one to send
 them something else.
@@ -127,6 +131,6 @@ them something else.
   keystrokes reach the customer exactly as typed.
 - The landed/failed email: **Email me when it actually lands**.
 - The fact check alone: **Stop it if the wording says something I didn't**.
-- The hold length: **Hold before sending**, 0–900 seconds.
+- The hold length: **Hold before sending**, 0–900 seconds (0 by default).
 - An address that isn't your alert mailbox (a send-as alias): when a reply comes
   in from one, the health card names it and offers **"That's me too — use it"**.

@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-11-24·auto-cancel';
+const BUILD = '2026-11-24·email-thread';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -2675,8 +2675,16 @@ async function handleInboundSms(request) {
     : gist
       ? `📱 ${who}: "${gist.length > 64 ? gist.slice(0, 63).trimEnd() + '…' : gist}"`
       : `📱 ${who} sent a photo`;
-  await notifyMikey(subject,
-    assistAlertBody(alertCfg, { phone: fromNorm, who, msg: text, ask, draft, note: nameNote, media: numMedia }));
+  // One Gmail thread per customer (customerMail): the subject is the customer,
+  // not the message. Their words still lead — they're the email's preheader, the
+  // grey line Gmail shows in the inbox row and the phone notification — and the
+  // per-message `subject` above stays for the text-message fallback.
+  const cm = await customerMail(inThread);
+  const alertMail = assistAlertBody(alertCfg, { phone: fromNorm, who, msg: text, ask, draft, note: nameNote, media: numMedia, thread: inThread });
+  // The text-message fallback stays the short single-message version — a whole
+  // conversation would cost several SMS segments.
+  const smsAlert = assistAlertBody(alertCfg, { phone: fromNorm, who, msg: text, ask, draft, note: nameNote, media: numMedia }).text;
+  await notifyMikey(cm.subject, Object.assign(alertMail, { sms: smsAlert, mail: cm.mail }));
   // The helper's phone too, if there is a helper. Their own list, their own
   // wording, and a tap that opens this conversation on their page.
   await pushHelper(`New text from ${who}`, tap ? `${tap.label} your message` : (gist || 'Sent a photo'), fromNorm).catch(() => {});
@@ -3008,6 +3016,7 @@ function assistPickTarget(index, token) {
 // purpose: anything with more in it is him telling us what to say instead, and
 // should go through the normal path rather than firing off a draft.
 const ASSIST_YES = /^(y|ya|yes+|yep|yeah|yup|ok|okay|k|sure|send|send it|send that|do it|go|go ahead|perfect|sounds good|looks good|that works|👍|👌|✅)[\s.!]*$/i;
+const ASSIST_CANCEL = /^(cancel|cancel it|cancel that|undo|nvm|nevermind|never mind|stop that|wait)[\s.!]*$/i;
 const ASSIST_NO = /^(n|no+|nope|nah|don'?t|don'?t send|do not send|no thanks|skip|skip it|scrap it|scrap that|delete|toss it|👎)[\s.!]*$/i;
 
 // Which draft is he answering? An email reply is threaded to one customer's
@@ -3311,10 +3320,16 @@ async function runAssist({ text, cfg, reply, channel, forcedPhone }) {
 
   // Pull back a queued assist reply. Targets the newest one still in the queue,
   // across every conversation, so "cancel" always undoes the last thing he sent.
-  if (/^(cancel|undo|nvm|nevermind|stop that|wait)\b/.test(lower)) {
+  // The WHOLE reply has to be the word. It used to be any reply that merely
+  // started with one, so "Wait, is it the white truck?" or "Cancel is fine, let's
+  // rebook" never reached the customer and pulled back someone else's text instead.
+  // On the email path the reply already names its customer, so only theirs counts.
+  if (ASSIST_CANCEL.test(lower)) {
     let best = null;
+    const only = forcedPhone ? normalizePhone(forcedPhone) : '';
     for (const e of index) {
       if (e.archived || !e.scheduledCount) continue;
+      if (only && normalizePhone(e.phone) !== only) continue;
       const th = await loadThread(e.phone);
       for (const s of (th.scheduled || [])) {
         if (s.kind === 'assist' && (!best || (s.at || 0) > (best.item.at || 0))) best = { thread: th, item: s };
@@ -3447,7 +3462,7 @@ async function runAssist({ text, cfg, reply, channel, forcedPhone }) {
   if (isPracticePhone(target.phone)) {
     await reply(
       `🧪 PRACTICE — nothing was sent.\n\nHere's what ${assistWho(target)} would have received:\n"${out}"\n\n` +
-      `That's the whole loop working. On a real customer this would now be queued with a hold, and you'd get this same message with a countdown and a CANCEL option.`,
+      `That's the whole loop working. On a real customer this would go out right away, and you'd get the conversation back with your text in it.`,
     );
     return;
   }
@@ -3456,15 +3471,34 @@ async function runAssist({ text, cfg, reply, channel, forcedPhone }) {
   // at-most-once delivery and the opt-out guard for free — and the gap between
   // now and sendAt IS the cancel window. Email gets a longer hold by default,
   // because a "cancel" reply has to make another trip through the inbox.
-  const raw = channel === 'email' ? cfg.assistEmailDelaySec : cfg.assistDelaySec;
+  //
+  // Email answers go out with NO hold by default (assistEmailHoldSec, a new key so
+  // the old 3-minute default saved in anyone's config can't keep holding them).
+  // Answering by email already costs a Gmail poll; a hold on top made it the slow
+  // way to reply, so it went unused. Every check above still runs first.
+  const raw = channel === 'email' ? cfg.assistEmailHoldSec : cfg.assistDelaySec;
   const delaySec = Math.max(0, Math.min(900, Number(raw) || 0));
   const item = { id: genId(), kind: 'assist', at: Date.now(), body: out, sendAt: Date.now() + delaySec * 1000 };
+  if (cfg.assistSentReceipt !== false) item.receipt = channel === 'email' ? 'email' : 'sms';
+  if (channel === 'email' && delaySec === 0) {
+    // Sent right here, not queued: the queue only drains on the next cron tick,
+    // which is up to another minute. The receipt that flushThreadDue sends is the
+    // ONE email he gets back for this — the conversation with his text in it —
+    // instead of a "sending in…" email followed by a "sent" email.
+    thread.dateRequest = null;
+    await assistHealthMark({ sentAt: Date.now(), sentWho: assistWho(target) });
+    const learn = [];
+    const n = await flushThreadDue(thread, Date.now(), { learn, alertOn: cfg.autoReplyAlert !== false }, [item]);
+    if (learn.length) { try { await addVoiceSamples(learn, 'sent'); } catch { /* non-fatal */ } }
+    // Receipts off means nothing else would tell him — say it in one line.
+    if (!item.receipt) await reply(n ? `✅ Sent to ${assistWho(target)}:\n"${out}"` : `⚠️ That did NOT send to ${assistWho(target)}. Open the dashboard.`);
+    return;
+  }
   // Ask the cron for a receipt once this actually reaches the customer. Until now
   // the last thing he heard was "sending in ~3 min", which is a promise, not a
   // record — and the gap between the two is exactly where a dead Twilio key or an
   // opt-out hides. The receipt is the only message in this loop that says a
   // customer's phone really buzzed.
-  if (cfg.assistSentReceipt !== false) item.receipt = channel === 'email' ? 'email' : 'sms';
   thread.scheduled.push(item);
   thread.scheduled.sort((a, b) => a.sendAt - b.sendAt);
   thread.dateRequest = null;
@@ -3604,7 +3638,7 @@ function assistAskBlock(ask, compact) {
 // line at the bottom (it's what routes his reply back to this customer). Gmail
 // renders the HTML part when replying, so anything hidden there is lost.
 function assistAlertHtml(cfg, o) {
-  const { phone, who, msg, note, ask, offer, byEmail, quickOk, media } = o;
+  const { phone, who, msg, note, ask, offer, byEmail, quickOk, media, thread } = o;
   const B = [];
   B.push(`<div style="font:400 11px/1.5 ${MAILF};color:#94a3b8;margin:0 0 10px;">${htmlEsc(ASSIST_CUT)}</div>`);
   if (note) {
@@ -3613,9 +3647,14 @@ function assistAlertHtml(cfg, o) {
       `<div style="font:400 14px/1.5 ${MAILF};color:${MAILC.ink};">${mailLines(note)}</div>`,
       { bg: MAILC.purpleBg, border: '#ddd6fe', edge: MAILC.purple }));
   }
+  // THE CONVERSATION — the last few messages both ways, drawn like his phone
+  // draws them, newest at the bottom and a size up. Falls back to the single big
+  // quote when there's no thread to draw (an older caller, or nothing stored).
+  const chat = thread ? mailChatHtml(thread, cfg, { label: `${who} texted`, labelColor: MAILC.amberInk }) : '';
+  if (chat) B.push(chat);
   // THE MESSAGE. Everything else on the screen is smaller than this on purpose —
   // one glance from the lock screen should be enough to know what was said.
-  B.push(mailCard(
+  else B.push(mailCard(
     mailLabel(media && !msg ? `${who} sent a photo` : `${who} texted`, MAILC.amberInk) +
     // A photo with no words gets the count instead of an empty pair of quotes.
     (msg
@@ -3682,7 +3721,7 @@ function assistAlertHtml(cfg, o) {
   }
   if (quickOk && tips.length) {
     tips.push(`Also: &ldquo;write: 375, thursday&rdquo; hands me the facts and lets me word it · &ldquo;send: …&rdquo; for your exact keystrokes · &ldquo;draft: …&rdquo; holds it in the dashboard · &ldquo;who&rdquo; lists everyone waiting · &ldquo;cancel&rdquo; pulls one back.`);
-    tips.push(`You'll get the finished wording back before it goes out, and a second email once it has actually reached them.`);
+    tips.push(`It goes out as soon as your reply is picked up (about a minute) — no hold — and this thread updates with the conversation once it has reached them.`);
   }
   const base = publicBase();
   let footInner = '';
@@ -3708,8 +3747,9 @@ function assistMailto(text, phone) {
 }
 
 function assistAlertBody(cfg, opts) {
-  const { phone, who, msg = '', ask, draft, note = '', media = 0 } = opts;
-  const quoted = `${who} texted:\n"${msg || (media ? '[photo]' : '')}"`;
+  const { phone, who, msg = '', ask, draft, note = '', media = 0, thread = null } = opts;
+  const convo = thread ? mailChatText(thread, cfg) : '';
+  const quoted = convo ? `Conversation with ${who} (newest last):\n${convo}` : `${who} texted:\n"${msg || (media ? '[photo]' : '')}"`;
   const core = note ? `${note}\n\n${quoted}` : quoted;
   const byEmail = cfg.assistEmail !== false;
   // A complaint should never come with a one-word answer box next to it.
@@ -3733,13 +3773,13 @@ function assistAlertBody(cfg, opts) {
   }
   if (quickOk && foot.length) {
     foot.push(`\nOther things you can say: "write: 375, thursday" to hand me the facts and let me word it · "send: <exact words>" for your keystrokes as typed · "draft: …" to hold it in the dashboard · "who" to see everyone waiting · "cancel" to pull one back.`);
-    foot.push(`You'll get the finished wording back before it goes out, and a second email once it has actually reached them.`);
+    foot.push(`It goes out as soon as your reply is picked up (about a minute) — no hold — and this thread updates with the conversation once it has reached them.`);
   }
   const body = `${core}\n${draftBlock}${block}`.trimEnd();
   // The HTML is what he'll actually see; the text is the fallback every mail
   // client keeps around, and it's also what goes out over SMS if email fails, so
   // it stays exactly as readable as it was before there was an HTML part at all.
-  const html = assistAlertHtml(cfg, { phone, who, msg, note, ask, offer, byEmail, quickOk, media });
+  const html = assistAlertHtml(cfg, { phone, who, msg, note, ask, offer, byEmail, quickOk, media, thread });
   let text;
   if (!foot.length) text = block ? body : core;
   // Only invite a reply when replies are actually processed. With email answering
@@ -3770,6 +3810,10 @@ function assistStripQuoted(raw) {
   if (cuts.length) s = s.slice(0, Math.min(...cuts));
   // Drop a trailing signature block ("-- \nMikey").
   s = s.replace(/\n--\s*\n[\s\S]*$/, '');
+  // And the ones phone mail apps add on their own. Left in, "yes\n\nSent from my
+  // iPhone" isn't a bare YES any more — it was read as his own words and the
+  // signature could go to the customer with them.
+  s = s.replace(/\n\s*(sent from my \w[^\n]*|sent from (yahoo|outlook|mail|gmail)[^\n]*|get outlook for (ios|android)[^\n]*|sent via [^\n]*|sent with [^\n]*)\s*$/i, '');
   // The ref rides along in the body when he answered by tapping a button (the
   // mailto pre-fills "YES\n\n[ref:…]"), and it's routing, not words — leaving it
   // in would stop a bare "YES" looking like a bare YES.
@@ -3876,8 +3920,11 @@ async function assistHealthMark(patch, quiet) {
 const ASSIST_MAX_AGE_MS = 6 * 3600 * 1000;
 
 async function handleAssistEmail(cfg, email, phone, ver) {
-  const subject = 'Re: ' + String(email.subject || 'your reply').replace(/^(re:\s*)+/i, '');
-  const say = (msg) => sendEmail(subject, `${ASSIST_CUT}\n${msg}\n\n[ref:${phone}]`).catch(() => {});
+  // Answers go back into the customer's own thread (customerMail), not a new one.
+  let subject = 'Re: ' + String(email.subject || 'your reply').replace(/^(re:\s*)+/i, '');
+  let sayMail = null;
+  try { const cm = await customerMail(await loadThread(phone)); subject = cm.subject; sayMail = cm.mail; } catch { /* plain Re: subject still threads in most clients */ }
+  const say = (msg) => sendEmail(subject, `${ASSIST_CUT}\n${msg}\n\n[ref:${phone}]`, '', null, sayMail).catch(() => {});
   const age = Date.now() - (Number(email.date) || Date.now());
   if (age > ASSIST_MAX_AGE_MS) {
     await assistHealthMark({ skippedAt: Date.now(), skippedWhy: `a reply from ${humanAgo(age)} ago was left alone — too old to act on` });
@@ -3904,6 +3951,75 @@ async function handleAssistEmail(cfg, email, phone, ver) {
 }
 
 // ---------------------------------------------------------------------------
+// One Gmail thread per customer
+// ---------------------------------------------------------------------------
+// Every email about a customer — each new text, the "sent" receipt, any answer
+// to his reply — goes out with the SAME subject and points back at the first
+// one with In-Reply-To/References. Gmail then keeps them as one conversation
+// that jumps to the top of the inbox when they text again, with his own replies
+// (sitting in Sent) inside it too. It used to be a fresh subject per text, so
+// one customer was a dozen separate emails.
+//
+// The first email's Message-ID is only knowable after it's sent (Resend gives it
+// on GET /emails/:id), so it's fetched then and kept under mailthr:<phone>. If
+// that lookup fails, the same subject alone still groups them in Gmail, and the
+// next send tries the lookup again.
+const MAIL_THREAD_PREFIX = 'mailthr:';
+function customerMailSubject(thread) {
+  const digits = String((thread && thread.phone) || '').replace(/\D/g, '');
+  const last4 = digits.slice(-4);
+  const name = thread && thread.name ? String(thread.name).trim() : '';
+  // The last four digits stay in even with a name, so two customers called Ruth
+  // never end up in one thread.
+  if (name) return `💬 ${name} (…${last4})`;
+  const ten = digits.length === 11 && digits[0] === '1' ? digits.slice(1) : digits;
+  const pretty = ten.length === 10 ? `(${ten.slice(0, 3)}) ${ten.slice(3, 6)}-${ten.slice(6)}` : ((thread && thread.phone) || 'a customer');
+  return `💬 ${pretty}`;
+}
+async function resendMessageId(id) {
+  if (!id || !ENV.RESEND_API_KEY) return '';
+  try {
+    const r = await fetch(`https://api.resend.com/emails/${encodeURIComponent(id)}`, { headers: { Authorization: `Bearer ${ENV.RESEND_API_KEY}` } });
+    if (!r.ok) return '';
+    const d = await r.json();
+    const mid = String((d && d.message_id) || '').trim();
+    if (!mid) return '';
+    return mid.startsWith('<') ? mid : `<${mid}>`;
+  } catch { return ''; }
+}
+// What to hand notifyMikey for an email about this customer: the subject, plus
+// `mail` (threading headers, the customer's name as the sender, and a hook that
+// records the thread's first Message-ID once it exists).
+async function customerMail(thread) {
+  const phone = normalizePhone(thread && thread.phone) || String((thread && thread.phone) || '');
+  const subject = customerMailSubject(thread);
+  const key = MAIL_THREAD_PREFIX + phone;
+  let rec = null;
+  try { rec = await kv().get(key, { type: 'json' }); } catch { rec = null; }
+  // A new subject (the customer just got a name) is a new Gmail thread — start over.
+  if (!rec || rec.subj !== subject) rec = { subj: subject, root: '', lastId: '' };
+  const before = JSON.stringify(rec);
+  if (!rec.root && rec.lastId) rec.root = await resendMessageId(rec.lastId);
+  const headers = {};
+  if (rec.root) { headers['In-Reply-To'] = rec.root; headers['References'] = rec.root; }
+  const who = thread && thread.name ? String(thread.name).trim() : '';
+  return {
+    subject,
+    mail: {
+      headers,
+      fromName: who ? `${who} · Texts` : 'Customer texts',
+      onSent: async (res) => {
+        const id = res && res.id;
+        if (id && !rec.root) { rec.lastId = id; rec.root = await resendMessageId(id); }
+        // Written only when something changed — once the root is known this is a
+        // read per email and no write, which matters on KV's daily write budget.
+        if (JSON.stringify(rec) !== before) await kv().put(key, JSON.stringify(rec), { expirationTtl: 180 * 86400 });
+      },
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // The receipt — "it actually went"
 // ---------------------------------------------------------------------------
 // Answering by email used to end on "Sending in ~3 min." That's the last word he
@@ -3922,23 +4038,32 @@ async function assistReceipt(thread, r) {
   const who = threadWho(thread);
   const phone = thread.phone;
   const ok = !!r.ok;
-  const subject = ok ? `✅ Sent to ${thread.name || phone}` : `⚠️ NOT sent to ${thread.name || phone}`;
+  // Same subject as every other email about this customer, so it lands in their
+  // thread (customerMail) — the conversation with his text now in it, rather than
+  // a separate "Sent to…" email.
+  const cm = await customerMail(thread);
+  const subject = cm.subject;
   const lead = ok
     ? `It went out. ${who} has this on their phone now:`
     : `It did NOT go out. ${who} has not heard from you:`;
   const tail = ok
     ? 'Reply to this if you want to send them something else.'
     : `Reason: ${r.err || 'unknown'}\n\nReply to this with what you want to say and I'll try again, or give them a call.`;
-  const text = `${ASSIST_CUT}\n${lead}\n\n"${r.body}"\n\n${tail}\n\n[ref:${phone}]`;
+  const convo = mailChatText(thread, await loadConfig());
+  const text = `${ASSIST_CUT}\n${lead}\n\n"${r.body}"\n\n${convo ? `Conversation (newest last):\n${convo}\n\n` : ''}${tail}\n\n[ref:${phone}]`;
 
   const B = [];
+  B.push(`<div style="font:400 11px/1.5 ${MAILF};color:#94a3b8;margin:0 0 10px;">${htmlEsc(ASSIST_CUT)}</div>`);
   B.push(mailCard(
-    `<div style="font:700 17px/1.35 ${MAILF};color:${ok ? MAILC.greenInk : MAILC.redInk};margin:0 0 8px;">${ok ? '✅ It went out' : '⚠️ It did not send'}</div>` +
-    `<div style="font:400 14px/1.6 ${MAILF};color:${MAILC.ink};">${mailLines(lead)}</div>`,
-    { bg: ok ? MAILC.greenBg : MAILC.redBg, border: ok ? '#bbf7d0' : '#fecaca', edge: ok ? MAILC.green : MAILC.red },
+    `<div style="font:700 17px/1.35 ${MAILF};color:${ok ? MAILC.greenInk : MAILC.redInk};margin:0;">${ok ? `✅ Sent to ${htmlEsc(thread.name || phone)}` : `⚠️ It did NOT send — ${htmlEsc(thread.name || phone)} hasn't heard from you`}</div>`,
+    { bg: ok ? MAILC.greenBg : MAILC.redBg, border: ok ? '#bbf7d0' : '#fecaca', edge: ok ? MAILC.green : MAILC.red, pad: '12px 16px' },
   ));
-  B.push(mailCard(`<div style="font:400 15px/1.6 ${MAILF};color:${MAILC.ink};">&ldquo;${mailLines(r.body)}&rdquo;</div>`));
-  B.push(mailCard(`<div style="font:400 13px/1.6 ${MAILF};color:${MAILC.mute};">${mailLines(tail)}</div>`));
+  // The conversation already ends with what he sent (flushThreadDue appended it,
+  // marked NOT DELIVERED on a failure), so it IS the receipt. Only without a
+  // thread to draw does the sent text get its own card.
+  const chat = mailChatHtml(thread, await loadConfig());
+  B.push(chat || mailCard(`<div style="font:400 15px/1.6 ${MAILF};color:${MAILC.ink};">&ldquo;${mailLines(r.body)}&rdquo;</div>`));
+  B.push(mailCard(`<div style="font:400 13px/1.6 ${MAILF};color:${MAILC.mute};">${mailLines(ok ? 'Reply to this email to text them again — same as before.' : `Reason: ${r.err || 'unknown'}\n\nReply with what you want to say and I'll try again, or give them a call.`)}</div>`));
   const base = publicBase();
   if (base) B.push(mailBtn(base, 'Open the conversation', MAILC.ink));
   B.push(`<div style="font:400 11px/1.5 ${MAILF};color:#94a3b8;padding:8px 4px;">[ref:${htmlEsc(phone)}]</div>`);
@@ -3948,7 +4073,8 @@ async function assistReceipt(thread, r) {
   // fallback short — the plumbing marker and the ref are email-only furniture.
   await notifyMikey(subject, {
     text,
-    html: mailShell(r.body, B.join('')),
+    mail: cm.mail,
+    html: mailShell(ok ? `✅ Sent: ${r.body}` : `⚠️ NOT sent: ${r.body}`, B.join('')),
     sms: ok ? `✅ Sent to ${who}: "${r.body}"` : `⚠️ NOT sent to ${who}: ${r.err || 'unknown'}. They haven't heard from you.`,
   }).catch(() => {});
 }
@@ -4028,8 +4154,10 @@ async function apiAssistPractice(request) {
   await updateIndexEntry(thread);
 
   const note = `🧪 THIS IS A PRACTICE MESSAGE — ${sc.name} is not a real customer.\nNothing you reply here will ever be sent to anyone.`;
-  const body = assistAlertBody(cfg, { phone: PRACTICE_PHONE, who: sc.name, msg: sc.body, ask, draft, note });
-  const sent = await notifyMikey(`🧪 Practice · ${sc.name}: "${String(sc.body).slice(0, 52)}${String(sc.body).length > 52 ? '…' : ''}"`, body);
+  const body = assistAlertBody(cfg, { phone: PRACTICE_PHONE, who: sc.name, msg: sc.body, ask, draft, note, thread });
+  // Threaded exactly like a real customer's, so practice shows the real shape.
+  const cm = await customerMail(thread);
+  const sent = await notifyMikey(cm.subject, Object.assign({}, body, { mail: cm.mail }));
   return json({ ok: !!sent, scenario: sc.id, ask, needsYou, phone: PRACTICE_PHONE, emailed: !!sent, previewBody: body.text, previewHtml: body.html });
 }
 
@@ -11888,7 +12016,7 @@ async function apiSaveConfig(request) {
   if (typeof data.assistSms === 'boolean') next.assistSms = data.assistSms;
   if (data.assistDelaySec != null && !isNaN(+data.assistDelaySec)) next.assistDelaySec = Math.max(0, Math.min(600, Math.round(+data.assistDelaySec)));
   if (typeof data.assistEmail === 'boolean') next.assistEmail = data.assistEmail;
-  if (data.assistEmailDelaySec != null && !isNaN(+data.assistEmailDelaySec)) next.assistEmailDelaySec = Math.max(0, Math.min(900, Math.round(+data.assistEmailDelaySec)));
+  if (data.assistEmailHoldSec != null && !isNaN(+data.assistEmailHoldSec)) next.assistEmailHoldSec = Math.max(0, Math.min(900, Math.round(+data.assistEmailHoldSec)));
   if (typeof data.assistFactCheck === 'boolean') next.assistFactCheck = data.assistFactCheck;
   if (typeof data.assistPolish === 'boolean') next.assistPolish = data.assistPolish;
   if (typeof data.assistSentReceipt === 'boolean') next.assistSentReceipt = data.assistSentReceipt;
@@ -13644,8 +13772,9 @@ function defaultConfig() {
     assistDelaySec: 60,      // cancel window before an assist reply actually goes out
     assistEmail: true,       // same thing by replying to the alert email — costs nothing,
                              // and the reply already knows which customer it's about
-    assistEmailDelaySec: 180,// longer hold on the email path: a "cancel" reply has to make
-                             // another trip through the inbox before it reaches us
+    assistEmailHoldSec: 0,   // hold on the email path. 0 = send the moment his reply is read.
+                             // (Replaces assistEmailDelaySec, whose 180 default may still be
+                             // saved in config — a new key means that old value is ignored.)
     assistFrom: [],          // extra addresses allowed to answer an alert. Gmail sends from
                              // whichever send-as alias the thread was addressed to, and a
                              // one-address rule quietly locked him out of his own feature
@@ -16525,7 +16654,12 @@ async function notifyMikeyNow(subject, body) {
   // Twilio — but it's a bonus channel, never the only one, so failures are silent.
   background(pushNotify().catch(() => {}));
   if (ENV.RESEND_API_KEY && ENV.ALERT_EMAIL) {
-    try { await sendEmail(subject, text, html, attachments); return true; }
+    const mail = (body && typeof body === 'object' && body.mail) || null;
+    try {
+      const res = await sendEmail(subject, text, html, attachments, mail);
+      if (mail && mail.onSent) { try { await mail.onSent(res); } catch { /* threading is best-effort */ } }
+      return true;
+    }
     catch { /* fall through to SMS so the alert still reaches Mikey */ }
   }
   try { await sendSms(ENV.MIKEY_PHONE, smsText, { skipOptOut: true }); return true; }
@@ -16537,11 +16671,19 @@ async function notifyMikeyNow(subject, body) {
 // thing a watch or a screen reader may show. ALERT_FROM must be a Resend-verified
 // sender; until a domain is verified, Resend only allows onboarding@resend.dev ->
 // your own account email, which is exactly the single-recipient case here.
-async function sendEmail(subject, text, html, attachments) {
+// `mail` (optional): { headers, fromName } — the threading headers and the
+// display name that make every email about one customer land in ONE Gmail thread
+// (see customerMail).
+async function sendEmail(subject, text, html, attachments, mail) {
   const to = ENV.ALERT_EMAIL;
-  const from = ENV.ALERT_FROM || 'Mikeys Dashboard <onboarding@resend.dev>';
+  let from = ENV.ALERT_FROM || 'Mikeys Dashboard <onboarding@resend.dev>';
   if (!to) throw new Error('ALERT_EMAIL not set');
+  if (mail && mail.fromName) {
+    const name = String(mail.fromName).replace(/["<>\r\n\\]/g, '').trim().slice(0, 60);
+    if (name) from = `"${name}" <${emailAddr(from)}>`;
+  }
   const payload = { from, to: [to], subject, text, html: html || alertHtml(subject, text) };
+  if (mail && mail.headers && Object.keys(mail.headers).length) payload.headers = mail.headers;
   if (attachments && attachments.length) payload.attachments = attachments.slice(0, 10);
   const res = await fetch('https://api.resend.com/emails', {
     method: 'POST',
@@ -16616,6 +16758,66 @@ function mailLabel(text, color) {
 // the second half of the message off the screen.
 function mailShout(text) {
   return `<div style="font-family:${MAILF};font-size:25px;line-height:1.32;font-weight:800;color:${MAILC.ink};margin:0;">&ldquo;${mailLines(String(text).replace(/\n{2,}/g, '\n').trim())}&rdquo;</div>`;
+}
+
+// ---------------------------------------------------------------------------
+// The conversation, drawn like his phone draws it
+// ---------------------------------------------------------------------------
+// Every email about a customer carries the last few messages as chat bubbles —
+// theirs grey on the left, his blue on the right, newest at the bottom — so one
+// glance shows what was said on BOTH sides without opening the dashboard. Built
+// from tables and inline styles only, because that is all Gmail keeps.
+const MAIL_CHAT_TURNS = 8;
+function mailChatWhen(ts, tz) {
+  try {
+    return new Date(ts).toLocaleString('en-US', { timeZone: tz || 'America/Los_Angeles', weekday: 'short', hour: 'numeric', minute: '2-digit' });
+  } catch { return ''; }
+}
+function mailChatMsgs(thread, n = MAIL_CHAT_TURNS) {
+  return (thread && thread.messages || [])
+    .filter((m) => (m.dir === 'in' || m.dir === 'out') && (String(m.body || '').trim() || (m.media && m.media.length)))
+    .slice(-n);
+}
+function mailChatBody(m) {
+  const body = String(m.body || '').replace(/\n?\[\d+ attachment\(s\)\]/, '').replace(/\n{2,}/g, '\n').trim();
+  const pics = (m.media && m.media.length) || 0;
+  const photo = pics ? `📷 ${pics} photo${pics === 1 ? '' : 's'}` : '';
+  return [photo, body].filter(Boolean).join('\n');
+}
+function mailChatHtml(thread, cfg, opts = {}) {
+  const msgs = mailChatMsgs(thread, opts.turns);
+  if (!msgs.length) return '';
+  const tz = cfg && cfg.tz;
+  const who = (thread && thread.name) || 'Them';
+  const rows = msgs.map((m, i) => {
+    const mine = m.dir === 'out';
+    const last = i === msgs.length - 1;
+    const failed = mine && m.error;
+    const bg = failed ? MAILC.redBg : mine ? '#2563eb' : '#e9e9eb';
+    const fg = failed ? MAILC.redInk : mine ? '#ffffff' : '#0f172a';
+    // The newest message is the one this email is about, so it reads a size up.
+    const size = last ? '17px' : '15px';
+    const weight = last && !mine ? 600 : 400;
+    const border = failed ? `border:1px solid #fecaca;` : '';
+    const meta = `${mine ? 'You' : htmlEsc(who)} · ${htmlEsc(mailChatWhen(m.ts, tz))}${failed ? ' · <b style="color:#dc2626;">NOT DELIVERED</b>' : ''}`;
+    return `<tr><td align="${mine ? 'right' : 'left'}" style="padding:0 0 10px;">` +
+      `<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="max-width:82%;"><tr>` +
+      `<td style="background:${bg};${border}color:${fg};border-radius:18px;padding:10px 14px;font:${weight} ${size}/1.4 ${MAILF};text-align:left;">${mailLines(mailChatBody(m))}</td>` +
+      `</tr></table>` +
+      `<div style="font:400 11px/1.4 ${MAILF};color:${MAILC.mute};padding:3px 6px 0;">${meta}</div>` +
+      `</td></tr>`;
+  }).join('');
+  const label = opts.label ? mailLabel(opts.label, opts.labelColor || MAILC.mute) : '';
+  return mailCard(label +
+    `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="width:100%;">${rows}</table>`,
+    { bg: MAILC.card, pad: '14px 12px 4px' });
+}
+// The same thing for the plain-text part (and the watch, and the SMS fallback).
+function mailChatText(thread, cfg, n = MAIL_CHAT_TURNS) {
+  const who = (thread && thread.name) || 'Them';
+  return mailChatMsgs(thread, n).map((m) =>
+    `${m.dir === 'out' ? 'You' : who} (${mailChatWhen(m.ts, cfg && cfg.tz)}): ${mailChatBody(m).replace(/\n/g, ' ')}${m.dir === 'out' && m.error ? ' [NOT DELIVERED]' : ''}`,
+  ).join('\n');
 }
 
 // Body copy for a plain-text alert. Almost every alert in here is written as
@@ -16876,8 +17078,25 @@ async function dispatchDueScheduled(now = Date.now()) {
   for (const entry of index) {
     if (!entry.scheduledCount) continue;
     const thread = await loadThread(entry.phone);
-    const due = (thread.scheduled || []).filter((s) => s.sendAt <= now);
-    if (!due.length) continue;
+    sent += await flushThreadDue(thread, now, { learn, alertOn });
+  }
+  // Batched, so a tick that flushes ten of his texts still costs one KV write.
+  if (learn.length) { try { await addVoiceSamples(learn, 'sent'); } catch { /* non-fatal */ } }
+  return sent;
+}
+
+// Send whatever in ONE thread is due, plus any `extra` items handed in directly.
+// The cron uses it per thread; an email answer with no hold uses it to send on
+// the spot. `extra` items are never written to the stored queue, so the cron
+// can't see them and send them a second time — sending right now is the only
+// way they go out.
+async function flushThreadDue(thread, now, ctx, extra = []) {
+  const learn = ctx.learn;
+  const alertOn = ctx.alertOn;
+  let sent = 0;
+  {
+    const due = (thread.scheduled || []).filter((s) => s.sendAt <= now).concat(extra);
+    if (!due.length) return 0;
     let mine = false;   // did any of this thread's due items carry his own words?
     const tell = [];    // confirmations owed to Mikey once this thread is saved
     const recs = [];    // "it actually went" receipts owed for his assist replies
@@ -16932,8 +17151,6 @@ async function dispatchDueScheduled(now = Date.now()) {
     // that keeps them out of the voice corpus: nothing there is his to promise.
     if (mine) await maybePromise(thread.phone).catch(() => {});
   }
-  // Batched, so a tick that flushes ten of his texts still costs one KV write.
-  if (learn.length) { try { await addVoiceSamples(learn, 'sent'); } catch { /* non-fatal */ } }
   return sent;
 }
 

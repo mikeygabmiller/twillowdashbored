@@ -32,7 +32,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const UNIT = [
   'hold', 'detect', 'autocancel', 'pay', 'ai', 'compose', 'thread', 'inbox', 'money', 'quickreply',
-  'replycheck', 'autoreply', 'quotes', 'balance', 'alertmail', 'assistmail', 'promise', 'recap',
+  'replycheck', 'autoreply', 'quotes', 'balance', 'alertmail', 'assistmail', 'emailthread', 'promise', 'recap',
   'geogrid', 'geogrid.ui', 'snapshot', 'journey', 'quotewatch', 'place', 'cold', 'portal', 'sheets', 'gdoc', 'gform', 'seed', 'scan', 'cpu',
   'aicost', 'expand', 'autoai', 'selftest', 'voicepairs', 'kept', 'use', 'calls', 'reachout', 'adsource', 'adsexport', 'quotereply', 'askme', 'photo', 'rain', 'name', 'openings', 'ready', 'opener', 'preview', 'voice', 'say', 'react', 'waitnudge', 'referral', 'prepost', 'helper', 'hangers', 'slots', 'signs', 'bookcal', 'crewcal', 'gift', 'channels', 'bookfacts', 'capacity', 'club', 'waiting', 'newapp', 'digest', 'kvreads', 'bearer', 'winback', 'unlogged', 'geminidraft', 'playbook',
 ].map((n) => `${n}.test.js`);
