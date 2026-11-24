@@ -102,6 +102,13 @@ Mikey's rules for any automatic text (2026-10-10):
   Say he'll probably be in touch, and ask them to reply with anything he
   should know.
 
+**Sound like him.** Before writing or changing anything a customer reads (a
+template, an AI prompt, a draft, a scripted reply), read
+`docs/WRITING-STYLE.md`. It is measured from the 664 texts he typed himself
+(built 2026-11-24) and holds his decisions on what a stand-in may decide.
+Where it disagrees with the dashboard's auto-generated voice fingerprint, the
+file wins.
+
 ## The Google Voice page (`/voice`): start simple, add back only what he uses
 
 Mikey, 2026-11-19: he uses Google Voice for his personal texts and felt the
