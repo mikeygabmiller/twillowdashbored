@@ -862,6 +862,12 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   .date-banner{display:flex;align-items:center;gap:9px;background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.4);
     border-radius:12px;padding:9px 12px;margin:0 0 8px;font-size:12.5px;color:var(--text)}
   .date-banner .db-ic{color:#34d399;display:flex}.date-banner b{font-weight:650}
+  .date-banner.appt-chg{background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.45)}
+  .date-banner.appt-chg .db-ic{color:#f59e0b}
+  .date-banner.appt-chg>div{flex:1;min-width:0}
+  .date-banner.appt-chg .ac-ev{display:block;color:var(--muted2);font-size:11.5px;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .date-banner.appt-chg .ac-undo{flex:none;background:none;border:1px solid rgba(245,158,11,.6);color:var(--text);border-radius:9px;padding:5px 10px;font:inherit;font-size:12px;font-weight:650;cursor:pointer}
+  .date-banner.appt-chg .db-x{flex:none}
   .helper-card{margin:8px 14px 0;padding:9px 12px;border-radius:11px;background:rgba(155,123,255,.07);border:1px solid rgba(155,123,255,.3);font-size:12.5px;color:var(--muted)}
   .helper-card b{color:var(--text);font-weight:650}
   .helper-card .hc-note{margin-top:5px;color:var(--text);white-space:pre-wrap}
@@ -4420,6 +4426,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     <div class="coach-panel" id="coachPanel" style="display:none"></div>
     <div class="team-id-bar" id="teamIdentityBar" style="display:none"></div>
     <div class="date-banner" id="dateBanner" style="display:none"></div>
+    <div class="date-banner appt-chg" id="apptChgBanner" style="display:none"></div>
     <div class="date-banner helper-ask" id="helperAskBanner" style="display:none"></div>
     <div class="helper-card" id="helperCard" style="display:none"></div>
     <div class="ai-review" id="suggestBox" style="display:none"></div>
@@ -4786,7 +4793,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-11-23·voice-select";
+  var APP_BUILD="2026-11-24·auto-cancel";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -11297,7 +11304,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       Array.prototype.forEach.call(sb.querySelectorAll(".e"),function(b){b.onclick=function(){editScheduled(t,b.getAttribute("data-edit"))}});
     }else sb.style.display="none";
     renderFuBanner(t);
-    renderDateBanner(t);renderHelperAsk(t);renderHelperCard(t);
+    renderDateBanner(t);renderApptChange(t);renderHelperAsk(t);renderHelperCard(t);
     renderSuggested(t);
     // Coach advice is per-conversation — clear it when the open thread changes,
     // but keep it across background polls of the SAME thread so it isn't yanked
@@ -12416,6 +12423,30 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     h+=notes.slice(-3).reverse().map(function(n){return'<div class="hc-note">'+esc(n.text)+'<small>'+esc(n.by||'')+' · '+esc(ago(n.at))+' ago</small></div>'}).join('');
     if(notes.length>3)h+='<div class="hc-note" style="color:var(--muted2)">+'+(notes.length-3)+' older notes on their page</div>';
     box.style.display="block";box.innerHTML=h;
+  }
+  // The app took a job off the schedule (or moved it) because of what the
+  // customer said. Shown for a week, with the quote it acted on and an Undo
+  // that puts the booking, board, calendar and reminder texts back.
+  function renderApptChange(t){
+    var box=el("apptChgBanner");if(!box)return;
+    var c=t&&t.apptChange;
+    var hidden=false;try{hidden=localStorage.getItem("acHide:"+(t&&t.phone))===String(c&&c.at)}catch(e){}
+    if(!c||c.undone||hidden||Date.now()-c.at>7*86400000){box.style.display="none";box.innerHTML="";return}
+    var when=function(ms){if(!ms)return "";var d=new Date(ms);return d.toLocaleDateString([],{weekday:"short",month:"short",day:"numeric"})+" at "+d.toLocaleTimeString([],{hour:"numeric",minute:"2-digit"})};
+    var what=c.kind==="cancel"?"Cancelled "+when(c.fromAt):c.kind==="postpone"?"Postponed "+when(c.fromAt):"Moved "+when(c.fromAt)+" → "+when(c.toAt);
+    box.style.display="flex";
+    box.innerHTML='<span class="db-ic">'+ic(c.kind==="reschedule"?"calendar-clock":"calendar-days",16)+'</span>'+
+      '<div><b>'+esc(what)+'</b>'+(c.auto?' · done automatically':'')+
+      (c.evidence?'<span class="ac-ev">“'+esc(c.evidence)+'”</span>':'')+'</div>'+
+      '<button class="ac-undo">Undo</button><button class="db-x" aria-label="Hide">'+ic("x",16)+'</button>';
+    box.querySelector(".ac-undo").onclick=function(){
+      var b=this;b.disabled=true;
+      post("/api/detect/undo",{phone:t.phone}).then(function(d){
+        if(d&&d.ok){if(d.thread&&state.phone===t.phone){state.thread=d.thread;renderThread()}refreshThreads();toast("Put back on the schedule")}
+        else{b.disabled=false;toast((d&&d.error)==="nothing_to_undo"?"Already undone":"Couldn't undo",{bad:true})}
+      }).catch(function(){b.disabled=false;toast("Network error",{bad:true})});
+    };
+    box.querySelector(".db-x").onclick=function(){try{localStorage.setItem("acHide:"+t.phone,String(c.at))}catch(e){}box.style.display="none"};
   }
   function renderDateBanner(t){
     var box=el("dateBanner");if(!box)return;
@@ -19338,7 +19369,8 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
       var when=r.date?(jdNiceDate(r.date)+" at "+jd12(r.slot)[0]+" "+jd12(r.slot)[1]):"";
       h+='<div class="jd-det'+(cancel||move?" warn":"")+'" data-det="'+esc(r.id)+'">'+
         '<div class="dt-flag">'+ic(cancel||move?"alert":"sparkles",12)+' '+
-          (cancel?"Might be cancelling":move?"Wants to move this":"Looks like you booked this")+'</div>'+
+          (cancel?(r.postpone?"Might be postponing":"Might be cancelling"):move?"Wants to move this":"Looks like you booked this")+'</div>'+
+        (move&&r.clash?'<div class="dt-bits">'+ic("alert",12)+' '+esc(r.clash)+' is already in that spot</div>':"")+
         '<div class="dt-who">'+esc(r.name||r.phone)+'</div>'+
         (cancel
           ? '<div class="dt-bits">Currently '+esc(jdWhenShort(r.currentAt))+'</div>'
