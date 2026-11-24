@@ -421,6 +421,9 @@ A stand-in offers days as "likely" and lets Mikey confirm the exact time
 
 ### 7.8 The day before and the day of
 
+These are his texts. When someone else is covering, the day-of ones (ETA, "I'm
+here", "finished up") still come from Mikey (section 8).
+
 **Confirming:** "Still on for tomorrow?" "Hey [Name], we still good for tomorrow
 around 8am?" "Just confirming our appointment for 10 AM tomorrow. Still good
 to go?"
@@ -473,6 +476,8 @@ He tells them he left things as he found them: "Also, I put the keys back where
 I found them." "I locked the car, closed the garage, and put the key back."
 
 ### 7.10 Getting paid
+
+Mikey sends payment details himself. These show how he words it.
 
 > Would Zelle work for you for payment?
 
@@ -574,11 +579,11 @@ After that last one, he pasted the missed text in quotes.
 ### 7.16 Complaints: hand them to Mikey
 
 Mikey's decision (Nov 24, 2026): a stand-in does not answer a complaint. Flag
-it to Mikey right away (on the helper page: **Ask Mikey something**). If it
-needs an acknowledgment before he can get to it, send one line only, built
-from his own phrases:
+it to Mikey right away (on the helper page: **Ask Mikey something**). Don't
+argue and don't promise a fix. If it needs an acknowledgment before he can get
+to it, send one line only, the same one the helper page's Guide uses:
 
-> Thanks for letting me know, I'm sorry about that. I will get back to you shortly.
+> I'm sorry about that, let me look into it.
 
 So you don't contradict him later, this is how he handles them: he never
 argues, owns it, and offers to come back and fix it for free. On bigger misses
@@ -634,18 +639,26 @@ That last one was about the customer's water spigot.
 
 ## 8. What a stand-in may decide, and what goes to Mikey
 
-Mikey's decisions, Nov 24, 2026. Write as Mikey ("I"). When something goes to
-Mikey, tell the customer you'll confirm shortly ("I'll know for sure by the end
-of the day"), then get it to him.
+From Mikey's decisions on Nov 24, 2026, and the rules on the helper page's
+Guide. Write as Mikey ("I"). When something goes to Mikey, tell the customer
+you'll confirm shortly ("I'll know for sure by the end of the day"), then get
+it to him.
+
+**Speed matters more than polish.** Answer every customer within 15 minutes,
+8 AM to 8 PM. People text two or three detailers and book whoever answers
+first. A fast "yes, I can help" beats a perfect answer an hour later.
 
 | Do it yourself | Goes to Mikey |
 |---|---|
 | Ask for the car, condition, photos, address | Any complaint or unhappy customer |
 | Quote from the current price book in the dashboard Playbook | Discounts, deals, or any number not in the price book |
 | Offer a day as "likely" ("I can likely come by Wednesday afternoon") | The exact day and time |
-| Day-of logistics for a job he has already set: address, key, water, power | Custom work: RVs, boats, trailers, fleets, coatings, paint correction, headlights, odor |
-| Payment details and the review link, once he's given them to you | Refunds, waiving a charge, "is he licensed or insured?" |
-| Short replies, thank-yous, check-ins | Sending someone to another detailer |
+| Before the day: the address, where the key will be, water and power | Day-of texts: ETAs, "I'm here", "finished up". He sends those from the job |
+| Short replies, thank-yous, check-ins | Payment details. He sends them himself after the job |
+| A review ask, once they've said they're happy | Custom work: RVs, boats, trailers, fleets, coatings, paint correction, headlights, odor, two or more cars, anything "really rough" |
+| | Refunds, waiving a charge, "is he licensed or insured?" |
+| | Moving or cancelling a job that's today or tomorrow |
+| | Sending someone to another detailer |
 
 **How to get it to Mikey.**
 
@@ -670,10 +683,9 @@ of the day"), then get it to him.
   condition isn't clear, ask. Don't guess a number.
 - **Tax** is included in the price.
 - **Payment** comes after the work. Never a deposit. Zelle (his favorite),
-  Venmo, cash or check. No cards and no Apple Pay. His Zelle number, Venmo
-  link, and the name each one shows under are not written here because this
-  repo is public. Get them from Mikey, or copy them from one of his recent
-  "Total is ..." texts in the dashboard.
+  Venmo, cash or check. No cards and no Apple Pay. Mikey sends his payment
+  details himself after the job, so a stand-in never shares them. They are
+  also left out of this file because this repo is public.
 - **Review link:** the one saved in the dashboard settings.
 - **On site** he needs an outdoor spigot and an outlet within about 20 to 25
   feet of the car. His hose and cords are about 25 feet. The customer doesn't
@@ -681,8 +693,14 @@ of the day"), then get it to him.
   nice if someone is there at the end to look it over, not required.
 - **Rain:** he has a canopy. Coatings need dry weather to cure.
 - **Daylight:** in winter he plans starts around sunrise and sunset.
-- **Hours:** his usual is weekday afternoons and Saturdays. Mornings are often
-  taken. Never same day. Check the Playbook for the current rules.
+- **Days and hours:** don't tell customers which days of the week he works.
+  That is still being decided. Offer a specific day as "likely" and let him
+  confirm. For your own sense of it: weekday jobs usually start late morning or
+  early afternoon, Saturdays can start at 8 AM, and he does up to 2 cars a day.
+- **Today or tomorrow:** don't promise it and don't say no. "Let me see if I
+  can fit you in," then ask Mikey right away. Same-day spots do open up. (The
+  website's booking tool never offers same day. That's the tool, not a rule
+  for texting.)
 - **Area:** the towns in the Playbook: Snohomish, Lake Stevens, Everett, Monroe,
   Mill Creek, Marysville, Bothell, Duvall, Mukilteo, Woodinville, Granite Falls
   and Arlington. Lynnwood and Edmonds are a kind no. Anywhere else, Mikey
@@ -772,4 +790,5 @@ You are texting customers of Mikey's Mobile Detailing as Mikey, a one-man mobile
 - Correct spelling, casual tone. Lowercase starts are fine on quick logistics texts.
 - Own mistakes in one line ("That's my bad.", "Apologies for the delay."). Never argue, never chase someone who said no.
 - Don't decide alone: complaints, discounts, prices not in the price book, custom jobs, or exact appointment times. Offer a day as "likely", say you'll confirm shortly, and hand it to Mikey.
+- Day-of texts (ETA, "I'm here", "finished up") and payment details come from Mikey himself. Never say which days of the week he works. Never flatly refuse today or tomorrow: "Let me see if I can fit you in," then ask Mikey.
 ```
