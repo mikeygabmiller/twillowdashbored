@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-11-23·email-thread';
+const BUILD = '2026-11-24·email-thread';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -792,6 +792,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/day/state')      return apiDayState(request);
   if (request.method === 'GET'  && pathname === '/api/detections')     return apiDetections();
   if (request.method === 'POST' && pathname === '/api/detection')      return apiDetectionAction(request);
+  if (request.method === 'POST' && pathname === '/api/detect/undo')   return apiDetectUndo(request);
   // Promises he made to customers ("I'll get back to you Monday").
   if (request.method === 'GET'  && pathname === '/api/promises')       return apiPromises();
   if (request.method === 'POST' && pathname === '/api/promise')        return apiPromiseAction(request);
@@ -2581,7 +2582,24 @@ async function handleInboundSms(request) {
   const START_WORDS = ['start', 'unstop', 'yes', 'unsubscribe stop'];
   if (STOP_WORDS.includes(kw)) {
     await setOptOut(fromNorm, true);
-    await appendMessage(fromNorm, { dir: 'in', body: text, ts: Date.now(), kind: 'opt-out' });
+    const optThread = await appendMessage(fromNorm, { dir: 'in', body: text, ts: Date.now(), kind: 'opt-out' });
+    // A bare "Cancel" from someone with a job coming up almost always means the
+    // job, not the texts. The carrier still treats it as STOP and blocks texts
+    // to them, so the job comes off the schedule (and its reminders, which
+    // would fail anyway) and he's told to call them.
+    if (kw === 'cancel' && optThread && optThread.appointmentAt && optThread.appointmentAt > Date.now() - 3 * 3600000) {
+      try {
+        const cfg = await loadConfig();
+        const tz = cfg.tz || 'America/Los_Angeles';
+        const fromAt = optThread.appointmentAt;
+        await detCancelAppt(optThread, 'cancel', { auto: true, evidence: text }, cfg);
+        await notifyMikey(`🚫 ${optThread.name || from} texted CANCEL — job taken off`,
+          `${optThread.name || from} texted just "CANCEL". Their job on ${detWhen(fromAt, tz)} is off your schedule and calendar.\n\n` +
+          `Heads up: the phone carrier reads a bare CANCEL as STOP, so texts to them are now blocked until they text START. ` +
+          `Call them if you want to rebook. Wrong? Open the conversation and tap Undo.`);
+        return twiml('');
+      } catch { /* fall through to the plain opt-out alert */ }
+    }
     await notifyMikey(`🚫 ${from} opted out (STOP)`, `${from} texted STOP and will not receive further messages until they text START.`);
     return twiml('');
   }
@@ -9180,6 +9198,11 @@ async function generateReply(thread, cfg, hint, meta) {
     `never a number you worked out yourself, and never one rounded up or down to look tidier. ` +
     `If the playbook does not price this vehicle, ask for what you're missing instead of guessing at a total.\n` +
     `- Never invent an appointment time. Ask, or offer what the playbook says he offers.\n` +
+    // From the replay test (2026-11-23): drafts claimed things Mikey can't
+    // know from a text: "Ben's a good mate of mine", "I see it on the map",
+    // "I'm on my way", "thanks for the heads up about the hose".
+    `- Only say what the conversation shows is true. Never claim to know someone, to see something, to be on your way, ` +
+    `or to remember something that isn't written in this conversation.\n` +
     `- Write the way a busy person texts, not the way an assistant writes. Finish every sentence.\n`;
 
   const build = (extra) =>
@@ -9225,7 +9248,11 @@ async function generateReply(thread, cfg, hint, meta) {
   const priceSources = [businessContext(cfg), hint || '', transcript(thread)];
   const tell = findTell(text);
   const madeUp = tell ? '' : findInventedPrice(text, priceSources);
-  const madeTime = (tell || madeUp) ? '' : findInventedReplyTime(text, [hint || '', transcript(thread)]);
+  // Only the live part of the conversation can back a time: on the replay a
+  // "2pm" from an appointment weeks earlier in the same thread let "the 24th at
+  // 2pm" through as if it had been agreed. The last 8 texts, none older than 7
+  // days before the newest.
+  const madeTime = (tell || madeUp) ? '' : findInventedReplyTime(text, [hint || '', recentTranscript(thread)]);
   const off = tell
     ? `used the phrase "${tell}", which is a dead giveaway that a machine wrote it`
     : madeUp
@@ -9249,6 +9276,11 @@ async function generateReply(thread, cfg, hint, meta) {
       // stricter instruction, so it is the better of the two either way.
       if (cleaned) { text = cleaned; if (meta) meta.provider = second.usedProvider || ''; }
     } catch { /* keep the first attempt rather than failing the draft */ }
+    // Except a made-up time. On the replay the redo usually just picked a
+    // DIFFERENT time ("2pm" became "2:30pm"), and a customer plans their day
+    // around it. If one survives the redo, the draft is his own stall line,
+    // word for word from his texts, and he fills in the time himself.
+    if (madeTime && findInventedReplyTime(text, [hint || '', recentTranscript(thread)])) text = REPLY_STALL;
   }
   return text;
 }
@@ -13794,131 +13826,24 @@ function defaultConfig() {
 // content so the AI is a little smarter out of the box; the fact-specific fields
 // (services, area, booking, faqs) start empty for the owner to fill in — we never
 // invent prices or policies. Everything is editable from the dashboard menu.
+// Rewritten 2026-11-23 from the website's facts table and price book (Mikey:
+// "sure update it"). It had sat at Interior $200 (and $160 in one FAQ), Exterior
+// $130, Full $260, a "30 second" quote, "3-4 hours", Wednesday to Saturday and a
+// $300 pre-sale flat rate, and every AI draft quoted from it. One more copy of
+// mikeysite's CLAUDE.md facts table and PRICING.md: a price change lands here
+// too, with a PLAYBOOK_SEED_VERSION bump so his stored copy follows.
 function defaultPlaybook() {
   return {
-    about: "Mikey's Mobile Detailing is an owner-run mobile car detailing service for the Snohomish and Monroe, WA areas — Mikey comes to your driveway. It's always Mikey himself: personal, friendly work that's tailored to you, and you don't pay until you love it. 300+ cars detailed, 5-star rated.",
-    services: "- Interior Detail — starts at $200 (deep interior clean: full vacuum, carpets & seats, all interior surfaces wiped down, interior windows, door jambs, pet-hair removal and stain treatment; about 1½ hours)\n" +
-      "- Exterior Detail — starts at $130 (hand wash, wheels & tires, bug & tar removal, polish, and a spray wax/sealant so the paint really shines)\n" +
-      "- Full Detail, In & Out — starts at $260 (everything inside and out; a first-time full detail runs about 3–4 hours)\n" +
-      "Trucks and heavily-soiled vehicles are priced a bit higher. Every price is a \"starting at\" — the exact price depends on the vehicle's year, make, model and condition, and always gets confirmed before booking.\n" +
-      "Add-ons available: ceramic coating, paint correction, and headlight restoration.\n" +
-      "Recurring members pay less per visit, and their upkeep visits are quicker (around an hour) since the car stays in great shape.",
-    area: "Main area: Snohomish and Monroe. Also serves Mill Creek, Lake Stevens, Marysville, Everett, Duvall, Sultan and nearby towns — all mobile, right at your driveway.\n" +
-      "Hours: usually Wednesday–Saturday, afternoons. Never Sundays.\n" +
-      "On-site: needs power and water within 20 ft of the vehicle — everything else is covered.",
-    booking: "Booking is by text — just text Mikey your vehicle and zip and he'll send a couple of time options and confirm the appointment. There's also an instant-quote tool on mikeysdetailing.com that gives an exact price in about 30 seconds.\n" +
-      "For a new customer, find out: their vehicle year/make/model, address or zip, whether they want interior / exterior / or full, the car's current condition (photos help), and the timeframe they're hoping for.\n" +
-      "Guarantee: you don't pay until you love it.\n" +
-      "No travel fee — the price is the price.\n" +
-      "Deposit: none. Cancellation: no cancellation fee.\n" +
-      "Payment: cash, Venmo, Zelle, or check.\n" +
-      "Lead time: usually booking about a week out.",
-    quoting: "THE QUOTE REPLY — the text Mikey sends the moment a customer answers the intro message with their vehicle. " +
-      "This is where the job is won or lost, and it has its own shape. Follow it:\n\n" +
-      "1. OPEN with one beat of warmth and nothing more: \"Awesome!\", \"Sounds good!\", \"Great!\", \"Thanks for the info!\", " +
-      "\"Perfect, thanks for that info!\". Never greet them by name again — the intro text already did that.\n" +
-      "2. CALL THE VEHICLE what they'd call it: \"your Ram\", \"the truck\", \"your Jeep\". Never read the full " +
-      "\"2024 Ram 3500 crew cab diesel\" back at them.\n" +
-      "3. NAME THE SERVICES, THEN ONE FIRM TOTAL. Not a range — an actual number, with the package spelled out beside it: " +
-      "\"For a Full Detail, Exterior Polish, Carpet Shampoo, Ceramic Wax, and RainX Window treatment, it'll be $400.\" " +
-      "The number must come from the worked quotes below or from Mikey. Never invent one.\n" +
-      "4. CLOSE BY ASKING FOR THE ADDRESS — not for a time: \"If you send over your address or general street area, I can let " +
-      "you know how soon I can come by.\" The address comes first because it decides whether he can take the job at all. " +
-      "He once quoted a Mountain View that turned out to be Duvall, 40 minutes out, and had to walk the booking back.\n\n" +
-      "DON'T QUOTE YET IF YOU CAN'T SEE THE CONDITION. A year, make and model alone is not enough to price. Ask, and make it " +
-      "easy to answer: \"Could you also let me know the general condition of the truck? Either a photo or just a quick " +
-      "explanation is fine. Doesn't have to be super detailed, just want to know if there's anything out of the ordinary " +
-      "from normal use. Thanks!\"\n\n" +
-      "SAY THE HONEST CAVEAT BEFORE THE PRICE, not after, and never only when asked: \"I can't guarantee how much of the " +
-      "stains I can get out, but I'll go over all the surfaces and get out as much as I can.\"\n\n" +
-      "ANSWER THEIR SIDE QUESTION FIRST, and say so plainly when something costs nothing extra: \"That service is included " +
-      "with the carpet shampoo add-on, so it won't add to the price at all.\"\n\n" +
-      "MATCH URGENCY, DON'T DEFLECT IT. Someone in a hurry gets a hedged yes, not a policy: \"I can probably squeeze in that " +
-      "detail for your Ram tomorrow. If you send over your address, I'll let you know for sure if I can come by.\" " +
-      "Hedge with probably / likely / might — never a hard promise, never a flat no.\n\n" +
-      "WORKED QUOTES — real jobs, real numbers. Use these as the reference points for a similar vehicle and package; " +
-      "if nothing here is close, ask rather than interpolate:\n" +
-      "- 2024 Ram 3500 crew cab diesel — Interior Detail, Exterior Detail, Carpet Shampoo, Exterior Polish, Ceramic Wax: $450\n" +
-      "- 2022 Ford F450 — Full Detail, Exterior Polish, Carpet Shampoo, Ceramic Wax, RainX Window treatment: $400\n" +
-      "- 2009 Acura RDX — Full Detail, Carpet Shampoo: $380\n" +
-      "- 2013 Jeep Wrangler — Full Interior Detail, Carpet Shampoo (cloth seats): $300\n" +
-      "- 2012 Ford Fusion — flat-rate pre-sale detail, interior + exterior + basic engine wipe-down: $300\n\n" +
-      "SERVICE NAMES he actually quotes in: Interior Detail, Exterior Detail, Full Detail, Carpet Shampoo, Exterior Polish, " +
-      "Ceramic Wax, RainX Window treatment, headlight restoration, paint correction, and the flat-rate pre-sale detail " +
-      "(interior + exterior + a basic engine wipe-down, for a car being sold).\n\n" +
-      "HOW THESE READ END TO END — match this exactly:\n" +
-      "- \"Awesome! So for your Ram, an Interior Detail, Exterior Detail, Carpet Shampoo, Exterior Polish, and Ceramic Wax " +
-      "will be $450. Feel free to send over your address or general street location, and I'll get you a spot on my schedule.\"\n" +
-      "- \"Sounds good! I can do a full interior detail and carpet shampoo for you. I can't guarantee how much of the stains " +
-      "I can get out, but I'll go over all the surfaces and get out as much as I can. I can do that for $300. If you send over " +
-      "your address or general street area, I can let you know how soon I can come by.\"\n" +
-      "- \"Great! My flat-rate pre-sale detail is $300. That includes a full interior and exterior detail, plus a basic engine " +
-      "wipe-down, to get your car ready to sell. I might even be able to squeeze you in this week if you like. Let me know how " +
-      "that sounds.\"\n" +
-      "- \"Thanks for the info! I can definitely clean that seatbelt for you. That service is included with the carpet shampoo " +
-      "add-on, so it won't add to the price at all. How soon are you looking to get it detailed?\"",
-    tone: "Friendly and warm, a confident pro, easygoing with a little humor, low-pressure, local and personable. " +
-      "Keep it short and casual like a real text. No emoji graphics (no 🚗✨) — but a simple \":)\" now and then is on-brand; that's how Mikey texts. " +
-      "Sometimes sign off with \"- Mikey\", but not on every text.",
-    faqs: "Q: How much does it cost?\n" +
-      "A: Interior details start at $200, exterior at $130, and a full in-and-out starts at $260. Trucks and really dirty vehicles are a bit more. Send me your car's year, make and model plus what you're after and I'll lock in an exact price — and you don't pay until you love it.\n\n" +
-      "Q: Do you come to me?\n" +
-      "A: Yes, I come to you! All I need is power and water within 20 ft of the vehicle.\n\n" +
-      "Q: How long does a full detail take?\n" +
-      "A: A first-time full detail usually runs about 3–4 hours.\n\n" +
-      "Q: Can you get out pet hair, stains, or smells?\n" +
-      "A: Yes! I have a special pet-hair removal process. For carpet and seat stains there's no guaranteeing they'll fully come out, but I'll sure as heck try!\n\n" +
-      "Q: Do you do interior-only or exterior-only?\n" +
-      "A: Yep! You can book interior-only (starts at $160), exterior-only (starts at $130), or the full in-and-out (starts at $260) — whatever you need.\n\n" +
-      "Q: Do you offer ceramic coating or paint correction?\n" +
-      "A: I do — ceramic coating, paint correction, and headlight restoration are available as add-ons. Send me your car's info or a photo and I'll get you a price.\n\n" +
-      "Q: Do you do regular or recurring cleanings?\n" +
-      "A: I do! Recurring members pay less per visit and keep their car looking like the day I first detailed it. Happy to set up a schedule that fits.\n\n" +
-      "Q: How far out are you booked?\n" +
-      "A: Right now I'm usually booking about a week out.\n\n" +
-      "Q: Do you need water and power at my place?\n" +
-      "A: Yes — I just need power and water within 20 ft of the vehicle.\n\n" +
-      "Q: How do I pay?\n" +
-      "A: I accept cash, check, Venmo, and Zelle. And you don't pay until you love it.\n\n" +
-      "Q: Do I need to be home while you work?\n" +
-      "A: Not at all! I'd prefer you're there at the start and end so we can go over everything, but in between you're free to go about your day.",
-    scenarios: "HOW MIKEY HANDLES COMMON SITUATIONS — respond with this same approach, warmth and wording:\n\n" +
-      "- Customer says it's more than they wanted to spend / asks for a discount:\n" +
-      "  \"I'm sorry to hear that! I can definitely help you mix and match services to get exactly what you need and nothing you don't. What's your budget?\"\n\n" +
-      "- Wants it done today / ASAP:\n" +
-      "  If booked up: \"Sadly I don't have availability this week, but I'll let you know the moment my next slot opens up.\" If it can be squeezed in: \"I can likely squeeze you in tomorrow if that works!\"\n\n" +
-      "- They're outside the service area:\n" +
-      "  \"Unfortunately I'm not able to make it out to your area anytime soon — we could plan for next month. If that's not soon enough, I totally understand if you'd rather go with someone else.\"\n\n" +
-      "- Arrived but they're not home / can't find access:\n" +
-      "  \"Hey, I'm at the address you sent! All I need is the car unlocked and access to power and water — let me know where I can find those.\"\n\n" +
-      "- Rain or bad weather on the appointment day:\n" +
-      "  \"Hey, the weather isn't looking great today. Any chance we can reschedule? Let me know what day works and I'll get you back on the calendar.\"\n\n" +
-      "- Running late:\n" +
-      "  \"I'm on my way, just running into a little traffic — ETA is about [time].\"\n\n" +
-      "- Unhappy with the result / a complaint (always stay warm and fix it):\n" +
-      "  \"I'm so sorry to hear that! I'd be more than happy to come back ASAP and make it right for you.\"",
-    rules: "NEVER write a dollar figure that isn't in this playbook, already agreed in the conversation, or given to you by Mikey. " +
-      "Do not add prices up into a new total, do not round one to look tidier, and do not guess a number because it seems about right. " +
-      "If this playbook doesn't price the vehicle in front of you, ask for what's missing instead of naming a total — " +
-      "a customer who's been quoted a number has been quoted it, and it can't be taken back.\n" +
-      "Never promise an exact appointment time on your own — offer to check and come back with a day.\n" +
-      "Never invent details or policies you don't know.\n" +
-      "Mikey works alone. Always \"I\", never \"we\".\n" +
-      "Only recommend add-ons lightly and when they genuinely fit the car — never pushy.\n" +
-      "Always be respectful, low-pressure, and never pushy.\n" +
-      "If someone texts STOP, don't text them again.\n" +
-      "Never argue with an upset customer — stay calm, apologize, and offer to come back and make it right.",
-    examples: "Real texts Mikey has sent — match this exact rhythm, warmth and length:\n" +
-      "- \"I can do 10:30 if that works :)\"\n" +
-      "- \"Perfect, let's shoot for 10:45.\"\n" +
-      "- \"Be there in 20!\"\n" +
-      "- \"Ready!\"\n" +
-      "- \"Sounds good!\"\n" +
-      "- \"Hey, unfortunately I couldn't get a slot for tomorrow. Let me know if there are any days next week that would work for you.\"\n" +
-      "- \"Ok, I'll work on getting one of those slots opened up for you right now. Can I get your address?\"\n" +
-      "- \"Thank you! I'm looking to open up the Thursday slot for after 3pm. I'll keep in touch and let you know :)\"\n" +
-      "- \"Hey Ruth! It'd work best for me to find a time next week for the detail. I'll reach out with the open slots when we're closer to the date. Thanks!\"\n" +
-      "- \"Good morning — unfortunately I need to leave town today for an emergency. Any chance we can reschedule for tomorrow at 1pm? Thanks for understanding.\"",
+    about: "Mikey's Mobile Detailing is an owner-run mobile car detailing service based in Snohomish, WA, covering Snohomish County and north King County. Mikey comes to your driveway or workplace, and it's always Mikey himself, no crew. 300+ cars detailed since 2021, 5.0 stars on Google. You don't pay until you love it.",
+    services: "Prices are sedan / SUV or pickup / van or 3-row:\n- Exterior Detail: $199 / $239 / $279. Hand wash, decontamination, wheels and tires, glass, door jambs, protection on the paint. About 1 to 2 hours.\n- Interior Detail: $249 / $289 / $329. Full vacuum, carpets and seats, every interior surface wiped down, interior glass, door jambs. About 90 minutes, or 2 to 4 hours with stain extraction or heavy pet hair.\n- Full Detail, inside and out: $369 / $409 / $449. Everything in both, and $79 less than booking them separately. Takes 3 to 5 hours.\nCondition adds $30 (needs work) or $60 (really rough). Add-ons: carpet shampoo $20, exterior polish $30, ceramic wax $20, RainX on the glass $10, RainX Anti-Fog (inside glass) $30.\nRain-Ready offer: book a Full Detail by December 31, 2026 and the ceramic wax, RainX and RainX Anti-Fog come free (worth $508, from $369). A job booked by Dec 31 can be done as late as January 31, 2027. After Dec 31 the offer is over: never offer it again.\nPaint correction from $400 (1-step $400+, 2-step $650+, multi-stage $900+), quoted after Mikey sees the paint. One-step takes 6 to 8 hours, multi-stage 1 to 2 days.\nCeramic coating from $500, tiered and quoted per car.\nPet hair removal: $50 to $80 as an add-on, $120 to $220 on its own.\nHeadlight restoration and odor removal have no set price: ask for a photo and Mikey quotes it himself.\nClean Club: $125 a visit, every 4 or 8 weeks, and the member's price is locked in. Mikey explains the club himself on a call, so don't quote any joining deal.\nMobile oil change and light maintenance is a separate price list: oil and filter from $89, fluids and filters from $59, wipers and bulbs from $25.\nSelling a car: that's a Full Detail at the prices above. There is no separate pre-sale price.\nThe quote tool on mikeysdetailing.com gives the exact price in about 60 seconds.",
+    area: "Based in Snohomish, WA 98290. Mikey is in these twelve towns most weeks: Snohomish, Lake Stevens, Everett, Monroe, Mill Creek, Marysville, Bothell, Duvall, Mukilteo, Woodinville, Granite Falls and Arlington. No travel fee anywhere in that area, and the price is the same in every town.\nLynnwood and Edmonds are not served. Say so kindly. Any other town nearby: Mikey decides, so never promise it.\nHours: appointments on weekday afternoons and Saturdays, never Sundays. Texts and quotes any time.\nOn site: Mikey uses the customer's outdoor water spigot and a power outlet. Using theirs is how he keeps prices where they are. If they truly don't have one, he can bring water and power, but only if absolutely necessary. The customer doesn't need to be home.",
+    booking: "Booking: the quote tool on mikeysdetailing.com shows the exact price in about 60 seconds, then the next open times to pick from, or they can text Mikey the quote. Never same day: tomorrow's times close at 9 PM tonight. Never promise a date or time yourself: say Mikey will check his schedule and get back to them.\nFor a new customer, find out: vehicle year, make and model; their town or address; interior, exterior or full; the condition (photos help); and when they're hoping for.\nGuarantee: you don't pay until you love it. We walk around the car together when Mikey's done and he fixes anything you point at.\nNo travel fee. No deposit, ever: payment is after the work. No cancellation fee.\nPayment: cash, check, Venmo or Zelle. No cards and no Apple Pay.\nIf someone asks whether Mikey is licensed or insured, don't answer for him. Say Mikey will answer that personally.",
+    quoting: "THE QUOTE REPLY: the text Mikey sends the moment a customer answers the intro message with their vehicle. This is where the job is won or lost, and it has its own shape. Follow it:\n\n1. OPEN with one beat of warmth and nothing more: \"Awesome!\", \"Sounds good!\", \"Great!\", \"Thanks for the info!\", \"Perfect, thanks for that info!\". Never greet them by name again; the intro text already did that.\n2. CALL THE VEHICLE what they'd call it: \"your Ram\", \"the truck\", \"your Jeep\". Never read the full \"2024 Ram 3500 crew cab diesel\" back at them.\n3. NAME THE SERVICES, THEN ONE FIRM TOTAL. Not a range, an actual number, with the package spelled out beside it. Work it out only as the price book says: the service's price for that size, plus $30 or $60 for condition, plus the add-ons at their listed prices. Nothing else, no rounding, no discounts. If you can't tell the size or the condition, ask instead of guessing.\n4. CLOSE BY ASKING FOR THE ADDRESS, not for a time: \"If you send over your address or general street area, I can let you know how soon I can come by.\" The address comes first because it decides whether he can take the job at all. He once quoted a Mountain View that turned out to be Duvall, 40 minutes out, and had to walk the booking back.\n\nDON'T QUOTE YET IF YOU CAN'T SEE THE CONDITION. A year, make and model alone is not enough to price. Ask, and make it easy to answer: \"Could you also let me know the general condition of the truck? Either a photo or just a quick explanation is fine. Doesn't have to be super detailed, just want to know if there's anything out of the ordinary from normal use. Thanks!\"\n\nSAY THE HONEST CAVEAT BEFORE THE PRICE, not after, and never only when asked: \"I can't guarantee how much of the stains I can get out, but I'll go over all the surfaces and get out as much as I can.\"\n\nANSWER THEIR SIDE QUESTION FIRST, and say so plainly when something costs nothing extra: \"That service is included with the carpet shampoo add-on, so it won't add to the price at all.\"\n\nMATCH URGENCY, DON'T DEFLECT IT. Someone in a hurry gets a hedged yes, not a policy: \"I can probably squeeze in that detail for your Ram this week. If you send over your address, I'll let you know for sure if I can come by.\" Hedge with probably / likely / might, never a hard promise, never a flat no.\n\nWORKED QUOTES, worked out from the price book (use the same math for any car):\n- 2024 Ram 3500 (pickup), pretty clean: Full Detail, Carpet Shampoo, Exterior Polish: $409 + $20 + $30 = $459. Booked by Dec 31, 2026, the ceramic wax, RainX and RainX Anti-Fog come free with it.\n- 2013 Jeep Wrangler (SUV), needs work: Interior Detail, Carpet Shampoo: $289 + $30 + $20 = $339\n- 2009 Acura RDX (SUV), pretty clean: Full Detail, Carpet Shampoo: $409 + $20 = $429\n- 2019 Honda Civic (sedan), pretty clean: Interior Detail: $249\n- 2017 Honda Odyssey (van), really rough: Interior Detail: $329 + $60 = $389\n- 2020 Toyota Camry (sedan), pretty clean: Exterior Detail, Ceramic Wax: $199 + $20 = $219\n\nSERVICE NAMES he actually quotes in: Interior Detail, Exterior Detail, Full Detail, Carpet Shampoo, Exterior Polish, Ceramic Wax, RainX Window treatment, RainX Anti-Fog, headlight restoration, paint correction, ceramic coating.\n\nHOW THESE READ END TO END (match this exactly):\n- \"Awesome! So for your Ram, a Full Detail with Carpet Shampoo and Exterior Polish will be $459, and since it's a Full Detail the ceramic wax, RainX and anti-fog are on me if you book by the end of the year. Feel free to send over your address or general street location, and I'll get you a spot on my schedule.\"\n- \"Sounds good! I can do an Interior Detail and carpet shampoo for your Jeep. I can't guarantee how much of the stains I can get out, but I'll go over all the surfaces and get out as much as I can. I can do that for $339. If you send over your address or general street area, I can let you know how soon I can come by.\"\n- \"Thanks for the info! I can definitely clean that seatbelt for you. That service is included with the carpet shampoo add-on, so it won't add to the price at all. How soon are you looking to get it detailed?\"",
+    tone: "Friendly and warm, a confident pro, easygoing with a little humor, low-pressure, local and personable. Keep it short and casual like a real text. No emoji graphics (no 🚗✨), but a simple \":)\" now and then is on-brand; that's how Mikey texts. Sometimes sign off with \"- Mikey\", but not on every text.",
+    faqs: "Q: How much does it cost?\nA: For a sedan, an exterior is $199, an interior $249 and a full inside-and-out $369. SUVs and pickups are $40 more, vans and 3-rows $80 more, and a really rough car adds a little. The quote tool on mikeysdetailing.com gives your exact price in about 60 seconds, and you don't pay until you love it.\n\nQ: Do you come to me?\nA: Yes, I come to you. I use your outdoor spigot and an outlet, which is how I keep my prices where they are. If you really don't have them, tell me and I can bring water and power.\n\nQ: How long does a full detail take?\nA: 3 to 5 hours, depending on the size and condition of the car. A basic interior is about 90 minutes.\n\nQ: Can you get out pet hair, stains or smells?\nA: Yes! I have a pet hair process that works. For carpet and seat stains there's no guaranteeing they'll fully come out, but I'll sure as heck try!\n\nQ: Do you do interior-only or exterior-only?\nA: Yep. Interior starts at $249, exterior at $199, or the full in-and-out at $369.\n\nQ: Do you do ceramic coating or paint correction?\nA: I do. Ceramic coating starts at $500 and paint correction at $400. Send me your car's info or a photo and I'll quote it.\n\nQ: Do you do regular cleanings?\nA: That's my Clean Club: $125 a visit, every 4 or 8 weeks, and your price is locked in. It keeps the car from ever getting that bad again.\n\nQ: How far out are you booked?\nA: The quote tool on my site shows my real next openings, so you can see and pick one there.\n\nQ: Do you need water and power at my place?\nA: Yes, an outdoor spigot and an outlet I can reach. If you truly don't have one, let me know when you book.\n\nQ: How do I pay?\nA: After the work, never before: cash, check, Venmo or Zelle. And you don't pay until you love it.\n\nQ: Do I need to be home?\nA: Not at all. Leave the keys, tell me where the spigot and outlet are, and I'll text you when it's done. If you can be there at the end, we'll walk around it together.",
+    scenarios: "HOW MIKEY HANDLES COMMON SITUATIONS (respond with this same approach, warmth and wording):\n\n- Customer says it's more than they wanted to spend / asks for a discount:\n  \"I'm sorry to hear that! I can definitely help you mix and match services to get exactly what you need and nothing you don't. What's your budget?\"\n\n- Wants it done today / ASAP:\n  Never same day. If booked up: \"Sadly I don't have availability this week, but I'll let you know the moment my next slot opens up.\" If it might fit: \"I can likely squeeze you in this week. I'll know for sure by EOD tomorrow.\"\n\n- They're outside the service area (Lynnwood, Edmonds, or anywhere not on the list):\n  \"Unfortunately I'm not able to make it out to your area anytime soon. I totally understand if you'd rather go with someone closer.\"\n\n- Arrived but they're not home / can't find access:\n  \"Hey, I'm at the address you sent! All I need is the car unlocked and access to the spigot and an outlet. Let me know where I can find those.\"\n\n- Rain or bad weather on the appointment day:\n  \"Hey, the weather isn't looking great today. Any chance we can reschedule? Let me know what day works and I'll get you back on the calendar.\"\n\n- Running late:\n  \"I'm on my way, just running into a little traffic. ETA is about [time].\"\n\n- Unhappy with the result / a complaint (always stay warm and fix it):\n  \"I'm so sorry to hear that! I'd be more than happy to come back ASAP and make it right for you.\"",
+    rules: "NEVER write a dollar figure that isn't in this playbook, worked out exactly from its price book, already agreed in the conversation, or given to you by Mikey. Do not round one to look tidier, and do not guess a number because it seems about right. If this playbook doesn't price the car in front of you, ask for what's missing instead of naming a total. A customer who's been quoted a number has been quoted it, and it can't be taken back.\nNever promise an exact appointment time on your own. Offer to check and come back with a day.\nNever invent details or policies you don't know.\nMikey works alone. Always \"I\", never \"we\" for the business.\nNever say or hint that Mikey is licensed or insured.\nNever ask for a deposit or say one is needed. Payment is after the work.\nOnly recommend add-ons lightly and when they genuinely fit the car, never pushy.\nAlways be respectful, low-pressure, and never pushy.\nIf someone texts STOP, don't text them again.\nNever argue with an upset customer. Stay calm, apologize, and offer to come back and make it right.\nNever use an em dash.",
+    examples: "Real texts Mikey has sent (match this exact rhythm, warmth and length):\n- \"I can do 10:30 if that works :)\"\n- \"Perfect, let's shoot for 10:45.\"\n- \"Be there in 20!\"\n- \"Ready!\"\n- \"Sounds good!\"\n- \"Hey, unfortunately I couldn't get a slot for tomorrow. Let me know if there are any days next week that would work for you.\"\n- \"Ok, I'll work on getting one of those slots opened up for you right now. Can I get your address?\"\n- \"Thank you! I'm looking to open up the Thursday slot for after 3pm. I'll keep in touch and let you know :)\"\n- \"Hey Ruth! It'd work best for me to find a time next week for the detail. I'll reach out with the open slots when we're closer to the date. Thanks!\"\n- \"I'm working on opening up an exact day and time for you right now. I'll follow up soon.\"\n- \"I can't guarantee how many of the stains I can get out, but I can sure as heck try.\"",
   };
 }
 
@@ -13974,7 +13899,10 @@ function cacheConfig(cfg) {
 // with a newer seed version we upgrade the stored playbook to the current
 // defaults, then stamp `playbookSeed` so this never runs again (protecting any
 // later dashboard edits). Exactly ONE KV write, ever, per version bump.
-const PLAYBOOK_SEED_VERSION = 4;
+// 5 (2026-11-23): the price-book rewrite above. His stored playbook matched the
+// old default word for word in every field (checked that day), so nothing of his
+// is overwritten.
+const PLAYBOOK_SEED_VERSION = 5;
 async function seedPlaybookIfNeeded() {
   const cfg = await loadConfig();
   if ((cfg.playbookSeed || 0) >= PLAYBOOK_SEED_VERSION) return;
@@ -15453,6 +15381,24 @@ function replyDayKeys(text) {
   while ((m = md.exec(t))) out.add(Number(m[1]));
   const named = /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{1,2})\b/g;
   while ((m = named.exec(t))) out.add(Number(m[1]));
+  return out;
+}
+// His own words for "I can't give you a time yet" (Don, 2026-11-20).
+const REPLY_STALL = "I'm working on opening up an exact day and time for you right now. I'll follow up soon.";
+function recentTranscript(thread) {
+  const ms = ((thread && thread.messages) || []).slice(-8), newest = (ms[ms.length - 1] || {}).ts || 0;
+  let out = transcript({ messages: ms.filter((x) => !newest || !x.ts || newest - x.ts <= 7 * 86400000) });
+  // The appointment already on the conversation is agreed by definition, however
+  // far back it was set: on the replay "see you around 1pm tomorrow" for a job
+  // booked weeks of texts earlier got turned into the stall line.
+  const at = thread && Number(thread.appointmentAt);
+  if (at) {
+    const d = new Date(at), tz = 'America/Los_Angeles';
+    const clock = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: tz }).toLowerCase();
+    const day = Number(d.toLocaleDateString('en-US', { day: 'numeric', timeZone: tz }));
+    const sfx = (day % 100 >= 11 && day % 100 <= 13) ? 'th' : ({ 1: 'st', 2: 'nd', 3: 'rd' }[day % 10] || 'th');
+    out += `\nBooked appointment: the ${day}${sfx} at ${clock}`;
+  }
   return out;
 }
 function findInventedReplyTime(text, sources) {
@@ -18584,6 +18530,17 @@ async function bkConfirmTexts(thread, bk, bcfg, cfg) {
       texted = true;
     } catch (e) { /* the booking is still confirmed even if the text fails */ }
   }
+  bkQueueReminders(thread, bk, bcfg, cfg);
+  return texted;
+}
+
+// The day-before and morning-of reminders for one booking, queued on the
+// thread. Its own function so a booking that moves days (detMoveSiteBooking)
+// gets fresh ones at the new time instead of the old day's. Mutates the
+// thread; the caller saves.
+function bkQueueReminders(thread, bk, bcfg, cfg) {
+  if (!bk.smsConsent) return;
+  const now = Date.now();
   // Reminders ride the existing reserve-then-send cron, so they're at-most-once
   // and opt-out aware for free. Tagged with bkId so a later cancel can pull them.
   const r24 = bk.apptAt - 86400000, rAm = bkLaEpoch(bk.date, '07:30');
@@ -18598,7 +18555,6 @@ async function bkConfirmTexts(thread, bk, bcfg, cfg) {
   if (b24 && r24 > now + 60000) add.push({ id: genId(), bkId: bk.id, kind: 'booking', body: b24, sendAt: r24 });
   if (bAm && rAm > now + 60000 && rAm < bk.apptAt) add.push({ id: genId(), bkId: bk.id, kind: 'booking', body: bAm, sendAt: rAm });
   if (add.length) { thread.scheduled.push(...add); thread.scheduled.sort((a, b) => a.sendAt - b.sendAt); }
-  return texted;
 }
 
 // Confirm / decline / cancel / complete a booking. Confirm texts the customer and
@@ -25016,15 +24972,27 @@ function detDefaults() {
     // day for a week because the move was a card nobody tapped). A move they
     // haven't agreed to holds the new day as a maybe and leaves the old one.
     autoMove: true,
+    // A cancel or a postpone the customer clearly stated ("we have to cancel
+    // Saturday", "something came up, can we push it, I'll text you") takes the
+    // job off his board, his calendar and the booking list by itself, and pulls
+    // the reminder texts that would otherwise still go out (Mikey, 2026-11-24:
+    // "automatically detects booking cancellations and postponing without
+    // needing my input"). Before this a cancel was always a card, and cards sat.
+    // A question ("could we maybe move it?") is not a cancel: that stays a
+    // card. Every automatic change carries an Undo in the conversation.
+    autoCancel: true,
+    autoCancelMinConfidence: 0.8,
   };
 }
 function detCfg(cfg) { return Object.assign(detDefaults(), (cfg && cfg.detect) || {}); }
 function sanitizeDetect(input, current) {
   const d = Object.assign(detDefaults(), current || {});
   const i = input || {};
-  ['enabled', 'eager', 'holdSlots', 'autoAdd', 'maybeAdd', 'autoMove'].forEach((k) => { if (typeof i[k] === 'boolean') d[k] = i[k]; });
+  ['enabled', 'eager', 'holdSlots', 'autoAdd', 'maybeAdd', 'autoMove', 'autoCancel'].forEach((k) => { if (typeof i[k] === 'boolean') d[k] = i[k]; });
   if (i.autoAddMinConfidence != null && !isNaN(+i.autoAddMinConfidence))
     d.autoAddMinConfidence = Math.max(0.45, Math.min(1, Number(i.autoAddMinConfidence)));
+  if (i.autoCancelMinConfidence != null && !isNaN(+i.autoCancelMinConfidence))
+    d.autoCancelMinConfidence = Math.max(0.6, Math.min(1, Number(i.autoCancelMinConfidence)));
   if (i.defaultDurationMin != null && !isNaN(+i.defaultDurationMin))
     d.defaultDurationMin = Math.max(15, Math.min(720, Math.round(+i.defaultDurationMin)));
   return d;
@@ -25038,7 +25006,7 @@ function sanitizeDetect(input, current) {
 const DET_DAY_RE = /\b(mon|tue|tues|wed|weds|wednes|thu|thur|thurs|fri|sat|satur|sun)(day)?\b|\b(today|tonight|tomorrow|tmrw|tmw)\b|\bnext\s+(week|mon|tue|wed|thu|fri|sat|sun)/i;
 const DET_MONTH_RE = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s*\d{1,2}\b|\b\d{1,2}\s*\/\s*\d{1,2}\b/i;
 const DET_TIME_RE = /\b\d{1,2}\s*(:\s*\d{2})?\s*(am|pm|a\.m\.|p\.m\.)\b|\b\d{1,2}:\d{2}\b|\b(noon|midnight|morning|afternoon|evening)\b|\bat\s+\d{1,2}\b/i;
-const DET_CANCEL_RE = /\b(cancel|reschedul|resched|postpon)\w*|\bpush (it )?back\b|\bmove it\b|\brain ?check\b|\bcan'?t make it\b|\bcant make it\b|\bsomething came up\b|\b(another|different) day\b/i;
+const DET_CANCEL_RE = /\b(cancel|reschedul|resched|postpon)\w*|\bpush (it |this |that )?(back|out)\b|\bmove (it|this|that)\b|\brain ?check\b|\bcan'?t make it\b|\bcant make it\b|\bwon'?t (be able to )?make it\b|\bsomething came up\b|\b(another|different) (day|time)\b|\bcall (it )?off\b|\bhold off\b|\bnot going to work\b|\bno longer need\b|\bdon'?t need (it|you)\b/i;
 
 function detLooksSchedulish(text, eager) {
   const t = String(text || '');
@@ -25094,11 +25062,13 @@ async function detAskAi(thread, msgs, cfg) {
     (thread.notes ? `Notes on file: ${jdStr(thread.notes, 400)}\n` : '') +
     `\nCONVERSATION (most recent last):\n${convo}\n\n` +
     `Reply with ONLY this JSON:\n` +
-    `{"intent":"set|maybe|reschedule|cancel|none",\n` +
+    (thread.appointmentAt ? `Job currently on file: ${new Date(thread.appointmentAt).toLocaleString('en-US', { timeZone: tz, weekday: 'long', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Pacific\n` : '') +
+    `{"intent":"set|maybe|reschedule|cancel|postpone|none",\n` +
     ` "date":"YYYY-MM-DD or empty","time":"HH:MM 24-hour, or empty if no specific time was given",\n` +
     ` "partOfDay":"morning|afternoon or empty",\n` +
     ` "tentative":true if the day is agreed but the exact hour is NOT pinned down,\n` +
-    ` "customerConfirmed":true only if the CUSTOMER clearly agreed to this day/time,\n` +
+    ` "customerConfirmed":true only if the CUSTOMER clearly agreed to this day/time,\n` +    ` "definite":true only if the cancel/postpone/move is STATED as decided ("we have to cancel", "I can't make Saturday, let's do Tuesday at 1"), false if it's a question or a maybe ("could we move it?", "might need to cancel"),\n` +
+    ` "saidBy":"customer|mikey" (who said the cancel/postpone/move),\n` +
     ` "service":"","vehicle":"","address":"","city":"","price":0,"name":"",\n` +
     ` "notes":"gate code, parking, apartment number, pets, water/power access",\n` +
     ` "confidence":0.0-1.0,"evidence":"the exact short quote showing the date was agreed"}\n\n` +
@@ -25109,7 +25079,9 @@ async function detAskAi(thread, msgs, cfg) {
     `and it isn't agreed yet ("I can likely come Wednesday", "Saturday could work", "how about the 23rd?"). ` +
     `A day with no job behind it ("I'm off Monday") is "none".\n` +
     `- "reschedule" when an EXISTING job is moving; put the NEW date/time in date/time.\n` +
-    `- "cancel" when it's called off with no replacement date.\n` +
+    `- "cancel" when the job is called off for good ("we went with someone else", "never mind, sold the car", "cancel please").\n` +
+    `- "postpone" when it's off for now but they want to do it later and NO new date is set ("something came up, can we push it? I'll text you", "let's hold off until next month").\n` +
+    `- Only the LATEST messages count: a cancel that was already followed by a new agreed day is that new day ("set" or "reschedule"), not a cancel.\n` +
     `- Never invent a date nobody said. A date in the past means you resolved it wrong.\n` +
     `- Below 0.3 confidence, answer "none".`;
 
@@ -25119,7 +25091,11 @@ async function detAskAi(thread, msgs, cfg) {
   if (!o || !o.intent || o.intent === 'none') return null;
   // A maybe is allowed to be unsure; that's what makes it a maybe.
   if (Number(o.confidence || 0) < (o.intent === 'maybe' ? 0.3 : 0.45)) return null;
-  if (o.intent === 'cancel') return { intent: 'cancel', evidence: jdStr(o.evidence, 200), confidence: Number(o.confidence) };
+  const definite = o.definite === true;
+  const saidBy = o.saidBy === 'mikey' ? 'mikey' : 'customer';
+  if (o.intent === 'cancel' || o.intent === 'postpone') {
+    return { intent: o.intent, evidence: jdStr(o.evidence, 200), confidence: Number(o.confidence) || 0, definite, saidBy };
+  }
 
   const date = jdStr(o.date, 12);
   if (!jdIsDate(date)) return null;
@@ -25143,6 +25119,7 @@ async function detAskAi(thread, msgs, cfg) {
     address: jdStr(o.address, 140), city: jdStr(o.city, 60),
     price: jdMoney(o.price), name: jdStr(o.name, 60), notes: jdStr(o.notes, 300),
     confidence: Number(o.confidence) || 0, evidence: jdStr(o.evidence, 200),
+    definite, saidBy,
   };
 }
 
@@ -25182,6 +25159,170 @@ async function detFindBoardJob(phone, at, tz) {
   return { doc, job, date };
 }
 
+// ---------------------------------------------------------------------------
+// Changing an appointment that's already on file: cancel, postpone, move, undo
+// ---------------------------------------------------------------------------
+// A customer's job can live in two places: the day board (one he typed, or one
+// detection placed) and the website's booking list, which also owns the
+// day-before and morning-of reminder texts. A change has to land on whichever
+// one they have. Before this, accepting a cancel card only touched the board,
+// so a website booking stayed "confirmed" and the customer who'd just
+// cancelled still got "Reminder, I've got your car tomorrow".
+//
+// Every change leaves thread.apptChange behind: what happened, what it was
+// read from, and exactly what to put back. The conversation shows it with an
+// Undo, because a change he never asked for has to be one tap to reverse.
+
+// Their open website booking nearest the appointment on file (within 12 hours).
+function detSiteBooking(all, phone, at) {
+  if (!at) return null;
+  const near = (all || []).filter((b) => b.phone === phone && (b.status === 'pending' || b.status === 'confirmed') &&
+    Math.abs((b.apptAt || 0) - at) < 12 * 3600000);
+  near.sort((a, b) => Math.abs(a.apptAt - at) - Math.abs(b.apptAt - at));
+  return near[0] || null;
+}
+
+// Someone else already on the books overlapping [at, at+durMs) that day: their
+// name, or '' when the time is clear. Board maybes don't count; a firm job does.
+async function detClash(phone, date, at, durMs, all, skipBkId) {
+  for (const b of all || []) {
+    if (b.id === skipBkId || b.phone === phone || b.date !== date) continue;
+    if (b.status !== 'pending' && b.status !== 'confirmed') continue;
+    const s0 = b.apptAt, e0 = s0 + (Number(b.durationMin) || 180) * 60000;
+    if (at < e0 && s0 < at + durMs) return b.name || 'another booking';
+  }
+  const doc = await loadDay(date);
+  for (const m of doc.manual || []) {
+    if (m.phone === phone || m.maybe) continue;
+    const s0 = bkLaEpoch(date, m.slot), e0 = s0 + (Number(m.durationMin) || 180) * 60000;
+    if (at < e0 && s0 < at + durMs) return m.name || 'another job';
+  }
+  return '';
+}
+
+// Take the job off everywhere: board, calendar, booking list, queued reminder
+// texts. kind is 'cancel' or 'postpone'; a postpone also tags the conversation
+// and sets him a reminder to check back in three days, so a "let's do it
+// later" doesn't quietly become a lost customer. Sends nothing to anyone.
+async function detCancelAppt(thread, kind, info, cfg) {
+  const tz = (cfg && cfg.tz) || 'America/Los_Angeles';
+  const fromAt = thread.appointmentAt;
+  const undo = { fromAt };
+  const board = await detFindBoardJob(thread.phone, fromAt, tz);
+  if (board) {
+    undo.board = { date: board.date, job: board.job };
+    await detMoveBoardJob({ kind: 'cancel', phone: thread.phone }, fromAt, cfg);
+  }
+  const all = await loadBookings();
+  const bk = detSiteBooking(all, thread.phone, fromAt);
+  if (bk) {
+    undo.bk = { id: bk.id, status: bk.status };
+    undo.scheduled = (thread.scheduled || []).filter((x) => x.bkId === bk.id);
+    bkPurgeScheduled(thread, bk.id);
+    bk.status = 'cancelled'; bk.cancelledAt = Date.now(); bk.cancelledBy = info.auto ? 'auto' : 'mikey';
+    await saveBookings(all);
+    background(bkGcalSync(bk));
+  }
+  thread.appointmentAt = null;
+  thread.tags = thread.tags || [];
+  if (kind === 'postpone') {
+    if (!thread.tags.includes('postponed')) { thread.tags.push('postponed'); undo.tagged = true; }
+    if (!thread.reminderAt) {
+      thread.reminderAt = Date.now() + 3 * 86400000;
+      thread.reminderNote = 'They postponed. Check in to rebook.';
+      thread.reminderNotified = false;
+      undo.reminder = true;
+    }
+  }
+  thread.apptChange = { kind, at: Date.now(), fromAt, toAt: null, evidence: info.evidence || '', auto: !!info.auto, undo };
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+  return { board: !!board, booking: !!bk, reminders: (undo.scheduled || []).length };
+}
+
+// Move their website booking to f.date/f.slot: new time on the booking and the
+// calendar, the old day's reminders pulled and new ones queued. Refuses a time
+// that overlaps someone else unless force (he tapped "Move it" himself).
+async function detMoveSiteBooking(thread, f, info, cfg) {
+  const all = await loadBookings();
+  const fromAt = thread.appointmentAt;
+  const bk = detSiteBooking(all, thread.phone, fromAt);
+  if (!bk) return { ok: false, error: 'no_booking' };
+  if (!jdIsDate(f.date) || !/^\d{2}:\d{2}$/.test(String(f.slot || ''))) return { ok: false, error: 'bad_when' };
+  const at = bkLaEpoch(f.date, f.slot);
+  if (!info.force) {
+    const clash = await detClash(thread.phone, f.date, at, (Number(bk.durationMin) || 180) * 60000, all, bk.id);
+    if (clash) return { ok: false, error: 'clash', clash };
+  }
+  const undo = { fromAt, bk: { id: bk.id, status: bk.status, date: bk.date, slot: bk.slot, dateLabel: bk.dateLabel, apptAt: bk.apptAt } };
+  undo.scheduled = (thread.scheduled || []).filter((x) => x.bkId === bk.id);
+  bkPurgeScheduled(thread, bk.id);
+  Object.assign(bk, { date: f.date, slot: f.slot, dateLabel: bkNiceDate(f.date), apptAt: at, movedAt: Date.now() });
+  if (bk.status === 'confirmed') bkQueueReminders(thread, bk, await loadBookingConfig(), cfg);
+  await saveBookings(all);
+  background(bkGcalSync(bk));
+  thread.appointmentAt = at;
+  thread.apptChange = { kind: 'reschedule', at: Date.now(), fromAt, toAt: at, evidence: info.evidence || '', auto: !!info.auto, undo };
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+  return { ok: true, at };
+}
+
+// Put back whatever thread.apptChange says was changed.
+async function detUndoChange(phone, cfg) {
+  const tz = (cfg && cfg.tz) || 'America/Los_Angeles';
+  const thread = await loadThread(phone);
+  const ch = thread.apptChange;
+  if (!ch || ch.undone) return { ok: false, error: 'nothing_to_undo' };
+  const u = ch.undo || {};
+  const now = Date.now();
+  const putBackReminders = (bkId) => {
+    bkPurgeScheduled(thread, bkId);
+    const keep = (u.scheduled || []).filter((x) => x.sendAt > now + 60000);
+    if (keep.length) { thread.scheduled = (thread.scheduled || []).concat(keep).sort((a, b) => a.sendAt - b.sendAt); }
+  };
+  if (u.bk) {
+    const all = await loadBookings();
+    const bk = all.find((x) => x.id === u.bk.id);
+    if (bk) {
+      Object.assign(bk, u.bk);
+      delete bk.cancelledAt; delete bk.cancelledBy; delete bk.movedAt;
+      putBackReminders(bk.id);
+      await saveBookings(all);
+      background(bkGcalSync(bk));
+    }
+  }
+  if (ch.kind === 'reschedule' && u.boardMove && ch.toAt && u.fromAt) {
+    await detMoveBoardJob({ kind: 'reschedule', phone, at: u.fromAt, date: localDateStr(u.fromAt, tz),
+      slot: localTimeHm(u.fromAt, tz), tentative: false }, ch.toAt, cfg);
+  }
+  if (u.board && u.board.job) {
+    const doc = await loadDay(u.board.date);
+    if (!doc.manual.some((m) => m.id === u.board.job.id)) {
+      doc.manual.push(u.board.job);
+      await saveDay(doc);
+      background(dayJobGcalSync(u.board.job, u.board.date));
+    }
+  }
+  if (u.tagged) thread.tags = (thread.tags || []).filter((t) => t !== 'postponed');
+  if (u.reminder) { thread.reminderAt = null; thread.reminderNote = ''; }
+  thread.appointmentAt = u.fromAt || null;
+  ch.undone = now;
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+  return { ok: true, thread };
+}
+
+async function apiDetectUndo(request) {
+  const d = await readJson(request);
+  const phone = normalizePhone(d.phone) || d.phone;
+  if (!phone) return json({ ok: false, error: 'missing_phone' }, 422);
+  const r = await detUndoChange(phone, await loadConfig());
+  return json(r, r.ok ? 200 : 409);
+}
+
+function detWhen(at, tz) { return `${bkNiceDate(localDateStr(at, tz))} at ${bkFmt12(localTimeHm(at, tz))}`; }
+
 // One open card per customer at a time — a later message about the same job
 // updates it in place instead of stacking up a pile of near-duplicates.
 // Returns what it did, in a word, for the sweep's report.
@@ -25203,6 +25344,7 @@ async function detApply(thread, f, dc, cfg, opts) {
       const fromAt = thread.appointmentAt;
       await detMoveBoardJob({ kind: 'reschedule', phone, at: f.at, date: f.date, slot: f.slot, tentative: f.tentative }, fromAt, cfg);
       thread.appointmentAt = f.at;
+      thread.apptChange = { kind: 'reschedule', at: Date.now(), fromAt, toAt: f.at, evidence: f.evidence || '', auto: true, undo: { fromAt, boardMove: true } };
       await saveThread(thread);
       await updateIndexEntry(thread);
       if (open) { list.splice(list.indexOf(open), 1); await saveDetections(list); }
@@ -25214,11 +25356,57 @@ async function detApply(thread, f, dc, cfg, opts) {
       }
       return 'moved';
     }
+    // A website booking moves itself too now, on the same terms: they agreed
+    // to it, it was stated rather than asked, the hour is real rather than
+    // guessed, and nobody else is already in that spot. Anything short of
+    // that stays a card, with the reason in the alert.
+    let clash = '';
+    if (!have && f.customerConfirmed && f.definite !== false && !f.tentative && (f.confidence || 0) >= dc.autoAddMinConfidence) {
+      const fromAt = thread.appointmentAt;
+      const mv = await detMoveSiteBooking(thread, f, { auto: true, evidence: f.evidence }, cfg);
+      if (mv.ok) {
+        if (open) { list.splice(list.indexOf(open), 1); await saveDetections(list); }
+        if (!quiet) {
+          await notifyMikey(`🔄 Moved ${thread.name || phone} to ${bkNiceDate(f.date)} at ${bkFmt12(f.slot)}`,
+            `${thread.name || phone} was on ${detWhen(fromAt, tz)}. Their booking, your calendar and their reminder texts are now on ${bkNiceDate(f.date)} at ${bkFmt12(f.slot)}.\n\n` +
+            `From: "${f.evidence}"\n\nNothing was sent to them. Wrong? Open the conversation and tap Undo.`).catch(() => {});
+          await pushNotify().catch(() => {});
+        }
+        return 'moved';
+      }
+      if (mv.error === 'clash') clash = mv.clash;
+    }
+    f = Object.assign({}, f, { clash });
     // Not agreed yet: hold the new day as a maybe and keep the old job where it
     // is. Holding both costs a slot for a day or two; dropping either is how a
     // promise gets double booked.
     if (have) f = Object.assign({}, f, { intent: 'set', maybe: true });
   }
+
+  // A cancel or postpone they clearly stated comes off the schedule by itself.
+  // Only a job still ahead (or that started within the last three hours): an
+  // old appointment that already happened is not "cancelled" by a later text.
+  if ((f.intent === 'cancel' || f.intent === 'postpone') && thread.appointmentAt && dc.autoCancel &&
+      f.definite && (f.confidence || 0) >= dc.autoCancelMinConfidence && thread.appointmentAt > Date.now() - 3 * 3600000) {
+    const fromAt = thread.appointmentAt;
+    const r = await detCancelAppt(thread, f.intent, { auto: true, evidence: f.evidence }, cfg);
+    if (open) { list.splice(list.indexOf(open), 1); await saveDetections(list); }
+    if (quiet) return f.intent === 'cancel' ? 'cancelled' : 'postponed';
+    const who = thread.name || phone;
+    const pulled = [r.board ? 'your day board' : null, r.booking ? 'the booking list' : null, 'your calendar'].filter(Boolean).join(', ');
+    await notifyMikey(
+      f.intent === 'cancel' ? `🚫 ${who} cancelled ${detWhen(fromAt, tz)} — taken off` : `⏸ ${who} postponed ${detWhen(fromAt, tz)} — taken off`,
+      [
+        `${who} ${f.intent === 'cancel' ? 'cancelled' : 'postponed'} ${detWhen(fromAt, tz)}. It's off ${pulled}.`,
+        r.reminders ? `${r.reminders} reminder text${r.reminders > 1 ? 's' : ''} to them won't go out now.` : null,
+        f.intent === 'postpone' ? `Tagged "postponed", and you'll get a reminder in 3 days to check in and rebook.` : null,
+        '', `From: "${f.evidence}"`, '',
+        `Nothing was sent to them. Wrong? Open the conversation and tap Undo.`,
+      ].filter((x) => x !== null).join('\n')).catch(() => {});
+    await pushNotify().catch(() => {});
+    return f.intent === 'cancel' ? 'cancelled' : 'postponed';
+  }
+  if (f.intent === 'postpone') f = Object.assign({}, f, { intent: 'cancel', postpone: true });
 
   if (f.intent === 'cancel' || f.intent === 'reschedule') {
     // Only meaningful against a job that already exists. A cancel is always a
@@ -25233,13 +25421,17 @@ async function detApply(thread, f, dc, cfg, opts) {
     rec.tentative = !!f.tentative;
     rec.name = thread.name || rec.name;
     rec.evidence = f.evidence; rec.confidence = f.confidence;
+    rec.postpone = !!f.postpone;
+    rec.clash = f.clash || '';
     rec.at_ = Date.now();
     if (!open) list.push(rec);
     await saveDetections(list);
     if (quiet) return 'card';
     await notifyMikey(
-      f.intent === 'cancel' ? `🚫 ${thread.name || phone} may be cancelling` : `🔄 ${thread.name || phone} wants to move`,
-      `"${f.evidence}"\n\nNothing has changed. Open Jobs to accept or ignore it.`).catch(() => {});
+      f.intent === 'cancel' ? `🚫 ${thread.name || phone} may be ${f.postpone ? 'postponing' : 'cancelling'}` : `🔄 ${thread.name || phone} wants to move`,
+      `"${f.evidence}"\n\n` +
+      (f.clash ? `Not moved automatically: ${f.clash} is already in that spot.\n\n` : '') +
+      `Nothing has changed yet because it didn't read as decided. Open Jobs to accept or ignore it.`).catch(() => {});
     await pushNotify().catch(() => {});
     return 'card';
   }
@@ -25568,17 +25760,31 @@ async function apiDetectionAction(request) {
 
   if (action === 'accept') {
     // Accept a proposed move or cancel against the existing appointment.
+    // Same paths the automatic change uses, so a website booking's status and
+    // reminder texts follow along with the board and the calendar.
     const thread = await loadThread(rec.phone);
-    // The board job (and its calendar event) follows, or the run sheet and his
-    // calendar keep the old day while the conversation says the new one.
-    await detMoveBoardJob(rec, thread.appointmentAt || rec.currentAt, cfg);
+    const tz = cfg.tz || 'America/Los_Angeles';
+    if (!thread.appointmentAt && rec.currentAt) thread.appointmentAt = rec.currentAt;
     if (rec.kind === 'cancel') {
-      thread.appointmentAt = null;
+      await detCancelAppt(thread, rec.postpone ? 'postpone' : 'cancel', { auto: false, evidence: rec.evidence }, cfg);
     } else if (rec.kind === 'reschedule' && rec.at) {
-      thread.appointmentAt = rec.at;
+      const fromAt = thread.appointmentAt;
+      const have = await detFindBoardJob(rec.phone, fromAt, tz);
+      if (have) {
+        await detMoveBoardJob(rec, fromAt, cfg);
+        thread.appointmentAt = rec.at;
+        thread.apptChange = { kind: 'reschedule', at: Date.now(), fromAt, toAt: rec.at, evidence: rec.evidence || '', auto: false, undo: { fromAt, boardMove: true } };
+        await saveThread(thread);
+        await updateIndexEntry(thread);
+      } else {
+        const mv = await detMoveSiteBooking(thread, rec, { auto: false, force: true, evidence: rec.evidence }, cfg);
+        if (!mv.ok) {
+          thread.appointmentAt = rec.at;
+          await saveThread(thread);
+          await updateIndexEntry(thread);
+        }
+      }
     }
-    await saveThread(thread);
-    await updateIndexEntry(thread);
     list.splice(i, 1);
     await saveDetections(list);
     return json({ ok: true, moved: rec.kind === 'reschedule' ? rec.at : null });
