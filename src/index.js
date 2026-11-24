@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-11-23·voice-select';
+const BUILD = '2026-11-24·auto-cancel';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -792,6 +792,7 @@ async function handle(request) {
   if (request.method === 'POST' && pathname === '/api/day/state')      return apiDayState(request);
   if (request.method === 'GET'  && pathname === '/api/detections')     return apiDetections();
   if (request.method === 'POST' && pathname === '/api/detection')      return apiDetectionAction(request);
+  if (request.method === 'POST' && pathname === '/api/detect/undo')   return apiDetectUndo(request);
   // Promises he made to customers ("I'll get back to you Monday").
   if (request.method === 'GET'  && pathname === '/api/promises')       return apiPromises();
   if (request.method === 'POST' && pathname === '/api/promise')        return apiPromiseAction(request);
@@ -2581,7 +2582,24 @@ async function handleInboundSms(request) {
   const START_WORDS = ['start', 'unstop', 'yes', 'unsubscribe stop'];
   if (STOP_WORDS.includes(kw)) {
     await setOptOut(fromNorm, true);
-    await appendMessage(fromNorm, { dir: 'in', body: text, ts: Date.now(), kind: 'opt-out' });
+    const optThread = await appendMessage(fromNorm, { dir: 'in', body: text, ts: Date.now(), kind: 'opt-out' });
+    // A bare "Cancel" from someone with a job coming up almost always means the
+    // job, not the texts. The carrier still treats it as STOP and blocks texts
+    // to them, so the job comes off the schedule (and its reminders, which
+    // would fail anyway) and he's told to call them.
+    if (kw === 'cancel' && optThread && optThread.appointmentAt && optThread.appointmentAt > Date.now() - 3 * 3600000) {
+      try {
+        const cfg = await loadConfig();
+        const tz = cfg.tz || 'America/Los_Angeles';
+        const fromAt = optThread.appointmentAt;
+        await detCancelAppt(optThread, 'cancel', { auto: true, evidence: text }, cfg);
+        await notifyMikey(`🚫 ${optThread.name || from} texted CANCEL — job taken off`,
+          `${optThread.name || from} texted just "CANCEL". Their job on ${detWhen(fromAt, tz)} is off your schedule and calendar.\n\n` +
+          `Heads up: the phone carrier reads a bare CANCEL as STOP, so texts to them are now blocked until they text START. ` +
+          `Call them if you want to rebook. Wrong? Open the conversation and tap Undo.`);
+        return twiml('');
+      } catch { /* fall through to the plain opt-out alert */ }
+    }
     await notifyMikey(`🚫 ${from} opted out (STOP)`, `${from} texted STOP and will not receive further messages until they text START.`);
     return twiml('');
   }
@@ -18295,6 +18313,17 @@ async function bkConfirmTexts(thread, bk, bcfg, cfg) {
       texted = true;
     } catch (e) { /* the booking is still confirmed even if the text fails */ }
   }
+  bkQueueReminders(thread, bk, bcfg, cfg);
+  return texted;
+}
+
+// The day-before and morning-of reminders for one booking, queued on the
+// thread. Its own function so a booking that moves days (detMoveSiteBooking)
+// gets fresh ones at the new time instead of the old day's. Mutates the
+// thread; the caller saves.
+function bkQueueReminders(thread, bk, bcfg, cfg) {
+  if (!bk.smsConsent) return;
+  const now = Date.now();
   // Reminders ride the existing reserve-then-send cron, so they're at-most-once
   // and opt-out aware for free. Tagged with bkId so a later cancel can pull them.
   const r24 = bk.apptAt - 86400000, rAm = bkLaEpoch(bk.date, '07:30');
@@ -18309,7 +18338,6 @@ async function bkConfirmTexts(thread, bk, bcfg, cfg) {
   if (b24 && r24 > now + 60000) add.push({ id: genId(), bkId: bk.id, kind: 'booking', body: b24, sendAt: r24 });
   if (bAm && rAm > now + 60000 && rAm < bk.apptAt) add.push({ id: genId(), bkId: bk.id, kind: 'booking', body: bAm, sendAt: rAm });
   if (add.length) { thread.scheduled.push(...add); thread.scheduled.sort((a, b) => a.sendAt - b.sendAt); }
-  return texted;
 }
 
 // Confirm / decline / cancel / complete a booking. Confirm texts the customer and
@@ -24727,15 +24755,27 @@ function detDefaults() {
     // day for a week because the move was a card nobody tapped). A move they
     // haven't agreed to holds the new day as a maybe and leaves the old one.
     autoMove: true,
+    // A cancel or a postpone the customer clearly stated ("we have to cancel
+    // Saturday", "something came up, can we push it, I'll text you") takes the
+    // job off his board, his calendar and the booking list by itself, and pulls
+    // the reminder texts that would otherwise still go out (Mikey, 2026-11-24:
+    // "automatically detects booking cancellations and postponing without
+    // needing my input"). Before this a cancel was always a card, and cards sat.
+    // A question ("could we maybe move it?") is not a cancel: that stays a
+    // card. Every automatic change carries an Undo in the conversation.
+    autoCancel: true,
+    autoCancelMinConfidence: 0.8,
   };
 }
 function detCfg(cfg) { return Object.assign(detDefaults(), (cfg && cfg.detect) || {}); }
 function sanitizeDetect(input, current) {
   const d = Object.assign(detDefaults(), current || {});
   const i = input || {};
-  ['enabled', 'eager', 'holdSlots', 'autoAdd', 'maybeAdd', 'autoMove'].forEach((k) => { if (typeof i[k] === 'boolean') d[k] = i[k]; });
+  ['enabled', 'eager', 'holdSlots', 'autoAdd', 'maybeAdd', 'autoMove', 'autoCancel'].forEach((k) => { if (typeof i[k] === 'boolean') d[k] = i[k]; });
   if (i.autoAddMinConfidence != null && !isNaN(+i.autoAddMinConfidence))
     d.autoAddMinConfidence = Math.max(0.45, Math.min(1, Number(i.autoAddMinConfidence)));
+  if (i.autoCancelMinConfidence != null && !isNaN(+i.autoCancelMinConfidence))
+    d.autoCancelMinConfidence = Math.max(0.6, Math.min(1, Number(i.autoCancelMinConfidence)));
   if (i.defaultDurationMin != null && !isNaN(+i.defaultDurationMin))
     d.defaultDurationMin = Math.max(15, Math.min(720, Math.round(+i.defaultDurationMin)));
   return d;
@@ -24749,7 +24789,7 @@ function sanitizeDetect(input, current) {
 const DET_DAY_RE = /\b(mon|tue|tues|wed|weds|wednes|thu|thur|thurs|fri|sat|satur|sun)(day)?\b|\b(today|tonight|tomorrow|tmrw|tmw)\b|\bnext\s+(week|mon|tue|wed|thu|fri|sat|sun)/i;
 const DET_MONTH_RE = /\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s*\d{1,2}\b|\b\d{1,2}\s*\/\s*\d{1,2}\b/i;
 const DET_TIME_RE = /\b\d{1,2}\s*(:\s*\d{2})?\s*(am|pm|a\.m\.|p\.m\.)\b|\b\d{1,2}:\d{2}\b|\b(noon|midnight|morning|afternoon|evening)\b|\bat\s+\d{1,2}\b/i;
-const DET_CANCEL_RE = /\b(cancel|reschedul|resched|postpon)\w*|\bpush (it )?back\b|\bmove it\b|\brain ?check\b|\bcan'?t make it\b|\bcant make it\b|\bsomething came up\b|\b(another|different) day\b/i;
+const DET_CANCEL_RE = /\b(cancel|reschedul|resched|postpon)\w*|\bpush (it |this |that )?(back|out)\b|\bmove (it|this|that)\b|\brain ?check\b|\bcan'?t make it\b|\bcant make it\b|\bwon'?t (be able to )?make it\b|\bsomething came up\b|\b(another|different) (day|time)\b|\bcall (it )?off\b|\bhold off\b|\bnot going to work\b|\bno longer need\b|\bdon'?t need (it|you)\b/i;
 
 function detLooksSchedulish(text, eager) {
   const t = String(text || '');
@@ -24805,11 +24845,13 @@ async function detAskAi(thread, msgs, cfg) {
     (thread.notes ? `Notes on file: ${jdStr(thread.notes, 400)}\n` : '') +
     `\nCONVERSATION (most recent last):\n${convo}\n\n` +
     `Reply with ONLY this JSON:\n` +
-    `{"intent":"set|maybe|reschedule|cancel|none",\n` +
+    (thread.appointmentAt ? `Job currently on file: ${new Date(thread.appointmentAt).toLocaleString('en-US', { timeZone: tz, weekday: 'long', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} Pacific\n` : '') +
+    `{"intent":"set|maybe|reschedule|cancel|postpone|none",\n` +
     ` "date":"YYYY-MM-DD or empty","time":"HH:MM 24-hour, or empty if no specific time was given",\n` +
     ` "partOfDay":"morning|afternoon or empty",\n` +
     ` "tentative":true if the day is agreed but the exact hour is NOT pinned down,\n` +
-    ` "customerConfirmed":true only if the CUSTOMER clearly agreed to this day/time,\n` +
+    ` "customerConfirmed":true only if the CUSTOMER clearly agreed to this day/time,\n` +    ` "definite":true only if the cancel/postpone/move is STATED as decided ("we have to cancel", "I can't make Saturday, let's do Tuesday at 1"), false if it's a question or a maybe ("could we move it?", "might need to cancel"),\n` +
+    ` "saidBy":"customer|mikey" (who said the cancel/postpone/move),\n` +
     ` "service":"","vehicle":"","address":"","city":"","price":0,"name":"",\n` +
     ` "notes":"gate code, parking, apartment number, pets, water/power access",\n` +
     ` "confidence":0.0-1.0,"evidence":"the exact short quote showing the date was agreed"}\n\n` +
@@ -24820,7 +24862,9 @@ async function detAskAi(thread, msgs, cfg) {
     `and it isn't agreed yet ("I can likely come Wednesday", "Saturday could work", "how about the 23rd?"). ` +
     `A day with no job behind it ("I'm off Monday") is "none".\n` +
     `- "reschedule" when an EXISTING job is moving; put the NEW date/time in date/time.\n` +
-    `- "cancel" when it's called off with no replacement date.\n` +
+    `- "cancel" when the job is called off for good ("we went with someone else", "never mind, sold the car", "cancel please").\n` +
+    `- "postpone" when it's off for now but they want to do it later and NO new date is set ("something came up, can we push it? I'll text you", "let's hold off until next month").\n` +
+    `- Only the LATEST messages count: a cancel that was already followed by a new agreed day is that new day ("set" or "reschedule"), not a cancel.\n` +
     `- Never invent a date nobody said. A date in the past means you resolved it wrong.\n` +
     `- Below 0.3 confidence, answer "none".`;
 
@@ -24830,7 +24874,11 @@ async function detAskAi(thread, msgs, cfg) {
   if (!o || !o.intent || o.intent === 'none') return null;
   // A maybe is allowed to be unsure; that's what makes it a maybe.
   if (Number(o.confidence || 0) < (o.intent === 'maybe' ? 0.3 : 0.45)) return null;
-  if (o.intent === 'cancel') return { intent: 'cancel', evidence: jdStr(o.evidence, 200), confidence: Number(o.confidence) };
+  const definite = o.definite === true;
+  const saidBy = o.saidBy === 'mikey' ? 'mikey' : 'customer';
+  if (o.intent === 'cancel' || o.intent === 'postpone') {
+    return { intent: o.intent, evidence: jdStr(o.evidence, 200), confidence: Number(o.confidence) || 0, definite, saidBy };
+  }
 
   const date = jdStr(o.date, 12);
   if (!jdIsDate(date)) return null;
@@ -24854,6 +24902,7 @@ async function detAskAi(thread, msgs, cfg) {
     address: jdStr(o.address, 140), city: jdStr(o.city, 60),
     price: jdMoney(o.price), name: jdStr(o.name, 60), notes: jdStr(o.notes, 300),
     confidence: Number(o.confidence) || 0, evidence: jdStr(o.evidence, 200),
+    definite, saidBy,
   };
 }
 
@@ -24893,6 +24942,170 @@ async function detFindBoardJob(phone, at, tz) {
   return { doc, job, date };
 }
 
+// ---------------------------------------------------------------------------
+// Changing an appointment that's already on file: cancel, postpone, move, undo
+// ---------------------------------------------------------------------------
+// A customer's job can live in two places: the day board (one he typed, or one
+// detection placed) and the website's booking list, which also owns the
+// day-before and morning-of reminder texts. A change has to land on whichever
+// one they have. Before this, accepting a cancel card only touched the board,
+// so a website booking stayed "confirmed" and the customer who'd just
+// cancelled still got "Reminder, I've got your car tomorrow".
+//
+// Every change leaves thread.apptChange behind: what happened, what it was
+// read from, and exactly what to put back. The conversation shows it with an
+// Undo, because a change he never asked for has to be one tap to reverse.
+
+// Their open website booking nearest the appointment on file (within 12 hours).
+function detSiteBooking(all, phone, at) {
+  if (!at) return null;
+  const near = (all || []).filter((b) => b.phone === phone && (b.status === 'pending' || b.status === 'confirmed') &&
+    Math.abs((b.apptAt || 0) - at) < 12 * 3600000);
+  near.sort((a, b) => Math.abs(a.apptAt - at) - Math.abs(b.apptAt - at));
+  return near[0] || null;
+}
+
+// Someone else already on the books overlapping [at, at+durMs) that day: their
+// name, or '' when the time is clear. Board maybes don't count; a firm job does.
+async function detClash(phone, date, at, durMs, all, skipBkId) {
+  for (const b of all || []) {
+    if (b.id === skipBkId || b.phone === phone || b.date !== date) continue;
+    if (b.status !== 'pending' && b.status !== 'confirmed') continue;
+    const s0 = b.apptAt, e0 = s0 + (Number(b.durationMin) || 180) * 60000;
+    if (at < e0 && s0 < at + durMs) return b.name || 'another booking';
+  }
+  const doc = await loadDay(date);
+  for (const m of doc.manual || []) {
+    if (m.phone === phone || m.maybe) continue;
+    const s0 = bkLaEpoch(date, m.slot), e0 = s0 + (Number(m.durationMin) || 180) * 60000;
+    if (at < e0 && s0 < at + durMs) return m.name || 'another job';
+  }
+  return '';
+}
+
+// Take the job off everywhere: board, calendar, booking list, queued reminder
+// texts. kind is 'cancel' or 'postpone'; a postpone also tags the conversation
+// and sets him a reminder to check back in three days, so a "let's do it
+// later" doesn't quietly become a lost customer. Sends nothing to anyone.
+async function detCancelAppt(thread, kind, info, cfg) {
+  const tz = (cfg && cfg.tz) || 'America/Los_Angeles';
+  const fromAt = thread.appointmentAt;
+  const undo = { fromAt };
+  const board = await detFindBoardJob(thread.phone, fromAt, tz);
+  if (board) {
+    undo.board = { date: board.date, job: board.job };
+    await detMoveBoardJob({ kind: 'cancel', phone: thread.phone }, fromAt, cfg);
+  }
+  const all = await loadBookings();
+  const bk = detSiteBooking(all, thread.phone, fromAt);
+  if (bk) {
+    undo.bk = { id: bk.id, status: bk.status };
+    undo.scheduled = (thread.scheduled || []).filter((x) => x.bkId === bk.id);
+    bkPurgeScheduled(thread, bk.id);
+    bk.status = 'cancelled'; bk.cancelledAt = Date.now(); bk.cancelledBy = info.auto ? 'auto' : 'mikey';
+    await saveBookings(all);
+    background(bkGcalSync(bk));
+  }
+  thread.appointmentAt = null;
+  thread.tags = thread.tags || [];
+  if (kind === 'postpone') {
+    if (!thread.tags.includes('postponed')) { thread.tags.push('postponed'); undo.tagged = true; }
+    if (!thread.reminderAt) {
+      thread.reminderAt = Date.now() + 3 * 86400000;
+      thread.reminderNote = 'They postponed. Check in to rebook.';
+      thread.reminderNotified = false;
+      undo.reminder = true;
+    }
+  }
+  thread.apptChange = { kind, at: Date.now(), fromAt, toAt: null, evidence: info.evidence || '', auto: !!info.auto, undo };
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+  return { board: !!board, booking: !!bk, reminders: (undo.scheduled || []).length };
+}
+
+// Move their website booking to f.date/f.slot: new time on the booking and the
+// calendar, the old day's reminders pulled and new ones queued. Refuses a time
+// that overlaps someone else unless force (he tapped "Move it" himself).
+async function detMoveSiteBooking(thread, f, info, cfg) {
+  const all = await loadBookings();
+  const fromAt = thread.appointmentAt;
+  const bk = detSiteBooking(all, thread.phone, fromAt);
+  if (!bk) return { ok: false, error: 'no_booking' };
+  if (!jdIsDate(f.date) || !/^\d{2}:\d{2}$/.test(String(f.slot || ''))) return { ok: false, error: 'bad_when' };
+  const at = bkLaEpoch(f.date, f.slot);
+  if (!info.force) {
+    const clash = await detClash(thread.phone, f.date, at, (Number(bk.durationMin) || 180) * 60000, all, bk.id);
+    if (clash) return { ok: false, error: 'clash', clash };
+  }
+  const undo = { fromAt, bk: { id: bk.id, status: bk.status, date: bk.date, slot: bk.slot, dateLabel: bk.dateLabel, apptAt: bk.apptAt } };
+  undo.scheduled = (thread.scheduled || []).filter((x) => x.bkId === bk.id);
+  bkPurgeScheduled(thread, bk.id);
+  Object.assign(bk, { date: f.date, slot: f.slot, dateLabel: bkNiceDate(f.date), apptAt: at, movedAt: Date.now() });
+  if (bk.status === 'confirmed') bkQueueReminders(thread, bk, await loadBookingConfig(), cfg);
+  await saveBookings(all);
+  background(bkGcalSync(bk));
+  thread.appointmentAt = at;
+  thread.apptChange = { kind: 'reschedule', at: Date.now(), fromAt, toAt: at, evidence: info.evidence || '', auto: !!info.auto, undo };
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+  return { ok: true, at };
+}
+
+// Put back whatever thread.apptChange says was changed.
+async function detUndoChange(phone, cfg) {
+  const tz = (cfg && cfg.tz) || 'America/Los_Angeles';
+  const thread = await loadThread(phone);
+  const ch = thread.apptChange;
+  if (!ch || ch.undone) return { ok: false, error: 'nothing_to_undo' };
+  const u = ch.undo || {};
+  const now = Date.now();
+  const putBackReminders = (bkId) => {
+    bkPurgeScheduled(thread, bkId);
+    const keep = (u.scheduled || []).filter((x) => x.sendAt > now + 60000);
+    if (keep.length) { thread.scheduled = (thread.scheduled || []).concat(keep).sort((a, b) => a.sendAt - b.sendAt); }
+  };
+  if (u.bk) {
+    const all = await loadBookings();
+    const bk = all.find((x) => x.id === u.bk.id);
+    if (bk) {
+      Object.assign(bk, u.bk);
+      delete bk.cancelledAt; delete bk.cancelledBy; delete bk.movedAt;
+      putBackReminders(bk.id);
+      await saveBookings(all);
+      background(bkGcalSync(bk));
+    }
+  }
+  if (ch.kind === 'reschedule' && u.boardMove && ch.toAt && u.fromAt) {
+    await detMoveBoardJob({ kind: 'reschedule', phone, at: u.fromAt, date: localDateStr(u.fromAt, tz),
+      slot: localTimeHm(u.fromAt, tz), tentative: false }, ch.toAt, cfg);
+  }
+  if (u.board && u.board.job) {
+    const doc = await loadDay(u.board.date);
+    if (!doc.manual.some((m) => m.id === u.board.job.id)) {
+      doc.manual.push(u.board.job);
+      await saveDay(doc);
+      background(dayJobGcalSync(u.board.job, u.board.date));
+    }
+  }
+  if (u.tagged) thread.tags = (thread.tags || []).filter((t) => t !== 'postponed');
+  if (u.reminder) { thread.reminderAt = null; thread.reminderNote = ''; }
+  thread.appointmentAt = u.fromAt || null;
+  ch.undone = now;
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+  return { ok: true, thread };
+}
+
+async function apiDetectUndo(request) {
+  const d = await readJson(request);
+  const phone = normalizePhone(d.phone) || d.phone;
+  if (!phone) return json({ ok: false, error: 'missing_phone' }, 422);
+  const r = await detUndoChange(phone, await loadConfig());
+  return json(r, r.ok ? 200 : 409);
+}
+
+function detWhen(at, tz) { return `${bkNiceDate(localDateStr(at, tz))} at ${bkFmt12(localTimeHm(at, tz))}`; }
+
 // One open card per customer at a time — a later message about the same job
 // updates it in place instead of stacking up a pile of near-duplicates.
 // Returns what it did, in a word, for the sweep's report.
@@ -24914,6 +25127,7 @@ async function detApply(thread, f, dc, cfg, opts) {
       const fromAt = thread.appointmentAt;
       await detMoveBoardJob({ kind: 'reschedule', phone, at: f.at, date: f.date, slot: f.slot, tentative: f.tentative }, fromAt, cfg);
       thread.appointmentAt = f.at;
+      thread.apptChange = { kind: 'reschedule', at: Date.now(), fromAt, toAt: f.at, evidence: f.evidence || '', auto: true, undo: { fromAt, boardMove: true } };
       await saveThread(thread);
       await updateIndexEntry(thread);
       if (open) { list.splice(list.indexOf(open), 1); await saveDetections(list); }
@@ -24925,11 +25139,57 @@ async function detApply(thread, f, dc, cfg, opts) {
       }
       return 'moved';
     }
+    // A website booking moves itself too now, on the same terms: they agreed
+    // to it, it was stated rather than asked, the hour is real rather than
+    // guessed, and nobody else is already in that spot. Anything short of
+    // that stays a card, with the reason in the alert.
+    let clash = '';
+    if (!have && f.customerConfirmed && f.definite !== false && !f.tentative && (f.confidence || 0) >= dc.autoAddMinConfidence) {
+      const fromAt = thread.appointmentAt;
+      const mv = await detMoveSiteBooking(thread, f, { auto: true, evidence: f.evidence }, cfg);
+      if (mv.ok) {
+        if (open) { list.splice(list.indexOf(open), 1); await saveDetections(list); }
+        if (!quiet) {
+          await notifyMikey(`🔄 Moved ${thread.name || phone} to ${bkNiceDate(f.date)} at ${bkFmt12(f.slot)}`,
+            `${thread.name || phone} was on ${detWhen(fromAt, tz)}. Their booking, your calendar and their reminder texts are now on ${bkNiceDate(f.date)} at ${bkFmt12(f.slot)}.\n\n` +
+            `From: "${f.evidence}"\n\nNothing was sent to them. Wrong? Open the conversation and tap Undo.`).catch(() => {});
+          await pushNotify().catch(() => {});
+        }
+        return 'moved';
+      }
+      if (mv.error === 'clash') clash = mv.clash;
+    }
+    f = Object.assign({}, f, { clash });
     // Not agreed yet: hold the new day as a maybe and keep the old job where it
     // is. Holding both costs a slot for a day or two; dropping either is how a
     // promise gets double booked.
     if (have) f = Object.assign({}, f, { intent: 'set', maybe: true });
   }
+
+  // A cancel or postpone they clearly stated comes off the schedule by itself.
+  // Only a job still ahead (or that started within the last three hours): an
+  // old appointment that already happened is not "cancelled" by a later text.
+  if ((f.intent === 'cancel' || f.intent === 'postpone') && thread.appointmentAt && dc.autoCancel &&
+      f.definite && (f.confidence || 0) >= dc.autoCancelMinConfidence && thread.appointmentAt > Date.now() - 3 * 3600000) {
+    const fromAt = thread.appointmentAt;
+    const r = await detCancelAppt(thread, f.intent, { auto: true, evidence: f.evidence }, cfg);
+    if (open) { list.splice(list.indexOf(open), 1); await saveDetections(list); }
+    if (quiet) return f.intent === 'cancel' ? 'cancelled' : 'postponed';
+    const who = thread.name || phone;
+    const pulled = [r.board ? 'your day board' : null, r.booking ? 'the booking list' : null, 'your calendar'].filter(Boolean).join(', ');
+    await notifyMikey(
+      f.intent === 'cancel' ? `🚫 ${who} cancelled ${detWhen(fromAt, tz)} — taken off` : `⏸ ${who} postponed ${detWhen(fromAt, tz)} — taken off`,
+      [
+        `${who} ${f.intent === 'cancel' ? 'cancelled' : 'postponed'} ${detWhen(fromAt, tz)}. It's off ${pulled}.`,
+        r.reminders ? `${r.reminders} reminder text${r.reminders > 1 ? 's' : ''} to them won't go out now.` : null,
+        f.intent === 'postpone' ? `Tagged "postponed", and you'll get a reminder in 3 days to check in and rebook.` : null,
+        '', `From: "${f.evidence}"`, '',
+        `Nothing was sent to them. Wrong? Open the conversation and tap Undo.`,
+      ].filter((x) => x !== null).join('\n')).catch(() => {});
+    await pushNotify().catch(() => {});
+    return f.intent === 'cancel' ? 'cancelled' : 'postponed';
+  }
+  if (f.intent === 'postpone') f = Object.assign({}, f, { intent: 'cancel', postpone: true });
 
   if (f.intent === 'cancel' || f.intent === 'reschedule') {
     // Only meaningful against a job that already exists. A cancel is always a
@@ -24944,13 +25204,17 @@ async function detApply(thread, f, dc, cfg, opts) {
     rec.tentative = !!f.tentative;
     rec.name = thread.name || rec.name;
     rec.evidence = f.evidence; rec.confidence = f.confidence;
+    rec.postpone = !!f.postpone;
+    rec.clash = f.clash || '';
     rec.at_ = Date.now();
     if (!open) list.push(rec);
     await saveDetections(list);
     if (quiet) return 'card';
     await notifyMikey(
-      f.intent === 'cancel' ? `🚫 ${thread.name || phone} may be cancelling` : `🔄 ${thread.name || phone} wants to move`,
-      `"${f.evidence}"\n\nNothing has changed. Open Jobs to accept or ignore it.`).catch(() => {});
+      f.intent === 'cancel' ? `🚫 ${thread.name || phone} may be ${f.postpone ? 'postponing' : 'cancelling'}` : `🔄 ${thread.name || phone} wants to move`,
+      `"${f.evidence}"\n\n` +
+      (f.clash ? `Not moved automatically: ${f.clash} is already in that spot.\n\n` : '') +
+      `Nothing has changed yet because it didn't read as decided. Open Jobs to accept or ignore it.`).catch(() => {});
     await pushNotify().catch(() => {});
     return 'card';
   }
@@ -25279,17 +25543,31 @@ async function apiDetectionAction(request) {
 
   if (action === 'accept') {
     // Accept a proposed move or cancel against the existing appointment.
+    // Same paths the automatic change uses, so a website booking's status and
+    // reminder texts follow along with the board and the calendar.
     const thread = await loadThread(rec.phone);
-    // The board job (and its calendar event) follows, or the run sheet and his
-    // calendar keep the old day while the conversation says the new one.
-    await detMoveBoardJob(rec, thread.appointmentAt || rec.currentAt, cfg);
+    const tz = cfg.tz || 'America/Los_Angeles';
+    if (!thread.appointmentAt && rec.currentAt) thread.appointmentAt = rec.currentAt;
     if (rec.kind === 'cancel') {
-      thread.appointmentAt = null;
+      await detCancelAppt(thread, rec.postpone ? 'postpone' : 'cancel', { auto: false, evidence: rec.evidence }, cfg);
     } else if (rec.kind === 'reschedule' && rec.at) {
-      thread.appointmentAt = rec.at;
+      const fromAt = thread.appointmentAt;
+      const have = await detFindBoardJob(rec.phone, fromAt, tz);
+      if (have) {
+        await detMoveBoardJob(rec, fromAt, cfg);
+        thread.appointmentAt = rec.at;
+        thread.apptChange = { kind: 'reschedule', at: Date.now(), fromAt, toAt: rec.at, evidence: rec.evidence || '', auto: false, undo: { fromAt, boardMove: true } };
+        await saveThread(thread);
+        await updateIndexEntry(thread);
+      } else {
+        const mv = await detMoveSiteBooking(thread, rec, { auto: false, force: true, evidence: rec.evidence }, cfg);
+        if (!mv.ok) {
+          thread.appointmentAt = rec.at;
+          await saveThread(thread);
+          await updateIndexEntry(thread);
+        }
+      }
     }
-    await saveThread(thread);
-    await updateIndexEntry(thread);
     list.splice(i, 1);
     await saveDetections(list);
     return json({ ok: true, moved: rec.kind === 'reschedule' ? rec.at : null });
