@@ -297,10 +297,16 @@ const KEYED = { ANTHROPIC_API_KEY: 'sk-test', GEMINI_API_KEY: 'g-test' };
 
 // --- pricing ---------------------------------------------------------------
 let R = makeRouter(KEYED);
-check('a million tokens each way on Haiku is $6', R.claudeCost(1e6, 1e6), 6);
-check('a typical draft — 3k in, 300 out — is under half a cent',
-  Math.round(R.claudeCost(3000, 300) * 10000) / 10000, 0.0045);
+// The key route runs Haiku 5.5 by default since 2026-11-24 (Mikey's pick, when
+// his writing-style guide went into every draft).
+check('a million tokens each way on Haiku 5.5 is 60 cents', R.claudeCost(1e6, 1e6), 0.6);
+check('a draft carrying the guide — 15k in, 600 out — is under a fifth of a cent',
+  Math.round(R.claudeCost(15000, 600) * 10000) / 10000, 0.0018);
 check('a negative count cannot credit the budget back', R.claudeCost(-5e6, 0), 0);
+// Haiku 4.5 stays in the table at its own rate: ANTHROPIC_MODEL can still put it
+// back, and pricing it as 5.5 would let a day run ten times over the ceiling.
+const H45 = makeRouter(Object.assign({}, KEYED, { ANTHROPIC_MODEL: 'claude-haiku-4-5' }));
+check('and a million each way on Haiku 4.5 is still $6', H45.claudeCost(1e6, 1e6), 6);
 // Opus is still in the table and still priced right, because ANTHROPIC_MODEL can
 // put it back on the key route — the drafts it writes are better, and the whole
 // point of the ceiling is that the better model can't run away with the month.
@@ -308,14 +314,17 @@ const OPUS = makeRouter(Object.assign({}, KEYED, { ANTHROPIC_MODEL: 'claude-opus
 check('and a million each way on Opus 5 is still $30', OPUS.claudeCost(1e6, 1e6), 30);
 check('output is the expensive half', OPUS.claudeCost(0, 1e6), 25);
 check('Opus takes the effort dial', OPUS.modelTakesEffort(OPUS.claudeModel()), true);
-check('Haiku does not, and sending it one is a 400', R.modelTakesEffort(R.claudeModel()), false);
+check('so does Haiku 5.5, the default', R.modelTakesEffort(R.claudeModel()), true);
+check('Haiku 4.5 does not, and sending it one is a 400', H45.modelTakesEffort(H45.claudeModel()), false);
+check('nor the binding\'s spelling of it', R.modelTakesEffort('anthropic/claude-haiku-4.5'), false);
+check('a model released after this file still gets the dial', R.modelTakesEffort('claude-opus-6'), true);
 
 // --- the ceiling itself ----------------------------------------------------
 check('the default ceiling is a dollar a day', R.aiDailyBudget(), 1);
 check('a var overrides it without a deploy', makeRouter(Object.assign({}, KEYED, { ANTHROPIC_DAILY_BUDGET: '0.25' })).aiDailyBudget(), 0.25);
 check('nonsense falls back to the default rather than to infinity',
   makeRouter(Object.assign({}, KEYED, { ANTHROPIC_DAILY_BUDGET: 'free' })).aiDailyBudget(), 1);
-check('and the model is the one being priced', R.claudeModel(), 'claude-haiku-4-5');
+check('and the model is the one being priced', R.claudeModel(), 'claude-haiku-5-5');
 
 console.log('\n=== reaching Claude through the AI binding, with no key anywhere ===');
 // The switch of 2026-09-20: drafts go through Cloudflare's AI binding on Unified
@@ -361,8 +370,8 @@ check('and beats a stale Worker secret too',
 check('the binding stays behind it as the fallback',
   makeRouter(TYPED).claudeRoutes(), ['key', 'binding']);
 check('with no binding it is the only route', makeRouter({ KEY_IN_SETTINGS: 'sk-ant-typed' }).claudeRoutes(), ['key']);
-check('and it prices as Haiku, same as the binding does',
-  makeRouter(TYPED).claudeCost(1e6, 1e6), 6);
+check('and it prices at the key route\'s Haiku 5.5 rate',
+  makeRouter(TYPED).claudeCost(1e6, 1e6), 0.6);
 
 STORE.clear();
 let T = makeRouter(TYPED); T.resetSpend();
@@ -393,12 +402,12 @@ check('a fast-tier call never reaches Claude at all',
   await R.aiGenerate('classify this', { tier: 'fast', surface: 'keyboard' }), 'gemini wrote this');
 
 // A day that already spent the ceiling, written the way noteAiUsage files it.
-// The counts are Haiku-sized on purpose: a day that went over at Opus rates is
-// only sixty cents at Haiku's, and a ceiling test that no longer reaches the
-// ceiling passes for the wrong reason. $0.80 in + $0.60 out = $1.40.
+// The counts are sized for Haiku 5.5 on purpose: the day that went over at Haiku
+// 4.5's rates is fourteen cents at 5.5's, and a ceiling test that no longer
+// reaches the ceiling passes for the wrong reason. $0.80 in + $0.60 out = $1.40.
 STORE.clear();
 STORE.set(aiUsageKey(TODAY), JSON.stringify({ date: TODAY, by: {
-  'reply draft (claude)': { calls: 60, in: 800000, out: 120000, errors: 0 },
+  'reply draft (claude)': { calls: 600, in: 8000000, out: 1200000, errors: 0 },
 } }));
 R = makeRouter(KEYED); R.resetSpend();
 const overBudget = await R.aiGenerate('draft this', { tier: 'voice', surface: 'reply draft' });
@@ -426,7 +435,7 @@ check('and it did try Claude first', R.calls, ['claude', 'gemini']);
 // --- a burst inside one isolate is caught before KV hears about it ---------
 STORE.clear(); R = makeRouter(KEYED); R.resetSpend();
 await R.claudeSpentToday();               // seeds the day at $0
-R.noteClaudeSpend(700000, 120000);        // $1.30 of Haiku drafting, none of it flushed yet
+R.noteClaudeSpend(7000000, 1200000);      // $1.30 of Haiku 5.5 drafting, none of it flushed yet
 check('an in-flight burst counts against the budget immediately',
   await R.aiGenerate('draft this', { tier: 'voice', surface: 'reply draft' }), 'gemini wrote this');
 

@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-11-24·email-thread';
+const BUILD = '2026-11-24·style-guide';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -623,6 +623,14 @@ async function handle(request) {
     if (!allowed) return json({ ok: false, error: 'helper_not_allowed' }, 403);
     return allowed(request, url);
   }
+  // The hourly drafter's key opens its two routes and nothing else, checked
+  // here once for the same reason as the helper's: a route added next month is
+  // closed to it until someone decides otherwise.
+  if (role === 'drafter') {
+    const allowed = DRAFTER_ROUTES[request.method + ' ' + pathname];
+    if (!allowed) return json({ ok: false, error: 'drafter_not_allowed' }, 403);
+    return allowed(request, url);
+  }
   if (request.method === 'GET'  && pathname === '/api/whoami')     return json({ ok: true, role });
   // Mikey can open the helper page too, to see exactly what his helper sees, and
   // he's the one who answers what the helper asks.
@@ -630,6 +638,13 @@ async function handle(request) {
     if (request.method === 'POST' && pathname === '/api/helper/answer') return apiHelperAnswer(request);
     const h = HELPER_ROUTES[request.method + ' ' + pathname];
     if (h && pathname !== '/api/helper/push') return h(request, url);
+  }
+  // Mikey can read the drafter's queue too, to see exactly what it sees, and
+  // only he can make or retire its key.
+  if (pathname.startsWith('/api/drafter/')) {
+    if (request.method === 'POST' && pathname === '/api/drafter/key') return apiDrafterKey(request);
+    const d = DRAFTER_ROUTES[request.method + ' ' + pathname];
+    if (d) return d(request, url);
   }
   // Past the gate = a real, authenticated use of a real feature. Buffered, never
   // written here: see noteApiUse. This is the half of usage tracking that keeps
@@ -11820,7 +11835,9 @@ async function apiFollowups() {
     .filter((e) => !e.archived && e.followupDue && e.fu)
     .map((e) => ({ phone: e.phone, name: e.name || '', status: e.status || '', lastBody: e.lastBody || '', ...e.fu }))
     .sort((a, b) => urgencyRank(b.urgency) - urgencyRank(a.urgency) || (a.dueAt || 0) - (b.dueAt || 0));
-  return json({ ok: true, items, config: cfg });
+  // publicConfig, like /api/config: the raw doc holds his Anthropic key and the
+  // hourly drafter's key hash, and neither may come back down to a browser.
+  return json({ ok: true, items, config: publicConfig(cfg) });
 }
 
 // The standing rules Mikey has told the AI, so he can see and drop them without
@@ -11952,6 +11969,10 @@ function publicConfig(cfg) {
   // what it is.
   delete out.helperPassword;
   out.helperPinSet = !!helperSecret(cfg);
+  // The hourly drafter's key is stored only as a hash, and even that stays in
+  // the Worker: the screen learns whether one is set and since when.
+  delete out.drafterKeyHash;
+  out.drafterKey = drafterKeyStatus(cfg);
   // Always sent whole, defaults filled in, so the switches on the screen read the
   // same "off" the Worker reads rather than rendering blank for a config that has
   // never been saved since this shipped.
@@ -12113,7 +12134,9 @@ async function apiBlock(request) {
   next.blockedNumbers = list;
   await kv().put('config', JSON.stringify(next));
   CFG_CACHE = next;
-  return json({ ok: true, config: next, blockedNumbers: list });
+  // Through publicConfig, the same as /api/config: the raw doc carries his
+  // Anthropic key and the drafter's key hash.
+  return json({ ok: true, config: publicConfig(next), blockedNumbers: list });
 }
 
 // ===========================================================================
@@ -14633,7 +14656,9 @@ function rollUpDraftVerdicts(d, days) {
     return { sent: list.length, kept, rate: Math.round((kept / list.length) * 100) };
   };
   const by = {};
-  for (const name of ['claude', 'gemini']) by[name] = tally(rows.filter((r) => r.by === name));
+  // 'opus' is the hourly drafter (DRAFTER_BY): counted on its own so its drafts
+  // can be held up against the instant ones he gets when the text lands.
+  for (const name of ['claude', 'gemini', 'opus']) by[name] = tally(rows.filter((r) => r.by === name));
   return Object.assign(tally(rows), { byProvider: by, days: days || 30 });
 }
 
@@ -18051,6 +18076,9 @@ async function bearerRole(request, pw) {
   try { rec = await kv().get(key, { type: 'json' }); } catch { rec = null; }
   if (rec && rec.n >= LOGIN_MAX_FAILS && now - (rec.at || 0) < LOGIN_LOCK_MS) return '';
   if (pw === ENV.DASHBOARD_PASSWORD) return 'owner';
+  // The hourly drafter's key (see DRAFTER_ROUTES): compared by hash only, and
+  // after the owner password so it can never be mistaken for it.
+  if (await drafterKeyMatches(pw)) return 'drafter';
   const fresh = !rec || now - (rec.at || 0) >= LOGIN_LOCK_MS;
   const next = { n: (fresh ? 0 : rec.n) + 1, at: now };
   try { await kv().put(key, JSON.stringify(next), { expirationTtl: 3600 }); } catch { /* the count is a brake, not a lock */ }
@@ -18123,6 +18151,185 @@ const HELPER_ROUTES = {
   'GET /api/push/key':      async () => json({ ok: true, key: (await vapidKeys()).pub }),
   'GET /api/push/peek':     () => apiHelperPeek(),
 };
+
+// ===========================================================================
+// The hourly drafter: Claude Code on Mikey's own plan (2026-11-24)
+// ===========================================================================
+// Mikey wanted his drafts written by Claude with his writing-style guide, on
+// his Claude subscription rather than a paid API. A subscription login can't be
+// wired into this Worker (Anthropic only allows those inside its own apps), so
+// the allowed shape runs the other way: a scheduled Claude Code task, hourly
+// from 8 to 8, asks this Worker who is waiting on him, writes a reply for each
+// with Opus, and posts it into the "Drafted for you" box. The instant Haiku
+// draft is still the first answer; the hourly one replaces it if he hasn't sent
+// anything yet, because the voice page only ever puts a draft over an older
+// draft he hasn't touched.
+//
+// That task reads customer texts, and a customer can type anything. So its key
+// opens exactly the two routes below and nothing else, the way the helper's
+// PIN does: it can see who is waiting and save a draft. It cannot send a text,
+// reach settings or money, or read a conversation that isn't waiting on him.
+// The worst a hostile text can get out of it is a strange draft that Mikey
+// reads before it goes anywhere. The task's cloud environment holds this key
+// and nothing else.
+//
+// The key is made on the Settings screen and shown once. Only its SHA-256 is
+// stored, so neither the config doc nor this public code can hand it back.
+const DRAFTER_ROUTES = {
+  'GET /api/drafter/queue':  () => apiDrafterQueue(),
+  'POST /api/drafter/draft': (request) => apiDrafterDraft(request),
+};
+const DRAFTER_KEY_PREFIX = 'mkd_draft_';
+// Older than a week, a conversation isn't waiting on a reply, it has gone quiet,
+// and a reply would be a revival he should choose to send himself.
+const DRAFTER_FRESH_MS = 7 * 86400000;
+// Per hourly run. More than this waiting at once is a backlog he is better off
+// seeing for himself than having drafted in bulk.
+const DRAFTER_MAX = 12;
+// How an hourly draft is marked. It rides into aiBy when he sends it, like any
+// draft, so "sent word for word" can say whether these beat the instant ones.
+const DRAFTER_BY = 'opus';
+
+async function drafterKeyMatches(pw) {
+  const s = String(pw || '');
+  if (!s.startsWith(DRAFTER_KEY_PREFIX)) return false;
+  const cfg = await loadConfig();
+  return !!cfg.drafterKeyHash && (await sha256hex(s)) === cfg.drafterKeyHash;
+}
+function drafterKeyStatus(cfg) {
+  return { set: !!(cfg && cfg.drafterKeyHash), at: +(cfg && cfg.drafterKeyAt) || 0 };
+}
+
+// POST /api/drafter/key, owner only. A new key retires the old one at once;
+// {revoke:true} switches the drafter off. The key is in this one response and
+// nowhere else, ever.
+async function apiDrafterKey(request) {
+  const data = await readJson(request);
+  const next = Object.assign({}, await loadConfig());
+  let key = '';
+  if (data && data.revoke) {
+    next.drafterKeyHash = '';
+    next.drafterKeyAt = 0;
+  } else {
+    key = DRAFTER_KEY_PREFIX + b64url(crypto.getRandomValues(new Uint8Array(24)));
+    next.drafterKeyHash = await sha256hex(key);
+    next.drafterKeyAt = Date.now();
+  }
+  await kv().put('config', JSON.stringify(next));
+  cacheConfig(next);
+  return json(Object.assign({ ok: true, drafterKey: drafterKeyStatus(next) }, key ? { key } : {}));
+}
+
+// The drafter never sees a phone number. It doesn't need one to write a reply,
+// and a number is the one thing in a thread that names the person outright. It
+// gets a stable stand-in instead, salted with the key's own hash so this public
+// code can't be used to walk one back to a number.
+async function drafterId(phone, cfg) {
+  return (await sha256hex('mkd-drafter:' + ((cfg && cfg.drafterKeyHash) || '') + ':' + phone)).slice(0, 16);
+}
+async function drafterPhone(id, cfg) {
+  if (!/^[0-9a-f]{16}$/.test(String(id || ''))) return '';
+  for (const e of await loadIndex()) {
+    if (e && e.phone && (await drafterId(e.phone, cfg)) === id) return e.phone;
+  }
+  return '';
+}
+// The conversation as the drafter should read it: what he and they actually
+// said. A tapback is not a message, so "Liked 'Be there in 10'" after his text
+// doesn't make it look like the customer is waiting.
+function drafterMessages(thread) {
+  return (thread.messages || []).filter((m) => m && (m.dir === 'in' || m.dir === 'out') && m.kind !== 'reaction');
+}
+
+// GET /api/drafter/queue: who is waiting on Mikey right now, longest wait first,
+// with what a reply needs (his guide, his prices and rules, the last stretch of
+// each conversation). Strictly read-only: loadThread, never openThreadForRead,
+// so the drafter looking at a chat doesn't clear its unread dot.
+async function apiDrafterQueue() {
+  const cfg = await loadConfig();
+  const now = Date.now();
+  const rows = (await loadIndex())
+    .filter((e) => rowAwaitingReply(e) && !e.archived && !isPracticePhone(e.phone) && !isOptedOut(cfg, e.phone)
+      && now - (e.lastTs || 0) < DRAFTER_FRESH_MS)
+    .sort((a, b) => (a.lastTs || 0) - (b.lastTs || 0));
+  const out = [];
+  for (const e of rows) {
+    if (out.length >= DRAFTER_MAX) break;
+    const thread = await loadThread(e.phone);
+    if (thread.archived || !replyOwed(thread)) continue;
+    const msgs = drafterMessages(thread);
+    const last = msgs[msgs.length - 1];
+    if (!last || last.dir !== 'in') continue;
+    // Already settled for this exact message: a question only he can answer is
+    // hanging on it (the instant drafter held back on purpose, and a guessed
+    // time goes out in his voice), a draft somebody asked for by hand is
+    // waiting, or the hourly drafter already answered it or passed on it.
+    const s = thread.suggested;
+    if (thread.needsYou && thread.needsYou.forTs === last.ts) continue;
+    if (s && s.manual) continue;
+    if (s && s.by === DRAFTER_BY && s.forTs === last.ts) continue;
+    if (thread.drafterSkip && thread.drafterSkip.forTs === last.ts) continue;
+    out.push({
+      id: await drafterId(e.phone, cfg),
+      forTs: last.ts,
+      firstName: jdFirst(thread.name),
+      waitingMinutes: Math.max(0, Math.round((now - last.ts) / 60000)),
+      car: e.vehicleLabel || '',
+      appointment: thread.appointmentAt ? new Date(thread.appointmentAt).toISOString() : '',
+      instantDraft: (s && s.text && s.forTs === last.ts) ? s.text : '',
+      messages: msgs.slice(-14).map((m) => ({
+        from: m.dir === 'in' ? 'customer' : 'mikey',
+        at: new Date(m.ts).toISOString(),
+        text: (String(m.body || '') + (m.transcript ? ` [voicemail transcript: ${m.transcript}]` : '')).slice(0, 1500),
+      })),
+    });
+  }
+  return json({
+    ok: true,
+    guide: WRITING_STYLE_GUIDE,
+    playbook: businessContext(cfg) + (await rulesContext()) + sayNeverPrompt(cfg),
+    conversations: out,
+  });
+}
+
+// POST /api/drafter/draft {id, forTs, text}, or {id, forTs, skip:true, reason}
+// for "this one doesn't need a reply". Only ever a draft, and only an answer to
+// the message it was written for: if the customer has texted again or Mikey has
+// answered since, it is refused as stale rather than landing on a conversation
+// that moved on. And it answers to the instant drafter's two gates, a made-up
+// price and a made-up time, because a draft he sends without rereading is still
+// his word.
+async function apiDrafterDraft(request) {
+  const d = (await readJson(request)) || {};
+  const cfg = await loadConfig();
+  const phone = await drafterPhone(d.id, cfg);
+  if (!phone) return json({ ok: false, error: 'not_found' }, 404);
+  const forTs = Number(d.forTs) || 0;
+  const thread = await loadThread(phone);
+  const msgs = drafterMessages(thread);
+  const last = msgs[msgs.length - 1];
+  if (!last || last.ts !== forTs) return json({ ok: false, error: 'stale' }, 409);
+  if (last.dir !== 'in') return json({ ok: false, error: 'answered' }, 409);
+  if (isOptedOut(cfg, phone)) return json({ ok: false, error: 'opted_out' }, 409);
+  if (thread.suggested && thread.suggested.manual) return json({ ok: false, error: 'kept_his_draft' }, 409);
+  if (thread.needsYou && thread.needsYou.forTs === forTs) return json({ ok: false, error: 'needs_you' }, 409);
+  if (d.skip) {
+    thread.drafterSkip = { forTs, at: Date.now(), why: String(d.reason || '').slice(0, 160) };
+    await saveThread(thread);
+    return json({ ok: true, skipped: true });
+  }
+  const text = cleanReply(String(d.text || '')).slice(0, 640).trim();
+  if (!text) return json({ ok: false, error: 'empty' }, 422);
+  const price = findInventedPrice(text, [businessContext(cfg), transcript(thread)]);
+  if (price) return json({ ok: false, error: 'invented_price', detail: price }, 422);
+  const time = findInventedReplyTime(text, [recentTranscript(thread)]);
+  if (time) return json({ ok: false, error: 'invented_time', detail: time }, 422);
+  thread.suggested = { text, ts: Date.now(), forTs, by: DRAFTER_BY };
+  await saveThread(thread);
+  await updateIndexEntry(thread);
+  return json({ ok: true });
+}
+
 function helperName(cfg) { return String((cfg && cfg.helperName) || '').trim() || 'Helper'; }
 // Re-issue a request with the helper's name stamped on it. The name comes from
 // the config, never from the page, so the "sent by" tag can't be anyone else's.

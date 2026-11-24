@@ -4793,7 +4793,7 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   // Deploy fingerprint — keep identical to BUILD in src/index.js. The footer shows
   // "app <APP_BUILD> · server <server build>" so you can confirm the LIVE url is
   // serving this version. See DEPLOY.md.
-  var APP_BUILD="2026-11-24·email-thread";
+  var APP_BUILD="2026-11-24·style-guide";
   var ME_KEY="mkd-me"; // which team member is using THIS device (per-device, local)
   var pollTimer=null, pollInterval=POLL_MIN, lastSig="", lastActivity=Date.now(), paused=false, lastArchive=null;
   function el(id){return document.getElementById(id)}
@@ -8903,6 +8903,12 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
   function saveConfig(patch){
     return post("/api/config",patch).then(function(d){if(d&&d.ok){state.config=d.config;afterConfig()}return d});
   }
+  // The status line under "Hourly drafts on my Claude plan". The Worker sends
+  // {set, at} and never the key itself (publicConfig strips its hash too).
+  function drafterKeyLine(dk){
+    dk=dk||{};
+    return dk.set?("On · key made "+new Date(dk.at).toLocaleDateString([],{month:"short",day:"numeric"})):"Off · no key yet";
+  }
   // Mirrors clickAlertMode() in the Worker, including its default: a config
   // saved before this setting existed has no key, and "every new visitor" is
   // what that means. Both sides have to agree or the switch shows one thing and
@@ -9316,6 +9322,21 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
           ((c.aiKey&&c.aiKey.set)?("Using your Anthropic account · "+esc(c.aiKey.hint)):"Not set — paid for with Cloudflare credits, or Gemini writes the drafts if there are none.")+
         '</span></div>'+
       '<div class="hint">Claude writes the texts a customer reads, and something has to pay for it. Two ways: credits on your <b>Cloudflare</b> account, where there is no key at all and nothing to paste, or a key from <b>console.anthropic.com</b> pasted here, which spends the credits sitting in that account instead. Paste one and it gets used ahead of everything else.<br><br><b>Treat it like the password to this dashboard.</b> It is kept in your app\'s own storage, not in a proper secret box, so anybody who can open this screen could spend it. It is never shown again after you save it, never included in a snapshot, and you can kill it from the Anthropic console in one tap. Whatever happens, the AI stops itself at <b>$1 a day</b>.</div>'+
+      // The hourly drafter (DRAFTER_ROUTES in the Worker): a Claude Code task on
+      // his own Claude plan. Its key is made here and shown once. display:none
+      // rather than the hidden attribute, because .btn and an inline flex both
+      // outrank [hidden] and would leave these showing.
+      '<div class="fu-col"><span class="lbl2">Hourly drafts on my Claude plan</span>'+
+        '<span style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">'+
+          '<button id="cfgDrafterMake" class="btn">'+(((c.drafterKey||{}).set)?'Make a new key':'Make the key')+'</button>'+
+          '<button id="cfgDrafterOff" class="btn" style="'+(((c.drafterKey||{}).set)?'':'display:none')+'">Turn it off</button>'+
+        '</span>'+
+        '<span id="cfgDrafterKeyRow" style="display:none;gap:6px;align-items:center">'+
+          '<input type="text" id="cfgDrafterKey" readonly spellcheck="false" autocomplete="off" style="flex:1;min-width:170px;font-family:monospace">'+
+          '<button id="cfgDrafterCopy" class="btn">Copy</button>'+
+        '</span>'+
+        '<span id="cfgDrafterMsg" style="color:var(--muted2);font-size:12px">'+esc(drafterKeyLine(c.drafterKey))+'</span></div>'+
+      '<div class="hint">Once an hour from 8 to 8, Claude on <b>your own Claude plan</b> reads who\'s waiting on you and writes a better draft with your writing guide, into the same <b>Drafted for you</b> box. It only replaces the instant draft if you haven\'t touched it. This key is all it gets: it can see who\'s waiting and leave a draft, and it <b>can\'t send a text</b>, see money or settings, or read anyone who isn\'t waiting on you.<br><br>The key is shown <b>once</b>, so copy it straight into Claude. <b>Make a new key</b> stops the old one right away, and <b>Turn it off</b> stops the drafter. Your instant drafts keep coming either way.</div>'+
       '<div class="fu-col"><span class="lbl2">What the AI is actually costing</span></div>'+
       '<div id="aiUseCard" class="hint">Counting\u2026</div>'+
       '<div class="fu-row"><span class="lbl2">AI keyboard <span style="color:var(--muted2);font-weight:400">· suggests your next word</span></span><span class="sw'+(c.predictive!==false?" on":"")+'" id="cfgPredict"></span></div>'+
@@ -9399,6 +9420,43 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     };
     if(el("cfgAiKeyClear"))el("cfgAiKeyClear").onclick=function(){
       saveConfig({anthropicApiKey:""}).then(function(){toast("Key removed")});
+    };
+    // The hourly drafter's key. Shown once, right after it's made: the Worker
+    // keeps only its hash, so there is no "show it again" to build. Updated in
+    // place rather than through saveConfig/afterConfig, because a re-render
+    // would wipe the one moment the key is on screen.
+    el("cfgDrafterMake").onclick=function(){
+      var had=!!(state.config.drafterKey&&state.config.drafterKey.set);
+      if(had&&!confirm("Make a new key? The old one stops working right away, so the hourly drafter will need the new one."))return;
+      var m=el("cfgDrafterMsg");m.textContent="Making it…";
+      post("/api/drafter/key",{}).then(function(d){
+        if(!d||!d.ok||!d.key){m.textContent="Couldn't make a key. Try again.";return}
+        state.config.drafterKey=d.drafterKey;
+        el("cfgDrafterKey").value=d.key;
+        el("cfgDrafterKeyRow").style.display="flex";
+        el("cfgDrafterOff").style.display="";
+        el("cfgDrafterMake").textContent="Make a new key";
+        m.textContent="Copy it now and paste it into Claude. It won't be shown again.";
+      });
+    };
+    el("cfgDrafterCopy").onclick=function(){
+      var box=el("cfgDrafterKey");box.select();
+      var done=function(){toast("Key copied")};
+      if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(box.value).then(done,function(){document.execCommand("copy");done()});
+      else{document.execCommand("copy");done()}
+    };
+    el("cfgDrafterOff").onclick=function(){
+      if(!confirm("Turn off the hourly drafter? Its key stops working right away. Your instant drafts keep coming."))return;
+      post("/api/drafter/key",{revoke:true}).then(function(d){
+        if(!d||!d.ok){toast("Couldn't turn it off",{bad:true});return}
+        state.config.drafterKey=d.drafterKey;
+        el("cfgDrafterKey").value="";
+        el("cfgDrafterKeyRow").style.display="none";
+        el("cfgDrafterOff").style.display="none";
+        el("cfgDrafterMake").textContent="Make the key";
+        el("cfgDrafterMsg").textContent=drafterKeyLine(d.drafterKey);
+        toast("Hourly drafter off");
+      });
     };
     // The one place a raw provider error is shown. Everywhere else a failure
     // falls back and reports whoever failed LAST, so a dead key reads as a
@@ -14628,7 +14686,18 @@ if(L&&["deck","air","bento","console"].indexOf(L)>=0)document.documentElement.se
     else navOpen("moreView",function(){MORE.view="root";mrRender()});
     MORE.view=view;mrRender();
   }
+  // The hourly drafter's key is shown once (see cfgDrafterMake). Settings isn't
+  // rebuilt between visits, so without this the key would still be sitting in
+  // its box the next time he opened it. Opening any screen from here puts the
+  // card back to its status line; switching apps to paste it does not.
+  function drafterKeyForget(){
+    var box=el("cfgDrafterKey");if(!box||!box.value)return;
+    box.value="";
+    var row=el("cfgDrafterKeyRow");if(row)row.style.display="none";
+    var m=el("cfgDrafterMsg");if(m)m.textContent=drafterKeyLine(state.config&&state.config.drafterKey);
+  }
   function openMore(view){
+    drafterKeyForget();
     MORE.view=view||"root";
     el("moreApp").classList.add("show");
     setNavActive("more");

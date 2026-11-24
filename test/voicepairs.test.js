@@ -56,6 +56,7 @@ const env = new Function(
    ${liftConst('VOICE_STOP')}
    ${lift('voiceTokens')}
    ${lift('voiceOverlap')}
+   ${lift('looksAiWritten')}
    ${lift('pickVoiceExamples')}
    ${lift('voiceExchanges')}
    ${lift('emptyVoice')}
