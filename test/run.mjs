@@ -35,6 +35,7 @@ const UNIT = [
   'replycheck', 'autoreply', 'quotes', 'balance', 'alertmail', 'assistmail', 'emailthread', 'promise', 'recap',
   'geogrid', 'geogrid.ui', 'snapshot', 'journey', 'quotewatch', 'place', 'cold', 'portal', 'sheets', 'gdoc', 'gform', 'seed', 'scan', 'cpu',
   'aicost', 'expand', 'autoai', 'selftest', 'voicepairs', 'kept', 'use', 'calls', 'reachout', 'adsource', 'adsexport', 'quotereply', 'askme', 'photo', 'rain', 'name', 'openings', 'ready', 'opener', 'preview', 'voice', 'say', 'react', 'waitnudge', 'referral', 'prepost', 'helper', 'hangers', 'slots', 'signs', 'bookcal', 'crewcal', 'gift', 'channels', 'bookfacts', 'capacity', 'club', 'waiting', 'newapp', 'digest', 'kvreads', 'bearer', 'winback', 'unlogged', 'geminidraft', 'playbook',
+  'writingstyle', 'drafter',
 ].map((n) => `${n}.test.js`);
 
 const UI = [
@@ -42,6 +43,7 @@ const UI = [
   'newmsg.ui', 'peek.ui', 'polish.ui', 'journey.ui', 'scan.ui', 'aidiet.ui', 'autoai.ui', 'use.ui', 'layout.ui', 'stale.ui',
   'keyboard.ui', 'assist.ui', 'calls.ui', 'adsource.ui', 'askme.ui', 'photo.ui',
   'expand.ui', 'winddown.ui', 'homeloop.ui', 'rain.ui', 'sendnow.ui', 'qol.ui', 'qol2.ui', 'qol3.ui', 'name.ui', 'five.ui', 'ready.ui', 'opener.ui', 'preview.ui', 'say.ui', 'aikey.ui', 'react.ui', 'promise.ui', 'referral.ui', 'links.ui', 'helper.ui', 'afterpage.ui', 'ratepage.ui', 'pageeditor.ui', 'hangers.ui', 'slots.ui', 'signs.ui', 'bookcal.ui', 'crewcal.ui', 'gift.ui', 'channels.ui', 'bookfacts.ui', 'capacity.ui', 'club.ui', 'waiting.ui', 'insightsfresh.ui', 'homemoney.ui', 'gvoice.ui',
+  'drafter.ui',
 ].map((n) => `${n}.test.js`);
 
 const argv = process.argv.slice(2);

@@ -102,6 +102,22 @@ Mikey's rules for any automatic text (2026-10-10):
   Say he'll probably be in touch, and ask them to reply with anything he
   should know.
 
+**Sound like him.** Before writing or changing anything a customer reads (a
+template, an AI prompt, a draft, a scripted reply), read
+`docs/WRITING-STYLE.md`. It is measured from the 664 texts he typed himself
+(built 2026-11-24) and holds his decisions on what a stand-in may decide.
+Where it disagrees with the dashboard's auto-generated voice fingerprint, the
+file wins.
+
+The guide is also **built into every draft** (reply drafts, follow-up drafts,
+appointment confirmations, the website quote opener) as `WRITING_STYLE_GUIDE`
+in `src/index.js`, a generated copy. After editing `docs/WRITING-STYLE.md`,
+run `node scripts/sync-writing-style.mjs`; `test/writingstyle.test.js` fails
+until you do. Instant drafts run on Claude Haiku 5.5, and an **hourly drafter**
+on Mikey's own Claude plan writes better ones into the same box. Its key opens
+two routes and nothing else. Read `docs/HOURLY-DRAFTER.md` before touching
+`DRAFTER_ROUTES` or widening what that key can reach.
+
 ## The Google Voice page (`/voice`): start simple, add back only what he uses
 
 Mikey, 2026-11-19: he uses Google Voice for his personal texts and felt the
