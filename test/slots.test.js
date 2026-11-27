@@ -218,6 +218,25 @@ ok('Nov 1, an 11:00 PM to midnight event is still on Nov 1', JSON.stringify(M.bk
 ok('Mar 14 2027, a 1:00 to 3:00 PM event blocks 13:00 to 15:00', busy('2027-03-14', '13:00', '15:00') === '{"s":780,"e":900}', busy('2027-03-14', '13:00', '15:00'));
 ok('an ordinary Tuesday is unchanged', busy('2026-11-03', '13:00', '15:00') === '{"s":780,"e":900}', busy('2026-11-03', '13:00', '15:00'));
 
+section('Off for the holidays (Mikey, 2026-11-27): Dec 24, 25, 26, 31 and Jan 1');
+await M.saveBookings([]);
+NOW = at('2026-12-15', '10:00');
+ok('Wed Dec 23 still offers 1:00', JSON.stringify(await avail('2026-12-23', 'exterior')) === '["13:00"]', await avail('2026-12-23', 'exterior'));
+for (const d of ['2026-12-24', '2026-12-25', '2026-12-26', '2026-12-31', '2027-01-01']) ok(d + ' offers nothing', (await avail(d, 'exterior')).length === 0, await avail(d, 'exterior'));
+ok('Tue Dec 29 is back to 1:00', JSON.stringify(await avail('2026-12-29', 'exterior')) === '["13:00"]', await avail('2026-12-29', 'exterior'));
+ok('Sat Jan 2 is back to 7:00 and 1:00', JSON.stringify(await avail('2027-01-02', 'exterior')) === '["07:00","13:00"]', await avail('2027-01-02', 'exterior'));
+M.__reset();
+let hol = await (await M.apiNextOpenings(new URL('https://x.test/api/next-openings?service=exterior&n=12'))).json();
+ok('next openings skip all five days', hol.openings.length && !hol.openings.some((o) => /^(2026-12-2[456]|2026-12-31|2027-01-01)$/.test(o.date)), hol.openings.map((o) => o.date));
+ok('and tell the site both breaks are ahead', JSON.stringify(hol.away.map((h) => h.name)) === '["Christmas","New Year\'s"]', hol.away);
+r = await (await M.apiBook(req({ service: 'exterior', size: 'suv', date: '2026-12-26', slot: '13:00', name: 'Holly Day',
+  phone: '4255550177', address: '1 Pine St', city: 'Snohomish', smsConsent: true, estimate: 239 }))).json();
+ok('a booking for Dec 26 is turned away', !r.ok && r.error === 'slot_taken', r);
+NOW = at('2027-01-02', '10:00');
+M.__reset();
+hol = await (await M.apiNextOpenings(new URL('https://x.test/api/next-openings?service=exterior&n=3'))).json();
+ok('once they are past, the site gets no holiday note', Array.isArray(hol.away) && hol.away.length === 0, hol.away);
+
 Date.now = realNow;
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
