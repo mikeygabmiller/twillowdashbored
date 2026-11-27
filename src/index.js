@@ -158,7 +158,7 @@ function publicBase() { return String(ENV.PUBLIC_BASE_URL || BASE_URL || '').rep
 // <build> ✓" so you can confirm at a glance that the LIVE url (not just a preview
 // build) is serving this exact version — front-end assets and Worker script alike.
 // A "⚠ mismatch" means they came from different deploys. See DEPLOY.md.
-const BUILD = '2026-11-24·style-guide';
+const BUILD = '2026-11-27·holidays-off';
 
 // Truthy-check a Worker var/secret. Used for kill switches that must work even
 // when KV writes are blocked (the in-app toggles all persist to KV, so they're
@@ -19019,11 +19019,30 @@ function bkLaEpoch(dateStr, hhmm) {
   return naive - bkLaOffsetMin(guess) * 60000;
 }
 
+// Holidays off (Mikey, 2026-11-27: "block out Christmas Eve, Christmas and the
+// day after, along with New Year's Eve and New Year's"). In code, not in his
+// saved blockedDates, so it can't be lost by a Settings save and it ends on its
+// own: past dates simply never get asked about. The website reads `away` from
+// /api/next-openings to show a festive "gone for the holidays" note, so the
+// names here are customer copy: plain words, no dashes.
+const HOLIDAYS_OFF = [
+  { from: '2026-12-24', to: '2026-12-26', name: 'Christmas', note: 'Dec 24 to 26' },
+  { from: '2026-12-31', to: '2027-01-01', name: "New Year's", note: 'Dec 31 and Jan 1' },
+];
+function bkHolidayOff(date) { return HOLIDAYS_OFF.some((h) => date >= h.from && date <= h.to); }
+// The breaks still ahead and inside the booking window, for the website's note.
+function bkHolidaysAhead(cfg) {
+  const today = localDateStr(Date.now(), cfg.tz);
+  const last = localDateStr(Date.now() + (Number(cfg.windowDays) || 30) * 86400000, cfg.tz);
+  return HOLIDAYS_OFF.filter((h) => h.to >= today && h.from <= last).map((h) => Object.assign({}, h));
+}
+
 // Open start-times for a date, given service + size. Read-only.
 // Availability = work rules − existing jobs − Google Calendar busy − blocked dates.
 async function bkAvailability(date, service, size) {
   const cfg = await loadBookingConfig();
   if ((cfg.blockedDates || []).includes(date)) return [];      // Mikey marked the day off
+  if (bkHolidayOff(date)) return [];                           // off for the holidays
   const svc = bkSvc(cfg, service);
   if (!svc) return [];
   if (cfg.slotRules && cfg.slotRules.on) return bkSlotAvailability(cfg, date, service);
@@ -19143,7 +19162,7 @@ async function bkCapacity(service, through) {
   for (let i = 1; i < 400; i++) {
     const date = localDateStr(Date.now() + i * 86400000, tz);
     if (date > through) break;
-    if ((cfg.blockedDates || []).includes(date)) continue;
+    if ((cfg.blockedDates || []).includes(date) || bkHolidayOff(date)) continue;
     const m = date.slice(0, 7);
     const row = months[m] = months[m] || { m, open: 0, openLit: 0 };
     const n = (await bkSlotAvailability(cfg, date, service, pre)).length;
@@ -19435,7 +19454,7 @@ async function apiNextOpenings(url) {
   // Every page view of the site asks this (the "Next opening" line), so let
   // browsers and Cloudflare hold it for a few minutes. Stale by five minutes is
   // harmless: /api/book re-checks the slot before it takes it.
-  const res = json({ ok: true, service, openings: out });
+  const res = json({ ok: true, service, openings: out, away: bkHolidaysAhead(cfg) });
   res.headers.set('Cache-Control', 'public, max-age=300');
   return res;
 }

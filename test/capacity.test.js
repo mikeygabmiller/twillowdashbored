@@ -22,7 +22,7 @@ const kv = {
   async delete(k) { store.delete(k); },
   async list() { return { keys: [], list_complete: true }; },
 };
-const M = new Function('__env__', src + '\n; ENV = __env__; return { bkCapacity, apiBookingCapacity, bkAvailability, bkDuskMin, bkHm2min, bookingDefaults, localDateStr, saveDetections, __reset(){ resetInvocationCaches(); } };')({ MESSAGES: kv });
+const M = new Function('__env__', src + '\n; ENV = __env__; return { bkCapacity, apiBookingCapacity, bkAvailability, bkDuskMin, bkHolidayOff, bkHm2min, bookingDefaults, localDateStr, saveDetections, __reset(){ resetInvocationCaches(); } };')({ MESSAGES: kv });
 
 let pass = 0, fail = 0;
 const ok = (n, c, x) => { if (c) { pass++; console.log('  ✓', n); } else { fail++; console.log('  ✗', n, x !== undefined ? '→ ' + JSON.stringify(x) : ''); } };
@@ -42,6 +42,7 @@ function independent(lights, from, to) {
     const date = new Date(t).toISOString().slice(0, 10);
     if (date > to) break;
     if (from && date < from) continue;
+    if (M.bkHolidayOff(date)) continue;               // his holidays off (2026-11-27) hold nothing
     const dow = new Date(t).getUTCDay(), dusk = M.bkDuskMin(date);
     let n = 0;
     for (const hm of R.days[dow] || []) {
@@ -66,7 +67,9 @@ ok('each month matches the independent count', JSON.stringify(got) === JSON.stri
 ok('November holds 5 or fewer Full Details without lights', (got['2026-11'] || 0) <= 5, got['2026-11']);
 ok('December too', (got['2026-12'] || 0) <= 5, got['2026-12']);
 ok('the lights number is the independent one with lights', c.openLit === Object.values(wantLit).reduce((a, b) => a + b, 0), { openLit: c.openLit, wantLit });
-ok('lights add a lot of winter Full Details', c.openLit - c.open >= 40, { open: c.open, openLit: c.openLit });
+// 40 before the holidays came off (2026-11-27); those five days were
+// mostly lit-only weekday slots, so the gap is now in the mid-30s.
+ok('lights add a lot of winter Full Details', c.openLit - c.open >= 30, { open: c.open, openLit: c.openLit });
 ok('it reads the lights switch as off', c.lights === false);
 
 section('Bookings, holds and days off come off the count');
