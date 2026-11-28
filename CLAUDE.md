@@ -102,6 +102,16 @@ Mikey's rules for any automatic text (2026-10-10):
   Say he'll probably be in touch, and ask them to reply with anything he
   should know.
 
+**Clear, correct grammar, in every text a customer reads** (Mikey,
+2026-11-27: "a special focus on phrasing", "clarity and grammar, proper
+grammar and proper sentence phrasing", "especially the longer ones"). Not
+only automatic texts: templates, AI drafts, the Polish buttons and the helper
+page too. A capital to start every sentence, punctuation to end it, no two
+sentences joined with only a comma, no missing words. Longer texts get the
+most care: answer first, one idea per sentence, next step last. Casual words
+are fine; broken grammar is not. Details: rule 1 and section 3 of
+`docs/WRITING-STYLE.md`.
+
 **Sound like him.** Before writing or changing anything a customer reads (a
 template, an AI prompt, a draft, a scripted reply), read
 `docs/WRITING-STYLE.md`. It is measured from the 664 texts he typed himself
