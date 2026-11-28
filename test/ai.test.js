@@ -126,10 +126,13 @@ check('a fix list', /FIX SILENTLY/.test(PB), true);
 check('a flag list it must not act on', /FLAG, NEVER FIX/.test(PB), true);
 check('a tone list it must not act on', /TONE RISK/.test(PB), true);
 check('a hands-off list', /NEVER TOUCH/.test(PB), true);
-// The one that costs him a customer if it gets fixed: his signature opener is
-// not a missing apostrophe, and a generic proofreader "corrects" it every time.
-check('his opener is protected', /its Mikey/.test(PB), true);
-check('lowercase starts are protected', /starts lowercase/.test(PB), true);
+// Mikey, 2026-11-27: proper grammar is the focus. His opener gets its
+// apostrophe and a lowercase start gets its capital. Both used to be on the
+// hands-off list; they are fixes now, and must not sit on both lists at once.
+const PBfix = PB.slice(PB.indexOf('FIX SILENTLY'), PB.indexOf('FLAG, NEVER FIX'));
+const PBhands = PB.slice(PB.indexOf('NEVER TOUCH'));
+check('his opener gets its apostrophe now', /it\\'s Mikey", with the apostrophe/.test(PBfix), true);
+check('lowercase starts get a capital now', /starts with a lowercase letter/.test(PBfix) && !/lowercase/.test(PBhands), true);
 check('soft prices are protected', /never sharpen/.test(PB), true);
 check('sounding like a company is a tone risk', /one guy with a van/.test(PB), true);
 check('tone is never silently rewritten', /NEVER rewrite these, only mention/.test(PB), true);

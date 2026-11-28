@@ -32,6 +32,7 @@ globalThis.fetch = async () => ({ ok: false, status: 404, text: async () => 'no'
 // appointment confirmation falls to its template, which is what gets checked.
 const M = new Function('__env__', src + '\n; ENV = __env__; return { WRITING_STYLE_GUIDE, styleGuideContext, looksAiWritten,' +
   ' voiceContext, pickVoiceExamples, measureStyle, detConfirmDraft, VOICE_BUCKETS, claudeModel, modelTakesEffort, aiConfigured,' +
+  ' POLISH_PLAYBOOK, EXPAND_PLAYBOOK, POLISH_PROMPT, spellPrompt, measuredStyleRules, HELPER_GUIDE, HELPER_QUICK,' +
   ' __reset(){ resetInvocationCaches(); } };')({
   MESSAGES: kv, TWILIO_ACCOUNT_SID: 'AC1', TWILIO_AUTH_TOKEN: 't', TWILIO_FROM: '+14256007897', MIKEY_PHONE: '+13607975831',
   DETECT_DISABLED: '1', PUBLIC_BASE_URL: 'https://texting.test' });
@@ -55,7 +56,7 @@ section('The guide inside the Worker is the guide in docs/');
 ok('the generated block matches docs/WRITING-STYLE.md (if not: node scripts/sync-writing-style.mjs)',
   currentBlock(RAW) === generatedBlock(MD));
 const G = M.WRITING_STYLE_GUIDE;
-ok('it starts at his 10 rules', G.startsWith('## Start here'), G.slice(0, 40));
+ok('it starts at his rules', G.startsWith('## Start here'), G.slice(0, 40));
 ok('it carries every section through the AI-prompt version', /## 2\. The numbers/.test(G) && /## 13\. Short version for an AI prompt/.test(G));
 ok('and leaves out how the file was built and its contents list',
   !/How this was built/.test(G) && !/^## Contents/m.test(G));
@@ -136,6 +137,53 @@ ok('the "pin down a time" text asks morning or afternoon without one', /morning 
 section('The model that writes the instant drafts');
 ok('the key route defaults to Haiku 5.5', M.claudeModel('key') === 'claude-haiku-5-5', M.claudeModel('key'));
 ok('which takes the effort dial', M.modelTakesEffort(M.claudeModel('key')) === true);
+
+// Mikey, 2026-11-27: "a special focus on phrasing", "clarity and grammar,
+// proper grammar and proper sentence phrasing", "especially the longer ones".
+// The guide used to teach the opposite in places (keep his comma splices, keep
+// his lowercase starts) and even listed perfect grammar as the sign of an AI.
+section('Clear, correct grammar comes first in the guide');
+ok('it is rule 1', /\n1\. \*\*Clear, correct sentences, every time\.\*\*/.test(G));
+ok('section 3 opens with grammar and clarity, before the formatting',
+  /## 3\. Grammar and clarity[^\n]*\n\n\*\*Grammar and clarity come first\.\*\*/.test(G));
+ok('longer texts get their own recipe: answer first, next step last',
+  /\*\*Longer texts get the most care\.\*\*/.test(G) && /Lead with the answer or the main point\./.test(G) && /End with the next step or one question\./.test(G));
+ok('nothing tells a writer to keep two sentences glued with a comma', !/Keep that rhythm/.test(G));
+ok('or to start lowercase', !/Lowercase starts are fine/.test(G) && !/lowercase quick texts/.test(G) && !/A lowercase start only on/.test(G));
+ok('section 11 no longer calls correct grammar the sign of an AI',
+  !/with perfect grammar/.test(G) && /Correct grammar is not the giveaway/.test(G));
+ok('his example texts are marked as voice, not grammar to copy', /Those habits show his voice, not\s+grammar to copy/.test(MD));
+ok('the checklist starts with grammar', /## 12\. Before you hit send\n\n1\. Is the grammar right\?/.test(G));
+const BLOCK = (G.match(/```text\n([\s\S]*?)```/) || [null, ''])[1];
+ok('the short AI-prompt version leads with it', /^You are texting[^\n]*\n- Clear, correct sentences come first/.test(BLOCK), BLOCK.slice(0, 160));
+ok('and no longer teaches "ya" or "10:30ish"', !/\bya\b/.test(BLOCK.replace('"you" not "ya"', '')) && !/10:30ish/.test(BLOCK));
+ok('"Ready for ya." is gone from the phrases to use', !/Ready for ya/.test(G));
+ok('every draft is told a grammar rule beats one of his example texts',
+  /Where one of his example texts breaks a grammar rule, the rule wins/.test(draft) && /the rule wins/.test(auto));
+
+section('The Polish buttons fix grammar instead of guarding his habits');
+const PB = M.POLISH_PLAYBOOK;
+const fixList = PB.slice(PB.indexOf('FIX SILENTLY'), PB.indexOf('FLAG, NEVER FIX'));
+const handsOff = PB.slice(PB.indexOf('NEVER TOUCH'));
+ok('✨ Polish capitalises a lowercase start', /starts with a lowercase letter\. Capitalise it/.test(fixList));
+ok('…which is off the hands-off list', !/lowercase/i.test(handsOff), handsOff);
+ok('his opener gets its apostrophe', /"it's Mikey", with the apostrophe/.test(fixList));
+ok('…and "its Mikey" is off the hands-off list', !/its Mikey/.test(handsOff));
+ok('mixed-up words get fixed', /your \/ you're, then \/ than/.test(fixList) && /"ya" for "you"/.test(fixList));
+ok('an overlong sentence in a longer text gets split', /longer text \(three sentences or more\), a sentence over about 25 words/.test(fixList));
+ok('a correct text still comes back untouched', /return his message EXACTLY as written/.test(PB));
+ok('"Expand it" (his longer version) is told proper grammar, longer texts most of all',
+  /Proper grammar in every sentence/.test(M.EXPAND_PLAYBOOK) && /gets the most care/.test(M.EXPAND_PLAYBOOK));
+ok('…and its sample phrase is no longer two sentences glued with a comma', !/is fine, doesn't have to be detailed/.test(M.EXPAND_PLAYBOOK));
+ok('email replies: comma splices split and sentences capitalised, words still kept',
+  /Two sentences joined by only a comma/.test(M.POLISH_PROMPT) && /capital letter at the start of every sentence/.test(M.POLISH_PROMPT) && /Never add a word/.test(M.POLISH_PROMPT));
+const sp = M.spellPrompt('hi');
+ok('"Fix spelling": the same fixes, still no word changes',
+  /two sentences joined by only a comma split into two/.test(sp) && /capital letter at the start of every sentence/.test(sp) && /Do not change, add, remove or reorder any words/.test(sp));
+const habits = M.measuredStyleRules({ n: 100, medLen: 80, p90Len: 200, medSentences: 1, greetPct: 10, emojiPct: 2, smileyPct: 0, exclaimPct: 30, lowerStartPct: 20 });
+ok('measured habits no longer call lowercase starts "normal for him"', /Do not copy that/.test(habits) && !/normal for him/.test(habits), habits);
+ok('the helper page asks for proper grammar too', M.HELPER_GUIDE.some((s) => s.points.some((p) => /Use proper grammar and spelling/.test(p))));
+ok('…and its tap-to-use starters have no missing words', !M.HELPER_QUICK.some((q) => /(^|\. )Just want to know/.test(q.text)));
 
 console.log(`\n================  ${pass} passed, ${fail} failed  ================`);
 process.exit(fail ? 1 : 0);
